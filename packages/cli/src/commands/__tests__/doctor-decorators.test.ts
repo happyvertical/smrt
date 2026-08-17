@@ -35,18 +35,22 @@ const LEGACY_CONFIG = [
 
 describe('resolveDeclaredViteMajor', () => {
   it('reads the major from ordinary ranges', () => {
-    expect(resolveDeclaredViteMajor({ devDependencies: { vite: '^8.1.2' } })).toBe(
-      8,
+    expect(
+      resolveDeclaredViteMajor({ devDependencies: { vite: '^8.1.2' } }),
+    ).toBe(8);
+    expect(resolveDeclaredViteMajor({ dependencies: { vite: '7.0.0' } })).toBe(
+      7,
     );
-    expect(resolveDeclaredViteMajor({ dependencies: { vite: '7.0.0' } })).toBe(7);
-    expect(resolveDeclaredViteMajor({ devDependencies: { vite: '>=8.0.0' } })).toBe(
-      8,
-    );
+    expect(
+      resolveDeclaredViteMajor({ devDependencies: { vite: '>=8.0.0' } }),
+    ).toBe(8);
   });
 
   it('returns null when Vite is absent or the range has no readable major', () => {
     expect(resolveDeclaredViteMajor({})).toBeNull();
-    expect(resolveDeclaredViteMajor({ devDependencies: { vite: '*' } })).toBeNull();
+    expect(
+      resolveDeclaredViteMajor({ devDependencies: { vite: '*' } }),
+    ).toBeNull();
     expect(
       resolveDeclaredViteMajor({ devDependencies: { vite: 'workspace:*' } }),
     ).toBeNull();
@@ -159,8 +163,14 @@ describe('doctor decorator check (end to end)', () => {
       'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true } }),
       '.env': '\n',
     });
-    await writeFile(resolve(projectDir, 'src/lib/objects/index.ts'), 'export {};\n');
-    await writeFile(resolve(projectDir, 'src/lib/server/smrt.ts'), 'export {};\n');
+    await writeFile(
+      resolve(projectDir, 'src/lib/objects/index.ts'),
+      'export {};\n',
+    );
+    await writeFile(
+      resolve(projectDir, 'src/lib/server/smrt.ts'),
+      'export {};\n',
+    );
 
     process.chdir(projectDir);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -196,8 +206,14 @@ describe('doctor decorator check (end to end)', () => {
       }),
       '.env': '\n',
     });
-    await writeFile(resolve(projectDir, 'src/lib/objects/index.ts'), 'export {};\n');
-    await writeFile(resolve(projectDir, 'src/lib/server/smrt.ts'), 'export {};\n');
+    await writeFile(
+      resolve(projectDir, 'src/lib/objects/index.ts'),
+      'export {};\n',
+    );
+    await writeFile(
+      resolve(projectDir, 'src/lib/server/smrt.ts'),
+      'export {};\n',
+    );
 
     process.chdir(projectDir);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -207,7 +223,9 @@ describe('doctor decorator check (end to end)', () => {
       throw new Error(`exit:${code ?? ''}`);
     }) as typeof process.exit);
 
-    await expect(utilityCommands.doctor.handler([], {})).rejects.toThrow('exit:1');
+    await expect(utilityCommands.doctor.handler([], {})).rejects.toThrow(
+      'exit:1',
+    );
 
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Vite 8 ignores tsconfig experimentalDecorators');

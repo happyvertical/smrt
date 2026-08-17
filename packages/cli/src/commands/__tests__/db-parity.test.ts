@@ -104,7 +104,9 @@ describe('formatParityReport', () => {
 
   it('says so when index metadata could not be read', () => {
     expect(
-      formatParityReport(report({ indexIntrospection: 'unavailable' })).join('\n'),
+      formatParityReport(report({ indexIntrospection: 'unavailable' })).join(
+        '\n',
+      ),
     ).toContain('Index metadata is not readable');
   });
 
@@ -134,10 +136,9 @@ describe('formatParityReport', () => {
       ],
     });
 
-    expect(selectFindings(messy, 'error').map((finding) => finding.table)).toEqual([
-      'apples',
-      'zebras',
-    ]);
+    expect(
+      selectFindings(messy, 'error').map((finding) => finding.table),
+    ).toEqual(['apples', 'zebras']);
     expect(summarizeParityReport(messy)).toBe(
       '2 error(s), 0 warning(s), 0 informational',
     );
@@ -262,7 +263,9 @@ describe('live parity against a real SQLite database', () => {
       await db.query(
         'CREATE TABLE widgets (id TEXT PRIMARY KEY, slug TEXT, context TEXT, tenant_id TEXT)',
       );
-      await db.query('CREATE INDEX widgets_slug_context_idx ON widgets(slug, context)');
+      await db.query(
+        'CREATE INDEX widgets_slug_context_idx ON widgets(slug, context)',
+      );
     });
     await createSystemTables();
 
@@ -320,7 +323,9 @@ describe('live parity against a real SQLite database', () => {
       await db.query(
         'CREATE UNIQUE INDEX widgets_slug_context_idx ON widgets(slug, context)',
       );
-      await db.query('CREATE INDEX widgets_tenant_id_idx ON widgets(tenant_id)');
+      await db.query(
+        'CREATE INDEX widgets_tenant_id_idx ON widgets(tenant_id)',
+      );
     });
     await createSystemTables();
 
