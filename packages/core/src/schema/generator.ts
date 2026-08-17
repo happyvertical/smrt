@@ -365,7 +365,6 @@ export class SchemaGenerator {
       columns: string[];
       unique?: boolean;
       where?: string;
-      description?: string;
     }>,
     columns: Record<string, { referenceKind?: string } | undefined>,
     tableName: string,
@@ -380,10 +379,11 @@ export class SchemaGenerator {
     );
     if (alreadyLeading) return;
 
+    // No `description`: ManifestIndexDefinition has no such field, and this
+    // helper feeds the manifest paths as well as the structured ones.
     indexes.push({
       name: `${tableName}_${tenantColumn}_idx`,
       columns: [tenantColumn],
-      description: `Index for tenant scoping on ${tenantColumn}`,
     });
   }
 
