@@ -27,6 +27,23 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Driver-error classification (#2366). Mirrored from the node entry because the
+// package's `browser` export condition resolves here, and consumers that import
+// these from the package root — `smrt-users`' TenantIntegrationCollection and
+// `smrt-profiles`' OIDC coordinator — must not fail to resolve when bundled for
+// the browser. The module is pure: it classifies plain objects and pulls in no
+// node built-ins.
+export {
+  classifyDatabaseError,
+  classifyDialectMessage,
+  type DatabaseErrorClassification,
+  type DatabaseErrorKind,
+  isAbortedTransactionError,
+  isDeterministicDatabaseError,
+  isNotNullViolationError,
+  isTransientDatabaseError,
+  isUniqueViolationError,
+} from './db-errors';
 export * from './errors';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 export {

@@ -22,6 +22,7 @@ import {
   type ListOptions as InterceptorListOptions,
 } from './interceptors';
 import type { SmrtObject } from './object';
+import { QueryBoundsError, QueryOrderByError } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -35,6 +36,54 @@ import {
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * Validate an optional collection-level list bound (#2367).
+ *
+ * @returns the bound, or `undefined` when the option was not supplied
+ * @throws {QueryBoundsError} when the option is present but not a positive
+ *   integer — a `maxListLimit` of `0` or `-1` would silently make every read on
+ *   the collection return nothing
+ */
+function assertOptionalListBound(
+  value: number | undefined,
+  optionName: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new QueryBoundsError(
+      `Invalid ${optionName}: expected a positive integer, got ${String(value)}.`,
+      'INVALID_QUERY_BOUNDS',
+      { optionName, value },
+    );
+  }
+  return value;
+}
+
+/**
+ * Validate a per-query `limit`/`offset` before it is bound (#2367).
+ *
+ * `0` is allowed — `LIMIT 0` and `OFFSET 0` are both meaningful — but `NaN`,
+ * `Infinity`, negatives and fractions are not: they used to be bound verbatim
+ * and surface as a driver-level 500 for what is a caller error.
+ *
+ * @returns the bound, or `undefined` when the caller supplied none
+ * @throws {QueryBoundsError} when the value is not a non-negative integer
+ */
+function assertQueryBound(
+  value: number | undefined,
+  parameterName: string,
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new QueryBoundsError(
+      `Invalid ${parameterName}: expected a non-negative integer, got ${String(value)}.`,
+      'INVALID_QUERY_BOUNDS',
+      { parameterName, value },
+    );
+  }
+  return value;
+}
 
 /**
  * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
@@ -271,7 +320,26 @@ interface CollectionFieldDefinition {
 /**
  * Configuration options for SmrtCollection
  */
-export interface SmrtCollectionOptions extends SmrtClassOptions {}
+export interface SmrtCollectionOptions extends SmrtClassOptions {
+  /**
+   * Page size `list()` applies when the caller passes no `limit` (#2367).
+   *
+   * Unset by default — `list()` is the framework's bulk-read primitive and its
+   * internal callers expect every matching row, so an implicit default would
+   * truncate correct queries. Set this on collections whose reads are always
+   * paged.
+   */
+  defaultListLimit?: number;
+
+  /**
+   * Ceiling `list()` clamps every `limit` down to (#2367).
+   *
+   * Unset by default. The generated REST/SvelteKit/MCP surfaces enforce
+   * `MAX_LIST_LIMIT` on their own untrusted input regardless of this option;
+   * set it to extend the same ceiling to direct programmatic reads.
+   */
+  maxListLimit?: number;
+}
 
 // S4 #1579: the constructor `options` and static `create(options)` params are
 // left as `any` deliberately. This type is satisfied by every concrete model
@@ -332,6 +400,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private _cachedFields: Record<string, CollectionFieldDefinition> | null =
     null;
 
+  /**
+   * Opt-in list bounds (#2367). See {@link SmrtCollectionOptions.defaultListLimit}
+   * and {@link SmrtCollectionOptions.maxListLimit}.
+   * @private
+   */
+  private _defaultListLimit: number | undefined;
+  private _maxListLimit: number | undefined;
+
   private getRegisteredItemClass() {
     return (
       ObjectRegistry.getClassByConstructor(
@@ -349,6 +425,343 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return (
       registered?.qualifiedName || registered?.name || this._itemClass.name
     );
+  }
+
+  /**
+   * Resolve the identifier whitelist and the sensitive-column blocklist that
+   * every caller-supplied identifier on this collection is checked against.
+   *
+   * Extracted from `convertWhereKeys()` so `orderBy` validation enforces the
+   * *same* sets (#2367). `where` (#1540) and `select` (#1902) both rejected
+   * sensitive columns while `orderBy` accepted any identifier, which made
+   * `?orderBy=api_secret&limit=1` an ordering oracle over a column the same
+   * request is forbidden to filter on or project.
+   *
+   * @returns the snake_case identifiers this collection accepts, the sensitive
+   *   names it must refuse, and whether whitelist enforcement applies at all —
+   *   classes with no registered fields (manifest-less inline test classes,
+   *   #869) have nothing to validate against and fall through to SQL.
+   * @private
+   */
+  private collectQueryableFieldNames(
+    fields: Record<string, CollectionFieldDefinition>,
+  ): {
+    validFieldNames: Set<string>;
+    sensitiveFieldNames: Set<string>;
+    readPermissionFieldNames: Set<string>;
+    skipFieldValidation: boolean;
+  } {
+    // `toSnakeCase()` — the SAME function `SchemaGenerator` names columns with
+    // (`schema/generator.ts`) — so this set holds real column names. Note it
+    // STRIPS a leading underscore, while `toDbColumnName()` preserves one; the
+    // two disagree for a declared `_rank` field, whose actual column is `rank`.
+    // `orderBy` reconciles that at the term (see `buildOrderBySql`).
+    const validFieldNames = new Set(
+      Object.keys(fields).map((f) => toSnakeCase(f)),
+    );
+
+    // Security (#1540): collect snake_case names of `@field({ sensitive: true })`
+    // columns so they can't be used as `where` filter keys. Filtering on a
+    // secret column turns the generated REST/MCP `where` surface into a value
+    // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
+    // character at a time even though it's excluded from serialization.
+    const sensitiveFieldNames = this.collectSensitiveFieldNames(fields);
+
+    // Security (#2367): the same collection for `@field({ readPermission })`
+    // columns. These are stripped from `toPublicJSON()` for callers without the
+    // permission and are refused outright by `select`, so ordering by one is the
+    // same oracle in a different door. Kept in its own set because `where`
+    // (#1540) deliberately does not consult it and this must not change that.
+    const readPermissionFieldNames =
+      this.collectReadPermissionFieldNames(fields);
+
+    // Add standard SMRT fields that are always valid
+    validFieldNames.add('id');
+    validFieldNames.add('slug');
+    validFieldNames.add('context');
+    validFieldNames.add('created_at');
+    validFieldNames.add('updated_at');
+
+    // Add STI discriminator field for polymorphic queries.
+    // R5-canon: use the qualified item name as the lookup key so a
+    // same-simple-name class in another package can't yield the wrong
+    // tableStrategy.
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
+    if (tableStrategy === 'sti') {
+      // Add both with and without leading underscore (toSnakeCase strips leading _)
+      validFieldNames.add('_meta_type');
+      validFieldNames.add('meta_type');
+      validFieldNames.add('_meta_data');
+      validFieldNames.add('meta_data');
+
+      // Issue #869: For STI classes, also include fields from all ancestor classes
+      // This ensures child class collections can filter by parent class fields.
+      //
+      // inheritanceChain entries are qualified names (when the
+      // registration has one). Compare self against the qualified form;
+      // the framework-base sentinels stay as simple names since they're
+      // never registered. The simple-name `itemClassName` is also checked
+      // as a defensive fall-through for unqualified registrations.
+      const inheritanceChain =
+        ObjectRegistry.getInheritanceChain(itemQualifiedName);
+      for (const ancestorName of inheritanceChain) {
+        if (
+          ancestorName === 'SmrtObject' ||
+          ancestorName === 'SmrtClass' ||
+          ancestorName === itemQualifiedName ||
+          ancestorName === itemClassName
+        ) {
+          continue; // Skip framework base classes and self (already included)
+        }
+        const ancestorFields = ObjectRegistry.getFields(ancestorName);
+        for (const fieldName of ancestorFields.keys()) {
+          validFieldNames.add(toSnakeCase(fieldName));
+        }
+        this.collectSensitiveFieldNames(ancestorFields, sensitiveFieldNames);
+        this.collectReadPermissionFieldNames(
+          ancestorFields,
+          readPermissionFieldNames,
+        );
+      }
+
+      // Security (#1540): a base collection serializes (and so must protect)
+      // STI descendant fields too — a child's `@meta` sensitive field lives in
+      // `_meta_data` and would otherwise be probe-able via `_meta_data.<prop>`
+      // from the base collection. Mirror toJSON()/getSensitiveFieldNames().
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase) {
+        for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
+          const descendantFields = ObjectRegistry.getFields(descendant);
+          this.collectSensitiveFieldNames(
+            descendantFields,
+            sensitiveFieldNames,
+          );
+          this.collectReadPermissionFieldNames(
+            descendantFields,
+            readPermissionFieldNames,
+          );
+        }
+      }
+    }
+
+    // Issue #869: If no fields are registered (no manifest for test classes),
+    // skip field validation. Invalid fields will fail at SQL level instead.
+    // This commonly happens for inline test classes decorated with @smrt().
+    return {
+      readPermissionFieldNames,
+      skipFieldValidation: Object.keys(fields).length === 0,
+      sensitiveFieldNames,
+      validFieldNames,
+    };
+  }
+
+  /**
+   * Build the `ORDER BY` clause for `list()`, validating every term against the
+   * same whitelist and sensitive-column blocklist as `where` and `select`
+   * (#2367).
+   *
+   * `orderBy` is interpolated UNPARAMETERIZED into the identifier position, and
+   * it arrives from the generated REST/MCP/SvelteKit surfaces as caller input.
+   * The identifier regex here has always blocked injection; what it did not
+   * block was ordering by a column the caller may not read. Sorting is a
+   * comparison, and a comparison against a secret is an oracle: repeatedly
+   * requesting `?orderBy=api_secret&limit=1` (with a shrinking `where`) walks
+   * the secret's value ordering without ever serializing the column.
+   *
+   * @param orderBy - one `'<field> [ASC|DESC]'` term or an array of them
+   * @param fields - the collection's cached field definitions
+   * @returns the `' ORDER BY ...'` fragment, or `''` when no ordering was asked
+   *   for
+   * @throws {QueryOrderByError} on a malformed term, an unknown column, or a
+   *   sensitive column — all rendered as a 400 by the generated surfaces
+   * @private
+   */
+  private buildOrderBySql(
+    orderBy: string | string[] | undefined,
+    fields: Record<string, CollectionFieldDefinition>,
+  ): string {
+    if (!orderBy) return '';
+
+    const orderByItems = Array.isArray(orderBy) ? orderBy : [orderBy];
+    if (orderByItems.length === 0) return '';
+
+    const itemClassName = this.getResolvedItemClassName();
+    const {
+      readPermissionFieldNames,
+      sensitiveFieldNames,
+      skipFieldValidation,
+      validFieldNames,
+    } = this.collectQueryableFieldNames(fields);
+
+    // Column → definition, so a term can be checked for column-backing after it
+    // passes the name whitelist. Keyed by `toSnakeCase` because that is what
+    // `SchemaGenerator` names the column with — a declared `_rank` field lives
+    // in a column called `rank`, not `_rank`.
+    const definitionByColumn = new Map<string, CollectionFieldDefinition>();
+    for (const [fieldName, fieldDef] of Object.entries(fields)) {
+      definitionByColumn.set(toSnakeCase(fieldName), fieldDef);
+    }
+
+    // `id`/`slug`/`context` are added to the whitelist unconditionally, but the
+    // schema generator omits them for a class that declares its own primary key.
+    // Without this, `?orderBy=id` on such a model passes the whitelist, matches
+    // no definition, and reaches the driver as `no such column: id` — a 500.
+    // Same derivation `resolveProjectionSelect` uses for `select`.
+    const customPrimaryKey = this.hasCustomPrimaryKey(fields);
+    const registeredFields = ObjectRegistry.getFields(
+      this.getResolvedItemQualifiedName(),
+    );
+    const explicitFieldNames = new Set(
+      (registeredFields.size > 0
+        ? registeredFields
+        : ObjectRegistry.getFields(itemClassName)
+      ).keys(),
+    );
+
+    const terms = orderByItems.map((item) => {
+      const [field, direction = 'ASC'] = String(item).trim().split(/\s+/);
+
+      // Validate field name
+      if (!/^[a-zA-Z0-9_]+$/.test(field)) {
+        throw new QueryOrderByError(
+          `Invalid field name for ordering: ${field}`,
+          `Invalid field name for ordering: ${field}`,
+          'INVALID_ORDER_BY',
+          { field },
+        );
+      }
+
+      // Validate direction
+      const normalizedDirection = direction.toUpperCase();
+      if (normalizedDirection !== 'ASC' && normalizedDirection !== 'DESC') {
+        throw new QueryOrderByError(
+          `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
+          `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
+          'INVALID_ORDER_BY',
+          { direction },
+        );
+      }
+
+      // Resolve the term to a real column. The two normalizations disagree on a
+      // leading underscore, and each is right for a different case:
+      //
+      // - a DECLARED field is named by `toSnakeCase`, which strips it, so
+      //   `_rank` lives in a column called `rank`;
+      // - the STI framework columns `_meta_type`/`_meta_data` really do carry
+      //   the underscore and are never declared fields.
+      //
+      // Prefer the declared column when one exists, otherwise keep the
+      // underscore-preserving form so `_metaType` still reaches `_meta_type`.
+      // Emitting the resolved name (rather than one normalization applied
+      // blindly) is what keeps a term that passes the whitelist from naming a
+      // column that does not exist.
+      const strippedName = toSnakeCase(field);
+      const columnName = definitionByColumn.has(strippedName)
+        ? strippedName
+        : this.toDbColumnName(field);
+
+      // Security (#2367): refuse sensitive columns before the whitelist check,
+      // so the rejection reason for a secret is never "no such field" (which
+      // would itself confirm the column exists elsewhere).
+      if (
+        sensitiveFieldNames.has(columnName) ||
+        sensitiveFieldNames.has(field)
+      ) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Ordering by sensitive fields is not allowed.`,
+          `Invalid orderBy field: '${field}'. Ordering by sensitive fields is not allowed.`,
+          'INVALID_ORDER_BY_SENSITIVE',
+          { field },
+        );
+      }
+
+      // Security (#2367): same for `@field({ readPermission })` columns.
+      // `toPublicJSON()` redacts them per caller and `select` refuses them, so
+      // an ordering over one is the same oracle through a different door.
+      if (
+        readPermissionFieldNames.has(columnName) ||
+        readPermissionFieldNames.has(field)
+      ) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Ordering by permission-gated fields is not allowed.`,
+          `Invalid orderBy field: '${field}'. Ordering by permission-gated fields is not allowed.`,
+          'INVALID_ORDER_BY_RESTRICTED',
+          { field },
+        );
+      }
+
+      // Whitelist, mirroring `where`. Skipped for manifest-less inline test
+      // classes with no registered fields (#869), exactly as `where` does.
+      if (!skipFieldValidation && !validFieldNames.has(columnName)) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Field does not exist on ${itemClassName}. ` +
+            `Valid fields: ${Array.from(validFieldNames).sort().join(', ')}`,
+          // The public form omits the field list: the column list is schema
+          // detail an unauthenticated caller has no need for.
+          `Invalid orderBy field: '${field}'.`,
+          'INVALID_ORDER_BY_UNKNOWN_FIELD',
+          { field, itemClassName },
+        );
+      }
+
+      // Being a registered field is not the same as being a column (#2367).
+      // `oneToMany`/`manyToMany` are relationship-only, `meta` lives inside the
+      // STI `_meta_data` blob, and `transient` is never persisted — the schema
+      // generator emits no column for any of them. Ordering by one reached the
+      // driver as `no such column`, which carries no 4xx status and so surfaced
+      // as a 500 on a public endpoint. `select` already rejects the same set.
+      const fieldDef = definitionByColumn.get(columnName);
+      const fieldType = fieldDef?.type;
+      const isTransient =
+        fieldDef?.transient === true || fieldDef?._meta?.transient === true;
+      if (
+        fieldType === 'meta' ||
+        fieldType === 'oneToMany' ||
+        fieldType === 'manyToMany' ||
+        isTransient ||
+        this.isOmittedCustomPrimaryKeySystemField(
+          columnName,
+          customPrimaryKey,
+          explicitFieldNames,
+        )
+      ) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Field is not column-backed on ${itemClassName}.`,
+          `Invalid orderBy field: '${field}'. Field is not column-backed.`,
+          'INVALID_ORDER_BY_NOT_COLUMN_BACKED',
+          { field, itemClassName },
+        );
+      }
+
+      return `${columnName} ${normalizedDirection}`;
+    });
+
+    return ` ORDER BY ${terms.join(', ')}`;
+  }
+
+  /**
+   * Apply this collection's configured list bounds (#2367).
+   *
+   * Both bounds are opt-in (`defaultListLimit` / `maxListLimit` collection
+   * options) and default to unset. `list()` is the framework's bulk-read
+   * primitive — relationship loaders, junction hydration and `listByIds()` all
+   * go through it expecting every matching row — so a framework-wide implicit
+   * default would silently truncate correct queries instead of bounding an
+   * attack surface. The generated surfaces, where untrusted input actually
+   * arrives, apply {@link DEFAULT_LIST_LIMIT}/{@link MAX_LIST_LIMIT}
+   * unconditionally; an application that wants the same ceiling on its own
+   * programmatic reads sets `maxListLimit` when constructing the collection.
+   *
+   * @private
+   */
+  private applyListBounds(limit: number | undefined): number | undefined {
+    const effective = limit ?? this._defaultListLimit;
+    if (effective === undefined) return undefined;
+    return this._maxListLimit === undefined
+      ? effective
+      : Math.min(effective, this._maxListLimit);
   }
 
   /**
@@ -419,84 +832,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Get schema fields for validation (sync from cache)
     const fields = this.getFieldsSync();
-    const validFieldNames = new Set(
-      Object.keys(fields).map((f) => toSnakeCase(f)),
-    );
-
-    // Security (#1540): collect snake_case names of `@field({ sensitive: true })`
-    // columns so they can't be used as `where` filter keys. Filtering on a
-    // secret column turns the generated REST/MCP `where` surface into a value
-    // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
-    // character at a time even though it's excluded from serialization.
-    const sensitiveFieldNames = this.collectSensitiveFieldNames(fields);
-
-    // Add standard SMRT fields that are always valid
-    validFieldNames.add('id');
-    validFieldNames.add('slug');
-    validFieldNames.add('context');
-    validFieldNames.add('created_at');
-    validFieldNames.add('updated_at');
-
-    // Add STI discriminator field for polymorphic queries.
-    // R5-canon: use the qualified item name as the lookup key so a
-    // same-simple-name class in another package can't yield the wrong
-    // tableStrategy.
     const itemClassName = this.getResolvedItemClassName();
-    const itemQualifiedName = this.getResolvedItemQualifiedName();
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
-    if (tableStrategy === 'sti') {
-      // Add both with and without leading underscore (toSnakeCase strips leading _)
-      validFieldNames.add('_meta_type');
-      validFieldNames.add('meta_type');
-      validFieldNames.add('_meta_data');
-      validFieldNames.add('meta_data');
-
-      // Issue #869: For STI classes, also include fields from all ancestor classes
-      // This ensures child class collections can filter by parent class fields.
-      //
-      // inheritanceChain entries are qualified names (when the
-      // registration has one). Compare self against the qualified form;
-      // the framework-base sentinels stay as simple names since they're
-      // never registered. The simple-name `itemClassName` is also checked
-      // as a defensive fall-through for unqualified registrations.
-      const inheritanceChain =
-        ObjectRegistry.getInheritanceChain(itemQualifiedName);
-      for (const ancestorName of inheritanceChain) {
-        if (
-          ancestorName === 'SmrtObject' ||
-          ancestorName === 'SmrtClass' ||
-          ancestorName === itemQualifiedName ||
-          ancestorName === itemClassName
-        ) {
-          continue; // Skip framework base classes and self (already included)
-        }
-        const ancestorFields = ObjectRegistry.getFields(ancestorName);
-        for (const fieldName of ancestorFields.keys()) {
-          validFieldNames.add(toSnakeCase(fieldName));
-        }
-        this.collectSensitiveFieldNames(ancestorFields, sensitiveFieldNames);
-      }
-
-      // Security (#1540): a base collection serializes (and so must protect)
-      // STI descendant fields too — a child's `@meta` sensitive field lives in
-      // `_meta_data` and would otherwise be probe-able via `_meta_data.<prop>`
-      // from the base collection. Mirror toJSON()/getSensitiveFieldNames().
-      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
-      if (stiBase) {
-        for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
-          this.collectSensitiveFieldNames(
-            ObjectRegistry.getFields(descendant),
-            sensitiveFieldNames,
-          );
-        }
-      }
-    }
-
-    // Issue #869: If no fields are registered (no manifest for test classes),
-    // skip field validation. Invalid fields will fail at SQL level instead.
-    // This commonly happens for inline test classes decorated with @smrt().
-    const hasRegisteredFields = Object.keys(fields).length > 0;
-    const skipFieldValidation = !hasRegisteredFields;
+    const { sensitiveFieldNames, skipFieldValidation, validFieldNames } =
+      this.collectQueryableFieldNames(fields);
 
     const converted: Record<string, unknown> = {};
 
@@ -788,6 +1126,34 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return target;
   }
 
+  /**
+   * The `collectSensitiveFieldNames` sibling for `@field({ readPermission })`
+   * columns (#2367).
+   *
+   * These are per-caller redacted by `toPublicJSON()` and refused outright by
+   * `select`, so an ordering over one leaks comparisons about a value the
+   * caller may not read. `list()` has no permission context, so — exactly as
+   * `select` does — they are refused unconditionally rather than conditionally.
+   */
+  private collectReadPermissionFieldNames(
+    fieldMap:
+      | Record<string, CollectionFieldDefinition>
+      | Map<string, CollectionFieldDefinition>,
+    target = new Set<string>(),
+  ): Set<string> {
+    const entries =
+      fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
+
+    for (const [fieldName, fieldDef] of entries) {
+      if (this.getReadPermissionFieldDefinition(fieldDef) !== undefined) {
+        target.add(toSnakeCase(fieldName));
+        target.add(fieldName);
+      }
+    }
+
+    return target;
+  }
+
   private hasCustomPrimaryKey(
     fields: Record<string, CollectionFieldDefinition>,
   ): boolean {
@@ -1037,6 +1403,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   constructor(options: SmrtCollectionOptions = {}) {
     super(options);
 
+    // #2367: validate the configured bounds at construction, not at query time.
+    // A bad ceiling that only surfaces on the first paged read is a production
+    // incident; a bad ceiling that fails to construct is a startup error.
+    this._defaultListLimit = assertOptionalListBound(
+      options.defaultListLimit,
+      'defaultListLimit',
+    );
+    this._maxListLimit = assertOptionalListBound(
+      options.maxListLimit,
+      'maxListLimit',
+    );
+
     // Auto-register the collection if it's not the base SmrtCollection and has an _itemClass.
     // `this.constructor` is typed as the structureless `Function`; view it as the
     // collection-class shape (static `_itemClass` constructor + the new-able ctor
@@ -1090,16 +1468,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     this: new (
       options?: SmrtCollectionOptions,
     ) => T,
-    options: SmrtClassOptions = {},
+    // `SmrtCollectionOptions`, not `SmrtClassOptions`: the collection-only
+    // options (#2367 list bounds) must be passable through the recommended
+    // factory without a cast, and every `SmrtClassOptions` value still satisfies
+    // this because the extra members are optional.
+    options: SmrtCollectionOptions = {},
   ): Promise<T> {
-    // Extract only collection-compatible options from broader SmrtClassOptions
+    // Extract only collection-compatible options from the incoming bag.
+    // This is an allowlist: an option absent from BOTH the destructuring and the
+    // literal below never reaches the constructor, however it was passed.
     const {
       _className,
       db,
+      defaultListLimit, // #2367
       persistence, // Also extract persistence alias
       ai,
       fs,
       logging,
+      maxListLimit, // #2367
       metrics,
       pubsub,
       sanitization,
@@ -1111,8 +1497,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       db,
       persistence, // Pass persistence through so initialize() can map it to db
       ai,
+      defaultListLimit,
       fs,
       logging,
+      maxListLimit,
       metrics,
       pubsub,
       sanitization,
@@ -1277,8 +1665,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is a convenience method that avoids N+1 queries when you have
    * a list of IDs and need to fetch the corresponding records.
    *
+   * The id list is chunked at `IN_LIST_CHUNK_SIZE` (#2367). `collection.list()`
+   * expands an array-valued WHERE into one `id IN (?, ?, ...)` clause and does
+   * not chunk it, so an unbounded caller-sized array hits the backend's
+   * bind-variable ceiling — `SQLITE_MAX_VARIABLE_NUMBER` (999 pre-3.32, 32766
+   * after) or PostgreSQL's 65535 — and the whole query fails before it runs.
+   * The relationship, junction and hierarchy loaders have chunked at this value
+   * for exactly this reason; `listByIds()` is the remaining path that took ids
+   * straight from the caller and did not.
+   *
    * @param ids - Array of UUIDs to fetch
-   * @returns Promise resolving to array of objects (order not guaranteed)
+   * @returns Promise resolving to array of objects (order not guaranteed;
+   *   results are concatenated in chunk order)
    *
    * @example
    * ```typescript
@@ -1287,7 +1685,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async listByIds(ids: string[]): Promise<ModelType[]> {
     if (ids.length === 0) return [];
-    return this.list({ where: { id: ids } });
+
+    // Never chunk above a configured ceiling: an explicit `limit` is clamped by
+    // `maxListLimit`, so a chunk larger than the ceiling would come back
+    // truncated and silently drop ids the caller asked for.
+    const chunkSize =
+      this._maxListLimit === undefined
+        ? IN_LIST_CHUNK_SIZE
+        : Math.min(IN_LIST_CHUNK_SIZE, this._maxListLimit);
+
+    const chunks = chunkArray(ids, chunkSize);
+    if (chunks.length === 1) {
+      return this.list({ limit: chunks[0].length, where: { id: chunks[0] } });
+    }
+
+    const results: ModelType[] = [];
+    for (const idChunk of chunks) {
+      results.push(
+        ...(await this.list({ limit: idChunk.length, where: { id: idChunk } })),
+      );
+    }
+    return results;
   }
 
   /**
@@ -1449,7 +1867,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const convertedWhere = this.convertWhereKeys(where);
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
-    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
+    // `get()` reads `rows[0]` and discards the rest, so the row cap belongs in
+    // the query, not in JavaScript (#2367). Without it a filter that is not
+    // backed by a unique index — `get({ status: 'active' })`, or any slug lookup
+    // on a table whose natural-key index was replaced by custom
+    // `conflictColumns` — streams every matching row through the driver and
+    // hydrates none of them. The literal is safe to interpolate: it is not
+    // caller-derived, and `$n` placeholders here would have to be numbered after
+    // the WHERE values on PostgreSQL.
+    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql} LIMIT 1`;
     const rows = await this.queryRowsWithCache(
       fullSQL,
       whereValues,
@@ -1599,47 +2025,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    let orderBySql = '';
-    if (orderBy) {
-      orderBySql = ' ORDER BY ';
-      const orderByItems = Array.isArray(orderBy) ? orderBy : [orderBy];
-
-      orderBySql += orderByItems
-        .map((item) => {
-          const [field, direction = 'ASC'] = item.split(' ');
-
-          // Validate field name
-          if (!/^[a-zA-Z0-9_]+$/.test(field)) {
-            throw new Error(`Invalid field name for ordering: ${field}`);
-          }
-
-          // Validate direction
-          const normalizedDirection = direction.toUpperCase();
-          if (normalizedDirection !== 'ASC' && normalizedDirection !== 'DESC') {
-            throw new Error(
-              `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
-            );
-          }
-
-          // Convert field name to snake_case
-          const snakeField = toSnakeCase(field);
-          return `${snakeField} ${normalizedDirection}`;
-        })
-        .join(', ');
-    }
+    const orderBySql = this.buildOrderBySql(orderBy, fields);
 
     let limitOffsetSql = '';
     const limitOffsetValues: (number | undefined)[] = [];
     let paramIndex = whereValues.length + 1;
 
-    if (limit !== undefined) {
+    // #2367: reject a malformed bound here rather than binding it. A NaN or
+    // fractional `limit` used to reach the driver verbatim, where PostgreSQL
+    // answers `invalid input syntax for type bigint` — a 500 for what is a
+    // caller error. Then apply the collection's opt-in default/ceiling.
+    const boundedLimit = this.applyListBounds(assertQueryBound(limit, 'limit'));
+    const boundedOffset = assertQueryBound(offset, 'offset');
+
+    if (boundedLimit !== undefined) {
       limitOffsetSql += ` LIMIT $${paramIndex++}`;
-      limitOffsetValues.push(limit);
+      limitOffsetValues.push(boundedLimit);
     }
 
-    if (offset !== undefined) {
+    if (boundedOffset !== undefined) {
       limitOffsetSql += ` OFFSET $${paramIndex++}`;
-      limitOffsetValues.push(offset);
+      limitOffsetValues.push(boundedOffset);
     }
 
     const selectSql = projection ? projection.sql : '*';

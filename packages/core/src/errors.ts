@@ -32,6 +32,7 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
+import { classifyDatabaseError } from './db-errors';
 
 const logger = createLogger({ level: 'info' });
 
@@ -784,7 +785,28 @@ export class TenantIsolationError extends SmrtError {
  */
 export class ErrorUtils {
   /**
-   * Wraps a function with error handling and automatic retry logic
+   * Wraps a function with error handling and automatic retry logic.
+   *
+   * Retries are for failures a later attempt might survive. An error is
+   * rethrown immediately, with no backoff, when it is:
+   *
+   * - a {@link ValidationError} or {@link ConfigurationError} — the input is
+   *   wrong, and the same input will be wrong next time;
+   * - a {@link TenantIsolationError} — a security boundary, and deterministic;
+   * - a **deterministic database failure** (#2366), classified through the
+   *   driver-error cause chain by {@link classifyDatabaseError}: constraint
+   *   violations, invalid input syntax, missing tables/columns, and statements
+   *   issued inside an already-aborted PostgreSQL transaction (`25P02`).
+   *
+   * The database check matters because `@happyvertical/sql` wraps every driver
+   * error as `DatabaseError('Failed to upsert record into table', …)`, hiding
+   * the constraint wording from `error.message`. Without it, a unique-key
+   * collision burned the full 500 + 1000 + 2000 ms backoff and — inside a
+   * caller-managed transaction — replaced the real cause with
+   * `25P02 current transaction is aborted` on the way out.
+   *
+   * Errors the classifier has no opinion about (`kind: 'unknown'`) keep the
+   * original permissive behavior and are retried.
    */
   static async withRetry<T>(
     operation: () => Promise<T>,
@@ -815,6 +837,14 @@ export class ErrorUtils {
           throw error;
         }
 
+        // A deterministic database failure cannot be retried into success, and
+        // retrying it inside a transaction actively destroys evidence: every
+        // later attempt runs on the aborted client and reports `25P02` instead
+        // of the constraint that actually failed (#2366).
+        if (classifyDatabaseError(error).deterministic) {
+          throw lastError;
+        }
+
         // Wait before retrying with exponential backoff
         // Wrap in try-catch to handle any potential timer errors
         try {
@@ -832,9 +862,21 @@ export class ErrorUtils {
   }
 
   /**
-   * Checks if an error is retryable
+   * Checks if an error is retryable.
+   *
+   * A database failure is classified through its driver-error cause chain
+   * first (#2366), so a wrapped `40001 serialization_failure` or `SQLITE_BUSY`
+   * reports retryable while a wrapped `23505 unique_violation` does not —
+   * neither of which the `category === 'database'` test alone could tell
+   * apart. Only when the chain yields no opinion do the original
+   * category/message heuristics apply.
    */
   static isRetryable(error: Error): boolean {
+    const databaseClassification = classifyDatabaseError(error);
+    if (databaseClassification.kind !== 'unknown') {
+      return databaseClassification.retryable;
+    }
+
     if (error instanceof SmrtError) {
       return error.category === 'network' || error.category === 'ai';
     }
