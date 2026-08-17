@@ -17,6 +17,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/change-feed.ts` | the adapter-agnostic change-observation spine — `_smrt_changes`, cursors, table versions, generated `_changes` routes, retention | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` + the generated `_events` SSE route | the push companion to the change feed — the signal bus, cross-replica fan-out, the SSE route, and its documented gaps | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
+| `src/schema/` | the five `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
 
 ## SmrtObject Lifecycle
 
@@ -203,13 +204,35 @@ byte/provenance/path/content drift, skips scans and manifest writes, and still
 generates routes, types, registration, and virtual modules. Omit it for normal
 local development and watch mode.
 
+## Schema paths (#2382)
+
+Production DDL comes from the **manifest** paths
+(`generateSTISchemaFromManifest`/`generateCTISchemaFromManifest`, selected in
+`src/scanner/manifest-generator.ts` → registered `schema` → `db:migrate`). The
+**registry** paths feed `getTestDatabase()` and emit foreign-key indexes
+production never gets: the suite runs on a richer schema than it ships.
+
+- Change column/index emission on every shipping path, proven by a path-parity
+  test (#2359 adds one). A "same as migrations" comment is a claim to check.
+- Every new query predicate ships with its index, or a reason it doesn't.
+- Numeric types, uuid casts, conflict targets, timestamps, migrations: run the
+  `test:postgres` lane — SQLite affinity accepts what PostgreSQL rejects.
+- Read `dist/manifest.json`/regenerated schemas for what a decorator produced;
+  count across all packages instead of sampling.
+- Tenant scoping is whole-path: every unique constraint and conflict target on a
+  tenant-scoped table carries the tenant column, and every read path — not only
+  `list()` — is interceptor-aware.
+- Rolling indexes out is part of the change: a bulk `CREATE INDEX` batch needs
+  the bounded, concurrent migrate path (#2362, Gotchas), or it takes production
+  down on deploy.
+
 ## Gotchas
 
 - **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
-- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly
-- **PostgreSQL migrate batches are always time-bounded (#2362)**: `MigrationTracker.applyAll({ atomic: true })` emits `SET LOCAL lock_timeout`/`SET LOCAL statement_timeout` before any DDL, so a batch blocked on one table cannot hold its earlier locks indefinitely. Adding `postgresSafe: true` selects concurrent-index mode: non-index DDL commits atomically, then index DDL runs `CONCURRENTLY` on a session pinned via `db.acquireSession()` (a pooled `db.query` would not keep the `SET` and the DDL on one connection). That mode is deliberately **not atomic**; unfinished index migrations are left `failed`, not `running`, so a reconciling re-run retries them without `--force`. Their `error_message` carries a `[smrt: concurrent-index phase 1 committed]` marker, which is the durable record that the transactional half already ran — a retry of the same definition (checksum match) skips those statements and resumes at the index build, so non-idempotent DDL like `ALTER TABLE … ADD COLUMN` cannot oscillate on "column already exists". INVALID indexes are found through `pg_index.indisvalid` — `pg_indexes` reports them as present — and dropped before rebuild.
+- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check
+- **PostgreSQL migrate batches are always time-bounded (#2362)**: `MigrationTracker.applyAll({ atomic: true })` emits `SET LOCAL lock_timeout`/`statement_timeout` before any DDL, so a batch blocked on one table cannot hold its earlier locks indefinitely. `postgresSafe: true` adds concurrent-index mode — non-index DDL commits atomically, then index DDL runs `CONCURRENTLY` on a session pinned via `db.acquireSession()` (a pooled `db.query` would not keep the `SET` and the DDL on one connection). That mode is deliberately **not atomic**: unfinished index migrations are recorded `failed`, not `running`, and their `error_message` carries a `[smrt: concurrent-index phase 1 committed]` marker so a reconciling re-run resumes at the index build instead of replaying committed DDL. INVALID indexes are found via `pg_index.indisvalid` (`pg_indexes` reports them as present) and dropped before rebuild. Operational detail: `packages/cli/AGENTS.md`.
 - **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
