@@ -9,6 +9,10 @@
 
 import type { DatabaseInterface, SchemasOption } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
+import {
+  applyPostgresRuntimeTimeouts,
+  type PostgresTimeoutConfig,
+} from './postgres-timeouts.js';
 
 /**
  * Unified type for all database configuration formats
@@ -41,6 +45,13 @@ export type DatabaseConfig =
       url?: string;
       type?: 'sqlite' | 'postgres' | 'duckdb' | 'json';
       authToken?: string;
+      /**
+       * Runtime PostgreSQL timeouts for this connection (#2377). Ignored by
+       * every other engine.
+       *
+       * @see {@link PostgresTimeoutConfig}
+       */
+      timeouts?: PostgresTimeoutConfig;
       [key: string]: unknown;
     }
   | DatabaseInterface;
@@ -156,11 +167,14 @@ export async function resolveDatabase(
   // String URL shortcut
   if (typeof config === 'string') {
     const isMemoryDb = config === ':memory:';
+    // The dbid is derived from the *bounded* URL so two configurations that
+    // differ only in their PostgreSQL timeouts cannot share one pool (#2377).
+    const bounded = applyPostgresRuntimeTimeouts({ url: config });
     return getDatabase({
-      url: config,
+      ...bounded,
       schemas,
-      ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${config}` }),
-    });
+      ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${bounded.url}` }),
+    } as Parameters<typeof getDatabase>[0]);
   }
 
   // Config object
@@ -169,14 +183,14 @@ export async function resolveDatabase(
   const canUseMemory = !config.type || config.type === 'sqlite';
   const dbUrl = config.url || (canUseMemory ? ':memory:' : '');
   const isMemoryDb = dbUrl === ':memory:';
+  const bounded = applyPostgresRuntimeTimeouts({ ...config, url: dbUrl });
   // `config` is the loosely-typed config-object variant of `DatabaseConfig`
   // (it carries an open `[key: string]: unknown` index for adapter-specific
   // options). Cast the merged options to `getDatabase`'s own parameter type at
   // this boundary; the adapter validates the concrete shape at runtime.
   return getDatabase({
-    ...config,
-    url: dbUrl,
+    ...bounded,
     schemas,
-    ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${dbUrl}` }),
+    ...(isMemoryDb ? {} : { dbid: dbid ?? `smrt:${bounded.url}` }),
   } as Parameters<typeof getDatabase>[0]);
 }

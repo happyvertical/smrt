@@ -40,6 +40,7 @@ import type {
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
+import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
@@ -51,6 +52,29 @@ import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
+
+/**
+ * Timeout budget for the PostgreSQL system-table bootstrap transaction.
+ *
+ * The runtime pool's session `lock_timeout`/`statement_timeout` (#2377) are
+ * sized for request work. This transaction is not request work: it holds the
+ * advisory lock across up to 29 sequential DDL round-trips — ~18.85 s on the
+ * high-latency link `bootstrapSystemTables` documents — and a second replica
+ * cold-starting against the same fresh database *waits* on that lock. Both GUCs
+ * bound that wait, because `pg_advisory_xact_lock` is an ordinary statement in
+ * the lock manager, so at the runtime defaults the second replica would abort
+ * with "canceling statement due to lock timeout" where it previously waited and
+ * succeeded.
+ *
+ * Five minutes is an order of magnitude above the documented worst case and
+ * still bounded — this is a raise, not a disable. `SET LOCAL` scopes it to this
+ * transaction, the same lever migrations use for the same reason (#2362).
+ */
+const SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS = 300_000;
+const SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL = [
+  `SET LOCAL lock_timeout = '${SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS}ms'`,
+  `SET LOCAL statement_timeout = '${SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS}ms'`,
+];
 
 const logger = createLogger({ level: 'info' });
 
@@ -583,10 +607,16 @@ export class SmrtClass {
           // Preserve connection sharing for file-backed databases while leaving
           // true in-memory databases isolated per instance.
           const isMemoryDb = this.options.db === ':memory:';
-          this._db = await getDatabase({
+          // PostgreSQL URLs pick up the runtime timeout bounds, and the dbid is
+          // derived from the bounded URL so the same rewrite at every call site
+          // still resolves to one shared pool (#2377).
+          const bounded = applyPostgresRuntimeTimeouts({
             url: this.options.db,
-            ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
           });
+          this._db = await getDatabase({
+            ...bounded,
+            ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url}` }),
+          } as unknown as Parameters<typeof getDatabase>[0]);
         } else if ('query' in this.options.db) {
           // Format 2: Already a DatabaseInterface instance - return as-is
           this._db = this.options.db as DatabaseInterface;
@@ -613,12 +643,15 @@ export class SmrtClass {
           const dbConfig = this.options.db as { url?: string; type?: string };
           const dbUrl = dbConfig.url || 'memory';
           const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+          // Keep the config's own key set: an object with no `url` must stay
+          // that way so the adapter applies its own default (#2377).
+          const bounded = applyPostgresRuntimeTimeouts({ ...this.options.db });
           // The loose config-object variant of `DatabaseConfig` carries an
           // index signature that the closed `getDatabase` option union does
           // not accept structurally, so route through its parameter type.
           this._db = await getDatabase({
-            ...this.options.db,
-            ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
+            ...bounded,
+            ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url ?? dbUrl}` }),
           } as unknown as Parameters<typeof getDatabase>[0]);
         }
 
@@ -899,6 +932,11 @@ export class SmrtClass {
       }
 
       try {
+        // Raise the budget before taking the lock — the wait itself is what the
+        // runtime session timeouts would otherwise cancel (#2377).
+        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+          await tx.query(sql);
+        }
         await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
         const result = await callback(tx);
         await tx.commit();
@@ -915,6 +953,9 @@ export class SmrtClass {
       ) => Promise<R>;
 
       return runInTransaction(async (tx) => {
+        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+          await tx.query(sql);
+        }
         await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
         return callback(tx);
       });
