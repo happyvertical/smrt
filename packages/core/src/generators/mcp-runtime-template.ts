@@ -10,7 +10,11 @@
  * - Graceful shutdown
  */
 
-import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../query-bounds.js';
+import {
+  DEFAULT_LIST_LIMIT,
+  DEFAULT_LIST_ORDER_BY,
+  MAX_LIST_LIMIT,
+} from '../query-bounds.js';
 import type { CustomActionScope } from './custom-action.js';
 import type { MCPConfig, MCPContext } from './mcp.js';
 
@@ -90,6 +94,15 @@ export interface RuntimeOptions {
    * collection API.
    */
   stiTargets?: Record<string, Record<string, string>>;
+
+  /**
+   * Default list ordering per lowercased MCP object prefix (#2367).
+   *
+   * Baked in at generation time because the tiebreak follows the model's
+   * declared primary key, which the emitted server cannot resolve on its own.
+   * Prefixes absent from this map fall back to {@link DEFAULT_LIST_ORDER_BY}.
+   */
+  listOrderBy?: Record<string, readonly string[]>;
 }
 
 /**
@@ -109,6 +122,7 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     taskActions = {},
     tenantScopedObjects = [],
     stiTargets = {},
+    listOrderBy = {},
     toolListCacheHint = { ttlMs: 86_400_000, cacheScope: 'private' },
   } = options;
 
@@ -137,6 +151,12 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
             return `${indent}case '${tool.name}': {
 ${indent}  const limit = resolveListBound(args.limit, 'limit', ${DEFAULT_LIST_LIMIT}, ${MAX_LIST_LIMIT});
 ${indent}  const offset = resolveListBound(args.offset, 'offset', 0);
+${indent}  // #2367: the tool schema advertises \`orderBy\`, so honour it; and page
+${indent}  // deterministically when it is omitted — LIMIT/OFFSET with no ORDER BY
+${indent}  // lets successive pages repeat and skip rows on PostgreSQL.
+${indent}  const orderBy = args.orderBy ?? ${JSON.stringify(
+              listOrderBy[objectName] ?? DEFAULT_LIST_ORDER_BY,
+            )};
 ${indent}  const where = args.where ?? {};
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
@@ -144,7 +164,7 @@ ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: pr
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const items = await collection.list({ where, limit, offset });
+${indent}  const items = await collection.list({ where, limit, offset, orderBy });
 ${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON_OPTIONS));
 ${indent}  const structuredContent = {
 ${indent}    data: itemsPublic,

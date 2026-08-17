@@ -98,6 +98,18 @@ describe('#2367 MCP list query bounds', () => {
     expect(response.content[0].text).toMatch(/offset/i);
     expect(calls).toHaveLength(0);
   });
+
+  it('pages deterministically when the caller supplies no ordering', async () => {
+    const { calls } = await callList({});
+    expect(calls[0]).toMatchObject({
+      orderBy: ['created_at DESC', 'id ASC'],
+    });
+  });
+
+  it('lets an explicit orderBy win over the default', async () => {
+    const { calls } = await callList({ orderBy: 'name ASC' });
+    expect(calls[0]).toMatchObject({ orderBy: 'name ASC' });
+  });
 });
 
 describe('#2367 emitted MCP stdio runtime bounds', () => {
@@ -127,5 +139,35 @@ describe('#2367 emitted MCP stdio runtime bounds', () => {
   it('no longer takes the bound straight off the untyped argument bag', () => {
     expect(source).not.toContain('const limit = args.limit ?? 50;');
     expect(source).not.toContain('const offset = args.offset ?? 0;');
+  });
+
+  it('honours the advertised orderBy argument and defaults it', () => {
+    // The tool schema advertises `orderBy`; the emitted handler used to build
+    // `collection.list({ where, limit, offset })` and drop it silently.
+    expect(source).toContain(
+      'const orderBy = args.orderBy ?? ["created_at DESC","id ASC"];',
+    );
+    expect(source).toContain(
+      'const items = await collection.list({ where, limit, offset, orderBy });',
+    );
+    expect(source).not.toContain(
+      'const items = await collection.list({ where, limit, offset });',
+    );
+  });
+
+  it('bakes in a per-object tiebreak for a custom primary key', () => {
+    const custom = generateRuntimeBootstrap({
+      listOrderBy: { widget: ['created_at DESC', 'sku ASC'] },
+      tools: [
+        {
+          description: 'List widgets',
+          inputSchema: { properties: {}, type: 'object' },
+          name: 'widget_list',
+        },
+      ],
+    });
+    expect(custom).toContain(
+      'const orderBy = args.orderBy ?? ["created_at DESC","sku ASC"];',
+    );
   });
 });
