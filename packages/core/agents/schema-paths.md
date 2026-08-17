@@ -180,3 +180,21 @@ candidate claimed conflict indexes past two columns were narrowed to two
 columns, when only the index *name* is shortened. And an index fix that ships
 without a bounded-timeout, `CONCURRENTLY`-capable migrate path can take
 production down on rollout (#2362).
+
+### 13. `schema.ddl` is a preview, not the table
+
+`SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
+CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no
+indexes, no triggers, abstract `REAL`/`JSON`/`UUID`/`TIMESTAMP`. It is kept for
+backward compatibility only. Everything that needs an executable table renders
+`columns` + `indexes` through `getDDLStrategy(engine)` — `db:migrate`
+(`migrations/orchestrate.ts`), `MigrationGenerator` (default
+`materializeStructuredSchema: true`; `false` is a deprecated opt-out),
+`SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
+last three via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is executed only for
+manifest objects with no structured columns. Do not add a new consumer of the
+string, and do not write a private CREATE INDEX renderer — the retired ones
+dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
+`PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
+

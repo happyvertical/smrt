@@ -77,7 +77,16 @@ export interface ForeignKeyDefinition {
 
 export interface SchemaDefinition {
   tableName: string;
-  /** SQL DDL statement for table creation (optional - may be generated lazily) */
+  /**
+   * Engine-neutral CREATE TABLE preview (optional; may be generated lazily).
+   *
+   * Non-authoritative (#2358): it carries no indexes, no triggers and no
+   * per-engine type mapping (`REAL`/`JSON`/`UUID`/`TIMESTAMP` stay abstract).
+   * Kept for backward compatibility with published manifests and third-party
+   * tooling; framework consumers render `columns` and `indexes` through
+   * `getDDLStrategy(engine)` and only fall back to `ddl` when `columns` is
+   * empty (hand-authored manifests).
+   */
   ddl?: string;
   columns: Record<string, ColumnDefinition>;
   indexes: IndexDefinition[];

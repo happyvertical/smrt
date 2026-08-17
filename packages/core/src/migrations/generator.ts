@@ -70,10 +70,17 @@ export class MigrationGenerator {
       includeDown?: boolean;
       packageName?: string;
       /**
-       * Ignore cached manifest DDL and materialize structured columns for the
-       * selected engine. Framework-owned executable paths should enable this;
-       * the default preserves the published custom-DDL contract while still
-       * materializing bare PostgreSQL TIMESTAMP columns as TIMESTAMPTZ.
+       * Render new tables from their structured columns through the engine's
+       * DDL strategy (default, `true`) — the same renderer `db:migrate` uses,
+       * so column types, indexes and triggers match what the differ expects
+       * on the next run.
+       *
+       * @deprecated Passing `false` re-enables the retired cached-`ddl` string
+       * path (#2358): it emits the manifest's engine-neutral CREATE TABLE with
+       * only bare PostgreSQL `TIMESTAMP` rewritten, so `REAL`/`JSON` drift on
+       * PostgreSQL and no indexes are created. Schemas that expose no
+       * structured columns always fall back to their cached `ddl` regardless
+       * of this flag.
        */
       materializeStructuredSchema?: boolean;
     } = {},
@@ -83,7 +90,7 @@ export class MigrationGenerator {
     this.includeDown = options.includeDown ?? true;
     this.packageName = options.packageName;
     this.materializeStructuredSchema =
-      options.materializeStructuredSchema ?? false;
+      options.materializeStructuredSchema ?? true;
   }
 
   /**
@@ -96,9 +103,14 @@ export class MigrationGenerator {
     const upStatements: string[] = [];
     const downStatements: string[] = [];
 
-    // Handle new tables
+    // Handle new tables: CREATE TABLE plus the table's indexes and triggers,
+    // exactly as the migration orchestrator emits them (#2358). The differ
+    // only produces `add_index` changes for tables that already exist, so
+    // there is no double emission against `diff.changes`.
     for (const schema of diff.added_tables) {
       upStatements.push(this.generateCreateTable(schema));
+      upStatements.push(...this.generateTableIndexes(schema));
+      upStatements.push(...this.generateTableTriggers(schema));
       if (this.includeDown || options.includeDown) {
         downStatements.push(this.generateDropTable(schema.tableName));
       }
@@ -286,20 +298,34 @@ ${downStatementsStr}
     }
 
     if (!this.materializeStructuredSchema && schema.ddl?.trim()) {
-      // Preserve the documented custom-DDL contract by default, including
-      // table-level constraints that structured ColumnDefinition cannot
-      // represent. Engine-aware framework callers explicitly opt into the
-      // structured materialization path below.
+      // Deprecated opt-out (#2358): the cached string is engine-neutral and
+      // index-less; only bare PostgreSQL TIMESTAMP is rewritten.
       return materializeManifestDDLForEngine(schema.ddl, this.engine);
     }
 
     // The manifest's pre-generated `ddl` is deliberately engine-neutral and
-    // may contain abstract TIMESTAMP/JSON/UUID types. Always materialize the
+    // may contain abstract TIMESTAMP/JSON/UUID types. Materialize the
     // structured columns through the selected engine strategy; executing the
     // cached string on PostgreSQL would otherwise bypass TIMESTAMPTZ and lose
     // JavaScript Date offsets (#2069). This matches the migration orchestrator
     // and also prevents JSON/REAL/UUID drift after a create.
     return getDDLStrategy(this.engine).generateCreateTable(schema);
+  }
+
+  /**
+   * Generate the CREATE INDEX statements for a new table through the engine
+   * strategy (partial `WHERE`, JSON-path targets, inline-UNIQUE engines).
+   */
+  private generateTableIndexes(schema: SchemaDefinition): string[] {
+    return getDDLStrategy(this.engine).generateIndexes(schema);
+  }
+
+  /**
+   * Generate the CREATE TRIGGER statements for a new table (engines without
+   * trigger support return none).
+   */
+  private generateTableTriggers(schema: SchemaDefinition): string[] {
+    return getDDLStrategy(this.engine).generateTriggers(schema);
   }
 
   /**
@@ -432,13 +458,18 @@ ${downStatementsStr}
   ): string {
     const uniqueStr = index.unique ? 'UNIQUE ' : '';
     const target = renderIndexTarget(index, this.engine);
+    // Partial-index predicate. DuckDB (and the JSON adapter backed by it)
+    // rejects partial indexes, so the declaration degrades to a full index
+    // there — matching the differ and the DuckDB DDL strategy.
+    const whereClause =
+      this.engine !== 'duckdb' && index.where ? ` WHERE ${index.where}` : '';
 
     if (this.engine === 'postgres') {
       // PostgreSQL: use CONCURRENTLY for production safety
-      return `CREATE ${uniqueStr}INDEX CONCURRENTLY IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
+      return `CREATE ${uniqueStr}INDEX CONCURRENTLY IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${target})${whereClause}`;
     }
 
-    return `CREATE ${uniqueStr}INDEX IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
+    return `CREATE ${uniqueStr}INDEX IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${target})${whereClause}`;
   }
 
   /**

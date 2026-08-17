@@ -6,6 +6,20 @@ export { SchemaCodeGenerator } from './code-generator.js';
 // Re-export DDL strategies for per-engine schema generation
 export * from './ddl/index.js';
 export { SchemaGenerator } from './generator.js';
+// Structured manifest → SchemaDefinition helpers (#2358): the supported way
+// to turn raw manifest JSON into executable, engine-specific DDL.
+export {
+  type CollectedManifestTable,
+  collectManifestTables,
+  type ManifestColumnLike,
+  type ManifestIndexLike,
+  type ManifestSchemaLike,
+  manifestColumnsToDefinitions,
+  manifestIndexesToDefinitions,
+  manifestSchemaToDefinition,
+  mergeSchemaDefinitionInto,
+  renderCollectedManifestTable,
+} from './manifest-schema.js';
 export { SchemaOverrideSystem } from './override-system.js';
 export type {
   AggregatedTable,

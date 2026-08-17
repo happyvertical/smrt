@@ -1323,9 +1323,11 @@ export class SchemaGenerator {
       });
     }
 
-    // Generate DDL
     // Tenancy injects `tenant_id` but nothing indexes it (#2356). Added
-    // before the DDL is rendered so the emitted SQL creates it too.
+    // before the schema definition is finalized so every consumer of the
+    // structured `indexes` array (migrations, test databases, aggregation)
+    // creates it. The cached `ddl` string below is CREATE TABLE only and is
+    // not an executable representation of the table (#2358).
     this.ensureTenantIdIndex(indexes, columns, tableName);
 
     const schemaDefinition: SchemaDefinition = {
@@ -1503,9 +1505,11 @@ export class SchemaGenerator {
       });
     }
 
-    // Generate DDL
     // Tenancy injects `tenant_id` but nothing indexes it (#2356). Added
-    // before the DDL is rendered so the emitted SQL creates it too.
+    // before the schema definition is finalized so every consumer of the
+    // structured `indexes` array (migrations, test databases, aggregation)
+    // creates it. The cached `ddl` string below is CREATE TABLE only and is
+    // not an executable representation of the table (#2358).
     this.ensureTenantIdIndex(indexes, columns, tableName);
 
     const schemaDefinition: SchemaDefinition = {
@@ -1625,19 +1629,21 @@ export class SchemaGenerator {
   }
 
   /**
-   * Generate SQL CREATE TABLE statement from schema definition
+   * Generate the CREATE TABLE statement for a schema definition.
    *
-   * This is the single source of truth for SQL generation, consolidating
-   * logic that was previously duplicated across multiple code paths.
+   * With an `engine` this delegates to that engine's DDL strategy. Without
+   * one it renders the engine-neutral preview stored in `schema.ddl` and
+   * `manifest.json`: abstract SQL types, no indexes, no triggers. That
+   * preview is NOT an executable representation of the table (#2358) —
+   * executable paths (`db:migrate`, `MigrationGenerator`, `SchemaAggregator`,
+   * `createIsolatedTestDbFromManifest`) render `schema.columns` and
+   * `schema.indexes` through `getDDLStrategy(engine)` instead.
    *
    * @param schema - Schema definition object
-   * @returns SQL CREATE TABLE statement with indexes
+   * @param engine - Optional target engine; omit for the neutral preview
+   * @returns SQL CREATE TABLE statement (no indexes)
    */
   generateSQL(schema: SchemaDefinition, engine?: DatabaseEngine): string {
-    // NOTE: We no longer append indexes to DDL string here.
-    // The SDK expects ddl to contain ONLY the CREATE TABLE statement.
-    // Indexes are stored separately in schema.indexes as SQL strings
-    // and the SDK handles them via syncSchema() or dedicated index creation.
     if (engine) {
       return getDDLStrategy(engine).generateCreateTable(schema);
     }

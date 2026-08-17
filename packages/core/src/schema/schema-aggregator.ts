@@ -4,6 +4,12 @@
  * Aggregates database schemas across multiple SMRT package manifests.
  * Handles STI table deduplication, index merging, and sorting for deterministic output.
  *
+ * Tables and indexes are rendered from the manifests' structured `columns` /
+ * `indexes` through the dialect's DDL strategy (`getDDLStrategy`), the same
+ * renderer `smrt db:migrate` uses — never from the cached `schema.ddl` string,
+ * which carries no indexes and no per-engine types (#2358). Objects that expose
+ * no structured columns fall back to their cached `ddl` for the CREATE TABLE.
+ *
  * This replaces the manual generate-schema.ts pattern used by downstream
  * projects like blindmanpress.com (Issue #1013).
  *
@@ -31,16 +37,12 @@ import { join } from 'node:path';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import type { DatabaseEngine } from './ddl/types.js';
 import {
-  findCreateTableBodyRange,
-  getSQLDefinitionComparisonKey,
-  getSQLDefinitionIdentifier,
-  isSQLTableConstraintDefinition,
-  materializeManifestDDLForEngine,
-  tokenizeSQLDDLBody,
-} from './ddl/materialize-manifest.js';
-import { quoteIdentifier } from './sql-identifiers.js';
-import { renderIndexTarget } from './utils.js';
+  collectManifestTables,
+  renderCollectedManifestTable,
+} from './manifest-schema.js';
+import type { ColumnDefinition } from './types.js';
 
 // ============================================================================
 // Types
@@ -52,14 +54,21 @@ import { renderIndexTarget } from './utils.js';
 export interface AggregatedTable {
   /** Table name */
   tableName: string;
-  /** CREATE TABLE statement (most comprehensive version for STI tables) */
+  /**
+   * CREATE TABLE statement rendered by the dialect's DDL strategy from the
+   * merged structured columns of every contributing class (STI union).
+   */
   ddl: string;
-  /** CREATE INDEX statements (deduplicated across sources) */
+  /**
+   * CREATE INDEX statements rendered by the same strategy (partial `WHERE`
+   * and JSON-path targets included), deduplicated by index name across
+   * sources.
+   */
   indexes: string[];
   /** Package:className sources that contribute to this table */
   sources: string[];
-  /** Schema definition metadata */
-  columns?: Record<string, unknown>;
+  /** Merged structured columns (first contributor wins per column name) */
+  columns?: Record<string, ColumnDefinition>;
 }
 
 /**
@@ -141,77 +150,6 @@ const DEFAULT_MINIMAL_SKIP_PATTERNS: RegExp[] = [
   /_relationship_term/,
   /_relationship_type/,
 ];
-
-function parseDefinitionsFromDDL(ddl: string): {
-  columns: Map<string, string>;
-  tableElements: string[];
-} {
-  const columns = new Map<string, string>();
-  const tableElements: string[] = [];
-  const bodyRange = findCreateTableBodyRange(ddl);
-  if (!bodyRange) return { columns, tableElements };
-  const [bodyStart, bodyEnd] = bodyRange;
-
-  const segments = tokenizeSQLDDLBody(ddl.slice(bodyStart + 1, bodyEnd));
-
-  for (const segment of segments) {
-    const identifier = getSQLDefinitionIdentifier(segment);
-    if (!identifier) continue;
-    if (isSQLTableConstraintDefinition(segment)) {
-      tableElements.push(segment);
-      continue;
-    }
-
-    columns.set(identifier.name, segment);
-  }
-
-  return { columns, tableElements };
-}
-
-function mergeDDL(existingDDL: string, newDDL: string): string {
-  const existingDefinitions = parseDefinitionsFromDDL(existingDDL);
-  const newDefinitions = parseDefinitionsFromDDL(newDDL);
-
-  const missingCols: string[] = [];
-  for (const [name, def] of newDefinitions.columns) {
-    if (!existingDefinitions.columns.has(name)) {
-      missingCols.push(def);
-    }
-  }
-
-  const existingTableElements = new Set(
-    existingDefinitions.tableElements.map(getSQLDefinitionComparisonKey),
-  );
-  const missingTableElements = newDefinitions.tableElements.filter(
-    (definition) =>
-      !existingTableElements.has(getSQLDefinitionComparisonKey(definition)),
-  );
-
-  if (missingCols.length === 0 && missingTableElements.length === 0) {
-    return existingDDL;
-  }
-
-  const bodyRange = findCreateTableBodyRange(existingDDL);
-  if (!bodyRange) return existingDDL;
-  const [bodyStart, bodyEnd] = bodyRange;
-  const prefix = existingDDL.slice(0, bodyStart + 1);
-  const body = existingDDL.slice(bodyStart + 1, bodyEnd);
-  const suffix = existingDDL.slice(bodyEnd);
-  const segments = tokenizeSQLDDLBody(body);
-  const firstConstraintIndex = segments.findIndex((segment) =>
-    isSQLTableConstraintDefinition(segment),
-  );
-  const insertionIndex =
-    firstConstraintIndex === -1 ? segments.length : firstConstraintIndex;
-  const mergedSegments = [
-    ...segments.slice(0, insertionIndex),
-    ...missingCols,
-    ...segments.slice(insertionIndex),
-    ...missingTableElements,
-  ];
-
-  return `${prefix}\n${mergedSegments.map((segment) => `  ${segment}`).join(',\n')}\n${suffix}`;
-}
 
 // ============================================================================
 // SchemaAggregator
@@ -315,7 +253,10 @@ export class SchemaAggregator {
           ) as SmartObjectManifest;
           // Only use local if it has schemas
           const hasSchemas = Object.values(content.objects || {}).some(
-            (obj) => obj.schema?.ddl,
+            (obj) =>
+              obj.schema?.tableName &&
+              (Object.keys(obj.schema.columns || {}).length > 0 ||
+                obj.schema.ddl),
           );
           if (hasSchemas) return content;
         } catch {
@@ -349,92 +290,52 @@ export class SchemaAggregator {
   /**
    * Extract schemas from manifests, deduplicating STI tables.
    *
-   * For STI tables (shared by multiple classes across packages),
-   * keeps the most comprehensive DDL (largest) and merges indexes.
+   * STI tables (shared by multiple classes across packages) are merged
+   * structurally — columns first-wins by name, indexes deduplicated by name —
+   * and every table is rendered through the dialect's DDL strategy, the same
+   * renderer `db:migrate` uses. The manifest's cached `schema.ddl` string is
+   * consulted only for objects that expose no structured columns (#2358).
    */
   private extractSchemas(
     manifests: SmartObjectManifest[],
     dialect?: 'postgres' | 'sqlite',
   ): Map<string, AggregatedTable> {
-    const tables = new Map<string, AggregatedTable>();
-    // The aggregator only knows sqlite vs postgres; jsonPath rendering
-    // treats anything non-sqlite as the postgres-style `->>` form, which
-    // is also what DuckDB accepts. Default mirrors `AggregateOptions.dialect`
-    // (`@default 'postgres'`) so unspecified callers get the documented shape.
-    const engine: 'sqlite' | 'postgres' | 'duckdb' =
-      dialect === 'sqlite' ? 'sqlite' : 'postgres';
+    // Default mirrors `AggregateOptions.dialect` (`@default 'postgres'`) so
+    // unspecified callers get the documented shape.
+    const engine: DatabaseEngine = dialect === 'sqlite' ? 'sqlite' : 'postgres';
 
+    const entries: Array<{
+      schema: NonNullable<SmartObjectManifest['objects'][string]['schema']>;
+      source: string;
+    }> = [];
     for (const manifest of manifests) {
       for (const [_key, object] of Object.entries(manifest.objects)) {
         const schema = object.schema;
-        if (!schema?.ddl) continue;
-
+        if (!schema?.tableName) continue;
         const className: string = object.className || _key;
-        const tableName: string = schema.tableName;
-        const existing = tables.get(tableName);
-        const executableDDL = materializeManifestDDLForEngine(
-          schema.ddl,
-          engine,
-        );
-
-        if (existing) {
-          // STI table — merge columns from every subtype into the shared DDL.
-          existing.ddl = mergeDDL(existing.ddl, executableDDL);
-          existing.sources.push(`${manifest.packageName || '?'}:${className}`);
-          if (schema.columns) {
-            existing.columns = {
-              ...(existing.columns || {}),
-              ...schema.columns,
-            };
-          }
-
-          // Merge indexes (deduplicate by SQL text)
-          for (const idx of schema.indexes || []) {
-            const indexDdl = this.formatIndexDdl(idx, tableName, engine);
-            if (!existing.indexes.includes(indexDdl)) {
-              existing.indexes.push(indexDdl);
-            }
-          }
-        } else {
-          // New table
-          const indexes: string[] = [];
-          for (const idx of schema.indexes || []) {
-            indexes.push(this.formatIndexDdl(idx, tableName, engine));
-          }
-
-          tables.set(tableName, {
-            tableName,
-            ddl: executableDDL,
-            indexes,
-            sources: [`${manifest.packageName || '?'}:${className}`],
-            columns: schema.columns,
-          });
-        }
+        entries.push({
+          schema,
+          source: `${manifest.packageName || '?'}:${className}`,
+        });
       }
     }
 
-    return tables;
-  }
+    const tables = new Map<string, AggregatedTable>();
+    for (const [tableName, table] of collectManifestTables(entries)) {
+      const rendered = renderCollectedManifestTable(table, engine);
+      tables.set(tableName, {
+        tableName,
+        ddl: rendered.createTable,
+        indexes: rendered.indexes,
+        sources: table.sources,
+        columns:
+          Object.keys(table.definition.columns).length > 0
+            ? table.definition.columns
+            : undefined,
+      });
+    }
 
-  /**
-   * Format an index definition into a CREATE INDEX statement.
-   */
-  private formatIndexDdl(
-    idx: {
-      name: string;
-      columns: string[];
-      unique?: boolean;
-      jsonPath?: { column: string; path: string };
-    },
-    tableName: string,
-    engine: 'sqlite' | 'postgres' | 'duckdb' = 'sqlite',
-  ): string {
-    const target = renderIndexTarget(idx, engine);
-    const indexName = quoteIdentifier(idx.name);
-    const table = quoteIdentifier(tableName);
-    return idx.unique
-      ? `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON ${table} (${target});`
-      : `CREATE INDEX IF NOT EXISTS ${indexName} ON ${table} (${target});`;
+    return tables;
   }
 
   /**

@@ -315,7 +315,157 @@ describe('MigrationGenerator', () => {
       expect(up).not.toContain('JSONB');
     });
 
-    it('makes cached manifest DDL instant-safe for PostgreSQL by default (#2069)', () => {
+    it('renders new tables from structured columns and emits their indexes and triggers by default (#2358)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'events',
+            // Cached engine-neutral preview: CREATE TABLE only, abstract types.
+            // It must not be what the migration executes.
+            ddl: 'CREATE TABLE IF NOT EXISTS "events" ("id" TEXT PRIMARY KEY NOT NULL, "tenant_id" TEXT, "payload" JSON, "deleted_at" TIMESTAMP);',
+            columns: {
+              id: { type: 'UUID', primaryKey: true, notNull: true },
+              tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
+              payload: { type: 'JSON' },
+              deleted_at: { type: 'TIMESTAMP' },
+            },
+            indexes: [
+              { name: 'events_tenant_id_idx', columns: ['tenant_id'] },
+              {
+                name: 'events_id_active_idx',
+                columns: ['id'],
+                unique: true,
+                where: '"deleted_at" IS NULL',
+              },
+            ],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          },
+        ],
+        dropped_tables: [],
+        // An `add_index` for a DIFFERENT, existing table must still be
+        // emitted exactly once — the added table's indexes come from the
+        // strategy, not from `diff.changes`.
+        changes: [
+          {
+            type: 'add_index',
+            table: 'users',
+            name: 'users_email_idx',
+            index: { name: 'users_email_idx', columns: ['email'] },
+          },
+        ],
+      };
+
+      const migration = new MigrationGenerator({
+        engine: 'postgres',
+      }).generateFromDiff(diff, { name: '0001_events' });
+      const up = migration.up.join('\n');
+
+      // Structured render, not the cached string: PG types.
+      expect(up).toContain('"id" uuid PRIMARY KEY NOT NULL');
+      expect(up).toContain('"tenant_id" uuid');
+      expect(up).toContain('"payload" JSONB');
+      expect(up).toContain('"deleted_at" TIMESTAMPTZ');
+      expect(up).not.toMatch(/"payload"\s+JSON\b/);
+      // The table's own indexes, including the partial predicate.
+      expect(up).toContain(
+        'CREATE INDEX IF NOT EXISTS "events_tenant_id_idx" ON "events" ("tenant_id");',
+      );
+      expect(up).toContain(
+        'CREATE UNIQUE INDEX IF NOT EXISTS "events_id_active_idx" ON "events" ("id") WHERE "deleted_at" IS NULL;',
+      );
+      // No double emission: one CREATE TABLE, two table indexes, one add_index.
+      expect(
+        migration.up.filter((s) => s.startsWith('CREATE TABLE')),
+      ).toHaveLength(1);
+      expect(
+        migration.up.filter((s) => /CREATE (UNIQUE )?INDEX/.test(s)),
+      ).toHaveLength(3);
+      expect(
+        migration.up.filter((s) => s.includes('users_email_idx')),
+      ).toHaveLength(1);
+      // DOWN drops the table once (indexes go with it).
+      expect(
+        migration.down.filter((s) => s.startsWith('DROP TABLE')),
+      ).toHaveLength(1);
+    });
+
+    it('emits SQLite primary keys with an explicit NOT NULL (#2358)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'things',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              name: { type: 'TEXT' },
+            },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          } as SchemaDefinition,
+        ],
+        dropped_tables: [],
+        changes: [],
+      };
+
+      const up = new MigrationGenerator({ engine: 'sqlite' })
+        .generateFromDiff(diff, { name: '0001_things' })
+        .up.join('\n');
+      // SQLite lets a bare `TEXT PRIMARY KEY` hold NULL; the strategy must
+      // spell out NOT NULL.
+      expect(up).toContain('"id" TEXT PRIMARY KEY NOT NULL');
+    });
+
+    it('keeps the partial predicate on generated add_index statements (#2358)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [],
+        dropped_tables: [],
+        changes: [
+          {
+            type: 'add_index',
+            table: 'events',
+            name: 'events_active_idx',
+            index: {
+              name: 'events_active_idx',
+              columns: ['tenant_id'],
+              where: '"deleted_at" IS NULL',
+            },
+          },
+        ],
+      };
+
+      const sqlite = new MigrationGenerator({ engine: 'sqlite' })
+        .generateFromDiff(diff, { name: '0001_idx' })
+        .up.join('\n');
+      expect(sqlite).toContain(
+        'CREATE INDEX IF NOT EXISTS "events_active_idx" ON "events" ("tenant_id") WHERE "deleted_at" IS NULL',
+      );
+
+      const postgres = new MigrationGenerator({ engine: 'postgres' })
+        .generateFromDiff(diff, { name: '0001_idx' })
+        .up.join('\n');
+      expect(postgres).toContain(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS "events_active_idx" ON "events" ("tenant_id") WHERE "deleted_at" IS NULL',
+      );
+
+      // DuckDB rejects partial indexes: degrade to a full index (differ parity).
+      const duckdb = new MigrationGenerator({ engine: 'duckdb' })
+        .generateFromDiff(diff, { name: '0001_idx' })
+        .up.join('\n');
+      expect(duckdb).toContain(
+        'CREATE INDEX IF NOT EXISTS "events_active_idx" ON "events" ("tenant_id")',
+      );
+      expect(duckdb).not.toContain('WHERE');
+    });
+
+    it('makes cached manifest DDL instant-safe for PostgreSQL on the deprecated cached-ddl path (#2069)', () => {
       const diff: SchemaDiff = {
         has_changes: true,
         added_tables: [
@@ -351,7 +501,13 @@ describe('MigrationGenerator', () => {
         changes: [],
       };
 
-      const up = new MigrationGenerator({ engine: 'postgres' })
+      // `materializeStructuredSchema: false` is the deprecated opt-out that
+      // re-enables executing the cached string (#2358); the default renders
+      // the structured columns through the engine strategy.
+      const up = new MigrationGenerator({
+        engine: 'postgres',
+        materializeStructuredSchema: false,
+      })
         .generateFromDiff(diff, { name: '0001_events' })
         .up.join('\n');
 
@@ -381,7 +537,7 @@ describe('MigrationGenerator', () => {
       expect(up).not.toContain('CONSTRAINT TIMESTAMPTZ');
     });
 
-    it('materializes PostgreSQL CREATE TABLE header variants (#2069)', () => {
+    it('materializes PostgreSQL CREATE TABLE header variants on the deprecated cached-ddl path (#2069)', () => {
       const variants = [
         'CREATE UNLOGGED TABLE events (occurred_at TIMESTAMP);',
         'CREATE TEMP TABLE events (occurred_at TIMESTAMP);',
@@ -408,7 +564,10 @@ describe('MigrationGenerator', () => {
           changes: [],
         };
 
-        const up = new MigrationGenerator({ engine: 'postgres' })
+        const up = new MigrationGenerator({
+          engine: 'postgres',
+          materializeStructuredSchema: false,
+        })
           .generateFromDiff(diff, { name: '0001_events' })
           .up.join('\n');
         expect(up).toContain('occurred_at TIMESTAMPTZ');

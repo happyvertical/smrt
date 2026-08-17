@@ -1,0 +1,349 @@
+/**
+ * Manifest schema → structured `SchemaDefinition` helpers (#2358).
+ *
+ * A manifest's `schema.ddl` string is an engine-neutral CREATE TABLE preview:
+ * it carries no indexes and no per-engine type mapping, so nothing that needs
+ * an executable schema may treat it as authoritative. Every consumer that
+ * reads raw manifest JSON — `SchemaAggregator`, `createIsolatedTestDbFromManifest`
+ * in `@happyvertical/smrt-vitest`, third-party tooling — should collect the
+ * structured `columns` / `indexes` through this module and render them with
+ * `getDDLStrategy(engine)`, exactly as `db:migrate` does.
+ *
+ * The cached `ddl` string is used only when a manifest object exposes no
+ * structured columns at all (hand-authored or pre-structured manifests); that
+ * legacy path keeps working but is not engine-complete.
+ *
+ * IMPORTANT: keep this module a leaf — type-only imports plus the DDL
+ * strategies. It is imported by `@happyvertical/smrt-vitest`, and must not
+ * pull the registry/collection module graph.
+ */
+
+import { getDDLStrategy } from './ddl/index.js';
+import {
+  findCreateTableBodyRange,
+  getSQLDefinitionComparisonKey,
+  getSQLDefinitionIdentifier,
+  isSQLTableConstraintDefinition,
+  materializeManifestDDLForEngine,
+  tokenizeSQLDDLBody,
+} from './ddl/materialize-manifest.js';
+import type { DatabaseEngine, EngineSpecificDDL } from './ddl/types.js';
+import type {
+  ColumnDefinition,
+  IndexDefinition,
+  SchemaDefinition,
+  SQLDataType,
+} from './types.js';
+
+/**
+ * Column shape as it appears in raw manifest JSON. `ManifestColumnDefinition`
+ * spells the default `default`; registry-side `ColumnDefinition` spells it
+ * `defaultValue`. Hand-authored manifests use either.
+ */
+export interface ManifestColumnLike {
+  type: string;
+  primaryKey?: boolean;
+  referenceKind?: ColumnDefinition['referenceKind'];
+  notNull?: boolean;
+  unique?: boolean;
+  default?: unknown;
+  defaultValue?: unknown;
+  foreignKey?: ColumnDefinition['foreignKey'];
+  check?: string;
+}
+
+/** Index shape as it appears in raw manifest JSON. */
+export interface ManifestIndexLike {
+  name: string;
+  columns?: string[];
+  unique?: boolean;
+  where?: string;
+  jsonPath?: IndexDefinition['jsonPath'];
+}
+
+/** The subset of a manifest object's `schema` this module reads. */
+export interface ManifestSchemaLike {
+  tableName: string;
+  ddl?: string;
+  columns?: Record<string, ManifestColumnLike>;
+  indexes?: ManifestIndexLike[];
+  version?: string;
+}
+
+/**
+ * Convert one raw manifest column map into structured `ColumnDefinition`s.
+ * Picks known fields only, so stray manifest keys never leak into DDL.
+ */
+export function manifestColumnsToDefinitions(
+  columns: Record<string, ManifestColumnLike> | undefined,
+): Record<string, ColumnDefinition> {
+  const result: Record<string, ColumnDefinition> = {};
+  for (const [name, column] of Object.entries(columns || {})) {
+    if (!column || typeof column.type !== 'string') continue;
+    const definition: ColumnDefinition = {
+      type: column.type as SQLDataType,
+    };
+    if (column.primaryKey !== undefined)
+      definition.primaryKey = column.primaryKey;
+    if (column.referenceKind !== undefined)
+      definition.referenceKind = column.referenceKind;
+    if (column.notNull !== undefined) definition.notNull = column.notNull;
+    if (column.unique !== undefined) definition.unique = column.unique;
+    const defaultValue =
+      column.defaultValue !== undefined ? column.defaultValue : column.default;
+    if (defaultValue !== undefined) definition.defaultValue = defaultValue;
+    if (column.foreignKey) definition.foreignKey = { ...column.foreignKey };
+    if (column.check) definition.check = column.check;
+    result[name] = definition;
+  }
+  return result;
+}
+
+/**
+ * Convert raw manifest indexes into structured `IndexDefinition`s, keeping
+ * `where` (partial) and `jsonPath` (expression) targets — the two fields the
+ * retired string-based renderers dropped.
+ */
+export function manifestIndexesToDefinitions(
+  indexes: ManifestIndexLike[] | undefined,
+): IndexDefinition[] {
+  const result: IndexDefinition[] = [];
+  for (const index of indexes || []) {
+    if (!index?.name) continue;
+    const definition: IndexDefinition = {
+      name: index.name,
+      columns: Array.isArray(index.columns) ? [...index.columns] : [],
+    };
+    if (index.unique !== undefined) definition.unique = index.unique;
+    if (index.where) definition.where = index.where;
+    if (index.jsonPath?.column && index.jsonPath.path) {
+      definition.jsonPath = { ...index.jsonPath };
+    }
+    result.push(definition);
+  }
+  return result;
+}
+
+/**
+ * Convert one manifest object's `schema` into a `SchemaDefinition`.
+ *
+ * The cached `ddl` string is carried along (non-authoritative) so callers can
+ * fall back to it when the manifest exposes no structured columns.
+ */
+export function manifestSchemaToDefinition(
+  schema: ManifestSchemaLike,
+): SchemaDefinition {
+  return {
+    tableName: schema.tableName,
+    ddl: schema.ddl,
+    columns: manifestColumnsToDefinitions(schema.columns),
+    indexes: manifestIndexesToDefinitions(schema.indexes),
+    triggers: [],
+    foreignKeys: [],
+    dependencies: [],
+    version: schema.version ?? '',
+  };
+}
+
+/**
+ * One physical table collected from one or more manifest objects (STI
+ * subclasses share a table and each contributes columns and indexes).
+ */
+export interface CollectedManifestTable {
+  tableName: string;
+  /**
+   * Structured union of every contributor: columns first-wins by name,
+   * indexes deduplicated by name.
+   */
+  definition: SchemaDefinition;
+  /**
+   * `true` when every contributor exposed structured columns, i.e. the table
+   * can be rendered by a DDL strategy. `false` means at least one contributor
+   * carried only a cached `ddl` string and the table must fall back to it.
+   */
+  structured: boolean;
+  /**
+   * The contributors' cached `ddl` strings merged column-wise (legacy path).
+   * Empty when no contributor carried a `ddl`.
+   */
+  legacyDdl: string;
+  /** `<package>:<ClassName>` labels of the contributors, in encounter order. */
+  sources: string[];
+}
+
+/**
+ * Deterministic STI merge of two structured definitions: existing columns
+ * win, new columns are appended, indexes are deduplicated by name.
+ */
+export function mergeSchemaDefinitionInto(
+  target: SchemaDefinition,
+  incoming: SchemaDefinition,
+): void {
+  for (const [name, column] of Object.entries(incoming.columns)) {
+    if (!(name in target.columns)) {
+      target.columns[name] = column;
+    }
+  }
+  const indexNames = new Set(target.indexes.map((index) => index.name));
+  for (const index of incoming.indexes) {
+    if (!indexNames.has(index.name)) {
+      indexNames.add(index.name);
+      target.indexes.push(index);
+    }
+  }
+}
+
+/**
+ * Collect manifest schemas into physical tables.
+ *
+ * Accepts the `schema` entries of manifest objects (any package, any manifest)
+ * in encounter order and groups them by `tableName`, merging STI contributors
+ * structurally. Objects without a `schema`/`tableName` are skipped by the
+ * caller; objects with neither columns nor `ddl` are ignored here.
+ */
+export function collectManifestTables(
+  entries: Iterable<{ schema: ManifestSchemaLike; source: string }>,
+): Map<string, CollectedManifestTable> {
+  const tables = new Map<string, CollectedManifestTable>();
+
+  for (const { schema, source } of entries) {
+    if (!schema?.tableName) continue;
+    const definition = manifestSchemaToDefinition(schema);
+    const hasColumns = Object.keys(definition.columns).length > 0;
+    const ddl = typeof schema.ddl === 'string' ? schema.ddl : '';
+    if (!hasColumns && !ddl.trim()) continue;
+
+    const existing = tables.get(schema.tableName);
+    if (!existing) {
+      tables.set(schema.tableName, {
+        tableName: schema.tableName,
+        definition,
+        structured: hasColumns,
+        legacyDdl: ddl,
+        sources: [source],
+      });
+      continue;
+    }
+
+    mergeSchemaDefinitionInto(existing.definition, definition);
+    existing.structured = existing.structured && hasColumns;
+    existing.legacyDdl = existing.legacyDdl
+      ? ddl
+        ? mergeManifestDDL(existing.legacyDdl, ddl)
+        : existing.legacyDdl
+      : ddl;
+    existing.sources.push(source);
+  }
+
+  return tables;
+}
+
+/**
+ * Render a collected table for one engine.
+ *
+ * Structured tables go through the engine strategy for the CREATE TABLE
+ * (per-engine types, inline UNIQUE where the engine needs it) and for every
+ * index (partial `WHERE`, JSON-path expressions, engine-specific syntax).
+ * Legacy tables keep the merged cached `ddl` string, made minimally safe with
+ * `materializeManifestDDLForEngine`, but still render their indexes through
+ * the strategy — the string never carried them.
+ */
+export function renderCollectedManifestTable(
+  table: CollectedManifestTable,
+  engine: DatabaseEngine,
+): EngineSpecificDDL {
+  const strategy = getDDLStrategy(engine);
+  const createTable = table.structured
+    ? strategy.generateCreateTable(table.definition)
+    : materializeManifestDDLForEngine(table.legacyDdl, engine);
+  return {
+    createTable,
+    indexes: strategy.generateIndexes(table.definition),
+    triggers: strategy.generateTriggers(table.definition),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Legacy cached-DDL string merge (column-less manifests only)
+// ---------------------------------------------------------------------------
+
+function parseDefinitionsFromDDL(ddl: string): {
+  columns: Map<string, string>;
+  tableElements: string[];
+} {
+  const columns = new Map<string, string>();
+  const tableElements: string[] = [];
+  const bodyRange = findCreateTableBodyRange(ddl);
+  if (!bodyRange) return { columns, tableElements };
+  const [bodyStart, bodyEnd] = bodyRange;
+
+  const segments = tokenizeSQLDDLBody(ddl.slice(bodyStart + 1, bodyEnd));
+
+  for (const segment of segments) {
+    const identifier = getSQLDefinitionIdentifier(segment);
+    if (!identifier) continue;
+    if (isSQLTableConstraintDefinition(segment)) {
+      tableElements.push(segment);
+      continue;
+    }
+
+    columns.set(identifier.name, segment);
+  }
+
+  return { columns, tableElements };
+}
+
+/**
+ * Merge two cached CREATE TABLE strings for the same table (STI subclasses):
+ * the union of columns, existing definitions winning, new columns inserted
+ * before any trailing table constraints, missing table constraints appended.
+ *
+ * Only the legacy column-less manifest path uses this; structured manifests
+ * merge through `mergeSchemaDefinitionInto`.
+ *
+ * @internal
+ */
+export function mergeManifestDDL(existingDDL: string, newDDL: string): string {
+  const existingDefinitions = parseDefinitionsFromDDL(existingDDL);
+  const newDefinitions = parseDefinitionsFromDDL(newDDL);
+
+  const missingCols: string[] = [];
+  for (const [name, def] of newDefinitions.columns) {
+    if (!existingDefinitions.columns.has(name)) {
+      missingCols.push(def);
+    }
+  }
+
+  const existingTableElements = new Set(
+    existingDefinitions.tableElements.map(getSQLDefinitionComparisonKey),
+  );
+  const missingTableElements = newDefinitions.tableElements.filter(
+    (definition) =>
+      !existingTableElements.has(getSQLDefinitionComparisonKey(definition)),
+  );
+
+  if (missingCols.length === 0 && missingTableElements.length === 0) {
+    return existingDDL;
+  }
+
+  const bodyRange = findCreateTableBodyRange(existingDDL);
+  if (!bodyRange) return existingDDL;
+  const [bodyStart, bodyEnd] = bodyRange;
+  const prefix = existingDDL.slice(0, bodyStart + 1);
+  const body = existingDDL.slice(bodyStart + 1, bodyEnd);
+  const suffix = existingDDL.slice(bodyEnd);
+  const segments = tokenizeSQLDDLBody(body);
+  const firstConstraintIndex = segments.findIndex((segment) =>
+    isSQLTableConstraintDefinition(segment),
+  );
+  const insertionIndex =
+    firstConstraintIndex === -1 ? segments.length : firstConstraintIndex;
+  const mergedSegments = [
+    ...segments.slice(0, insertionIndex),
+    ...missingCols,
+    ...segments.slice(insertionIndex),
+    ...missingTableElements,
+  ];
+
+  return `${prefix}\n${mergedSegments.map((segment) => `  ${segment}`).join(',\n')}\n${suffix}`;
+}

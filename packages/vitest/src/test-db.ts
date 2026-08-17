@@ -43,8 +43,11 @@ import { join } from 'node:path';
 // misclassified as table-bearing and lost their FK/junction columns.
 import { isSmrtCollectionExtendsName } from '@happyvertical/smrt-core';
 import {
+  type CollectedManifestTable,
+  collectManifestTables,
+  type ManifestSchemaLike,
   materializeManifestDDLForEngine,
-  tokenizeSQLDDLBody,
+  renderCollectedManifestTable,
 } from '@happyvertical/smrt-core/schema/utils';
 import {
   applySqliteSpeedPragmas,
@@ -72,13 +75,14 @@ function removeSqliteFiles(url: string): void {
 // ============================================================================
 
 /**
- * Schema definition from a manifest object
+ * Schema definition from a manifest object.
+ *
+ * `columns` and `indexes` are the structured, authoritative schema and are
+ * rendered through the engine DDL strategy; `ddl` is the engine-neutral
+ * CREATE TABLE preview and is only used when an object exposes no columns
+ * (hand-authored manifests, #2358).
  */
-interface ManifestSchema {
-  tableName: string;
-  ddl: string;
-  indexes?: Array<{ name: string; columns: string[]; unique?: boolean }>;
-}
+type ManifestSchema = ManifestSchemaLike;
 
 /**
  * Object definition from a manifest
@@ -597,45 +601,13 @@ function loadManifest(manifestPath?: string): ManifestFile | null {
 }
 
 /**
- * Index definition from manifest
- */
-interface ManifestIndex {
-  name: string;
-  columns: string[];
-  unique?: boolean;
-}
-
-/**
  * Table info extracted from manifest for dependency sorting
  */
 interface TableInfo {
   tableName: string;
-  ddl: string;
-  indexes: ManifestIndex[];
+  /** Structured STI union of every contributing manifest object */
+  table: CollectedManifestTable;
   dependencies: string[];
-}
-
-/**
- * Generate CREATE INDEX statements from manifest indexes
- *
- * Generates both regular and UNIQUE indexes.
- * UNIQUE indexes on conflict columns (like slug, context) are required
- * for UPSERT/ON CONFLICT to work in SQLite.
- */
-function generateIndexDDL(tableName: string, indexes: ManifestIndex[]): string {
-  if (!indexes || indexes.length === 0) return '';
-
-  const statements: string[] = [];
-  for (const index of indexes) {
-    if (!index.columns || index.columns.length === 0) continue;
-
-    const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
-    const columns = index.columns.map((c) => `"${c}"`).join(', ');
-    statements.push(
-      `CREATE ${indexType} IF NOT EXISTS "${index.name}" ON "${tableName}" (${columns});`,
-    );
-  }
-  return statements.join('\n');
 }
 
 /**
@@ -659,11 +631,26 @@ function extractForeignKeyDependencies(ddl: string): string[] {
 }
 
 /**
- * Tokenize CREATE TABLE body into individual column/constraint definitions.
- *
- * Splits on top-level commas (not inside parentheses or quotes) so it works
- * for both multi-line and single-line DDL strings.
+ * Collect the tables a collected manifest table depends on: structured
+ * `foreignKey.table` references first, then any `REFERENCES` clauses in the
+ * contributors' cached DDL strings (hand-authored manifests).
  */
+function collectTableDependencies(table: CollectedManifestTable): string[] {
+  const dependencies: string[] = [];
+  for (const column of Object.values(table.definition.columns)) {
+    const target = column.foreignKey?.table;
+    if (target && !dependencies.includes(target)) {
+      dependencies.push(target);
+    }
+  }
+  for (const dep of extractForeignKeyDependencies(table.legacyDdl)) {
+    if (!dependencies.includes(dep)) {
+      dependencies.push(dep);
+    }
+  }
+  return dependencies;
+}
+
 /**
  * Materialize abstract manifest timestamp columns for the selected adapter.
  *
@@ -674,6 +661,9 @@ function extractForeignKeyDependencies(ddl: string): string[] {
  * identifiers, table constraints, and explicitly qualified timestamp types
  * remain untouched.
  *
+ * Only the legacy column-less manifest path still executes cached DDL text;
+ * structured manifests render through the engine DDL strategy (#2358).
+ *
  * @internal
  */
 export function materializeManifestDDLForAdapter(
@@ -681,96 +671,6 @@ export function materializeManifestDDLForAdapter(
   adapter: TestDbAdapter,
 ): string {
   return materializeManifestDDLForEngine(ddl, adapter);
-}
-
-/** Keywords that indicate a table-level constraint, not a column definition */
-const CONSTRAINT_KEYWORDS = new Set([
-  'CONSTRAINT',
-  'PRIMARY',
-  'FOREIGN',
-  'UNIQUE',
-  'CHECK',
-]);
-
-/**
- * Parse column definitions from a CREATE TABLE DDL statement
- *
- * Returns a Map of column name → full column definition line.
- * Skips table-level constraints (FOREIGN KEY, PRIMARY KEY, etc.).
- */
-function parseColumnsFromDDL(ddl: string): Map<string, string> {
-  const columns = new Map<string, string>();
-  // Match the body between CREATE TABLE ... ( ... )
-  const bodyMatch = ddl.match(
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"?\w+"?\s*\(([\s\S]+)\)/i,
-  );
-  if (!bodyMatch) return columns;
-
-  const segments = tokenizeSQLDDLBody(bodyMatch[1]);
-
-  for (const segment of segments) {
-    // Extract first identifier and check if it's a constraint keyword
-    const colMatch = segment.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
-    if (!colMatch) continue;
-
-    const firstToken = colMatch[1].toUpperCase();
-    if (CONSTRAINT_KEYWORDS.has(firstToken)) continue;
-
-    columns.set(colMatch[1], segment);
-  }
-
-  return columns;
-}
-
-/**
- * Merge two DDL statements for the same table (STI subclasses)
- *
- * Takes the union of all columns from both DDLs.
- * When a column exists in both, the existing definition is kept.
- */
-function mergeDDL(existingDDL: string, newDDL: string): string {
-  const existingCols = parseColumnsFromDDL(existingDDL);
-  const newCols = parseColumnsFromDDL(newDDL);
-
-  // Find columns in newDDL that are missing from existingDDL
-  const missingCols: string[] = [];
-  for (const [name, def] of newCols) {
-    if (!existingCols.has(name)) {
-      missingCols.push(def);
-    }
-  }
-
-  if (missingCols.length === 0) return existingDDL;
-
-  // Insert missing columns before the closing paren
-  const closingIdx = existingDDL.lastIndexOf(')');
-  if (closingIdx === -1) return existingDDL;
-
-  const before = existingDDL.substring(0, closingIdx).trimEnd();
-  const after = existingDDL.substring(closingIdx);
-  const additions = missingCols.map((col) => `  ${col}`).join(',\n');
-
-  return `${before},\n${additions}\n${after}`;
-}
-
-/**
- * Merge indexes from multiple STI subclasses sharing the same table
- *
- * Deduplicates by index name, keeping the first occurrence.
- */
-function mergeIndexes(
-  existing: ManifestIndex[],
-  incoming: ManifestIndex[],
-): ManifestIndex[] {
-  const names = new Set(existing.map((i) => i.name));
-  const merged = [...existing];
-  for (const idx of incoming) {
-    if (!names.has(idx.name)) {
-      names.add(idx.name);
-      merged.push(idx);
-    }
-  }
-  return merged;
 }
 
 function getPackageNameFromKey(key: string): string | undefined {
@@ -1032,22 +932,26 @@ function buildEffectiveIncludeObjects(
 }
 
 /**
- * Extract DDL from manifest objects with STI deduplication
+ * Extract tables from manifest objects with STI deduplication
  *
- * Multiple classes may share the same table (STI), so we deduplicate by tableName.
- * When STI subclasses add columns, DDLs are merged to include all columns.
- * Also extracts indexes for generating CREATE INDEX statements.
+ * Multiple classes may share the same table (STI), so we deduplicate by
+ * tableName and merge their structured columns and indexes (first contributor
+ * wins per column name; indexes deduplicated by name). The merged definition
+ * is rendered through the engine DDL strategy — the same renderer
+ * `db:migrate` uses — so the isolated test database has the same tables and
+ * indexes as a migrated one (#2358). Objects that expose no structured
+ * columns fall back to their cached `ddl` string for the CREATE TABLE.
  */
-function extractDDLFromManifest(
+function extractTablesFromManifest(
   manifest: ManifestFile,
   includeObjects?: string[],
 ): TableInfo[] {
-  const tableMap = new Map<string, TableInfo>();
   const effectiveIncludes = buildEffectiveIncludeObjects(
     manifest,
     includeObjects,
   );
 
+  const entries: Array<{ schema: ManifestSchema; source: string }> = [];
   for (const [key, objectDef] of Object.entries(manifest.objects)) {
     // Skip if filter is specified and class not included
     // Compare against both the key (e.g., '@dumm/models:Product') and className (e.g., 'Product')
@@ -1062,36 +966,18 @@ function extractDDLFromManifest(
     }
 
     // Skip objects without schema (abstract classes, etc.)
-    if (!objectDef.schema?.ddl || !objectDef.schema?.tableName) {
+    if (!objectDef.schema?.tableName) {
       continue;
     }
 
-    const { tableName, ddl, indexes = [] } = objectDef.schema;
-
-    // Merge by tableName — STI subclasses may add columns to the same table
-    const existing = tableMap.get(tableName);
-    if (!existing) {
-      tableMap.set(tableName, {
-        tableName,
-        ddl,
-        indexes,
-        dependencies: extractForeignKeyDependencies(ddl),
-      });
-    } else {
-      // Merge DDL columns and indexes from this STI subclass
-      existing.ddl = mergeDDL(existing.ddl, ddl);
-      existing.indexes = mergeIndexes(existing.indexes, indexes);
-      // Merge FK dependencies
-      const newDeps = extractForeignKeyDependencies(ddl);
-      for (const dep of newDeps) {
-        if (!existing.dependencies.includes(dep)) {
-          existing.dependencies.push(dep);
-        }
-      }
-    }
+    entries.push({ schema: objectDef.schema, source: key });
   }
 
-  return Array.from(tableMap.values());
+  return Array.from(collectManifestTables(entries).values()).map((table) => ({
+    tableName: table.tableName,
+    table,
+    dependencies: collectTableDependencies(table),
+  }));
 }
 
 /**
@@ -1259,8 +1145,8 @@ export async function createIsolatedTestDbFromManifest(
     );
   }
 
-  // 2. Extract DDL with STI deduplication
-  const tables = extractDDLFromManifest(manifest, includeObjects);
+  // 2. Extract tables with STI deduplication
+  const tables = extractTablesFromManifest(manifest, includeObjects);
   if (tables.length === 0) {
     throw new Error(
       includeObjects
@@ -1269,28 +1155,26 @@ export async function createIsolatedTestDbFromManifest(
     );
   }
 
-  // 3. Sort by FK dependencies and join DDL
+  // 3. Sort by FK dependencies and render through the engine DDL strategy
   // Use Map for O(1) lookups instead of O(n) Array.find()
   const tableMap = new Map(tables.map((t) => [t.tableName, t] as const));
   const sortedTableNames = sortByDependencies(tables);
+  const rendered = sortedTableNames.flatMap((name) => {
+    const table = tableMap.get(name);
+    return table ? [renderCollectedManifestTable(table.table, adapter)] : [];
+  });
 
-  // Generate CREATE TABLE statements first
-  const createTableDDL = sortedTableNames
-    .map((name) => {
-      const ddl = tableMap.get(name)?.ddl;
-      return ddl ? materializeManifestDDLForAdapter(ddl, adapter) : ddl;
-    })
+  // CREATE TABLE statements first
+  const createTableDDL = rendered
+    .map((ddl) => ddl.createTable)
     .filter(Boolean)
     .join('\n\n');
 
-  // Generate CREATE INDEX statements after tables exist
-  // This includes UNIQUE indexes required for UPSERT/ON CONFLICT to work
-  const createIndexDDL = sortedTableNames
-    .map((name) => {
-      const table = tableMap.get(name);
-      if (!table) return '';
-      return generateIndexDDL(table.tableName, table.indexes);
-    })
+  // CREATE INDEX statements after tables exist. This includes the UNIQUE
+  // indexes required for UPSERT/ON CONFLICT to work and, unlike the retired
+  // string renderer, keeps partial `WHERE` predicates and JSON-path targets.
+  const createIndexDDL = rendered
+    .flatMap((ddl) => ddl.indexes)
     .filter(Boolean)
     .join('\n');
 

@@ -23,6 +23,17 @@ export {
 // Index-rendering helpers live in a separate file to avoid pulling the
 // heavyweight registry/collection module graph into the DDL strategies.
 export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
+// Structured manifest → executable DDL helpers (#2358). Re-exported here for
+// `@happyvertical/smrt-vitest`, which already imports this subpath.
+export {
+  type CollectedManifestTable,
+  collectManifestTables,
+  type ManifestColumnLike,
+  type ManifestIndexLike,
+  type ManifestSchemaLike,
+  manifestSchemaToDefinition,
+  renderCollectedManifestTable,
+} from './manifest-schema.js';
 
 /**
  * Generates a complete database schema SQL statement for a class

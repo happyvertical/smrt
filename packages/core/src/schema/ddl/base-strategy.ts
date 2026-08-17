@@ -97,13 +97,15 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       this.mapType(columnDef.type),
     ];
 
-    // Primary key
+    // Primary key. NOT NULL is emitted explicitly as well: SQLite's legacy
+    // behaviour lets a non-INTEGER PRIMARY KEY column hold NULL, so a bare
+    // `"id" TEXT PRIMARY KEY` accepts NULL ids there (#2358). PostgreSQL and
+    // DuckDB already imply NOT NULL for a primary key; the explicit clause is
+    // redundant but valid on every engine and keeps the rendered DDL identical
+    // to the engine-neutral `SchemaGenerator.generateSQL()` output.
     if (columnDef.primaryKey) {
-      parts.push('PRIMARY KEY');
-    }
-
-    // NOT NULL (skip for primary key - it's implicit)
-    if (columnDef.notNull && !columnDef.primaryKey) {
+      parts.push('PRIMARY KEY', 'NOT NULL');
+    } else if (columnDef.notNull) {
       parts.push('NOT NULL');
     }
 

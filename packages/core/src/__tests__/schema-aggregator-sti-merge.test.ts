@@ -148,22 +148,174 @@ describe('SchemaAggregator STI merge', () => {
       '@happyvertical/smrt-content:Content',
       '@happyvertical/praeco:Agenda',
     ]);
+    // Rendered from the merged structured columns through the PostgreSQL
+    // strategy (#2358) — the cached `ddl` string is not what ships.
+    expect(contents?.ddl).toContain('"id" TEXT PRIMARY KEY NOT NULL');
     expect(contents?.ddl).toContain('"meeting_id" TEXT');
     expect(contents?.ddl).toContain('"url" TEXT NOT NULL DEFAULT \'\'');
     expect(contents?.ddl).toContain('"created_at" TIMESTAMPTZ');
     expect(contents?.ddl).toContain('"updated_at" TIMESTAMPTZ');
-    expect(contents?.ddl).toContain('"payload" TEXT DEFAULT $$a,b(c)$$');
+    expect(contents?.ddl).toContain('"_meta_data" JSONB');
+    expect(contents?.ddl).toContain('"tenant_id" uuid');
+    // The structured column says `payload: TEXT` with no default; the cached
+    // string's `$$a,b(c)$$` default is not authoritative.
+    expect(contents?.ddl).toMatch(/"payload" TEXT[,\n]/);
+    expect(contents?.ddl).not.toContain('$$a,b(c)$$');
     expect(contents?.ddl).not.toMatch(
       /"(?:created_at|updated_at)"\s+TIMESTAMP\b/,
     );
     expect(contents?.indexes).toContain(
       'CREATE INDEX IF NOT EXISTS "contents_meeting_id_idx" ON "contents" ("meeting_id");',
     );
+    expect(Object.keys(contents?.columns ?? {})).toEqual(
+      expect.arrayContaining(['meeting_id', 'url', 'payload']),
+    );
     expect(result.sql).toContain('"meeting_id" TEXT');
     expect(result.sql).toContain('"created_at" TIMESTAMPTZ');
+    expect(result.sql).toContain('"contents_meeting_id_idx"');
   });
 
-  it('inserts merged STI columns before trailing table constraints', () => {
+  it('renders partial and JSON-path indexes through the dialect strategy (#2358)', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'schema-aggregator-indexes-'));
+    tempDirs.push(tempDir);
+
+    const manifestPath = writeManifest(tempDir, 'events.manifest.json', {
+      packageName: '@happyvertical/events',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/events:Event': {
+          className: 'Event',
+          schema: {
+            tableName: 'events',
+            ddl: 'CREATE TABLE IF NOT EXISTS "events" ("id" TEXT PRIMARY KEY NOT NULL);',
+            columns: {
+              id: { type: 'UUID', primaryKey: true, notNull: true },
+              tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
+              _meta_type: { type: 'TEXT', notNull: true, default: '' },
+              _meta_data: { type: 'JSON' },
+              deleted_at: { type: 'TIMESTAMP' },
+            },
+            indexes: [
+              { name: 'events_tenant_id_idx', columns: ['tenant_id'] },
+              {
+                name: 'events_tenant_active_idx',
+                columns: ['tenant_id'],
+                unique: true,
+                where: '"deleted_at" IS NULL',
+              },
+              {
+                name: 'events_meta_kind_idx',
+                columns: [],
+                jsonPath: { column: '_meta_data', path: 'kind' },
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const postgres = new SchemaAggregator().aggregate({
+      packages: ['@happyvertical/events'],
+      localPaths: { '@happyvertical/events': manifestPath },
+      dialect: 'postgres',
+    });
+    const pgEvents = postgres.tables.get('events');
+    expect(pgEvents?.ddl).toContain('"id" uuid PRIMARY KEY NOT NULL');
+    expect(pgEvents?.ddl).toContain('"_meta_data" JSONB');
+    expect(pgEvents?.ddl).toContain('"deleted_at" TIMESTAMPTZ');
+    // Manifest `default` (not `defaultValue`) is honoured.
+    expect(pgEvents?.ddl).toContain('"_meta_type" TEXT NOT NULL DEFAULT \'\'');
+    expect(pgEvents?.indexes).toEqual([
+      'CREATE INDEX IF NOT EXISTS "events_tenant_id_idx" ON "events" ("tenant_id");',
+      'CREATE UNIQUE INDEX IF NOT EXISTS "events_tenant_active_idx" ON "events" ("tenant_id") WHERE "deleted_at" IS NULL;',
+      'CREATE INDEX IF NOT EXISTS "events_meta_kind_idx" ON "events" (("_meta_data"->>\'kind\'));',
+    ]);
+
+    const sqlite = new SchemaAggregator().aggregate({
+      packages: ['@happyvertical/events'],
+      localPaths: { '@happyvertical/events': manifestPath },
+      dialect: 'sqlite',
+    });
+    const liteEvents = sqlite.tables.get('events');
+    expect(liteEvents?.ddl).toContain('"id" TEXT PRIMARY KEY NOT NULL');
+    expect(liteEvents?.ddl).toContain('"_meta_data" TEXT');
+    expect(liteEvents?.ddl).toContain('"deleted_at" DATETIME');
+    expect(liteEvents?.indexes).toEqual([
+      'CREATE INDEX IF NOT EXISTS "events_tenant_id_idx" ON "events" ("tenant_id");',
+      'CREATE UNIQUE INDEX IF NOT EXISTS "events_tenant_active_idx" ON "events" ("tenant_id") WHERE "deleted_at" IS NULL;',
+      'CREATE INDEX IF NOT EXISTS "events_meta_kind_idx" ON "events" ((json_extract("_meta_data", \'$.kind\')));',
+    ]);
+    expect(sqlite.sql).toContain('PRAGMA foreign_keys = ON;');
+    expect(sqlite.sql).toContain('WHERE "deleted_at" IS NULL');
+  });
+
+  it('degrades a table to the cached-DDL merge when one STI contributor exposes no columns', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'schema-aggregator-mixed-'));
+    tempDirs.push(tempDir);
+
+    const baseManifestPath = writeManifest(tempDir, 'base.manifest.json', {
+      packageName: '@happyvertical/base',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/base:Content': {
+          className: 'Content',
+          schema: {
+            tableName: 'contents',
+            ddl: 'CREATE TABLE IF NOT EXISTS "contents" ("id" TEXT PRIMARY KEY NOT NULL, "title" TEXT);',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              title: { type: 'TEXT' },
+            },
+            indexes: [{ name: 'contents_title_idx', columns: ['title'] }],
+          },
+        },
+      },
+    });
+    const legacyManifestPath = writeManifest(tempDir, 'legacy.manifest.json', {
+      packageName: '@happyvertical/legacy',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/legacy:Agenda': {
+          className: 'Agenda',
+          schema: {
+            tableName: 'contents',
+            // Hand-authored manifest: cached DDL only, no structured columns.
+            ddl: 'CREATE TABLE IF NOT EXISTS "contents" ("id" TEXT PRIMARY KEY NOT NULL, "title" TEXT, "meeting_id" TEXT, CHECK (length("id") > 0));',
+            indexes: [
+              { name: 'contents_meeting_id_idx', columns: ['meeting_id'] },
+            ],
+          },
+        },
+      },
+    });
+
+    const result = new SchemaAggregator().aggregate({
+      packages: ['@happyvertical/base', '@happyvertical/legacy'],
+      localPaths: {
+        '@happyvertical/base': baseManifestPath,
+        '@happyvertical/legacy': legacyManifestPath,
+      },
+      dialect: 'sqlite',
+    });
+
+    const contents = result.tables.get('contents');
+    expect(contents?.sources).toEqual([
+      '@happyvertical/base:Content',
+      '@happyvertical/legacy:Agenda',
+    ]);
+    // Both contributors' columns survive, via the cached-string merge, and
+    // the legacy contributor's table constraint is preserved.
+    expect(contents?.ddl).toContain('"meeting_id" TEXT');
+    expect(contents?.ddl).toContain('"title" TEXT');
+    expect(contents?.ddl).toContain('CHECK (length("id") > 0)');
+    // Indexes always come from the structured `indexes` arrays.
+    expect(contents?.indexes).toEqual([
+      'CREATE INDEX IF NOT EXISTS "contents_title_idx" ON "contents" ("title");',
+      'CREATE INDEX IF NOT EXISTS "contents_meeting_id_idx" ON "contents" ("meeting_id");',
+    ]);
+  });
+
+  it('inserts merged STI columns before trailing table constraints (cached-DDL fallback for column-less manifests)', () => {
     const tempDir = mkdtempSync(
       join(tmpdir(), 'schema-aggregator-sti-constraints-'),
     );
@@ -182,10 +334,6 @@ describe('SchemaAggregator STI merge', () => {
   "slug" TEXT NOT NULL,
   UNIQUE("slug")
 );`,
-            columns: {
-              id: { type: 'TEXT', primaryKey: true, notNull: true },
-              slug: { type: 'TEXT', notNull: true },
-            },
             indexes: [],
           },
         },
@@ -206,11 +354,6 @@ describe('SchemaAggregator STI merge', () => {
   "meeting_id" TEXT,
   UNIQUE("slug")
 );`,
-            columns: {
-              id: { type: 'TEXT', primaryKey: true, notNull: true },
-              slug: { type: 'TEXT', notNull: true },
-              meeting_id: { type: 'TEXT' },
-            },
             indexes: [],
           },
         },
@@ -232,7 +375,7 @@ describe('SchemaAggregator STI merge', () => {
     expect(contents?.ddl).toMatch(/"meeting_id" TEXT,\n\s+UNIQUE\("slug"\)/);
   });
 
-  it('merges STI columns when quoted table names and comments contain parentheses', () => {
+  it('merges cached DDL for column-less manifests when quoted table names and comments contain parentheses', () => {
     const tempDir = mkdtempSync(
       join(tmpdir(), 'schema-aggregator-sti-quoted-parens-'),
     );
@@ -255,15 +398,6 @@ describe('SchemaAggregator STI merge', () => {
   CHECK (label <> 'a  b'),
   CONSTRAINT repeated_check CHECK (id <> '')
 );`,
-            columns: {
-              id: { type: 'TEXT', primaryKey: true, notNull: true },
-              created_at: {
-                type: 'TIMESTAMP',
-                notNull: true,
-                defaultValue: 'current_timestamp',
-              },
-              label: { type: 'TEXT' },
-            },
             indexes: [],
           },
         },
@@ -290,16 +424,6 @@ describe('SchemaAggregator STI merge', () => {
   CHECK (label <> 'a b'),
   constraint repeated_check check(id<>'')
 );`,
-            columns: {
-              id: { type: 'TEXT', primaryKey: true, notNull: true },
-              created_at: {
-                type: 'TIMESTAMP',
-                notNull: true,
-                defaultValue: 'current_timestamp',
-              },
-              label: { type: 'TEXT' },
-              starts_at: { type: 'TIMESTAMP' },
-            },
             indexes: [],
           },
         },
