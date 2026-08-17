@@ -25,6 +25,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
+- `save()` error contract (#2366): a unique/primary-key violation raises `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT` and a NOT NULL violation raises `VALIDATION_REQUIRED_FIELD`, on every adapter, on the first attempt; other database failures raise `DatabaseError` with the driver error on `cause`. The column comes from the driver's own `column`/`detail` fields when it names one
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
 
@@ -209,7 +210,7 @@ local development and watch mode.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly
-- **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry
+- **Retry logic is transient-only (#2366)**: `db.get()` (3 retries, 250 ms) and `db.upsert()` (3 retries, 500 ms) retry, but `ErrorUtils.withRetry` first classifies the failure through its whole cause chain (`src/db-errors.ts`) and rethrows deterministic ones immediately. `@happyvertical/sql` wraps every driver error as `DatabaseError('Failed to upsert record into table', { …, originalError })` with the driver text stringified into `context.originalError`, so **never match on `error.message`** — use `classifyDatabaseError()` / `isUniqueViolationError()` / `isAbortedTransactionError()`. Constraint violations, invalid input syntax, missing tables and statements inside an aborted PostgreSQL transaction (`25P02`) fail fast; serialization failures, deadlocks, lock timeouts and dropped connections still retry. `kind: 'unknown'` means no opinion, and those keep the permissive default.
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
 - **Table verification cache**: `isTableVerified(dbUrl, tableName)` avoids redundant `tableExists()` calls
