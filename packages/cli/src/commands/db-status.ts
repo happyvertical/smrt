@@ -304,6 +304,7 @@ export function summarizeSchemaDiff(diff: {
             : 'default_drift';
         const hasSql = Boolean(change.sql || change.sqlStatements?.length);
         if (!hasSql && change.advisory) {
+          if (change.advisory.severity !== 'warning') break; // note, not drift
           drift.push({
             name,
             type: driftType,
@@ -326,12 +327,12 @@ export function summarizeSchemaDiff(diff: {
       }
 
       case 'orphan_column':
+        // Info-level orphans (nullable / defaulted, harmless for inserts)
+        // are notes, not drift — see summarizeSchemaNotes.
+        if (change.advisory?.severity !== 'warning') break;
         drift.push({
           name: `${change.table}.${change.name ?? '(unknown)'}`,
-          type:
-            change.advisory?.severity === 'warning'
-              ? 'orphan_column_blocking'
-              : 'orphan_column',
+          type: 'orphan_column_blocking',
           recommendation:
             change.advisory?.message ??
             'Column exists in the database but not in the manifest.',
@@ -360,6 +361,49 @@ export function summarizeSchemaDiff(diff: {
   }
 
   return drift;
+}
+
+/**
+ * Info-level live-schema notes (#2369): harmless orphan columns, live
+ * defaults the manifest no longer declares, and tables no loaded manifest
+ * declares. Reported separately from `drift` so a JSON consumer counting
+ * drift entries is not tripped by findings that need no action.
+ */
+export function summarizeSchemaNotes(diff: {
+  orphan_tables?: string[];
+  changes: Array<{
+    type: string;
+    table: string;
+    name?: string;
+    advisory?: { severity: 'warning' | 'info'; message: string };
+    sql?: string;
+    sqlStatements?: string[];
+  }>;
+}): StatusDrift[] {
+  const notes: StatusDrift[] = [];
+  for (const change of diff.changes) {
+    const hasSql = Boolean(change.sql || change.sqlStatements?.length);
+    if (hasSql || change.advisory?.severity !== 'info') continue;
+    notes.push({
+      name: `${change.table}.${change.name ?? '(unknown)'}`,
+      type:
+        change.type === 'orphan_column'
+          ? 'orphan_column'
+          : change.type === 'alter_column'
+            ? 'default_drift'
+            : change.type,
+      recommendation: change.advisory.message,
+    });
+  }
+  for (const table of diff.orphan_tables ?? []) {
+    notes.push({
+      name: table,
+      type: 'orphan_table',
+      recommendation:
+        'Table exists in the database but no loaded manifest declares it. Not dropped; remove it manually if it is stale.',
+    });
+  }
+  return notes;
 }
 
 export const dbStatusCommand: CLICommand = {
@@ -472,6 +516,7 @@ export const dbStatusCommand: CLICommand = {
           })),
         },
         drift: [] as StatusDrift[],
+        notes: [] as StatusDrift[],
         preconditions: [] as StatusPrecondition[],
         failedMigrations: summarizeFailedMigrations(failed, null),
         schemaContract: schemaContract as SchemaContractReport,
@@ -491,6 +536,7 @@ export const dbStatusCommand: CLICommand = {
         const comparer = new SchemaComparer(db);
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
+        status.notes = summarizeSchemaNotes(diff);
         status.preconditions = await checkTenantIdUuidPreconditions({
           db,
           dbType,
@@ -600,6 +646,19 @@ export const dbStatusCommand: CLICommand = {
         console.log();
       } else {
         console.log('✅ Live schema matches current manifests');
+        console.log();
+      }
+
+      if (status.notes.length > 0) {
+        console.log(
+          `ℹ️  Live schema notes (${status.notes.length}, no action required):`,
+        );
+        for (const note of status.notes) {
+          console.log(`   • ${note.name}: ${note.type}`);
+          if (options.verbose) {
+            console.log(`     ${note.recommendation}`);
+          }
+        }
         console.log();
       }
 

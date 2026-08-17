@@ -15,7 +15,7 @@ import {
   printSchemaAdvisories,
   type SchemaChangeLike,
 } from '../db-migrate-actions.js';
-import { summarizeSchemaDiff } from '../db-status.js';
+import { summarizeSchemaDiff, summarizeSchemaNotes } from '../db-status.js';
 
 const className = (tableName: string) => `${tableName}:Class`;
 
@@ -239,10 +239,11 @@ describe('synthetic migration names (#2369)', () => {
   });
 });
 
-describe('db:status summarizeSchemaDiff (#2369)', () => {
-  it('surfaces constraint drift, orphan columns and stale unique constraints as drift entries', () => {
-    const drift = summarizeSchemaDiff({
+describe('db:status summarizeSchemaDiff / summarizeSchemaNotes (#2369)', () => {
+  it('surfaces actionable constraint drift, blocking orphans and stale unique constraints as drift; info findings as notes', () => {
+    const diff = {
       added_tables: [],
+      orphan_tables: ['zombie'],
       changes: [
         executableSetNotNull,
         manualSqliteSetDefault,
@@ -251,13 +252,13 @@ describe('db:status summarizeSchemaDiff (#2369)', () => {
         orphanInfo,
         orphanUnique,
       ],
-    });
+    };
+    const drift = summarizeSchemaDiff(diff);
     expect(drift.map((d) => `${d.name}:${d.type}`)).toEqual([
       'items.status:nullability_drift',
       'items.kind:default_drift',
       'items.note:nullability_drift',
       'posts.title:orphan_column_blocking',
-      'posts.legacy:orphan_column',
       'users.users_email_key:orphan_unique_constraint',
     ]);
     expect(drift[0].recommendation).toMatch(/Run `smrt db:migrate` to repair/);
@@ -266,6 +267,12 @@ describe('db:status summarizeSchemaDiff (#2369)', () => {
     expect(drift[3].recommendation).toMatch(
       /every ORM insert into posts will fail/,
     );
+
+    const notes = summarizeSchemaNotes(diff);
+    expect(notes.map((n) => `${n.name}:${n.type}`)).toEqual([
+      'posts.legacy:orphan_column',
+      'zombie:orphan_table',
+    ]);
   });
 });
 
