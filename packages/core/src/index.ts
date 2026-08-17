@@ -90,6 +90,18 @@ export {
   type ResolveDatabaseOptions,
   resolveDatabase,
 } from './database';
+// Driver-error classification for the persistence path (#2366)
+export {
+  classifyDatabaseError,
+  classifyDialectMessage,
+  type DatabaseErrorClassification,
+  type DatabaseErrorKind,
+  isAbortedTransactionError,
+  isDeterministicDatabaseError,
+  isNotNullViolationError,
+  isTransientDatabaseError,
+  isUniqueViolationError,
+} from './db-errors';
 export {
   applyPendingDecoratorRegistrations,
   type CompatiblePropertyDecorator,
@@ -197,6 +209,18 @@ export {
   type ResolvedPostgresTimeouts,
   resolvePostgresTimeouts,
 } from './postgres-timeouts';
+// Shared list query bounds for every generated read surface (#2367)
+export {
+  buildDefaultListOrderBy,
+  DEFAULT_LIST_LIMIT,
+  DEFAULT_LIST_ORDER_BY,
+  type ListBoundOptions,
+  MAX_LIST_LIMIT,
+  QueryBoundsError,
+  QueryOrderByError,
+  resolveListLimit,
+  resolveListOffset,
+} from './query-bounds';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
