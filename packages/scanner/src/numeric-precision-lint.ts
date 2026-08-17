@@ -131,17 +131,47 @@ export function hasMonetaryHeadNoun(name: string): boolean {
   return false;
 }
 
+/** Text a file must contain before it can declare a field this lint reports. */
+const PERSISTED_CLASS_MARKER = /@smrt\s*\(|extends\s+Smrt[A-Za-z]*/;
+
+/** Any numeric initializer. Deliberately does not require a terminator. */
+const NUMERIC_INITIALIZER = /=\s*-?\d/;
+
+/**
+ * A monetary word at a camelCase/underscore boundary — the same boundaries
+ * {@link splitIdentifierWords} cuts on, which is what makes this filter
+ * conservative rather than merely plausible. Case matters: a lowercase word
+ * must start the identifier or follow a non-letter, and a capitalized word must
+ * follow another identifier character. Matching case-insensitively instead
+ * would both admit prose and, worse, miss `unitPrice` — where `price` is
+ * preceded by a letter and only the capitalized arm can see it.
+ */
+const MONETARY_WORD_AT_BOUNDARY = new RegExp(
+  `(?<![A-Za-z])(?:${[...MONETARY_HEAD_WORDS].join('|')})` +
+    `|(?<=[A-Za-z0-9])(?:${[...MONETARY_HEAD_WORDS]
+      .map((word) => word[0].toUpperCase() + word.slice(1))
+      .join('|')})`,
+);
+
 /**
  * Cheap pre-filter so callers can skip parsing files that cannot produce a
- * finding. Conservative by construction: it may return `true` for a file the
- * AST pass then clears, but never `false` for one that would be flagged.
+ * finding.
+ *
+ * Conservative by construction: every condition here is textually implied by a
+ * finding. A reported field lives in a class carrying `@smrt(` or
+ * `extends Smrt…`, is initialized `= <digits>`, and has a monetary word at one
+ * of the boundaries the head-noun splitter cuts on. It may still return `true`
+ * for a file the AST pass then clears — that is the intended direction.
+ *
+ * @param source - Full file contents.
+ * @returns `false` only when the file provably cannot produce a finding.
  */
 export function sourceMayContainMonetaryIntegerField(source: string): boolean {
-  if (!/=\s*-?\d+\s*(?:;|$)/m.test(source)) return false;
-  for (const word of MONETARY_HEAD_WORDS) {
-    if (source.toLowerCase().includes(word)) return true;
-  }
-  return false;
+  return (
+    PERSISTED_CLASS_MARKER.test(source) &&
+    NUMERIC_INITIALIZER.test(source) &&
+    MONETARY_WORD_AT_BOUNDARY.test(source)
+  );
 }
 
 /** Does any decorator on this field state the column type explicitly? */
@@ -203,8 +233,11 @@ function resolveDeclarationLine(
   fallback: number,
 ): number {
   if (fallback > 0 || !sourceText) return fallback;
+  // `$` is a legal identifier character and a regex anchor, so the name has to
+  // be escaped rather than interpolated raw.
+  const escapedName = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const declaration = new RegExp(
-    `^\\s*(?:(?:public|private|protected|readonly|declare|override)\\s+)*${fieldName}\\s*[?!]?\\s*(?::[^=;]+)?=\\s*-?\\d`,
+    `^\\s*(?:(?:public|private|protected|readonly|declare|override)\\s+)*${escapedName}\\s*[?!]?\\s*(?::[^=;]+)?=\\s*-?\\d`,
   );
   const lines = sourceText.split('\n');
   for (let index = 0; index < lines.length; index += 1) {

@@ -265,21 +265,71 @@ describe('lintNumericPrecision', () => {
 });
 
 describe('sourceMayContainMonetaryIntegerField', () => {
-  it('lets through sources that could contain a finding', () => {
-    expect(
-      sourceMayContainMonetaryIntegerField('  totalAmount: number = 0;'),
-    ).toBe(true);
+  const model = (field: string) =>
+    ['@smrt()', 'class M extends SmrtObject {', `  ${field}`, '}', ''].join(
+      '\n',
+    );
+
+  /**
+   * The property that makes this filter safe: it must never skip a file the
+   * AST pass would flag. A `false` here is invisible — the finding simply never
+   * appears — so every shape the lint reports is asserted through both paths.
+   */
+  it('never skips a source the lint would flag', () => {
+    const flaggable = [
+      'totalAmount: number = 0;',
+      'unitPrice: number = 0;', // capitalized word mid-identifier
+      'USDPrice: number = 0;', // capitalized word after an acronym
+      'tax_rate: number = 0;', // underscore boundary
+      'price = 0 // catalog price', // no terminator, trailing comment
+      'subtotal:number=0;', // no whitespace anywhere
+      'discount: number = -1;', // negative initializer
+      'amountPaid: number =\n    0;', // wrapped initializer
+    ];
+
+    for (const field of flaggable) {
+      const source = model(field);
+      const findings = lintNumericPrecision(
+        parseSource(source, 'model.ts').classes,
+        source,
+      );
+      expect(findings.length, `AST should flag: ${field}`).toBeGreaterThan(0);
+      expect(
+        sourceMayContainMonetaryIntegerField(source),
+        `pre-filter must not skip: ${field}`,
+      ).toBe(true);
+    }
   });
 
-  it('skips sources with no integer literal initializer', () => {
-    expect(
-      sourceMayContainMonetaryIntegerField('  totalAmount: number = 0.0;'),
-    ).toBe(false);
-  });
-
-  it('skips sources with no monetary vocabulary at all', () => {
-    expect(sourceMayContainMonetaryIntegerField('  retries: number = 0;')).toBe(
+  it('skips sources that cannot produce a finding', () => {
+    // No persisted-class marker, no numeric initializer, no monetary word —
+    // each condition alone is enough to skip.
+    expect(sourceMayContainMonetaryIntegerField('const total = 0;')).toBe(
       false,
     );
+    expect(sourceMayContainMonetaryIntegerField(model("total = '';"))).toBe(
+      false,
+    );
+    expect(sourceMayContainMonetaryIntegerField(model('retries = 0;'))).toBe(
+      false,
+    );
+  });
+
+  it('stays permissive where cheap text cannot decide', () => {
+    // `= 0.0` is already correct, but the filter cannot tell `0` from `0.0`
+    // without parsing — and erring toward parsing is the safe direction.
+    expect(sourceMayContainMonetaryIntegerField(model('total = 0.0;'))).toBe(
+      true,
+    );
+  });
+
+  it('is not fooled by monetary letters inside unrelated words', () => {
+    // `generate`/`separator`/`corporate` all contain "rate"; matching them
+    // would make the filter useless rather than unsafe, so this guards cost.
+    expect(
+      sourceMayContainMonetaryIntegerField(
+        model('separator = 0;\n  // generate a corporate aggregate'),
+      ),
+    ).toBe(false);
   });
 });
