@@ -180,3 +180,12 @@ candidate claimed conflict indexes past two columns were narrowed to two
 columns, when only the index *name* is shortened. And an index fix that ships
 without a bounded-timeout, `CONCURRENTLY`-capable migrate path can take
 production down on rollout (#2362).
+
+### 13. Relationship targets resolve to a class name on both paths
+
+`@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
+`() => Target` thunk. The decorator resolves the thunk and throws when the
+target cannot be resolved (never `related: ''`); the scanner unwraps the same
+thunk from raw source (never `related: '() => Target'`). An unresolved target
+silently costs the relationship edge, `loadRelated()`, and the FK-derived index
+(#2379).

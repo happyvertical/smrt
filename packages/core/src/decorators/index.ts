@@ -204,6 +204,89 @@ export interface CrossPackageRefOptions
 }
 
 /**
+ * Resolve a relationship decorator's target argument to a class name.
+ *
+ * Accepted target forms:
+ * - `'Target'` — class name string; resolves lazily, immune to import cycles.
+ * - `Target` — class constructor.
+ * - `() => Target` — forward-reference thunk (inline or a named `const`),
+ *   invoked here to read the name.
+ *
+ * A thunk's own `.name` is `''`, so reading `relatedClass.name` used to register
+ * `related: ''` (issue #2379): the field kept `type: 'foreignKey'` but lost its
+ * target, which silently dropped the relationship edge, `loadRelated()`, and any
+ * FK-derived index. Thunks are therefore invoked at decoration time and an
+ * unresolvable target throws with the string form as the remedy — an empty
+ * `related` is never registered.
+ *
+ * Resolution runs inside the field-registration callback, which is the latest
+ * point in the decorator lifecycle (after the class binding exists for legacy
+ * decorators, and at `@smrt()` application time for standard decorators), so a
+ * self-referential `() => Self` thunk resolves rather than hitting the TDZ.
+ */
+function resolveRelatedClassName(
+  decoratorName: 'foreignKey' | 'oneToMany' | 'manyToMany',
+  relatedClass: string | Function,
+  className: string,
+  propertyKey: string,
+): string {
+  const where = `@${decoratorName}() on ${className}.${propertyKey}`;
+  const remedy =
+    `Pass the target class name as a string instead — ` +
+    `\`@${decoratorName}('Target')\` resolves lazily and is immune to import cycles.`;
+
+  if (typeof relatedClass === 'string') {
+    const name = relatedClass.trim();
+    if (!name) {
+      throw new Error(
+        `${where}: target class name is empty. Pass a class, a class name, or a \`() => Target\` thunk.`,
+      );
+    }
+    return name;
+  }
+
+  if (typeof relatedClass !== 'function') {
+    throw new Error(
+      `${where}: expected a class, a class name, or a \`() => Target\` thunk, received ${relatedClass === null ? 'null' : typeof relatedClass}. ${remedy}`,
+    );
+  }
+
+  // Class/function reference — the common `@foreignKey(Target)` form. Arrow
+  // functions have no `prototype`, so a *named* thunk (`const lazyTarget = () =>
+  // Target`) is still routed to the thunk branch below instead of registering
+  // the variable name as the target class.
+  if (relatedClass.name && relatedClass.prototype !== undefined) {
+    return relatedClass.name;
+  }
+
+  // Thunk (`() => Target`, named or inline) — invoke it for the target.
+  let resolved: unknown;
+  try {
+    resolved = (relatedClass as () => unknown)();
+  } catch (error) {
+    throw new Error(
+      `${where}: the \`() => Target\` thunk threw while resolving its target (${
+        error instanceof Error ? error.message : String(error)
+      }). ${remedy}`,
+      { cause: error },
+    );
+  }
+
+  if (typeof resolved === 'function' && resolved.name) {
+    return resolved.name;
+  }
+  if (typeof resolved === 'string' && resolved.trim()) {
+    return resolved.trim();
+  }
+
+  throw new Error(
+    `${where}: the \`() => Target\` thunk resolved to ${
+      resolved === null ? 'null' : typeof resolved
+    } instead of a named class. ${remedy}`,
+  );
+}
+
+/**
  * Marks a class property with validation constraints and metadata options.
  *
  * Use `@field()` when you need options beyond what plain TypeScript initializers
@@ -270,9 +353,14 @@ export function field(
  * For cross-package foreign keys, use a plain `string` property instead to avoid
  * circular dependencies between packages.
  *
- * @param relatedClass - The target class constructor (or class name string)
+ * @param relatedClass - The target class constructor, its name as a string, or a
+ *   `() => Target` forward-reference thunk (resolved at decoration time). Prefer
+ *   the string form when the target is declared later or imported circularly —
+ *   it never has to be evaluated.
  * @param options - Optional field constraints (required, nullable, etc.)
  * @returns A TypeScript property decorator
+ * @throws Error when the target cannot be resolved to a class name (an empty
+ *   string, a thunk that throws, or a thunk returning an anonymous value)
  *
  * @example
  * ```typescript
@@ -281,6 +369,10 @@ export function field(
  *   // Same-package FK — enables loadRelated() and eager loading
  *   @foreignKey(Customer)
  *   customerId: string = '';
+ *
+ *   // Forward reference to a class declared later in the module
+ *   @foreignKey(() => Invoice)
+ *   invoiceId: string = '';
  * }
  *
  * // Cross-package: use a plain string instead
@@ -301,9 +393,6 @@ export function foreignKey(
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
     propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
-    const relatedClassName =
-      typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
-
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
@@ -311,7 +400,12 @@ export function foreignKey(
         ObjectRegistry.registerFieldDecorator(className, propertyKey, {
           ...options,
           type: 'foreignKey',
-          related: relatedClassName,
+          related: resolveRelatedClassName(
+            'foreignKey',
+            relatedClass,
+            className,
+            propertyKey,
+          ),
         });
       },
     );
@@ -447,9 +541,6 @@ export function oneToMany(
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
     propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
-    const relatedClassName =
-      typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
-
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
@@ -457,7 +548,12 @@ export function oneToMany(
         ObjectRegistry.registerFieldDecorator(className, propertyKey, {
           ...options,
           type: 'oneToMany',
-          related: relatedClassName,
+          related: resolveRelatedClassName(
+            'oneToMany',
+            relatedClass,
+            className,
+            propertyKey,
+          ),
           transient: true, // Relationship fields are not database columns
         });
       },
@@ -499,9 +595,6 @@ export function manyToMany(
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
     propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
   ) => {
-    const relatedClassName =
-      typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
-
     registerCompatibleFieldDecorator(
       targetOrValue,
       propertyKeyOrContext,
@@ -509,7 +602,12 @@ export function manyToMany(
         ObjectRegistry.registerFieldDecorator(className, propertyKey, {
           ...options,
           type: 'manyToMany',
-          related: relatedClassName,
+          related: resolveRelatedClassName(
+            'manyToMany',
+            relatedClass,
+            className,
+            propertyKey,
+          ),
           transient: true, // Relationship fields are not database columns
         });
       },
