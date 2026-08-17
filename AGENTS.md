@@ -60,6 +60,10 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 ## Core model invariants
 
 - Numeric defaults carry schema meaning: `0` maps to integer and `0.0` to decimal.
+  Money, rate, and confidence fields must write `0.0` (or an explicit
+  `@field({ type })`); an INTEGER column rejects fractional saves on PostgreSQL
+  while SQLite's affinity hides it. `dev:knowledge-check` fails closed on
+  `packages/*` and warns downstream (#2361).
 - Never override `toJSON()`; extend serialization through `transformJSON()`.
 - Same-package foreign keys use `@foreignKey(Target)`; cross-package references
   use `@crossPackageRef('@happyvertical/smrt-package:Class')`.
@@ -88,8 +92,9 @@ the Vite plugin consumes deterministic `dist/` artifacts.
   the knowledge tooling resolves the links. `pnpm check:agents-chain` reports headroom.
 - `smrt docs:agents` generates downstream `.agents/smrt-framework.md` snapshots.
 - `smrt dev:knowledge-index` prints the deterministic SMRT + SDK knowledge graph.
-- `smrt dev:knowledge-check` validates docs, manifests, package files, and
-  relationship facts. CI and Lefthook run strict freshness checks.
+- `smrt dev:knowledge-check` validates docs, manifests, package files,
+  relationship facts, and money-field numeric precision. CI and Lefthook run
+  strict freshness checks.
 - Use `smrt knowledge:review-context` and
   `smrt knowledge:architecture-context` with the narrowest scope/package.
 - Runtime manifests stay runtime-focused; `.smrt/smrt-knowledge.json` and

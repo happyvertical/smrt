@@ -26,6 +26,13 @@ export {
 } from './discovery.js';
 export { InheritanceResolver } from './inheritance-resolver.js';
 export { ManifestAdapter } from './manifest-adapter.js';
+export {
+  hasMonetaryHeadNoun,
+  lintNumericPrecision,
+  type NumericPrecisionFinding,
+  sourceMayContainMonetaryIntegerField,
+  splitIdentifierWords,
+} from './numeric-precision-lint.js';
 export { extractSmrtImports, parseFile, parseSource } from './oxc-parser.js';
 export { OxcScanner } from './scanner.js';
 export * from './types.js';

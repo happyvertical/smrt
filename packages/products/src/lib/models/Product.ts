@@ -92,7 +92,13 @@ export class Product extends SmrtObject {
   category = ''; // Reference to category
   manufacturer = '';
   model = '';
-  price = 0;
+  /**
+   * Catalog price. The `0.0` initializer is load-bearing: SMRT maps an integer
+   * literal to INTEGER and a decimal literal to DECIMAL, and PostgreSQL rejects
+   * a fractional save into an INTEGER column (`22P02`). Matches
+   * `Material.costPerUnit` and `Sku.weightGrams` (#2361).
+   */
+  price = 0.0;
   inStock = true;
   specifications: Record<string, unknown> = {};
   tags: string[] = [];

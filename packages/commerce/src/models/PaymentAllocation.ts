@@ -95,9 +95,13 @@ export class PaymentAllocation extends SmrtObject {
   invoiceId: string = '';
 
   /**
-   * Amount allocated from payment to invoice
+   * Amount allocated from payment to invoice.
+   *
+   * The `0.0` initializer is load-bearing: SMRT maps `= 0` to INTEGER and
+   * `= 0.0` to DECIMAL, and allocations are reconciled against `Payment.amount`
+   * (already DECIMAL) with a sub-cent epsilon (#2361).
    */
-  amount: number = 0;
+  amount: number = 0.0;
 
   /**
    * When the allocation was made

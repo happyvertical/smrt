@@ -1148,6 +1148,144 @@ describe('SchemaComparer engine-specific SQL generation', () => {
   });
 });
 
+/**
+ * #2361 — commerce/products/facts money fields shipped as INTEGER columns
+ * because `= 0` compiles to integer. The models now declare `0.0`, so existing
+ * deployments need the widening migration to actually be emitted. INTEGER→REAL
+ * is already whitelisted as a compatible upgrade; these lock in that the
+ * upgrade reaches the diff and produces engine-correct SQL.
+ */
+describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () => {
+  const invoiceManifest = (): Record<string, SchemaDefinition> => ({
+    invoices: {
+      tableName: 'invoices',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        // What `subtotal: number = 0.0` now compiles to.
+        subtotal: { type: 'REAL', defaultValue: 0 },
+        // A genuine integer column on the same table must not be disturbed.
+        reminders_sent: { type: 'INTEGER', defaultValue: 0 },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  /** A deployed table whose `subtotal` column is still INTEGER. */
+  const legacyColumns = (integerType: string) => ({
+    id: { type: 'text', notnull: true },
+    subtotal: { type: integerType, notnull: false },
+    reminders_sent: { type: integerType, notnull: false },
+  });
+
+  it('emits an ALTER … TYPE DOUBLE PRECISION on PostgreSQL', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'invoices' }] }),
+      getTableSchema: async () => ({
+        columns: legacyColumns('integer'),
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('subtotal');
+    expect(typeUpgrades[0].mismatch).toEqual({
+      expected: 'REAL',
+      actual: 'integer',
+    });
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE "invoices"');
+    expect(typeUpgrades[0].sql).toContain(
+      'ALTER COLUMN "subtotal" TYPE DOUBLE PRECISION',
+    );
+    // PostgreSQL casts integer to double precision implicitly, so a USING
+    // clause would be noise; the default is cycled so it can be re-typed.
+    expect(typeUpgrades[0].sql).not.toContain('USING');
+    expect(typeUpgrades[0].sql).toContain('DROP DEFAULT');
+    expect(typeUpgrades[0].sql).toContain('SET DEFAULT');
+
+    // The widening must not be mistaken for drift on the real integer column.
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+  });
+
+  it('emits a native ALTER COLUMN TYPE on DuckDB', async () => {
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'invoices' }] }),
+      getTableSchema: async () => ({
+        columns: legacyColumns('BIGINT'),
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('subtotal');
+    // DuckDB maps the abstract REAL straight through; the framework's lack of
+    // an exact-decimal type is tracked separately as #2373.
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "invoices" ALTER COLUMN "subtotal" TYPE REAL',
+    );
+  });
+
+  it('reports SQLite as needing table recreation rather than silently passing', async () => {
+    // SQLite's affinity is exactly why the bug survived: it stores REAL in an
+    // INTEGER column. The differ must still surface the drift.
+    const mockSqliteDb = {
+      url: ':memory:',
+      query: async () => ({ rows: [{ name: 'invoices' }] }),
+      getTableSchema: async () => ({
+        columns: legacyColumns('INTEGER'),
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockSqliteDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('subtotal');
+    expect(typeUpgrades[0].sql).toContain('requires table recreation');
+    expect(diff.has_changes).toBe(true);
+  });
+
+  it('is a no-op once the column is already REAL', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'invoices' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          subtotal: { type: 'double precision', notnull: false },
+          reminders_sent: { type: 'integer', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});
+
 describe('hasActionableChanges', () => {
   it('should return true when there are added tables', () => {
     const diff: SchemaDiff = {

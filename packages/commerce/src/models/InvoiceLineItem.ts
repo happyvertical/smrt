@@ -67,29 +67,36 @@ export class InvoiceLineItem extends SmrtObject {
   sku: string = '';
 
   /**
-   * Quantity (e.g., impressions, hours, units)
+   * Quantity (e.g., impressions, hours, units).
+   *
+   * The `1.0` initializer is load-bearing: SMRT maps an integer literal to
+   * INTEGER and a decimal literal to DECIMAL, and fractional quantities
+   * (billable hours) must survive a PostgreSQL save. Matches
+   * `ContractLineItem.quantity` (#2361).
    */
-  quantity: number = 1;
+  quantity: number = 1.0;
 
   /**
-   * Unit price before discount
+   * Unit price before discount. `0.0` keeps the column DECIMAL (#2361).
    */
-  unitPrice: number = 0;
+  unitPrice: number = 0.0;
 
   /**
-   * Discount amount (flat, not percentage)
+   * Discount amount (flat, not percentage). `0.0` keeps the column DECIMAL
+   * (#2361).
    */
-  discount: number = 0;
+  discount: number = 0.0;
 
   /**
-   * Tax rate as decimal (e.g., 0.05 for 5%)
+   * Tax rate as decimal (e.g., 0.05 for 5%). `0.0` keeps the column DECIMAL
+   * (#2361).
    */
-  taxRate: number = 0;
+  taxRate: number = 0.0;
 
   /**
-   * Calculated line amount
+   * Calculated line amount. `0.0` keeps the column DECIMAL (#2361).
    */
-  amount: number = 0;
+  amount: number = 0.0;
 
   // ============================================================================
   // Source Tracking

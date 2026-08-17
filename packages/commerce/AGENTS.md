@@ -35,7 +35,7 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 ## Gotchas
 
 - **Optional tenancy**: all models `@TenantScoped({ mode: 'optional' })` + nullable tenantId
-- **Currency in decimal fields**: price, taxAmount, totalAmount (not integer cents like affiliates)
+- **Currency in decimal fields**: price, taxAmount, totalAmount (not integer cents like affiliates). Every money field — and `InvoiceLineItem.quantity`, which bills fractional hours — must be initialized `0.0` / `1.0`, never `0` / `1`: an integer literal compiles to an INTEGER column and PostgreSQL rejects the fractional save with `22P02` while SQLite quietly stores it. Invoice, InvoiceLineItem and PaymentAllocation shipped that bug until #2361; `pnpm --filter @happyvertical/smrt-commerce test:postgres` is the lane that holds the line.
 - **Invoice controls payment status**: not the Payment model — use `Invoice.updatePaymentStatus()`
 - **Tax rate is external**: no tax rate field on Invoice — rate must be calculated externally
 - **Profile linking**: separate `ProfileCollection.create()` needed to fetch actual Profile object

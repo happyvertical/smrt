@@ -238,24 +238,29 @@ export class Invoice extends SmrtObject {
   // ============================================================================
 
   /**
-   * Subtotal before tax
+   * Subtotal before tax.
+   *
+   * The `0.0` initializer is load-bearing: SMRT maps `= 0` to INTEGER and
+   * `= 0.0` to DECIMAL, and PostgreSQL rejects a fractional save into an
+   * INTEGER column (`22P02`). Matches `Contract.subtotal` (#2361).
    */
-  subtotal: number = 0;
+  subtotal: number = 0.0;
 
   /**
-   * Tax amount
+   * Tax amount. `0.0` keeps the column DECIMAL (#2361).
    */
-  taxAmount: number = 0;
+  taxAmount: number = 0.0;
 
   /**
-   * Total amount due (subtotal + tax)
+   * Total amount due (subtotal + tax). `0.0` keeps the column DECIMAL (#2361).
    */
-  totalAmount: number = 0;
+  totalAmount: number = 0.0;
 
   /**
-   * Amount paid (sum of PaymentAllocations)
+   * Amount paid (sum of PaymentAllocations). `0.0` keeps the column DECIMAL
+   * (#2361).
    */
-  amountPaid: number = 0;
+  amountPaid: number = 0.0;
 
   /**
    * Currency code (ISO 4217)

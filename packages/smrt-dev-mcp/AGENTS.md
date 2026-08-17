@@ -210,6 +210,13 @@ launcher or a small wrapper script with an absolute Node path.
   agent would load the parent's and its own. Those two checks are skipped for it
   and a `nested-agents-md` error fires if one reappears; the expertise belongs in
   the parent's linked `agents/<module>.md`.
+- **The money-field lint reads source, not the manifest** (#2361): a manifest
+  records that a column is INTEGER but not whether anyone chose it, so only the
+  source distinguishes `@field({ type: 'integer' })` (a decision) from `= 0` (a
+  default nobody made). `numeric-precision-money-integer` is an `error` on
+  `@happyvertical/smrt-*` packages and a `warning` on a consumer's own packages,
+  so `dev:knowledge-check` stays passable downstream. A cheap textual pre-filter
+  keeps it from parsing the whole workspace.
 - **`maxChars` budgets the objects payload, not the whole response**: project
   metadata and diagnostics are always returned in full, because a diagnostic is
   how discovery reports that it found nothing (#2143). Budgeting it away would

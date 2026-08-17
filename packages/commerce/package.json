@@ -35,6 +35,7 @@
     "dev": "npm run build:watch",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/money-fields.postgres.test.ts",
     "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
