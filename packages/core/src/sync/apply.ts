@@ -48,7 +48,7 @@
  * scope for v1.
  */
 
-import { ValidationError } from '../errors.js';
+import { isUniqueViolationError } from '../db-errors.js';
 
 /**
  * URL segments of the generated batch apply endpoint, relative to the API
@@ -466,34 +466,16 @@ function rowUpdatedAtIso(row: SyncApplyRowLike): string | undefined {
 
 /**
  * Detect a unique/primary-key constraint failure anywhere in an error's cause
- * chain. `save()` classifies constraint errors into typed `ValidationError`s
- * when the driver message reaches it directly, but adapter layers may wrap
- * the driver error (e.g. "Failed to upsert record into table …" with the
- * SQLite/PostgreSQL/DuckDB constraint text nested in `cause`), surfacing as a
- * generic `DatabaseError` instead — so match both, walking the chain. The
- * message patterns mirror `SmrtObject.classifyConstraintError`.
+ * chain.
+ *
+ * Reduced to the framework contract in #2366: `save()` now classifies through
+ * the driver-error cause chain, so this reports `true` for both the typed
+ * `ValidationError` it raises and any still-wrapped adapter error that reaches
+ * here by another path. The private chain walk and duplicated dialect regexes
+ * this replaced are gone — `classifyDatabaseError()` is the single matcher.
  */
 function isUniqueConstraintError(error: unknown): boolean {
-  const seen = new Set<unknown>();
-  let current: unknown = error;
-  while (current instanceof Error && !seen.has(current)) {
-    seen.add(current);
-    if (
-      current instanceof ValidationError &&
-      current.code === 'VALIDATION_UNIQUE_CONSTRAINT'
-    ) {
-      return true;
-    }
-    if (
-      /UNIQUE constraint failed/i.test(current.message) ||
-      /violates unique constraint/i.test(current.message) ||
-      /violates primary key constraint/i.test(current.message)
-    ) {
-      return true;
-    }
-    current = (current as { cause?: unknown }).cause;
-  }
-  return false;
+  return isUniqueViolationError(error);
 }
 
 async function applyValidatedItem(

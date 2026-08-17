@@ -4,7 +4,10 @@
  * @packageDocumentation
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  isUniqueViolationError,
+  SmrtCollection,
+} from '@happyvertical/smrt-core';
 import {
   TenantIntegration,
   type TenantIntegrationProvider,
@@ -60,28 +63,14 @@ export class TenantIntegrationCollection extends SmrtCollection<TenantIntegratio
   }
 }
 
+/**
+ * Detect the losing side of a concurrent `findOrInit` race.
+ *
+ * Reduced to the framework contract in #2366: the hand-rolled cause walk and
+ * its dialect regexes were a workaround for `save()` surfacing constraint
+ * violations as a generic `DatabaseError`. Core now classifies through the
+ * driver-error chain, so the typed check is sufficient.
+ */
 function isDuplicateKeyError(err: unknown): boolean {
-  const seen = new Set<unknown>();
-  let cur: unknown = err;
-
-  while (cur && typeof cur === 'object' && !seen.has(cur)) {
-    seen.add(cur);
-    const e = cur as { code?: unknown; message?: unknown; cause?: unknown };
-    if (e.code === '23505' || e.code === 'VALIDATION_UNIQUE_CONSTRAINT') {
-      return true;
-    }
-
-    const message = typeof e.message === 'string' ? e.message : '';
-    if (
-      /duplicate key|unique.+violat|code=23505|SQLITE_CONSTRAINT.*UNIQUE/i.test(
-        message,
-      )
-    ) {
-      return true;
-    }
-
-    cur = e.cause;
-  }
-
-  return false;
+  return isUniqueViolationError(err);
 }

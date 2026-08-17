@@ -498,7 +498,17 @@ const docs = await collection.create({ slug: 'intro', context: '/docs' });
 
 // This FAILS (same slug + context)
 const blog2 = await collection.create({ slug: 'intro', context: '/blog' });
-// Error: UNIQUE constraint failed: slug, context
+// throws ValidationError, code 'VALIDATION_UNIQUE_CONSTRAINT'
+```
+
+Detect it with the typed check, never by matching `error.message` — the
+adapter wraps the driver error, so the constraint wording is not on the outer
+message (#2366):
+
+```typescript
+import { isUniqueViolationError } from '@happyvertical/smrt-core';
+
+if (isUniqueViolationError(error)) { /* … */ }
 ```
 
 **Solution**: Ensure unique slugs within the same context, or use different contexts for objects with the same slug.
