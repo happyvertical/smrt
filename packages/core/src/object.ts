@@ -1756,7 +1756,8 @@ export class SmrtObject extends SmrtClass {
    * no backoff, so the original cause survives instead of being replaced by
    * `25P02` on a doomed retry inside a caller-managed transaction. Only
    * transient failures (serialization failure, deadlock, lock timeout, dropped
-   * connection, `SQLITE_BUSY`) are retried: 3 attempts, 500 ms backoff.
+   * connection, `SQLITE_BUSY`) are retried: up to 4 attempts total — the
+   * initial try plus 3 retries — sleeping 500, 1000 and 2000 ms between them.
    *
    * @returns This instance after saving (enables chaining)
    * @throws {ValidationError} `VALIDATION_UNIQUE_CONSTRAINT` on a unique or
@@ -2332,8 +2333,9 @@ export class SmrtObject extends SmrtClass {
    * Hydrates this object from the database using its `id` property.
    *
    * Queries the database for a row matching `{ id: this._id }` and calls
-   * `loadDataFromDb()` if found. Transient failures get a 3-attempt retry with
-   * a 250 ms initial delay; deterministic ones do not. A malformed identifier
+   * `loadDataFromDb()` if found. Transient failures are retried up to 4 times
+   * total — the initial try plus 3 retries — sleeping 250, 500 and 1000 ms
+   * between them; deterministic failures are not. A malformed identifier
    * (PostgreSQL `22P02 invalid_text_representation` on a `uuid` column) is a
    * deterministic failure, so it now raises on the first attempt instead of
    * spending three retries re-submitting the same bad literal (#2366).
