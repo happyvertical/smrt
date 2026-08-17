@@ -66,6 +66,16 @@ describe('parsePostgresTimeoutMs', () => {
     expect(parsePostgresTimeoutMs('30 seconds', 99)).toBe(99);
   });
 
+  it('refuses a digit run that overflows to Infinity', () => {
+    // The regex admits any number of digits, so parseFloat (or the unit
+    // multiplication after it) can overflow. Infinity is unparseable input, not
+    // a timeout: emitted into a URL parameter it fails connection setup far
+    // from the typo that caused it.
+    expect(parsePostgresTimeoutMs('9'.repeat(400), 99)).toBe(99);
+    expect(parsePostgresTimeoutMs(`${'9'.repeat(400)}h`, 99)).toBe(99);
+    expect(parsePostgresTimeoutMs(`${Number.MAX_VALUE}h`, 99)).toBe(99);
+  });
+
   it('is the same function the migrations subpath publishes (#2362)', () => {
     // `migrations.postgres.*` and a runtime `timeouts` config are written in the
     // same spelling, so they are parsed by one implementation rather than two
@@ -203,6 +213,24 @@ describe('applyPostgresTimeoutsToUrl', () => {
     expect(params.get('sslmode')).toBe('require');
     expect(params.get('application_name')).toBe('smrt');
     expect(params.get('statement_timeout')).toBe('30000');
+  });
+
+  it('copies the existing query substring byte for byte', () => {
+    // Round-tripping through URLSearchParams.toString() would hand pg a
+    // re-encoded DSN — `%20` as `+`, parameters reordered — that is equivalent
+    // rather than identical. Append; never re-serialize.
+    const existing = 'options=-c%20search_path%3Dapp&sslmode=require&z=1&a=2';
+    const url = applyPostgresTimeoutsToUrl(`${PG_URL}?${existing}`, timeouts);
+
+    expect(url.startsWith(`${PG_URL}?${existing}&`)).toBe(true);
+    expect(url).not.toContain('+');
+    expect(connectionParams(url).get('options')).toBe('-c search_path=app');
+  });
+
+  it('appends without a stray separator when the query is empty', () => {
+    expect(applyPostgresTimeoutsToUrl(`${PG_URL}?`, timeouts)).toBe(
+      `${PG_URL}?statement_timeout=30000&idle_in_transaction_session_timeout=60000&lock_timeout=10000`,
+    );
   });
 
   it('never overrides a timeout the operator spelled into the DSN', () => {

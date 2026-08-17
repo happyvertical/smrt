@@ -191,7 +191,14 @@ export function parsePostgresTimeoutMs(
           ? 1000
           : 1;
 
-  return Math.trunc(amount * multiplier);
+  // The regex admits an arbitrarily long digit run, so `parseFloat` — and the
+  // unit multiplication after it — can overflow to `Infinity`. That is
+  // unparseable input, not a timeout: emitted into a URL parameter or a pool
+  // option it fails connection setup somewhere far from the typo that caused
+  // it. The numeric branch above already refuses non-finite input; this keeps
+  // the string branch honest to the same contract.
+  const milliseconds = amount * multiplier;
+  return Number.isFinite(milliseconds) ? Math.trunc(milliseconds) : fallback;
 }
 
 /**
@@ -285,11 +292,14 @@ export function isPostgresTarget(url?: string, type?: string): boolean {
  * per-parameter granularity means overriding one does not surrender the other
  * two to `pg`'s unbounded defaults.
  *
- * Only the query suffix is touched — scheme, userinfo, host, and path are
- * copied through as written. Reparsing the whole DSN with `new URL()` (which is
- * what `pg-connection-string` does at connect time) would let this function
- * normalize a URL it does not own, so a shape `pg` accepts today would be
- * handed to `pg` in a different form tomorrow.
+ * The DSN is edited by **appending**, never by re-serializing. Everything the
+ * caller wrote — scheme, userinfo, host, path, and the existing query substring
+ * byte for byte — is copied through, and only the missing parameters are added
+ * after it. `URLSearchParams` is used to *read* which parameters are already
+ * present; writing through it would hand `pg` a re-encoded DSN (`%20` becoming
+ * `+`, parameters reordered) that is merely equivalent rather than identical,
+ * which is not this function's business. The emitted values are bare digits, so
+ * appending needs no encoding of its own.
  *
  * @param url - PostgreSQL connection URL
  * @param timeouts - Resolved timeouts
@@ -307,25 +317,24 @@ export function applyPostgresTimeoutsToUrl(
   const queryStart = withoutFragment.indexOf('?');
   const base =
     queryStart === -1 ? withoutFragment : withoutFragment.slice(0, queryStart);
-  const params = new URLSearchParams(
-    queryStart === -1 ? '' : withoutFragment.slice(queryStart + 1),
-  );
+  const query = queryStart === -1 ? '' : withoutFragment.slice(queryStart + 1);
+  const present = new URLSearchParams(query);
 
-  let changed = false;
+  const additions: string[] = [];
   for (const [key, param] of Object.entries(URL_TIMEOUT_PARAMS) as [
     keyof typeof URL_TIMEOUT_PARAMS,
     string,
   ][]) {
-    if (params.has(param)) continue;
-    params.set(param, String(Math.max(0, Math.trunc(timeouts[key]))));
-    changed = true;
+    if (present.has(param)) continue;
+    additions.push(`${param}=${Math.max(0, Math.trunc(timeouts[key]))}`);
   }
 
-  if (!changed) {
+  if (additions.length === 0) {
     return url;
   }
 
-  return `${base}?${params.toString()}${fragment}`;
+  const separator = query.length > 0 ? '&' : '';
+  return `${base}?${query}${separator}${additions.join('&')}${fragment}`;
 }
 
 /**
