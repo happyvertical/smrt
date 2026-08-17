@@ -480,6 +480,100 @@ describe('checkLiveSchemaParity failure modes', () => {
   });
 });
 
+describe('DuckDB index introspection', () => {
+  /**
+   * A DuckDB-shaped fake. Uniqueness on this engine lives almost entirely in
+   * `duckdb_constraints()` (DuckDB requires an inline UNIQUE constraint for
+   * upsert), so losing that catalog while keeping `duckdb_indexes()` would make
+   * every conflict target and unique column look unenforced.
+   */
+  function duckDb(options: { constraintsFail: boolean }): DatabaseProvider {
+    return {
+      url: 'analytics.duckdb',
+      query: async (sql: string) => {
+        if (sql.includes('duckdb_constraints')) {
+          if (options.constraintsFail) {
+            throw new Error('duckdb_constraints() unavailable');
+          }
+          return {
+            rows: [
+              {
+                table_name: 'widgets',
+                constraint_type: 'UNIQUE',
+                constraint_column_names: ['slug', 'context'],
+              },
+            ],
+          };
+        }
+        if (sql.includes('duckdb_indexes')) return { rows: [] };
+        if (sql.includes('sqlite_master'))
+          return { rows: [{ name: 'widgets' }] };
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          slug: { type: 'TEXT' },
+          context: { type: 'TEXT' },
+        },
+        indexes: [],
+        foreignKeys: [],
+      }),
+    } as unknown as DatabaseProvider;
+  }
+
+  const duckDbSchema: Record<string, SchemaDefinition> = {
+    widgets: {
+      tableName: 'widgets',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true, referenceKind: 'id' },
+        slug: { type: 'TEXT' },
+        context: { type: 'TEXT' },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  };
+
+  it('reads uniqueness from the constraint catalog', async () => {
+    const report = await checkLiveSchemaParity({
+      db: duckDb({ constraintsFail: false }),
+      schemas: duckDbSchema,
+      conflictTargets: {
+        widgets: [{ columns: ['slug', 'context'], source: 'Widget' }],
+      },
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    expect(report.indexIntrospection).toBe('full');
+    expect(report.findings).toEqual([]);
+  });
+
+  it('skips every index check when the constraint catalog is unreadable', async () => {
+    const report = await checkLiveSchemaParity({
+      db: duckDb({ constraintsFail: true }),
+      schemas: duckDbSchema,
+      conflictTargets: {
+        widgets: [{ columns: ['slug', 'context'], source: 'Widget' }],
+      },
+      includeSystemTables: false,
+      engineHint: 'duckdb',
+    });
+
+    // Partial metadata must never manufacture an error: with constraints
+    // unreadable the conflict target would look unenforced on a correct
+    // database.
+    expect(report.indexIntrospection).toBe('unavailable');
+    expect(report.findings).toEqual([]);
+    expect(report.ok).toBe(true);
+  });
+});
+
 describe('parseIndexDefColumns', () => {
   it('extracts plain columns from a PostgreSQL index definition', () => {
     expect(

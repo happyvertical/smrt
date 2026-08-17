@@ -103,6 +103,46 @@ describe('assessDecoratorSupport', () => {
     ).toBe('ok');
   });
 
+  it('does not accept a stray mention of oxc and decorator', () => {
+    // Both words appear, but no `oxc: { decorator: … }` block does. Accepting
+    // this would mark a Vite 8 project configured right up until its first SSR
+    // request throws `SyntaxError: Invalid or unexpected token`.
+    const decoyConfig = [
+      "import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';",
+      "import { decorator } from './helpers/decorator.js';",
+      '// TODO: migrate the oxc transform once we are on Vite 8',
+      'export default { plugins: [smrtPlugin(), decorator()] };',
+      '',
+    ].join('\n');
+
+    const result = assessDecoratorSupport({
+      viteMajor: 8,
+      viteConfigContent: decoyConfig,
+      tsconfigContent: '{"compilerOptions":{"experimentalDecorators":true}}',
+    });
+
+    expect(result.status).toBe('error');
+    expect(result.message).toContain('Vite 8 ignores tsconfig');
+  });
+
+  it('accepts an oxc block that declares other options before decorator', () => {
+    expect(
+      assessDecoratorSupport({
+        viteMajor: 8,
+        viteConfigContent: [
+          'export default {',
+          '  oxc: {',
+          "    target: 'es2022',",
+          '    decorator: { legacy: true, emitDecoratorMetadata: true },',
+          '  },',
+          '};',
+          '',
+        ].join('\n'),
+        tsconfigContent: '{}',
+      }).status,
+    ).toBe('ok');
+  });
+
   it('reports an error when neither recipe is present', () => {
     const result = assessDecoratorSupport({
       viteMajor: null,

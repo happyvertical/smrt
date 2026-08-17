@@ -349,6 +349,23 @@ export interface DecoratorSupportAssessment {
 }
 
 /**
+ * Match an actual `oxc: { … decorator: … }` configuration block.
+ *
+ * Deliberately stricter than "the words `oxc` and `decorator` both appear":
+ * a stray mention in a comment or an unrelated import would otherwise mark the
+ * transform configured on a Vite 8 project that throws
+ * `SyntaxError: Invalid or unexpected token` on its first SSR request — the
+ * exact failure this check exists to catch. The lazy body stops at the first
+ * `decorator:` key after the `oxc` object opens.
+ *
+ * A config that assembles `oxc` indirectly (a spread, or an imported base
+ * config) is reported as unconfigured. That direction is the safe one: the
+ * recommendation names the exact key to add, whereas the opposite error is
+ * silent until runtime.
+ */
+const OXC_DECORATOR_BLOCK_RE = /\boxc\s*:\s*\{[\s\S]*?\bdecorator\s*:/;
+
+/**
  * Read the declared Vite major version from a project's package.json.
  *
  * Returns `null` when Vite is absent or the range is not a simple one whose
@@ -394,8 +411,7 @@ export function assessDecoratorSupport(input: {
 
   const hasOxcDecorator =
     viteConfigContent !== null &&
-    /\boxc\b/.test(viteConfigContent) &&
-    /\bdecorator\b/.test(viteConfigContent);
+    OXC_DECORATOR_BLOCK_RE.test(viteConfigContent);
   const hasTsconfigDecorators =
     tsconfigContent !== null &&
     tsconfigContent.includes('experimentalDecorators');

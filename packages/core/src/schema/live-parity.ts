@@ -1108,7 +1108,14 @@ async function readDuckDbIndexCatalog(
       byTable.set(tableName, bucket);
     }
   } catch {
-    // Indexes without constraints are still usable information.
+    // Constraints are not optional metadata on this engine: DuckDB requires an
+    // inline UNIQUE constraint for upsert, so uniqueness lives almost entirely
+    // in `duckdb_constraints()` rather than in `duckdb_indexes()`. Without it,
+    // `conflict_target_unindexed` and `unique_constraint_missing` would fire as
+    // *errors* against a correct database. Degrade the whole catalog instead —
+    // the caller then skips every index check and the report says
+    // `indexIntrospection: 'unavailable'`.
+    return null;
   }
 
   return { forTable: async (tableName) => byTable.get(tableName) ?? [] };
