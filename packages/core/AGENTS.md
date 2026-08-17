@@ -26,7 +26,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
-- `save()` error contract (#2366): a unique/primary-key violation raises `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT` and a NOT NULL violation raises `VALIDATION_REQUIRED_FIELD`, on every adapter, on the first attempt; other database failures raise `DatabaseError` with the driver error on `cause`. The column comes from the driver's own `column`/`detail` fields when it names one
+- `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
 
@@ -223,6 +223,9 @@ production never gets: the suite runs on a richer schema than it ships.
 - Tenant scoping is whole-path: every unique constraint and conflict target on a
   tenant-scoped table carries the tenant column, and every read path — not only
   `list()` — is interceptor-aware.
+- Rolling indexes out is part of the change: a bulk `CREATE INDEX` batch needs
+  the bounded, concurrent migrate path (#2362, Gotchas), or it takes production
+  down on deploy.
 
 ## Gotchas
 
@@ -230,7 +233,8 @@ production never gets: the suite runs on a richer schema than it ships.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check
-- **Retry logic is transient-only (#2366)**: `db.get()` and `db.upsert()` retry up to 4 times total (the initial try plus 3 retries, sleeping 250/500/1000 ms and 500/1000/2000 ms respectively), but `ErrorUtils.withRetry` first classifies the failure through its whole cause chain (`src/db-errors.ts`) and rethrows deterministic ones immediately. `@happyvertical/sql` wraps every driver error as `DatabaseError('Failed to upsert record into table', { …, originalError })` with the driver text stringified into `context.originalError`, so **never match on `error.message`** — use `classifyDatabaseError()` / `isUniqueViolationError()` / `isAbortedTransactionError()`. Constraint violations, invalid input syntax, missing tables and statements inside an aborted PostgreSQL transaction (`25P02`) fail fast; serialization failures, deadlocks, lock timeouts and dropped connections still retry. `kind: 'unknown'` means no opinion, and those keep the permissive default.
+- **PostgreSQL migrate batches are always time-bounded (#2362)**: `MigrationTracker.applyAll({ atomic: true })` emits `SET LOCAL lock_timeout`/`statement_timeout` before any DDL, so a batch blocked on one table cannot hold its earlier locks indefinitely. `postgresSafe: true` adds concurrent-index mode — non-index DDL commits atomically, then index DDL runs `CONCURRENTLY` on a session pinned via `db.acquireSession()` (a pooled `db.query` would not keep the `SET` and the DDL on one connection). That mode is deliberately **not atomic**: unfinished index migrations are recorded `failed`, not `running`, and their `error_message` carries a `[smrt: concurrent-index phase 1 committed]` marker so a reconciling re-run resumes at the index build instead of replaying committed DDL. INVALID indexes are found via `pg_index.indisvalid` (`pg_indexes` reports them as present) and dropped before rebuild. Operational detail: `packages/cli/AGENTS.md`.
+- **Retry logic is transient-only (#2366)**: `db.get()`/`db.upsert()` retry 4× total (initial + 3), but `ErrorUtils.withRetry` classifies via the cause chain (`src/db-errors.ts`) and rethrows deterministic failures immediately — constraint violations, bad input syntax, missing tables, aborted PG tx (`25P02`). `@happyvertical/sql` stringifies the driver text into `context.originalError`, so **never match `error.message`**; use `classifyDatabaseError()` / `isUniqueViolationError()` / `isAbortedTransactionError()`.
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
 - **Table verification cache**: `isTableVerified(dbUrl, tableName)` avoids redundant `tableExists()` calls
