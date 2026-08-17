@@ -226,7 +226,37 @@ columns, when only the index *name* is shortened. And an index fix that ships
 without a bounded-timeout, `CONCURRENTLY`-capable migrate path can take
 production down on rollout (#2362).
 
-### 13. The generator owns the index for its own default ordering (#2363)
+### 13. Composite indexes are declared, not inferred (#2357)
+
+The generated set only covers foreign keys, unique/conflict columns, the STI
+discriminator, reference columns (#2359), the default list ordering (rule 14
+below), and single columns opted in with `@field({ indexed: true })`. A list
+workload's access path is composite, so declare it:
+
+```ts
+@smrt({
+  indexes: [
+    { name: 'contents_tenant_id_publish_date_idx',
+      columns: ['tenantId', 'publish_date'] },
+  ],
+})
+```
+
+`columns` takes field names or column names in access-path order — filter
+columns first, sort column last. Declare columns, not a direction: PostgreSQL
+scans a btree either way, so an ascending index also serves the matching
+`ORDER BY ... DESC` as an ordered scan with no Sort node. `unique` and `where`
+(partial index) are honoured.
+
+`appendDeclaredIndexes()` runs first on all five entry points, ahead of
+`ensureDefaultListOrderingIndex()` and `ensureReferenceColumnIndexes()`, so a
+declared composite leading with the tenant column replaces the automatic
+standalone `tenant_id` index rather than duplicating it. Unknown columns,
+malformed entries, and a name collision with a different index all fail
+generation — a silently dropped index only surfaces later as a production
+slowdown. Rule 8 above is why this works at runtime at all.
+
+### 14. The generator owns the index for its own default ordering (#2363)
 
 Every generated list surface — REST, MCP, the SvelteKit list route — pages with
 `ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`, #2367), and

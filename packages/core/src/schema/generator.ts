@@ -23,6 +23,7 @@ import {
 } from './sql-identifiers.js';
 import type {
   ColumnDefinition,
+  DeclaredIndexDefinition,
   ForeignKeyDefinition,
   IndexDefinition,
   SchemaDefinition,
@@ -57,6 +58,15 @@ interface RegistryField {
 type SchemaGeneratorConfig = {
   conflictColumns?: string[];
   idType?: 'uuid' | 'text';
+  /**
+   * `@smrt({ indexes: [...] })` declarations (#2357).
+   *
+   * The manifest paths receive the whole `decoratorConfig`, so this arrives for
+   * free there. The runtime paths rebuild a narrow config bag by hand
+   * (`schema/utils.ts`, `testing/database.ts`) and must thread it explicitly —
+   * omitting it is what made the option unreachable at runtime.
+   */
+  indexes?: DeclaredIndexDefinition[];
   registry?: {
     getConfig?(className: string): { idType?: 'uuid' | 'text' };
     getDescendants(baseClassName: string): string[];
@@ -375,6 +385,180 @@ export class SchemaGenerator {
         !index.jsonPath &&
         (index.columns?.length ?? 0) >= leadingColumns.length &&
         leadingColumns.every((column, i) => index.columns[i] === column),
+    );
+  }
+
+  /**
+   * Append `@smrt({ indexes: [...] })` declarations to a generated index set
+   * (#2357).
+   *
+   * Shared by every schema path — build-time AST, runtime registry CTI/STI, and
+   * manifest CTI/STI — so one declaration behaves identically however the schema
+   * was derived. Call it *first*, ahead of
+   * {@link ensureDefaultListOrderingIndex} (#2363) and
+   * {@link ensureReferenceColumnIndexes} (#2359): a declared composite leading
+   * with `tenant_id`, or with the ordering columns, is exactly what those
+   * helpers' "already leading" check is meant to defer to, and appending
+   * afterwards would leave the table with a redundant standalone index.
+   *
+   * Nothing is dropped quietly. A column that resolves to no column on the
+   * table, a malformed entry, and a name collision with a different index are
+   * all hard errors — a silently missing index is a production performance bug
+   * that surfaces only under load.
+   *
+   * @param indexes - Generated index set, appended in place
+   * @param declared - The object's `indexes` config, from any config source
+   * @param columns - Emitted columns, keyed by column name
+   * @param tableName - Table the indexes belong to (for error messages)
+   */
+  private appendDeclaredIndexes(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+    }>,
+    declared: unknown,
+    columns: Record<string, unknown>,
+    tableName: string,
+  ): void {
+    if (declared === undefined || declared === null) return;
+    if (!Array.isArray(declared)) {
+      throw new Error(
+        `@smrt({ indexes }) on "${tableName}" must be an array of index declarations.`,
+      );
+    }
+
+    for (const entry of declared) {
+      const spec = this.validateDeclaredIndex(entry, tableName);
+
+      const mappedColumns = spec.columns.map((column) =>
+        this.resolveDeclaredIndexColumn(column, columns),
+      );
+      // `Object.hasOwn`, not `in`: the column map is a plain object, so `in`
+      // also answers true for `toString`, `constructor` and every other
+      // `Object.prototype` key — a declaration naming one would sail past this
+      // check and emit an index on a column that does not exist.
+      const unknownColumns = mappedColumns.filter(
+        (column) => !Object.hasOwn(columns, column),
+      );
+      if (unknownColumns.length > 0) {
+        throw new Error(
+          `Declared index "${spec.name}" on "${tableName}" references unknown column(s): ` +
+            `${unknownColumns.join(', ')}. Declared index columns must name a field or ` +
+            `column on the object.`,
+        );
+      }
+
+      // No `description`: ManifestIndexDefinition has no such field, and this
+      // helper feeds the manifest paths as well as the structured ones.
+      const index = {
+        name: spec.name,
+        columns: mappedColumns,
+        ...(spec.unique === true ? { unique: true } : {}),
+        ...(spec.where !== undefined ? { where: spec.where } : {}),
+      };
+
+      const existing = indexes.find((other) => other.name === index.name);
+      if (existing) {
+        // An identical re-declaration is harmless (the same object can be
+        // generated through more than one path). A *different* index under a
+        // name already taken is not: one of the two would vanish.
+        if (this.sameIndexTarget(existing, index)) continue;
+        throw new Error(
+          `Declared index "${index.name}" on "${tableName}" collides with a different index ` +
+            `of the same name. Rename the declared index.`,
+        );
+      }
+
+      indexes.push(index);
+    }
+  }
+
+  /** Narrow one raw `indexes[]` entry, rejecting anything unusable. */
+  private validateDeclaredIndex(
+    entry: unknown,
+    tableName: string,
+  ): DeclaredIndexDefinition {
+    const spec = entry as Partial<DeclaredIndexDefinition> | null | undefined;
+    const describe = () => {
+      try {
+        return JSON.stringify(entry) ?? String(entry);
+      } catch {
+        return String(entry);
+      }
+    };
+
+    if (typeof spec !== 'object' || spec === null || Array.isArray(spec)) {
+      throw new Error(
+        `Declared index on "${tableName}" must be an object: got ${describe()}.`,
+      );
+    }
+    if (typeof spec.name !== 'string' || spec.name.length === 0) {
+      throw new Error(
+        `Declared index on "${tableName}" needs a non-empty "name": got ${describe()}.`,
+      );
+    }
+    if (
+      !Array.isArray(spec.columns) ||
+      spec.columns.length === 0 ||
+      !spec.columns.every(
+        (column) => typeof column === 'string' && column.length > 0,
+      )
+    ) {
+      throw new Error(
+        `Declared index "${spec.name}" on "${tableName}" needs a non-empty "columns" array of field or column names.`,
+      );
+    }
+    if (spec.unique !== undefined && typeof spec.unique !== 'boolean') {
+      throw new Error(
+        `Declared index "${spec.name}" on "${tableName}" has a non-boolean "unique": got ${describe()}.`,
+      );
+    }
+    // An empty predicate would render `CREATE INDEX ... WHERE ;`, and treating
+    // it as "no predicate" would silently widen a partial index to a full one.
+    if (
+      spec.where !== undefined &&
+      (typeof spec.where !== 'string' || spec.where.trim().length === 0)
+    ) {
+      throw new Error(
+        `Declared index "${spec.name}" on "${tableName}" has an empty or non-string "where" predicate.`,
+      );
+    }
+
+    return spec as DeclaredIndexDefinition;
+  }
+
+  /**
+   * Resolve a declared index column to an emitted column name.
+   *
+   * Declarations name SMRT fields, but only the runtime/manifest paths
+   * snake_case them into columns — the build-time AST path keys columns by the
+   * field name itself. Prefer an exact column hit, then the snake_case form, and
+   * otherwise return the input unchanged so the caller reports it as unknown.
+   */
+  private resolveDeclaredIndexColumn(
+    name: string,
+    columns: Record<string, unknown>,
+  ): string {
+    // `Object.hasOwn` rather than `in` — see appendDeclaredIndexes: `in` would
+    // resolve `toString` to itself and let the caller's unknown-column check
+    // pass on a column that does not exist.
+    if (Object.hasOwn(columns, name)) return name;
+    const snakeCased = this.toSnakeCase(name);
+    return Object.hasOwn(columns, snakeCased) ? snakeCased : name;
+  }
+
+  /** Whether two index definitions describe the same database object. */
+  private sameIndexTarget(
+    a: { columns: string[]; unique?: boolean; where?: string },
+    b: { columns: string[]; unique?: boolean; where?: string },
+  ): boolean {
+    return (
+      a.columns.length === b.columns.length &&
+      a.columns.every((column, i) => column === b.columns[i]) &&
+      (a.unique ?? false) === (b.unique ?? false) &&
+      (a.where ?? null) === (b.where ?? null)
     );
   }
 
@@ -710,6 +894,15 @@ export class SchemaGenerator {
         });
       }
     }
+
+    // Declared indexes (#2357), before generateSchema()'s ordering and
+    // reference-column passes (#2363 / #2359).
+    this.appendDeclaredIndexes(
+      indexes,
+      objectDef.decoratorConfig?.indexes,
+      columns,
+      tableName,
+    );
 
     return indexes;
   }
@@ -1048,6 +1241,9 @@ export class SchemaGenerator {
       });
     }
 
+    // Indexes declared with `@smrt({ indexes: [...] })` (#2357).
+    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
+
     // The default list page orders by created_at (#2363) — before the
     // reference-column pass so the composite suppresses a standalone tenant
     // index.
@@ -1379,6 +1575,11 @@ export class SchemaGenerator {
       });
     }
 
+    // Indexes declared on the STI base with `@smrt({ indexes: [...] })`
+    // (#2357). Descendants share one table, so the base owns its access paths
+    // and a declaration there applies to every subtype's reads.
+    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
+
     // The default list page orders by created_at (#2363) — before the
     // reference-column pass so the composite suppresses a standalone tenant
     // index.
@@ -1618,6 +1819,9 @@ export class SchemaGenerator {
       });
     }
 
+    // Indexes declared on the STI base with `@smrt({ indexes: [...] })` (#2357).
+    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
+
     // The default list page orders by created_at (#2363) — before the
     // reference-column pass so the composite suppresses a standalone tenant
     // index.
@@ -1804,6 +2008,9 @@ export class SchemaGenerator {
         columns: [colName],
       });
     }
+
+    // Indexes declared with `@smrt({ indexes: [...] })` (#2357).
+    this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
 
     // The default list page orders by created_at (#2363) — before the
     // reference-column pass so the composite suppresses a standalone tenant

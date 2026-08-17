@@ -131,17 +131,30 @@ function buildFixtureManifest(): SmartObjectManifest {
     ),
   );
 
-  // Tenant-scoped CTI whose custom conflict key already leads with
-  // (tenant_id, created_at): the default list-ordering composite is a prefix
-  // of an index that exists, so nothing extra is emitted (#2363). This is the
-  // suppression rule #2357's `@smrt({ indexes })` declarations will feed.
+  // Tenant-scoped CTI with two declared composites (#2357). One already leads
+  // with `(tenant_id, created_at)`, so the default list-ordering index is
+  // suppressed; the other sorts on a different column and therefore stands
+  // beside it — it cannot order the default page (#2363).
   add(
     objectDef(
       'ParityCovered',
-      { externalId: { type: 'text', required: true } },
+      {
+        externalId: { type: 'text', required: true },
+        publishDate: { type: 'datetime', _meta: { nullable: true } },
+        status: { type: 'text' },
+      },
       {
         tenantScoped: { mode: 'required' },
-        conflictColumns: ['tenant_id', 'created_at', 'external_id'],
+        indexes: [
+          {
+            name: 'parity_covereds_tenant_id_created_at_status_idx',
+            columns: ['tenantId', 'created_at', 'status'],
+          },
+          {
+            name: 'parity_covereds_tenant_id_publish_date_idx',
+            columns: ['tenantId', 'publishDate'],
+          },
+        ],
       },
     ),
   );
@@ -359,6 +372,10 @@ describe('schema path parity (#2359)', () => {
       const runtimeSchemaConfig = {
         conflictColumns: ObjectRegistry.getConflictColumns(name),
         idType: registered?.config.idType,
+        // Every option that affects schema must be threaded here as well as in
+        // `schema/utils.ts` and `testing/database.ts`; dropping one is exactly
+        // what made `indexes` unreachable at runtime (#2357, rule 8).
+        indexes: registered?.config.indexes,
         registry: ObjectRegistry,
       };
       const schema =
@@ -579,22 +596,31 @@ describe('schema path parity (#2359)', () => {
       expect(Boolean(slugLookup?.unique)).toBe(false);
     });
 
-    it('a declared composite that already leads with (tenant_id, created_at) suppresses the list-ordering index (#2363)', () => {
+    it('a declared composite leading with (tenant_id, created_at) suppresses the list-ordering index; one on another sort column does not (#2357/#2363)', () => {
       expect(names('parity_covereds')).toEqual([
         'parity_covereds_slug_context_idx',
+        'parity_covereds_tenant_id_created_at_status_idx',
+        'parity_covereds_tenant_id_publish_date_idx',
+      ]);
+      // No generated `parity_covereds_tenant_id_created_at_idx` — the declared
+      // three-column index has it as a prefix. And no standalone tenant index
+      // either: both declared composites lead with the tenant column.
+      expect(names('parity_covereds')).not.toContain(
         'parity_covereds_tenant_id_created_at_idx',
-      ]);
-      // The single index is the caller's UNIQUE conflict key over three
-      // columns, not a second one the generator appended.
-      const covering = idx('parity_covereds').find(
-        (i) => i.name === 'parity_covereds_tenant_id_created_at_idx',
       );
-      expect(covering?.unique).toBe(true);
-      expect(covering?.columns).toEqual([
-        'tenant_id',
-        'created_at',
-        'external_id',
-      ]);
+      expect(names('parity_covereds')).not.toContain(
+        'parity_covereds_tenant_id_idx',
+      );
+      expect(
+        idx('parity_covereds').find(
+          (i) => i.name === 'parity_covereds_tenant_id_created_at_status_idx',
+        )?.columns,
+      ).toEqual(['tenant_id', 'created_at', 'status']);
+      expect(
+        idx('parity_covereds').find(
+          (i) => i.name === 'parity_covereds_tenant_id_publish_date_idx',
+        )?.columns,
+      ).toEqual(['tenant_id', 'publish_date']);
     });
 
     it('junction-shaped conflict key: leading FK suppressed, trailing FK indexed', () => {

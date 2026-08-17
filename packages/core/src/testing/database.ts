@@ -345,9 +345,13 @@ export async function getTestDatabase(
 
     const fields = await ObjectRegistry.getAllFields(className);
     const strategy = ObjectRegistry.getTableStrategy(className);
+    // Mirrors `schema/utils.ts`: this bag is rebuilt by hand, so every `@smrt()`
+    // option the generator reads has to be listed or tests silently diverge
+    // from the production schema. `indexes` (#2357) was missing from both.
     const runtimeSchemaConfig = {
       conflictColumns: ObjectRegistry.getConflictColumns(className),
       idType: registered?.config.idType,
+      indexes: registered?.config.indexes,
       registry: ObjectRegistry,
     };
 
