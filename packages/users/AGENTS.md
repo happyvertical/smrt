@@ -299,8 +299,10 @@ the package root).
   the coordinator owns per database URL — `_smrt_backfills` initialization, the
   transaction, and the post-commit rebind — because one adapter multiplexes a
   single native connection and cannot safely overlap unrelated root
-  transactions; owner-authorized DuckDB callbacks use that same root-handle
-  serialization;
+  transactions. Never overlap two statements on one such handle, inside a
+  transaction or not: rebind and owner/email candidate reads are sequential,
+  never `Promise.all`. Owner-authorized DuckDB callbacks use that same
+  root-handle serialization;
   PostgreSQL deadlock and serialization errors use a bounded transaction retry.
   Newly provisioned Profiles use non-semantic per-profile slugs so equal IdP
   display names cannot trigger a natural-key upsert;

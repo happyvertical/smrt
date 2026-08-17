@@ -1,6 +1,9 @@
 import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
+import { createProfileFromOidc } from '../auth/index.js';
 import { coordinateOidcProvisioning } from '../auth/oidcProvisioningCoordinator';
+import { ProfileTypeCollection } from '../collections/ProfileTypeCollection.js';
+import { backfillProfileEmailKeys } from '../migrations/backfillProfileEmailKeys.js';
 
 type DatabaseInterface = Awaited<ReturnType<typeof getDatabase>>;
 
@@ -132,6 +135,82 @@ describe('coordinateOidcProvisioning shared-connection ordering', () => {
     } finally {
       releaseFirstTransaction.resolve();
       await Promise.allSettled([first, second]);
+      await db.close?.();
+    }
+  });
+
+  /**
+   * #2352: the ordering guard above only covers statements the coordinator
+   * itself owns. A single flow can just as easily overlap its own statements
+   * — the post-commit rebind used `Promise.all` over two or three primary-key
+   * reads — and on one native connection that is the same defect. Counting
+   * in-flight statements catches both without racing: an overlap is a
+   * structural property of the call, not a timing accident.
+   */
+  it('never overlaps two statements on one shared DuckDB connection during concurrent provisioning', async () => {
+    const db = (await getDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+    })) as DatabaseInterface;
+    await ProfileTypeCollection.create({ db });
+    await backfillProfileEmailKeys(db);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const overlapped: string[] = [];
+    const observe = (database: DatabaseInterface): DatabaseInterface =>
+      new Proxy(database, {
+        get(target, property, receiver) {
+          if (property === 'query') {
+            return async (sql: string, ...params: unknown[]) => {
+              inFlight += 1;
+              maxInFlight = Math.max(maxInFlight, inFlight);
+              if (inFlight > 1) {
+                overlapped.push(sql.replace(/\s+/gu, ' ').trim());
+              }
+              try {
+                return await target.query(sql, ...params);
+              } finally {
+                inFlight -= 1;
+              }
+            };
+          }
+          if (property === 'transaction') {
+            const transaction = target.transaction;
+            if (!transaction) return undefined;
+            return async <T>(
+              callback: (tx: DatabaseInterface) => Promise<T>,
+            ): Promise<T> =>
+              transaction.call(target, (tx) => callback(observe(tx)));
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as DatabaseInterface;
+
+    const sharedClaims = {
+      sub: 'overlap-guard-subject',
+      iss: 'https://auth.example.com',
+      email_verified: true,
+      name: 'Overlap Guard',
+    };
+    try {
+      await Promise.all([
+        createProfileFromOidc(
+          { ...sharedClaims, email: 'overlap-guard-first@example.com' },
+          'example',
+          { db: observe(db) },
+        ),
+        createProfileFromOidc(
+          { ...sharedClaims, email: 'overlap-guard-second@example.com' },
+          'example',
+          { db: observe(db) },
+        ),
+      ]);
+
+      expect(overlapped).toEqual([]);
+      expect(maxInFlight).toBe(1);
+    } finally {
       await db.close?.();
     }
   });
