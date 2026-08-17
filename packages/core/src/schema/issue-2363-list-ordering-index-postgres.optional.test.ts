@@ -137,20 +137,38 @@ describe.skipIf(!pgUrl)(
       }
 
       tenantIds = Array.from({ length: TENANTS }, () => randomUUID());
-      // One multi-row INSERT ... SELECT: 10k rows through the driver row by row
-      // would dominate the runtime of the lane for no extra signal.
+
+      // One multi-row INSERT ... SELECT unnest(): inserting 10k rows through
+      // the driver one at a time would dominate the lane's runtime for no
+      // extra signal. Ids come from `randomUUID()` rather than
+      // `gen_random_uuid()` so the test carries no `pgcrypto` dependency —
+      // that function only moved into core PostgreSQL in 13, and the lane's
+      // role may not be allowed to CREATE EXTENSION.
+      const ids: string[] = [];
+      const slugs: string[] = [];
+      const rowTenants: string[] = [];
+      const ages: number[] = [];
+      for (const tenantId of tenantIds) {
+        for (let n = 1; n <= ROWS_PER_TENANT; n += 1) {
+          ids.push(randomUUID());
+          slugs.push(`${tenantId}-${n}`);
+          rowTenants.push(tenantId);
+          ages.push(n);
+        }
+      }
+
       await db.query(
         `INSERT INTO "${TABLE}" (id, slug, context, tenant_id, title, created_at, updated_at)
-       SELECT gen_random_uuid()::text,
-              t.tenant_id || '-' || g::text,
-              '',
-              t.tenant_id,
-              'row ' || g::text,
-              now() - (g || ' seconds')::interval,
-              now()
-       FROM unnest($1::text[]) AS t(tenant_id),
-            generate_series(1, ${ROWS_PER_TENANT}) AS g`,
-        [tenantIds],
+         SELECT r.id,
+                r.slug,
+                '',
+                r.tenant_id,
+                'row ' || r.age::text,
+                now() - make_interval(secs => r.age),
+                now()
+         FROM unnest($1::text[], $2::text[], $3::text[], $4::int[])
+              AS r(id, slug, tenant_id, age)`,
+        [ids, slugs, rowTenants, ages],
       );
       await db.query(`ANALYZE "${TABLE}"`);
     }, 120_000);
