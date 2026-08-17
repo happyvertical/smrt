@@ -7,6 +7,7 @@
 import type { DatabaseProvider } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SchemaGenerator } from '../../schema/generator.js';
 import type { SchemaDefinition, SchemaDiff } from '../../schema/types.js';
 import {
   getSQLFromDiff,
@@ -141,6 +142,50 @@ describe('SchemaComparer', () => {
       const indexChanges = diff.changes.filter((c) => c.type === 'add_index');
       expect(indexChanges).toHaveLength(1);
       expect(indexChanges[0].name).toBe('idx_users_email');
+    });
+
+    it('migrates a declared composite index onto an existing deployment (#2357)', async () => {
+      // A table that predates the `@smrt({ indexes: [...] })` declaration.
+      await db.query(
+        'CREATE TABLE posts (id TEXT PRIMARY KEY, tenant_id TEXT, publish_date TIMESTAMP);',
+      );
+
+      // Target schema comes from the generator, so this asserts the whole
+      // declaration → schema → migration path rather than a hand-written index.
+      const generated = new SchemaGenerator().generateSchemaFromRegistry(
+        'Post',
+        'posts',
+        new Map<string, { type: string }>([
+          ['tenantId', { type: 'text' }],
+          ['publish_date', { type: 'datetime' }],
+        ]) as never,
+        {
+          indexes: [
+            {
+              name: 'posts_tenant_id_publish_date_idx',
+              columns: ['tenantId', 'publish_date'],
+            },
+          ],
+        },
+      );
+
+      const diff = await comparer.compare({ posts: generated });
+
+      const add = diff.changes.find(
+        (c) =>
+          c.type === 'add_index' &&
+          c.name === 'posts_tenant_id_publish_date_idx',
+      );
+      expect(add).toBeDefined();
+      // And the emitted statement is executable against the live table.
+      expect(add?.sql).toBeTruthy();
+      await db.query(add?.sql as string);
+      const indexes = await db.query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts';",
+      );
+      expect(indexes.rows.map((row) => row.name)).toContain(
+        'posts_tenant_id_publish_date_idx',
+      );
     });
 
     it('should not report existing indexes as new', async () => {

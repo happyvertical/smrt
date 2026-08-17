@@ -98,7 +98,7 @@ Two persistence primitives every `SmrtObject`/`SmrtCollection` inherits — load
 
 ## @smrt() Decorator Options
 
-Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
+Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `indexes` (declared multi-column indexes, #2357 — see "Schema paths"), `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).
 
@@ -214,6 +214,10 @@ production never gets: the suite runs on a richer schema than it ships.
 
 - Change column/index emission on every shipping path, proven by a path-parity
   test (#2359 adds one). A "same as migrations" comment is a claim to check.
+- Declare composite indexes with `@smrt({ indexes: [{ name, columns, unique?,
+  where? }] })` — `columns` takes field or column names in access-path order
+  (filter first, sort last), unknown columns and name collisions are hard errors,
+  and one leading with `tenant_id` replaces the auto tenant index (#2357).
 - Every new query predicate ships with its index, or a reason it doesn't.
 - Numeric types, uuid casts, conflict targets, timestamps, migrations: run the
   `test:postgres` lane — SQLite affinity accepts what PostgreSQL rejects.
