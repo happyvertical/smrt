@@ -209,8 +209,8 @@ export interface CrossPackageRefOptions
  * Accepted target forms:
  * - `'Target'` — class name string; resolves lazily, immune to import cycles.
  * - `Target` — class constructor.
- * - `() => Target` — forward-reference thunk (inline or a named `const`),
- *   invoked here to read the name.
+ * - `() => Target` — thunk (inline or a named `const`), invoked here to read
+ *   the name, so its target must already be initialized.
  *
  * A thunk's own `.name` is `''`, so reading `relatedClass.name` used to register
  * `related: ''` (issue #2379): the field kept `type: 'foreignKey'` but lost its
@@ -223,6 +223,10 @@ export interface CrossPackageRefOptions
  * point in the decorator lifecycle (after the class binding exists for legacy
  * decorators, and at `@smrt()` application time for standard decorators), so a
  * self-referential `() => Self` thunk resolves rather than hitting the TDZ.
+ * A thunk pointing at a class declared LATER in the same module is still in
+ * that class's temporal dead zone when the decorators of the earlier class run;
+ * that now fails loudly, naming the string form, instead of silently
+ * registering an empty target.
  */
 function resolveRelatedClassName(
   decoratorName: 'foreignKey' | 'oneToMany' | 'manyToMany',
@@ -354,13 +358,16 @@ export function field(
  * circular dependencies between packages.
  *
  * @param relatedClass - The target class constructor, its name as a string, or a
- *   `() => Target` forward-reference thunk (resolved at decoration time). Prefer
- *   the string form when the target is declared later or imported circularly —
- *   it never has to be evaluated.
+ *   `() => Target` thunk. A thunk is **invoked at decoration time**, so its
+ *   target must already be initialized: a class from an already-evaluated module
+ *   or the decorated class itself. Use the string form for a class declared
+ *   later in the same module or reached through an import cycle — it is never
+ *   evaluated, so it cannot hit the temporal dead zone.
  * @param options - Optional field constraints (required, nullable, etc.)
  * @returns A TypeScript property decorator
  * @throws Error when the target cannot be resolved to a class name (an empty
- *   string, a thunk that throws, or a thunk returning an anonymous value)
+ *   string, a thunk that throws — including on an uninitialized target — or a
+ *   thunk returning an anonymous value)
  *
  * @example
  * ```typescript
@@ -370,8 +377,12 @@ export function field(
  *   @foreignKey(Customer)
  *   customerId: string = '';
  *
- *   // Forward reference to a class declared later in the module
- *   @foreignKey(() => Invoice)
+ *   // Self-reference: the class binding exists when its decorators run
+ *   @foreignKey(() => Order)
+ *   parentOrderId: string = '';
+ *
+ *   // Declared later in this module — name string, never evaluated
+ *   @foreignKey('Invoice')
  *   invoiceId: string = '';
  * }
  *

@@ -165,6 +165,21 @@ describe('issue #2379: unresolvable relationship targets throw', () => {
     ).toThrow(/@foreignKey\('Target'\)/);
   });
 
+  it('throws when the thunk target is declared later and still in its TDZ', () => {
+    class TdzProbe {}
+
+    // The documented limitation of resolving at decoration time: a thunk
+    // pointing at a class declared later in the same module cannot resolve, so
+    // it fails loudly and names the string form rather than registering an
+    // empty target.
+    expect(() =>
+      foreignKey(() => DeclaredLater)(TdzProbe.prototype, 'targetId'),
+    ).toThrow(/TdzProbe\.targetId.*@foreignKey\('Target'\)/s);
+
+    class DeclaredLater extends SmrtObject {}
+    void DeclaredLater;
+  });
+
   it('throws when the thunk resolves to an anonymous value', () => {
     class ThunkAnonymousProbe {}
 

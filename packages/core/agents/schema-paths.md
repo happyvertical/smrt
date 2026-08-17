@@ -213,8 +213,9 @@ production slowdown. Rule 8 above is why this works at runtime at all.
 ### 14. Relationship targets resolve to a class name on both paths
 
 `@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
-`() => Target` thunk. The decorator resolves the thunk and throws when the
-target cannot be resolved (never `related: ''`); the scanner unwraps the same
-thunk from raw source (never `related: '() => Target'`). An unresolved target
-silently costs the relationship edge, `loadRelated()`, and the FK-derived index
-(#2379).
+`() => Target` thunk. The decorator invokes the thunk and throws when the target
+cannot be resolved (never `related: ''`); the scanner unwraps the same thunk
+from raw source (never `related: '() => Target'`). An unresolved target silently
+costs the relationship edge, `loadRelated()`, and the FK-derived index (#2379).
+A thunk resolves at decoration time, so a target declared later in the same
+module is still in its temporal dead zone — use the string form there.
