@@ -1794,6 +1794,33 @@ class Product extends SmrtObject {
 }
 ```
 
+A list workload usually needs more than one column: it filters on one or more
+columns and sorts on another, and only a composite index in that order serves it
+as an ordered scan. Declare those with `@smrt({ indexes })` (#2357):
+
+```typescript
+@smrt({
+  indexes: [
+    // Serves: WHERE tenant_id = ? AND ... ORDER BY publish_date DESC LIMIT 10
+    {
+      name: 'articles_tenant_id_publish_date_idx',
+      columns: ['tenantId', 'publish_date'],
+    },
+    // Partial + unique indexes are supported too.
+    { name: 'articles_active_sku_idx', columns: ['sku'], unique: true, where: 'archived = false' },
+  ],
+})
+class Article extends SmrtObject {}
+```
+
+`columns` accepts SMRT field names or column names, in index order — filter
+columns first, sort column last. Declare columns, not a direction: PostgreSQL
+scans a btree either way, so an ascending index also serves the matching
+`ORDER BY ... DESC` without a sort step. A column the object does not have, or a
+name that collides with a different generated index, fails schema generation
+rather than silently dropping the index. An index leading with the tenant column
+also stands in for the automatic `tenant_id` index.
+
 ### 5. Cache AI Responses
 
 For expensive AI operations, cache results in object properties:

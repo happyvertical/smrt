@@ -21,7 +21,10 @@ import type {
   SmrtVisibility,
   ValidationRule,
 } from '../scanner/types.js';
-import type { SchemaDefinition } from '../schema/types.js';
+import type {
+  DeclaredIndexDefinition,
+  SchemaDefinition,
+} from '../schema/types.js';
 
 /**
  * Type for any constructor function that extends SmrtObject.
@@ -317,6 +320,38 @@ export interface SmartObjectConfig {
    * ```
    */
   conflictColumns?: string[];
+
+  /**
+   * Extra indexes for this object's table (issue #2357).
+   *
+   * `@field({ indexed: true })` gives a single-column index and the generator
+   * auto-creates indexes for foreign keys, unique/conflict columns,
+   * `updated_at`, the STI discriminator and `tenant_id`. A list workload's
+   * access path is composite — filter column(s) first, sort column last — and
+   * nothing above can express it. Declared indexes are honoured on every schema
+   * path (build-time AST, runtime registry CTI/STI, manifest CTI/STI), so the
+   * same declaration behaves identically however the schema was derived.
+   *
+   * `columns` accepts SMRT field names or column names, in index order. Declare
+   * columns, not a direction: PostgreSQL scans a btree either way, so an
+   * ascending index also serves the matching `ORDER BY ... DESC` as an ordered
+   * scan without a sort step.
+   *
+   * @example
+   * ```typescript
+   * // Serves: WHERE tenant_id = ? ... ORDER BY publish_date DESC LIMIT 10
+   * @smrt({
+   *   indexes: [
+   *     {
+   *       name: 'contents_tenant_id_publish_date_idx',
+   *       columns: ['tenantId', 'publish_date'],
+   *     },
+   *   ],
+   * })
+   * class Content extends SmrtObject {}
+   * ```
+   */
+  indexes?: DeclaredIndexDefinition[];
 
   /**
    * Opt-in read-through cache for collection reads (issue #1498).
