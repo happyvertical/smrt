@@ -8,6 +8,11 @@ import {
   invalidateCollectionCache,
   resolveDbCacheKey,
 } from './collection-cache';
+import {
+  classifyDatabaseError,
+  classifyDialectMessage,
+  type DatabaseErrorClassification,
+} from './db-errors';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
@@ -1734,16 +1739,33 @@ export class SmrtObject extends SmrtClass {
    * 3. Assigns a UUID `id` if not already set
    * 4. Generates a `slug` via `getSlug()` if not already set
    * 5. Updates `updated_at` (and sets `created_at` on first save)
-   * 6. Upserts the row with automatic retry (3 attempts, 500 ms backoff)
+   * 6. Upserts the row, retrying only failures a later attempt could survive
    * 7. Executes `afterSave` interceptors
    * 8. Triggers embedding generation in the background if configured
    *
    * For STI classes, validates that `_meta_type` is present and correct
    * before writing to the database.
    *
+   * **Error contract (#2366).** The driver error is classified through its
+   * whole cause chain, because `@happyvertical/sql` wraps it as
+   * `DatabaseError('Failed to upsert record into table', …)` and the
+   * constraint wording never reaches the outer `message`. A deterministic
+   * failure — unique/not-null/foreign-key/check violation, invalid input
+   * syntax, missing table, or a statement issued inside an already-aborted
+   * PostgreSQL transaction (`25P02`) — is raised on the **first** attempt with
+   * no backoff, so the original cause survives instead of being replaced by
+   * `25P02` on a doomed retry inside a caller-managed transaction. Only
+   * transient failures (serialization failure, deadlock, lock timeout, dropped
+   * connection, `SQLITE_BUSY`) are retried: 3 attempts, 500 ms backoff.
+   *
    * @returns This instance after saving (enables chaining)
-   * @throws {ValidationError} If a required field is missing or a unique constraint is violated
-   * @throws {DatabaseError} If the table does not exist (`DB_SCHEMA_MISSING`) or the query fails
+   * @throws {ValidationError} `VALIDATION_UNIQUE_CONSTRAINT` on a unique or
+   *   primary-key violation, `VALIDATION_REQUIRED_FIELD` on a NOT NULL
+   *   violation — on every adapter, and never retried
+   * @throws {DatabaseError} If the table does not exist (`DB_SCHEMA_MISSING`),
+   *   or the query fails for any other reason (`DB_QUERY_FAILED`), including
+   *   foreign-key and check violations, whose original driver error is
+   *   preserved on `cause`
    * @throws {RuntimeError} For any other unexpected failure during save
    *
    * @example
@@ -1909,21 +1931,31 @@ export class SmrtObject extends SmrtClass {
               await this.db.upsert(this.tableName, upsertConflictColumns, data);
             }
           } catch (error) {
-            // Detect specific database error types. `@happyvertical/sql` does
-            // not normalize driver errors, so match SQLite, PostgreSQL and
-            // DuckDB constraint strings to preserve the advertised typed-error
-            // parity (#1378) across adapters.
+            // Detect specific database error types. `@happyvertical/sql` wraps
+            // every driver error as
+            // `DatabaseError('Failed to upsert record into table', { …,
+            // originalError })`, so the constraint wording never reaches
+            // `error.message`. Classify through the whole cause chain — driver
+            // codes first (SQLSTATE / SQLite result codes), dialect wording
+            // only as the DuckDB fallback — to restore the typed-error parity
+            // the docs promise (#1378, #2366).
             if (error instanceof Error) {
-              const kind = SmrtObject.classifyConstraintError(error.message);
-              if (kind === 'unique') {
-                const field = this.extractConstraintField(error.message);
+              const classification = classifyDatabaseError(error);
+              if (classification.kind === 'unique_violation') {
+                const field = this.extractConstraintFieldFromChain(
+                  error,
+                  classification,
+                );
                 throw ValidationError.uniqueConstraint(
                   field,
                   this.getFieldValue(field),
                 );
               }
-              if (kind === 'not_null') {
-                const field = this.extractConstraintField(error.message);
+              if (classification.kind === 'not_null_violation') {
+                const field = this.extractConstraintFieldFromChain(
+                  error,
+                  classification,
+                );
                 throw ValidationError.requiredField(field, className);
               }
               const operation =
@@ -2223,35 +2255,46 @@ export class SmrtObject extends SmrtClass {
       return null;
     }
 
-    // NOT NULL — checked first because DuckDB's "violates" wording would
-    // otherwise be misread as a unique violation below.
-    // SQLite/DuckDB: "NOT NULL constraint failed: t.col"
-    // PostgreSQL:    'null value in column "col" ... violates not-null constraint'
-    if (
-      /NOT NULL constraint failed/i.test(message) ||
-      /null value in column .* violates not-null/i.test(message)
-    ) {
-      return 'not_null';
-    }
-
-    // UNIQUE — match unique/primary-key wording specifically. Do NOT match a
-    // bare "Constraint Error ... violates", because DuckDB phrases foreign-key
-    // failures the same way ("Constraint Error: violates foreign key
-    // constraint"); a broad match would misreport an FK violation as a unique
-    // one. Unmatched constraint kinds (FK, CHECK) fall through to a generic
-    // DatabaseError, preserving the original error contract.
-    // SQLite:     "UNIQUE constraint failed: t.col"
-    // PostgreSQL: "duplicate key value violates unique constraint ..."
-    // DuckDB:     "Constraint Error: ... violates unique/primary key constraint"
-    if (
-      /UNIQUE constraint failed/i.test(message) ||
-      /violates unique constraint/i.test(message) ||
-      /violates primary key constraint/i.test(message)
-    ) {
-      return 'unique';
-    }
-
+    // Delegates to the shared dialect matcher in `db-errors` so the wording
+    // recognized here and by `classifyDatabaseError()` cannot drift apart
+    // (#2366). NOT NULL is matched before UNIQUE there, because DuckDB's
+    // "violates" phrasing would otherwise be misread as a unique violation,
+    // and foreign-key/check kinds deliberately map back to `null` so they keep
+    // falling through to a generic DatabaseError (#1578).
+    const kind = classifyDialectMessage(message);
+    if (kind === 'not_null_violation') return 'not_null';
+    if (kind === 'unique_violation') return 'unique';
     return null;
+  }
+
+  /**
+   * Recovers the offending column for a constraint violation, searching every
+   * message in the driver-error cause chain rather than only the outermost
+   * one (#2366).
+   *
+   * Prefers the column the driver named outright (`node-postgres` sets
+   * `error.column` on a `23502`), then falls back to parsing. The adapter's
+   * wrapper message ("Failed to upsert record into table") carries no column,
+   * and PostgreSQL puts a unique violation's column in the `DETAIL` line
+   * ("Key (sku)=(abc) already exists.") — reachable either as `error.detail`
+   * on the direct INSERT path or folded into `formatDbError`'s `detail=…`
+   * string on the upsert path. Returns `'unknown_field'` only when nothing in
+   * the chain names a column.
+   */
+  protected extractConstraintFieldFromChain(
+    error: Error,
+    classification: DatabaseErrorClassification,
+  ): string {
+    if (classification.column) {
+      return classification.column;
+    }
+    for (const message of [error.message, ...classification.driverMessages]) {
+      const field = this.extractConstraintField(message);
+      if (field !== 'unknown_field') {
+        return field;
+      }
+    }
+    return 'unknown_field';
   }
 
   /**
@@ -2289,15 +2332,19 @@ export class SmrtObject extends SmrtClass {
    * Hydrates this object from the database using its `id` property.
    *
    * Queries the database for a row matching `{ id: this._id }` and calls
-   * `loadDataFromDb()` if found. Uses a 3-attempt retry with 250 ms initial
-   * delay to handle transient failures.
+   * `loadDataFromDb()` if found. Transient failures get a 3-attempt retry with
+   * a 250 ms initial delay; deterministic ones do not. A malformed identifier
+   * (PostgreSQL `22P02 invalid_text_representation` on a `uuid` column) is a
+   * deterministic failure, so it now raises on the first attempt instead of
+   * spending three retries re-submitting the same bad literal (#2366).
    *
    * Called automatically by `initialize()` when `options.id` is provided.
    * Typically you do not need to call this directly.
    *
    * @returns Promise that resolves when loading is complete (no-op if not found)
    * @throws {ValidationError} If `this._id` is not set
-   * @throws {DatabaseError} If the query fails after all retries
+   * @throws {DatabaseError} If the query fails; the driver error is preserved
+   *   on `cause`
    *
    * @example
    * ```typescript
