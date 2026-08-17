@@ -1,4 +1,7 @@
-import { ValidationError } from '@happyvertical/smrt-core';
+import {
+  isAbortedTransactionError,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import {
   BackfillTableUnavailableError,
   BackfillTracker,
@@ -142,22 +145,21 @@ async function withProvisioningLocks<T>(
   return acquire(0);
 }
 
-/** Detect an adapter error caused by an aborted transaction. */
+/**
+ * Detect an adapter error caused by an aborted transaction.
+ *
+ * Reduced to the framework contract in #2366. The heuristic this replaced
+ * matched a bare `/transaction.*aborted/` against every message in the chain,
+ * which would misclassify a genuine foreign-key or check violation whose text
+ * happened to mention a transaction. Core now recognizes PostgreSQL's
+ * `25P02 in_failed_sql_transaction` from the driver's own SQLSTATE, whichever
+ * layer wrapped it.
+ *
+ * Kept as a named export because it is part of this package's provisioning
+ * API surface; the body is now a single delegation.
+ */
 export function isOidcAbortedTransactionError(error: unknown): boolean {
-  const seen = new Set<unknown>();
-  let current: unknown = error;
-  while (current instanceof Error && !seen.has(current)) {
-    seen.add(current);
-    if (
-      /current transaction is aborted|transaction.*aborted/iu.test(
-        current.message,
-      )
-    ) {
-      return true;
-    }
-    current = (current as { cause?: unknown }).cause;
-  }
-  return false;
+  return isAbortedTransactionError(error);
 }
 
 export interface OidcProvisioningRaceClassifierOptions {

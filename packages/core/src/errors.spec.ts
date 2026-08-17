@@ -154,6 +154,94 @@ describe('SMRT Error System', () => {
       expect(ErrorUtils.isRetryable(new Error('Invalid input'))).toBe(false);
     });
 
+    describe('deterministic database failures are never retried (#2366)', () => {
+      // `@happyvertical/sql` rethrows every driver error as
+      // `DatabaseError('Failed to upsert record into table', { …,
+      // originalError })`, where `originalError` is a formatted string. The
+      // wrapper's own message names no constraint, which is why matching on
+      // `error.message` let a unique violation burn the full backoff.
+      function wrappedDriverError(originalError: string): Error {
+        return Object.assign(new Error('Failed to upsert record into table'), {
+          code: 'DATABASE_ERROR',
+          context: { originalError },
+        });
+      }
+
+      it('rethrows a wrapped unique violation on the first attempt', async () => {
+        let attempts = 0;
+        const started = Date.now();
+
+        await expect(
+          ErrorUtils.withRetry(
+            async () => {
+              attempts++;
+              throw wrappedDriverError(
+                'duplicate key value violates unique constraint "widgets_sku_key", code=23505',
+              );
+            },
+            3,
+            500,
+          ),
+        ).rejects.toThrow('Failed to upsert record into table');
+
+        expect(attempts).toBe(1);
+        expect(Date.now() - started).toBeLessThan(500);
+      });
+
+      it('rethrows inside an aborted PostgreSQL transaction on the first attempt', async () => {
+        // Retrying here is what replaced the real cause with `25P02` and
+        // forced consumers to write their own aborted-transaction heuristics.
+        let attempts = 0;
+        await expect(
+          ErrorUtils.withRetry(
+            async () => {
+              attempts++;
+              throw wrappedDriverError(
+                'current transaction is aborted, commands ignored until end of transaction block, code=25P02',
+              );
+            },
+            3,
+            500,
+          ),
+        ).rejects.toThrow();
+        expect(attempts).toBe(1);
+      });
+
+      it('still retries a transient serialization failure', async () => {
+        let attempts = 0;
+        const result = await ErrorUtils.withRetry(
+          async () => {
+            attempts++;
+            if (attempts < 3) {
+              throw wrappedDriverError(
+                'could not serialize access due to concurrent update, code=40001',
+              );
+            }
+            return 'committed';
+          },
+          3,
+          1,
+        );
+        expect(result).toBe('committed');
+        expect(attempts).toBe(3);
+      });
+
+      it('classifies wrapped database errors through isRetryable', () => {
+        expect(
+          ErrorUtils.isRetryable(
+            wrappedDriverError('deadlock detected, code=40P01'),
+          ),
+        ).toBe(true);
+        expect(
+          ErrorUtils.isRetryable(
+            wrappedDriverError(
+              'null value in column "name" violates not-null constraint, code=23502',
+            ),
+          ),
+        ).toBe(false);
+      });
+    });
+
     it('should sanitize errors', () => {
       const error = DatabaseError.connectionFailed(
         'postgres://user:password123@host/db',
