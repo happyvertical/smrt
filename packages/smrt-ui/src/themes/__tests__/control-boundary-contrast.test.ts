@@ -102,12 +102,21 @@ describe('control boundaries clear the 3:1 non-text floor (#2322)', () => {
 
         const failures: string[] = [];
         for (const surfaceName of SURFACES) {
+          // Assert each parse BEFORE it is used as the next one's backdrop.
+          // Folding these together would let an unparseable surface reach
+          // `flatten` as a null backdrop, and the test would die on a
+          // TypeError instead of naming the token that could not be read.
           const surface = flatten(palette[surfaceName] as string, page as Rgb);
+          expect(
+            surface,
+            `${theme.id} ${scheme} ${surfaceName} must be parseable`,
+          ).not.toBeNull();
+
           const outline = flatten(palette.outline, surface as Rgb);
           expect(
-            surface && outline,
-            `${theme.id} ${scheme} ${surfaceName} must be parseable`,
-          ).toBeTruthy();
+            outline,
+            `${theme.id} ${scheme} outline must be parseable`,
+          ).not.toBeNull();
 
           const ratio = contrast(outline as Rgb, surface as Rgb);
           if (ratio < 3) failures.push(`${surfaceName} ${ratio.toFixed(2)}:1`);
