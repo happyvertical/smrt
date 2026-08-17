@@ -564,3 +564,71 @@ describe('SchemaGenerator.generateSQL / formatDefaultValue', () => {
     expect(sql).toContain('"email" TEXT NOT NULL UNIQUE');
   });
 });
+
+describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
+  it('indexes a tenancy-injected tenant_id column', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchema(
+      objectDef('Note', {
+        tenantId: {
+          type: 'text',
+          _meta: { __tenancy: { isTenantIdField: true } },
+        },
+        title: { type: 'text' },
+      }),
+    );
+
+    // Derive the tenant column rather than assuming its spelling: the
+    // build-time path keeps the field name, the registry path snake_cases it.
+    const tenantColumn = Object.entries(schema.columns).find(
+      ([, column]) => column.referenceKind === 'tenantId',
+    )?.[0];
+    expect(tenantColumn).toBeDefined();
+    expect(
+      schema.indexes.some((index) => index.columns[0] === tenantColumn),
+    ).toBe(true);
+  });
+
+  it('adds nothing when the object is not tenant-scoped', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchema(
+      objectDef('Plain', { title: { type: 'text' } }),
+    );
+
+    expect(
+      Object.values(schema.columns).some(
+        (column) => column.referenceKind === 'tenantId',
+      ),
+    ).toBe(false);
+    expect(schema.indexes.some((index) => /tenant/i.test(index.name))).toBe(
+      false,
+    );
+  });
+
+  it('does not duplicate when an index already leads with tenant_id', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchema(
+      objectDef(
+        'Scoped',
+        {
+          tenantId: {
+            type: 'text',
+            _meta: { __tenancy: { isTenantIdField: true } },
+          },
+          externalId: { type: 'text' },
+        },
+        // conflictColumns produce a unique index leading on tenant_id, which
+        // already serves tenant-scoped lookups.
+        { conflictColumns: ['tenantId', 'externalId'] },
+      ),
+    );
+
+    const tenantColumn = Object.entries(schema.columns).find(
+      ([, column]) => column.referenceKind === 'tenantId',
+    )?.[0];
+    const leading = schema.indexes.filter(
+      (index) => index.columns[0] === tenantColumn,
+    );
+    expect(leading.length).toBe(1);
+  });
+});
