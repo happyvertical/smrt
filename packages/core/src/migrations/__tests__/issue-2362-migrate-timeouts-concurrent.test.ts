@@ -241,6 +241,23 @@ describe('atomic PostgreSQL migrations are bounded by timeouts (issue #2362)', (
     ).toBe(false);
   });
 
+  it('falls each timeout back to its own default, never the other one', async () => {
+    // A bad lock_timeout must not inherit the statement-timeout default:
+    // silently widening a 30s lock bound to 60s is exactly the unbounded-wait
+    // problem this issue is about, in miniature.
+    const tracker = new MigrationTracker({
+      db: fake.db,
+      lockTimeout: Number.NaN,
+      statementTimeout: Number.POSITIVE_INFINITY,
+    });
+
+    await tracker.applyAll([addColumn], { atomic: true });
+
+    const inTx = fake.sqlIn('transaction');
+    expect(inTx[0]).toBe(`SET LOCAL lock_timeout = '30000ms'`);
+    expect(inTx[1]).toBe(`SET LOCAL statement_timeout = '60000ms'`);
+  });
+
   it('applies the timeouts even without concurrent-index mode', async () => {
     // Regression guard for the original bug: the timeouts were only reached
     // on the non-atomic `postgresSafe` path, which production never took.
@@ -423,6 +440,94 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     expect(interimWrite).toBeLessThan(buildAt);
   });
 
+  it('resumes at the index phase without re-running committed non-index DDL', async () => {
+    // A definition may mix transaction-safe DDL with index DDL — a
+    // `create_table_*` migration always does. The differ emits
+    // `ALTER TABLE … ADD COLUMN` without `IF NOT EXISTS`, so re-running the
+    // committed half on retry would fail with "column already exists" forever
+    // and never reach the index build the retry existed for.
+    const mixed = definition('add_table_and_index_jobs', [
+      'ALTER TABLE "jobs" ADD COLUMN "status" TEXT',
+      'CREATE INDEX IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    ]);
+
+    const first = createFakeDb({
+      failOn: [
+        {
+          match: 'jobs_status_idx',
+          message: 'canceling statement due to lock timeout',
+        },
+      ],
+    });
+    const firstRun = await new MigrationTracker({ db: first.db }).applyAll(
+      [mixed],
+      { atomic: true, postgresSafe: true },
+    );
+
+    expect(firstRun[0].success).toBe(false);
+    const stranded = first.rows.get('add_table_and_index_jobs');
+    expect(stranded?.status).toBe('failed');
+    expect(
+      first.sqlIn('transaction').some((sql) => sql.includes('ADD COLUMN')),
+    ).toBe(true);
+
+    // Second run: the tracker finds the committed interim record. Seed a fresh
+    // fake with it, then replay the same definition.
+    const second = createFakeDb();
+    second.rows.set('add_table_and_index_jobs', {
+      ...stranded,
+      // The interim marker the resume check reads.
+      status: 'failed',
+      error_message: stranded?.error_message,
+    });
+
+    const secondRun = await new MigrationTracker({ db: second.db }).applyAll(
+      [mixed],
+      { atomic: true, postgresSafe: true, reconcile: true },
+    );
+
+    expect(secondRun[0].success).toBe(true);
+    // The already-committed column DDL must NOT run again…
+    expect(
+      second.sqlIn('transaction').some((sql) => sql.includes('ADD COLUMN')),
+    ).toBe(false);
+    // …but the index build it was retrying for must.
+    expect(second.sqlIn('session')).toContain(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    );
+    expect(second.rows.get('add_table_and_index_jobs')?.status).toBe(
+      'completed',
+    );
+  });
+
+  it('re-runs everything when the definition itself changed', async () => {
+    // A different checksum means the interim marker describes different SQL,
+    // so resuming would skip statements that never ran.
+    const fake = createFakeDb();
+    fake.rows.set('add_index_jobs_status_idx', {
+      id: 'seeded',
+      name: 'add_index_jobs_status_idx',
+      checksum: 'a-different-definition',
+      status: 'failed',
+      error_message:
+        '[smrt: concurrent-index phase 1 committed] Concurrent index build pending.',
+      attempts: 1,
+      applied_at: new Date().toISOString(),
+      is_reversible: 0,
+      batch: 1,
+    });
+
+    const results = await new MigrationTracker({ db: fake.db }).applyAll(
+      [addIndex],
+      { atomic: true, postgresSafe: true, reconcile: true },
+    );
+
+    expect(results[0].success).toBe(true);
+    expect(fake.sqlIn('session')).toContain(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    );
+  });
+
   it('records a failed index build as failed so the next run retries it', async () => {
     const fake = createFakeDb({
       failOn: [
@@ -508,6 +613,23 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
     );
     expect(dropAt).toBeGreaterThanOrEqual(0);
     expect(createAt).toBeGreaterThan(dropAt);
+  });
+
+  it('scopes the catalog read to the session search path', async () => {
+    // Migration DDL names indexes unqualified, and so does the repair drop.
+    // Scanning every schema would let an unrelated invalid index of the same
+    // name in another schema trigger a drop that resolves to a different
+    // object.
+    const fake = createFakeDb({ invalidIndexes: ['jobs_status_idx'] });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await tracker.applyAll([addIndex], { atomic: true, postgresSafe: true });
+
+    const catalogRead = fake.queries.find((entry) =>
+      entry.sql.includes('pg_index'),
+    );
+    expect(catalogRead?.sql).toContain('current_schemas(false)');
+    expect(catalogRead?.sql).not.toContain("NOT IN ('pg_catalog'");
   });
 
   it('leaves healthy indexes alone', async () => {

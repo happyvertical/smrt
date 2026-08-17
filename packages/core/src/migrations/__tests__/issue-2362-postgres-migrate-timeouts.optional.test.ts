@@ -243,5 +243,57 @@ describe.skipIf(!pgUrl)(
       expect(results[0].success).toBe(true);
       expect(await indexIsValid(invalidIndex)).toBe(true);
     }, 120_000);
+
+    it('retries a failed index build without re-running its committed column DDL', async () => {
+      // The oscillation this guards against: the batch's ALTER TABLE commits,
+      // the index build then fails, and a naive retry re-runs the ALTER —
+      // which PostgreSQL rejects with "column already exists", so the retry
+      // never reaches the index it existed to build.
+      const name = `i2362_resume_${suffix}`;
+      const indexName = `i2362_resume_idx_${suffix}`;
+
+      // The previous test leaves a UNIQUE index on `status`; drop it so this
+      // test controls the uniqueness it is about to violate on purpose.
+      await adminDb.query(`DROP INDEX IF EXISTS "i2362_invalid_idx_${suffix}"`);
+
+      // Force the index build to fail: duplicate values under a UNIQUE index.
+      await adminDb.query(
+        `INSERT INTO "${TABLE}" (id, status, run_at) VALUES ('r1', 'resume', '2026-03-01'), ('r2', 'resume', '2026-03-02')`,
+      );
+
+      const mixed = definition(name, [
+        `ALTER TABLE "${TABLE}" ADD COLUMN "resume_probe" TEXT`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "${indexName}" ON "${TABLE}" ("status")`,
+      ]);
+
+      const first = await new MigrationTracker({ db: migrateDb }).applyAll(
+        [mixed],
+        { atomic: true, postgresSafe: true, reconcile: true },
+      );
+
+      expect(first[0].success).toBe(false);
+      expect(await migrationStatus(name)).toBe('failed');
+      // The column half committed even though the index half failed.
+      const columns = await adminDb.query(
+        `SELECT column_name FROM information_schema.columns
+          WHERE table_name = $1 AND column_name = 'resume_probe'`,
+        TABLE,
+      );
+      expect(columns.rows).toHaveLength(1);
+
+      // Make the index buildable, then re-run the identical definition.
+      await adminDb.query(`DELETE FROM "${TABLE}" WHERE id = 'r2'`);
+
+      const second = await new MigrationTracker({ db: migrateDb }).applyAll(
+        [mixed],
+        { atomic: true, postgresSafe: true, reconcile: true },
+      );
+
+      // Without the resume marker this fails with 42701 "column already exists".
+      expect(second.map((result) => result.error).filter(Boolean)).toEqual([]);
+      expect(second[0].success).toBe(true);
+      expect(await migrationStatus(name)).toBe('completed');
+      expect(await indexIsValid(indexName)).toBe(true);
+    }, 120_000);
   },
 );

@@ -51,7 +51,10 @@ after that commit. This is the mode for large index rollouts.
 
 - **Concurrent mode is not atomic.** Committed column/table changes survive a
   later index failure; unfinished index migrations are recorded `failed`, and
-  `db:migrate` (which reconciles) retries them on the next run.
+  `db:migrate` (which reconciles) retries them on the next run. The retry
+  resumes at the index build — their `error_message` carries a
+  `[smrt: concurrent-index phase 1 committed]` marker, so the non-index
+  statements that already committed are not re-run.
 - INVALID indexes — the stump a cancelled or timed-out
   `CREATE INDEX CONCURRENTLY` leaves, which `pg_indexes` still reports as
   present — are detected via `pg_index.indisvalid` and dropped before the

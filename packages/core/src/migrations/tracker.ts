@@ -131,18 +131,35 @@ export function extractCreatedIndexName(sql: string): string | null {
 }
 
 /**
+ * Coerce a caller-supplied timeout to a usable millisecond count.
+ *
+ * Applied once, in the constructor, so every later read of
+ * `this.options.lockTimeout` / `.statementTimeout` is already finite and
+ * non-negative. Each timeout falls back to *its own* default — a bad
+ * `lockTimeout` must not silently inherit the (much larger) statement-timeout
+ * default and weaken the lock bound it was meant to impose.
+ */
+function resolveTimeoutOption(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : fallback;
+}
+
+/**
  * Render a millisecond timeout as a PostgreSQL interval literal.
  *
  * PostgreSQL reads `lock_timeout`/`statement_timeout` as milliseconds when
  * given a bare number, but the explicit `ms` unit keeps the emitted SQL
  * self-documenting in migration logs. `0` disables the timeout, which is
  * PostgreSQL's own semantic and therefore preserved verbatim.
+ *
+ * Input is already normalized by {@link resolveTimeoutOption}.
  */
 function formatPostgresTimeout(milliseconds: number): string {
-  const safe = Number.isFinite(milliseconds)
-    ? Math.max(0, Math.trunc(milliseconds))
-    : DEFAULT_OPTIONS.statementTimeout;
-  return `${safe}ms`;
+  return `${Math.max(0, Math.trunc(milliseconds))}ms`;
 }
 
 /**
@@ -186,11 +203,23 @@ export function parsePostgresTimeoutMs(
 }
 
 /**
+ * Prefix stamped on the `error_message` of every concurrent-index migration
+ * whose transactional half has already committed.
+ *
+ * This is the resume marker: it is the only durable record that phase 1's
+ * statements ran, so a retry can skip straight to the index build. It must
+ * therefore be carried by *both* the interim write at the end of phase 1 and
+ * every failure recorded during phase 2 — a lock timeout on the index build
+ * leaves the non-index DDL committed just as surely as a crash does.
+ */
+const CONCURRENT_INDEX_PHASE1_MARKER =
+  '[smrt: concurrent-index phase 1 committed]';
+
+/**
  * Interim `error_message` for a migration whose transactional half has
  * committed but whose `CONCURRENTLY` index build has not run yet.
  */
-const CONCURRENT_INDEX_PENDING_MESSAGE =
-  'Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.';
+const CONCURRENT_INDEX_PENDING_MESSAGE = `${CONCURRENT_INDEX_PHASE1_MARKER} Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.`;
 
 /**
  * Statements split out of the atomic batch for PostgreSQL concurrent-index
@@ -255,9 +284,14 @@ export class MigrationTracker {
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
     this.options = {
-      lockTimeout: options.lockTimeout ?? DEFAULT_OPTIONS.lockTimeout,
-      statementTimeout:
-        options.statementTimeout ?? DEFAULT_OPTIONS.statementTimeout,
+      lockTimeout: resolveTimeoutOption(
+        options.lockTimeout,
+        DEFAULT_OPTIONS.lockTimeout,
+      ),
+      statementTimeout: resolveTimeoutOption(
+        options.statementTimeout,
+        DEFAULT_OPTIONS.statementTimeout,
+      ),
       useConcurrentIndexes:
         options.useConcurrentIndexes ?? DEFAULT_OPTIONS.useConcurrentIndexes,
     };
@@ -590,10 +624,24 @@ export class MigrationTracker {
     const split = this.concurrentIndexPlan?.get(definition.id);
     const deferredConcurrent = (split?.concurrent.length ?? 0) > 0;
 
+    // A retry of an interrupted concurrent-index migration must not re-run the
+    // half that already committed. The marker on the previous attempt's
+    // `error_message` says it did, and the checksum says it was this same
+    // definition. Without this, a definition that mixes non-idempotent DDL
+    // (`ALTER TABLE … ADD COLUMN`, which the differ emits without
+    // `IF NOT EXISTS`) with index DDL would fail on "column already exists"
+    // forever, never reaching the index build it was retrying for.
+    const phase1AlreadyCommitted =
+      deferredConcurrent &&
+      existing?.status === 'failed' &&
+      existing.checksum === checksum &&
+      typeof existing.error_message === 'string' &&
+      existing.error_message.startsWith(CONCURRENT_INDEX_PHASE1_MARKER);
+
     try {
       // Execute the migration
       await this.executeStatements(
-        split ? split.regular : definition.up,
+        phase1AlreadyCommitted ? [] : split ? split.regular : definition.up,
         options,
       );
 
@@ -700,7 +748,8 @@ export class MigrationTracker {
    * commits. That mode trades atomicity for availability — a failure part way
    * through the index phase leaves the committed non-index DDL in place, and
    * the unfinished index migrations are recorded `failed` so the next run
-   * retries them.
+   * retries them, resuming at the index phase rather than re-running the
+   * non-index statements that already committed.
    */
   async applyAll(
     definitions: MigrationDefinition[],
@@ -992,12 +1041,21 @@ export class MigrationTracker {
   }
 
   /**
-   * Read the names of INVALID indexes in the search path.
+   * Read the names of INVALID indexes that an unqualified index name in this
+   * session would actually resolve to.
    *
    * `pg_indexes` (what the SQL adapter's introspection reads) lists an
    * INVALID index exactly like a healthy one, so the schema differ believes a
-   * failed `CREATE INDEX CONCURRENTLY` succeeded. `pg_index.indisvalid` is
-   * the authoritative flag.
+   * failed `CREATE INDEX CONCURRENTLY` succeeded. `pg_index.indisvalid` is the
+   * authoritative flag.
+   *
+   * Scoped to `current_schemas(false)` — the session's search path — because
+   * migration DDL names indexes unqualified, and so does the
+   * `DROP INDEX CONCURRENTLY IF EXISTS "<name>"` repair. Scanning every schema
+   * would let an unrelated invalid index of the same name in another schema
+   * trigger a drop that then resolves to a *different* object. Where the same
+   * name appears in several search-path schemas, the earliest on the path wins
+   * — the same rule PostgreSQL uses to resolve the name.
    *
    * A role without catalog access degrades to "no known invalid indexes"
    * rather than aborting the migration.
@@ -1009,12 +1067,14 @@ export class MigrationTracker {
 
     try {
       const result = await session.query(
-        `SELECT c.relname AS index_name
+        `SELECT DISTINCT ON (c.relname) c.relname AS index_name
            FROM pg_index i
            JOIN pg_class c ON c.oid = i.indexrelid
            JOIN pg_namespace n ON n.oid = c.relnamespace
           WHERE i.indisvalid = false
-            AND n.nspname NOT IN ('pg_catalog', 'pg_toast', 'information_schema')`,
+            AND n.nspname = ANY (current_schemas(false))
+          ORDER BY c.relname,
+                   array_position(current_schemas(false), n.nspname::text)`,
       );
 
       for (const row of result.rows) {
@@ -1058,7 +1118,9 @@ export class MigrationTracker {
         `UPDATE _smrt_schema_migrations
            SET status = 'failed', error_message = ?
          WHERE name = ?`,
-        message,
+        // Keep the resume marker: this failure happened *after* phase 1
+        // committed, so the retry must skip the non-index statements too.
+        `${CONCURRENT_INDEX_PHASE1_MARKER} ${message}`,
         name,
       );
     } catch (persistError) {
