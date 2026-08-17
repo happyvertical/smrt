@@ -198,6 +198,21 @@ describe('lintNumericPrecision', () => {
     ).toEqual([]);
   });
 
+  it('is not fooled by "type:" inside a description string', () => {
+    // `description` is a shipped `@field` option (#2046). Substring-matching
+    // the raw decorator text would read this as an explicit type and suppress
+    // the finding — silently, which is the worst outcome for this gate.
+    const findings = lintSource(`
+      @smrt()
+      class Quote extends SmrtObject {
+        @field({ description: 'Discount type: percentage or flat' })
+        discount: number = 0;
+      }
+    `);
+
+    expect(findings.map((f) => f.fieldName)).toEqual(['discount']);
+  });
+
   it('ignores transient, meta and relationship fields', () => {
     expect(
       lintSource(`

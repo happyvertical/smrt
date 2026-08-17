@@ -51,6 +51,9 @@ describePostgres('products price column on PostgreSQL (#2361)', () => {
 
     const rows = result.rows as { data_type: string }[];
     expect(rows).toHaveLength(1);
+    // Loose on purpose — see the note in commerce's money-fields lane: the
+    // manifest's pre-rendered `ddl` lands float4 while the structured strategy
+    // would emit float8. "Not INTEGER" is the assertion (#2358).
     expect(rows[0].data_type).toMatch(/double precision|real|numeric/);
   });
 

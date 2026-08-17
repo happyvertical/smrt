@@ -64,6 +64,9 @@ describePostgres('facts confidence columns on PostgreSQL (#2361)', () => {
 
     expect(rows).toHaveLength(3);
     for (const row of rows) {
+      // Loose on purpose — see the note in commerce's money-fields lane: the
+      // manifest's pre-rendered `ddl` lands float4 while the structured
+      // strategy would emit float8. "Not INTEGER" is the assertion (#2358).
       expect(row.data_type, `${row.table_name}.${row.column_name}`).toMatch(
         /double precision|real|numeric/,
       );

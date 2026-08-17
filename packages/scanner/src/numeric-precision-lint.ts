@@ -180,6 +180,21 @@ export function sourceMayContainMonetaryIntegerField(source: string): boolean {
   );
 }
 
+/**
+ * Blank out string-literal contents so option *keys* can be matched without
+ * prose inside a value masquerading as one.
+ *
+ * `@field({ description: 'Discount type: percent or flat' })` otherwise reads
+ * as an explicit `type:` and silently suppresses a real finding — and
+ * `description` is a shipped option (#2046), so this is reachable, not
+ * hypothetical. Quote characters are preserved to keep offsets stable.
+ */
+function blankStringLiterals(text: string): string {
+  return text.replace(/(['"`])(?:\\.|(?!\1)[\s\S])*\1/g, (match) =>
+    match[0].repeat(match.length),
+  );
+}
+
 /** Does any decorator on this field state the column type explicitly? */
 function hasExplicitTypeDecorator(field: RawFieldDefinition): boolean {
   for (const decorator of field.decorators) {
@@ -194,7 +209,7 @@ function hasExplicitTypeDecorator(field: RawFieldDefinition): boolean {
       return true;
     }
     if (decorator.name !== 'field') continue;
-    const args = decorator.arguments.join(' ');
+    const args = blankStringLiterals(decorator.arguments.join(' '));
     // `@field({ type: 'decimal' })` — an explicit declaration of intent, which
     // is exactly what this lint asks for, whichever type was chosen.
     if (/\btype\s*:/.test(args)) return true;

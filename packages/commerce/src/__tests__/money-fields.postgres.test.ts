@@ -78,6 +78,13 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
 
     expect(rows).toHaveLength(10);
     for (const row of rows) {
+      // Deliberately loose, and NOT a style nit: the PostgreSQL DDL strategy
+      // maps REAL to DOUBLE PRECISION, but production materializes these tables
+      // from the manifest's pre-rendered `ddl` string, which carries a bare
+      // `REAL` and lands as float4. Both are correct answers to "not INTEGER",
+      // which is what this asserts. Tightening it to `double precision` fails
+      // against the path that actually runs. The float4/float8 split is #2358;
+      // the absence of an exact-decimal type is #2373.
       expect(row.data_type, `${row.table_name}.${row.column_name}`).toMatch(
         /double precision|real|numeric/,
       );
