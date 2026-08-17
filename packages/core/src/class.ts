@@ -53,6 +53,29 @@ import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './system/schema.js';
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
 
+/**
+ * Timeout budget for the PostgreSQL system-table bootstrap transaction.
+ *
+ * The runtime pool's session `lock_timeout`/`statement_timeout` (#2377) are
+ * sized for request work. This transaction is not request work: it holds the
+ * advisory lock across up to 29 sequential DDL round-trips — ~18.85 s on the
+ * high-latency link `bootstrapSystemTables` documents — and a second replica
+ * cold-starting against the same fresh database *waits* on that lock. Both GUCs
+ * bound that wait, because `pg_advisory_xact_lock` is an ordinary statement in
+ * the lock manager, so at the runtime defaults the second replica would abort
+ * with "canceling statement due to lock timeout" where it previously waited and
+ * succeeded.
+ *
+ * Five minutes is an order of magnitude above the documented worst case and
+ * still bounded — this is a raise, not a disable. `SET LOCAL` scopes it to this
+ * transaction, the same lever migrations use for the same reason (#2362).
+ */
+const SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS = 300_000;
+const SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL = [
+  `SET LOCAL lock_timeout = '${SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS}ms'`,
+  `SET LOCAL statement_timeout = '${SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS}ms'`,
+];
+
 const logger = createLogger({ level: 'info' });
 
 type DatabaseWithConfig = DatabaseInterface & {
@@ -909,6 +932,11 @@ export class SmrtClass {
       }
 
       try {
+        // Raise the budget before taking the lock — the wait itself is what the
+        // runtime session timeouts would otherwise cancel (#2377).
+        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+          await tx.query(sql);
+        }
         await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
         const result = await callback(tx);
         await tx.commit();
@@ -925,6 +953,9 @@ export class SmrtClass {
       ) => Promise<R>;
 
       return runInTransaction(async (tx) => {
+        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
+          await tx.query(sql);
+        }
         await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
         return callback(tx);
       });

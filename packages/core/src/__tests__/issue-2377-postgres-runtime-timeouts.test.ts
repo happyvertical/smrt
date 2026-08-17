@@ -14,14 +14,14 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { parsePostgresTimeoutMs } from '../migrations/tracker.js';
+import { parsePostgresTimeoutMs as migrationsParser } from '../migrations/index.js';
 import {
   applyPostgresRuntimeTimeouts,
   applyPostgresTimeoutsToUrl,
   DEFAULT_POSTGRES_TIMEOUTS,
   isPostgresTarget,
   POSTGRES_TIMEOUT_ENV_VARS,
-  parseTimeoutMs,
+  parsePostgresTimeoutMs,
   resolvePostgresTimeouts,
 } from '../postgres-timeouts.js';
 
@@ -35,70 +35,43 @@ function connectionParams(url: string): URLSearchParams {
   );
 }
 
-describe('parseTimeoutMs', () => {
+describe('parsePostgresTimeoutMs', () => {
   it('reads bare numbers as milliseconds', () => {
-    expect(parseTimeoutMs(1500, 99)).toBe(1500);
-    expect(parseTimeoutMs('1500', 99)).toBe(1500);
+    expect(parsePostgresTimeoutMs(1500, 99)).toBe(1500);
+    expect(parsePostgresTimeoutMs('1500', 99)).toBe(1500);
   });
 
   it('reads the duration suffixes migrations config already uses', () => {
-    expect(parseTimeoutMs('30s', 99)).toBe(30_000);
-    expect(parseTimeoutMs('250ms', 99)).toBe(250);
-    expect(parseTimeoutMs('2min', 99)).toBe(120_000);
-    expect(parseTimeoutMs('2m', 99)).toBe(120_000);
-    expect(parseTimeoutMs('1h', 99)).toBe(3_600_000);
-    expect(parseTimeoutMs(' 5S ', 99)).toBe(5000);
+    expect(parsePostgresTimeoutMs('30s', 99)).toBe(30_000);
+    expect(parsePostgresTimeoutMs('250ms', 99)).toBe(250);
+    expect(parsePostgresTimeoutMs('2min', 99)).toBe(120_000);
+    expect(parsePostgresTimeoutMs('2m', 99)).toBe(120_000);
+    expect(parsePostgresTimeoutMs('1h', 99)).toBe(3_600_000);
+    expect(parsePostgresTimeoutMs(' 5S ', 99)).toBe(5000);
   });
 
   it('preserves 0 as PostgreSQL disabled rather than treating it as missing', () => {
-    expect(parseTimeoutMs(0, 99)).toBe(0);
-    expect(parseTimeoutMs('0', 99)).toBe(0);
-    expect(parseTimeoutMs('0s', 99)).toBe(0);
+    expect(parsePostgresTimeoutMs(0, 99)).toBe(0);
+    expect(parsePostgresTimeoutMs('0', 99)).toBe(0);
+    expect(parsePostgresTimeoutMs('0s', 99)).toBe(0);
   });
 
   it('falls back for missing, empty, negative, or unparseable input', () => {
-    expect(parseTimeoutMs(undefined, 99)).toBe(99);
-    expect(parseTimeoutMs('', 99)).toBe(99);
-    expect(parseTimeoutMs('   ', 99)).toBe(99);
-    expect(parseTimeoutMs(-1, 99)).toBe(99);
-    expect(parseTimeoutMs(Number.NaN, 99)).toBe(99);
-    expect(parseTimeoutMs('soon', 99)).toBe(99);
-    expect(parseTimeoutMs('30 seconds', 99)).toBe(99);
+    expect(parsePostgresTimeoutMs(undefined, 99)).toBe(99);
+    expect(parsePostgresTimeoutMs('', 99)).toBe(99);
+    expect(parsePostgresTimeoutMs('   ', 99)).toBe(99);
+    expect(parsePostgresTimeoutMs(-1, 99)).toBe(99);
+    expect(parsePostgresTimeoutMs(Number.NaN, 99)).toBe(99);
+    expect(parsePostgresTimeoutMs('soon', 99)).toBe(99);
+    expect(parsePostgresTimeoutMs('30 seconds', 99)).toBe(99);
   });
 
-  it('agrees with the migration timeout parser on every input (#2362)', () => {
-    // Runtime and migrate timeouts are configured in the same spelling, so the
-    // two parsers must not drift. The runtime path deliberately keeps its own
-    // copy: importing the migration tracker would drag the whole migration
-    // engine into the connection path.
-    const inputs: (string | number | undefined)[] = [
-      undefined,
-      '',
-      '   ',
-      0,
-      '0',
-      '0s',
-      1500,
-      '1500',
-      '250ms',
-      '30s',
-      ' 5S ',
-      '2m',
-      '2min',
-      '1h',
-      '1.5s',
-      -1,
-      Number.NaN,
-      'soon',
-      '30 seconds',
-    ];
-
-    for (const input of inputs) {
-      expect([input, parseTimeoutMs(input, 99)]).toEqual([
-        input,
-        parsePostgresTimeoutMs(input, 99),
-      ]);
-    }
+  it('is the same function the migrations subpath publishes (#2362)', () => {
+    // `migrations.postgres.*` and a runtime `timeouts` config are written in the
+    // same spelling, so they are parsed by one implementation rather than two
+    // that can drift. `@happyvertical/smrt-core/migrations` re-exports this
+    // exact binding; identity is the assertion, not behavioural agreement.
+    expect(migrationsParser).toBe(parsePostgresTimeoutMs);
   });
 });
 

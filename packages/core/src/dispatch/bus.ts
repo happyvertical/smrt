@@ -837,7 +837,14 @@ export async function createDispatchBus(
   // Get or create database interface
   let db: DatabaseInterface;
   if (typeof dbConfig === 'string') {
-    db = await getDatabase(dbConfig);
+    // `DispatchBusOptions.db` does not admit a bare string, but this branch is
+    // live code and must not be the one unbounded pool a reader finds while
+    // auditing this file (#2377).
+    db = await getDatabase(
+      applyPostgresRuntimeTimeouts({
+        url: dbConfig,
+      }) as Parameters<typeof getDatabase>[0],
+    );
   } else if ('query' in dbConfig) {
     // Already a DatabaseInterface (has query method)
     db = dbConfig as DatabaseInterface;

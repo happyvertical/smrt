@@ -184,16 +184,16 @@ export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';
-// Runtime PostgreSQL pool timeouts (#2377)
+// Runtime PostgreSQL pool timeouts (#2377). Deliberately narrow: this is what
+// another package needs to bound a pool it builds itself, and nothing more.
+// The URL rewriter and the engine predicate stay internal, and the parser is
+// public through `./migrations` as `parsePostgresTimeoutMs` — one name, one
+// place.
 export {
   applyPostgresRuntimeTimeouts,
-  applyPostgresTimeoutsToUrl,
   DEFAULT_POSTGRES_TIMEOUTS,
-  isPostgresTarget,
   POSTGRES_TIMEOUT_ENV_VARS,
-  type PostgresTimeoutAwareConfig,
   type PostgresTimeoutConfig,
-  parseTimeoutMs,
   type ResolvedPostgresTimeouts,
   resolvePostgresTimeouts,
 } from './postgres-timeouts';

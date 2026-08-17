@@ -151,15 +151,19 @@ const URL_TIMEOUT_PARAMS = {
  * unparseable input so a typo degrades to the documented default instead of
  * silently disabling the timeout it was meant to impose.
  *
- * This is the same contract as `parsePostgresTimeoutMs` in
- * `@happyvertical/smrt-core/migrations` (#2362) — deliberately, so runtime and
- * migration timeouts are written the same way.
+ * This is the single implementation behind both timeout surfaces: the
+ * migration tracker re-exports it as the public
+ * `@happyvertical/smrt-core/migrations` symbol (#2362), so a runtime `timeouts`
+ * config and `migrations.postgres.*` are parsed by the same function and cannot
+ * drift. This module deliberately imports nothing, which is what lets the
+ * migration path depend on it without dragging anything into the connection
+ * path.
  *
  * @param value - Millisecond count or duration string
  * @param fallback - Value returned for missing or unparseable input
  * @returns Timeout in milliseconds
  */
-export function parseTimeoutMs(
+export function parsePostgresTimeoutMs(
   value: string | number | undefined,
   fallback: number,
 ): number {
@@ -205,14 +209,19 @@ export function parseTimeoutMs(
  */
 export function resolvePostgresTimeouts(
   config: PostgresTimeoutConfig = {},
-  env: Record<string, string | undefined> = process.env,
+  env?: Record<string, string | undefined>,
 ): ResolvedPostgresTimeouts {
+  // Read `process.env` lazily rather than through a default parameter, which
+  // would dereference `process` on every call — including the SQLite ones that
+  // never need it — in whatever environment this module is loaded.
+  const environment =
+    env ?? (typeof process !== 'undefined' ? process.env : {});
   const resolve = (
     key: keyof PostgresTimeoutConfig,
     fallback: number,
   ): number =>
-    parseTimeoutMs(
-      config[key] ?? env[POSTGRES_TIMEOUT_ENV_VARS[key]],
+    parsePostgresTimeoutMs(
+      config[key] ?? environment[POSTGRES_TIMEOUT_ENV_VARS[key]],
       fallback,
     );
 
@@ -276,10 +285,11 @@ export function isPostgresTarget(url?: string, type?: string): boolean {
  * per-parameter granularity means overriding one does not surrender the other
  * two to `pg`'s unbounded defaults.
  *
- * The query string is edited through `URLSearchParams` rather than `new URL()`
- * because a DSN whose password contains characters that are legal in libpq but
- * not in a WHATWG URL must survive this function untouched rather than throw
- * inside connection setup.
+ * Only the query suffix is touched — scheme, userinfo, host, and path are
+ * copied through as written. Reparsing the whole DSN with `new URL()` (which is
+ * what `pg-connection-string` does at connect time) would let this function
+ * normalize a URL it does not own, so a shape `pg` accepts today would be
+ * handed to `pg` in a different form tomorrow.
  *
  * @param url - PostgreSQL connection URL
  * @param timeouts - Resolved timeouts
@@ -338,8 +348,10 @@ export interface PostgresTimeoutAwareConfig {
 /**
  * Bound a runtime database configuration before it reaches `getDatabase()`.
  *
- * Non-PostgreSQL configurations are returned unchanged (same reference), so
- * SQLite/DuckDB/JSON callers pay nothing and no file path is ever rewritten.
+ * Non-PostgreSQL configurations pass through unchanged — the same reference,
+ * so SQLite/DuckDB/JSON callers pay nothing and no file path is ever rewritten
+ * — except that a stray `timeouts` key is stripped on every engine, because it
+ * is SMRT configuration and never an adapter option.
  *
  * For PostgreSQL the returned object carries a URL with the three session
  * timeouts and a `connectionTimeoutMillis` pool option. Callers that derive a
@@ -360,19 +372,25 @@ export interface PostgresTimeoutAwareConfig {
  * would ignore it, and leaving it in the options object would make it look
  * like a supported adapter option.
  *
+ * Rewriting the URL also changes the SDK's own pool cache key for call sites
+ * that pass no `dbid`, so a consumer that separately calls `getDatabase()` with
+ * the same raw URL no longer shares SMRT's pool. Consumers that want one pool
+ * should hand SMRT the `DatabaseInterface`, not the same URL.
+ *
  * @param config - Database configuration bound for `getDatabase()`
  * @param env - Environment to read (defaults to `process.env`)
  * @returns Configuration with runtime timeouts applied
  */
 export function applyPostgresRuntimeTimeouts(
   config: PostgresTimeoutAwareConfig,
-  env: Record<string, string | undefined> = process.env,
+  env?: Record<string, string | undefined>,
 ): PostgresTimeoutAwareConfig {
+  const { timeouts: configuredTimeouts, ...rest } = config;
+
   if (!isPostgresTarget(config.url, config.type)) {
-    return config;
+    return configuredTimeouts === undefined ? config : rest;
   }
 
-  const { timeouts: configuredTimeouts, ...rest } = config;
   const timeouts = resolvePostgresTimeouts(configuredTimeouts, env);
 
   return {

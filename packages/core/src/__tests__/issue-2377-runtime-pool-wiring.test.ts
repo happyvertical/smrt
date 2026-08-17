@@ -8,13 +8,23 @@
  * assert the options each site hands to `getDatabase()`, including the dbid,
  * which must be derived from the bounded URL so all the sites agree on one
  * pool identity.
+ *
+ * `.claude/rules/testing.md` says never to mock database operations, and this
+ * file mocks `getDatabase` deliberately: the assertion target is the options
+ * object handed *to* the adapter, which no real database can report back. The
+ * behaviour those options produce is proven against a live server in
+ * `issue-2377-postgres-runtime-timeouts.optional.test.ts`; nothing here asserts
+ * a query result.
  */
 
 import { getDatabase } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveDatabase } from '../database.js';
 import { resolveChangesDb } from '../generators/changes-route.js';
-import { DEFAULT_POSTGRES_TIMEOUTS } from '../postgres-timeouts.js';
+import {
+  DEFAULT_POSTGRES_TIMEOUTS,
+  POSTGRES_TIMEOUT_ENV_VARS,
+} from '../postgres-timeouts.js';
 
 vi.mock('@happyvertical/sql', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@happyvertical/sql')>();
@@ -41,10 +51,20 @@ function timeoutParams(url: unknown): URLSearchParams {
 }
 
 beforeEach(() => {
+  // These assertions are against DEFAULT_POSTGRES_TIMEOUTS, so a developer
+  // machine (or a CI runner) that happens to export SMRT_PG_* must not change
+  // the answer.
+  for (const name of Object.values(POSTGRES_TIMEOUT_ENV_VARS)) {
+    vi.stubEnv(name, undefined as unknown as string);
+  }
   getDatabaseMock.mockReset();
   getDatabaseMock.mockResolvedValue(
     undefined as unknown as Awaited<ReturnType<typeof getDatabase>>,
   );
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 describe('resolveDatabase', () => {
@@ -147,6 +167,20 @@ describe('createDispatchBus', () => {
     );
     expect(options.connectionTimeoutMillis).toBe(
       DEFAULT_POSTGRES_TIMEOUTS.connectionTimeoutMs,
+    );
+  });
+
+  it('bounds the string-shortcut branch too', async () => {
+    const { createDispatchBus } = await import('../dispatch/bus.js');
+
+    // `DispatchBusOptions.db` does not admit a bare string, but the branch is
+    // live code — it must not be the one unbounded pool in the file.
+    await createDispatchBus({
+      db: PG_URL as unknown as { type: 'postgres'; url: string },
+    }).catch(() => undefined);
+
+    expect(timeoutParams(lastOptions().url).get('statement_timeout')).toBe(
+      String(DEFAULT_POSTGRES_TIMEOUTS.statementTimeoutMs),
     );
   });
 });
