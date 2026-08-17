@@ -1531,9 +1531,9 @@ async function generateRegistrationFile(
    */
   function portableObjectManifest(
     root: string,
-    objectDef: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const filePath = objectDef.filePath;
+    objectDef: SmartObjectDefinition,
+  ): SmartObjectDefinition {
+    const { filePath } = objectDef;
     if (typeof filePath !== 'string' || !isAbsolute(filePath)) {
       return objectDef;
     }
