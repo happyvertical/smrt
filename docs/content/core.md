@@ -808,6 +808,49 @@ const db = await getDatabase({ type: 'postgres', url: 'postgres://...' });
 const collection = await ProductCollection.create({ db });
 ```
 
+### PostgreSQL runtime timeouts
+
+Every PostgreSQL pool SMRT opens is bounded by default. Without these, `pg`
+waits forever for a free client, a runaway query holds its connection until it
+finishes, and a request that stalls mid-transaction holds its locks until the
+process exits.
+
+| Key | Applied as | Default | Effect |
+| --- | --- | --- | --- |
+| `connectionTimeout` | `connectionTimeoutMillis` pool option | `10s` | Fail an acquisition instead of queueing forever (pending happyvertical/sdk#1204) |
+| `statementTimeout` | `statement_timeout` | `30s` | Cancel a single runaway statement |
+| `idleInTransactionSessionTimeout` | `idle_in_transaction_session_timeout` | `60s` | Kill a transaction left open between statements, releasing its locks |
+| `lockTimeout` | `lock_timeout` | `10s` | Stop waiting for a lock someone else holds |
+
+Values are milliseconds or a duration string (`'250ms'`, `'30s'`, `'2min'`,
+`'1h'`) — the same spelling `migrations.postgres.*` uses. `0` disables a
+timeout explicitly. An unparseable value falls back to that key's default.
+
+```typescript
+// Per connection
+const collection = await ProductCollection.create({
+  db: {
+    type: 'postgres',
+    url: process.env.DATABASE_URL,
+    timeouts: { statementTimeout: '10s', lockTimeout: '2s' },
+  },
+});
+```
+
+Deployments that only hand SMRT a connection URL configure the same four keys
+through the environment: `SMRT_PG_CONNECTION_TIMEOUT`,
+`SMRT_PG_STATEMENT_TIMEOUT`, `SMRT_PG_IDLE_IN_TRANSACTION_TIMEOUT`, and
+`SMRT_PG_LOCK_TIMEOUT`. Precedence is: a parameter already spelled into the
+connection URL, then `timeouts`, then the environment variable, then the
+default — so `postgres://…/app?statement_timeout=120000` keeps its 120 s while
+still picking up bounded lock and idle-in-transaction settings.
+
+Two things these do **not** cover. `smrt db:migrate` opens its own connection
+and bounds each statement from `migrations.postgres.lockTimeout` /
+`.statementTimeout`, so a long migration keeps its own budget. And a `db`
+option that is already a live `DatabaseInterface` or a pre-created client is
+used as given — configure timeouts where that pool is built.
+
 ## Vector Embeddings
 
 SMRT objects support vector embeddings for semantic search and similarity comparisons. Embeddings convert object content into numerical vectors that capture semantic meaning.

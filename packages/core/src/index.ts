@@ -184,6 +184,19 @@ export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';
+// Runtime PostgreSQL pool timeouts (#2377)
+export {
+  applyPostgresRuntimeTimeouts,
+  applyPostgresTimeoutsToUrl,
+  DEFAULT_POSTGRES_TIMEOUTS,
+  isPostgresTarget,
+  POSTGRES_TIMEOUT_ENV_VARS,
+  type PostgresTimeoutAwareConfig,
+  type PostgresTimeoutConfig,
+  parseTimeoutMs,
+  type ResolvedPostgresTimeouts,
+  resolvePostgresTimeouts,
+} from './postgres-timeouts';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities

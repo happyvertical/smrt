@@ -40,6 +40,7 @@ import type {
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
+import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
@@ -583,10 +584,16 @@ export class SmrtClass {
           // Preserve connection sharing for file-backed databases while leaving
           // true in-memory databases isolated per instance.
           const isMemoryDb = this.options.db === ':memory:';
-          this._db = await getDatabase({
+          // PostgreSQL URLs pick up the runtime timeout bounds, and the dbid is
+          // derived from the bounded URL so the same rewrite at every call site
+          // still resolves to one shared pool (#2377).
+          const bounded = applyPostgresRuntimeTimeouts({
             url: this.options.db,
-            ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
           });
+          this._db = await getDatabase({
+            ...bounded,
+            ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url}` }),
+          } as unknown as Parameters<typeof getDatabase>[0]);
         } else if ('query' in this.options.db) {
           // Format 2: Already a DatabaseInterface instance - return as-is
           this._db = this.options.db as DatabaseInterface;
@@ -613,12 +620,15 @@ export class SmrtClass {
           const dbConfig = this.options.db as { url?: string; type?: string };
           const dbUrl = dbConfig.url || 'memory';
           const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+          // Keep the config's own key set: an object with no `url` must stay
+          // that way so the adapter applies its own default (#2377).
+          const bounded = applyPostgresRuntimeTimeouts({ ...this.options.db });
           // The loose config-object variant of `DatabaseConfig` carries an
           // index signature that the closed `getDatabase` option union does
           // not accept structurally, so route through its parameter type.
           this._db = await getDatabase({
-            ...this.options.db,
-            ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
+            ...bounded,
+            ...(isMemoryDb ? {} : { dbid: `smrt:${bounded.url ?? dbUrl}` }),
           } as unknown as Parameters<typeof getDatabase>[0]);
         }
 
