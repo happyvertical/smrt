@@ -58,6 +58,45 @@ export interface IndexDefinition {
   };
 }
 
+/**
+ * A multi-column index declared on an object through `@smrt({ indexes: [...] })`
+ * (issue #2357).
+ *
+ * Generated schemas otherwise only index foreign keys, unique/conflict columns,
+ * `updated_at`, the STI discriminator, `tenant_id`, and columns opted in one at
+ * a time with `@field({ indexed: true })`. None of those can express a list
+ * workload's real access path, which is composite: filter column(s) first, sort
+ * column last. `WHERE tenant_id = ? ... ORDER BY publish_date DESC LIMIT 10`
+ * wants `(tenant_id, publish_date)`, and there was no way to ask for it.
+ *
+ * Declare the columns, not a direction: PostgreSQL scans a btree in either
+ * direction, so a plain ascending index also serves the matching
+ * `ORDER BY ... DESC` as an ordered scan with no sort step.
+ */
+export interface DeclaredIndexDefinition {
+  /**
+   * Index name. Must be unique within the database, and must not collide with
+   * a generated index of the same name unless it describes the same target —
+   * schema generation fails rather than silently dropping either one.
+   */
+  name: string;
+  /**
+   * SMRT field names or column names, in index order. Field names are mapped to
+   * their column names; a name that resolves to no column on the table is a
+   * hard error.
+   */
+  columns: string[];
+  /** Emit as a UNIQUE index. */
+  unique?: boolean;
+  /**
+   * Partial-index predicate, rendered verbatim into `CREATE INDEX ... WHERE`.
+   *
+   * This is authored SQL from the object's own source, exactly like the
+   * predicates the STI path emits; never build it from request input.
+   */
+  where?: string;
+}
+
 export interface TriggerDefinition {
   name: string;
   when: 'BEFORE' | 'AFTER' | 'INSTEAD OF';

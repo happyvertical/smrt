@@ -181,7 +181,36 @@ columns, when only the index *name* is shortened. And an index fix that ships
 without a bounded-timeout, `CONCURRENTLY`-capable migrate path can take
 production down on rollout (#2362).
 
-### 13. `schema.ddl` is a preview, not the table
+### 13. Composite indexes are declared, not inferred (#2357)
+
+The generated set only covers foreign keys, unique/conflict columns,
+`updated_at`, the STI discriminator, `tenant_id`, and single columns opted in
+with `@field({ indexed: true })`. A list workload's access path is composite,
+so declare it:
+
+```ts
+@smrt({
+  indexes: [
+    { name: 'contents_tenant_id_publish_date_idx',
+      columns: ['tenantId', 'publish_date'] },
+  ],
+})
+```
+
+`columns` takes field names or column names in access-path order — filter
+columns first, sort column last. Declare columns, not a direction: PostgreSQL
+scans a btree either way, so an ascending index also serves the matching
+`ORDER BY ... DESC` as an ordered scan with no Sort node. `unique` and `where`
+(partial index) are honoured.
+
+`appendDeclaredIndexes()` runs on all five entry points, before
+`ensureTenantIdIndex()`, so a declared composite leading with the tenant column
+replaces the automatic standalone `tenant_id` index rather than duplicating it.
+Unknown columns, malformed entries, and a name collision with a different index
+all fail generation — a silently dropped index only surfaces later as a
+production slowdown. Rule 8 above is why this works at runtime at all.
+
+### 14. `schema.ddl` is a preview, not the table
 
 `SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
 CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no

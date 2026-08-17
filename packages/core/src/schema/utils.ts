@@ -124,10 +124,15 @@ export async function generateSchema(
   const { SchemaGenerator } = await import('./generator.js');
   const generator = new SchemaGenerator();
   const registeredClass = ObjectRegistry.getClass(className);
+  // Every key the generator reads from `@smrt()` config must be listed here:
+  // this bag is rebuilt by hand rather than passed through, so an unlisted
+  // option is silently unreachable at runtime while still appearing in the
+  // manifest. `indexes` (#2357) was exactly that.
   const runtimeSchemaConfig = registeredClass?.config
     ? {
         conflictColumns: registeredClass.config.conflictColumns,
         idType: registeredClass.config.idType,
+        indexes: registeredClass.config.indexes,
         registry: ObjectRegistry,
       }
     : undefined;
