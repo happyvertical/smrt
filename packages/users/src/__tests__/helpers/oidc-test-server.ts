@@ -43,6 +43,10 @@ export interface OidcTestServer {
  * Schema for the tables OIDC user provisioning touches
  * (`UserCollection.getOrCreateFromOidc`): the smrt-profiles trio plus users
  * and sessions. Extend with further DDL per suite as needed.
+ *
+ * Tenant-scoped tables (`profile_types`, `profiles`) key on
+ * `(tenant_id, slug, context, _meta_type)` since smrt#2360 — keep this DDL in
+ * step with the framework schema or `save()`'s ON CONFLICT cannot bind.
  */
 export const OIDC_USERS_TEST_SCHEMA = `
 CREATE TABLE IF NOT EXISTS "_smrt_backfills" (
@@ -64,7 +68,7 @@ CREATE TABLE IF NOT EXISTS "profile_types" (
   "name" TEXT DEFAULT '',
   "description" TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "profile_types_slug_context_meta_type_idx" ON "profile_types" ("slug", "context", "_meta_type");
+CREATE UNIQUE INDEX IF NOT EXISTS "profile_types_slug_context_meta_type_idx" ON "profile_types" ("tenant_id", "slug", "context", "_meta_type");
 CREATE INDEX IF NOT EXISTS "profile_types_meta_type_idx" ON "profile_types" ("_meta_type");
 
 CREATE TABLE IF NOT EXISTS "profiles" (
@@ -82,7 +86,7 @@ CREATE TABLE IF NOT EXISTS "profiles" (
   "name" TEXT DEFAULT '',
   "description" TEXT
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "profiles_slug_context_meta_type_idx" ON "profiles" ("slug", "context", "_meta_type");
+CREATE UNIQUE INDEX IF NOT EXISTS "profiles_slug_context_meta_type_idx" ON "profiles" ("tenant_id", "slug", "context", "_meta_type");
 CREATE INDEX IF NOT EXISTS "profiles_meta_type_idx" ON "profiles" ("_meta_type");
 CREATE INDEX IF NOT EXISTS "profiles_email_key_idx" ON "profiles" ("email_key");
 
