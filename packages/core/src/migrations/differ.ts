@@ -802,7 +802,7 @@ export class SchemaComparer {
               : null,
             relaxation: {
               severity: 'info',
-              message: `${tableName}.${colName} has a live default (${String(dbCol.defaultValue)}) the manifest no longer declares; inserts that omit the column keep receiving it. Pass relaxColumns / --relax-columns to drop it.`,
+              message: `${tableName}.${colName} has a live default (${String(dbCol.defaultValue)}) the manifest no longer declares; inserts that omit the column keep receiving it. ${this.relaxHint('drop it')}`,
             },
           }),
         );
@@ -893,7 +893,7 @@ export class SchemaComparer {
             : null,
           relaxation: {
             severity: 'warning',
-            message: `${tableName}.${colName} is NOT NULL in the database but nullable in the manifest; writes that store NULL will fail. Pass relaxColumns / --relax-columns to drop the constraint.`,
+            message: `${tableName}.${colName} is NOT NULL in the database but nullable in the manifest; writes that store NULL will fail. ${this.relaxHint('drop the constraint')}`,
           },
         }),
       );
@@ -1038,6 +1038,17 @@ export class SchemaComparer {
           : [dropSql],
       },
     };
+  }
+
+  /**
+   * Remediation hint for a relaxation advisory. On engines with `ALTER
+   * COLUMN` the flag executes it; SQLite cannot relax in place, so the hint
+   * says so instead of implying the flag will act (#2370).
+   */
+  private relaxHint(action: string): string {
+    return this.supportsAlterColumn()
+      ? `Pass relaxColumns / --relax-columns to ${action}.`
+      : `SQLite cannot ${action} in place (no ALTER COLUMN); it requires a table rebuild (#2370) — relaxColumns / --relax-columns only reports it as manual here.`;
   }
 
   private describeDbColumn(

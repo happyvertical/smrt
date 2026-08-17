@@ -405,7 +405,7 @@ ${downStatementsStr}
         // Report-only: surface the advisory as comments so a generated
         // migration file documents the drift without acting on it.
         up.push(
-          `-- WARNING: ${change.type === 'orphan_column' ? 'Orphan column' : 'Orphan unique constraint'} ${change.table}.${change.name} (${change.mismatch?.actual ?? 'unknown shape'})`,
+          `-- ${change.advisory?.severity === 'warning' ? 'WARNING' : 'NOTE'}: ${change.type === 'orphan_column' ? 'Orphan column' : 'Orphan unique constraint'} ${change.table}.${change.name} (${change.mismatch?.actual ?? 'unknown shape'})`,
         );
         if (change.advisory?.message) {
           up.push(`-- ${change.advisory.message}`);
