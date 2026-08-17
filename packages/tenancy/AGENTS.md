@@ -69,6 +69,7 @@ Modes: `'required'` (default — throws without context) or `'optional'` (passes
 - **Auto-populate only if empty**: if tenantId already set, interceptor validates (not overwrites)
 - **Isolation checked at query time**: `list({ where: { tenantId: 'other' } })` throws immediately
 - **Testing**: `resetTenancy()` + `setupTestTenancy()` in beforeEach; `testTenantIsolation()` helper
+- **Natural keys are per tenant (smrt#2360)**: a tenant-scoped class with no explicit `conflictColumns` upserts on, and indexes, `(tenant_id, slug, context[, _meta_type])` — `save()` from tenant B with tenant A's slug is a second row, never an overwrite; within a tenant the natural key still dedups; NULL-tenant (`optional` mode, no context) rows dedup among themselves through the SDK's null-aware upsert but not through the index (NULLs are distinct), so raw SQL `ON CONFLICT (slug, context…)` on such a table no longer binds — use `WHERE NOT EXISTS`, and on PostgreSQL an advisory lock, as `ProfileTypeCollection.getOrCreateGlobalBySlug()` does. Core recognizes the class as tenant-scoped through the manifest's `decoratorConfig.tenantScoped` (the scanner folds `@TenantScoped()` in), never through the tenancy registry, so the schema and the upsert agree before `enableTenancy()` runs.
 
 ## Known exceptions to monorepo standards
 

@@ -74,7 +74,36 @@ divergence is a bug in the generator, not an exception to add to the test.
   `(slug, context)` unique index; `loadFromSlug()`/`getId()`/`getSavedId()`
   still filter on slug/context, so a plain `<table>_slug_context_idx` is kept
   (additive; routing those lookups through the conflict key would change which
-  row a slug resolves to).
+  row a slug resolves to). The tenant-led default key below counts as serving
+  it (`servesSlugLookup()`): a tenant-scoped slug lookup carries the tenant
+  predicate (#2365) and is served by the prefix, so no second index.
+- **Tenant-scoped tables key per tenant (#2360).** A tenant-scoped class with
+  no explicit `conflictColumns` upserts on, and indexes,
+  `(tenant_id, slug, context)` — `(tenant_id, slug, context, _meta_type)` for
+  an STI hierarchy — resolved by one rule on both paths:
+  `ManifestGenerator.normalizeConflictColumns()` materializes it into
+  `decoratorConfig.conflictColumns` for the manifest paths (so the manifest,
+  the schema, `smrt-knowledge.json` and the runtime read one value), and
+  `ObjectRegistry.getConflictColumns()` derives the same value at runtime from
+  the schema owner's `tenantScoped` config (`ObjectRegistry.getTenantColumn()`;
+  an STI child resolves through its root; a `@report` class through its
+  group/bucket columns; a custom primary key through that key). Explicit
+  `conflictColumns` are never rewritten. `src/schema/conflict-target.ts` holds
+  the shared helpers. Consequences: the index NAME stays
+  `<table>_slug_context_idx` / `_slug_context_meta_type_idx`, so the differ
+  swaps the columns of an existing global unique in place by name (a superset
+  key — creating it cannot fail on existing rows); the tenant-led key also
+  serves the tenant column, so `<table>_tenant_id_idx` is no longer emitted
+  for those tables (an existing one is an orphan the differ drops only with
+  `--drop-indexes`); NULL-tenant rows (`mode: 'optional'` outside a tenant
+  context) dedup among themselves through the SDK's null-aware upsert
+  (`IS NOT DISTINCT FROM`), exactly as every row did before, while the index
+  itself treats NULLs as distinct — raw SQL can still insert two global rows
+  with one slug. Cross-tenant ingestion that relied on natural-key dedup
+  across tenants now inserts one row per tenant (release note). The `save()`
+  path serializes an unset tenant field as an explicit `NULL` whatever its
+  registered type, because the SDK rejects an upsert whose conflict column is
+  missing from the row.
 - **STI `@field({ unique: true })` is enforced through indexes** (the differ can
   add an index to an existing table, never a column constraint): a full
   `<table>_<col>_unique_idx` when the STI base declares it, one
@@ -182,9 +211,12 @@ see "Index rules" above. Check the pair, not the declaration.
 
 Every unique constraint and every conflict target on a tenant-scoped table
 includes the tenant column — otherwise a second tenant's `save()` of the same
-natural key updates the first tenant's row through `DO UPDATE SET` (#2360). And
-every read path is interceptor-aware: hydration (`loadFromId`/`loadFromSlug`),
-get-by-slug, vector search, and collection memory, not only `list()` (#2365).
+natural key updates the first tenant's row through `DO UPDATE SET` (#2360; the
+default key now does, see "Index rules" — an explicit `conflictColumns` that
+omits the tenant column is the class author's own key and is not rewritten).
+And every read path is interceptor-aware: hydration
+(`loadFromId`/`loadFromSlug`), get-by-slug, vector search, and collection
+memory, not only `list()` (#2365).
 
 ### 7. Retry only transient errors
 
@@ -225,3 +257,19 @@ candidate claimed conflict indexes past two columns were narrowed to two
 columns, when only the index *name* is shortened. And an index fix that ships
 without a bounded-timeout, `CONCURRENTLY`-capable migrate path can take
 production down on rollout (#2362).
+
+### 13. One conflict-target rule, applied on every producer
+
+`save()` upserts on `ObjectRegistry.getConflictColumns()`; the schema must
+carry exactly one unique index over those columns (or they must be the
+primary key). Keep the derivation in `src/schema/conflict-target.ts` and let
+every producer call it — the three manifest pipelines share
+`ManifestGenerator.applyGenerationPasses()` since #2360 because
+`ManifestBuilder` had silently skipped the report passes for months. When you
+add a way for the key to vary (a new decorator option, a new class kind),
+thread it through `getConflictColumns()`, `normalizeConflictColumns()` and the
+generator's `resolveConflictTarget()` together, and extend the parity test's
+"unique index == conflict target" assertion; a key the runtime uses and the
+schema does not index is a hard PostgreSQL error (42P10) on the first save,
+and a key the schema indexes without the tenant column is the silent
+cross-tenant overwrite this rule exists for.

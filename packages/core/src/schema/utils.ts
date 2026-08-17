@@ -117,9 +117,13 @@ export async function generateSchema(
   const { SchemaGenerator } = await import('./generator.js');
   const generator = new SchemaGenerator();
   const registeredClass = ObjectRegistry.getClass(className);
+  // The RESOLVED conflict target, not the raw decorator option: for a
+  // tenant-scoped class with no explicit `conflictColumns` the registry
+  // derives `[tenant_id, ...natural key]` (#2360), and `save()` upserts on
+  // exactly that, so the unique index generated here must match it.
   const runtimeSchemaConfig = registeredClass?.config
     ? {
-        conflictColumns: registeredClass.config.conflictColumns,
+        conflictColumns: ObjectRegistry.getConflictColumns(className),
         idType: registeredClass.config.idType,
         registry: ObjectRegistry,
       }

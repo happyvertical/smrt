@@ -6,6 +6,7 @@
 
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
+import { conflictIndexName } from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
@@ -277,20 +278,26 @@ function withConflictIndex(
   );
   if (hasConflictIndex) return indexes;
 
-  const nameColumns =
-    conflictColumns.length > 2 ? conflictColumns.slice(0, 2) : conflictColumns;
-  const preferredName = `${tableName}_${nameColumns.join('_')}_idx`;
-  const name = indexes.some((index) => index.name === preferredName)
-    ? `${preferredName}_unique`
-    : preferredName;
-  return [
-    ...indexes,
-    {
-      name,
-      columns: conflictColumns,
-      unique: true,
-    },
-  ];
+  // Same stable naming as SchemaGenerator (`schema/conflict-target.ts`), so
+  // a manifest built before the runtime learned the tenant-aware default
+  // (#2360) has its stale `<table>_slug_context_idx` REPLACED in place here
+  // — the differ then swaps the live index by name — instead of a second,
+  // suffixed unique index being appended beside the old global one.
+  const tenantColumn = Object.entries(columns).find(
+    ([, column]) => column.referenceKind === 'tenantId',
+  )?.[0];
+  const name = conflictIndexName(tableName, conflictColumns, tenantColumn);
+  const conflictIndex: IndexDefinition = {
+    name,
+    columns: conflictColumns,
+    unique: true,
+  };
+  if (indexes.some((index) => index.name === name)) {
+    return indexes.map((index) =>
+      index.name === name ? conflictIndex : index,
+    );
+  }
+  return [...indexes, conflictIndex];
 }
 
 /**

@@ -1242,39 +1242,43 @@ export class SmrtObject extends SmrtClass {
           (prop && typeof prop === 'object' && 'type' in prop && prop.type) ||
           fieldDef?.type;
 
-        if (fieldType === 'text') {
-          // Don't convert tenant ID fields to empty string (Issue #841)
-          // Tenant fields should remain null/undefined for interceptor to auto-populate.
-          // Check both the property instance and field definition for __tenancy marker.
-          // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
-          // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
-          // `prop` may be a Field-helper instance carrying a `__tenancy`
-          // marker; read it through a narrow indexable view after the
-          // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
-          const propTenancy =
-            prop && typeof prop === 'object' && '__tenancy' in prop
-              ? (prop as { __tenancy?: { isTenantIdField?: boolean } })
-                  .__tenancy
-              : undefined;
-          const hasTenancyMarker =
-            propTenancy?.isTenantIdField ||
-            fieldDef?.__tenancy?.isTenantIdField ||
-            fieldDef?._meta?.__tenancy?.isTenantIdField;
+        // Don't convert tenant ID fields to empty string (Issue #841)
+        // Tenant fields should remain null/undefined for interceptor to auto-populate.
+        // Check both the property instance and field definition for __tenancy marker.
+        // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
+        // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
+        // `prop` may be a Field-helper instance carrying a `__tenancy`
+        // marker; read it through a narrow indexable view after the
+        // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
+        //
+        // Checked before the type switch (#2360): the registry injects the
+        // tenant field of a `tenantScoped` class as `foreignKey` when no
+        // manifest carries it, and the tenant column is part of the
+        // conflict target, so it must reach the row as an explicit NULL —
+        // an omitted key would fail `ON CONFLICT` validation ("conflict
+        // columns missing from data") instead of taking the null-aware path.
+        const propTenancy =
+          prop && typeof prop === 'object' && '__tenancy' in prop
+            ? (prop as { __tenancy?: { isTenantIdField?: boolean } }).__tenancy
+            : undefined;
+        const hasTenancyMarker =
+          propTenancy?.isTenantIdField ||
+          fieldDef?.__tenancy?.isTenantIdField ||
+          fieldDef?._meta?.__tenancy?.isTenantIdField;
 
-          if (hasTenancyMarker) {
-            // Leave tenant field as null so interceptor can auto-populate
-            if (isSTI && fieldDef?.type === 'meta') {
-              metaData[key] = null;
-            } else {
-              data[key] = null;
-            }
+        if (hasTenancyMarker) {
+          // Leave tenant field as null so interceptor can auto-populate
+          if (isSTI && fieldDef?.type === 'meta') {
+            metaData[key] = null;
           } else {
-            // For regular TEXT fields, convert undefined to an empty string.
-            if (isSTI && fieldDef?.type === 'meta') {
-              metaData[key] = '';
-            } else {
-              data[key] = '';
-            }
+            data[key] = null;
+          }
+        } else if (fieldType === 'text') {
+          // For regular TEXT fields, convert undefined to an empty string.
+          if (isSTI && fieldDef?.type === 'meta') {
+            metaData[key] = '';
+          } else {
+            data[key] = '';
           }
         } else if (fieldType === 'json') {
           // For JSON fields, use the default value from manifest to prevent:

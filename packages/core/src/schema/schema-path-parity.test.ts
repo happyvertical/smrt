@@ -25,6 +25,13 @@
  * Any generator change must keep the three legs equal — extend the fixture
  * rather than special-casing a path.
  *
+ * Since #2360 it also asserts that every table's `ObjectRegistry
+ * .getConflictColumns()` — what `save()` upserts on — is backed by exactly one
+ * unique index on every path (or is the primary key), and that a tenant-scoped
+ * table's default key leads with the tenant column on the build AND runtime
+ * paths, so a second tenant's `save()` of the same slug can never adopt the
+ * first tenant's row.
+ *
  * Documented, deliberate non-parity (not asserted here):
  * - the build-time AST path (`generateSchema(objectDef)`) feeds only an
  *   unconsumed vite virtual module and is not held to parity (assessment A8);
@@ -160,6 +167,79 @@ function buildFixtureManifest(): SmartObjectManifest {
     ),
   );
 
+  // Tenant-scoped CTI with the DEFAULT natural key (#2360): the conflict
+  // target becomes (tenant_id, slug, context) under the stable
+  // `_slug_context_idx` name, and that index also serves the tenant column.
+  add(
+    objectDef(
+      'ParityScopedDoc',
+      { title: { type: 'text', required: true } },
+      { tenantScoped: { mode: 'required' } },
+    ),
+  );
+
+  // Optional-tenancy CTI (NULL-tenant rows allowed): same key shape.
+  add(
+    objectDef(
+      'ParityScopedNote',
+      { body: { type: 'text' } },
+      { tenantScoped: { mode: 'optional' } },
+    ),
+  );
+
+  // `@report` object: no explicit conflict key; the report passes give it
+  // optional tenancy and derive `[tenant_id, ...group/bucket columns]`
+  // (finding A4 — the manifest CTI path used to emit (slug, context) here
+  // while the runtime upserted on the report key).
+  add(
+    objectDef(
+      'ParityDailyTotal',
+      {
+        storeId: {
+          type: 'text',
+          _meta: { __report: { kind: 'group', sourceColumn: 'storeId' } },
+        },
+        day: {
+          type: 'datetime',
+          _meta: {
+            __report: { kind: 'bucket', unit: 'day', sourceColumn: 'soldAt' },
+          },
+        },
+        revenue: {
+          type: 'decimal',
+          _meta: {
+            __report: { kind: 'aggregate', fn: 'sum', column: 'amount' },
+          },
+        },
+      },
+      { report: { source: 'ParityPlain' } },
+    ),
+  );
+
+  // Tenant-scoped STI root with a CUSTOM conflict key plus a child: the
+  // STI paths must honour the root's `conflictColumns` (they used to
+  // hard-code (slug, context, _meta_type), finding A4), keep slug lookups
+  // served (A7), and lead nothing else with tenant_id.
+  add(
+    objectDef(
+      'ParityTicket',
+      { code: { type: 'text', required: true } },
+      {
+        tableStrategy: 'sti',
+        tenantScoped: { mode: 'required' },
+        conflictColumns: ['tenant_id', 'code'],
+      },
+    ),
+  );
+  add(
+    objectDef(
+      'ParityBugTicket',
+      { severity: { type: 'text' } },
+      {},
+      'ParityTicket',
+    ),
+  );
+
   // STI hierarchy: base with a base-declared unique field and tenant scope,
   // two children — one with a same-package FK, an `@meta` field, a
   // descendant-only unique field and an indexed meta field; the sibling
@@ -289,12 +369,12 @@ describe('schema path parity (#2359)', () => {
   beforeAll(async () => {
     restoreRegistry = snapshotObjectRegistryState();
 
-    // 1. Manifest paths — the production pipeline steps that shape schema.
+    // 1. Manifest paths — THE production pass sequence (report tenancy and
+    //    conflict-key normalization included, #2360), exactly what
+    //    `generateManifest()`, `ManifestBuilder` and the Vite plugin run.
     manifest = buildFixtureManifest();
     const manifestGenerator = new ManifestGenerator();
-    manifestGenerator.injectTenantScopedFields(manifest);
-    manifestGenerator.mergeInheritedFields(manifest);
-    manifestGenerator.generateSchemas(manifest);
+    manifestGenerator.applyGenerationPasses(manifest);
 
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.schema) continue;
@@ -375,9 +455,63 @@ describe('schema path parity (#2359)', () => {
     'parity_links',
     'parity_nodes',
     'parity_reports',
+    'parity_scoped_docs',
+    'parity_scoped_notes',
+    'parity_daily_totals',
+    'parity_tickets',
     'parity_rooms',
     'parity_events',
   ];
+
+  /** The class whose key the table upserts on (STI root or the class). */
+  const schemaOwnerOf: Record<string, string> = {
+    parity_plains: 'ParityPlain',
+    parity_authors: 'ParityAuthor',
+    parity_posts: 'ParityPost',
+    parity_scopeds: 'ParityScoped',
+    parity_links: 'ParityLink',
+    parity_nodes: 'ParityNode',
+    parity_reports: 'ParityReport',
+    parity_scoped_docs: 'ParityScopedDoc',
+    parity_scoped_notes: 'ParityScopedNote',
+    parity_daily_totals: 'ParityDailyTotal',
+    parity_tickets: 'ParityTicket',
+    parity_rooms: 'ParityRoom',
+    parity_events: 'ParityEvent',
+  };
+
+  it('backs `ObjectRegistry.getConflictColumns()` with exactly one unique index on every path (unique index == conflict target, #2360)', () => {
+    for (const table of expectedTables) {
+      const owner = `${PKG}:${schemaOwnerOf[table]}`;
+      const conflictColumns = ObjectRegistry.getConflictColumns(owner);
+      const primaryKey = Object.entries(
+        manifestSchemas.get(table)?.columns ?? {},
+      )
+        .filter(([, column]) => column.primaryKey)
+        .map(([name]) => name);
+      const conflictIsPrimaryKey =
+        primaryKey.length === conflictColumns.length &&
+        primaryKey.every((column) => conflictColumns.includes(column));
+      for (const [leg, schema] of [
+        ['manifest', manifestSchemas.get(table)],
+        ['registry', registrySchemas.get(table)],
+        ['migrate', migrateSchemas[table]],
+      ] as const) {
+        const backing = (schema?.indexes ?? []).filter(
+          (i) =>
+            i.unique === true &&
+            !i.where &&
+            !i.jsonPath &&
+            i.columns.length === conflictColumns.length &&
+            i.columns.every((column) => conflictColumns.includes(column)),
+        );
+        expect(
+          backing.length,
+          `${leg} ${table}: conflict target ${JSON.stringify(conflictColumns)} should be backed by exactly one unique index (or be the primary key), got ${JSON.stringify(backing.map((i) => i.name))}`,
+        ).toBe(conflictIsPrimaryKey ? 0 : 1);
+      }
+    }
+  });
 
   it('generates every fixture table on every path', () => {
     for (const table of expectedTables) {
@@ -522,7 +656,66 @@ describe('schema path parity (#2359)', () => {
       expect(idx('parity_reports').some((i) => i.unique)).toBe(false);
     });
 
-    it('STI: plain FK/xref/tenant indexes, base-declared unique full, descendant-declared unique partial per class, meta JSON-path index', () => {
+    it('tenant-scoped CTI default key: (tenant_id, slug, context) UNIQUE under the stable name, no standalone tenant index, no extra slug index (#2360)', () => {
+      for (const table of ['parity_scoped_docs', 'parity_scoped_notes']) {
+        expect(names(table)).toEqual([`${table}_slug_context_idx`]);
+        const conflict = idx(table).find(
+          (i) => i.name === `${table}_slug_context_idx`,
+        );
+        expect(conflict?.unique).toBe(true);
+        expect(conflict?.columns).toEqual(['tenant_id', 'slug', 'context']);
+        expect(
+          ObjectRegistry.getConflictColumns(`${PKG}:${schemaOwnerOf[table]}`),
+        ).toEqual(['tenant_id', 'slug', 'context']);
+        expect(
+          manifest.objects[`${PKG}:${schemaOwnerOf[table]}`].decoratorConfig
+            .conflictColumns,
+        ).toEqual(['tenant_id', 'slug', 'context']);
+      }
+    });
+
+    it('report default key: (tenant_id, group, bucket) UNIQUE on the manifest path too, slug lookup kept', () => {
+      expect(names('parity_daily_totals')).toEqual([
+        'parity_daily_totals_slug_context_idx',
+        'parity_daily_totals_tenant_id_store_id_idx',
+      ]);
+      const conflict = idx('parity_daily_totals').find(
+        (i) => i.name === 'parity_daily_totals_tenant_id_store_id_idx',
+      );
+      expect(conflict?.unique).toBe(true);
+      expect(conflict?.columns).toEqual(['tenant_id', 'store_id', 'day']);
+      expect(
+        ObjectRegistry.getConflictColumns(`${PKG}:ParityDailyTotal`),
+      ).toEqual(['tenant_id', 'store_id', 'day']);
+    });
+
+    it('STI root with custom conflictColumns: honoured on both STI paths, slug lookup kept, child resolves the same key (#2360)', () => {
+      expect(names('parity_tickets')).toEqual([
+        'parity_tickets_meta_type_idx',
+        'parity_tickets_slug_context_idx',
+        'parity_tickets_tenant_id_code_idx',
+      ]);
+      const conflict = idx('parity_tickets').find(
+        (i) => i.name === 'parity_tickets_tenant_id_code_idx',
+      );
+      expect(conflict?.unique).toBe(true);
+      expect(conflict?.columns).toEqual(['tenant_id', 'code']);
+      expect(
+        idx('parity_tickets').find(
+          (i) => i.name === 'parity_tickets_slug_context_idx',
+        )?.unique,
+      ).toBeFalsy();
+      expect(ObjectRegistry.getConflictColumns(`${PKG}:ParityTicket`)).toEqual([
+        'tenant_id',
+        'code',
+      ]);
+      // An STI child upserts on the ROOT's key — the table has one index.
+      expect(
+        ObjectRegistry.getConflictColumns(`${PKG}:ParityBugTicket`),
+      ).toEqual(['tenant_id', 'code']);
+    });
+
+    it('STI: plain FK/xref indexes, tenant-led default key serves tenant_id, base-declared unique full, descendant-declared unique partial per class, meta JSON-path index', () => {
       expect(names('parity_events')).toEqual([
         'parity_events_booking_ref_parity_meeting_unique_idx',
         'parity_events_code_unique_idx',
@@ -531,8 +724,26 @@ describe('schema path parity (#2359)', () => {
         'parity_events_meta_type_idx',
         'parity_events_room_id_idx',
         'parity_events_slug_context_meta_type_idx',
-        'parity_events_tenant_id_idx',
       ]);
+      const conflict = idx('parity_events').find(
+        (i) => i.name === 'parity_events_slug_context_meta_type_idx',
+      );
+      expect(conflict?.unique).toBe(true);
+      expect(conflict?.columns).toEqual([
+        'tenant_id',
+        'slug',
+        'context',
+        '_meta_type',
+      ]);
+      expect(ObjectRegistry.getConflictColumns(`${PKG}:ParityEvent`)).toEqual([
+        'tenant_id',
+        'slug',
+        'context',
+        '_meta_type',
+      ]);
+      expect(ObjectRegistry.getConflictColumns(`${PKG}:ParityMeeting`)).toEqual(
+        ['tenant_id', 'slug', 'context', '_meta_type'],
+      );
       const partialUnique = idx('parity_events').find(
         (i) => i.name === 'parity_events_booking_ref_parity_meeting_unique_idx',
       );
