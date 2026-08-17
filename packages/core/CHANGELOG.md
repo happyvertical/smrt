@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.40.69
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - emit portable paths in generated smrt-register manifests (#2348) (core)
+  - declare the request-scoped database global once in smrt-core (#2344) (core,users)
+  - raise control boundaries and status green to WCAG floors (#2343) (smrt-ui,smrt-svelte)
+
+  ### Other Changes
+
+  - perf: lazy browser-ai in Provider, static-first theme delivery (#2347) (smrt-svelte,smrt-ui)
+  - chore: sync sdk packages to v0.88.0 (#2338) (deps)
+  - @happyvertical/smrt-config@0.40.69
+  - @happyvertical/smrt-types@0.40.69
+  - @happyvertical/smrt-scanner@0.40.69
+
 ## 0.40.68
 
 ### Patch Changes
