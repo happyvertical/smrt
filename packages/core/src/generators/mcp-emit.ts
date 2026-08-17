@@ -96,12 +96,28 @@ type TypeScriptApi = typeof import('typescript');
  *
  * `typescript` is CommonJS: Node's ESM interop exposes the whole API on
  * `default`, while bundlers hand back the namespace itself.
+ *
+ * It is an *optional* peer dependency (#2339): declaring it as a runtime
+ * dependency made every consumer's bundler resolve cosmiconfig's
+ * `require('typescript')` and pull the whole compiler into their production
+ * server graph, even though only this transpile path needs it. Anyone
+ * generating a `.js` MCP server installs `typescript` themselves; the throw
+ * below tells them exactly that instead of surfacing ERR_MODULE_NOT_FOUND.
  */
 async function loadTypeScript(): Promise<TypeScriptApi> {
-  const imported = (await import('typescript')) as TypeScriptApi & {
-    default?: TypeScriptApi;
-  };
-  return imported.default ?? imported;
+  try {
+    const imported = (await import('typescript')) as TypeScriptApi & {
+      default?: TypeScriptApi;
+    };
+    return imported.default ?? imported;
+  } catch (cause) {
+    throw new Error(
+      'Generating a JavaScript MCP server requires the optional peer dependency ' +
+        '"typescript". Install it (pnpm add -D typescript) or emit TypeScript ' +
+        'instead by giving generateServer() an output path ending in ".ts".',
+      { cause },
+    );
+  }
 }
 
 /**
