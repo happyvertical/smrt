@@ -18,6 +18,11 @@
  * schema production never got, and the comment in `testing/database.ts`
  * claiming the test path was "same as migrations" was false.
  *
+ * #2363 added the third rule the fixture now pins: every table carries an
+ * index for its own default list ordering — `(tenant_id, created_at)` when the
+ * table is tenant-scoped, `(created_at)` otherwise — and that composite
+ * replaces the standalone tenant index rather than sitting beside it.
+ *
  * This suite is the guard: for a representative set of classes it runs the
  * SAME manifest through the manifest paths, through the registry paths (after
  * `ObjectRegistry.registerFromManifest`) and through
@@ -122,6 +127,21 @@ function buildFixtureManifest(): SmartObjectManifest {
       {
         tenantScoped: { mode: 'required' },
         conflictColumns: ['tenant_id', 'external_id'],
+      },
+    ),
+  );
+
+  // Tenant-scoped CTI whose custom conflict key already leads with
+  // (tenant_id, created_at): the default list-ordering composite is a prefix
+  // of an index that exists, so nothing extra is emitted (#2363). This is the
+  // suppression rule #2357's `@smrt({ indexes })` declarations will feed.
+  add(
+    objectDef(
+      'ParityCovered',
+      { externalId: { type: 'text', required: true } },
+      {
+        tenantScoped: { mode: 'required' },
+        conflictColumns: ['tenant_id', 'created_at', 'external_id'],
       },
     ),
   );
@@ -372,6 +392,7 @@ describe('schema path parity (#2359)', () => {
     'parity_authors',
     'parity_posts',
     'parity_scopeds',
+    'parity_covereds',
     'parity_links',
     'parity_nodes',
     'parity_reports',
@@ -427,9 +448,53 @@ describe('schema path parity (#2359)', () => {
           );
           expect(
             serving.length,
-            `${leg} ${table}.${column} (${kind}) should have exactly one unqualified leading index, got ${JSON.stringify(serving.map((i) => i.name))}`,
-          ).toBe(1);
+            `${leg} ${table}.${column} (${kind}) should have at least one unqualified leading index`,
+          ).toBeGreaterThanOrEqual(1);
+          // ...and never a standalone `<table>_<column>_idx` beside a wider
+          // index that already leads with the column: a B-tree serves every
+          // prefix of its column list, so the duplicate would only cost
+          // writes (#2359 leads-with suppression, extended by #2363's
+          // `(tenant_id, created_at)` composite).
+          if (serving.length > 1) {
+            expect(
+              serving.map((i) => i.name),
+              `${leg} ${table}.${column} (${kind}) keeps a redundant standalone index beside ${JSON.stringify(serving.map((i) => i.name))}`,
+            ).not.toContain(`${table}_${column}_idx`);
+          }
         }
+      }
+    }
+  });
+
+  it('serves the default list ordering from an index on every path (#2363, A2)', () => {
+    for (const table of expectedTables) {
+      for (const [leg, schema] of [
+        ['manifest', manifestSchemas.get(table)],
+        ['registry', registrySchemas.get(table)],
+        ['migrate', migrateSchemas[table]],
+      ] as const) {
+        expect(schema).toBeDefined();
+        if (!schema) continue;
+        const tenantColumn = Object.entries(schema.columns).find(
+          ([, def]) => def.referenceKind === 'tenantId',
+        )?.[0];
+        // Tenant-scoped tables order inside the interceptor's tenant filter;
+        // everything else orders straight off created_at.
+        const expected = tenantColumn
+          ? [tenantColumn, 'created_at']
+          : ['created_at'];
+        const serving = schema.indexes.filter(
+          (i) =>
+            !i.where &&
+            !i.jsonPath &&
+            expected.every(
+              (column, position) => i.columns[position] === column,
+            ),
+        );
+        expect(
+          serving.map((i) => i.name),
+          `${leg} ${table} has no index leading with ${expected.join(', ')}`,
+        ).not.toEqual([]);
       }
     }
   });
@@ -471,8 +536,9 @@ describe('schema path parity (#2359)', () => {
         .map((i) => i.name)
         .sort();
 
-    it('plain CTI: only the (slug, context) conflict index', () => {
+    it('plain CTI: the (slug, context) conflict index and the list-ordering index', () => {
       expect(names('parity_plains')).toEqual([
+        'parity_plains_created_at_idx',
         'parity_plains_slug_context_idx',
       ]);
     });
@@ -480,6 +546,7 @@ describe('schema path parity (#2359)', () => {
     it('CTI references: FK + cross-package ref indexed, indexed:true honoured, inline unique kept on the column', () => {
       expect(names('parity_posts')).toEqual([
         'parity_posts_author_id_idx',
+        'parity_posts_created_at_idx',
         'parity_posts_profile_id_idx',
         'parity_posts_slug_context_idx',
         'parity_posts_status_idx',
@@ -489,19 +556,50 @@ describe('schema path parity (#2359)', () => {
       );
     });
 
-    it('tenant-scoped + custom conflict key leading with tenant_id: no standalone tenant index, slug lookup kept (A7)', () => {
+    it('tenant-scoped + custom conflict key leading with tenant_id: (tenant_id, created_at) instead of a standalone tenant index, slug lookup kept (A7, #2363)', () => {
       expect(names('parity_scopeds')).toEqual([
         'parity_scopeds_slug_context_idx',
+        'parity_scopeds_tenant_id_created_at_idx',
         'parity_scopeds_tenant_id_external_id_idx',
       ]);
+      // The conflict key serves the tenant equality filter, so #2359 adds no
+      // standalone `tenant_id` index; the list page still needs the ordering
+      // composite, which the unique conflict key cannot serve.
+      expect(names('parity_scopeds')).not.toContain(
+        'parity_scopeds_tenant_id_idx',
+      );
+      const ordering = idx('parity_scopeds').find(
+        (i) => i.name === 'parity_scopeds_tenant_id_created_at_idx',
+      );
+      expect(ordering?.columns).toEqual(['tenant_id', 'created_at']);
+      expect(Boolean(ordering?.unique)).toBe(false);
       const slugLookup = idx('parity_scopeds').find(
         (i) => i.name === 'parity_scopeds_slug_context_idx',
       );
       expect(Boolean(slugLookup?.unique)).toBe(false);
     });
 
+    it('a declared composite that already leads with (tenant_id, created_at) suppresses the list-ordering index (#2363)', () => {
+      expect(names('parity_covereds')).toEqual([
+        'parity_covereds_slug_context_idx',
+        'parity_covereds_tenant_id_created_at_idx',
+      ]);
+      // The single index is the caller's UNIQUE conflict key over three
+      // columns, not a second one the generator appended.
+      const covering = idx('parity_covereds').find(
+        (i) => i.name === 'parity_covereds_tenant_id_created_at_idx',
+      );
+      expect(covering?.unique).toBe(true);
+      expect(covering?.columns).toEqual([
+        'tenant_id',
+        'created_at',
+        'external_id',
+      ]);
+    });
+
     it('junction-shaped conflict key: leading FK suppressed, trailing FK indexed', () => {
       expect(names('parity_links')).toEqual([
+        'parity_links_created_at_idx',
         'parity_links_left_id_right_id_idx',
         'parity_links_right_id_idx',
         'parity_links_slug_context_idx',
@@ -510,6 +608,7 @@ describe('schema path parity (#2359)', () => {
 
     it('self-referencing FK is indexed', () => {
       expect(names('parity_nodes')).toEqual([
+        'parity_nodes_created_at_idx',
         'parity_nodes_parent_id_idx',
         'parity_nodes_slug_context_idx',
       ]);
@@ -517,6 +616,7 @@ describe('schema path parity (#2359)', () => {
 
     it('conflictColumns [id]: no conflict index beside the primary key, slug lookup kept', () => {
       expect(names('parity_reports')).toEqual([
+        'parity_reports_created_at_idx',
         'parity_reports_slug_context_idx',
       ]);
       expect(idx('parity_reports').some((i) => i.unique)).toBe(false);
@@ -531,8 +631,20 @@ describe('schema path parity (#2359)', () => {
         'parity_events_meta_type_idx',
         'parity_events_room_id_idx',
         'parity_events_slug_context_meta_type_idx',
-        'parity_events_tenant_id_idx',
+        'parity_events_tenant_id_created_at_idx',
       ]);
+      // One list-ordering index for the shared table, unqualified: the base
+      // class's polymorphic list carries no `_meta_type` predicate, so a
+      // per-subtype composite could not serve it (same reasoning as the plain
+      // STI reference indexes above, #2359).
+      const ordering = idx('parity_events').find(
+        (i) => i.name === 'parity_events_tenant_id_created_at_idx',
+      );
+      expect(ordering?.where).toBeUndefined();
+      expect(ordering?.columns).toEqual(['tenant_id', 'created_at']);
+      expect(names('parity_events')).not.toContain(
+        'parity_events_tenant_id_idx',
+      );
       const partialUnique = idx('parity_events').find(
         (i) => i.name === 'parity_events_booking_ref_parity_meeting_unique_idx',
       );

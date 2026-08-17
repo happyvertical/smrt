@@ -81,6 +81,11 @@ export class SchemaGenerator {
     const dependencies = this.extractDependencies(objectDef, foreignKeys);
     const version = this.generateVersion(objectDef);
 
+    // The default list page orders by created_at (#2363) — before the
+    // reference-column pass so the composite suppresses a standalone tenant
+    // index.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
@@ -344,13 +349,39 @@ export class SchemaGenerator {
   }
 
   /**
-   * Whether an existing index already serves equality lookups on `column`.
+   * Whether an existing index already leads with `leadingColumns`, in order.
    *
    * Only an UNQUALIFIED index (no partial `WHERE`, no JSON-path expression)
-   * whose first column is `column` counts. A partial index such as
-   * `... WHERE _meta_type = 'Article'` cannot serve a base-class polymorphic
-   * query, which carries no subtype predicate, so it must not suppress the
-   * standalone index (#2359, review of #2384).
+   * counts. A partial index such as `... WHERE _meta_type = 'Article'` cannot
+   * serve a base-class polymorphic query, which carries no subtype predicate,
+   * so it must not suppress the standalone index (#2359, review of #2384).
+   *
+   * A B-tree serves any prefix of its column list, so an index over
+   * `(tenant_id, created_at, status)` covers both `(tenant_id)` equality
+   * lookups and `(tenant_id, created_at)` ordering — hence the prefix test
+   * rather than an exact match (#2363).
+   */
+  private hasUnqualifiedLeadingColumns(
+    indexes: ReadonlyArray<{
+      columns: string[];
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    leadingColumns: readonly string[],
+  ): boolean {
+    return indexes.some(
+      (index) =>
+        !index.where &&
+        !index.jsonPath &&
+        (index.columns?.length ?? 0) >= leadingColumns.length &&
+        leadingColumns.every((column, i) => index.columns[i] === column),
+    );
+  }
+
+  /**
+   * Whether an existing index already serves equality lookups on `column`.
+   *
+   * Single-column shorthand for {@link hasUnqualifiedLeadingColumns}.
    */
   private hasUnqualifiedLeadingIndex(
     indexes: ReadonlyArray<{
@@ -360,10 +391,86 @@ export class SchemaGenerator {
     }>,
     column: string,
   ): boolean {
-    return indexes.some(
-      (index) =>
-        !index.where && !index.jsonPath && index.columns?.[0] === column,
-    );
+    return this.hasUnqualifiedLeadingColumns(indexes, [column]);
+  }
+
+  /**
+   * The column list of the default list-ordering index for a table.
+   *
+   * Every generated list surface — REST, MCP, and the SvelteKit list route —
+   * pages with `ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`,
+   * #2367). On a tenant-scoped table that page is always preceded by a
+   * `tenant_id = ?` equality filter from the tenancy interceptor, so the
+   * serving index leads with the tenant column and orders inside it.
+   *
+   * Returns `null` when the table has no `created_at` column (no path emits
+   * such a table today, but the helper stays total).
+   */
+  private getDefaultListOrderingColumns(
+    columns: Record<string, { referenceKind?: string } | undefined>,
+  ): string[] | null {
+    if (!columns.created_at) return null;
+
+    // The tenant column name is configurable (`@smrt({ tenantScoped: { field } })`),
+    // so find it by reference kind rather than by the `tenant_id` spelling.
+    const tenantColumn = Object.entries(columns).find(
+      ([, columnDef]) => columnDef?.referenceKind === 'tenantId',
+    )?.[0];
+
+    return tenantColumn ? [tenantColumn, 'created_at'] : ['created_at'];
+  }
+
+  /**
+   * Ensure the table can serve its own default list page from an index.
+   *
+   * Generated REST/MCP/SvelteKit list routes all page with
+   * `ORDER BY created_at DESC, <pk> ASC LIMIT n` and no `created_at` index
+   * existed on any schema path (the dead AST path indexed `updated_at`
+   * instead), so every default list page was a sequential scan plus a top-N
+   * sort of the whole table — 21 ms against 0.1 ms with the right composite on
+   * the workload the assessment measured (#2363, finding A2).
+   *
+   * Emitted shape:
+   *
+   * - tenant-scoped table → `(<tenant column>, created_at)`. The tenancy
+   *   interceptor adds `tenant_id = ?` to every list, so the tenant column
+   *   leads and `created_at` orders within it.
+   * - otherwise → `(created_at)`.
+   *
+   * No `DESC` declaration: PostgreSQL scans a B-tree backwards just as
+   * cheaply, and `IndexDefinition` carries no per-column direction. The
+   * trailing primary-key tiebreak is left out deliberately — its direction is
+   * opposite to `created_at`'s, so no single-direction index can satisfy the
+   * whole key anyway; the leading columns turn a full sort into an index scan
+   * with an incremental sort over rows that share a timestamp.
+   *
+   * Call this AFTER every declared/opt-in index and BEFORE
+   * {@link ensureReferenceColumnIndexes}: a declared composite that already
+   * leads with the same columns suppresses this one, and this composite in
+   * turn suppresses the standalone tenant index that would otherwise be a
+   * redundant prefix of it.
+   */
+  private ensureDefaultListOrderingIndex(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    columns: Record<string, { referenceKind?: string } | undefined>,
+    tableName: string,
+  ): void {
+    const orderingColumns = this.getDefaultListOrderingColumns(columns);
+    if (!orderingColumns) return;
+    if (this.hasUnqualifiedLeadingColumns(indexes, orderingColumns)) return;
+
+    const name = `${tableName}_${orderingColumns.join('_')}_idx`;
+    if (indexes.some((index) => index.name === name)) return;
+
+    // No `description`: ManifestIndexDefinition has no such field, and this
+    // helper feeds the manifest paths as well as the structured ones.
+    indexes.push({ name, columns: orderingColumns });
   }
 
   /**
@@ -388,8 +495,12 @@ export class SchemaGenerator {
    * them is redundant and harmless.
    *
    * Call this LAST in every path, after every other index (conflict, opt-in,
-   * unique, and any future declared composite index) has been appended, so
-   * the leads-with suppression sees the full set.
+   * unique, the default list-ordering composite, and any future declared
+   * composite index) has been appended, so the leads-with suppression sees the
+   * full set. In particular {@link ensureDefaultListOrderingIndex} runs first
+   * on a tenant-scoped table: its `(tenant_id, created_at)` composite serves
+   * the tenant equality filter too, so no standalone tenant index is added
+   * (#2363).
    */
   private ensureReferenceColumnIndexes(
     indexes: Array<{
@@ -931,6 +1042,11 @@ export class SchemaGenerator {
       });
     }
 
+    // The default list page orders by created_at (#2363) — before the
+    // reference-column pass so the composite suppresses a standalone tenant
+    // index.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
@@ -1257,6 +1373,11 @@ export class SchemaGenerator {
       });
     }
 
+    // The default list page orders by created_at (#2363) — before the
+    // reference-column pass so the composite suppresses a standalone tenant
+    // index.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
@@ -1491,6 +1612,11 @@ export class SchemaGenerator {
       });
     }
 
+    // The default list page orders by created_at (#2363) — before the
+    // reference-column pass so the composite suppresses a standalone tenant
+    // index.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359). `generateSQL()` below renders only the
     // CREATE TABLE statement; indexes travel separately in `indexes`, which
@@ -1672,6 +1798,11 @@ export class SchemaGenerator {
         columns: [colName],
       });
     }
+
+    // The default list page orders by created_at (#2363) — before the
+    // reference-column pass so the composite suppresses a standalone tenant
+    // index.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
 
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359). `generateSQL()` below renders only the
