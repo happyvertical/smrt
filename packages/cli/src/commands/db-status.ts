@@ -320,7 +320,9 @@ export function summarizeSchemaDiff(diff: {
           drift.push({
             name,
             type: driftType,
-            recommendation: `Manual intervention required: expected ${change.mismatch?.expected ?? '?'}, found ${change.mismatch?.actual ?? '?'} (${change.alteration ?? 'alter_column'}; cannot auto-apply on this database engine or live data blocks it).`,
+            recommendation: change.advisory?.message
+              ? `Manual intervention required: ${change.advisory.message}`
+              : `Manual intervention required: expected ${change.mismatch?.expected ?? '?'}, found ${change.mismatch?.actual ?? '?'} (${change.alteration ?? 'alter_column'}; cannot auto-apply on this database engine).`,
           });
         }
         break;

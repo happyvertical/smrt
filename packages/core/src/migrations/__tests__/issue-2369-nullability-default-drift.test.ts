@@ -404,6 +404,18 @@ for (const { name, type, engine } of engines) {
         'UPDATE "items" SET "owner_id"',
       );
 
+      // A change carrying both an advisory and comment-only SQL is manual,
+      // not actionable: hasActionableChanges must not report it as work.
+      expect(isAdvisoryOnlyChange(followUp)).toBe(false);
+      expect(
+        hasActionableChanges({
+          added_tables: [],
+          dropped_tables: [],
+          changes: [followUp],
+          has_changes: true,
+        }),
+      ).toBe(false);
+
       // Only the ADD COLUMN executes; the comment is filtered by the
       // orchestrator and classified as manual by the CLI.
       const executable = getSQLFromDiff(diff).filter(

@@ -143,6 +143,44 @@ describe('SchemaComparer', () => {
       expect(indexChanges[0].name).toBe('idx_users_email');
     });
 
+    it('emits add-index SQL with IF NOT EXISTS so a retry repairs (issue #2362)', async () => {
+      // A batch that fails part way through — a lock_timeout during the epic's
+      // ~200-index rollout, a cancelled deploy — leaves some indexes created.
+      // Without IF NOT EXISTS the retry errors on those instead of repairing
+      // the rest. This also matches the canonical `generateIndexes()` DDL used
+      // for new tables, so both schema paths emit the same clause.
+      await db.query('CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT);');
+
+      const manifest: Record<string, SchemaDefinition> = {
+        users: {
+          tableName: 'users',
+          ddl: 'CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT);',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            email: { type: 'TEXT' },
+          },
+          indexes: [
+            { name: 'idx_users_email', columns: ['email'], unique: true },
+          ],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      };
+
+      const diff = await comparer.compare(manifest);
+      const add = diff.changes.find((c) => c.type === 'add_index');
+
+      expect(add?.sql).toBe(
+        'CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email")',
+      );
+
+      // Executable, and idempotent on a second run.
+      await db.query(add?.sql as string);
+      await expect(db.query(add?.sql as string)).resolves.toBeDefined();
+    });
+
     it('should not report existing indexes as new', async () => {
       await db.query('CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT);');
       await db.query('CREATE INDEX idx_users_email ON users(email);');
