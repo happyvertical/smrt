@@ -379,7 +379,109 @@ export class SchemaGenerator {
       }
     }
 
+    // Indexes declared on the object (#2340). The generated set above only
+    // covers foreign keys, unique columns and `updated_at`, which cannot
+    // express a list workload's access path — a tenant-filtered, sorted,
+    // limited read needs a composite index nothing here would produce.
+    this.appendDeclaredIndexes(
+      indexes,
+      objectDef.decoratorConfig as { indexes?: unknown } | undefined,
+      columns,
+      tableName,
+    );
+
     return indexes;
+  }
+
+  /**
+   * Append `@smrt({ indexes: [...] })` declarations to a generated index set.
+   *
+   * Shared by the build-time AST path and the registry/STI path so a
+   * declaration behaves identically however the schema was derived. Declared
+   * columns may be SMRT field names or column names; field names are mapped
+   * through, and anything that resolves to no column is a hard error rather
+   * than a silently dropped index.
+   */
+  private appendDeclaredIndexes(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+      description?: string;
+    }>,
+    config: { indexes?: unknown } | undefined,
+    columns: Record<string, unknown>,
+    tableName: string,
+  ): void {
+    const declared = config?.indexes;
+    if (!Array.isArray(declared)) return;
+
+    for (const entry of declared) {
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        typeof (entry as { name?: unknown }).name !== 'string' ||
+        !Array.isArray((entry as { columns?: unknown }).columns) ||
+        !(entry as { columns: unknown[] }).columns.every(
+          (column) => typeof column === 'string',
+        )
+      ) {
+        continue;
+      }
+      const spec = entry as {
+        name: string;
+        columns: string[];
+        unique?: boolean;
+        where?: string;
+      };
+
+      const mapped = spec.columns.map((column) =>
+        this.toColumnName(column, columns),
+      );
+      const unknown = mapped.filter((column) => !columns[column]);
+      if (unknown.length > 0) {
+        throw new Error(
+          `Index "${spec.name}" on "${tableName}" references unknown column(s): ${unknown.join(', ')}. ` +
+            'Declared index columns must be fields on the object.',
+        );
+      }
+      if (indexes.some((existing) => existing.name === spec.name)) continue;
+
+      indexes.push({
+        name: spec.name,
+        columns: mapped,
+        ...(spec.unique ? { unique: true } : {}),
+        ...(spec.where ? { where: spec.where } : {}),
+        description: `Declared index for ${tableName}`,
+      });
+    }
+  }
+
+  /** Resolve a manifest object definition by class name (exact, then suffix). */
+  private findManifestObject(
+    className: string,
+    manifest: SmartObjectManifest,
+  ): SmartObjectDefinition | undefined {
+    const objects = manifest.objects ?? {};
+    const direct = objects[className];
+    if (direct) return direct;
+    for (const [key, def] of Object.entries(objects)) {
+      if (def?.className === className || key.endsWith(`:${className}`)) {
+        return def;
+      }
+    }
+    return undefined;
+  }
+
+  /** Resolve a SMRT field name to its column name, passing through columns. */
+  private toColumnName(
+    name: string,
+    columns: Record<string, unknown>,
+  ): string {
+    if (columns[name]) return name;
+    const snake = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+    return columns[snake] ? snake : name;
   }
 
   /**
@@ -735,6 +837,16 @@ export class SchemaGenerator {
         description: `Index for ${colName}`,
       });
     }
+
+    // Indexes declared through `@smrt({ indexes: [...] })` (#2340). This is the
+    // path STI/registry-backed objects take, so a declaration must be honored
+    // here as well as in the build-time AST path.
+    this.appendDeclaredIndexes(
+      indexes,
+      config as { indexes?: unknown } | undefined,
+      columns,
+      tableName,
+    );
 
     return {
       tableName,
@@ -1273,6 +1385,17 @@ export class SchemaGenerator {
     }
 
     // Generate DDL
+    // Indexes declared on the STI base through `@smrt({ indexes: [...] })`
+    // (#2340). STI descendants share one table, so the base owns the table's
+    // access paths and a declaration there applies to every subtype's reads.
+    // Appended before the DDL is rendered so the emitted SQL creates it too.
+    this.appendDeclaredIndexes(
+      indexes,
+      config as { indexes?: unknown } | undefined,
+      columns,
+      tableName,
+    );
+
     const schemaDefinition: SchemaDefinition = {
       tableName,
       columns: this.convertManifestColumnsToSchemaColumns(columns),
@@ -1474,6 +1597,14 @@ export class SchemaGenerator {
       .digest('hex')
       .substring(0, 8);
 
+    // Indexes declared through `@smrt({ indexes: [...] })` (#2340). The
+    // manifest generator passes this object's decoratorConfig as `config`.
+    this.appendDeclaredIndexes(
+      indexes,
+      config as { indexes?: unknown } | undefined,
+      columns,
+      tableName,
+    );
     return {
       tableName,
       ddl,

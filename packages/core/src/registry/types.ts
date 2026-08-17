@@ -319,6 +319,35 @@ export interface SmartObjectConfig {
   conflictColumns?: string[];
 
   /**
+   * Extra indexes for this object's table (issue #2340).
+   *
+   * Generated schemas otherwise only index foreign keys, unique columns and
+   * `updated_at`, which cannot express a list workload's real access path. A
+   * multi-tenant list — `WHERE tenant_id = ? ... ORDER BY <sort> DESC LIMIT n`
+   * — needs a composite index leading with the filter column and ending on the
+   * sort column, and there was no way to declare one: consumers cannot touch a
+   * shared table's schema because SMRT manifests own it.
+   *
+   * `columns` are SMRT field names or column names, in index order. Postgres
+   * scans a btree in either direction, so a plain ascending index also serves
+   * the matching `ORDER BY ... DESC` as an ordered scan without a sort step —
+   * declare the columns, not a direction.
+   *
+   * @example
+   * ```typescript
+   * // Serves: WHERE tenant_id = ? ... ORDER BY publish_date DESC LIMIT 10
+   * @smrt({ indexes: [{ name: 'contents_tenant_publish_date_idx',
+   *                     columns: ['tenant_id', 'publish_date'] }] })
+   * ```
+   */
+  indexes?: Array<{
+    name: string;
+    columns: string[];
+    unique?: boolean;
+    where?: string;
+  }>;
+
+  /**
    * Opt-in read-through cache for collection reads (issue #1498).
    *
    * When set, `collection.list()` and `collection.get()` memoize result

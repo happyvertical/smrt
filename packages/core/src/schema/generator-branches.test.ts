@@ -564,3 +564,90 @@ describe('SchemaGenerator.generateSQL / formatDefaultValue', () => {
     expect(sql).toContain('"email" TEXT NOT NULL UNIQUE');
   });
 });
+
+describe('SchemaGenerator declared indexes (#2340)', () => {
+  it('emits a declared composite index, mapping SMRT field names to columns', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchema(
+      objectDef(
+        'Post',
+        {
+          tenantId: { type: 'text' },
+          publish_date: { type: 'datetime' },
+          title: { type: 'text' },
+        },
+        {
+          indexes: [
+            {
+              name: 'posts_tenant_publish_date_idx',
+              columns: ['tenantId', 'publish_date'],
+            },
+          ],
+        },
+      ),
+    );
+
+    const declared = schema.indexes.find(
+      (index) => index.name === 'posts_tenant_publish_date_idx',
+    );
+    expect(declared).toBeDefined();
+    // Column order is the access path: filter column first, sort column last.
+    // `tenantId` is declared camelCase and resolves to the object's own column.
+    expect(declared?.columns).toEqual(['tenantId', 'publish_date']);
+    expect(declared?.unique).toBeUndefined();
+  });
+
+  it('carries unique and partial-index options through', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchema(
+      objectDef(
+        'Ticket',
+        { code: { type: 'text' }, active: { type: 'boolean' } },
+        {
+          indexes: [
+            {
+              name: 'tickets_active_code_idx',
+              columns: ['code'],
+              unique: true,
+              where: 'active = true',
+            },
+          ],
+        },
+      ),
+    );
+
+    const declared = schema.indexes.find(
+      (index) => index.name === 'tickets_active_code_idx',
+    );
+    expect(declared?.unique).toBe(true);
+    expect(declared?.where).toBe('active = true');
+  });
+
+  it('rejects a declared index naming a column the object does not have', () => {
+    const generator = new SchemaGenerator();
+    expect(() =>
+      generator.generateSchema(
+        objectDef(
+          'Post',
+          { title: { type: 'text' } },
+          {
+            indexes: [
+              { name: 'posts_bad_idx', columns: ['title', 'nope'] },
+            ],
+          },
+        ),
+      ),
+    ).toThrow(/unknown column\(s\): nope/);
+  });
+
+  it('leaves generated indexes untouched when none are declared', () => {
+    const generator = new SchemaGenerator();
+    const without = new SchemaGenerator().generateSchema(
+      objectDef('Plain', { title: { type: 'text' } }),
+    );
+    const withEmpty = generator.generateSchema(
+      objectDef('Plain', { title: { type: 'text' } }, { indexes: [] }),
+    );
+    expect(withEmpty.indexes).toEqual(without.indexes);
+  });
+});

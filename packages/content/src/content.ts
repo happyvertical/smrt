@@ -641,6 +641,20 @@ export interface ContentOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
+  // Public content lists read one tenant's newest rows:
+  //   WHERE tenant_id = ? AND status IN (...) ORDER BY publish_date DESC LIMIT n
+  // `contents` is a shared STI table, so without this the read is a sequential
+  // scan plus a top-N sort over every tenant's content. Measured on 120k rows /
+  // 202 tenants: 35,576 buffers / 21.2 ms without it, 19 buffers / 0.107 ms
+  // with it. Ascending is deliberate — Postgres scans a btree backwards, so
+  // this serves `ORDER BY publish_date DESC` as an ordered scan with no sort
+  // step (verified: `Index Scan Backward`, no Sort node). (#2340)
+  indexes: [
+    {
+      name: 'contents_tenant_publish_date_idx',
+      columns: ['tenantId', 'publish_date'],
+    },
+  ],
   api: {
     include: [
       'list',
