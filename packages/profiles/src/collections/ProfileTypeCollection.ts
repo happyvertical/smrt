@@ -62,15 +62,38 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
     // A plain SMRT create is an upsert and may replace the winning row's id
     // when two first-login transactions race. Keep the canonical id stable by
     // using a cross-adapter insert-if-absent and then hydrating the winner.
+    //
+    // The table's unique key is `(tenant_id, slug, context, _meta_type)` since
+    // smrt#2360, and a global row's NULL tenant never conflicts at the
+    // database level (NULLs are distinct in a unique index), so a raw
+    // `ON CONFLICT (…) DO NOTHING` can no longer arbitrate this race. Serialize
+    // the global create per slug instead: PostgreSQL through a
+    // transaction-scoped advisory lock (the arbiter the SDK's null-aware
+    // upsert uses too); the embedded engines through the provisioning
+    // coordinator's in-process lock plus their single-writer transactions.
+    if (/^postgres(?:ql)?:/iu.test(this.db.url ?? '')) {
+      await this.db.query(
+        'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+        '@happyvertical/smrt-profiles:profile_types:global',
+        slug,
+      );
+    }
     await this.db.query(
       `INSERT INTO profile_types
         (id, slug, context, _meta_type, tenant_id, name, description)
-       VALUES (?, ?, '', '@happyvertical/smrt-profiles:ProfileType', NULL, ?, ?)
-       ON CONFLICT (slug, context, _meta_type) DO NOTHING`,
+       SELECT ?, ?, '', '@happyvertical/smrt-profiles:ProfileType', NULL, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM profile_types
+         WHERE slug = ?
+           AND context = ''
+           AND _meta_type = '@happyvertical/smrt-profiles:ProfileType'
+           AND tenant_id IS NULL
+       )`,
       crypto.randomUUID(),
       slug,
       defaults.name,
       defaults.description ?? null,
+      slug,
     );
     const profileType = await this.loadGlobalBySlug(slug);
     if (!profileType) {
