@@ -1725,12 +1725,10 @@ import './smrt-register.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 
-declare global {
-  // eslint-disable-next-line no-var
-  var __smrtGetRequestScopedDatabase:
-    | (() => SmrtClassOptions['db'] | undefined)
-    | undefined;
-}
+// \`__smrtGetRequestScopedDatabase\` is declared canonically by
+// @happyvertical/smrt-core; importing its types above is enough to see it.
+// Do not redeclare it here — duplicate \`declare global\` entries must be
+// type-identical, and a second declaration broke consumer checks (#2342).
 
 /**
  * Per-object configuration overrides
