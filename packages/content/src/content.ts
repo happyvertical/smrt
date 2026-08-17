@@ -716,6 +716,19 @@ export interface ContentOptions extends SmrtObjectOptions {
     include: ['list', 'get', 'create', 'update'], // AI tools for content management
   },
   cli: true, // Enable CLI commands for content management
+  // Content's own list pages sort by publish date inside a tenant, not by
+  // `created_at`, so the generated `(tenant_id, created_at)` ordering index
+  // (#2363) does not serve them — this is the second access path on the same
+  // table and it has to be declared (#2357, measured in #2340). Declared
+  // indexes are appended before the automatic passes, so this one also stands
+  // in for the standalone `contents_tenant_id_idx` (#2359): a btree serves
+  // every prefix of its column list.
+  indexes: [
+    {
+      name: 'contents_tenant_id_publish_date_idx',
+      columns: ['tenantId', 'publish_date'],
+    },
+  ],
 })
 export class Content
   extends SmrtObject
