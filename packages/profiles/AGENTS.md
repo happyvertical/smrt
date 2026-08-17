@@ -90,10 +90,15 @@ import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
   `@happyvertical/smrt-profiles/internal/oidc-provisioning` subpath instead of
   duplicating adapter probing, locking, or retry policy, and supply both exact
   issuer/subject and normalized-email lock keys in deterministic order. The
-  coordinator additionally serializes all SQLite/DuckDB provisioning
-  transactions per database URL because those adapters cannot overlap
-  unrelated root transactions safely and retries bounded PostgreSQL
-  deadlock/serialization failures. New OIDC Profiles use per-profile,
+  coordinator additionally serializes every root-handle statement it owns per
+  database URL on SQLite/DuckDB — shared `_smrt_backfills` initialization, the
+  provisioning transaction, and the post-commit rebind — because those adapters
+  multiplex one native connection and cannot overlap unrelated root
+  transactions safely. **Never overlap two statements on one such handle,
+  transaction-bound or not** — no `Promise.all` over reads, not even
+  primary-key rebinds — because DuckDB fails the losing prepared statement or
+  aborts the process outright. It retries
+  bounded PostgreSQL deadlock/serialization failures. New OIDC Profiles use per-profile,
   non-semantic slugs so duplicate display names never invoke natural-key upsert.
   Caller-owned transactions never execute `_smrt_backfills` DDL; paths that
   perform canonical email lookup or reservation require the table to already
