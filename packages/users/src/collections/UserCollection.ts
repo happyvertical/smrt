@@ -640,12 +640,15 @@ export class UserCollection extends SmrtCollection<User> {
        LIMIT 2${lockClause}`,
       profileId,
     );
-    const owners = await Promise.all(
-      result.rows.map((row) =>
-        typeof row.id === 'string' ? this.get({ id: row.id }) : null,
-      ),
-    );
-    return owners.filter((owner): owner is User => owner !== null);
+    // Sequential by design: this runs on the caller's transaction handle, and
+    // SQLite/DuckDB multiplex one native connection per handle (#2352).
+    const owners: User[] = [];
+    for (const row of result.rows) {
+      if (typeof row.id !== 'string') continue;
+      const owner = await this.get({ id: row.id });
+      if (owner !== null && owner !== undefined) owners.push(owner);
+    }
+    return owners;
   }
 
   private async validateProfileOwnerAuthorization(
@@ -723,11 +726,12 @@ export class UserCollection extends SmrtCollection<User> {
       const users = await UserCollection.create({ db: rootDb });
       const profiles = await ProfileCollection.create({ db: rootDb });
       const identities = await OidcIdentityCollection.create({ db: rootDb });
-      const [user, profile, oidcIdentity] = await Promise.all([
-        users.get({ id: userId }),
-        profiles.get({ id: profileId }),
-        identities.get({ id: identityId }),
-      ]);
+      // Read one statement at a time. SQLite and DuckDB handles multiplex a
+      // single native connection, so overlapping statements on it fail the
+      // losing prepared statement or abort the process outright (#2352).
+      const user = await users.get({ id: userId });
+      const profile = await profiles.get({ id: profileId });
+      const oidcIdentity = await identities.get({ id: identityId });
       if (!user || !profile || !oidcIdentity) {
         throw new OidcProvisioningError(
           'concurrency_conflict',
@@ -805,12 +809,15 @@ export class UserCollection extends SmrtCollection<User> {
     for (const row of result.rows) {
       this.assertUserEmailKeyCurrent(row, email);
     }
-    const users = await Promise.all(
-      result.rows.map((row) =>
-        typeof row.id === 'string' ? this.get({ id: row.id }) : null,
-      ),
-    );
-    return users.filter((user): user is User => user !== null);
+    // Sequential by design: this runs on the caller's transaction handle, and
+    // SQLite/DuckDB multiplex one native connection per handle (#2352).
+    const matched: User[] = [];
+    for (const row of result.rows) {
+      if (typeof row.id !== 'string') continue;
+      const user = await this.get({ id: row.id });
+      if (user !== null && user !== undefined) matched.push(user);
+    }
+    return matched;
   }
 
   /** Require the deploy-time backfill marker before indexed identity reads. */

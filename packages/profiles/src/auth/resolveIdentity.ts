@@ -519,10 +519,13 @@ async function rebindOidcProfileResult<
   const [profile, oidcIdentity] = await withSystemContext(async () => {
     const profiles = await ProfileCollection.create({ db: rootDb });
     const identities = await OidcIdentityCollection.create({ db: rootDb });
-    return Promise.all([
-      profiles.get({ id: profileId }),
-      identities.get({ id: identityId }),
-    ]);
+    // Read one statement at a time. SQLite and DuckDB handles multiplex a
+    // single native connection, so overlapping statements on it fail the
+    // losing prepared statement or abort the process outright (#2352). These
+    // are primary-key reads, so the sequential cost is one extra round trip.
+    const rebound = await profiles.get({ id: profileId });
+    const reboundIdentity = await identities.get({ id: identityId });
+    return [rebound, reboundIdentity] as const;
   });
   if (!profile || !oidcIdentity) {
     throw new Error(
