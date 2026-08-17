@@ -150,22 +150,33 @@ export interface SmrtGlobalConfig {
  */
 export interface MigrationsPostgresConfig {
   /**
-   * Use CREATE INDEX CONCURRENTLY for index creation
-   * Avoids table locks but cannot run in a transaction
+   * Allow `CREATE INDEX CONCURRENTLY` when concurrent-index mode is requested
+   * with `smrt db:migrate --postgres-safe`.
+   *
+   * Concurrent builds avoid the batch's table locks but cannot run inside a
+   * transaction, so that mode is not atomic. Setting this to `false` vetoes
+   * the flag: index DDL then stays inside the atomic transaction, still bounded
+   * by the timeouts below. The flag is the opt-in — this key alone does not
+   * enable concurrent mode.
    *
    * @default true
    */
   useConcurrently?: boolean;
 
   /**
-   * Lock timeout for migration statements
+   * `lock_timeout` applied to every PostgreSQL migration statement.
+   *
+   * Accepts a bare millisecond count or an `ms`/`s`/`min`/`h` suffix. `'0'`
+   * disables the timeout, as PostgreSQL defines it.
    *
    * @default '30s'
    */
   lockTimeout?: string;
 
   /**
-   * Statement timeout for migration execution
+   * `statement_timeout` applied to every PostgreSQL migration statement.
+   *
+   * Same accepted forms as {@link MigrationsPostgresConfig.lockTimeout}.
    *
    * @default '60s'
    */

@@ -51,7 +51,13 @@ export {
   type PendingSchemaStatementsResult,
 } from './orchestrate.js';
 // Core classes
-export { MigrationTracker, planPostgresStatements } from './tracker.js';
+export {
+  buildConcurrentIndexPlan,
+  extractCreatedIndexName,
+  MigrationTracker,
+  parsePostgresTimeoutMs,
+  planPostgresStatements,
+} from './tracker.js';
 
 // Types
 export type {

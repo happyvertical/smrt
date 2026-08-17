@@ -1267,11 +1267,16 @@ export class SchemaComparer {
    * reject partial indexes — the predicate is dropped so the emitted DDL stays
    * executable (a partial index degrades to a full index there). The predicate
    * is trimmed and a redundant leading `WHERE` stripped for robustness.
+   *
+   * `IF NOT EXISTS` matches the canonical `generateIndexes()` DDL path and
+   * makes a retry after a partially applied batch repair the schema instead of
+   * erroring on the indexes that did land (issue #2362). All three engines
+   * (SQLite, PostgreSQL, DuckDB) accept the clause.
    */
   private generateAddIndexSQL(tableName: string, idx: IndexDefinition): string {
     const uniqueStr = idx.unique ? 'UNIQUE ' : '';
     const target = renderIndexTarget(idx, this.engine);
-    let sql = `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
+    let sql = `CREATE ${uniqueStr}INDEX IF NOT EXISTS ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
     const where = idx.where?.trim().replace(/^WHERE\s+/i, '');
     if (this.supportsPartialIndexes() && where) {
       sql += ` WHERE ${where}`;
