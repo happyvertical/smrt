@@ -1680,6 +1680,16 @@ class Product extends SmrtObject {
 }
 ```
 
+Reference columns need no opt-in: every `@foreignKey`, `@crossPackageRef` and
+tenant column is indexed automatically on every schema path (test databases,
+`manifest.json`, `smrt db:migrate`) unless an index already leads with it — for
+example a `conflictColumns` unique index that starts on that column. The
+primary key is not indexed twice, `unique: true` on a single-table-inheritance
+field becomes a unique index (partial by discriminator when only a subclass
+declares it), and classes with custom `conflictColumns` keep a plain
+`(slug, context)` index for slug loading. `smrt db:migrate` adds the missing
+indexes to existing databases and drops the legacy `<table>_id_idx`.
+
 ### 5. Cache AI Responses
 
 For expensive AI operations, cache results in object properties:

@@ -237,7 +237,7 @@ describe('STI Schema Generation (Unit)', () => {
       expect(schema.columns.room_number?.notNull).toBe(false);
     });
 
-    it('should generate partial indexes for FK columns', async () => {
+    it('should generate one plain index per FK column (not per-class partial indexes)', async () => {
       const generator = new SchemaGenerator();
 
       vi.mocked(registry.getDescendants).mockReturnValue(['Meeting']);
@@ -270,14 +270,20 @@ describe('STI Schema Generation (Unit)', () => {
         registryConfig,
       );
 
-      // Should have partial index for room_id filtered by Meeting type
-      const partialIndex = schema.indexes.find(
-        (idx) => idx.name === 'idx_events_room_id_meeting',
+      // One unqualified index on room_id serves both the Meeting collection's
+      // `_meta_type = 'Meeting' AND room_id = ?` filter and base-class
+      // polymorphic queries that carry no discriminator predicate (#2359).
+      const roomIndexes = schema.indexes.filter(
+        (idx) => idx.columns[0] === 'room_id',
       );
 
-      expect(partialIndex).toBeDefined();
-      expect(partialIndex?.where).toBe("_meta_type = 'Meeting'");
-      expect(partialIndex?.columns).toEqual(['room_id']);
+      expect(roomIndexes).toHaveLength(1);
+      expect(roomIndexes[0].name).toBe('events_room_id_idx');
+      expect(roomIndexes[0].where).toBeUndefined();
+      // No redundant index on the primary key column either (#2359, A5).
+      expect(schema.indexes.some((idx) => idx.name === 'events_id_idx')).toBe(
+        false,
+      );
     });
 
     it('should handle class with no descendants', async () => {

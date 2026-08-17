@@ -22,7 +22,11 @@ export {
 } from './ddl/materialize-manifest.js';
 // Index-rendering helpers live in a separate file to avoid pulling the
 // heavyweight registry/collection module graph into the DDL strategies.
-export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
+export {
+  isJsonPathIndex,
+  isStiSubtypeUniqueIndex,
+  renderIndexTarget,
+} from './index-utils.js';
 
 /**
  * Generates a complete database schema SQL statement for a class

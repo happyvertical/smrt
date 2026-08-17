@@ -74,3 +74,27 @@ export function isJsonPathIndex(
 ): boolean {
   return !!(index.jsonPath?.column && index.jsonPath.path);
 }
+
+/**
+ * True for a UNIQUE index whose predicate scopes it to one STI subtype
+ * (`WHERE _meta_type = '<qualified class>'`) — the shape `SchemaGenerator`
+ * emits for `@field({ unique: true })` declared only on an STI descendant
+ * (#2359).
+ *
+ * Engines without partial indexes (DuckDB, and the JSON adapter it backs)
+ * degrade an ordinary partial index to a full index, and a caller-declared
+ * partial UNIQUE (`WHERE active = TRUE`) to a full UNIQUE — a stricter but
+ * intended approximation. This shape is the exception: widening it would
+ * enforce one subtype's uniqueness across every sibling's rows in the shared
+ * table, so those engines skip it instead. Kept here so the DDL strategy and
+ * the migration differ apply the same test.
+ */
+export function isStiSubtypeUniqueIndex(
+  index: Pick<IndexDefinition, 'unique' | 'where'>,
+): boolean {
+  return (
+    index.unique === true &&
+    typeof index.where === 'string' &&
+    /^\s*\(*\s*_meta_type\s*(::\w+\s*)?=/.test(index.where)
+  );
+}
