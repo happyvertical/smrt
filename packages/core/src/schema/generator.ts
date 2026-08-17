@@ -403,6 +403,12 @@ export class SchemaGenerator {
    * `tenant_id = ?` equality filter from the tenancy interceptor, so the
    * serving index leads with the tenant column and orders inside it.
    *
+   * `created_at` is generator-owned on every path — a declared `createdAt`
+   * field is rewritten to the same `TIMESTAMP NOT NULL DEFAULT
+   * current_timestamp` column — so it is never a primary key and never
+   * inline-UNIQUE. That is why only `indexes` needs checking for existing
+   * coverage: no constraint-backed index can already order this column.
+   *
    * Returns `null` when the table has no `created_at` column (no path emits
    * such a table today, but the helper stays total).
    */

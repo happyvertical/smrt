@@ -1162,6 +1162,28 @@ describe('SchemaGenerator default list-ordering index (#2363)', () => {
     expect(leading[0].unique).toBe(true);
   });
 
+  it('keeps emitting the index when a class declares its own createdAt field', () => {
+    // Every path rewrites a declared `createdAt` to the generator's own
+    // TIMESTAMP column, dropping `primaryKey`/`unique`, so no constraint-backed
+    // index can already order it and `indexes` is the only place to look for
+    // existing coverage.
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchemaFromRegistry(
+      'Tick',
+      'ticks',
+      new Map<string, any>([
+        ['createdAt', { type: 'datetime', _meta: { primaryKey: true } }],
+        ['label', { type: 'text' }],
+      ]),
+    );
+
+    expect(schema.columns.created_at.primaryKey).toBeUndefined();
+    expect(schema.columns.created_at.unique).toBeUndefined();
+    expect(schema.indexes.map((index) => index.name)).toContain(
+      'ticks_created_at_idx',
+    );
+  });
+
   it('is emitted beside the partial unique indexes of an STI table, unqualified', async () => {
     // Partial indexes (`WHERE _meta_type = ...`) never count as coverage —
     // the base-class list carries no subtype predicate (#2359, review of
