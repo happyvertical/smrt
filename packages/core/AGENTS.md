@@ -17,6 +17,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/change-feed.ts` | the adapter-agnostic change-observation spine — `_smrt_changes`, cursors, table versions, generated `_changes` routes, retention | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` + the generated `_events` SSE route | the push companion to the change feed — the signal bus, cross-replica fan-out, the SSE route, and its documented gaps | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
+| `src/schema/` | the five `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
 
 ## SmrtObject Lifecycle
 
@@ -203,12 +204,31 @@ byte/provenance/path/content drift, skips scans and manifest writes, and still
 generates routes, types, registration, and virtual modules. Omit it for normal
 local development and watch mode.
 
+## Schema paths (#2382)
+
+Production DDL comes from the **manifest** paths
+(`generateSTISchemaFromManifest`/`generateCTISchemaFromManifest`, selected in
+`scanner/manifest-generator.ts` → registered `schema` → `db:migrate`). The
+**registry** paths feed `getTestDatabase()` and emit foreign-key indexes
+production never gets: the suite runs on a richer schema than it ships.
+
+- Change column/index emission on every shipping path, proven by a path-parity
+  test (#2359 adds one). A "same as migrations" comment is a claim to check.
+- Every new query predicate ships with its index, or a reason it doesn't.
+- Numeric types, uuid casts, conflict targets, timestamps, migrations: run the
+  `test:postgres` lane — SQLite affinity accepts what PostgreSQL rejects.
+- Read `dist/manifest.json`/regenerated schemas for what a decorator produced;
+  count across all packages instead of sampling.
+- Tenant scoping is whole-path: every unique constraint and conflict target on a
+  tenant-scoped table carries the tenant column, and every read path — not only
+  `list()` — is interceptor-aware.
+
 ## Gotchas
 
 - **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
-- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly
+- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`schema/table-verifier.ts`) — no column, type, or index check
 - **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
