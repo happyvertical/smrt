@@ -65,6 +65,16 @@ import {
   type StiDiscriminatorRepairConflict,
 } from './sti-upgrade.js';
 
+/**
+ * Fallbacks for `migrations.postgres.lockTimeout` / `.statementTimeout`.
+ *
+ * These mirror `DEFAULT_CLI_CONFIG.migrations.postgres` ('30s' / '60s') so a
+ * project that never wrote a `migrations` block still gets a bounded
+ * PostgreSQL migration rather than an unbounded lock wait (issue #2362).
+ */
+const DEFAULT_MIGRATION_LOCK_TIMEOUT_MS = 30_000;
+const DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS = 60_000;
+
 function formatSchemaCommandFailureHeader(
   error: unknown,
   fallback: string,
@@ -1165,7 +1175,7 @@ export default testManifest;
       'postgres-safe': {
         type: 'boolean',
         description:
-          'Use PostgreSQL-safe operations (CONCURRENTLY for indexes, lock_timeout)',
+          'PostgreSQL concurrent-index mode: commit non-index DDL atomically, then build each index with CREATE INDEX CONCURRENTLY outside that transaction. Trades batch atomicity for availability; lock_timeout/statement_timeout apply either way.',
         default: false,
       },
       'postgres-timestamp-legacy-timezone': {
@@ -1373,13 +1383,35 @@ export default testManifest;
         }
 
         // 7.5. Initialize MigrationTracker for tracking applied migrations
-        const { MigrationTracker, shortChecksum } = await import(
-          '@happyvertical/smrt-core/migrations'
+        const {
+          buildConcurrentIndexPlan,
+          MigrationTracker,
+          parsePostgresTimeoutMs,
+          shortChecksum,
+        } = await import('@happyvertical/smrt-core/migrations');
+
+        // `migrations.postgres.*` is live configuration, not documentation:
+        // the timeouts bound every PostgreSQL migration statement, and
+        // `useConcurrently: false` vetoes concurrent-index mode even when
+        // --postgres-safe is passed (issue #2362).
+        const postgresMigrationConfig = config.migrations?.postgres;
+        const lockTimeout = parsePostgresTimeoutMs(
+          postgresMigrationConfig?.lockTimeout,
+          DEFAULT_MIGRATION_LOCK_TIMEOUT_MS,
         );
+        const statementTimeout = parsePostgresTimeoutMs(
+          postgresMigrationConfig?.statementTimeout,
+          DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS,
+        );
+        const concurrentIndexMode =
+          Boolean(options['postgres-safe']) &&
+          (postgresMigrationConfig?.useConcurrently ?? true);
 
         const tracker = new MigrationTracker({
           db,
-          useConcurrentIndexes: options['postgres-safe'] ?? false,
+          lockTimeout,
+          statementTimeout,
+          useConcurrentIndexes: concurrentIndexMode,
         });
         if (!isDryRun) {
           await tracker.initialize();
@@ -1392,10 +1424,19 @@ export default testManifest;
               ? `Migration tracker preview configured (engine: ${engine})`
               : `Migration tracker initialized (engine: ${engine})`,
           );
-          if (options['postgres-safe'] && engine === 'postgres') {
+          if (engine === 'postgres') {
             console.log(
-              'PostgreSQL-safe mode enabled (CONCURRENTLY, lock_timeout)',
+              `PostgreSQL lock_timeout: ${lockTimeout}ms, statement_timeout: ${statementTimeout}ms`,
             );
+            if (concurrentIndexMode) {
+              console.log(
+                'PostgreSQL concurrent-index mode enabled (CREATE INDEX CONCURRENTLY outside the atomic batch)',
+              );
+            } else if (options['postgres-safe']) {
+              console.log(
+                'PostgreSQL concurrent-index mode disabled by migrations.postgres.useConcurrently = false',
+              );
+            }
           }
           console.log();
         }
@@ -1611,13 +1652,6 @@ export default testManifest;
 
         const schemaChangeCount = diff.added_tables.length + migrations.length;
 
-        // Only show migration execution header if there are schema changes to apply
-        if (applySchemaMigrations && schemaChangeCount > 0) {
-          console.log(
-            `🔨 Applying ${schemaChangeCount} schema change(s) atomically...\n`,
-          );
-        }
-
         if (applySchemaMigrations && schemaChangeCount > 0) {
           const migrationDefs: MigrationDefinition[] = [];
           const migrationLogs = new Map<string, SchemaMigrationLogInfo>();
@@ -1698,27 +1732,49 @@ export default testManifest;
             });
           }
 
-          if (
-            options['postgres-safe'] &&
-            engine === 'postgres' &&
-            migrations.some(
-              (migration) =>
-                migration.type === 'add_index' ||
-                migration.type === 'drop_index',
-            )
-          ) {
+          // Ask core for the exact split it will perform, rather than
+          // re-deriving it here: this counts the index DDL a `create_table_*`
+          // migration carries as well as standalone add_index/drop_index.
+          const deferredIndexMigrations =
+            concurrentIndexMode && engine === 'postgres'
+              ? buildConcurrentIndexPlan(migrationDefs, true).size
+              : 0;
+          const batchHasIndexDDL = migrations.some(
+            (migration) =>
+              migration.type === 'add_index' || migration.type === 'drop_index',
+          );
+
+          console.log(
+            deferredIndexMigrations > 0
+              ? `🔨 Applying ${schemaChangeCount} schema change(s) (non-index DDL atomically, ${deferredIndexMigrations} index migration(s) CONCURRENTLY)...\n`
+              : `🔨 Applying ${schemaChangeCount} schema change(s) atomically...\n`,
+          );
+
+          if (deferredIndexMigrations > 0) {
             console.warn(
-              '⚠️  --postgres-safe requested, but db:migrate applies generated schema changes atomically.',
+              '⚠️  PostgreSQL concurrent-index mode: index DDL runs CONCURRENTLY after the non-index batch commits.',
             );
             console.warn(
-              '   Index DDL in this batch will run without CONCURRENTLY so PostgreSQL can roll back the full batch on failure.\n',
+              '   This batch is therefore NOT atomic — committed column/table changes survive a later index failure, and unfinished index migrations are recorded failed so the next db:migrate retries them.\n',
+            );
+          } else if (
+            engine === 'postgres' &&
+            batchHasIndexDDL &&
+            options['postgres-safe'] &&
+            !concurrentIndexMode
+          ) {
+            console.warn(
+              '⚠️  --postgres-safe requested, but migrations.postgres.useConcurrently is false.',
+            );
+            console.warn(
+              '   Index DDL in this batch will run inside the atomic transaction (bounded by lock_timeout/statement_timeout).\n',
             );
           }
 
           try {
             const results = await tracker.applyAll(migrationDefs, {
               atomic: true,
-              postgresSafe: false,
+              postgresSafe: concurrentIndexMode,
               force: forceSelection.force,
               forceMigrations: forceSelection.forceMigrations,
               // The diff was computed from the live schema moments earlier, so
@@ -1783,7 +1839,9 @@ export default testManifest;
               console.error(`\n${error.stack}\n`);
             }
             console.error(
-              '     Rolled back all schema changes from this migration batch, including any successful steps shown above.',
+              deferredIndexMigrations > 0
+                ? '     Non-index changes in this batch were committed; concurrent index builds that did not finish are recorded failed and will be retried on the next db:migrate.'
+                : '     Rolled back all schema changes from this migration batch, including any successful steps shown above.',
             );
           }
         }
