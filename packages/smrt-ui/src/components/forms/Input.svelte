@@ -179,7 +179,7 @@ export function getElement(): HTMLInputElement | null {
 		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
 		color: var(--smrt-color-on-surface, #1f2937);
 		background-color: var(--smrt-color-surface, #fff);
-		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
+		border: 1px solid var(--smrt-color-outline, #6b7280);
 		border-radius: var(--smrt-radius-small, 0.375rem);
 		transition:
 			border-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease-in-out),

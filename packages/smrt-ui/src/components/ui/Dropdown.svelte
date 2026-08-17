@@ -179,7 +179,7 @@ $effect(() => {
     cursor: pointer;
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border-radius: var(--smrt-radius-medium, 8px);
-    border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
+    border: 1px solid var(--smrt-color-outline, #79747e);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
   }
@@ -236,10 +236,18 @@ $effect(() => {
     color: var(--smrt-color-on-surface);
     white-space: nowrap;
   }
-  .dropdown__item:hover:not(:disabled),
+  .dropdown__item:hover:not(:disabled) {
+    background: var(--smrt-color-surface-container-high);
+  }
+  /* Keyboard focus needs its own indicator: the hover background alone is a
+     ~1.1:1 change against the menu surface in every preset (1.00:1 in glass
+     light), which is invisible and fails WCAG 2.4.11. The ring is inset so it
+     sits inside the item's padding box rather than overlapping the neighbouring
+     item or the menu's edge (#2322). */
   .dropdown__item:focus-visible {
     background: var(--smrt-color-surface-container-high);
-    outline: none;
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: -2px;
   }
   .dropdown__item:disabled {
     opacity: 0.5;

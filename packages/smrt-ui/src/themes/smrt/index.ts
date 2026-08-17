@@ -86,7 +86,11 @@ const lightColors: ColorPalette = {
   onBackground: '#14171c',
 
   // Outline - Hairline / line greys
-  outline: '#c6ccd4',
+  // Boundary role: clears 3:1 non-text on every surface in this scheme so
+  // control borders are perceivable (WCAG 1.4.11). Was #c6ccd4 (1.29–1.62:1),
+  // which read as a divider, not a boundary (#2322). outlineVariant below
+  // remains the hairline for dividers, readout rows, and panel edges.
+  outline: '#7c7f85',
   outlineVariant: '#dfe3e8',
 
   // Inverse
@@ -160,7 +164,9 @@ const darkColors: ColorPalette = {
   onBackground: '#c9cdd3',
 
   // Outline - Line / hairline strokes
-  outline: '#333842',
+  // See the light-scheme note: boundary role, 3:1 on every dark surface.
+  // Was #333842 (1.23–1.57:1).
+  outline: '#70747b',
   outlineVariant: '#23272e',
 
   // Inverse

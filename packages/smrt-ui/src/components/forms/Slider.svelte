@@ -125,7 +125,7 @@ useControlRegistration(() => {
   .slider__header { justify-content: space-between; font: var(--smrt-typography-label-large-font); }
   output { color: var(--smrt-color-primary); font-variant-numeric: tabular-nums; }
   input[type='range'] { flex: 1; min-width: 8rem; accent-color: var(--smrt-color-primary); cursor: pointer; }
-  .slider__number { width: 5.5rem; padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
+  .slider__number { width: 5.5rem; padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
   input:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   .slider[data-smrt-highlighted='true'] { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
 </style>

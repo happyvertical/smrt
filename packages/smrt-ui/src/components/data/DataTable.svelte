@@ -529,7 +529,7 @@ const sizeClasses = {
   }
 
   .data-table__cell--expand { width: 2.75rem; text-align: center; }
-  .data-table__expand-button { width: 1.75rem; height: 1.75rem; border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-full); background: transparent; color: var(--smrt-color-on-surface); cursor: pointer; }
+  .data-table__expand-button { width: 1.75rem; height: 1.75rem; border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); background: transparent; color: var(--smrt-color-on-surface); cursor: pointer; }
   .data-table__expand-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-color-surface-container-low); }
   .data-table__footer { border-top: 2px solid var(--smrt-color-outline-variant); font-weight: var(--smrt-typography-weight-medium); }

@@ -131,7 +131,7 @@ useControlRegistration(() => {
   .range-slider__track input::-moz-range-thumb { pointer-events: auto; }
   .range-slider__inputs { display: flex; gap: var(--smrt-spacing-3); }
   .range-slider__inputs label { display: grid; gap: var(--smrt-spacing-1); flex: 1; font: var(--smrt-typography-label-small-font); color: var(--smrt-color-on-surface-variant); }
-  .range-slider__inputs input { width: 100%; padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline-variant); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
+  .range-slider__inputs input { width: 100%; padding: var(--smrt-spacing-2); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); }
   input:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 3px; }
   :global(.range-slider[data-smrt-highlighted='true']) { outline: 3px solid var(--smrt-color-tertiary); outline-offset: 4px; border-radius: var(--smrt-radius-small); }
 </style>

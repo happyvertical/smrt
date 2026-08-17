@@ -57,15 +57,33 @@ const { t } = useI18n();
     text-decoration: none;
   }
 
-  .smrt-system-status-chips [data-tone='success'] {
-    color: var(--smrt-color-success);
+  /* Every tone is a lamp beside on-surface text; none of them paints the
+     letterforms. Status hues are chosen to be recognisable at a glance, which
+     puts them in luminance bands that are not text-safe on light surfaces —
+     measured worst-case as TEXT across all five presets: warning falls to
+     1.41:1 (material and studio light), error to 2.65:1 (glass light), success
+     to 1.66:1 (glass light). A lamp carries the same meaning with no contrast
+     obligation, and keeps the component correct under any palette rather than
+     depending on each preset tuning three hues for text (#2323). */
+  .smrt-system-status-chips [data-tone='success']::before,
+  .smrt-system-status-chips [data-tone='warning']::before,
+  .smrt-system-status-chips [data-tone='error']::before {
+    content: '';
+    flex: none;
+    inline-size: 0.5rem;
+    block-size: 0.5rem;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
-  .smrt-system-status-chips [data-tone='warning'] {
-    color: var(--smrt-color-warning);
+  .smrt-system-status-chips [data-tone='success']::before {
+    background: var(--smrt-color-success);
   }
 
-  .smrt-system-status-chips [data-tone='error'] {
-    color: var(--smrt-color-error);
+  .smrt-system-status-chips [data-tone='warning']::before {
+    background: var(--smrt-color-warning);
+  }
+
+  .smrt-system-status-chips [data-tone='error']::before {
+    background: var(--smrt-color-error);
   }
 </style>
