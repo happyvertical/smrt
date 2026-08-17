@@ -10,6 +10,7 @@
  * - Graceful shutdown
  */
 
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../query-bounds.js';
 import type { CustomActionScope } from './custom-action.js';
 import type { MCPConfig, MCPContext } from './mcp.js';
 
@@ -134,8 +135,8 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
         switch (action) {
           case 'list':
             return `${indent}case '${tool.name}': {
-${indent}  const limit = args.limit ?? 50;
-${indent}  const offset = args.offset ?? 0;
+${indent}  const limit = resolveListBound(args.limit, 'limit', ${DEFAULT_LIST_LIMIT}, ${MAX_LIST_LIMIT});
+${indent}  const offset = resolveListBound(args.offset, 'offset', 0);
 ${indent}  const where = args.where ?? {};
 
 ${indent}  const collection = await ObjectRegistry.getCollection('${capitalize(objectName)}', {
@@ -348,6 +349,24 @@ const PUBLIC_JSON_OPTIONS = {
     .map((permission) => permission.trim())
     .filter(Boolean),
 };
+
+/**
+ * Page-bound guard (#2367). MCP tool arguments are untyped JSON, so \`limit\`
+ * arrives as whatever the client sent: \`"abc"\` used to become \`LIMIT NaN\`
+ * (a driver error, not a tool error), and nothing capped the value, so one
+ * \`limit: 100000000\` call was a full table scan. Rejects anything that is not
+ * a non-negative integer and clamps the rest to \`max\`.
+ */
+function resolveListBound(raw: any, name: string, fallback: number, max?: number): number {
+  if (raw === undefined || raw === null || raw === '') {
+    return max === undefined ? fallback : Math.min(fallback, max);
+  }
+  const value = typeof raw === 'string' && /^\\d+$/.test(raw.trim()) ? Number(raw.trim()) : raw;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error("Invalid " + name + ": expected a non-negative integer, got " + JSON.stringify(raw));
+  }
+  return max === undefined ? value : Math.min(value, max);
+}
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and

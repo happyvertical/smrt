@@ -15,6 +15,7 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import { resolveCustomActionMetadata } from '../generators/custom-action.js';
+import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../query-bounds.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -674,6 +675,83 @@ function usesPrincipalContext(objectDef: SmartObjectDefinition): boolean {
 
 function needsRouteTenantContext(objectDef: SmartObjectDefinition): boolean {
   return isTenantScoped(objectDef) || usesPrincipalContext(objectDef);
+}
+
+/**
+ * Emit the page-bounds guard and the deterministic ordering constant for a
+ * generated list route (#2367).
+ *
+ * The route used to parse its own bounds with
+ * `Number(url.searchParams.get('limit')) || 50`, which has three faults: it
+ * accepts `NaN` from any non-numeric input and binds it (PostgreSQL answers
+ * `invalid input syntax for type bigint` — a 500 for a caller typo), it folds a
+ * deliberate `limit=0` into 50, and it has no ceiling, so `?limit=100000000` is
+ * a full table scan plus a full hydration pass on a public endpoint.
+ *
+ * The helper is emitted into the route rather than imported from
+ * `@happyvertical/smrt-core` so the generated file stays readable on its own and
+ * the bound is visible at the call site; the constants come from core so there
+ * is still one source of truth.
+ */
+function generateListBoundsHelper(objectDef: SmartObjectDefinition): string {
+  const orderBy = resolveDefaultListOrderBy(objectDef);
+  return `
+/** Deterministic list ordering (#2367); matching index is #2363. */
+const LIST_ORDER_BY = ${JSON.stringify(orderBy)};
+
+/**
+ * Parse \`?limit\`/\`?offset\` (#2367): default when absent, 400 when malformed,
+ * clamped to ${MAX_LIST_LIMIT} when oversized.
+ */
+function listBounds(url: URL): { limit: number; offset: number } {
+  const parse = (name: 'limit' | 'offset', fallback: number, max?: number): number => {
+    const raw = url.searchParams.get(name);
+    if (raw === null || raw === '') {
+      return max === undefined ? fallback : Math.min(fallback, max);
+    }
+    if (!/^\\d+$/.test(raw.trim())) {
+      throw error(400, \`Invalid \${name}: '\${raw}' is not a non-negative integer.\`);
+    }
+    const value = Number(raw.trim());
+    if (!Number.isSafeInteger(value)) {
+      throw error(400, \`Invalid \${name}: '\${raw}' is not a non-negative integer.\`);
+    }
+    return max === undefined ? value : Math.min(value, max);
+  };
+
+  return {
+    limit: parse('limit', ${DEFAULT_LIST_LIMIT}, ${MAX_LIST_LIMIT}),
+    offset: parse('offset', 0),
+  };
+}
+`;
+}
+
+/**
+ * Deterministic default ordering for a generated list route (#2367).
+ *
+ * The list route pages with `LIMIT`/`OFFSET` and previously emitted no
+ * `ORDER BY` at all. That is not pagination: without an ordering PostgreSQL may
+ * return rows in any order and is free to pick a different one per query, so
+ * page 2 can repeat rows from page 1 and skip others entirely — silently, and
+ * only under concurrency or a plan change, which is why it survived review.
+ *
+ * `created_at DESC` alone is not enough (rows created in the same tick tie), so
+ * the primary key follows as a total-order tiebreak. The matching index is
+ * #2363.
+ */
+function resolveDefaultListOrderBy(
+  objectDef: SmartObjectDefinition,
+): readonly string[] {
+  // A class declaring its own primary key has no `id` column to tie-break on
+  // (`id`/`slug`/`context` are omitted for custom-PK classes), so order by the
+  // declared key instead.
+  const customPrimaryKey = Object.entries(objectDef.fields ?? {}).find(
+    ([, fieldDef]) =>
+      (fieldDef as { primaryKey?: boolean } | undefined)?.primaryKey === true,
+  )?.[0];
+
+  return ['created_at DESC', `${customPrimaryKey ?? 'id'} ASC`];
 }
 
 /**
@@ -2387,16 +2465,19 @@ ${
 ${hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). Non-tenant models keep the
   // plain list/count.
+  // #2367: every generated page is ordered. `LIST_ORDER_BY` is emitted as a
+  // module constant so the ordering is visible in the generated file rather
+  // than implied by the database's row order.
   const listAndCount = isTenantScoped(objectDef)
     ? `  const readScope = tenantReadScope();
-  const items = await collection.list({ limit, offset, where: readScope });
+  const items = await collection.list({ limit, offset, orderBy: LIST_ORDER_BY, where: readScope });
   const count = await collection.count({ where: readScope });`
-    : `  const items = await collection.list({ limit, offset });
+    : `  const items = await collection.list({ limit, offset, orderBy: LIST_ORDER_BY });
   const count = await collection.count();`;
 
   const getHandler = hasGet
@@ -2405,8 +2486,7 @@ ${generateAuthGuardHelper(objectDef, manifest)}${needsRouteTenantContext(objectD
 export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false)}
   const publicJsonOptions = getPublicJsonOptions(locals);
-  const limit = Number(url.searchParams.get('limit')) || 50;
-  const offset = Number(url.searchParams.get('offset')) || 0;
+  const { limit, offset } = listBounds(url);
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${

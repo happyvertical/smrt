@@ -688,6 +688,30 @@ const total = await collection.count({
 });
 ```
 
+#### Query bounds
+
+`limit` and `offset` must be non-negative integers; anything else (`NaN`, a
+negative, a fraction) is rejected as a client error rather than bound into the
+query. `orderBy` terms are validated against the model's fields and refused for
+`@field({ sensitive: true })` columns, the same rail `where` and `select` use —
+ordering by a secret is an oracle over it.
+
+`list()` applies no default page size, because relationship, junction and
+`listByIds()` callers rely on receiving every matching row. Opt into bounds per
+collection when a collection's reads should always be paged:
+
+```typescript
+const products = await Products.create({
+  db,
+  defaultListLimit: 50, // used when a caller passes no limit
+  maxListLimit: 500,    // every limit is clamped down to this
+});
+```
+
+The generated REST, SvelteKit and MCP surfaces always bound their own input:
+they default to 50, clamp to 1000, reject malformed values with a 400, and page
+with a deterministic `ORDER BY created_at DESC, id ASC`.
+
 ### Eager Loading (Preventing N+1 Queries)
 
 SMRT supports eager loading to optimize queries that access related objects, solving the common "N+1 query problem":

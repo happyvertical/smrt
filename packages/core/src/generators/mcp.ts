@@ -8,6 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
 import type { PublicJsonOptions, SmrtObject } from '../object';
+import { resolveListLimit, resolveListOffset } from '../query-bounds';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
@@ -1434,9 +1435,14 @@ export class MCPGenerator {
         // Args arrive as untyped JSON; narrow each query field at this
         // boundary. `where`/`orderBy` are passed through to the collection's
         // typed query API.
+        // #2367: one shared bounds parser instead of `x || 50` — which turned a
+        // deliberate `limit: 0` into 50 — and instead of trusting the arg to be
+        // a number at all: MCP args are untyped JSON, so `limit: "abc"` reached
+        // the driver as `LIMIT NaN`. Malformed bounds now throw a 400-typed
+        // error the MCP error path reports as a tool failure.
         const listOptions: Parameters<typeof collection.list>[0] = {
-          limit: Math.min((args.limit as number | undefined) || 50, 1000),
-          offset: (args.offset as number | undefined) || 0,
+          limit: resolveListLimit(args.limit),
+          offset: resolveListOffset(args.offset),
         };
 
         if (args.where) {

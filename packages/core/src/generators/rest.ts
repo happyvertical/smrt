@@ -12,6 +12,11 @@ import {
   resolveDispatchTenantScope,
 } from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
+import {
+  DEFAULT_LIST_ORDER_BY,
+  resolveListLimit,
+  resolveListOffset,
+} from '../query-bounds';
 import { ObjectRegistry } from '../registry';
 import type {
   ApiCustomRouteConfig,
@@ -1085,10 +1090,24 @@ export class APIGenerator {
   ): Promise<Response> {
     const cacheControl = this.resolveReadCachePolicy(objectName);
 
+    // #2367: parse the page bounds BEFORE any ETag/version work, and outside
+    // `buildPayload`, so a malformed `?limit=abc` costs one rejection rather
+    // than a table-version read plus a `LIMIT NaN` round-trip to the driver.
+    // `resolveListLimit` throws a 400-typed `QueryBoundsError`, which
+    // `handleRequest`'s `normalizeTypedHttpError` catch renders as a structured
+    // client error instead of the 500 `Number.parseInt('abc')` used to produce.
+    const limit = resolveListLimit(params.get('limit'));
+    const offset = resolveListOffset(params.get('offset'));
+
     const buildPayload = async () => {
-      const limit = Number.parseInt(params.get('limit') || '50', 10);
-      const offset = Number.parseInt(params.get('offset') || '0', 10);
-      const orderBy = params.get('orderBy') || 'created_at DESC';
+      // #2367: the default ordering carries a primary-key tiebreak. Rows sharing
+      // a `created_at` tick tie under `created_at DESC` alone, and a tie leaves
+      // the order unspecified — so successive LIMIT/OFFSET pages could repeat
+      // and skip those rows. An explicit `?orderBy` still wins.
+      const orderByParam = params.get('orderBy');
+      const orderBy: string | string[] = orderByParam
+        ? orderByParam
+        : [...DEFAULT_LIST_ORDER_BY];
 
       // Build where clause from query params
       // Convert REST-style operators (price[gt]) to SQL-style (price >)

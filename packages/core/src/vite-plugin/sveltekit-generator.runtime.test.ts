@@ -114,6 +114,16 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       '    globalThis.__smrtGeneratedHelperRegistrations.push(args);',
       '  },',
       '};',
+      // Conditional-GET helpers the emitted list route imports (#1765). Kept
+      // deliberately trivial: these tests assert list bounds and ordering
+      // (#2367), not ETag semantics, which conditional-get.spec.ts covers.
+      'export function canonicalReadRepresentation(request) { return new URL(request.url).search; }',
+      'export function computeTableVersionEtag(version, representation) {',
+      "  return 'W/\"' + version + '-' + representation + '\"';",
+      '}',
+      'export async function getTableVersion() { return 1; }',
+      'export function ifNoneMatchHasConcreteMatch() { return false; }',
+      'export function ifNoneMatchSatisfied() { return false; }',
       'export function normalizeTypedHttpError(error) {',
       "  if (!error || typeof error !== 'object' || !Number.isInteger(error.status) || error.status < 400 || error.status > 499) return undefined;",
       "  const code = typeof error.code === 'string' ? error.code : error.status === 403 ? 'permission_denied' : 'request_rejected';",
@@ -271,6 +281,26 @@ describe('generated SvelteKit helper runtime', () => {
       principalContext
         ? 'generated-principal-post-route.mjs'
         : 'generated-post-route.mjs',
+    );
+  }
+
+  async function importGeneratedCollectionList() {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    await generateSvelteKitRoutes(
+      projectRoot,
+      createManifest(projectRoot, objectFilePath, ['list']),
+      {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      },
+    );
+
+    return await bundleGeneratedRoute(
+      'src/routes/api/widgets/+server.ts',
+      'generated-list-route.mjs',
     );
   }
 
@@ -585,5 +615,82 @@ describe('generated SvelteKit helper runtime', () => {
     expect(
       isIgnoredByGit(projectRoot, 'src/routes/generated-api/manual/+server.ts'),
     ).toBe(false);
+  });
+
+  /**
+   * #2367. The emitted list route paged with LIMIT/OFFSET and no ORDER BY —
+   * which is not pagination: PostgreSQL may return rows in any order and pick a
+   * different one per query, so page 2 could repeat or skip page 1's rows. It
+   * also parsed its bounds with `Number(x) || 50`, which binds NaN for any
+   * non-numeric input, folds a deliberate `limit=0` into 50, and has no ceiling.
+   */
+  describe('generated list route bounds and ordering (#2367)', () => {
+    async function listWithQuery(query: string) {
+      const route = await importGeneratedCollectionList();
+      const calls: Array<Record<string, unknown>> = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        count: async () => 0,
+        db: { type: 'sqlite', url: ':memory:' },
+        list: async (options: Record<string, unknown>) => {
+          calls.push(options);
+          return [];
+        },
+        tableName: 'widgets',
+      };
+
+      const invoke = () =>
+        route.GET({
+          // The auth guard runs before bounds parsing (authenticate first,
+          // then validate input), so the caller must be authenticated for the
+          // bounds assertions below to be reached at all.
+          locals: { user: { id: 'user-1' } },
+          request: new Request(`http://localhost/api/widgets${query}`),
+          url: new URL(`http://localhost/api/widgets${query}`),
+        });
+
+      return { calls, invoke };
+    }
+
+    it('pages deterministically with a total-order tiebreak', async () => {
+      const { calls, invoke } = await listWithQuery('');
+      const response = await invoke();
+      expect(response.status).toBe(200);
+      expect(calls[0]).toMatchObject({
+        limit: 50,
+        offset: 0,
+        orderBy: ['created_at DESC', 'id ASC'],
+      });
+    });
+
+    it('clamps an oversized page to the ceiling', async () => {
+      const { calls, invoke } = await listWithQuery('?limit=100000000');
+      await invoke();
+      expect(calls[0]).toMatchObject({ limit: 1000 });
+    });
+
+    it('honours an explicit limit=0 instead of folding it into the default', async () => {
+      const { calls, invoke } = await listWithQuery('?limit=0');
+      await invoke();
+      expect(calls[0]).toMatchObject({ limit: 0 });
+    });
+
+    it.each([
+      ['abc'],
+      ['1.5'],
+      ['-1'],
+      ['1e3'],
+    ])('rejects ?limit=%s with a 400 instead of binding NaN', async (raw) => {
+      const { calls, invoke } = await listWithQuery(
+        `?limit=${encodeURIComponent(raw)}`,
+      );
+      await expect(invoke()).rejects.toMatchObject({ status: 400 });
+      // Rejected before the collection is queried at all.
+      expect(calls).toHaveLength(0);
+    });
+
+    it('rejects a malformed ?offset the same way', async () => {
+      const { invoke } = await listWithQuery('?offset=abc');
+      await expect(invoke()).rejects.toMatchObject({ status: 400 });
+    });
   });
 });

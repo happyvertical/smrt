@@ -22,6 +22,7 @@ import {
   type ListOptions as InterceptorListOptions,
 } from './interceptors';
 import type { SmrtObject } from './object';
+import { QueryBoundsError, QueryOrderByError } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -35,6 +36,54 @@ import {
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * Validate an optional collection-level list bound (#2367).
+ *
+ * @returns the bound, or `undefined` when the option was not supplied
+ * @throws {QueryBoundsError} when the option is present but not a positive
+ *   integer — a `maxListLimit` of `0` or `-1` would silently make every read on
+ *   the collection return nothing
+ */
+function assertOptionalListBound(
+  value: number | undefined,
+  optionName: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new QueryBoundsError(
+      `Invalid ${optionName}: expected a positive integer, got ${String(value)}.`,
+      'INVALID_QUERY_BOUNDS',
+      { optionName, value },
+    );
+  }
+  return value;
+}
+
+/**
+ * Validate a per-query `limit`/`offset` before it is bound (#2367).
+ *
+ * `0` is allowed — `LIMIT 0` and `OFFSET 0` are both meaningful — but `NaN`,
+ * `Infinity`, negatives and fractions are not: they used to be bound verbatim
+ * and surface as a driver-level 500 for what is a caller error.
+ *
+ * @returns the bound, or `undefined` when the caller supplied none
+ * @throws {QueryBoundsError} when the value is not a non-negative integer
+ */
+function assertQueryBound(
+  value: number | undefined,
+  parameterName: string,
+): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new QueryBoundsError(
+      `Invalid ${parameterName}: expected a non-negative integer, got ${String(value)}.`,
+      'INVALID_QUERY_BOUNDS',
+      { parameterName, value },
+    );
+  }
+  return value;
+}
 
 /**
  * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
@@ -271,7 +320,26 @@ interface CollectionFieldDefinition {
 /**
  * Configuration options for SmrtCollection
  */
-export interface SmrtCollectionOptions extends SmrtClassOptions {}
+export interface SmrtCollectionOptions extends SmrtClassOptions {
+  /**
+   * Page size `list()` applies when the caller passes no `limit` (#2367).
+   *
+   * Unset by default — `list()` is the framework's bulk-read primitive and its
+   * internal callers expect every matching row, so an implicit default would
+   * truncate correct queries. Set this on collections whose reads are always
+   * paged.
+   */
+  defaultListLimit?: number;
+
+  /**
+   * Ceiling `list()` clamps every `limit` down to (#2367).
+   *
+   * Unset by default. The generated REST/SvelteKit/MCP surfaces enforce
+   * `MAX_LIST_LIMIT` on their own untrusted input regardless of this option;
+   * set it to extend the same ceiling to direct programmatic reads.
+   */
+  maxListLimit?: number;
+}
 
 // S4 #1579: the constructor `options` and static `create(options)` params are
 // left as `any` deliberately. This type is satisfied by every concrete model
@@ -332,6 +400,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private _cachedFields: Record<string, CollectionFieldDefinition> | null =
     null;
 
+  /**
+   * Opt-in list bounds (#2367). See {@link SmrtCollectionOptions.defaultListLimit}
+   * and {@link SmrtCollectionOptions.maxListLimit}.
+   * @private
+   */
+  private _defaultListLimit: number | undefined;
+  private _maxListLimit: number | undefined;
+
   private getRegisteredItemClass() {
     return (
       ObjectRegistry.getClassByConstructor(
@@ -352,73 +428,28 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
-   * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
-   * Validates operators and field names to prevent SQL injection and invalid queries.
+   * Resolve the identifier whitelist and the sensitive-column blocklist that
+   * every caller-supplied identifier on this collection is checked against.
    *
-   * Uses cached fields for sync access (issue #663) to avoid async overhead on every query.
+   * Extracted from `convertWhereKeys()` so `orderBy` validation enforces the
+   * *same* sets (#2367). `where` (#1540) and `select` (#1902) both rejected
+   * sensitive columns while `orderBy` accepted any identifier, which made
+   * `?orderBy=api_secret&limit=1` an ordering oracle over a column the same
+   * request is forbidden to filter on or project.
    *
-   * @param where - WHERE clause object with camelCase field names
-   * @returns WHERE clause object with snake_case field names
+   * @returns the snake_case identifiers this collection accepts, the sensitive
+   *   names it must refuse, and whether whitelist enforcement applies at all —
+   *   classes with no registered fields (manifest-less inline test classes,
+   *   #869) have nothing to validate against and fall through to SQL.
    * @private
-   *
-   * @example
-   * ```typescript
-   * // Input: { 'typeId': 'foo', 'categoryId >': 100 }
-   * // Output: { 'type_id': 'foo', 'category_id >': 100 }
-   * ```
    */
-  private convertWhereKeys(
-    where: Record<string, unknown>,
-  ): Record<string, unknown> {
-    // Whitelist of allowed SQL operators.
-    //
-    // This list is a contract, not a wish list (#2276): every entry must be an
-    // operator `@happyvertical/sql`'s `parseConditionKey` recognises, because a
-    // key this method accepts is passed straight to `buildWhere`. An operator
-    // accepted here but unknown there is not "unimplemented" — `buildWhere`
-    // fails to split it off the key, tries to read `"<field> <operator>"` as one
-    // identifier, and throws `Invalid SQL identifier` from inside the query
-    // builder. The caller gets a SQL-layer error naming SQL-layer concepts for a
-    // query the API told them was valid. Keep this list in lockstep with
-    // `VALID_OPERATORS` in `@happyvertical/sql`'s `shared/utils.ts`; the
-    // "executes every accepted operator" test in
-    // `src/__tests__/issue-2276-where-contract.test.ts` is what enforces it.
-    const VALID_OPERATORS = [
-      '=',
-      '>',
-      '<',
-      '>=',
-      '<=',
-      '!=',
-      'in',
-      'not in',
-      'like',
-    ];
-
-    // Operators callers reach for that this layer cannot honour, mapped to the
-    // supported way to express the same intent. Being listed here only improves
-    // the rejection message — these are rejected exactly like any other unknown
-    // operator. A Map, not an object literal, because the lookup key is
-    // caller-supplied: `{ 'name toString': 'x' }` would otherwise find
-    // `Object.prototype.toString` and splice a function into the error text.
-    const UNSUPPORTED_OPERATOR_HINTS = new Map<string, string>([
-      // `contains` shipped in this whitelist but never existed in the SQL layer,
-      // so it has always failed at execution (#2276). It is not re-implemented
-      // here as `like '%value%'` because that would be a different operator
-      // wearing its name: `%` and `_` in the value would silently become
-      // wildcards (escaping them needs a `LIKE ... ESCAPE` clause `buildWhere`
-      // cannot emit), and `LIKE` is case-insensitive on SQLite but
-      // case-sensitive on PostgreSQL, so the same call would mean two things.
-      // Restoring it belongs in the SQL layer, where the dialect is known —
-      // tracked in happyvertical/sdk#1192.
-      [
-        'contains',
-        "Use 'like' with explicit wildcards instead, e.g. { 'name like': '%term%' }.",
-      ],
-    ]);
-
-    // Get schema fields for validation (sync from cache)
-    const fields = this.getFieldsSync();
+  private collectQueryableFieldNames(
+    fields: Record<string, CollectionFieldDefinition>,
+  ): {
+    validFieldNames: Set<string>;
+    sensitiveFieldNames: Set<string>;
+    skipFieldValidation: boolean;
+  } {
     const validFieldNames = new Set(
       Object.keys(fields).map((f) => toSnakeCase(f)),
     );
@@ -495,8 +526,205 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Issue #869: If no fields are registered (no manifest for test classes),
     // skip field validation. Invalid fields will fail at SQL level instead.
     // This commonly happens for inline test classes decorated with @smrt().
-    const hasRegisteredFields = Object.keys(fields).length > 0;
-    const skipFieldValidation = !hasRegisteredFields;
+    return {
+      skipFieldValidation: Object.keys(fields).length === 0,
+      sensitiveFieldNames,
+      validFieldNames,
+    };
+  }
+
+  /**
+   * Build the `ORDER BY` clause for `list()`, validating every term against the
+   * same whitelist and sensitive-column blocklist as `where` and `select`
+   * (#2367).
+   *
+   * `orderBy` is interpolated UNPARAMETERIZED into the identifier position, and
+   * it arrives from the generated REST/MCP/SvelteKit surfaces as caller input.
+   * The identifier regex here has always blocked injection; what it did not
+   * block was ordering by a column the caller may not read. Sorting is a
+   * comparison, and a comparison against a secret is an oracle: repeatedly
+   * requesting `?orderBy=api_secret&limit=1` (with a shrinking `where`) walks
+   * the secret's value ordering without ever serializing the column.
+   *
+   * @param orderBy - one `'<field> [ASC|DESC]'` term or an array of them
+   * @param fields - the collection's cached field definitions
+   * @returns the `' ORDER BY ...'` fragment, or `''` when no ordering was asked
+   *   for
+   * @throws {QueryOrderByError} on a malformed term, an unknown column, or a
+   *   sensitive column — all rendered as a 400 by the generated surfaces
+   * @private
+   */
+  private buildOrderBySql(
+    orderBy: string | string[] | undefined,
+    fields: Record<string, CollectionFieldDefinition>,
+  ): string {
+    if (!orderBy) return '';
+
+    const orderByItems = Array.isArray(orderBy) ? orderBy : [orderBy];
+    if (orderByItems.length === 0) return '';
+
+    const itemClassName = this.getResolvedItemClassName();
+    const { sensitiveFieldNames, skipFieldValidation, validFieldNames } =
+      this.collectQueryableFieldNames(fields);
+
+    const terms = orderByItems.map((item) => {
+      const [field, direction = 'ASC'] = String(item).trim().split(/\s+/);
+
+      // Validate field name
+      if (!/^[a-zA-Z0-9_]+$/.test(field)) {
+        throw new QueryOrderByError(
+          `Invalid field name for ordering: ${field}`,
+          `Invalid field name for ordering: ${field}`,
+          'INVALID_ORDER_BY',
+          { field },
+        );
+      }
+
+      // Validate direction
+      const normalizedDirection = direction.toUpperCase();
+      if (normalizedDirection !== 'ASC' && normalizedDirection !== 'DESC') {
+        throw new QueryOrderByError(
+          `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
+          `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
+          'INVALID_ORDER_BY',
+          { direction },
+        );
+      }
+
+      // Normalize to the column name. `toDbColumnName` (not bare
+      // `toSnakeCase`) so a leading-underscore field such as `_metaType`
+      // resolves to `_meta_type` rather than the non-existent `meta_type`.
+      const columnName = this.toDbColumnName(field);
+
+      // Security (#2367): refuse sensitive columns before the whitelist check,
+      // so the rejection reason for a secret is never "no such field" (which
+      // would itself confirm the column exists elsewhere).
+      if (
+        sensitiveFieldNames.has(columnName) ||
+        sensitiveFieldNames.has(field)
+      ) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Ordering by sensitive fields is not allowed.`,
+          `Invalid orderBy field: '${field}'. Ordering by sensitive fields is not allowed.`,
+          'INVALID_ORDER_BY_SENSITIVE',
+          { field },
+        );
+      }
+
+      // Whitelist, mirroring `where`. Skipped for manifest-less inline test
+      // classes with no registered fields (#869), exactly as `where` does.
+      if (!skipFieldValidation && !validFieldNames.has(columnName)) {
+        throw new QueryOrderByError(
+          `Invalid orderBy field: '${field}'. Field does not exist on ${itemClassName}. ` +
+            `Valid fields: ${Array.from(validFieldNames).sort().join(', ')}`,
+          // The public form omits the field list: the column list is schema
+          // detail an unauthenticated caller has no need for.
+          `Invalid orderBy field: '${field}'.`,
+          'INVALID_ORDER_BY_UNKNOWN_FIELD',
+          { field, itemClassName },
+        );
+      }
+
+      return `${columnName} ${normalizedDirection}`;
+    });
+
+    return ` ORDER BY ${terms.join(', ')}`;
+  }
+
+  /**
+   * Apply this collection's configured list bounds (#2367).
+   *
+   * Both bounds are opt-in (`defaultListLimit` / `maxListLimit` collection
+   * options) and default to unset. `list()` is the framework's bulk-read
+   * primitive — relationship loaders, junction hydration and `listByIds()` all
+   * go through it expecting every matching row — so a framework-wide implicit
+   * default would silently truncate correct queries instead of bounding an
+   * attack surface. The generated surfaces, where untrusted input actually
+   * arrives, apply {@link DEFAULT_LIST_LIMIT}/{@link MAX_LIST_LIMIT}
+   * unconditionally; an application that wants the same ceiling on its own
+   * programmatic reads sets `maxListLimit` when constructing the collection.
+   *
+   * @private
+   */
+  private applyListBounds(limit: number | undefined): number | undefined {
+    const effective = limit ?? this._defaultListLimit;
+    if (effective === undefined) return undefined;
+    return this._maxListLimit === undefined
+      ? effective
+      : Math.min(effective, this._maxListLimit);
+  }
+
+  /**
+   * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
+   * Validates operators and field names to prevent SQL injection and invalid queries.
+   *
+   * Uses cached fields for sync access (issue #663) to avoid async overhead on every query.
+   *
+   * @param where - WHERE clause object with camelCase field names
+   * @returns WHERE clause object with snake_case field names
+   * @private
+   *
+   * @example
+   * ```typescript
+   * // Input: { 'typeId': 'foo', 'categoryId >': 100 }
+   * // Output: { 'type_id': 'foo', 'category_id >': 100 }
+   * ```
+   */
+  private convertWhereKeys(
+    where: Record<string, unknown>,
+  ): Record<string, unknown> {
+    // Whitelist of allowed SQL operators.
+    //
+    // This list is a contract, not a wish list (#2276): every entry must be an
+    // operator `@happyvertical/sql`'s `parseConditionKey` recognises, because a
+    // key this method accepts is passed straight to `buildWhere`. An operator
+    // accepted here but unknown there is not "unimplemented" — `buildWhere`
+    // fails to split it off the key, tries to read `"<field> <operator>"` as one
+    // identifier, and throws `Invalid SQL identifier` from inside the query
+    // builder. The caller gets a SQL-layer error naming SQL-layer concepts for a
+    // query the API told them was valid. Keep this list in lockstep with
+    // `VALID_OPERATORS` in `@happyvertical/sql`'s `shared/utils.ts`; the
+    // "executes every accepted operator" test in
+    // `src/__tests__/issue-2276-where-contract.test.ts` is what enforces it.
+    const VALID_OPERATORS = [
+      '=',
+      '>',
+      '<',
+      '>=',
+      '<=',
+      '!=',
+      'in',
+      'not in',
+      'like',
+    ];
+
+    // Operators callers reach for that this layer cannot honour, mapped to the
+    // supported way to express the same intent. Being listed here only improves
+    // the rejection message — these are rejected exactly like any other unknown
+    // operator. A Map, not an object literal, because the lookup key is
+    // caller-supplied: `{ 'name toString': 'x' }` would otherwise find
+    // `Object.prototype.toString` and splice a function into the error text.
+    const UNSUPPORTED_OPERATOR_HINTS = new Map<string, string>([
+      // `contains` shipped in this whitelist but never existed in the SQL layer,
+      // so it has always failed at execution (#2276). It is not re-implemented
+      // here as `like '%value%'` because that would be a different operator
+      // wearing its name: `%` and `_` in the value would silently become
+      // wildcards (escaping them needs a `LIKE ... ESCAPE` clause `buildWhere`
+      // cannot emit), and `LIKE` is case-insensitive on SQLite but
+      // case-sensitive on PostgreSQL, so the same call would mean two things.
+      // Restoring it belongs in the SQL layer, where the dialect is known —
+      // tracked in happyvertical/sdk#1192.
+      [
+        'contains',
+        "Use 'like' with explicit wildcards instead, e.g. { 'name like': '%term%' }.",
+      ],
+    ]);
+
+    // Get schema fields for validation (sync from cache)
+    const fields = this.getFieldsSync();
+    const itemClassName = this.getResolvedItemClassName();
+    const { sensitiveFieldNames, skipFieldValidation, validFieldNames } =
+      this.collectQueryableFieldNames(fields);
 
     const converted: Record<string, unknown> = {};
 
@@ -1037,6 +1265,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   constructor(options: SmrtCollectionOptions = {}) {
     super(options);
 
+    // #2367: validate the configured bounds at construction, not at query time.
+    // A bad ceiling that only surfaces on the first paged read is a production
+    // incident; a bad ceiling that fails to construct is a startup error.
+    this._defaultListLimit = assertOptionalListBound(
+      options.defaultListLimit,
+      'defaultListLimit',
+    );
+    this._maxListLimit = assertOptionalListBound(
+      options.maxListLimit,
+      'maxListLimit',
+    );
+
     // Auto-register the collection if it's not the base SmrtCollection and has an _itemClass.
     // `this.constructor` is typed as the structureless `Function`; view it as the
     // collection-class shape (static `_itemClass` constructor + the new-able ctor
@@ -1092,7 +1332,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     ) => T,
     options: SmrtClassOptions = {},
   ): Promise<T> {
-    // Extract only collection-compatible options from broader SmrtClassOptions
+    // Extract only collection-compatible options from broader SmrtClassOptions.
+    // This is an allowlist: an option absent from BOTH the destructuring and the
+    // literal below never reaches the constructor, however it was passed.
     const {
       _className,
       db,
@@ -1105,14 +1347,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       sanitization,
       signals,
     } = options;
+    // #2367: list bounds are collection options, not SmrtClassOptions, so they
+    // are read off the incoming bag explicitly rather than destructured above.
+    const { defaultListLimit, maxListLimit } = options as SmrtCollectionOptions;
 
     const collectionOptions: SmrtCollectionOptions = {
       _className,
       db,
       persistence, // Pass persistence through so initialize() can map it to db
       ai,
+      defaultListLimit,
       fs,
       logging,
+      maxListLimit,
       metrics,
       pubsub,
       sanitization,
@@ -1277,8 +1524,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is a convenience method that avoids N+1 queries when you have
    * a list of IDs and need to fetch the corresponding records.
    *
+   * The id list is chunked at `IN_LIST_CHUNK_SIZE` (#2367). `collection.list()`
+   * expands an array-valued WHERE into one `id IN (?, ?, ...)` clause and does
+   * not chunk it, so an unbounded caller-sized array hits the backend's
+   * bind-variable ceiling — `SQLITE_MAX_VARIABLE_NUMBER` (999 pre-3.32, 32766
+   * after) or PostgreSQL's 65535 — and the whole query fails before it runs.
+   * The relationship, junction and hierarchy loaders have chunked at this value
+   * for exactly this reason; `listByIds()` is the remaining path that took ids
+   * straight from the caller and did not.
+   *
    * @param ids - Array of UUIDs to fetch
-   * @returns Promise resolving to array of objects (order not guaranteed)
+   * @returns Promise resolving to array of objects (order not guaranteed;
+   *   results are concatenated in chunk order)
    *
    * @example
    * ```typescript
@@ -1287,7 +1544,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async listByIds(ids: string[]): Promise<ModelType[]> {
     if (ids.length === 0) return [];
-    return this.list({ where: { id: ids } });
+
+    // Never chunk above a configured ceiling: an explicit `limit` is clamped by
+    // `maxListLimit`, so a chunk larger than the ceiling would come back
+    // truncated and silently drop ids the caller asked for.
+    const chunkSize =
+      this._maxListLimit === undefined
+        ? IN_LIST_CHUNK_SIZE
+        : Math.min(IN_LIST_CHUNK_SIZE, this._maxListLimit);
+
+    const chunks = chunkArray(ids, chunkSize);
+    if (chunks.length === 1) {
+      return this.list({ limit: chunks[0].length, where: { id: chunks[0] } });
+    }
+
+    const results: ModelType[] = [];
+    for (const idChunk of chunks) {
+      results.push(
+        ...(await this.list({ limit: idChunk.length, where: { id: idChunk } })),
+      );
+    }
+    return results;
   }
 
   /**
@@ -1449,7 +1726,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const convertedWhere = this.convertWhereKeys(where);
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
-    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
+    // `get()` reads `rows[0]` and discards the rest, so the row cap belongs in
+    // the query, not in JavaScript (#2367). Without it a filter that is not
+    // backed by a unique index — `get({ status: 'active' })`, or any slug lookup
+    // on a table whose natural-key index was replaced by custom
+    // `conflictColumns` — streams every matching row through the driver and
+    // hydrates none of them. The literal is safe to interpolate: it is not
+    // caller-derived, and `$n` placeholders here would have to be numbered after
+    // the WHERE values on PostgreSQL.
+    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql} LIMIT 1`;
     const rows = await this.queryRowsWithCache(
       fullSQL,
       whereValues,
@@ -1599,47 +1884,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    let orderBySql = '';
-    if (orderBy) {
-      orderBySql = ' ORDER BY ';
-      const orderByItems = Array.isArray(orderBy) ? orderBy : [orderBy];
-
-      orderBySql += orderByItems
-        .map((item) => {
-          const [field, direction = 'ASC'] = item.split(' ');
-
-          // Validate field name
-          if (!/^[a-zA-Z0-9_]+$/.test(field)) {
-            throw new Error(`Invalid field name for ordering: ${field}`);
-          }
-
-          // Validate direction
-          const normalizedDirection = direction.toUpperCase();
-          if (normalizedDirection !== 'ASC' && normalizedDirection !== 'DESC') {
-            throw new Error(
-              `Invalid sort direction: ${direction}. Must be ASC or DESC.`,
-            );
-          }
-
-          // Convert field name to snake_case
-          const snakeField = toSnakeCase(field);
-          return `${snakeField} ${normalizedDirection}`;
-        })
-        .join(', ');
-    }
+    const orderBySql = this.buildOrderBySql(orderBy, fields);
 
     let limitOffsetSql = '';
     const limitOffsetValues: (number | undefined)[] = [];
     let paramIndex = whereValues.length + 1;
 
-    if (limit !== undefined) {
+    // #2367: reject a malformed bound here rather than binding it. A NaN or
+    // fractional `limit` used to reach the driver verbatim, where PostgreSQL
+    // answers `invalid input syntax for type bigint` — a 500 for what is a
+    // caller error. Then apply the collection's opt-in default/ceiling.
+    const boundedLimit = this.applyListBounds(assertQueryBound(limit, 'limit'));
+    const boundedOffset = assertQueryBound(offset, 'offset');
+
+    if (boundedLimit !== undefined) {
       limitOffsetSql += ` LIMIT $${paramIndex++}`;
-      limitOffsetValues.push(limit);
+      limitOffsetValues.push(boundedLimit);
     }
 
-    if (offset !== undefined) {
+    if (boundedOffset !== undefined) {
       limitOffsetSql += ` OFFSET $${paramIndex++}`;
-      limitOffsetValues.push(offset);
+      limitOffsetValues.push(boundedOffset);
     }
 
     const selectSql = projection ? projection.sql : '*';
