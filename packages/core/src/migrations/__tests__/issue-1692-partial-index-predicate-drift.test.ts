@@ -289,7 +289,7 @@ describe('SchemaComparer partial-index predicate drift (issue #1692)', () => {
 
       const add = diff.changes.find((c) => c.type === 'add_index');
       expect(add?.sql).toBe(
-        `CREATE INDEX "idx_tenants_owner" ON "tenants" ("owner_id") WHERE _meta_type = 'ClassA'`,
+        `CREATE INDEX IF NOT EXISTS "idx_tenants_owner" ON "tenants" ("owner_id") WHERE _meta_type = 'ClassA'`,
       );
     });
   });
