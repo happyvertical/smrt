@@ -28,7 +28,7 @@ import {
   ManifestAdapter,
   OxcScanner,
   parseSource,
-  sourceMayContainMonetaryIntegerField,
+  sourceMayContainNumericPrecisionIssue,
 } from '@happyvertical/smrt-scanner';
 import type {
   DomainKnowledgeField,
@@ -2930,18 +2930,30 @@ function findStalePatternIssues(
 }
 
 /**
- * Flag money/rate fields that rely on the silent `= 0` → INTEGER heuristic
- * (#2361).
+ * Flag fields whose declared numeric precision contradicts their name (#2361):
+ * money declared decimal, or a rate declared integer.
  *
- * Fails closed on the framework's own packages (`@happyvertical/smrt-*`), where
- * an INTEGER money column is always a bug, and warns for a consumer's own
- * packages, where the framework cannot know whether an integer was intended and
- * a hard failure would make `dev:knowledge-check` unpassable downstream — the
- * same split the AGENTS.md rules use.
+ * Severity is split by what the repository can currently satisfy, not by
+ * preference:
  *
- * Source, not manifest, is the oracle here: the manifest records the resulting
+ * - **rate** findings fail closed on `@happyvertical/smrt-*`. The framework has
+ *   zero violations, so the gate holds the line at zero.
+ * - **money** findings warn everywhere for now. Twenty-one framework fields
+ *   across commerce, projects, subscriptions, support and the conformance
+ *   fixture still declare money decimal, and converting them means changing
+ *   live column types (REAL→INTEGER is not a whitelisted upgrade) and rescaling
+ *   stored values by 100. That is a coordinated migration, not a lint fix, so
+ *   failing closed today would only break every build. This flips to `error`
+ *   once that conversion lands.
+ *
+ * Consumer packages always warn: the framework cannot know a downstream
+ * project's money convention, and a hard failure would make
+ * `dev:knowledge-check` unpassable there.
+ *
+ * Source, not manifest, is the oracle: the manifest records the resulting
  * column type but not whether the author chose it, so only the source can tell
- * `@field({ type: 'integer' })` (a decision) from `= 0` (a default nobody made).
+ * `@field({ type: 'decimal' })` (a decision) from `= 0.0` (a default nobody
+ * made).
  */
 function findNumericPrecisionIssues(
   index: SmrtKnowledgeIndex,
@@ -2957,10 +2969,7 @@ function findNumericPrecisionIssues(
     if (pkg.kind === 'sdk') continue;
     const srcDir = join(pkg.directory, 'src');
     if (!existsSync(srcDir)) continue;
-    // The framework owns its own money semantics; a consumer's do not belong to
-    // us, so downstream findings inform rather than block.
-    const severity: KnowledgeIssueSeverity =
-      pkg.kind === 'smrt' ? 'error' : 'warning';
+    const isFramework = pkg.kind === 'smrt';
 
     for (const filePath of walkFiles(srcDir)) {
       if (!isLintableModelSource(filePath)) continue;
@@ -2974,14 +2983,18 @@ function findNumericPrecisionIssues(
       // Parsing every file in the workspace would dominate this check; the
       // pre-filter is conservative, so it only ever skips files that could not
       // have produced a finding.
-      if (!sourceMayContainMonetaryIntegerField(sourceText)) continue;
+      if (!sourceMayContainNumericPrecisionIssue(sourceText)) continue;
 
       const parsed = parseSource(sourceText, filePath);
       for (const finding of lintNumericPrecision(parsed.classes, sourceText)) {
         const location = finding.line > 0 ? `:${finding.line}` : '';
+        // See this function's doc comment: rates hold at zero, money waits on
+        // a coordinated column migration.
+        const severity: KnowledgeIssueSeverity =
+          isFramework && finding.kind === 'rate' ? 'error' : 'warning';
         issues.push({
           severity,
-          code: 'numeric-precision-money-integer',
+          code: `numeric-precision-${finding.kind}`,
           message: `${finding.message} ${finding.remedy}`,
           file: `${relative(index.rootDir, filePath)}${location}`,
           packageName: pkg.name,

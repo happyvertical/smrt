@@ -1,16 +1,16 @@
 /**
- * PostgreSQL round-trip proof for the money columns fixed in #2361.
+ * PostgreSQL lane for commerce money and rate columns (#2361).
  *
- * `subtotal: number = 0` compiled to an INTEGER column, and PostgreSQL rejects
- * `19.99` there with `22P02 invalid input syntax for type integer`. SQLite's
- * type affinity stores the REAL anyway, which is why every SQLite suite in this
- * package passed while the same save failed in production. Only a real
- * PostgreSQL lane can hold that line, so this file is the lane.
+ * Money in this package is **integer minor units** (cents, satoshis) — `$19.99`
+ * is `1999`. That is what the INTEGER columns encode, and it is exact, so the
+ * lane's job is to prove two things a SQLite-only suite cannot:
  *
- * These use `baseDb` rather than the transaction handle: `Invoice.save()`
- * constructs a `PaymentAllocationCollection` of its own from `this.options`,
- * and a nested collection built on a transaction handle does not share its
- * scope.
+ *  1. the money columns really are INTEGER and integer minor units round-trip;
+ *  2. a fractional *major-unit* write — the actual bug behind this issue — is
+ *     rejected rather than silently stored, as SQLite's type affinity does.
+ *
+ * Genuine rates (`taxRate`) are the opposite case: inherently fractional, so
+ * they must be DECIMAL or every rate truncates to 0.
  */
 
 import {
@@ -47,6 +47,8 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     if (isolated.config.type !== 'postgres') {
       throw new Error('Expected a PostgreSQL test database');
     }
+    // `Invoice.save()` builds a PaymentAllocationCollection of its own from
+    // `this.options`, which a transaction handle would not share.
     db = isolated.baseDb;
     invoices = await InvoiceCollection.create({ db });
     lineItems = await InvoiceLineItemCollection.create({ db });
@@ -59,103 +61,126 @@ describePostgres('commerce money columns on PostgreSQL (#2361)', () => {
     isolated = undefined;
   });
 
-  it('declares every money column as a floating-point type, not integer', async () => {
+  it('declares money columns INTEGER and rate columns floating-point', async () => {
     const result = await db.query(
       `SELECT table_name, column_name, data_type FROM information_schema.columns
        WHERE (table_name = 'invoices'
               AND column_name IN ('subtotal', 'tax_amount', 'total_amount', 'amount_paid'))
           OR (table_name = 'invoice_line_items'
-              AND column_name IN ('quantity', 'unit_price', 'discount', 'tax_rate', 'amount'))
+              AND column_name IN ('unit_price', 'discount', 'amount', 'tax_rate'))
           OR (table_name = 'payment_allocations' AND column_name = 'amount')
        ORDER BY table_name, column_name`,
     );
 
-    const rows = result.rows as {
-      table_name: string;
-      column_name: string;
-      data_type: string;
-    }[];
+    const byColumn = Object.fromEntries(
+      (
+        result.rows as {
+          table_name: string;
+          column_name: string;
+          data_type: string;
+        }[]
+      ).map((row) => [`${row.table_name}.${row.column_name}`, row.data_type]),
+    );
 
-    expect(rows).toHaveLength(10);
-    for (const row of rows) {
-      // Deliberately loose, and NOT a style nit: the PostgreSQL DDL strategy
-      // maps REAL to DOUBLE PRECISION, but production materializes these tables
-      // from the manifest's pre-rendered `ddl` string, which carries a bare
-      // `REAL` and lands as float4. Both are correct answers to "not INTEGER",
-      // which is what this asserts. Tightening it to `double precision` fails
-      // against the path that actually runs. The float4/float8 split is #2358;
-      // the absence of an exact-decimal type is #2373.
-      expect(row.data_type, `${row.table_name}.${row.column_name}`).toMatch(
-        /double precision|real|numeric/,
-      );
+    for (const column of [
+      'invoices.subtotal',
+      'invoices.tax_amount',
+      'invoices.total_amount',
+      'invoices.amount_paid',
+      'invoice_line_items.unit_price',
+      'invoice_line_items.discount',
+      'invoice_line_items.amount',
+      'payment_allocations.amount',
+    ]) {
+      expect(byColumn[column], column).toMatch(/integer|bigint/);
     }
+
+    // A rate is inherently fractional; INTEGER here would truncate 0.0825 to 0.
+    expect(byColumn['invoice_line_items.tax_rate']).toMatch(
+      /double precision|real|numeric/,
+    );
   });
 
-  it('round-trips fractional invoice amounts that an INTEGER column rejected', async () => {
+  it('round-trips invoice amounts as exact integer minor units', async () => {
+    // $19.99 + $1.60 tax = $21.59, expressed as cents.
     const invoice = await invoices.create({
-      invoiceNumber: 'INV-2361-FRACTIONAL',
-      subtotal: 19.99,
-      taxAmount: 1.6,
-      totalAmount: 21.59,
+      invoiceNumber: 'INV-2361-MINOR-UNITS',
+      subtotal: 1999,
+      taxAmount: 160,
+      totalAmount: 2159,
     });
 
     const reloaded = await invoices.get(invoice.id);
     expect(reloaded).toBeTruthy();
-    expect(reloaded?.subtotal).toBeCloseTo(19.99, 6);
-    expect(reloaded?.taxAmount).toBeCloseTo(1.6, 6);
-    expect(reloaded?.totalAmount).toBeCloseTo(21.59, 6);
+    // Exact equality, not toBeCloseTo — that is the point of minor units.
+    expect(reloaded?.subtotal).toBe(1999);
+    expect(reloaded?.taxAmount).toBe(160);
+    expect(reloaded?.totalAmount).toBe(2159);
   });
 
-  it('round-trips fractional line-item price, discount, tax rate and quantity', async () => {
+  it('rejects a fractional major-unit write instead of silently storing it', async () => {
+    // This is the bug from the issue: `19.99` into a minor-units column.
+    // PostgreSQL refuses it (22P02); SQLite's affinity would store it and hide
+    // the mistake. Catching it before the database is the desired end state —
+    // see the note in the PR: that guard cannot land until `Payment.amount`
+    // moves to minor units alongside `PaymentAllocation.amount`.
+    await expect(
+      invoices.create({
+        invoiceNumber: 'INV-2361-FRACTIONAL',
+        subtotal: 19.99,
+        taxAmount: 0,
+        totalAmount: 19.99,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('round-trips line-item minor units alongside a fractional tax rate', async () => {
     const invoice = await invoices.create({ invoiceNumber: 'INV-2361-LINES' });
 
     const lineItem = await lineItems.create({
       invoiceId: invoice.id,
       description: 'Consulting',
-      // Billable hours are fractional, which is why `quantity` moved off the
-      // integer heuristic alongside the money fields.
-      quantity: 2.5,
-      unitPrice: 149.99,
-      discount: 12.34,
-      taxRate: 0.0825,
-      amount: 362.64,
+      quantity: 2,
+      unitPrice: 14999, // $149.99
+      discount: 1234, // $12.34
+      taxRate: 0.0825, // 8.25% — a rate, so genuinely fractional
+      amount: 28764, // 2 * 14999 - 1234
     });
 
     const reloaded = await lineItems.get(lineItem.id);
-    expect(reloaded?.quantity).toBeCloseTo(2.5, 6);
-    expect(reloaded?.unitPrice).toBeCloseTo(149.99, 6);
-    expect(reloaded?.discount).toBeCloseTo(12.34, 6);
+    expect(reloaded?.quantity).toBe(2);
+    expect(reloaded?.unitPrice).toBe(14999);
+    expect(reloaded?.discount).toBe(1234);
+    expect(reloaded?.amount).toBe(28764);
     expect(reloaded?.taxRate).toBeCloseTo(0.0825, 6);
-    expect(reloaded?.amount).toBeCloseTo(362.64, 6);
   });
 
-  it('round-trips a fractional allocation and derives amountPaid from it', async () => {
+  it('round-trips an allocation and derives amountPaid from it', async () => {
     const invoice = await invoices.create({
       invoiceNumber: 'INV-2361-ALLOCATION',
-      subtotal: 21.59,
-      taxAmount: 0.0,
-      totalAmount: 21.59,
+      subtotal: 2159,
+      taxAmount: 0,
+      totalAmount: 2159,
     });
 
+    // `PaymentAllocation.save()` caps the allocation against the persisted
+    // `Payment.amount`, so both sides must be in the same units. `Payment` is
+    // still a DECIMAL column (out of scope here), which is exactly why that
+    // pair has to convert together.
     const payment = await payments.create({
       paymentNumber: 'PAY-2361',
-      amount: 21.59,
+      amount: 2159,
     });
 
     const allocation = await allocations.create({
       paymentId: payment.id,
       invoiceId: invoice.id,
-      amount: 21.59,
+      amount: 2159,
     });
 
-    expect((await allocations.get(allocation.id))?.amount).toBeCloseTo(
-      21.59,
-      6,
-    );
+    expect((await allocations.get(allocation.id))?.amount).toBe(2159);
 
-    // `amountPaid` is derived from allocations on a persisted save, so this is
-    // the only path that can write a fractional value into that column.
     await invoice.save();
-    expect((await invoices.get(invoice.id))?.amountPaid).toBeCloseTo(21.59, 6);
+    expect((await invoices.get(invoice.id))?.amountPaid).toBe(2159);
   });
 });

@@ -1,19 +1,25 @@
 /**
- * Regression tests for the money/rate integer-heuristic lint (#2361).
+ * Regression tests for the money/rate precision lint (#2361).
  *
- * The bug this guards: `subtotal: number = 0` silently compiles to an INTEGER
- * column, PostgreSQL rejects `19.99` with 22P02, and SQLite's affinity hides it
- * from every SQLite-only suite. The lint has to be precise enough to run as a
- * fail-closed gate over the whole monorepo, so the negative cases below matter
- * as much as the positive ones.
+ * Two rules pointing opposite ways, which is what makes the classification
+ * worth testing hard:
+ *
+ * - money is exact and stored as integer minor units, so `subtotal = 0.0` is
+ *   wrong;
+ * - a rate is inherently fractional, so `taxRate = 0` is wrong — it truncates
+ *   every value and PostgreSQL rejects the save with 22P02 while SQLite's
+ *   affinity hides it.
+ *
+ * The lint runs over the whole monorepo, so the negative cases below matter as
+ * much as the positive ones.
  */
 
 import { describe, expect, it } from 'vitest';
 import { ManifestAdapter } from '../manifest-adapter.js';
 import {
-  hasMonetaryHeadNoun,
+  classifyNumericFieldName,
   lintNumericPrecision,
-  sourceMayContainMonetaryIntegerField,
+  sourceMayContainNumericPrecisionIssue,
   splitIdentifierWords,
 } from '../numeric-precision-lint.js';
 import { parseSource } from '../oxc-parser.js';
@@ -44,33 +50,40 @@ describe('splitIdentifierWords', () => {
   });
 });
 
-describe('hasMonetaryHeadNoun', () => {
-  it('matches when the monetary word is the head noun', () => {
+describe('classifyNumericFieldName', () => {
+  it('classifies money by head noun', () => {
     for (const name of [
       'amount',
       'subtotal',
       'taxAmount',
       'totalAmount',
       'unitPrice',
-      'taxRate',
       'discount',
-      'confidence',
       'price',
       'total',
-      'hourlyRate',
+      'creditLimitBalance',
     ]) {
-      expect(hasMonetaryHeadNoun(name), name).toBe(true);
+      expect(classifyNumericFieldName(name), name).toBe('money');
     }
   });
 
   it('looks past trailing qualifiers that do not displace the head', () => {
-    expect(hasMonetaryHeadNoun('amountPaid')).toBe(true);
-    expect(hasMonetaryHeadNoun('amountRemaining')).toBe(true);
-    expect(hasMonetaryHeadNoun('totalDue')).toBe(true);
+    expect(classifyNumericFieldName('amountPaid')).toBe('money');
+    expect(classifyNumericFieldName('amountRemaining')).toBe('money');
+    expect(classifyNumericFieldName('totalOutstanding')).toBe('money');
   });
 
-  it('does not match when the head noun names a unit or a count', () => {
-    // These are the shapes `sales`, `chat` and `support` use deliberately.
+  it('classifies rates, and lets a rate word beat a money word', () => {
+    // `taxRate` carries both vocabularies; the rate is what the value *is*.
+    expect(classifyNumericFieldName('taxRate')).toBe('rate');
+    expect(classifyNumericFieldName('confidence')).toBe('rate');
+    expect(classifyNumericFieldName('credibility')).toBe('rate');
+    expect(classifyNumericFieldName('conversionRatio')).toBe('rate');
+    expect(classifyNumericFieldName('hourlyRate')).toBe('rate');
+  });
+
+  it('leaves a unit or count head noun unclassified', () => {
+    // The shapes `sales`, `chat` and `support` use deliberately.
     for (const name of [
       'amountCents',
       'baseAmountCents',
@@ -80,11 +93,25 @@ describe('hasMonetaryHeadNoun', () => {
       'totalTokensUsed',
       'pausedTotalSeconds',
       'totalCalls',
-      'totalSignals',
       'priceLockWindowMs',
-      'rateLimitAttempts',
     ]) {
-      expect(hasMonetaryHeadNoun(name), name).toBe(false);
+      expect(classifyNumericFieldName(name), name).toBeUndefined();
+    }
+  });
+
+  it('does not guess at words that are commonly whole numbers', () => {
+    // `AdVariation.weight = 1` is a correct integer; calling these rates would
+    // fail closed on working code.
+    for (const name of [
+      'weight',
+      'score',
+      'healthScore',
+      'factor',
+      'percentComplete',
+      'sortOrder',
+      'remindersSent',
+    ]) {
+      expect(classifyNumericFieldName(name), name).toBeUndefined();
     }
   });
 
@@ -93,26 +120,24 @@ describe('hasMonetaryHeadNoun', () => {
       'corporateId',
       'aggregateVersion',
       'separator',
-      'sortOrder',
       'expMonth',
       'leadTimeDays',
-      'remindersSent',
       'syntaxMode',
     ]) {
-      expect(hasMonetaryHeadNoun(name), name).toBe(false);
+      expect(classifyNumericFieldName(name), name).toBeUndefined();
     }
   });
 });
 
-describe('lintNumericPrecision', () => {
-  it('flags the exact shape that broke commerce: a money field with `= 0`', () => {
+describe('lintNumericPrecision — money must be integer minor units', () => {
+  it('flags a money field declared decimal', () => {
     const findings = lintSource(`
       @smrt()
       class Invoice extends SmrtObject {
-        subtotal: number = 0;
-        taxAmount: number = 0;
-        totalAmount: number = 0;
-        amountPaid: number = 0;
+        subtotal: number = 0.0;
+        taxAmount: number = 0.0;
+        totalAmount: number = 0.0;
+        amountPaid: number = 0.0;
       }
     `);
 
@@ -122,77 +147,77 @@ describe('lintNumericPrecision', () => {
       'totalAmount',
       'amountPaid',
     ]);
-    expect(findings[0].className).toBe('Invoice');
+    expect(findings.every((f) => f.kind === 'money')).toBe(true);
   });
 
-  it('recovers declaration lines from source text the AST cannot supply', () => {
-    // OXC nodes reach the scanner without `loc`, so `field.line` is 0; a
-    // finding that cannot point at a line is far harder to act on.
-    const source = [
-      '@smrt()',
-      'class Invoice extends SmrtObject {',
-      '  reference: string = "";',
-      '  totalAmount: number = 0;',
-      '}',
-    ].join('\n');
-
-    const parsed = parseSource(source, 'model.ts');
-    expect(lintNumericPrecision(parsed.classes, source)[0].line).toBe(4);
-    expect(lintNumericPrecision(parsed.classes)[0].line).toBe(0);
-  });
-
-  it('points at the 0 / 0.0 rule and both accepted fixes', () => {
+  it('names the minor-units rule and both accepted fixes', () => {
     const [finding] = lintSource(`
       @smrt()
       class Ledger extends SmrtObject {
-        total: number = 0;
+        total: number = 0.0;
       }
     `);
 
-    expect(finding.message).toContain('INTEGER');
-    expect(finding.message).toContain('22P02');
-    expect(finding.remedy).toContain('total = 0.0');
-    expect(finding.remedy).toContain("@field({ type: 'integer' })");
+    expect(finding.message).toContain('minor units');
+    expect(finding.message).toContain('1999');
+    expect(finding.remedy).toContain('total = 0');
+    expect(finding.remedy).toContain("@field({ type: 'decimal' })");
   });
 
-  it('flags a bare numeric initializer with no type annotation', () => {
-    // `products/Product.ts` declared `price = 0` — inference step 3.5.
+  it('accepts an integer initializer', () => {
+    expect(
+      lintSource(`
+        @smrt()
+        class Invoice extends SmrtObject {
+          subtotal: number = 0;
+          totalAmount: number = 0;
+          price = 0;
+        }
+      `),
+    ).toEqual([]);
+  });
+});
+
+describe('lintNumericPrecision — rates must be decimal', () => {
+  it('flags a rate declared integer', () => {
     const findings = lintSource(`
       @smrt()
-      class Product extends SmrtObject {
-        price = 0;
+      class Line extends SmrtObject {
+        taxRate: number = 0;
+        confidence: number = 0;
       }
     `);
 
-    expect(findings).toHaveLength(1);
-    expect(findings[0].fieldName).toBe('price');
+    expect(findings.map((f) => f.fieldName)).toEqual(['taxRate', 'confidence']);
+    expect(findings.every((f) => f.kind === 'rate')).toBe(true);
+    expect(findings[0].message).toContain('22P02');
+    expect(findings[0].remedy).toContain('taxRate = 0.0');
   });
 
   it('accepts a decimal initializer', () => {
     expect(
       lintSource(`
         @smrt()
-        class Invoice extends SmrtObject {
-          subtotal: number = 0.0;
+        class Line extends SmrtObject {
           taxRate: number = 0.0;
-          quantity: number = 1.0;
+          confidence: number = 0.0;
         }
       `),
     ).toEqual([]);
   });
+});
 
-  it('accepts an explicitly declared type, integer included', () => {
-    // Integer cents is a legitimate answer; the lint asks for a decision, not
-    // for a particular one.
+describe('lintNumericPrecision — exemptions', () => {
+  it('accepts an explicitly declared type, either direction', () => {
     expect(
       lintSource(`
         @smrt()
         class Commission extends SmrtObject {
-          @field({ type: 'integer' })
-          amount: number = 0;
-
           @field({ type: 'decimal' })
-          rate: number = 0;
+          amount: number = 0.0;
+
+          @field({ type: 'integer' })
+          taxRate: number = 0;
         }
       `),
     ).toEqual([]);
@@ -206,7 +231,7 @@ describe('lintNumericPrecision', () => {
       @smrt()
       class Quote extends SmrtObject {
         @field({ description: 'Discount type: percentage or flat' })
-        discount: number = 0;
+        discount: number = 0.0;
       }
     `);
 
@@ -219,12 +244,12 @@ describe('lintNumericPrecision', () => {
         @smrt()
         class Quote extends SmrtObject {
           @field({ transient: true })
-          totalAmount: number = 0;
+          totalAmount: number = 0.0;
 
           @meta()
-          discount: number = 0;
+          discount: number = 0.0;
 
-          costPerUnit: Meta<number> = 0;
+          costPerUnit: Meta<number> = 0.0;
         }
       `),
     ).toEqual([]);
@@ -235,11 +260,11 @@ describe('lintNumericPrecision', () => {
       lintSource(`
         @smrt()
         class Invoice extends SmrtObject {
-          static defaultTaxRate: number = 0;
+          static defaultTotal: number = 0.0;
         }
 
         class InvoiceCalculator {
-          totalAmount: number = 0;
+          totalAmount: number = 0.0;
         }
       `),
     ).toEqual([]);
@@ -248,7 +273,7 @@ describe('lintNumericPrecision', () => {
   it('covers a persisted base class that carries no @smrt() decorator', () => {
     const findings = lintSource(`
       abstract class BillableLine extends SmrtObject {
-        unitPrice: number = 0;
+        unitPrice: number = 0.0;
       }
     `);
 
@@ -257,29 +282,42 @@ describe('lintNumericPrecision', () => {
 
   it("agrees with the manifest adapter's inferred column type", () => {
     // The lint is only worth trusting if it fires exactly when the adapter
-    // would produce `integer`, so assert both halves against one source.
+    // would produce the wrong column type, so assert both halves at once.
     const source = `
       @smrt()
       class Invoice extends SmrtObject {
-        subtotal: number = 0;
-        taxAmount: number = 0.0;
+        subtotal: number = 0.0;
+        totalAmount: number = 0;
+        taxRate: number = 0;
       }
     `;
     const parsed = parseSource(source, 'model.ts');
     const adapter = new ManifestAdapter();
-    const fields = parsed.classes[0].fields;
     const inferred = Object.fromEntries(
-      fields.map((field) => [field.name, adapter.inferFieldType(field).type]),
+      parsed.classes[0].fields.map((field) => [
+        field.name,
+        adapter.inferFieldType(field).type,
+      ]),
     );
 
-    expect(inferred).toEqual({ subtotal: 'integer', taxAmount: 'decimal' });
+    expect(inferred).toEqual({
+      subtotal: 'decimal',
+      totalAmount: 'integer',
+      taxRate: 'integer',
+    });
     expect(
-      lintNumericPrecision(parsed.classes).map((f) => f.fieldName),
-    ).toEqual(['subtotal']);
+      lintNumericPrecision(parsed.classes, source).map((f) => [
+        f.fieldName,
+        f.kind,
+      ]),
+    ).toEqual([
+      ['subtotal', 'money'],
+      ['taxRate', 'rate'],
+    ]);
   });
 });
 
-describe('sourceMayContainMonetaryIntegerField', () => {
+describe('sourceMayContainNumericPrecisionIssue', () => {
   const model = (field: string) =>
     ['@smrt()', 'class M extends SmrtObject {', `  ${field}`, '}', ''].join(
       '\n',
@@ -292,16 +330,14 @@ describe('sourceMayContainMonetaryIntegerField', () => {
    */
   it('never skips a source the lint would flag', () => {
     const flaggable = [
-      'totalAmount: number = 0;',
-      'unitPrice: number = 0;', // capitalized word mid-identifier
-      'USDPrice: number = 0;', // capitalized word after an acronym
-      'tax_rate: number = 0;', // underscore boundary
-      'Price: number = 0;', // PascalCase — capitalized word starting the name
-      'Total: number = 0;',
-      'price = 0 // catalog price', // no terminator, trailing comment
-      'subtotal:number=0;', // no whitespace anywhere
-      'discount: number = -1;', // negative initializer
-      'amountPaid: number =\n    0;', // wrapped initializer
+      'totalAmount: number = 0.0;',
+      'unitPrice: number = 0.0;', // capitalized word mid-identifier
+      'USDPrice: number = 0.0;', // capitalized word after an acronym
+      'Price: number = 0.0;', // PascalCase — capitalized word starting the name
+      'tax_rate: number = 0;', // underscore boundary, rate direction
+      'price = 0.0 // catalog price', // no terminator, trailing comment
+      'subtotal:number=0.0;', // no whitespace anywhere
+      'amountPaid: number =\n    0.0;', // wrapped initializer
     ];
 
     for (const field of flaggable) {
@@ -312,7 +348,7 @@ describe('sourceMayContainMonetaryIntegerField', () => {
       );
       expect(findings.length, `AST should flag: ${field}`).toBeGreaterThan(0);
       expect(
-        sourceMayContainMonetaryIntegerField(source),
+        sourceMayContainNumericPrecisionIssue(source),
         `pre-filter must not skip: ${field}`,
       ).toBe(true);
     }
@@ -324,7 +360,7 @@ describe('sourceMayContainMonetaryIntegerField', () => {
     const source = [
       '@smrt',
       'class Ledger {',
-      '  total: number = 0;',
+      '  total: number = 0.0;',
       '}',
       '',
     ].join('\n');
@@ -332,28 +368,20 @@ describe('sourceMayContainMonetaryIntegerField', () => {
     expect(
       lintNumericPrecision(parseSource(source, 'model.ts').classes, source),
     ).toHaveLength(1);
-    expect(sourceMayContainMonetaryIntegerField(source)).toBe(true);
+    expect(sourceMayContainNumericPrecisionIssue(source)).toBe(true);
   });
 
   it('skips sources that cannot produce a finding', () => {
-    // No persisted-class marker, no numeric initializer, no monetary word —
+    // No persisted-class marker, no numeric initializer, no relevant word —
     // each condition alone is enough to skip.
-    expect(sourceMayContainMonetaryIntegerField('const total = 0;')).toBe(
+    expect(sourceMayContainNumericPrecisionIssue('const total = 0.0;')).toBe(
       false,
     );
-    expect(sourceMayContainMonetaryIntegerField(model("total = '';"))).toBe(
+    expect(sourceMayContainNumericPrecisionIssue(model("total = '';"))).toBe(
       false,
     );
-    expect(sourceMayContainMonetaryIntegerField(model('retries = 0;'))).toBe(
+    expect(sourceMayContainNumericPrecisionIssue(model('retries = 0;'))).toBe(
       false,
-    );
-  });
-
-  it('stays permissive where cheap text cannot decide', () => {
-    // `= 0.0` is already correct, but the filter cannot tell `0` from `0.0`
-    // without parsing — and erring toward parsing is the safe direction.
-    expect(sourceMayContainMonetaryIntegerField(model('total = 0.0;'))).toBe(
-      true,
     );
   });
 
@@ -361,7 +389,7 @@ describe('sourceMayContainMonetaryIntegerField', () => {
     // `generate`/`separator`/`corporate` all contain "rate"; matching them
     // would make the filter useless rather than unsafe, so this guards cost.
     expect(
-      sourceMayContainMonetaryIntegerField(
+      sourceMayContainNumericPrecisionIssue(
         model('separator = 0;\n  // generate a corporate aggregate'),
       ),
     ).toBe(false);

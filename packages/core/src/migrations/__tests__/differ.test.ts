@@ -1149,22 +1149,27 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 });
 
 /**
- * #2361 — commerce/products/facts money fields shipped as INTEGER columns
- * because `= 0` compiles to integer. The models now declare `0.0`, so existing
- * deployments need the widening migration to actually be emitted. INTEGER→REAL
- * is already whitelisted as a compatible upgrade; these lock in that the
- * upgrade reaches the diff and produces engine-correct SQL.
+ * #2361 — rate fields (`InvoiceLineItem.taxRate`, `FactEvidence.confidence`)
+ * shipped as INTEGER columns because `= 0` compiles to integer, which truncates
+ * every rate. The models now declare `0.0`, so existing deployments need the
+ * widening migration to actually be emitted. INTEGER→REAL is already
+ * whitelisted as a compatible upgrade; these lock in that the upgrade reaches
+ * the diff and produces engine-correct SQL.
+ *
+ * Money went the other way and stays INTEGER (minor units), so the integer
+ * column below is not incidental — it stands for the money columns on the same
+ * table, which this migration must leave completely alone.
  */
-describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () => {
+describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () => {
   const invoiceManifest = (): Record<string, SchemaDefinition> => ({
-    invoices: {
-      tableName: 'invoices',
+    invoice_line_items: {
+      tableName: 'invoice_line_items',
       columns: {
         id: { type: 'TEXT', primaryKey: true },
-        // What `subtotal: number = 0.0` now compiles to.
-        subtotal: { type: 'REAL', defaultValue: 0 },
-        // A genuine integer column on the same table must not be disturbed.
-        reminders_sent: { type: 'INTEGER', defaultValue: 0 },
+        // What `taxRate: number = 0.0` now compiles to.
+        tax_rate: { type: 'REAL', defaultValue: 0 },
+        // Money stays INTEGER minor units and must not be disturbed.
+        unit_price: { type: 'INTEGER', defaultValue: 0 },
       },
       indexes: [],
       triggers: [],
@@ -1174,17 +1179,17 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
     },
   });
 
-  /** A deployed table whose `subtotal` column is still INTEGER. */
+  /** A deployed table whose `tax_rate` column is still INTEGER. */
   const legacyColumns = (integerType: string) => ({
     id: { type: 'text', notnull: true },
-    subtotal: { type: integerType, notnull: false },
-    reminders_sent: { type: integerType, notnull: false },
+    tax_rate: { type: integerType, notnull: false },
+    unit_price: { type: integerType, notnull: false },
   });
 
   it('emits an ALTER … TYPE DOUBLE PRECISION on PostgreSQL', async () => {
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
-      query: async () => ({ rows: [{ table_name: 'invoices' }] }),
+      query: async () => ({ rows: [{ table_name: 'invoice_line_items' }] }),
       getTableSchema: async () => ({
         columns: legacyColumns('integer'),
         indexes: [],
@@ -1197,14 +1202,14 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].name).toBe('subtotal');
+    expect(typeUpgrades[0].name).toBe('tax_rate');
     expect(typeUpgrades[0].mismatch).toEqual({
       expected: 'REAL',
       actual: 'integer',
     });
-    expect(typeUpgrades[0].sql).toContain('ALTER TABLE "invoices"');
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE "invoice_line_items"');
     expect(typeUpgrades[0].sql).toContain(
-      'ALTER COLUMN "subtotal" TYPE DOUBLE PRECISION',
+      'ALTER COLUMN "tax_rate" TYPE DOUBLE PRECISION',
     );
     // PostgreSQL casts integer to double precision implicitly, so a USING
     // clause would be noise; the default is cycled so it can be re-typed.
@@ -1219,7 +1224,7 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
   it('emits a native ALTER COLUMN TYPE on DuckDB', async () => {
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
-      query: async () => ({ rows: [{ name: 'invoices' }] }),
+      query: async () => ({ rows: [{ name: 'invoice_line_items' }] }),
       getTableSchema: async () => ({
         columns: legacyColumns('BIGINT'),
         indexes: [],
@@ -1232,11 +1237,11 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].name).toBe('subtotal');
+    expect(typeUpgrades[0].name).toBe('tax_rate');
     // DuckDB maps the abstract REAL straight through; the framework's lack of
     // an exact-decimal type is tracked separately as #2373.
     expect(typeUpgrades[0].sql).toBe(
-      'ALTER TABLE "invoices" ALTER COLUMN "subtotal" TYPE REAL',
+      'ALTER TABLE "invoice_line_items" ALTER COLUMN "tax_rate" TYPE REAL',
     );
   });
 
@@ -1245,7 +1250,7 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
     // INTEGER column. The differ must still surface the drift.
     const mockSqliteDb = {
       url: ':memory:',
-      query: async () => ({ rows: [{ name: 'invoices' }] }),
+      query: async () => ({ rows: [{ name: 'invoice_line_items' }] }),
       getTableSchema: async () => ({
         columns: legacyColumns('INTEGER'),
         indexes: [],
@@ -1258,7 +1263,7 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].name).toBe('subtotal');
+    expect(typeUpgrades[0].name).toBe('tax_rate');
     expect(typeUpgrades[0].sql).toContain('requires table recreation');
     expect(diff.has_changes).toBe(true);
   });
@@ -1266,12 +1271,12 @@ describe('SchemaComparer INTEGER→REAL widening for money columns (#2361)', () 
   it('is a no-op once the column is already REAL', async () => {
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
-      query: async () => ({ rows: [{ table_name: 'invoices' }] }),
+      query: async () => ({ rows: [{ table_name: 'invoice_line_items' }] }),
       getTableSchema: async () => ({
         columns: {
           id: { type: 'text', notnull: true },
-          subtotal: { type: 'double precision', notnull: false },
-          reminders_sent: { type: 'integer', notnull: false },
+          tax_rate: { type: 'double precision', notnull: false },
+          unit_price: { type: 'integer', notnull: false },
         },
         indexes: [],
       }),

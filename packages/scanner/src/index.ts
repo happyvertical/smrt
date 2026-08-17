@@ -27,10 +27,11 @@ export {
 export { InheritanceResolver } from './inheritance-resolver.js';
 export { ManifestAdapter } from './manifest-adapter.js';
 export {
-  hasMonetaryHeadNoun,
+  classifyNumericFieldName,
   lintNumericPrecision,
   type NumericPrecisionFinding,
-  sourceMayContainMonetaryIntegerField,
+  type NumericPrecisionKind,
+  sourceMayContainNumericPrecisionIssue,
   splitIdentifierWords,
 } from './numeric-precision-lint.js';
 export { extractSmrtImports, parseFile, parseSource } from './oxc-parser.js';

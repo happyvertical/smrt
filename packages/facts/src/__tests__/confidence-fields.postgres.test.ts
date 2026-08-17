@@ -7,6 +7,10 @@
  * entirely in `[0, 1]`, so an INTEGER column makes every meaningful value
  * unstorable — PostgreSQL raises `22P02` and SQLite quietly accepts it, which
  * is why the SQLite suites never caught it.
+ *
+ * Confidence is a *rate*, not money: it is inherently fractional, so decimal is
+ * correct here. Money elsewhere in the framework goes the other way — integer
+ * minor units — which is why the lint treats the two vocabularies separately.
  */
 
 import {

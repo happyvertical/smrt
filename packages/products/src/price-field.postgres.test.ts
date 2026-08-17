@@ -1,11 +1,13 @@
 /**
- * PostgreSQL round-trip proof for `Product.price` (#2361).
+ * PostgreSQL lane for `Product.price` (#2361).
  *
- * `price = 0` compiles to an INTEGER column, so a catalog price of `19.99`
- * failed on PostgreSQL with `22P02 invalid input syntax for type integer`.
- * SQLite's affinity stored it regardless, which is exactly why this package's
- * SQLite-only suites never saw it. `Product` is an STI base, so the column is
- * shared by every consumer subtype on the `products` table.
+ * Price is **integer minor units** (cents, satoshis) — `$19.99` is `1999`.
+ * `Product` is the STI base, so the column is shared by every consumer subtype,
+ * which makes a silent unit mistake here especially expensive.
+ *
+ * SQLite's type affinity stores a fractional write into an INTEGER column
+ * without complaint, so only a real PostgreSQL lane can prove the boundary
+ * actually holds.
  */
 
 import {
@@ -43,7 +45,7 @@ describePostgres('products price column on PostgreSQL (#2361)', () => {
     isolated = undefined;
   });
 
-  it('declares the shared price column as a floating-point type', async () => {
+  it('declares the shared price column as an integer type', async () => {
     const result = await db.query(
       `SELECT data_type FROM information_schema.columns
        WHERE table_name = 'products' AND column_name = 'price'`,
@@ -51,34 +53,44 @@ describePostgres('products price column on PostgreSQL (#2361)', () => {
 
     const rows = result.rows as { data_type: string }[];
     expect(rows).toHaveLength(1);
-    // Loose on purpose — see the note in commerce's money-fields lane: the
-    // manifest's pre-rendered `ddl` lands float4 while the structured strategy
-    // would emit float8. "Not INTEGER" is the assertion (#2358).
-    expect(rows[0].data_type).toMatch(/double precision|real|numeric/);
+    expect(rows[0].data_type).toMatch(/integer|bigint/);
   });
 
-  it('round-trips a fractional catalog price', async () => {
+  it('round-trips a price as exact integer minor units', async () => {
     const product = await products.create({
       name: 'Widget',
       slug: 'widget-2361',
-      price: 19.99,
+      price: 1999, // $19.99
     });
 
-    expect((await products.get(product.id))?.price).toBeCloseTo(19.99, 6);
+    // Exact equality — minor units are exact by construction.
+    expect((await products.get(product.id))?.price).toBe(1999);
   });
 
-  it('round-trips a fractional price on an STI subtype', async () => {
-    // `Material` shares the `products` table, so it exercises the same column
-    // through the discriminated path consumers actually use.
+  it('rejects a fractional major-unit price instead of silently storing it', async () => {
+    await expect(
+      products.create({
+        name: 'Fractional',
+        slug: 'fractional-2361',
+        price: 19.99,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('shares the column with an STI subtype', async () => {
+    // `Material` lives on the same `products` table, so it exercises the same
+    // column through the discriminated path consumers actually use.
+    // `costPerUnit` is a `Meta<number>` in `_meta_data`, not a column, so it is
+    // outside the minor-units rule and stays decimal.
     const material = await materials.create({
       name: 'Cotton twill',
       slug: 'cotton-twill-2361',
-      price: 4.25,
+      price: 425, // $4.25
       costPerUnit: 2.75,
     });
 
     const reloaded = await materials.get(material.id);
-    expect(reloaded?.price).toBeCloseTo(4.25, 6);
+    expect(reloaded?.price).toBe(425);
     expect(reloaded?.costPerUnit).toBeCloseTo(2.75, 6);
   });
 });

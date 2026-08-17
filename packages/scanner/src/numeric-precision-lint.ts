@@ -1,57 +1,83 @@
 /**
- * Numeric-precision lint for money-shaped SMRT fields (#2361).
+ * Numeric-precision lint for money and rate fields (#2361).
  *
  * SMRT infers a `number` field's column type from the *initializer literal*:
  * `= 0` compiles to INTEGER and `= 0.0` compiles to DECIMAL
- * (`manifest-adapter.ts`, steps 3 and 3.5). The rule is silent, and SQLite's
- * type affinity happily stores a REAL in an INTEGER column — so a money field
- * declared `= 0` passes every SQLite suite and then fails in production on
- * PostgreSQL with `22P02 invalid input syntax for type integer: "19.99"`.
+ * (`manifest-adapter.ts`, inference steps 3 and 3.5). The rule is silent, and
+ * SQLite's type affinity happily stores a REAL in an INTEGER column — so a
+ * mistyped field passes every SQLite suite and then behaves differently in
+ * production on PostgreSQL.
  *
- * This lint closes that gap deterministically, at source, before the manifest
- * exists: a persisted `number` field whose *head noun* is monetary (amount,
- * price, total, rate, tax, confidence, percent, discount, …) may not rely on
- * the integer heuristic. Either write a decimal literal or state the type
- * explicitly with `@field({ type: 'integer' })` — an explicit integer is a
- * legitimate answer (`sales` keeps exact ledgers in integer cents).
+ * Two vocabularies, opposite answers:
+ *
+ * - **Money is exact**, so it is stored as *integer minor units* — cents,
+ *   satoshis. `$19.99` is `1999`. A money field declared `= 0.0` becomes a
+ *   float column, which reintroduces binary-fraction error into amounts that
+ *   must balance, and invites callers to write major units.
+ * - **Rates are inherently fractional** — `taxRate`, `confidence`, a percentage
+ *   — so they must be DECIMAL. INTEGER would truncate every meaningful value
+ *   (a confidence in `[0, 1]` collapses to 0 or 1) and PostgreSQL rejects the
+ *   write outright with `22P02`.
  *
  * Matching is head-noun based rather than substring based, which is what keeps
- * it usable as a fail-closed gate: `amountCents` and `totalTokensUsed` name a
+ * it usable as a repo-wide gate: `amountCents` and `totalTokensUsed` name a
  * unit or a count as their head and are left alone, while `totalAmount`,
- * `amountPaid` and a bare `total` are flagged. JSDoc prose is deliberately NOT
+ * `amountPaid` and a bare `total` are money. JSDoc prose is deliberately NOT
  * matched — the head-noun signal is precise, and scanning prose for the same
- * vocabulary would make a repo-wide error gate fire on documentation wording.
+ * vocabulary would make the gate fire on documentation wording.
  */
 
 import type { RawClassDefinition, RawFieldDefinition } from './types.js';
 
 /**
- * Head nouns that denote a monetary, proportional, or fractional quantity.
+ * Head nouns that denote an exact monetary quantity, stored as integer minor
+ * units.
  *
- * Deliberately narrow: every entry names a value that is fractional in normal
- * business use, so an integer column is a bug unless the author says otherwise.
+ * `tax` is money (a tax *amount*); `taxRate` is not, and the rate vocabulary
+ * below wins whenever both appear, so the two never collide.
  */
-const MONETARY_HEAD_WORDS = new Set([
+const MONEY_HEAD_WORDS = new Set([
   'amount',
   'balance',
-  'confidence',
   'cost',
   'discount',
+  'due',
   'fee',
-  'percent',
-  'percentage',
+  'paid',
   'price',
-  'rate',
   'subtotal',
   'tax',
   'total',
 ]);
 
 /**
- * Words that may trail the monetary head noun without displacing it.
+ * Head nouns that denote an inherently fractional quantity, stored as DECIMAL.
  *
- * `amountPaid` is still an amount; `amountCents` is not (its head noun names an
- * exact integer unit), which is why the exemption is an allowlist rather than a
+ * A name carrying any of these is a rate even when it also carries a money word
+ * (`taxRate`, `feePercentage`), because the rate is what the value *is*.
+ */
+const RATE_WORDS = new Set([
+  'confidence',
+  'credibility',
+  'probability',
+  'rate',
+  'ratio',
+]);
+
+/**
+ * Deliberately NOT rate words: `weight`, `score`, `factor`, `percent`.
+ *
+ * Each is commonly a whole number — an ad-rotation `weight` of 1, a score out
+ * of 100, a percent as 0–100 — so treating them as necessarily fractional
+ * produces false positives on correct code. `AdVariation.weight = 1` is the
+ * worked example. They are left unclassified rather than guessed at.
+ */
+
+/**
+ * Words that may trail a head noun without displacing it.
+ *
+ * `amountPaid` is still an amount; `amountCents` is not — its head noun already
+ * names the exact unit — which is why this is an allowlist rather than a
  * blocklist of unit words.
  */
 const TRAILING_QUALIFIERS = new Set([
@@ -59,13 +85,11 @@ const TRAILING_QUALIFIERS = new Set([
   'billed',
   'charged',
   'collected',
-  'due',
   'earned',
   'gross',
   'net',
   'outstanding',
   'owed',
-  'paid',
   'refunded',
   'remaining',
 ]);
@@ -78,8 +102,13 @@ const PERSISTED_BASE_CLASSES = new Set([
   'SmrtPolymorphicAssociation',
 ]);
 
-/** One field that relies on the integer heuristic for a monetary quantity. */
+/** Which rule a field falls under, if any. */
+export type NumericPrecisionKind = 'money' | 'rate';
+
+/** One field whose declared precision contradicts its name. */
 export interface NumericPrecisionFinding {
+  /** `money` wants INTEGER minor units; `rate` wants DECIMAL. */
+  kind: NumericPrecisionKind;
   /** Declaring class, e.g. `Invoice`. */
   className: string;
   /** Field name, e.g. `totalAmount`. */
@@ -93,11 +122,11 @@ export interface NumericPrecisionFinding {
    * {@link lintNumericPrecision}.
    */
   line: number;
-  /** The integer literal that triggered the finding. */
+  /** The initializer that triggered the finding. */
   initializer: string;
-  /** Human-readable explanation naming the 0 / 0.0 rule. */
+  /** Human-readable explanation naming the rule. */
   message: string;
-  /** The two accepted fixes. */
+  /** The accepted fixes. */
   remedy: string;
 }
 
@@ -115,20 +144,24 @@ export function splitIdentifierWords(name: string): string[] {
 }
 
 /**
- * True when the identifier's head noun is monetary.
+ * Classify an identifier as money, a rate, or neither.
  *
- * The head is the last word, or the last word before a trailing qualifier such
- * as `Paid`. This is what separates `amountPaid` (an amount) from `amountCents`
- * (a count of cents, correctly an integer).
+ * The head noun is the last word, or the last word before a trailing qualifier
+ * such as `Paid`. A rate word anywhere in the name wins outright: `taxRate` is
+ * a rate even though `tax` is money, and that precedence is what stops the two
+ * vocabularies from fighting over the same field.
  */
-export function hasMonetaryHeadNoun(name: string): boolean {
+export function classifyNumericFieldName(
+  name: string,
+): NumericPrecisionKind | undefined {
   const words = splitIdentifierWords(name);
+  if (words.some((word) => RATE_WORDS.has(word))) return 'rate';
   for (let index = words.length - 1; index >= 0; index -= 1) {
     const word = words[index];
-    if (MONETARY_HEAD_WORDS.has(word)) return true;
-    if (!TRAILING_QUALIFIERS.has(word)) return false;
+    if (MONEY_HEAD_WORDS.has(word)) return 'money';
+    if (!TRAILING_QUALIFIERS.has(word)) return undefined;
   }
-  return false;
+  return undefined;
 }
 
 /**
@@ -143,28 +176,30 @@ const PERSISTED_CLASS_MARKER = /@smrt\b|extends\s+Smrt/;
 /** Any numeric initializer. Deliberately does not require a terminator. */
 const NUMERIC_INITIALIZER = /=\s*-?\d/;
 
+const ALL_WORDS = [...MONEY_HEAD_WORDS, ...RATE_WORDS];
+
 /**
- * A monetary word starting an identifier — any case, since `Price` and `price`
+ * A relevant word starting an identifier — any case, since `Price` and `price`
  * are both legal there. Case-insensitivity also matches prose in comments,
  * which costs a parse and nothing else.
  */
-const MONETARY_WORD_AT_START = new RegExp(
-  `(?<![A-Za-z])(?:${[...MONETARY_HEAD_WORDS].join('|')})`,
+const WORD_AT_START = new RegExp(
+  `(?<![A-Za-z])(?:${ALL_WORDS.join('|')})`,
   'i',
 );
 
 /**
- * A monetary word after a camel hump (`unitPrice`, `USDPrice`), where it is
+ * A relevant word after a camel hump (`unitPrice`, `USDPrice`), where it is
  * necessarily capitalized and necessarily preceded by an identifier character.
  * This arm cannot be case-insensitive: `generate` would then match on `rate`.
  *
  * Together the two arms cover exactly the boundaries {@link splitIdentifierWords}
  * cuts on, which is what makes the filter conservative rather than plausible.
  */
-const MONETARY_WORD_AFTER_HUMP = new RegExp(
-  `(?<=[A-Za-z0-9])(?:${[...MONETARY_HEAD_WORDS]
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join('|')})`,
+const WORD_AFTER_HUMP = new RegExp(
+  `(?<=[A-Za-z0-9])(?:${ALL_WORDS.map(
+    (word) => word[0].toUpperCase() + word.slice(1),
+  ).join('|')})`,
 );
 
 /**
@@ -172,20 +207,19 @@ const MONETARY_WORD_AFTER_HUMP = new RegExp(
  * finding.
  *
  * Conservative by construction: every condition here is textually implied by a
- * finding. A reported field lives in a class carrying `@smrt(` or
- * `extends Smrt…`, is initialized `= <digits>`, and has a monetary word at one
- * of the boundaries the head-noun splitter cuts on. It may still return `true`
- * for a file the AST pass then clears — that is the intended direction.
+ * finding. A reported field lives in a class carrying `@smrt` or
+ * `extends Smrt…`, is initialized to a number, and has a money or rate word at
+ * one of the boundaries the head-noun splitter cuts on. It may still return
+ * `true` for a file the AST pass then clears — that is the intended direction.
  *
  * @param source - Full file contents.
  * @returns `false` only when the file provably cannot produce a finding.
  */
-export function sourceMayContainMonetaryIntegerField(source: string): boolean {
+export function sourceMayContainNumericPrecisionIssue(source: string): boolean {
   return (
     PERSISTED_CLASS_MARKER.test(source) &&
     NUMERIC_INITIALIZER.test(source) &&
-    (MONETARY_WORD_AT_START.test(source) ||
-      MONETARY_WORD_AFTER_HUMP.test(source))
+    (WORD_AT_START.test(source) || WORD_AFTER_HUMP.test(source))
   );
 }
 
@@ -219,8 +253,8 @@ function hasExplicitTypeDecorator(field: RawFieldDefinition): boolean {
     }
     if (decorator.name !== 'field') continue;
     const args = blankStringLiterals(decorator.arguments.join(' '));
-    // `@field({ type: 'decimal' })` — an explicit declaration of intent, which
-    // is exactly what this lint asks for, whichever type was chosen.
+    // An explicit declaration of intent is exactly what this lint asks for,
+    // whichever type was chosen.
     if (/\btype\s*:/.test(args)) return true;
     // A transient field is never persisted, so no column type is inferred.
     if (/\btransient\s*:\s*true\b/.test(args)) return true;
@@ -236,9 +270,9 @@ function isMetaField(field: RawFieldDefinition): boolean {
   return /^Meta\s*</.test(field.typeAnnotation ?? '');
 }
 
-/** Would the manifest adapter's heuristic type this field as INTEGER? */
-function relaxesToIntegerHeuristic(field: RawFieldDefinition): boolean {
-  if (field.numericValue === null || field.hasDecimalPoint) return false;
+/** Is this a plain `number` column whose type came from the literal? */
+function usesLiteralInference(field: RawFieldDefinition): boolean {
+  if (field.numericValue === null) return false;
   const annotation = (field.typeAnnotation ?? '').replace(/\s/g, '');
   if (annotation === '') return true; // `price = 0` — inference step 3.5
   return annotation === 'number' || annotation === 'number|null';
@@ -276,9 +310,46 @@ function resolveDeclarationLine(
   return 0;
 }
 
+function describeMoneyFinding(
+  cls: RawClassDefinition,
+  field: RawFieldDefinition,
+): Pick<NumericPrecisionFinding, 'message' | 'remedy'> {
+  const whole = Math.trunc(field.numericValue ?? 0);
+  return {
+    message:
+      `${cls.className}.${field.name} is a money field with a decimal ` +
+      `initializer (= ${field.initializer ?? field.numericValue}), so SMRT ` +
+      'compiles it to a floating-point column. Money is exact and is stored ' +
+      'as integer minor units (cents, satoshis) — $19.99 is 1999 — so a float ' +
+      'column reintroduces binary-fraction error into amounts that must ' +
+      'balance.',
+    remedy:
+      `Write an integer initializer (\`${field.name} = ${whole}\`) and treat ` +
+      'the value as minor units, or state the intent explicitly with ' +
+      "`@field({ type: 'decimal' })` when the value really is fractional.",
+  };
+}
+
+function describeRateFinding(
+  cls: RawClassDefinition,
+  field: RawFieldDefinition,
+): Pick<NumericPrecisionFinding, 'message' | 'remedy'> {
+  return {
+    message:
+      `${cls.className}.${field.name} is a rate with an integer initializer ` +
+      `(= ${field.numericValue}), so SMRT compiles it to an INTEGER column. A ` +
+      'rate is inherently fractional, so every meaningful value truncates; ' +
+      'PostgreSQL rejects the save with 22P02 while SQLite silently accepts it.',
+    remedy:
+      `Write a decimal initializer (\`${field.name} = ${field.numericValue}.0\`) ` +
+      'to get a DECIMAL column, or state the intent explicitly with ' +
+      "`@field({ type: 'integer' })` when the value really is a whole count.",
+  };
+}
+
 /**
- * Report every persisted `number` field that leans on the integer heuristic for
- * a monetary quantity.
+ * Report every persisted `number` field whose declared precision contradicts
+ * its name — money declared decimal, or a rate declared integer.
  *
  * @param classes - Raw class definitions from `parseFile` / `OxcScanner`.
  * @param sourceText - Optional contents of the scanned file, used only to
@@ -294,26 +365,25 @@ export function lintNumericPrecision(
     if (!isPersistedClass(cls)) continue;
     for (const field of cls.fields) {
       if (field.isStatic) continue;
-      if (!relaxesToIntegerHeuristic(field)) continue;
-      if (!hasMonetaryHeadNoun(field.name)) continue;
+      if (!usesLiteralInference(field)) continue;
+      const kind = classifyNumericFieldName(field.name);
+      if (!kind) continue;
+      // Money wants an integer literal; a rate wants a decimal one. A field
+      // already on the right side of its rule is fine.
+      if (kind === 'money' && !field.hasDecimalPoint) continue;
+      if (kind === 'rate' && field.hasDecimalPoint) continue;
       if (isMetaField(field)) continue;
       if (hasExplicitTypeDecorator(field)) continue;
       findings.push({
+        kind,
         className: cls.className,
         fieldName: field.name,
         filePath: cls.filePath,
         line: resolveDeclarationLine(sourceText, field.name, field.line),
         initializer: field.initializer ?? String(field.numericValue),
-        message:
-          `${cls.className}.${field.name} is a monetary field with an integer ` +
-          `initializer (= ${field.numericValue}), so SMRT compiles it to an ` +
-          'INTEGER column. PostgreSQL then rejects fractional saves with ' +
-          '22P02; SQLite silently accepts them.',
-        remedy:
-          `Write a decimal initializer (\`${field.name} = ${field.numericValue}.0\`) ` +
-          'to get a DECIMAL column, or state the intent explicitly with ' +
-          `\`@field({ type: 'integer' })\` when the value really is exact ` +
-          '(integer cents, basis points).',
+        ...(kind === 'money'
+          ? describeMoneyFinding(cls, field)
+          : describeRateFinding(cls, field)),
       });
     }
   }

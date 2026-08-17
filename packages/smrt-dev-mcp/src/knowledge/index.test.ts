@@ -828,57 +828,74 @@ describe('SMRT knowledge index', () => {
   // #2361 — `= 0` compiles to INTEGER and `= 0.0` to DECIMAL. The rule is
   // silent and SQLite's affinity hides the consequence, so the gate is the only
   // thing standing between a money field and a PostgreSQL 22P02 in production.
-  describe('money/rate integer-heuristic lint (#2361)', () => {
+  // #2361 — money is exact and stored as integer minor units, while a rate is
+  // inherently fractional. The initializer literal decides the column type
+  // silently and SQLite's affinity hides the consequence, so this gate is the
+  // only thing between a mistyped field and production.
+  describe('money/rate precision lint (#2361)', () => {
     const writeModel = async (source: string, pkg = 'demo') =>
       writeFile(join(rootDir, 'packages', pkg, 'src', 'model.ts'), source);
 
-    it('fails closed on a framework package declaring `total: number = 0`', async () => {
-      await writeModel(
-        [
-          '@smrt()',
-          'export class Ledger extends SmrtObject {',
-          '  total: number = 0;',
-          '}',
-          '',
-        ].join('\n'),
-      );
+    const model = (fields: string[]) =>
+      [
+        '@smrt()',
+        'export class Ledger extends SmrtObject {',
+        ...fields.map((f) => `  ${f}`),
+        '}',
+        '',
+      ].join('\n');
+
+    it('fails closed on a framework rate declared integer', async () => {
+      await writeModel(model(['taxRate: number = 0;']));
 
       const result = await checkKnowledgeFreshness({ rootDir });
       const finding = result.issues.find(
-        (issue) => issue.code === 'numeric-precision-money-integer',
+        (issue) => issue.code === 'numeric-precision-rate',
       );
 
       expect(result.ok).toBe(false);
       expect(finding?.severity).toBe('error');
       expect(finding?.file).toBe('packages/demo/src/model.ts:3');
       expect(finding?.packageName).toBe('@happyvertical/smrt-demo');
-      // The message has to name the rule, not just the symptom.
-      expect(finding?.message).toContain('INTEGER');
-      expect(finding?.message).toContain('total = 0.0');
+      expect(finding?.message).toContain('22P02');
+      expect(finding?.message).toContain('taxRate = 0.0');
     });
 
-    it('accepts a decimal initializer or an explicit type', async () => {
+    it('warns rather than fails on framework money declared decimal', async () => {
+      // Twenty-one framework fields still declare money decimal; converting
+      // them means changing live column types and rescaling stored values, so
+      // this warns until that migration lands.
+      await writeModel(model(['totalAmount: number = 0.0;']));
+
+      const result = await checkKnowledgeFreshness({ rootDir });
+      const finding = result.issues.find(
+        (issue) => issue.code === 'numeric-precision-money',
+      );
+
+      expect(finding?.severity).toBe('warning');
+      expect(finding?.message).toContain('minor units');
+      expect(result.errorCount).toBe(0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('accepts money as integer minor units and rates as decimal', async () => {
       await writeModel(
-        [
-          '@smrt()',
-          'export class Ledger extends SmrtObject {',
-          '  total: number = 0.0;',
-          '',
-          '  @field({ type: "integer" })',
-          '  amountCharged: number = 0;',
-          '',
-          '  amountCents: number = 0;',
-          '  retries: number = 0;',
-          '}',
-          '',
-        ].join('\n'),
+        model([
+          'totalAmount: number = 0;',
+          'subtotal: number = 0;',
+          'taxRate: number = 0.0;',
+          'confidence: number = 0.0;',
+          'amountCents: number = 0;',
+          'retries: number = 0;',
+          'weight: number = 1;',
+        ]),
       );
 
       const result = await checkKnowledgeFreshness({ rootDir });
 
       expect(
-        result.issues.filter(
-          (issue) => issue.code === 'numeric-precision-money-integer',
+        result.issues.filter((issue) =>
+          issue.code.startsWith('numeric-precision-'),
         ),
       ).toEqual([]);
     });
@@ -892,26 +909,17 @@ describe('SMRT knowledge index', () => {
       );
       await writeFile(join(consumerDir, 'AGENTS.md'), '# App\n');
       await writeFile(join(consumerDir, 'CLAUDE.md'), '@AGENTS.md\n');
-      await writeModel(
-        [
-          '@smrt()',
-          'export class Order extends SmrtObject {',
-          '  totalAmount: number = 0;',
-          '}',
-          '',
-        ].join('\n'),
-        'app',
-      );
+      await writeModel(model(['taxRate: number = 0;']), 'app');
 
       const result = await checkKnowledgeFreshness({ rootDir });
       const finding = result.issues.find(
-        (issue) => issue.code === 'numeric-precision-money-integer',
+        (issue) => issue.code === 'numeric-precision-rate',
       );
 
+      // A consumer's convention is theirs to set; the gate must stay passable
+      // downstream.
       expect(finding?.severity).toBe('warning');
       expect(finding?.packageName).toBe('@acme/app');
-      // A consumer's integer choice is theirs to make; the gate must stay
-      // passable downstream.
       expect(result.errorCount).toBe(0);
       expect(result.ok).toBe(true);
     });
@@ -920,13 +928,7 @@ describe('SMRT knowledge index', () => {
       await mkdir(join(rootDir, 'packages', 'demo', 'src', 'template'), {
         recursive: true,
       });
-      const offender = [
-        '@smrt()',
-        'export class Ledger extends SmrtObject {',
-        '  total: number = 0;',
-        '}',
-        '',
-      ].join('\n');
+      const offender = model(['taxRate: number = 0;']);
       await writeFile(
         join(rootDir, 'packages', 'demo', 'src', 'model.test.ts'),
         offender,
@@ -939,31 +941,23 @@ describe('SMRT knowledge index', () => {
       const result = await checkKnowledgeFreshness({ rootDir });
 
       expect(
-        result.issues.filter(
-          (issue) => issue.code === 'numeric-precision-money-integer',
+        result.issues.filter((issue) =>
+          issue.code.startsWith('numeric-precision-'),
         ),
       ).toEqual([]);
     });
 
     it('limits the lint to changed files in changed mode', async () => {
       execFileSync('git', ['init'], { cwd: rootDir });
-      await writeModel(
-        [
-          '@smrt()',
-          'export class Ledger extends SmrtObject {',
-          '  total: number = 0;',
-          '}',
-          '',
-        ].join('\n'),
-      );
+      await writeModel(model(['taxRate: number = 0;']));
 
       const untracked = await checkKnowledgeFreshness({
         rootDir,
         changed: true,
       });
       expect(
-        untracked.issues.filter(
-          (issue) => issue.code === 'numeric-precision-money-integer',
+        untracked.issues.filter((issue) =>
+          issue.code.startsWith('numeric-precision-'),
         ),
       ).toEqual([]);
 
@@ -972,8 +966,8 @@ describe('SMRT knowledge index', () => {
       });
       const staged = await checkKnowledgeFreshness({ rootDir, changed: true });
       expect(
-        staged.issues.filter(
-          (issue) => issue.code === 'numeric-precision-money-integer',
+        staged.issues.filter((issue) =>
+          issue.code.startsWith('numeric-precision-'),
         ),
       ).toHaveLength(1);
     });

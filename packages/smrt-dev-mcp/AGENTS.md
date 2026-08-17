@@ -210,13 +210,18 @@ launcher or a small wrapper script with an absolute Node path.
   agent would load the parent's and its own. Those two checks are skipped for it
   and a `nested-agents-md` error fires if one reappears; the expertise belongs in
   the parent's linked `agents/<module>.md`.
-- **The money-field lint reads source, not the manifest** (#2361): a manifest
-  records that a column is INTEGER but not whether anyone chose it, so only the
-  source distinguishes `@field({ type: 'integer' })` (a decision) from `= 0` (a
-  default nobody made). `numeric-precision-money-integer` is an `error` on
-  `@happyvertical/smrt-*` packages and a `warning` on a consumer's own packages,
-  so `dev:knowledge-check` stays passable downstream. A cheap textual pre-filter
-  keeps it from parsing the whole workspace.
+- **The money/rate lint reads source, not the manifest** (#2361): a manifest
+  records a column's type but not whether anyone chose it, so only the source
+  distinguishes `@field({ type: 'decimal' })` (a decision) from `= 0.0` (a
+  default nobody made). Severity is split by what the repo can satisfy today,
+  not by preference: `numeric-precision-rate` is an `error` on
+  `@happyvertical/smrt-*` (the framework has zero violations, so the gate holds
+  at zero), while `numeric-precision-money` only `warn`s — 21 framework fields
+  across commerce, projects, subscriptions, support and the conformance fixture
+  still declare money decimal, and converting them means changing live column
+  types (REAL→INTEGER is not a whitelisted upgrade) and rescaling stored values
+  by 100. Consumer packages always warn. A cheap textual pre-filter keeps the
+  check from parsing the whole workspace.
 - **`maxChars` budgets the objects payload, not the whole response**: project
   metadata and diagnostics are always returned in full, because a diagnostic is
   how discovery reports that it found nothing (#2143). Budgeting it away would

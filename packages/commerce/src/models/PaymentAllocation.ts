@@ -97,11 +97,16 @@ export class PaymentAllocation extends SmrtObject {
   /**
    * Amount allocated from payment to invoice.
    *
-   * The `0.0` initializer is load-bearing: SMRT maps `= 0` to INTEGER and
-   * `= 0.0` to DECIMAL, and allocations are reconciled against `Payment.amount`
-   * (already DECIMAL) with a sub-cent epsilon (#2361).
+   * Left INTEGER, matching `Invoice.amountPaid`, which is derived by summing
+   * these rows.
+   *
+   * NOTE (#2361): this field cannot move to integer minor units on its own.
+   * `save()` caps an allocation against the persisted `Payment.amount`, which
+   * is DECIMAL major units, so mixing the two units would make every
+   * allocation read as over-applying its payment. Converting this pair is a
+   * single unit of work with `Payment`, not a per-field change.
    */
-  amount: number = 0.0;
+  amount: number = 0;
 
   /**
    * When the allocation was made
