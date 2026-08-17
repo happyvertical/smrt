@@ -631,9 +631,7 @@ describe('SchemaGenerator declared indexes (#2340)', () => {
           'Post',
           { title: { type: 'text' } },
           {
-            indexes: [
-              { name: 'posts_bad_idx', columns: ['title', 'nope'] },
-            ],
+            indexes: [{ name: 'posts_bad_idx', columns: ['title', 'nope'] }],
           },
         ),
       ),

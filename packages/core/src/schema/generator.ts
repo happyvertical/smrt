@@ -475,10 +475,7 @@ export class SchemaGenerator {
   }
 
   /** Resolve a SMRT field name to its column name, passing through columns. */
-  private toColumnName(
-    name: string,
-    columns: Record<string, unknown>,
-  ): string {
+  private toColumnName(name: string, columns: Record<string, unknown>): string {
     if (columns[name]) return name;
     const snake = name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
     return columns[snake] ? snake : name;
