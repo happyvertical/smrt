@@ -80,6 +80,18 @@ class AtomicMigrationRollback extends Error {
 const CONCURRENT_INDEX_STATEMENT_RE =
   /(?:(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY|REINDEX(?:\s*\([^)]*\))?\s+(?:INDEX|TABLE|SCHEMA|DATABASE|SYSTEM)\s+CONCURRENTLY)/i;
 
+/**
+ * Matches the leading clause of a `CREATE [UNIQUE] INDEX` statement and
+ * captures the index name, whether it is written bare or double-quoted, and
+ * regardless of the optional `CONCURRENTLY` / `IF NOT EXISTS` clauses.
+ *
+ * Used by the PostgreSQL concurrent-index mode to correlate a pending create
+ * with an INVALID index left behind by an earlier failed
+ * `CREATE INDEX CONCURRENTLY` (issue #2362).
+ */
+const CREATE_INDEX_NAME_RE =
+  /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))/i;
+
 function findConcurrentIndexStatement(
   definitions: MigrationDefinition[],
 ): { migrationName: string; statement: string } | null {
@@ -97,6 +109,112 @@ function findConcurrentIndexStatement(
   }
 
   return null;
+}
+
+/**
+ * Extract the index name from a `CREATE [UNIQUE] INDEX …` statement.
+ *
+ * Returns the unquoted identifier, or `null` when the statement is not a
+ * CREATE INDEX (a drop, a reindex, or unrelated DDL).
+ *
+ * Exported for unit testing and because the CLI's index rollout needs the
+ * same correlation to explain what it repaired.
+ */
+export function extractCreatedIndexName(sql: string): string | null {
+  const match = CREATE_INDEX_NAME_RE.exec(sql);
+  if (!match) {
+    return null;
+  }
+
+  // Group 1 is the quoted form (with `""` escapes), group 2 the bare form.
+  return match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+}
+
+/**
+ * Render a millisecond timeout as a PostgreSQL interval literal.
+ *
+ * PostgreSQL reads `lock_timeout`/`statement_timeout` as milliseconds when
+ * given a bare number, but the explicit `ms` unit keeps the emitted SQL
+ * self-documenting in migration logs. `0` disables the timeout, which is
+ * PostgreSQL's own semantic and therefore preserved verbatim.
+ */
+function formatPostgresTimeout(milliseconds: number): string {
+  const safe = Number.isFinite(milliseconds)
+    ? Math.max(0, Math.trunc(milliseconds))
+    : DEFAULT_OPTIONS.statementTimeout;
+  return `${safe}ms`;
+}
+
+/**
+ * Parse a PostgreSQL timeout expressed as the string form used in
+ * `smrt.config.js` (`migrations.postgres.lockTimeout`) into milliseconds.
+ *
+ * Accepts a bare number (milliseconds) or a number with an `ms`, `s`, `min`,
+ * `m`, `h` suffix. Returns `fallback` for `undefined`, empty, or unparseable
+ * input so a typo degrades to the documented default instead of silently
+ * disabling the timeout.
+ */
+export function parsePostgresTimeoutMs(
+  value: string | number | undefined,
+  fallback: number,
+): number {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : fallback;
+  }
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return fallback;
+  }
+
+  const match = /^\s*(\d+(?:\.\d+)?)\s*(ms|s|min|m|h)?\s*$/i.exec(value);
+  if (!match) {
+    return fallback;
+  }
+
+  const amount = Number.parseFloat(match[1]);
+  const unit = (match[2] ?? 'ms').toLowerCase();
+  const multiplier =
+    unit === 'h'
+      ? 3_600_000
+      : unit === 'min' || unit === 'm'
+        ? 60_000
+        : unit === 's'
+          ? 1000
+          : 1;
+
+  return Math.trunc(amount * multiplier);
+}
+
+/**
+ * Interim `error_message` for a migration whose transactional half has
+ * committed but whose `CONCURRENTLY` index build has not run yet.
+ */
+const CONCURRENT_INDEX_PENDING_MESSAGE =
+  'Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.';
+
+/**
+ * Statements split out of the atomic batch for PostgreSQL concurrent-index
+ * mode, keyed by migration definition id.
+ */
+type ConcurrentIndexPlan = Map<
+  string,
+  { regular: string[]; concurrent: string[] }
+>;
+
+/**
+ * Minimal pinned-session shape used by the concurrent-index phase.
+ *
+ * `CREATE INDEX CONCURRENTLY` must run outside a transaction, and the
+ * `SET lock_timeout` / `SET statement_timeout` that bound it are *session*
+ * state — on a pooled adapter a top-level `db.query` may land on a different
+ * connection, so the SET would silently not apply to the DDL (issue #2362).
+ */
+interface MigrationSession {
+  query: (
+    sql: string,
+    ...vars: unknown[]
+  ) => Promise<{ rows: Record<string, unknown>[]; rowCount?: number }>;
+  release: () => Promise<void>;
 }
 
 /**
@@ -124,6 +242,15 @@ export class MigrationTracker {
    */
   private initializePromise: Promise<void> | null = null;
   private currentBatch: number | null = null;
+  /**
+   * Statements deferred out of the current atomic batch by PostgreSQL
+   * concurrent-index mode. The parent tracker sets this on the
+   * transaction-scoped tracker before phase 1 so `apply()` executes only the
+   * transaction-safe statements and leaves the migration record in `running`;
+   * the parent finalizes those records after the transaction commits and the
+   * `CONCURRENTLY` DDL has run. `null` on every ordinary path.
+   */
+  private concurrentIndexPlan: ConcurrentIndexPlan | null = null;
 
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
@@ -457,12 +584,51 @@ export class MigrationTracker {
       );
     }
 
+    // PostgreSQL concurrent-index mode splits this definition: the
+    // transaction-safe statements run here, the CONCURRENTLY index DDL runs
+    // after the batch commits.
+    const split = this.concurrentIndexPlan?.get(definition.id);
+    const deferredConcurrent = (split?.concurrent.length ?? 0) > 0;
+
     try {
       // Execute the migration
-      await this.executeStatements(definition.up, options);
+      await this.executeStatements(
+        split ? split.regular : definition.up,
+        options,
+      );
+
+      const executionTime = Date.now() - startTime;
+
+      if (deferredConcurrent) {
+        // Commit this record as `failed`, not `completed` and not `running`.
+        // The index does not exist yet, so `completed` would be a lie; and
+        // unlike the single-transaction path — where a crash rolls the record
+        // insert back with the DDL — this row is about to be committed, so a
+        // crash before the concurrent phase finishes would strand a `running`
+        // record that the next `db:migrate` can only clear with
+        // `--force-migration`. `failed` is retryable under the CLI's
+        // reconciling re-run, which is what an interrupted index rollout
+        // needs. The concurrent phase overwrites this a moment later.
+        await this.db.query(
+          `UPDATE _smrt_schema_migrations
+           SET status = 'failed', execution_time_ms = ?, error_message = ?
+           WHERE id = ?`,
+          executionTime,
+          CONCURRENT_INDEX_PENDING_MESSAGE,
+          id,
+        );
+
+        return {
+          success: true,
+          applied: true,
+          skipped: false,
+          name: definition.id,
+          checksum,
+          execution_time_ms: executionTime,
+        };
+      }
 
       // Mark as completed
-      const executionTime = Date.now() - startTime;
       await this.db.query(
         `UPDATE _smrt_schema_migrations
          SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, applied_at = CURRENT_TIMESTAMP
@@ -520,7 +686,21 @@ export class MigrationTracker {
   }
 
   /**
-   * Apply multiple migrations in order
+   * Apply multiple migrations in order.
+   *
+   * On PostgreSQL the atomic path always bounds itself with
+   * `SET LOCAL lock_timeout` / `SET LOCAL statement_timeout` so a migration
+   * that queues behind a long-running writer fails fast and rolls back
+   * instead of stalling every writer behind its already-held locks
+   * (issue #2362).
+   *
+   * `options.postgresSafe` additionally enables **concurrent-index mode**:
+   * non-index DDL still runs in the one atomic transaction, then every index
+   * statement runs `CONCURRENTLY` on a pinned session after that transaction
+   * commits. That mode trades atomicity for availability — a failure part way
+   * through the index phase leaves the committed non-index DDL in place, and
+   * the unfinished index migrations are recorded `failed` so the next run
+   * retries them.
    */
   async applyAll(
     definitions: MigrationDefinition[],
@@ -533,34 +713,70 @@ export class MigrationTracker {
         );
       }
 
-      if (this.dbEngine === 'postgres') {
+      const isPostgres = this.dbEngine === 'postgres';
+      const concurrentIndexMode = isPostgres && Boolean(options.postgresSafe);
+      const plan = concurrentIndexMode
+        ? buildConcurrentIndexPlan(
+            definitions,
+            this.options.useConcurrentIndexes,
+          )
+        : null;
+
+      // Outside concurrent-index mode a CONCURRENTLY statement can only fail:
+      // PostgreSQL rejects it inside a transaction block. Fail before opening
+      // the transaction so the error names the offending migration.
+      if (isPostgres && !concurrentIndexMode) {
         const concurrentStatement = findConcurrentIndexStatement(definitions);
         if (concurrentStatement) {
           throw new Error(
-            `Atomic migration batch cannot include CONCURRENTLY index DDL in ${concurrentStatement.migrationName}; PostgreSQL forbids CONCURRENTLY inside a transaction.`,
+            `Atomic migration batch cannot include CONCURRENTLY index DDL in ${concurrentStatement.migrationName}; PostgreSQL forbids CONCURRENTLY inside a transaction. Re-run with PostgreSQL concurrent-index mode (smrt db:migrate --postgres-safe) to build those indexes outside the batch.`,
           );
         }
       }
 
+      const deferred = plan && plan.size > 0 ? plan : null;
+
       try {
-        return await this.db.transaction(async (tx) => {
+        const committed = await this.db.transaction(async (tx) => {
           const txDb = {
             ...tx,
             transaction: async <T>(
               callback: (transactionDb: DatabaseInterface) => Promise<T>,
             ) => callback(tx as DatabaseInterface),
           } as DatabaseInterface;
+
+          // Bound the whole batch. `SET LOCAL` reverts at COMMIT/ROLLBACK, so
+          // this cannot leak onto a pooled connection's next checkout.
+          if (isPostgres) {
+            await tx.query(
+              `SET LOCAL lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+            );
+            await tx.query(
+              `SET LOCAL statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+            );
+          }
+
           const txTracker = new MigrationTracker({
             db: txDb,
             lockTimeout: this.options.lockTimeout,
             statementTimeout: this.options.statementTimeout,
             useConcurrentIndexes: false,
           });
+          txTracker.concurrentIndexPlan = deferred;
           const results = await txTracker.applyAll(definitions, {
             ...options,
             atomic: false,
             continueOnError: false,
             postgresSafe: false,
+            // Deferred migrations report progress from the concurrent phase
+            // once they have actually finished, not when phase 1 commits.
+            onProgress: options.onProgress
+              ? (result) => {
+                  if (!deferred?.has(result.name)) {
+                    options.onProgress?.(result);
+                  }
+                }
+              : undefined,
           });
           const failed = results.find((result) => !result.success);
 
@@ -570,6 +786,16 @@ export class MigrationTracker {
 
           return results;
         });
+
+        if (!deferred) {
+          return committed;
+        }
+
+        return await this.applyDeferredConcurrentIndexes(
+          committed,
+          deferred,
+          options,
+        );
       } catch (error) {
         if (error instanceof AtomicMigrationRollback) {
           return error.results.map((result) => {
@@ -609,6 +835,241 @@ export class MigrationTracker {
 
     this.currentBatch = null;
     return results;
+  }
+
+  /**
+   * Phase 2 of PostgreSQL concurrent-index mode.
+   *
+   * Runs every deferred index statement on one pinned session, outside the
+   * committed transaction, bounded by session `lock_timeout` /
+   * `statement_timeout`. INVALID indexes left behind by an earlier failed
+   * `CREATE INDEX CONCURRENTLY` are dropped first so the retry rebuilds them
+   * rather than skipping over a stump that reads as present.
+   *
+   * On failure the batch stops: the failing migration and every migration it
+   * did not reach are recorded `failed`, which the CLI's reconciling
+   * `db:migrate` retries on the next run.
+   */
+  private async applyDeferredConcurrentIndexes(
+    committed: MigrationResult[],
+    plan: ConcurrentIndexPlan,
+    options: ApplyMigrationsOptions,
+  ): Promise<MigrationResult[]> {
+    const results = [...committed];
+    const session = await this.acquireMigrationSession();
+
+    try {
+      await session.query(
+        `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+      );
+      await session.query(
+        `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+      );
+
+      const invalidIndexes = await this.readInvalidIndexNames(session);
+      let stoppedBy: string | null = null;
+
+      for (let index = 0; index < results.length; index++) {
+        const result = results[index];
+        const split = plan.get(result.name);
+        if (!split || split.concurrent.length === 0) {
+          continue;
+        }
+
+        // A migration phase 1 skipped (already applied, checksum matched) is
+        // already `completed` in the tracking table — its index exists and
+        // must not be rebuilt or have its record rewritten.
+        if (result.skipped) {
+          continue;
+        }
+
+        if (stoppedBy) {
+          const error = new Error(
+            `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
+          );
+          await this.recordConcurrentIndexFailure(result.name, error.message);
+          results[index] = {
+            ...result,
+            success: false,
+            applied: false,
+            skipped: false,
+            error,
+          };
+          options.onProgress?.(results[index]);
+          continue;
+        }
+
+        const startedAt = Date.now();
+
+        try {
+          for (const sql of split.concurrent) {
+            const indexName = extractCreatedIndexName(sql);
+            if (indexName && invalidIndexes.has(indexName)) {
+              // An INVALID index is not usable by the planner and blocks the
+              // name, but `CREATE INDEX … IF NOT EXISTS` treats it as present.
+              // Drop it so the create below actually rebuilds it.
+              logger.warn(
+                `Rebuilding INVALID PostgreSQL index ${indexName} left by a previous failed CREATE INDEX CONCURRENTLY`,
+              );
+              await session.query(
+                `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(indexName)}`,
+              );
+              invalidIndexes.delete(indexName);
+            }
+
+            await session.query(sql);
+          }
+
+          // Floor at 1ms: callers (the CLI progress reporter, the applied vs
+          // skipped counters) read `execution_time_ms === 0` as "nothing ran".
+          const executionTime = Math.max(
+            1,
+            (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
+          );
+          await this.recordConcurrentIndexSuccess(
+            result.name,
+            result.checksum,
+            executionTime,
+          );
+          results[index] = {
+            ...result,
+            success: true,
+            applied: true,
+            skipped: false,
+            execution_time_ms: executionTime,
+          };
+        } catch (error) {
+          const indexError =
+            error instanceof Error ? error : new Error(String(error));
+          if (!options.continueOnError) {
+            stoppedBy = result.name;
+          }
+          await this.recordConcurrentIndexFailure(
+            result.name,
+            indexError.message,
+          );
+          results[index] = {
+            ...result,
+            success: false,
+            applied: false,
+            skipped: false,
+            execution_time_ms: Date.now() - startedAt,
+            error: indexError,
+          };
+        }
+
+        options.onProgress?.(results[index]);
+      }
+
+      return results;
+    } finally {
+      await session.release();
+    }
+  }
+
+  /**
+   * Pin one connection for the concurrent-index phase.
+   *
+   * PostgreSQL pools hand each top-level `query` an arbitrary connection, so
+   * a `SET lock_timeout` issued through the pool may not apply to the DDL
+   * that follows. Adapters that expose `acquireSession` give us a pinned
+   * connection; anything else (SQLite, DuckDB, test doubles) is
+   * single-connection anyway and falls back to the plain interface.
+   */
+  private async acquireMigrationSession(): Promise<MigrationSession> {
+    if (typeof this.db.acquireSession === 'function') {
+      const session = await this.db.acquireSession();
+      return {
+        query: (sql, ...vars) => session.query(sql, ...vars),
+        release: () => session.release(),
+      };
+    }
+
+    return {
+      query: (sql, ...vars) => this.db.query(sql, ...vars),
+      release: async () => {},
+    };
+  }
+
+  /**
+   * Read the names of INVALID indexes in the search path.
+   *
+   * `pg_indexes` (what the SQL adapter's introspection reads) lists an
+   * INVALID index exactly like a healthy one, so the schema differ believes a
+   * failed `CREATE INDEX CONCURRENTLY` succeeded. `pg_index.indisvalid` is
+   * the authoritative flag.
+   *
+   * A role without catalog access degrades to "no known invalid indexes"
+   * rather than aborting the migration.
+   */
+  private async readInvalidIndexNames(
+    session: MigrationSession,
+  ): Promise<Set<string>> {
+    const names = new Set<string>();
+
+    try {
+      const result = await session.query(
+        `SELECT c.relname AS index_name
+           FROM pg_index i
+           JOIN pg_class c ON c.oid = i.indexrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE i.indisvalid = false
+            AND n.nspname NOT IN ('pg_catalog', 'pg_toast', 'information_schema')`,
+      );
+
+      for (const row of result.rows) {
+        const name = (row as { index_name?: unknown }).index_name;
+        if (typeof name === 'string') {
+          names.add(name);
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        `Could not read pg_index.indisvalid; skipping INVALID index repair: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return names;
+  }
+
+  private async recordConcurrentIndexSuccess(
+    name: string,
+    checksum: string,
+    executionTime: number,
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE _smrt_schema_migrations
+         SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, error_message = NULL, applied_at = CURRENT_TIMESTAMP
+       WHERE name = ?`,
+      executionTime,
+      checksum,
+      name,
+    );
+  }
+
+  private async recordConcurrentIndexFailure(
+    name: string,
+    message: string,
+  ): Promise<void> {
+    try {
+      await this.db.query(
+        `UPDATE _smrt_schema_migrations
+           SET status = 'failed', error_message = ?
+         WHERE name = ?`,
+        message,
+        name,
+      );
+    } catch (persistError) {
+      logger.error(
+        `Failed to persist failed status for migration ${name}: ${
+          persistError instanceof Error
+            ? persistError.message
+            : String(persistError)
+        }`,
+      );
+    }
   }
 
   /**
@@ -795,10 +1256,10 @@ export class MigrationTracker {
       await this.db.transaction(async (tx) => {
         // Set session-level timeouts
         await tx.query(
-          `SET LOCAL lock_timeout = '${this.options.lockTimeout}ms'`,
+          `SET LOCAL lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
         );
         await tx.query(
-          `SET LOCAL statement_timeout = '${this.options.statementTimeout}ms'`,
+          `SET LOCAL statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
         );
 
         for (const sql of finalRegular) {
@@ -811,13 +1272,77 @@ export class MigrationTracker {
       }
     }
 
-    // Execute CONCURRENTLY statements outside transaction
-    for (const sql of finalConcurrent) {
-      // Set lock timeout for the session
-      await this.db.query(`SET lock_timeout = '${this.options.lockTimeout}ms'`);
-      await this.db.query(sql);
+    if (finalConcurrent.length === 0) {
+      return;
+    }
+
+    // Execute CONCURRENTLY statements outside the transaction, on one pinned
+    // connection so `SET lock_timeout` / `SET statement_timeout` actually
+    // govern the DDL that follows them (a pooled `db.query` may not reuse the
+    // connection the SET landed on).
+    const session = await this.acquireMigrationSession();
+    try {
+      await session.query(
+        `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+      );
+      await session.query(
+        `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+      );
+
+      const invalidIndexes = await this.readInvalidIndexNames(session);
+
+      for (const sql of finalConcurrent) {
+        const indexName = extractCreatedIndexName(sql);
+        if (indexName && invalidIndexes.has(indexName)) {
+          logger.warn(
+            `Rebuilding INVALID PostgreSQL index ${indexName} left by a previous failed CREATE INDEX CONCURRENTLY`,
+          );
+          await session.query(
+            `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(indexName)}`,
+          );
+          invalidIndexes.delete(indexName);
+        }
+
+        await session.query(sql);
+      }
+    } finally {
+      await session.release();
     }
   }
+}
+
+/**
+ * Quote an index identifier for PostgreSQL, escaping embedded double quotes.
+ */
+function quoteIndexName(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Build the PostgreSQL concurrent-index plan for an atomic batch.
+ *
+ * Returns one entry per migration definition that has at least one statement
+ * which must leave the transaction, mapping it to the transaction-safe
+ * statements (phase 1) and the `CONCURRENTLY` statements (phase 2).
+ * Definitions with nothing to defer are omitted so the caller can treat
+ * `plan.has(id)` as "this migration finishes in phase 2".
+ *
+ * Exported for unit testing.
+ */
+export function buildConcurrentIndexPlan(
+  definitions: MigrationDefinition[],
+  useConcurrentIndexes: boolean,
+): ConcurrentIndexPlan {
+  const plan: ConcurrentIndexPlan = new Map();
+
+  for (const definition of definitions) {
+    const split = planPostgresStatements(definition.up, useConcurrentIndexes);
+    if (split.concurrent.length > 0) {
+      plan.set(definition.id, split);
+    }
+  }
+
+  return plan;
 }
 
 /**

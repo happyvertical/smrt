@@ -9,6 +9,7 @@ smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:migrate              # Apply migrations
+smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:diff                 # Show schema differences without generating migration files
@@ -33,6 +34,32 @@ File-backed SQL/TypeScript migration generation is not supported. SMRT schema
 migrations are manifest-driven through registered objects and project manifests.
 
 `smrt test` is **deprecated** — use vitest plugin directly.
+
+## `db:migrate` on PostgreSQL
+
+`db:migrate` always bounds a PostgreSQL batch with `SET LOCAL lock_timeout` and
+`SET LOCAL statement_timeout` inside its transaction, from
+`migrations.postgres.lockTimeout` / `.statementTimeout` (defaults `30s` / `60s`;
+accepts `ms`/`s`/`min`/`h` suffixes, and `0` disables as PostgreSQL defines it).
+A migration queued behind a long-running writer therefore fails fast and rolls
+back instead of holding the locks it already took against every writer.
+
+`--postgres-safe` selects **concurrent-index mode**: non-index DDL still commits
+in one transaction, then each index statement runs
+`CREATE INDEX CONCURRENTLY` / `DROP INDEX CONCURRENTLY` on one pinned session
+after that commit. This is the mode for large index rollouts.
+
+- **Concurrent mode is not atomic.** Committed column/table changes survive a
+  later index failure; unfinished index migrations are recorded `failed`, and
+  `db:migrate` (which reconciles) retries them on the next run.
+- INVALID indexes — the stump a cancelled or timed-out
+  `CREATE INDEX CONCURRENTLY` leaves, which `pg_indexes` still reports as
+  present — are detected via `pg_index.indisvalid` and dropped before the
+  rebuild.
+- `migrations.postgres.useConcurrently: false` vetoes the flag; index DDL then
+  runs inside the atomic transaction (still bounded by the timeouts).
+- Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
+  before the transaction opens — PostgreSQL cannot run it there.
 
 ## Architecture
 
