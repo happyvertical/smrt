@@ -347,8 +347,18 @@ describe('Issue #35: System Tables Initialization', () => {
       await obj.initialize();
 
       expect(db.beginTransaction).toHaveBeenCalledOnce();
+      // The runtime session bounds (#2377) are raised before the lock is taken:
+      // the wait itself is a statement they would otherwise cancel.
       expect(tx.query).toHaveBeenNthCalledWith(
         1,
+        "SET LOCAL lock_timeout = '300000ms'",
+      );
+      expect(tx.query).toHaveBeenNthCalledWith(
+        2,
+        "SET LOCAL statement_timeout = '300000ms'",
+      );
+      expect(tx.query).toHaveBeenNthCalledWith(
+        3,
         "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
       );
       expect(tableLookups[0]).toBe('_smrt_migrations');
@@ -391,8 +401,18 @@ describe('Issue #35: System Tables Initialization', () => {
       await obj.initialize();
 
       expect(transaction).toHaveBeenCalledOnce();
+      // The runtime session bounds (#2377) are raised before the lock is taken:
+      // the wait itself is a statement they would otherwise cancel.
       expect(tx.query).toHaveBeenNthCalledWith(
         1,
+        "SET LOCAL lock_timeout = '300000ms'",
+      );
+      expect(tx.query).toHaveBeenNthCalledWith(
+        2,
+        "SET LOCAL statement_timeout = '300000ms'",
+      );
+      expect(tx.query).toHaveBeenNthCalledWith(
+        3,
         "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
       );
       expect(tableLookups[0]).toBe('_smrt_migrations');
@@ -429,8 +449,18 @@ describe('Issue #35: System Tables Initialization', () => {
       await obj.initialize();
 
       expect(transaction).toHaveBeenCalledOnce();
+      // The runtime session bounds (#2377) are raised before the lock is taken:
+      // the wait itself is a statement they would otherwise cancel.
       expect(tx.query).toHaveBeenNthCalledWith(
         1,
+        "SET LOCAL lock_timeout = '300000ms'",
+      );
+      expect(tx.query).toHaveBeenNthCalledWith(
+        2,
+        "SET LOCAL statement_timeout = '300000ms'",
+      );
+      expect(tx.query).toHaveBeenNthCalledWith(
+        3,
         "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
       );
       expect(tableLookups[0]).toBe('_smrt_migrations');

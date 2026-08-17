@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { createLogger } from '@happyvertical/logger';
+import { parsePostgresTimeoutMs } from '../postgres-timeouts.js';
 import { detectEngine } from '../schema/ddl/index.js';
 // DatabaseEngine comes from the DDL layer (the json-inclusive type that
 // `detectEngine` actually returns), matching `SchemaComparer` in differ.ts.
@@ -163,44 +164,16 @@ function formatPostgresTimeout(milliseconds: number): string {
 }
 
 /**
- * Parse a PostgreSQL timeout expressed as the string form used in
- * `smrt.config.js` (`migrations.postgres.lockTimeout`) into milliseconds.
+ * Parse a PostgreSQL timeout string into milliseconds.
  *
- * Accepts a bare number (milliseconds) or a number with an `ms`, `s`, `min`,
- * `m`, `h` suffix. Returns `fallback` for `undefined`, empty, or unparseable
- * input so a typo degrades to the documented default instead of silently
- * disabling the timeout.
+ * The implementation lives in `src/postgres-timeouts.ts`, the leaf module the
+ * runtime pool bounds are built from (#2377), so `migrations.postgres.*` and a
+ * runtime `timeouts` config are parsed by literally the same function rather
+ * than by two copies that can drift. It is re-exported here — and from
+ * `./index.ts` — because `@happyvertical/smrt-core/migrations` is the public
+ * subpath `db:migrate` reads it through.
  */
-export function parsePostgresTimeoutMs(
-  value: string | number | undefined,
-  fallback: number,
-): number {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : fallback;
-  }
-
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    return fallback;
-  }
-
-  const match = /^\s*(\d+(?:\.\d+)?)\s*(ms|s|min|m|h)?\s*$/i.exec(value);
-  if (!match) {
-    return fallback;
-  }
-
-  const amount = Number.parseFloat(match[1]);
-  const unit = (match[2] ?? 'ms').toLowerCase();
-  const multiplier =
-    unit === 'h'
-      ? 3_600_000
-      : unit === 'min' || unit === 'm'
-        ? 60_000
-        : unit === 's'
-          ? 1000
-          : 1;
-
-  return Math.trunc(amount * multiplier);
-}
+export { parsePostgresTimeoutMs };
 
 /**
  * Prefix stamped on the `error_message` of every concurrent-index migration
