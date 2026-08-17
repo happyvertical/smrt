@@ -208,7 +208,7 @@ local development and watch mode.
 
 Production DDL comes from the **manifest** paths
 (`generateSTISchemaFromManifest`/`generateCTISchemaFromManifest`, selected in
-`scanner/manifest-generator.ts` → registered `schema` → `db:migrate`). The
+`src/scanner/manifest-generator.ts` → registered `schema` → `db:migrate`). The
 **registry** paths feed `getTestDatabase()` and emit foreign-key indexes
 production never gets: the suite runs on a richer schema than it ships.
 
@@ -228,7 +228,7 @@ production never gets: the suite runs on a richer schema than it ships.
 - **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
-- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`schema/table-verifier.ts`) — no column, type, or index check
+- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check
 - **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)

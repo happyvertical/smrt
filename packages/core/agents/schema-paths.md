@@ -17,9 +17,9 @@ produce the same schema for the same class.
 
 | Entry point | Selected by | Status |
 |---|---|---|
-| `generateSTISchemaFromManifest` | `scanner/manifest-generator.ts` | **production** |
-| `generateCTISchemaFromManifest` | `scanner/manifest-generator.ts` | **production** |
-| `generateSTISchemaFromRegistry` | `testing/database.ts` (`getTestDatabase()`), `schema/utils.ts` (`generateSchema`; `ensureSchema` only as a fallback) | tests + runtime helpers |
+| `generateSTISchemaFromManifest` | `src/scanner/manifest-generator.ts` | **production** |
+| `generateCTISchemaFromManifest` | `src/scanner/manifest-generator.ts` | **production** |
+| `generateSTISchemaFromRegistry` | `src/testing/database.ts` (`getTestDatabase()`), `src/schema/utils.ts` (`generateSchema`; `ensureSchema` only as a fallback) | tests + runtime helpers |
 | `generateSchemaFromRegistry` | the same two callers | tests + runtime helpers |
 | `generateSchema` (AST) | the `smrt:schema` virtual module, which has no consumer | dead (#2380) |
 
@@ -31,14 +31,14 @@ Production DDL takes the manifest route:
                  ├─▶ smrt db:migrate | db:diff | db:status
                  │     (the CLI drives SchemaComparer + MigrationTracker directly)
                  └─▶ migrateSmrtSchemas() / getPendingSchemaStatements()
-                       (migrations/orchestrate.ts — exported for programmatic use;
-                        no in-repo caller outside its own tests)
+                       (src/migrations/orchestrate.ts — exported for programmatic
+                        use; no in-repo caller outside its own tests)
 ```
 
 The suite takes the registry route, and the registry route emits indexes the
 manifest route does not — per-column foreign-key indexes, and STI partial FK
 indexes filtered by `_meta_type`. Tests therefore run against a richer schema
-than any deployment receives. `testing/database.ts`'s "Generate schema using
+than any deployment receives. `src/testing/database.ts`'s "Generate schema using
 SchemaGenerator (same as migrations)" comment describes an intent, not the code.
 
 The manifest STI path even populates a `fkColumnsByClass` map and never reads it
@@ -48,7 +48,7 @@ FK loop at all. Both manifest paths then skip the explicit
 "FK columns and unique columns get their own indexes", which holds on the
 registry paths and not on this one.
 
-`schema/utils.ts` sits in between, and the two exports differ:
+`src/schema/utils.ts` sits in between, and the two exports differ:
 
 - `generateSchema()` (reached from `SmrtCollection.generateSchema()`) always
   rebuilds from the registry and writes the result back into the registry,
@@ -59,22 +59,23 @@ registry paths and not on this one.
   `generateSchema()` when no schema is registered at all.
 
 So a normal build keeps the manifest schema through `db:setup`, and a
-registry-derived schema is usually a test/dev artifact — but not always. One
-shipping consumer takes the registry route at runtime: `smrt-content`'s
-`src/hooks.server.ts` `bootstrapSchema()` calls `generateSchema()` for every
-registered class and then `ensureSchema()`, from the SvelteKit `handle` hook on
-any `/api/*` request, with no dev-mode gate despite the file header. In that
-process `getAllSchemasAsDefinitions()` returns registry-derived schemas. Always
-check which route a process actually took before trusting a reproduction.
+registry-derived schema is a dev/test artifact. `smrt-content` shows what one
+looks like: `packages/content/src/hooks.server.ts` `bootstrapSchema()` calls
+`generateSchema()` for every registered class and then `ensureSchema()` from the
+SvelteKit `handle` hook on any `/api/*` request, so that process holds
+registry-derived schemas rather than the manifest ones. It reaches only that
+package's own `vite dev` app — the library build excludes the file and the
+package never exports it — but it is the shape to recognize. Check which route a
+process actually took before trusting a reproduction.
 
 ## Why the drift stayed invisible
 
 Every drift oracle compares a database with the same artifact that dropped the
 index:
 
-- `verifyPersistenceTable()` (`schema/table-verifier.ts`) calls `db.tableExists()`
-  and nothing else. "Runtime verifies schema" has always meant existence-only —
-  no column, type, constraint, or index comparison.
+- `verifyPersistenceTable()` (`src/schema/table-verifier.ts`) calls
+  `db.tableExists()` and nothing else. "Runtime verifies schema" has always meant
+  existence-only — no column, type, constraint, or index comparison.
 - `smrt doctor` never opens a database connection.
 - `db:status` and `db:diff` diff the live database against
   `getAllSchemasAsDefinitions()`, i.e. the manifest projection.
@@ -107,11 +108,16 @@ spread on the assessed workload was 21 ms → 0.1 ms.
 
 ### 3. Run the PostgreSQL lane
 
-Anything touching numeric types, uuid casts, upsert conflict targets,
-timestamps, or migrations runs `pnpm --filter @happyvertical/smrt-<pkg>
-test:postgres` (core, cli, users, sales, marketing, analytics, and vitest carry
-the lane). SQLite's type affinity accepts values PostgreSQL rejects — a money
-field declared `number = 0` compiles to INTEGER and only fails on PG (#2361).
+Anything touching numeric types, uuid casts, upsert conflict targets, timestamps,
+or migrations runs the package's `test:postgres` script:
+
+```bash
+pnpm --filter @happyvertical/smrt-<pkg> test:postgres
+```
+
+core, cli, users, sales, marketing, analytics, and vitest carry the lane.
+SQLite's type affinity accepts values PostgreSQL rejects — a money field declared
+`number = 0` compiles to INTEGER and only fails on PG (#2361).
 
 ### 4. Read the built artifact, not the source
 
