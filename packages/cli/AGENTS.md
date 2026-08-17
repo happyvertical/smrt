@@ -13,7 +13,8 @@ smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:diff                 # Show schema differences without generating migration files
-smrt db:rollback             # Rollback migrations
+smrt db:rollback             # Roll back migrations by executing their recorded DOWN
+smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
@@ -63,6 +64,36 @@ after that commit. This is the mode for large index rollouts.
   runs inside the atomic transaction (still bounded by the timeouts).
 - Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
   before the transaction opens — PostgreSQL cannot run it there.
+
+## `db:rollback` is execute-or-refuse
+
+Schema state is diff-driven: `db:migrate` derives every migration from the
+manifest at run time and stores **no SQL** in `_smrt_schema_migrations`. So
+`db:rollback` can only honour the one DOWN script that is reconstructible from
+a tracking row — `create_table_<table>` → `DROP TABLE IF EXISTS "<table>"`,
+the exact statement `db:migrate` records for `diff.added_tables`.
+
+- Rows with a reconstructible DOWN are **executed** through
+  `MigrationTracker.rollback` (transactional), then marked `rolled_back`.
+- Anything else is **refused**: non-zero exit, an error naming each migration
+  and why, and no row touched. Refusal is all-or-nothing across the selected
+  set — a partial revert would leave the chain in a state the remaining DOWN
+  scripts were not written against. This includes rows recorded
+  `is_reversible` under a caller-chosen name: reversible at apply time, but the
+  SQL was never persisted, so it cannot be replayed (#2378).
+- `--mark-only` is the explicit opt-in for the record-only flip (for an
+  operator who already reverted the schema by hand). It says in its own output
+  that the schema was not changed, and it is the only path that moves a row
+  without running DDL.
+- A failed DOWN stops the batch; the migrations behind it are reported
+  `Not attempted` and left `completed`.
+- `--dry-run` previews the DOWN statements and still exits non-zero when the
+  real run would refuse. Both `--dry-run` and `--mark-only` are declared
+  kebab-cased, so handlers must read `options['dry-run']` / `options['mark-only']`
+  (`parseCliArgs` returns keys verbatim — the #1385 data-loss class).
+
+Reverting a non-`create_table` change is a forward operation: update the
+`@smrt` object definitions and run `db:migrate` again.
 
 ## Architecture
 
