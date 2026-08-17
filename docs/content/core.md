@@ -1605,6 +1605,10 @@ class FileDocument extends SmrtObject {
 
 SMRT provides comprehensive error handling with specific error types:
 
+Every error carries a stable machine-readable `code` and a structured
+`details` object. There are no ad-hoc `field` / `sql` / `operation`
+properties — read `details`.
+
 ```typescript
 import { ValidationError, DatabaseError, RuntimeError } from '@happyvertical/smrt-core';
 
@@ -1612,14 +1616,50 @@ try {
   await document.save();
 } catch (error) {
   if (error instanceof ValidationError) {
-    console.log('Validation failed:', error.field, error.value);
+    // 'VALIDATION_UNIQUE_CONSTRAINT' | 'VALIDATION_REQUIRED_FIELD' | ...
+    console.log('Validation failed:', error.code, error.details);
   } else if (error instanceof DatabaseError) {
-    console.log('Database error:', error.operation, error.sql);
+    // The driver error is preserved on `cause`.
+    console.log('Database error:', error.code, error.details, error.cause);
   } else if (error instanceof RuntimeError) {
-    console.log('Runtime error:', error.operation, error.target);
+    console.log('Runtime error:', error.code, error.details);
   }
 }
 ```
+
+### Constraint violations are typed, and never retried
+
+`save()` classifies the driver failure through its whole cause chain, so a
+unique or NOT NULL violation arrives as a `ValidationError` on every adapter —
+SQLite, PostgreSQL and DuckDB alike — raised on the first attempt with no retry
+backoff. Other database failures stay `DatabaseError` with the driver error on
+`cause`.
+
+Do **not** match on `error.message`. `@happyvertical/sql` wraps every driver
+error as `DatabaseError('Failed to upsert record into table', …)` and
+stringifies the driver text into `context.originalError`, so the constraint
+wording is not on the outer message. Use the classifier instead:
+
+```typescript
+import {
+  classifyDatabaseError,
+  isUniqueViolationError,
+} from '@happyvertical/smrt-core';
+
+try {
+  await document.save();
+} catch (error) {
+  if (isUniqueViolationError(error)) {
+    // Losing side of a race — re-read the winner.
+  }
+  const { kind, deterministic, retryable } = classifyDatabaseError(error);
+}
+```
+
+Retries are transient-only: serialization failures, deadlocks, lock timeouts
+and dropped connections are retried; constraint violations, invalid input
+syntax, missing tables and statements issued inside an aborted PostgreSQL
+transaction (`25P02`) fail fast.
 
 ## Performance Tips
 
@@ -1768,7 +1808,16 @@ const docs = await collection.create({ slug: 'intro', context: '/docs' });
 
 // This FAILS (same slug + context)
 const blog2 = await collection.create({ slug: 'intro', context: '/blog' });
-// Error: UNIQUE constraint failed: slug, context
+// throws ValidationError, code 'VALIDATION_UNIQUE_CONSTRAINT'
+```
+
+**Detecting it**: match the typed error, not the driver text — the adapter
+wraps the driver error, so the constraint wording is not on `error.message`.
+
+```typescript
+import { isUniqueViolationError } from '@happyvertical/smrt-core';
+
+if (isUniqueViolationError(error)) { /* … */ }
 ```
 
 **Solution**: Ensure unique slugs within the same context, or use different contexts for objects with the same slug.
