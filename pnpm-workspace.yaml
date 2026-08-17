@@ -90,6 +90,17 @@ overrides:
   # these use, so a single unified pin is preferred over shipping three
   # vulnerable copies.
   'sharp@<0.35.0': 0.35.3
+  # deepmerge-ts <8.0.0 exhausts the stack on recursive object graphs
+  # (GHSA-ggr8-5vv4-36mx). It reaches the tree only through
+  # packages/messages -> @happyvertical/email -> mailparser -> html-to-text,
+  # and html-to-text@10.0.0 is already the latest release while still declaring
+  # `deepmerge-ts: ^7.1.5`, so there is nothing to upgrade to. html-to-text
+  # imports only `deepmergeCustom`, which 8.x still exports with the same dual
+  # CJS/ESM entry points and `node >=16` engine; 8.0.0's breaking changes are
+  # type-level renames plus `deepmergeInto`/map-merge semantics it never uses.
+  # Verified: html-to-text conversion output is byte-identical on 7.1.5 and
+  # 8.0.1 across default, wordwrap, selector-composition, and limits paths.
+  'deepmerge-ts@<8.0.0': 8.0.1
 
 auditConfig:
   # Every entry here suppresses an advisory for the WHOLE tree, including future
