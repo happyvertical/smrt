@@ -19,6 +19,7 @@ function createManifest(
   objectFilePath: string,
   include?: string[],
   principalContext = false,
+  fields: SmartObjectManifest['objects'][string]['fields'] = {},
 ): SmartObjectManifest {
   return {
     objects: {
@@ -32,7 +33,7 @@ function createManifest(
               ? { ...(include ? { include } : {}), principalContext }
               : true,
         },
-        fields: {},
+        fields,
         filePath: objectFilePath,
         methods: {},
       },
@@ -284,11 +285,13 @@ describe('generated SvelteKit helper runtime', () => {
     );
   }
 
-  async function importGeneratedCollectionList() {
+  async function importGeneratedCollectionList(
+    fields: SmartObjectManifest['objects'][string]['fields'] = {},
+  ) {
     const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
     await generateSvelteKitRoutes(
       projectRoot,
-      createManifest(projectRoot, objectFilePath, ['list']),
+      createManifest(projectRoot, objectFilePath, ['list'], false, fields),
       {
         configFileName: 'smrt.ts',
         configPath: 'src/lib/server',
@@ -625,8 +628,11 @@ describe('generated SvelteKit helper runtime', () => {
    * non-numeric input, folds a deliberate `limit=0` into 50, and has no ceiling.
    */
   describe('generated list route bounds and ordering (#2367)', () => {
-    async function listWithQuery(query: string) {
-      const route = await importGeneratedCollectionList();
+    async function listWithQuery(
+      query: string,
+      fields: SmartObjectManifest['objects'][string]['fields'] = {},
+    ) {
+      const route = await importGeneratedCollectionList(fields);
       const calls: Array<Record<string, unknown>> = [];
       (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
         count: async () => 0,
@@ -659,6 +665,19 @@ describe('generated SvelteKit helper runtime', () => {
         limit: 50,
         offset: 0,
         orderBy: ['created_at DESC', 'id ASC'],
+      });
+    });
+
+    it('tiebreaks on a declared primary key, not a synthetic id', async () => {
+      // Scanner manifests carry the flag under `_meta`, not at the top level.
+      // A custom-primary-key class has no `id` column at all, so an `id`
+      // tiebreak would fail every unqualified list request for it.
+      const { calls, invoke } = await listWithQuery('', {
+        sku: { _meta: { primaryKey: true }, type: 'text' },
+      });
+      await invoke();
+      expect(calls[0]).toMatchObject({
+        orderBy: ['created_at DESC', 'sku ASC'],
       });
     });
 

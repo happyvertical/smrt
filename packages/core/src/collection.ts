@@ -1330,26 +1330,29 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     this: new (
       options?: SmrtCollectionOptions,
     ) => T,
-    options: SmrtClassOptions = {},
+    // `SmrtCollectionOptions`, not `SmrtClassOptions`: the collection-only
+    // options (#2367 list bounds) must be passable through the recommended
+    // factory without a cast, and every `SmrtClassOptions` value still satisfies
+    // this because the extra members are optional.
+    options: SmrtCollectionOptions = {},
   ): Promise<T> {
-    // Extract only collection-compatible options from broader SmrtClassOptions.
+    // Extract only collection-compatible options from the incoming bag.
     // This is an allowlist: an option absent from BOTH the destructuring and the
     // literal below never reaches the constructor, however it was passed.
     const {
       _className,
       db,
+      defaultListLimit, // #2367
       persistence, // Also extract persistence alias
       ai,
       fs,
       logging,
+      maxListLimit, // #2367
       metrics,
       pubsub,
       sanitization,
       signals,
     } = options;
-    // #2367: list bounds are collection options, not SmrtClassOptions, so they
-    // are read off the incoming bag explicitly rather than destructured above.
-    const { defaultListLimit, maxListLimit } = options as SmrtCollectionOptions;
 
     const collectionOptions: SmrtCollectionOptions = {
       _className,

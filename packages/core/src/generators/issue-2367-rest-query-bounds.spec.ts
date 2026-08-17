@@ -39,26 +39,55 @@ class RestBoundsWidgetCollection extends SmrtCollection<RestBoundsWidget> {
   static readonly _itemClass = RestBoundsWidget;
 }
 
+// A class that declares its own primary key: schema generation omits the
+// synthetic `id`/`slug`/`context` columns for it, so the default list ordering
+// must tiebreak on `sku` rather than on a column that does not exist.
+@smrt({ api: { include: ['list'], public: true } })
+class RestBoundsPkWidget extends SmrtObject {
+  @field({ primaryKey: true, type: 'text' })
+  sku: string = '';
+
+  @field({ type: 'text' })
+  name: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.sku !== undefined) this.sku = options.sku;
+    if (options.name !== undefined) this.name = options.name;
+  }
+}
+
+class RestBoundsPkWidgetCollection extends SmrtCollection<RestBoundsPkWidget> {
+  static readonly _itemClass = RestBoundsPkWidget;
+}
+
 describe('#2367 REST list query bounds', () => {
   ObjectRegistry.registerCollection(
     'RestBoundsWidget',
     RestBoundsWidgetCollection,
   );
+  ObjectRegistry.registerCollection(
+    'RestBoundsPkWidget',
+    RestBoundsPkWidgetCollection,
+  );
 
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
   let handler: (req: Request) => Promise<Response>;
+  let pkHandler: (req: Request) => Promise<Response>;
   let collection: RestBoundsWidgetCollection;
+  let pkCollection: RestBoundsPkWidgetCollection;
 
   const listUrl = (query = '') =>
     new Request(`http://localhost/api/v1/restboundswidgets${query}`);
 
   beforeAll(async () => {
     db = await getTestDatabase({
-      classes: ['RestBoundsWidget'],
+      classes: ['RestBoundsWidget', 'RestBoundsPkWidget'],
       type: 'sqlite',
       url: ':memory:',
     });
     collection = await RestBoundsWidgetCollection.create({ db });
+    pkCollection = await RestBoundsPkWidgetCollection.create({ db });
     for (let index = 0; index < 3; index++) {
       const widget = await collection.create({
         apiSecret: `sk-${index}`,
@@ -73,6 +102,13 @@ describe('#2367 REST list query bounds', () => {
       collection as unknown as SmrtCollection<SmrtObject>,
     );
     handler = api.generateHandler();
+
+    const pkApi = new APIGenerator({ basePath: '/api/v2' });
+    pkApi.registerCollection(
+      'restboundspkwidgets',
+      pkCollection as unknown as SmrtCollection<SmrtObject>,
+    );
+    pkHandler = pkApi.generateHandler();
   });
 
   afterAll(async () => {
@@ -118,6 +154,24 @@ describe('#2367 REST list query bounds', () => {
   it('lets an explicit ?orderBy win over the default', async () => {
     const { options } = await listOptionsFor('?orderBy=name%20ASC');
     expect(options).toMatchObject({ orderBy: 'name ASC' });
+  });
+
+  it('tiebreaks on the declared primary key, not a synthetic id', async () => {
+    // Custom-primary-key classes have no `id` column at all, so an `id`
+    // tiebreak would fail every unqualified list request for them.
+    const listSpy = vi.spyOn(pkCollection, 'list');
+    let options: Record<string, unknown> | undefined;
+    try {
+      await pkHandler(
+        new Request('http://localhost/api/v2/restboundspkwidgets'),
+      );
+    } finally {
+      options = listSpy.mock.calls[0]?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      listSpy.mockRestore();
+    }
+    expect(options).toMatchObject({ orderBy: ['created_at DESC', 'sku ASC'] });
   });
 
   it.each([

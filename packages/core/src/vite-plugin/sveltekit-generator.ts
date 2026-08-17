@@ -15,7 +15,11 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import { resolveCustomActionMetadata } from '../generators/custom-action.js';
-import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT } from '../query-bounds.js';
+import {
+  buildDefaultListOrderBy,
+  DEFAULT_LIST_LIMIT,
+  MAX_LIST_LIMIT,
+} from '../query-bounds.js';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -746,12 +750,19 @@ function resolveDefaultListOrderBy(
   // A class declaring its own primary key has no `id` column to tie-break on
   // (`id`/`slug`/`context` are omitted for custom-PK classes), so order by the
   // declared key instead.
+  //
+  // The flag is read from BOTH `_meta.primaryKey` and the top level: scanner
+  // manifests — the input this generator actually runs on — carry it under
+  // `_meta`, while decorator option bags mirror some flags at the top level.
+  // Checking only the top level silently never matches, which is exactly the
+  // case that would emit an `id` tiebreak for a table without an `id` column.
   const customPrimaryKey = Object.entries(objectDef.fields ?? {}).find(
     ([, fieldDef]) =>
+      fieldDef?._meta?.primaryKey === true ||
       (fieldDef as { primaryKey?: boolean } | undefined)?.primaryKey === true,
   )?.[0];
 
-  return ['created_at DESC', `${customPrimaryKey ?? 'id'} ASC`];
+  return buildDefaultListOrderBy(customPrimaryKey);
 }
 
 /**

@@ -213,3 +213,19 @@ export const DEFAULT_LIST_ORDER_BY: readonly string[] = [
   'created_at DESC',
   'id ASC',
 ];
+
+/**
+ * Deterministic default ordering for a model whose primary key may not be `id`.
+ *
+ * A class declaring `@field({ primaryKey: true })` on its own column has no
+ * synthetic `id` column — schema generation omits `id`/`slug`/`context` for
+ * custom-primary-key classes — so `ORDER BY ... id ASC` would name a column
+ * that does not exist and fail the whole page. The tiebreak therefore follows
+ * the declared key.
+ *
+ * @param primaryKeyField - the model's primary-key field name in SMRT (not
+ *   column) form; `collection.list()` maps it to the column
+ */
+export function buildDefaultListOrderBy(primaryKeyField = 'id'): string[] {
+  return ['created_at DESC', `${primaryKeyField} ASC`];
+}

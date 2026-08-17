@@ -13,7 +13,7 @@ import {
 } from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
-  DEFAULT_LIST_ORDER_BY,
+  buildDefaultListOrderBy,
   resolveListLimit,
   resolveListOffset,
 } from '../query-bounds';
@@ -1107,7 +1107,7 @@ export class APIGenerator {
       const orderByParam = params.get('orderBy');
       const orderBy: string | string[] = orderByParam
         ? orderByParam
-        : [...DEFAULT_LIST_ORDER_BY];
+        : this.resolveDefaultListOrderBy(objectName);
 
       // Build where clause from query params
       // Convert REST-style operators (price[gt]) to SQL-style (price >)
@@ -1504,6 +1504,31 @@ export class APIGenerator {
       tenantScoped,
       permissionScoped,
     });
+  }
+
+  /**
+   * Deterministic default ordering for a generated list page (#2367).
+   *
+   * The tiebreak follows the model's actual primary key. A class declaring
+   * `@field({ primaryKey: true })` has no synthetic `id` column — schema
+   * generation omits `id`/`slug`/`context` for custom-primary-key classes — so a
+   * hard-coded `id ASC` would name a column that does not exist and fail every
+   * unqualified list request for that model.
+   *
+   * The flag is read from both `_meta.primaryKey` and the top level: manifest
+   * field definitions carry it under `_meta`, decorator option bags mirror some
+   * flags at the top level.
+   */
+  private resolveDefaultListOrderBy(objectName: string | undefined): string[] {
+    if (!objectName) return buildDefaultListOrderBy();
+    for (const fields of this.getFieldMapsForPublicPolicy(objectName)) {
+      for (const [fieldName, def] of fields) {
+        if (def?._meta?.primaryKey === true || def?.primaryKey === true) {
+          return buildDefaultListOrderBy(fieldName);
+        }
+      }
+    }
+    return buildDefaultListOrderBy();
   }
 
   private hasReadPermissionFields(objectName: string | undefined): boolean {

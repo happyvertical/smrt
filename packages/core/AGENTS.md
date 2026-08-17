@@ -100,8 +100,11 @@ are **clamped** to `MAX_LIST_LIMIT` (1000) rather than rejected, and an explicit
   oracle over a column the request may neither filter on nor project. The
   whitelist is skipped only for manifest-less inline test classes (#869), exactly
   as `where` skips it.
-- The generated SvelteKit list route pages with `ORDER BY created_at DESC, id ASC`
-  — `LIMIT`/`OFFSET` with no ordering is not pagination. Index: #2363.
+- The generated REST and SvelteKit list routes page with
+  `ORDER BY created_at DESC, <pk> ASC` — `LIMIT`/`OFFSET` with no ordering is not
+  pagination, and `created_at` alone still ties. `<pk>` follows a declared
+  `@field({ primaryKey: true })` (read from `_meta.primaryKey` in manifests)
+  because custom-primary-key classes have no synthetic `id` column. Index: #2363.
 - `listByIds()` chunks its `IN` list at `IN_LIST_CHUNK_SIZE` (900), like the
   relationship/junction/hierarchy loaders.
 

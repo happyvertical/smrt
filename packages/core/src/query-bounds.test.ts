@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
   DEFAULT_LIST_ORDER_BY,
   MAX_LIST_LIMIT,
@@ -115,5 +116,18 @@ describe('#2367 DEFAULT_LIST_ORDER_BY', () => {
     // Both terms matter: `created_at DESC` alone still ties for rows created in
     // the same tick, which is what makes LIMIT/OFFSET paging skip and repeat.
     expect(DEFAULT_LIST_ORDER_BY).toEqual(['created_at DESC', 'id ASC']);
+  });
+
+  it('follows a declared primary key instead of assuming `id`', () => {
+    // Custom-primary-key classes have no synthetic `id` column, so an `id`
+    // tiebreak would name a column that does not exist and fail the page.
+    expect(buildDefaultListOrderBy('sku')).toEqual([
+      'created_at DESC',
+      'sku ASC',
+    ]);
+    expect(buildDefaultListOrderBy()).toEqual([...DEFAULT_LIST_ORDER_BY]);
+    expect(buildDefaultListOrderBy(undefined)).toEqual([
+      ...DEFAULT_LIST_ORDER_BY,
+    ]);
   });
 });

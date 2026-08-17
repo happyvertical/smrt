@@ -710,7 +710,8 @@ const products = await Products.create({
 
 The generated REST, SvelteKit and MCP surfaces always bound their own input:
 they default to 50, clamp to 1000, reject malformed values with a 400, and page
-with a deterministic `ORDER BY created_at DESC, id ASC`.
+with a deterministic `ORDER BY created_at DESC, <primary key> ASC` (`id` unless
+the model declares its own `@field({ primaryKey: true })` column).
 
 ### Eager Loading (Preventing N+1 Queries)
 
