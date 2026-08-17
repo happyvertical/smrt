@@ -58,7 +58,14 @@ export class Profile extends SmrtObject {
   @foreignKey('ProfileType', { required: true })
   typeId?: string; // References ProfileType.id
 
-  @field({ unique: true })
+  // Not `unique: true`: the schema generator now enforces STI unique fields
+  // through a unique index (#2359), and a global unique index on `email`
+  // cannot hold here — an unset text field is persisted as '' so every
+  // email-less Profile would collide, and OIDC provisioning deliberately
+  // tolerates legacy duplicate addresses and fails closed on them
+  // (`findUniqueGlobalPersonByEmail`). Identity uniqueness is arbitrated by
+  // `oidc_profile_email_reservations.email_key`; `emailKey` below is the
+  // indexed lookup key.
   email?: string; // Optional email address
 
   /** Adapter-independent identity lookup key derived from email on save. */

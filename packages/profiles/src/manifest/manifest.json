@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "timestamp": 1784000192728,
+  "timestamp": 0,
   "packageName": "@happyvertical/smrt-profiles",
-  "packageVersion": "0.39.12",
+  "packageVersion": "0.40.69",
   "objects": {
     "@happyvertical/smrt-profiles:ApiKeyCollection": {
       "name": "apikeycollection",
@@ -163,12 +163,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "api_keys_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "api_keys_slug_context_idx",
             "columns": [
@@ -356,12 +350,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "audit_logs_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "audit_logs_slug_context_idx",
             "columns": [
@@ -576,12 +564,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "magic_link_tokens_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "magic_link_tokens_slug_context_idx",
             "columns": [
@@ -813,12 +795,6 @@
         },
         "indexes": [
           {
-            "name": "nostr_identities_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "nostr_identities_slug_context_idx",
             "columns": [
               "slug",
@@ -969,12 +945,6 @@
         },
         "indexes": [
           {
-            "name": "oidc_identities_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "oidc_identities_slug_context_idx",
             "columns": [
               "slug",
@@ -1033,12 +1003,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "oidc_profile_email_reservations_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "oidc_profile_email_reservations_slug_context_idx",
             "columns": [
@@ -1285,12 +1249,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "profile_assets_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "profile_assets_slug_context_idx",
             "columns": [
@@ -1605,12 +1563,6 @@
         },
         "indexes": [
           {
-            "name": "profile_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_collections_slug_context_idx",
             "columns": [
               "slug",
@@ -1716,12 +1668,6 @@
         },
         "indexes": [
           {
-            "name": "profile_metadata_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_metadata_collections_slug_context_idx",
             "columns": [
               "slug",
@@ -1812,12 +1758,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "profile_metafield_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "profile_metafield_collections_slug_context_idx",
             "columns": [
@@ -1958,12 +1898,6 @@
         },
         "indexes": [
           {
-            "name": "profile_relationship_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_relationship_collections_slug_context_idx",
             "columns": [
               "slug",
@@ -2063,12 +1997,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "profile_relationship_term_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "profile_relationship_term_collections_slug_context_idx",
             "columns": [
@@ -2176,12 +2104,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "profile_relationship_type_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "profile_relationship_type_collections_slug_context_idx",
             "columns": [
@@ -2292,12 +2214,6 @@
           }
         },
         "indexes": [
-          {
-            "name": "profile_type_collections_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
           {
             "name": "profile_type_collections_slug_context_idx",
             "columns": [
@@ -2570,18 +2486,18 @@
         },
         "indexes": [
           {
-            "name": "api_keys_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "api_keys_slug_context_idx",
             "columns": [
               "slug",
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "api_keys_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
           }
         ],
         "version": "675b5c1a"
@@ -2809,18 +2725,30 @@
         },
         "indexes": [
           {
-            "name": "audit_logs_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "audit_logs_slug_context_idx",
             "columns": [
               "slug",
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "audit_logs_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "audit_logs_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
+          },
+          {
+            "name": "audit_logs_on_behalf_of_id_idx",
+            "columns": [
+              "on_behalf_of_id"
+            ]
           }
         ],
         "version": "42bf3450"
@@ -3071,18 +2999,18 @@
         },
         "indexes": [
           {
-            "name": "magic_link_tokens_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "magic_link_tokens_slug_context_idx",
             "columns": [
               "slug",
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "magic_link_tokens_nostr_identity_id_idx",
+            "columns": [
+              "nostr_identity_id"
+            ]
           }
         ],
         "version": "fc26af5c"
@@ -3391,18 +3319,18 @@
         },
         "indexes": [
           {
-            "name": "nostr_identities_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "nostr_identities_slug_context_idx",
             "columns": [
               "slug",
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "nostr_identities_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
           }
         ],
         "version": "b5de7c6f"
@@ -3658,12 +3586,6 @@
         },
         "indexes": [
           {
-            "name": "oidc_identities_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "oidc_identities_slug_context_idx",
             "columns": [
               "slug",
@@ -3681,6 +3603,12 @@
             "name": "oidc_identities_subject_idx",
             "columns": [
               "subject"
+            ]
+          },
+          {
+            "name": "oidc_identities_profile_id_idx",
+            "columns": [
+              "profile_id"
             ]
           }
         ],
@@ -3780,12 +3708,6 @@
         },
         "indexes": [
           {
-            "name": "oidc_profile_email_reservations_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "oidc_profile_email_reservations_slug_context_idx",
             "columns": [
               "slug",
@@ -3841,10 +3763,7 @@
         },
         "email": {
           "type": "text",
-          "required": false,
-          "_meta": {
-            "unique": true
-          }
+          "required": false
         },
         "emailKey": {
           "type": "text",
@@ -4883,12 +4802,6 @@
         },
         "indexes": [
           {
-            "name": "profiles_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profiles_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -4907,6 +4820,18 @@
             "name": "profiles_email_key_idx",
             "columns": [
               "email_key"
+            ]
+          },
+          {
+            "name": "profiles_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profiles_type_id_idx",
+            "columns": [
+              "type_id"
             ]
           }
         ],
@@ -5066,12 +4991,6 @@
         },
         "indexes": [
           {
-            "name": "profile_assets_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_assets_profile_id_asset_id_idx",
             "columns": [
               "profile_id",
@@ -5079,6 +4998,25 @@
               "relationship"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_assets_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ]
+          },
+          {
+            "name": "profile_assets_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profile_assets_asset_id_idx",
+            "columns": [
+              "asset_id"
+            ]
           }
         ],
         "version": "251cd922"
@@ -5752,12 +5690,6 @@
         },
         "indexes": [
           {
-            "name": "profile_metadata_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_metadata_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -5770,6 +5702,24 @@
             "name": "profile_metadata_meta_type_idx",
             "columns": [
               "_meta_type"
+            ]
+          },
+          {
+            "name": "profile_metadata_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profile_metadata_profile_id_idx",
+            "columns": [
+              "profile_id"
+            ]
+          },
+          {
+            "name": "profile_metadata_metafield_id_idx",
+            "columns": [
+              "metafield_id"
             ]
           }
         ],
@@ -6468,12 +6418,6 @@
         },
         "indexes": [
           {
-            "name": "profile_metafields_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_metafields_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -6486,6 +6430,12 @@
             "name": "profile_metafields_meta_type_idx",
             "columns": [
               "_meta_type"
+            ]
+          },
+          {
+            "name": "profile_metafields_tenant_id_idx",
+            "columns": [
+              "tenant_id"
             ]
           }
         ],
@@ -7215,12 +7165,6 @@
         },
         "indexes": [
           {
-            "name": "profile_relationships_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_relationships_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -7233,6 +7177,36 @@
             "name": "profile_relationships_meta_type_idx",
             "columns": [
               "_meta_type"
+            ]
+          },
+          {
+            "name": "profile_relationships_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profile_relationships_from_profile_id_idx",
+            "columns": [
+              "from_profile_id"
+            ]
+          },
+          {
+            "name": "profile_relationships_to_profile_id_idx",
+            "columns": [
+              "to_profile_id"
+            ]
+          },
+          {
+            "name": "profile_relationships_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
+          },
+          {
+            "name": "profile_relationships_context_profile_id_idx",
+            "columns": [
+              "context_profile_id"
             ]
           }
         ],
@@ -7883,12 +7857,6 @@
         },
         "indexes": [
           {
-            "name": "profile_relationship_terms_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_relationship_terms_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -7901,6 +7869,12 @@
             "name": "profile_relationship_terms_meta_type_idx",
             "columns": [
               "_meta_type"
+            ]
+          },
+          {
+            "name": "profile_relationship_terms_relationship_id_idx",
+            "columns": [
+              "relationship_id"
             ]
           }
         ],
@@ -8567,12 +8541,6 @@
         },
         "indexes": [
           {
-            "name": "profile_relationship_types_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_relationship_types_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -9228,12 +9196,6 @@
         },
         "indexes": [
           {
-            "name": "profile_types_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profile_types_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -9246,6 +9208,12 @@
             "name": "profile_types_meta_type_idx",
             "columns": [
               "_meta_type"
+            ]
+          },
+          {
+            "name": "profile_types_tenant_id_idx",
+            "columns": [
+              "tenant_id"
             ]
           }
         ],
@@ -9293,10 +9261,7 @@
         },
         "email": {
           "type": "text",
-          "required": false,
-          "_meta": {
-            "unique": true
-          }
+          "required": false
         },
         "emailKey": {
           "type": "text",
@@ -10315,12 +10280,6 @@
         },
         "indexes": [
           {
-            "name": "profiles_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profiles_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -10340,9 +10299,21 @@
             "columns": [
               "email_key"
             ]
+          },
+          {
+            "name": "profiles_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profiles_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
           }
         ],
-        "version": "23f35a07"
+        "version": "6f91abae"
       }
     },
     "@happyvertical/smrt-profiles:Organization": {
@@ -10386,10 +10357,7 @@
         },
         "email": {
           "type": "text",
-          "required": false,
-          "_meta": {
-            "unique": true
-          }
+          "required": false
         },
         "emailKey": {
           "type": "text",
@@ -11408,12 +11376,6 @@
         },
         "indexes": [
           {
-            "name": "profiles_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profiles_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -11433,9 +11395,21 @@
             "columns": [
               "email_key"
             ]
+          },
+          {
+            "name": "profiles_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profiles_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
           }
         ],
-        "version": "144faf5c"
+        "version": "6f91abae"
       }
     },
     "@happyvertical/smrt-profiles:Bot": {
@@ -11479,10 +11453,7 @@
         },
         "email": {
           "type": "text",
-          "required": false,
-          "_meta": {
-            "unique": true
-          }
+          "required": false
         },
         "emailKey": {
           "type": "text",
@@ -12501,12 +12472,6 @@
         },
         "indexes": [
           {
-            "name": "profiles_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
             "name": "profiles_slug_context_meta_type_idx",
             "columns": [
               "slug",
@@ -12526,9 +12491,21 @@
             "columns": [
               "email_key"
             ]
+          },
+          {
+            "name": "profiles_tenant_id_idx",
+            "columns": [
+              "tenant_id"
+            ]
+          },
+          {
+            "name": "profiles_type_id_idx",
+            "columns": [
+              "type_id"
+            ]
           }
         ],
-        "version": "38738f31"
+        "version": "6f91abae"
       }
     }
   },
