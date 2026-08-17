@@ -845,11 +845,15 @@ connection URL, then `timeouts`, then the environment variable, then the
 default — so `postgres://…/app?statement_timeout=120000` keeps its 120 s while
 still picking up bounded lock and idle-in-transaction settings.
 
-Two things these do **not** cover. `smrt db:migrate` opens its own connection
+Three things these do **not** cover. `smrt db:migrate` opens its own connection
 and bounds each statement from `migrations.postgres.lockTimeout` /
-`.statementTimeout`, so a long migration keeps its own budget. And a `db`
-option that is already a live `DatabaseInterface` or a pre-created client is
-used as given — configure timeouts where that pool is built.
+`.statementTimeout`, so a long migration keeps its own budget. A `db` option
+that is already a live `DatabaseInterface` or a pre-created client is used as
+given — configure timeouts where that pool is built. And the three session
+timeouts ride the connection URL, so a PostgreSQL config with no `url` (discrete
+`host`/`database` fields, or a bare `{ type: 'postgres' }` that lets the adapter
+read `HAVE_SQL_URL`) receives only the acquisition timeout; pass the URL through
+the config to get the rest.
 
 ## Vector Embeddings
 
