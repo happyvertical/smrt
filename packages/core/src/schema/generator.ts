@@ -397,13 +397,18 @@ export class SchemaGenerator {
       const mappedColumns = spec.columns.map((column) =>
         this.resolveDeclaredIndexColumn(column, columns),
       );
+      // `Object.hasOwn`, not `in`: the column map is a plain object, so `in`
+      // also answers true for `toString`, `constructor` and every other
+      // `Object.prototype` key — a declaration naming one would sail past this
+      // check and emit an index on a column that does not exist.
       const unknownColumns = mappedColumns.filter(
-        (column) => !(column in columns),
+        (column) => !Object.hasOwn(columns, column),
       );
       if (unknownColumns.length > 0) {
         throw new Error(
           `Declared index "${spec.name}" on "${tableName}" references unknown column(s): ` +
-            `${unknownColumns.join(', ')}. Declared index columns must be fields on the object.`,
+            `${unknownColumns.join(', ')}. Declared index columns must name a field or ` +
+            `column on the object.`,
         );
       }
 
@@ -498,9 +503,12 @@ export class SchemaGenerator {
     name: string,
     columns: Record<string, unknown>,
   ): string {
-    if (name in columns) return name;
+    // `Object.hasOwn` rather than `in` — see appendDeclaredIndexes: `in` would
+    // resolve `toString` to itself and let the caller's unknown-column check
+    // pass on a column that does not exist.
+    if (Object.hasOwn(columns, name)) return name;
     const snakeCased = this.toSnakeCase(name);
-    return snakeCased in columns ? snakeCased : name;
+    return Object.hasOwn(columns, snakeCased) ? snakeCased : name;
   }
 
   /** Whether two index definitions describe the same database object. */

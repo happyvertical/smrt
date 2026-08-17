@@ -854,6 +854,18 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
       ).toThrow(/unknown column\(s\): nope/);
     });
 
+    it('an `Object.prototype` key that is not a real column', () => {
+      // `'toString' in columns` is true for any plain object, so an `in` check
+      // would accept this and emit an index on a column that does not exist.
+      expect(() =>
+        generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
+          indexes: [
+            { name: 'posts_proto_idx', columns: ['toString', 'constructor'] },
+          ],
+        }),
+      ).toThrow(/unknown column\(s\): toString, constructor/);
+    });
+
     it('an empty columns list', () => {
       expect(() =>
         generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
