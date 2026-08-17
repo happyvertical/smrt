@@ -97,13 +97,42 @@ divergence is a bug in the generator, not an exception to add to the test.
   for those tables (an existing one is an orphan the differ drops only with
   `--drop-indexes`); NULL-tenant rows (`mode: 'optional'` outside a tenant
   context) dedup among themselves through the SDK's null-aware upsert
-  (`IS NOT DISTINCT FROM`), exactly as every row did before, while the index
-  itself treats NULLs as distinct — raw SQL can still insert two global rows
-  with one slug. Cross-tenant ingestion that relied on natural-key dedup
-  across tenants now inserts one row per tenant (release note). The `save()`
-  path serializes an unset tenant field as an explicit `NULL` whatever its
-  registered type, because the SDK rejects an upsert whose conflict column is
-  missing from the row.
+  (`IS NOT DISTINCT FROM` under a PostgreSQL advisory lock / an in-process
+  lock on SQLite) — application-enforced now, where the old global index was
+  database-enforced: the tenant-led index treats NULLs as distinct, so raw SQL
+  can insert two global rows with one slug, and a raw
+  `ON CONFLICT (slug, context…)` against such a table no longer binds (use
+  `WHERE NOT EXISTS`, plus an advisory lock on PostgreSQL). Emitting
+  `NULLS NOT DISTINCT` on PostgreSQL ≥ 15 (the SDK already detects it) would
+  restore the database arbiter — a follow-up. The `save()` path serializes an
+  unset tenant field as an explicit `NULL` whatever its registered type,
+  because the SDK rejects an upsert whose conflict column is missing from the
+  row.
+- **Rolling the tenant-led key out (#2360).** There is no mixed-version state:
+  new code against the old index fails every NEW-object create on a
+  tenant-scoped default-key table (PostgreSQL 42P10, SQLite "ON CONFLICT
+  clause does not match…"), and old code against the new index fails the same
+  way, because the conflict target must match the unique index's column set
+  exactly; only persisted objects (upsert on `id`) keep saving. Deploy the code
+  and run `smrt db:migrate` in the same maintenance step. The plan is one
+  `DROP INDEX` + `CREATE UNIQUE INDEX` per table under the SAME name (a
+  superset key, so the build cannot fail when the old same-name index was a
+  valid UNIQUE over the subset key; a #1165-class table whose old index was
+  non-unique or missing may still hold duplicates that a superset UNIQUE
+  rejects — run `db:diff` first). Atomic mode swaps every table in one
+  transaction (`DROP INDEX` takes ACCESS EXCLUSIVE, the rebuild SHARE, on each
+  table until commit — creates on those tables block for the batch); size
+  `statementTimeout` for the largest tenant-scoped table. `--postgres-safe`
+  runs the two statements sequentially per table, so each table has NO
+  conflict index between them and a failed rebuild leaves it without one until
+  the re-run — prefer atomic mode for this wave. The recreate has no automatic
+  DOWN: reverting the code means re-creating the old index by hand. And
+  legacy NULL-tenant rows fork rather than get adopted — a tenant-context save
+  whose slug matches a `(NULL, slug, ctx)` row now inserts `(tenant, slug,
+  ctx)` beside it, and that tenant no longer sees the legacy row — so backfill
+  `tenant_id` (anytown: `SET tenant_id = context::uuid`) BEFORE this release.
+  Ingestion that relied on natural-key dedup across tenants now inserts one
+  row per tenant (release note).
 - **STI `@field({ unique: true })` is enforced through indexes** (the differ can
   add an index to an existing table, never a column constraint): a full
   `<table>_<col>_unique_idx` when the STI base declares it, one

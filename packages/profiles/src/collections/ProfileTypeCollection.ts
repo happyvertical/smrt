@@ -8,6 +8,10 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import { isSystemContext } from '@happyvertical/smrt-tenancy';
 import { ProfileType } from '../models/ProfileType';
 
+function isPostgresUrl(url: string | undefined): boolean {
+  return /^postgres(?:ql)?:/iu.test(url ?? '');
+}
+
 export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
   static readonly _itemClass = ProfileType;
 
@@ -71,30 +75,49 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
     // transaction-scoped advisory lock (the arbiter the SDK's null-aware
     // upsert uses too); the embedded engines through the provisioning
     // coordinator's in-process lock plus their single-writer transactions.
-    if (/^postgres(?:ql)?:/iu.test(this.db.url ?? '')) {
-      await this.db.query(
-        'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
-        '@happyvertical/smrt-profiles:profile_types:global',
+    const insertIfAbsent = async (db: typeof this.db): Promise<void> => {
+      if (isPostgresUrl(db.url)) {
+        await db.query(
+          'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+          '@happyvertical/smrt-profiles:profile_types:global',
+          slug,
+        );
+      }
+      await db.query(
+        `INSERT INTO profile_types
+          (id, slug, context, _meta_type, tenant_id, name, description)
+         SELECT ?, ?, '', '@happyvertical/smrt-profiles:ProfileType', NULL, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM profile_types
+           WHERE slug = ?
+             AND context = ''
+             AND _meta_type = '@happyvertical/smrt-profiles:ProfileType'
+             AND tenant_id IS NULL
+         )`,
+        crypto.randomUUID(),
+        slug,
+        defaults.name,
+        defaults.description ?? null,
         slug,
       );
+    };
+
+    // A transaction-scoped advisory lock only spans both statements when they
+    // run on one transaction. Callers today pass a transaction-bound handle
+    // (the OIDC provisioning coordinator); on a pooled PostgreSQL root handle
+    // (`beginTransaction` present) each query would take its own connection,
+    // so open a transaction for the pair here. Embedded engines run directly:
+    // a nested root transaction would deadlock their single-writer adapters,
+    // and the coordinator's in-process lock already serializes them.
+    if (
+      isPostgresUrl(this.db.url) &&
+      typeof this.db.beginTransaction === 'function' &&
+      typeof this.db.transaction === 'function'
+    ) {
+      await this.db.transaction((tx) => insertIfAbsent(tx));
+    } else {
+      await insertIfAbsent(this.db);
     }
-    await this.db.query(
-      `INSERT INTO profile_types
-        (id, slug, context, _meta_type, tenant_id, name, description)
-       SELECT ?, ?, '', '@happyvertical/smrt-profiles:ProfileType', NULL, ?, ?
-       WHERE NOT EXISTS (
-         SELECT 1 FROM profile_types
-         WHERE slug = ?
-           AND context = ''
-           AND _meta_type = '@happyvertical/smrt-profiles:ProfileType'
-           AND tenant_id IS NULL
-       )`,
-      crypto.randomUUID(),
-      slug,
-      defaults.name,
-      defaults.description ?? null,
-      slug,
-    );
     const profileType = await this.loadGlobalBySlug(slug);
     if (!profileType) {
       throw new Error(
