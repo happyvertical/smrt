@@ -35,6 +35,7 @@ export type DatabaseErrorKind =
   | 'not_null_violation'
   | 'foreign_key_violation'
   | 'check_violation'
+  | 'exclusion_violation'
   | 'invalid_input'
   | 'aborted_transaction'
   | 'undefined_object'
@@ -92,7 +93,12 @@ const DETERMINISTIC_SQLSTATES = new Map<string, DatabaseErrorKind>([
   ['23503', 'foreign_key_violation'],
   ['23505', 'unique_violation'],
   ['23514', 'check_violation'],
-  ['23P01', 'unique_violation'], // exclusion_violation
+  // An EXCLUDE constraint is not a unique index: the conflicting rows differ on
+  // the constrained columns and merely overlap under the operator. Reporting it
+  // as `unique_violation` would make `save()` raise
+  // VALIDATION_UNIQUE_CONSTRAINT naming a field that did not collide, so it
+  // keeps its own kind and stays on the generic DatabaseError path.
+  ['23P01', 'exclusion_violation'],
   // Class 22 — data exception (bad literal, overflow, bad uuid cast)
   ['22001', 'invalid_input'], // string_data_right_truncation
   ['22003', 'invalid_input'], // numeric_value_out_of_range
@@ -101,9 +107,14 @@ const DETERMINISTIC_SQLSTATES = new Map<string, DatabaseErrorKind>([
   ['22023', 'invalid_input'], // invalid_parameter_value
   ['22P02', 'invalid_input'], // invalid_text_representation — the bad-uuid case
   ['22P03', 'invalid_input'], // invalid_binary_representation
-  // Class 25 — invalid transaction state
+  // Class 25 — invalid transaction state. Only `25P02` belongs here:
+  // `25P03 idle_in_transaction_session_timeout` means the server *terminated
+  // the session*, which is a connection-level failure a fresh connection can
+  // survive, so it lives in TRANSIENT_SQLSTATES instead. Calling it
+  // deterministic would both block that retry and make
+  // `isAbortedTransactionError()` report a timed-out session as an OIDC race
+  // conflict in the profiles coordinator.
   ['25P02', 'aborted_transaction'], // in_failed_sql_transaction
-  ['25P03', 'aborted_transaction'], // idle_in_transaction_session_timeout
   // Class 42 — syntax error or access rule violation
   ['42501', 'insufficient_privilege'],
   ['42601', 'syntax_error'],
@@ -126,6 +137,7 @@ const DETERMINISTIC_SQLSTATES = new Map<string, DatabaseErrorKind>([
  * The same statement may well succeed on a later attempt.
  */
 const TRANSIENT_SQLSTATES = new Set([
+  '25P03', // idle_in_transaction_session_timeout — the session was terminated
   '40001', // serialization_failure
   '40003', // statement_completion_unknown
   '40P01', // deadlock_detected
@@ -213,8 +225,11 @@ const DIALECT_MESSAGE_RULES: ReadonlyArray<{
       /NOT NULL constraint failed|null value in column .* violates not-null/i,
   },
   {
+    // SQLite reports `FOREIGN KEY constraint failed` under the bare
+    // `SQLITE_CONSTRAINT` parent code, so without this arm the sub-kind
+    // recovery below would mislabel every SQLite FK failure.
     kind: 'foreign_key_violation',
-    pattern: /violates foreign key constraint/i,
+    pattern: /violates foreign key constraint|FOREIGN KEY constraint failed/i,
   },
   {
     kind: 'check_violation',
@@ -263,11 +278,12 @@ const DETERMINISTIC_KIND_RANK = new Map<DatabaseErrorKind, number>([
   ['not_null_violation', 1],
   ['foreign_key_violation', 2],
   ['check_violation', 3],
-  ['invalid_input', 4],
-  ['undefined_object', 5],
-  ['insufficient_privilege', 6],
-  ['syntax_error', 7],
-  ['aborted_transaction', 8],
+  ['exclusion_violation', 4],
+  ['invalid_input', 5],
+  ['undefined_object', 6],
+  ['insufficient_privilege', 7],
+  ['syntax_error', 8],
+  ['aborted_transaction', 9],
 ]);
 
 function rankKind(kind: DatabaseErrorKind): number {
@@ -587,7 +603,10 @@ export function isNotNullViolationError(error: unknown): boolean {
  */
 export function isAbortedTransactionError(error: unknown): boolean {
   const signals = collectChainSignals(error);
-  if (signals.codes.some((code) => code === '25P02' || code === '25P03')) {
+  // `25P02` only. `25P03` is a terminated session, not a failed transaction,
+  // and reporting it here would make the profiles coordinator treat an
+  // idle-timeout disconnect as a provisioning race conflict.
+  if (signals.codes.includes('25P02')) {
     return true;
   }
   return signals.messages.some((message) =>

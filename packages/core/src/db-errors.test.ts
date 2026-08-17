@@ -170,6 +170,31 @@ describe('classifyDatabaseError separates transient from deterministic (#2366)',
     expect(isDeterministicDatabaseError(error)).toBe(true);
   });
 
+  it('keeps an exclusion violation off the unique-violation path', () => {
+    // An EXCLUDE constraint rejects rows that *overlap* under an operator; the
+    // conflicting rows differ on the constrained columns. Reporting 23P01 as a
+    // unique violation would make save() raise VALIDATION_UNIQUE_CONSTRAINT
+    // naming a field that never collided.
+    const error = sdkUpsertFailure(
+      'conflicting key value violates exclusion constraint "booking_no_overlap", code=23P01, severity=ERROR',
+    );
+    const classification = classifyDatabaseError(error);
+    expect(classification.kind).toBe('exclusion_violation');
+    expect(classification.deterministic).toBe(true);
+    expect(isUniqueViolationError(error)).toBe(false);
+  });
+
+  it('classifies a SQLite foreign-key failure as such, not as a check violation', () => {
+    // SQLite reports FK failures under the bare `SQLITE_CONSTRAINT` parent
+    // code, so the sub-kind has to come from this exact wording.
+    const error = sdkUpsertFailure(
+      'SQLITE_CONSTRAINT: FOREIGN KEY constraint failed, code=SQLITE_CONSTRAINT',
+    );
+    expect(classifyDatabaseError(error).kind).toBe('foreign_key_violation');
+    expect(isUniqueViolationError(error)).toBe(false);
+    expect(isDeterministicDatabaseError(error)).toBe(true);
+  });
+
   it('has no opinion about a non-database error', () => {
     const classification = classifyDatabaseError(
       new Error('totally unrelated'),
@@ -192,6 +217,20 @@ describe('aborted-transaction detection (#2366)', () => {
     expect(isAbortedTransactionError(error)).toBe(true);
     expect(classifyDatabaseError(error).kind).toBe('aborted_transaction');
     expect(isDeterministicDatabaseError(error)).toBe(true);
+  });
+
+  it('does not fire on 25P03, which terminates the session rather than the transaction', () => {
+    // `idle_in_transaction_session_timeout` means the server dropped the
+    // session. Calling it an aborted transaction would block the
+    // connection-level retry that can actually succeed, and would make the
+    // profiles OIDC coordinator report a timed-out session as a race conflict.
+    const error = sdkUpsertFailure(
+      'terminating connection due to idle-in-transaction timeout, code=25P03, severity=FATAL',
+    );
+    expect(isAbortedTransactionError(error)).toBe(false);
+    expect(classifyDatabaseError(error).kind).toBe('transient');
+    expect(isTransientDatabaseError(error)).toBe(true);
+    expect(isDeterministicDatabaseError(error)).toBe(false);
   });
 
   it('does not fire on a foreign-key violation that merely mentions a transaction', () => {
@@ -229,6 +268,35 @@ describe('SMRT typed errors classify as their driver equivalent (#2366)', () => 
     expect(
       isUniqueViolationError(ValidationError.requiredField('name', 'W')),
     ).toBe(false);
+  });
+});
+
+describe('the classifier is reachable from every package entry (#2366)', () => {
+  it('is exported from the browser entry as well as the node entry', async () => {
+    // The package's `browser` export condition resolves to `browser.ts`, so a
+    // consumer importing these from the package root in a browser bundle gets
+    // MISSING_EXPORT unless both entries carry them. `smrt-users`'
+    // TenantIntegrationCollection and `smrt-profiles`' OIDC coordinator both
+    // import from the root.
+    const [browserEntry, nodeEntry] = await Promise.all([
+      import('./browser'),
+      import('./index'),
+    ]);
+    const required = [
+      'classifyDatabaseError',
+      'classifyDialectMessage',
+      'isAbortedTransactionError',
+      'isDeterministicDatabaseError',
+      'isNotNullViolationError',
+      'isTransientDatabaseError',
+      'isUniqueViolationError',
+    ] as const;
+    for (const name of required) {
+      expect(nodeEntry, `node entry must export ${name}`).toHaveProperty(name);
+      expect(browserEntry, `browser entry must export ${name}`).toHaveProperty(
+        name,
+      );
+    }
   });
 });
 
