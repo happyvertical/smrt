@@ -1,3 +1,4 @@
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { SecretService } from '@happyvertical/smrt-secrets';
 import {
@@ -494,6 +495,42 @@ describe('smrt-social models', () => {
     const snapshot = new SocialPostAnalyticsSnapshot();
 
     expect(snapshot.platform).toBeNull();
+  });
+
+  describe('relationship metadata (issue #2379)', () => {
+    it('registers social_posts.social_account_id as a real foreign key', () => {
+      const relationship = ObjectRegistry.getRelationships('SocialPost').find(
+        (candidate) => candidate.fieldName === 'socialAccountId',
+      );
+
+      // The arrow-thunk form used to register `related: ''`, which dropped the
+      // relationship edge (and the FK-derived index) for this column.
+      expect(relationship).toBeDefined();
+      expect(relationship?.type).toBe('foreignKey');
+      expect(relationship?.targetClass).toBe('SocialAccount');
+    });
+
+    it('registers analytics snapshots against SocialPost', () => {
+      const relationship = ObjectRegistry.getRelationships(
+        'SocialPostAnalyticsSnapshot',
+      ).find((candidate) => candidate.fieldName === 'socialPostId');
+
+      expect(relationship).toBeDefined();
+      expect(relationship?.type).toBe('foreignKey');
+      expect(relationship?.targetClass).toBe('SocialPost');
+    });
+
+    it('keeps the video target a cross-package reference', () => {
+      const relationship = ObjectRegistry.getRelationships('SocialPost').find(
+        (candidate) => candidate.fieldName === 'videoContentId',
+      );
+
+      // Cross-package targets carry no DDL FK constraint and no value import.
+      expect(relationship?.type).toBe('crossPackageRef');
+      expect(relationship?.targetClass).toBe(
+        '@happyvertical/smrt-video:VideoContent',
+      );
+    });
   });
 
   it('validates manual credential fields before normalization', () => {
