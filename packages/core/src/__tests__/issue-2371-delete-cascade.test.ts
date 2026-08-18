@@ -1,0 +1,569 @@
+/**
+ * Referential integrity on delete (#2371).
+ *
+ * SMRT emits no DB-level `FOREIGN KEY` constraints, so before this change
+ * `delete()` removed the object's own row and left everything that pointed at
+ * it behind: junction rows, polymorphic association rows, `_smrt_embeddings`
+ * (which kept ranking the deleted id in `semanticSearch`) and `_smrt_contexts`.
+ * `@foreignKey(..., { onDelete })` was metadata nobody read.
+ *
+ * Everything here runs against real SQLite through the real model layer — the
+ * point of the issue was that the framework never issued the statements, so a
+ * mocked database would prove nothing.
+ */
+
+import { existsSync, unlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildCascadePlan, normalizeOnDelete } from '../cascade';
+import { SmrtCollection } from '../collection';
+import { field, foreignKey } from '../decorators/index';
+import { EmbeddingStorage } from '../embeddings/storage';
+import { ConfigurationError, DatabaseError } from '../errors';
+import { SmrtObject } from '../object';
+import { SmrtPolymorphicAssociation } from '../polymorphic-association';
+import { ObjectRegistry, smrt } from '../registry';
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+@smrt({ tableName: 'cascade_2371_docs' })
+class CascadeDoc extends SmrtObject {
+  title = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.title !== undefined) this.title = options.title;
+  }
+}
+
+@smrt()
+class CascadeDocCollection extends SmrtCollection<CascadeDoc> {
+  static readonly _itemClass = CascadeDoc;
+}
+
+/**
+ * Junction row: `doc_id` is part of the natural key, so the row is *identified*
+ * by the doc and must not outlive it. No `onDelete` is declared — this proves
+ * the natural-key default, which is what cleans up every junction in the
+ * monorepo without per-package annotation.
+ */
+@smrt({
+  tableName: 'cascade_2371_doc_tags',
+  conflictColumns: ['doc_id', 'tag'],
+})
+class CascadeDocTag extends SmrtObject {
+  @foreignKey('CascadeDoc', { required: true })
+  docId = '';
+
+  @field({ required: true })
+  tag = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+    if (options.tag !== undefined) this.tag = options.tag;
+  }
+}
+
+@smrt()
+class CascadeDocTagCollection extends SmrtCollection<CascadeDocTag> {
+  static readonly _itemClass = CascadeDocTag;
+}
+
+/**
+ * Ordinary child keyed by `(slug, context)`: `doc_id` is NOT part of the
+ * natural key and declares no `onDelete`, so it keeps the pre-#2371 behaviour
+ * and is left alone. Deleting a customer must not silently delete its orders.
+ */
+@smrt({ tableName: 'cascade_2371_notes' })
+class CascadeNote extends SmrtObject {
+  @foreignKey('CascadeDoc')
+  docId = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+  }
+}
+
+@smrt()
+class CascadeNoteCollection extends SmrtCollection<CascadeNote> {
+  static readonly _itemClass = CascadeNote;
+}
+
+/** Explicit opt-in cascade on a child that is not part of any natural key. */
+@smrt({ tableName: 'cascade_2371_sections' })
+class CascadeSection extends SmrtObject {
+  @foreignKey('CascadeDoc', { onDelete: 'CASCADE' })
+  docId = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+  }
+}
+
+@smrt()
+class CascadeSectionCollection extends SmrtCollection<CascadeSection> {
+  static readonly _itemClass = CascadeSection;
+}
+
+/** Grandchild — proves the cascade recurses rather than stopping one level in. */
+@smrt({ tableName: 'cascade_2371_blocks' })
+class CascadeBlock extends SmrtObject {
+  @foreignKey('CascadeSection', { onDelete: 'CASCADE' })
+  sectionId = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.sectionId !== undefined) this.sectionId = options.sectionId;
+  }
+}
+
+@smrt()
+class CascadeBlockCollection extends SmrtCollection<CascadeBlock> {
+  static readonly _itemClass = CascadeBlock;
+}
+
+@smrt({ tableName: 'cascade_2371_bookmarks' })
+class CascadeBookmark extends SmrtObject {
+  @foreignKey('CascadeDoc', { onDelete: 'SET NULL', nullable: true })
+  docId: string | null = null;
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+  }
+}
+
+@smrt()
+class CascadeBookmarkCollection extends SmrtCollection<CascadeBookmark> {
+  static readonly _itemClass = CascadeBookmark;
+}
+
+/** Guarded parent: nothing may delete it while a lock row still points at it. */
+@smrt({ tableName: 'cascade_2371_vaults' })
+class CascadeVault extends SmrtObject {
+  label = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.label !== undefined) this.label = options.label;
+  }
+}
+
+@smrt()
+class CascadeVaultCollection extends SmrtCollection<CascadeVault> {
+  static readonly _itemClass = CascadeVault;
+}
+
+@smrt({ tableName: 'cascade_2371_vault_locks' })
+class CascadeVaultLock extends SmrtObject {
+  @foreignKey('CascadeVault', { onDelete: 'RESTRICT' })
+  vaultId = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.vaultId !== undefined) this.vaultId = options.vaultId;
+  }
+}
+
+@smrt()
+class CascadeVaultLockCollection extends SmrtCollection<CascadeVaultLock> {
+  static readonly _itemClass = CascadeVaultLock;
+}
+
+/** Junction rows on the vault, to prove RESTRICT aborts the whole transaction. */
+@smrt({
+  tableName: 'cascade_2371_vault_tags',
+  conflictColumns: ['vault_id', 'tag'],
+})
+class CascadeVaultTag extends SmrtObject {
+  @foreignKey('CascadeVault', { required: true })
+  vaultId = '';
+
+  @field({ required: true })
+  tag = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.vaultId !== undefined) this.vaultId = options.vaultId;
+    if (options.tag !== undefined) this.tag = options.tag;
+  }
+}
+
+@smrt()
+class CascadeVaultTagCollection extends SmrtCollection<CascadeVaultTag> {
+  static readonly _itemClass = CascadeVaultTag;
+}
+
+/**
+ * A parent whose only referencing class declares an impossible action:
+ * `SET NULL` on a `required` column. Isolated on its own parent so the rest of
+ * the suite can still build plans.
+ */
+@smrt({ tableName: 'cascade_2371_strict' })
+class CascadeStrict extends SmrtObject {
+  label = '';
+}
+
+@smrt()
+class CascadeStrictCollection extends SmrtCollection<CascadeStrict> {
+  static readonly _itemClass = CascadeStrict;
+}
+
+@smrt({ tableName: 'cascade_2371_strict_children' })
+class CascadeStrictChild extends SmrtObject {
+  @foreignKey('CascadeStrict', { required: true, onDelete: 'SET NULL' })
+  strictId = '';
+}
+
+@smrt()
+class CascadeStrictChildCollection extends SmrtCollection<CascadeStrictChild> {
+  static readonly _itemClass = CascadeStrictChild;
+}
+
+@smrt({
+  tableName: 'cascade_2371_attachments',
+  conflictColumns: ['owner_key', 'meta_type', 'meta_id', 'role'],
+})
+class CascadeAttachment extends SmrtPolymorphicAssociation {
+  @field({ required: true })
+  ownerKey = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.ownerKey !== undefined) this.ownerKey = options.ownerKey;
+  }
+}
+
+@smrt()
+class CascadeAttachmentCollection extends SmrtCollection<CascadeAttachment> {
+  static readonly _itemClass = CascadeAttachment;
+}
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
+
+function tmpDbUrl(name: string): string {
+  return `file:${join(
+    tmpdir(),
+    `smrt-2371-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}.db`,
+  )}`;
+}
+
+describe('delete() referential integrity (#2371)', () => {
+  let dbPath: string;
+  let dbUrl: string;
+  let docs: CascadeDocCollection;
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    dbUrl = tmpDbUrl('cascade');
+    dbPath = dbUrl.replace('file:', '');
+    docs = await CascadeDocCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    db = (docs as unknown as { _db: DatabaseInterface })._db;
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) unlinkSync(dbPath);
+  });
+
+  /** Every collection in a case must share one handle, or each gets its own file. */
+  async function collectionOn<T extends SmrtCollection<any>>(ctor: {
+    create(options: any): Promise<T>;
+  }): Promise<T> {
+    return ctor.create({ db });
+  }
+
+  async function makeDoc(title: string): Promise<CascadeDoc> {
+    const doc = await docs.create({ title } as any);
+    await doc.save();
+    return doc;
+  }
+
+  describe('junction rows', () => {
+    it('removes the junction rows identified by the deleted object', async () => {
+      const tags = await collectionOn(CascadeDocTagCollection);
+      const doc = await makeDoc('kept-alive');
+      const other = await makeDoc('survivor');
+
+      for (const tag of ['alpha', 'beta']) {
+        await (await tags.create({ docId: doc.id, tag } as any)).save();
+      }
+      await (
+        await tags.create({ docId: other.id, tag: 'alpha' } as any)
+      ).save();
+
+      expect(await db.count('cascade_2371_doc_tags')).toBe(3);
+
+      await doc.delete();
+
+      const remaining = await db.list('cascade_2371_doc_tags', {});
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]?.doc_id).toBe(other.id);
+    });
+
+    it('is derived from the natural key, not from a declared onDelete', () => {
+      const plan = buildCascadePlan(ObjectRegistry, 'CascadeDoc');
+      const junction = plan.references.find(
+        (reference) => reference.className === 'CascadeDocTag',
+      );
+
+      expect(junction).toMatchObject({
+        column: 'doc_id',
+        action: 'CASCADE',
+        declared: false,
+      });
+    });
+  });
+
+  describe('onDelete actions', () => {
+    it('CASCADE removes children and their own children', async () => {
+      const sections = await collectionOn(CascadeSectionCollection);
+      const blocks = await collectionOn(CascadeBlockCollection);
+      const doc = await makeDoc('nested');
+
+      const section = await sections.create({ docId: doc.id } as any);
+      await section.save();
+      const block = await blocks.create({ sectionId: section.id } as any);
+      await block.save();
+
+      await doc.delete();
+
+      expect(await db.count('cascade_2371_sections')).toBe(0);
+      expect(await db.count('cascade_2371_blocks')).toBe(0);
+    });
+
+    it('SET NULL clears the column and keeps the row', async () => {
+      const bookmarks = await collectionOn(CascadeBookmarkCollection);
+      const doc = await makeDoc('bookmarked');
+
+      const bookmark = await bookmarks.create({ docId: doc.id } as any);
+      await bookmark.save();
+
+      await doc.delete();
+
+      const rows = await db.list('cascade_2371_bookmarks', {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.doc_id).toBeNull();
+    });
+
+    it('RESTRICT refuses the delete and leaves the object in place', async () => {
+      const vaults = await collectionOn(CascadeVaultCollection);
+      const locks = await collectionOn(CascadeVaultLockCollection);
+      const vault = await vaults.create({ label: 'guarded' } as any);
+      await vault.save();
+      const lock = await locks.create({ vaultId: vault.id } as any);
+      await lock.save();
+
+      await expect(vault.delete()).rejects.toThrow(DatabaseError);
+      await expect(vault.delete()).rejects.toThrow(/RESTRICT/);
+
+      expect(await db.count('cascade_2371_vaults', { id: vault.id })).toBe(1);
+    });
+
+    it('rolls back the whole cascade when a RESTRICT aborts it', async () => {
+      const vaults = await collectionOn(CascadeVaultCollection);
+      const locks = await collectionOn(CascadeVaultLockCollection);
+      const vaultTags = await collectionOn(CascadeVaultTagCollection);
+
+      const vault = await vaults.create({ label: 'guarded' } as any);
+      await vault.save();
+      await (
+        await vaultTags.create({ vaultId: vault.id, tag: 'alpha' } as any)
+      ).save();
+      await (await locks.create({ vaultId: vault.id } as any)).save();
+
+      await expect(vault.delete()).rejects.toThrow(DatabaseError);
+
+      // The junction rows would have been deleted before the RESTRICT check
+      // if the statements were not transactional.
+      expect(await db.count('cascade_2371_vault_tags')).toBe(1);
+      expect(await db.count('cascade_2371_vaults')).toBe(1);
+    });
+
+    it('leaves an undeclared, non-key reference untouched', async () => {
+      const notes = await collectionOn(CascadeNoteCollection);
+      const doc = await makeDoc('noted');
+
+      const note = await notes.create({ docId: doc.id } as any);
+      await note.save();
+
+      await doc.delete();
+
+      const rows = await db.list('cascade_2371_notes', {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.doc_id).toBe(doc.id);
+    });
+  });
+
+  describe('polymorphic associations', () => {
+    it('removes association rows pointing at the deleted object', async () => {
+      const attachments = await collectionOn(CascadeAttachmentCollection);
+      const doc = await makeDoc('attached');
+      const other = await makeDoc('untouched');
+
+      await (
+        await attachments.create({
+          ownerKey: 'owner-1',
+          metaType: 'CascadeDoc',
+          metaId: doc.id,
+          role: 'hero',
+        } as any)
+      ).save();
+      await (
+        await attachments.create({
+          ownerKey: 'owner-1',
+          metaType: 'CascadeDoc',
+          metaId: other.id,
+          role: 'hero',
+        } as any)
+      ).save();
+
+      await doc.delete();
+
+      const rows = await db.list('cascade_2371_attachments', {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.meta_id).toBe(other.id);
+    });
+
+    it('does not touch rows whose metaType names another class', async () => {
+      const attachments = await collectionOn(CascadeAttachmentCollection);
+      const doc = await makeDoc('attached');
+
+      await (
+        await attachments.create({
+          ownerKey: 'owner-1',
+          metaType: 'SomeOtherClass',
+          metaId: doc.id,
+          role: 'hero',
+        } as any)
+      ).save();
+
+      await doc.delete();
+
+      expect(await db.count('cascade_2371_attachments')).toBe(1);
+    });
+  });
+
+  describe('framework side tables', () => {
+    it('forgets the object memory it owned', async () => {
+      const doc = await makeDoc('remembers');
+      await doc.remember({ scope: 'test', key: 'k', value: 'v' });
+
+      expect(
+        await db.count('_smrt_contexts', { owner_id: doc.id }),
+      ).toBeGreaterThan(0);
+
+      await doc.delete();
+
+      expect(await db.count('_smrt_contexts', { owner_id: doc.id })).toBe(0);
+    });
+
+    it('keeps collection-scoped memory, which no object owns', async () => {
+      const doc = await makeDoc('remembers');
+      await docs.remember({ scope: 'test', key: 'shared', value: 'v' });
+
+      await doc.delete();
+
+      expect(
+        await db.count('_smrt_contexts', { owner_id: '__collection__' }),
+      ).toBe(1);
+    });
+
+    it('drops the embeddings that kept ranking the deleted id', async () => {
+      const doc = await makeDoc('embedded');
+      const other = await makeDoc('still-here');
+
+      // Written through the framework's own storage API, so the row shape is
+      // whatever `generateEmbeddings()` actually persists.
+      for (const target of [doc, other]) {
+        await EmbeddingStorage.upsert(db, {
+          objectClass: 'CascadeDoc',
+          objectId: target.id as string,
+          fieldName: 'title',
+          contentHash: 'hash',
+          embedding: [0.1, 0.2],
+          model: 'test-model',
+          dimensions: 2,
+        });
+      }
+
+      await doc.delete();
+
+      const rows = await db.list('_smrt_embeddings', {});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.object_id).toBe(other.id);
+    });
+  });
+
+  describe('unchanged behaviour', () => {
+    it('still deletes the object row and marks it unpersisted', async () => {
+      const doc = await makeDoc('plain');
+
+      await doc.delete();
+
+      expect(await db.count('cascade_2371_docs', { id: doc.id })).toBe(0);
+      expect(await docs.get({ id: doc.id })).toBeNull();
+    });
+  });
+});
+
+describe('cascade plan (#2371)', () => {
+  it('normalizes declared onDelete values', () => {
+    expect(normalizeOnDelete('cascade')).toBe('CASCADE');
+    expect(normalizeOnDelete('set_null')).toBe('SET NULL');
+    expect(normalizeOnDelete(' Restrict ')).toBe('RESTRICT');
+    expect(normalizeOnDelete('no action')).toBe('NO ACTION');
+    expect(normalizeOnDelete('nonsense')).toBeUndefined();
+    expect(normalizeOnDelete(undefined)).toBeUndefined();
+  });
+
+  it('drops references that resolve to NO ACTION', () => {
+    const plan = buildCascadePlan(ObjectRegistry, 'CascadeDoc');
+    expect(
+      plan.references.some(
+        (reference) => reference.className === 'CascadeNote',
+      ),
+    ).toBe(false);
+  });
+
+  it('records the declared actions it will apply', () => {
+    const plan = buildCascadePlan(ObjectRegistry, 'CascadeDoc');
+    const byClass = Object.fromEntries(
+      plan.references.map((reference) => [
+        reference.className,
+        reference.action,
+      ]),
+    );
+
+    expect(byClass.CascadeSection).toBe('CASCADE');
+    expect(byClass.CascadeBookmark).toBe('SET NULL');
+  });
+
+  it('finds the polymorphic association tables that can point anywhere', () => {
+    const plan = buildCascadePlan(ObjectRegistry, 'CascadeDoc');
+    expect(
+      plan.polymorphic.map((association) => association.tableName),
+    ).toContain('cascade_2371_attachments');
+  });
+
+  it('refuses SET NULL on a required field instead of failing in the engine', () => {
+    // The engine's own error would name a NOT NULL column, not the decorator
+    // that asked for the impossible thing.
+    expect(() => buildCascadePlan(ObjectRegistry, 'CascadeStrict')).toThrow(
+      ConfigurationError,
+    );
+    expect(() => buildCascadePlan(ObjectRegistry, 'CascadeStrict')).toThrow(
+      /SET NULL/,
+    );
+  });
+});

@@ -1,5 +1,6 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import { runCascadeDelete } from './cascade';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -2702,25 +2703,56 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Deletes this object from the database.
+   * Deletes this object from the database, cascading to the rows that
+   * reference it.
    *
    * Runs the full lifecycle in order:
    * 1. `beforeDelete` interceptors (e.g. tenant validation)
    * 2. `beforeDelete` lifecycle hook (defined in `@smrt({ hooks })`)
-   * 3. Database row deletion
+   * 3. Referential cleanup and the row deletion, in one transaction
    * 4. `afterDelete` lifecycle hook
    * 5. `afterDelete` interceptors
+   *
+   * ## Referential cleanup (#2371)
+   *
+   * SMRT emits no DB-level `FOREIGN KEY` constraints, so step 3 enforces
+   * referential integrity in the application layer instead:
+   *
+   * - `_smrt_embeddings` and `_smrt_contexts` rows owned by this object are
+   *   removed, so a deleted object can no longer win a `semanticSearch` slot
+   *   or resurrect stale `recall()` values.
+   * - Polymorphic association rows whose `(metaType, metaId)` points here are
+   *   removed.
+   * - `@foreignKey` / `@crossPackageRef` columns pointing at this class are
+   *   resolved according to their declared `onDelete` — `'CASCADE'`,
+   *   `'SET NULL'` or `'RESTRICT'`. Without a declaration, a column that is
+   *   part of the referencing class's `conflictColumns` (junction and
+   *   association rows) defaults to `CASCADE`; every other column is left
+   *   untouched, as before.
+   *
+   * Cascaded rows are removed with set-based statements: their own hooks and
+   * interceptors do **not** run and no change-feed tombstone is written for
+   * them, exactly as a DB-level `ON DELETE CASCADE` behaves. Only this object
+   * runs the lifecycle above.
+   *
+   * Everything in step 3 runs inside a single transaction when the adapter
+   * supports one, so a failed cascade cannot leave the object deleted with its
+   * junction rows intact.
    *
    * Prefer `collection.delete(id)` from application code — it loads the
    * object first (returning `false` when not found) before calling this method.
    *
    * @returns Promise that resolves when deletion is complete
+   * @throws {DatabaseError} When a referencing column declares
+   *   `onDelete: 'RESTRICT'` and rows still point at this object
    *
    * @example
    * ```typescript
    * const product = await products.get('product-uuid');
    * if (product) await product.delete();
    * ```
+   *
+   * @see {@link foreignKey} for declaring `onDelete` on the referencing side
    */
   public async delete(): Promise<void> {
     // Execute beforeDelete interceptors (e.g., tenant validation)
@@ -2733,14 +2765,29 @@ export class SmrtObject extends SmrtClass {
     await this.runHook('beforeDelete');
 
     await this.verifyStorageReady();
-    await this.db.delete(this.tableName, { id: this.id });
+
+    const { affectedTables } = await runCascadeDelete(
+      this.db,
+      ObjectRegistry,
+      {
+        className: this.constructor.name,
+        tableName: this.tableName,
+        id: this.id,
+      },
+      (db) => db.delete(this.tableName, { id: this.id }).then(() => undefined),
+    );
 
     // The backing row is gone — a later save() should go through the
     // natural-key insert path again rather than targeting a deleted id.
     this._persisted = false;
 
-    // Bust cached collection reads for this table (issue #1498).
+    // Bust cached collection reads for this table (issue #1498) and for every
+    // table the cascade touched — a stale junction read is as wrong as a stale
+    // read of this object.
     this.invalidateCollectionReadCache();
+    for (const table of affectedTables) {
+      this.invalidateCollectionReadCache(table);
+    }
 
     await this.runHook('afterDelete');
 
@@ -2759,17 +2806,17 @@ export class SmrtObject extends SmrtClass {
    * capability, fire-and-forget. Cache maintenance must never fail the
    * write that triggered it.
    */
-  private invalidateCollectionReadCache(): void {
+  private invalidateCollectionReadCache(tableName = this.tableName): void {
     try {
       const dbKey = resolveDbCacheKey(this.db);
-      invalidateCollectionCache(dbKey, this.tableName);
+      invalidateCollectionCache(dbKey, tableName);
 
-      if (this.shouldBroadcastCacheInvalidation(dbKey)) {
-        void broadcastCacheInvalidation(this.db, this.tableName);
+      if (this.shouldBroadcastCacheInvalidation(dbKey, tableName)) {
+        void broadcastCacheInvalidation(this.db, tableName);
       }
     } catch (error) {
       logger.warn('Failed to invalidate collection read cache after write', {
-        table: this.tableName,
+        table: tableName,
         error: error instanceof Error ? error.message : error,
       });
     }
@@ -2785,10 +2832,22 @@ export class SmrtObject extends SmrtClass {
    * 3. Any other STI hierarchy member sharing the table resolves to a
    *    `crossProcess` config — a child that opted out with `cache: false`
    *    still mutates the shared table its base/siblings are caching.
+   *
+   * Rules 2 and 3 read *this* class's configuration, so they only apply to
+   * this object's own table. A cascade-affected table (#2371) is another
+   * class's, and reaches rule 1 only — which is the correct test for it: the
+   * broadcast exists to serve readers that registered cross-process interest.
    */
-  private shouldBroadcastCacheInvalidation(dbKey: string): boolean {
-    if (hasCrossProcessCacheInterest(dbKey, this.tableName)) {
+  private shouldBroadcastCacheInvalidation(
+    dbKey: string,
+    tableName = this.tableName,
+  ): boolean {
+    if (hasCrossProcessCacheInterest(dbKey, tableName)) {
       return true;
+    }
+
+    if (tableName !== this.tableName) {
+      return false;
     }
 
     const qualifiedName = this.getResolvedQualifiedName();

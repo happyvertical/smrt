@@ -175,6 +175,27 @@ export interface RelationshipFieldOptions extends FieldOptions {
   through?: string;
   /** Relationship type */
   type?: 'foreignKey' | 'crossPackageRef' | 'oneToMany' | 'manyToMany';
+  /**
+   * What happens to this row when the referenced object is deleted (#2371).
+   *
+   * SMRT emits no DB-level `FOREIGN KEY` constraints, so this is enforced by
+   * `SmrtObject.delete()` in the application layer rather than by the engine:
+   *
+   * - `'CASCADE'` — this row is deleted with the target.
+   * - `'SET NULL'` — this column is set to `NULL`. The field must be nullable;
+   *   declaring it on a `required` field throws `ConfigurationError`.
+   * - `'RESTRICT'` — deleting the target throws `DatabaseError` while any row
+   *   still points at it.
+   *
+   * When omitted, a column that is part of this class's `conflictColumns`
+   * (junction and association rows, which are *identified* by the reference)
+   * defaults to `CASCADE`; every other column is left untouched on delete.
+   *
+   * Cascaded rows are removed set-based: their `beforeDelete`/`afterDelete`
+   * hooks and interceptors do not run and no change-feed entry is written, the
+   * same as a database-level `ON DELETE CASCADE`.
+   */
+  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
 }
 
 /**
@@ -357,6 +378,23 @@ export function field(
  * For cross-package foreign keys, use a plain `string` property instead to avoid
  * circular dependencies between packages.
  *
+ * **No DDL constraint is emitted.** SMRT generates no `FOREIGN KEY` clause on
+ * any engine — the relationship is enforced by the framework, not the database
+ * (#2371). What that buys you is `loadRelated()`, eager `include:` loading, and
+ * the `onDelete` behaviour applied by `SmrtObject.delete()`:
+ *
+ * ```typescript
+ * @foreignKey(Order, { onDelete: 'CASCADE' })   // deleted with the order
+ * orderId: string = '';
+ *
+ * @foreignKey(Customer, { onDelete: 'RESTRICT' }) // blocks the customer delete
+ * customerId: string = '';
+ * ```
+ *
+ * Without an `onDelete`, a column that is part of this class's
+ * `conflictColumns` defaults to `CASCADE` (this is what cleans up junction
+ * rows); any other column is left untouched when the target is deleted.
+ *
  * @param relatedClass - The target class constructor, its name as a string, or a
  *   `() => Target` thunk. A thunk is **invoked at decoration time**, so its
  *   target must already be initialized: a class from an already-evaluated module
@@ -428,10 +466,12 @@ export function foreignKey(
  *
  * Use this for relationships that point to a `SmrtObject` in a *different* package
  * (e.g. `Customer.profileId` pointing at `@happyvertical/smrt-profiles:Profile`).
- * Unlike `@foreignKey()`, this decorator does **not** emit a DDL `FOREIGN KEY`
- * constraint — cross-package classes are not visible at schema-generation time and
- * adding a constraint would force a circular package dependency. The decorated
- * property remains a plain `TEXT` column at the database level.
+ *
+ * Like `@foreignKey()`, this emits **no** DDL `FOREIGN KEY` constraint — SMRT
+ * does not emit them on any engine (#2371). The decorated property is a
+ * `UUID` column on PostgreSQL/DuckDB and `TEXT` on SQLite, matching the target's
+ * id type; pass `{ idType: 'text' }` when the target declares
+ * `@smrt({ idType: 'text' })`.
  *
  * What you get over a plain string field:
  * - The relationship is registered with the `ObjectRegistry`, so `loadRelated()`
@@ -439,6 +479,8 @@ export function foreignKey(
  *   manifest is loaded.
  * - Optional save-time validation (`validate: true`) confirms the referenced
  *   object exists, catching typos and stale IDs before they hit the database.
+ * - `onDelete` is honoured by `SmrtObject.delete()` when the target package's
+ *   manifest is loaded in the same runtime.
  *
  * The `qualifiedName` is a fully-qualified class identifier in the form
  * `@package/scope:ClassName` — for example `@happyvertical/smrt-profiles:Profile`.
@@ -460,7 +502,7 @@ export function foreignKey(
  * }
  * ```
  *
- * @see {@link foreignKey} for same-package relationships (emits FK constraint)
+ * @see {@link foreignKey} for same-package relationships
  * @see SmrtObject.loadRelated for runtime resolution
  */
 export function crossPackageRef(
@@ -505,6 +547,17 @@ export function crossPackageRef(
  * back to this class, pass `{ foreignKey: '<inverseFieldName>' }` so both
  * `loadRelatedMany` and the generated accessor resolve the intended inverse
  * side. Without it the first matching foreign key is used.
+ *
+ * **Delete behaviour is declared on the child, not here.** `@oneToMany` is a
+ * transient read-side accessor; to have children removed with their parent,
+ * put `onDelete: 'CASCADE'` on the inverse `@foreignKey` (#2371):
+ *
+ * ```typescript
+ * class OrderItem extends SmrtObject {
+ *   @foreignKey(Order, { onDelete: 'CASCADE' })
+ *   orderId: string = '';
+ * }
+ * ```
  *
  * @param relatedClass - The class constructor of the child/related objects
  * @param options - Optional relationship options. `foreignKey` selects the

@@ -263,3 +263,54 @@ Four properties of that module are load-bearing; keep them if you touch it:
 All the drifted columns of one table share a single rebuild: the first change
 carries the plan and the rest become `no change needed` comments that the CLI
 classifies as no-ops.
+
+## Referential integrity lives in `delete()`, not in the DDL
+
+No schema path emits a `FOREIGN KEY` clause on any engine — grep `schema/ddl/*`,
+`schema-manager.ts` and `differ.ts` for `REFERENCES` and you get nothing. That is
+a deliberate position, not an oversight: emitting constraints changes delete
+semantics for every consumer, requires topological table ordering in both
+migrate paths (neither orders today), and needs a plan for the orphans already in
+production databases. Emitting them is tracked separately.
+
+What `@foreignKey(..., { onDelete })` therefore means is *application* behaviour,
+applied by `SmrtObject.delete()` through `src/cascade.ts` (#2371):
+
+| Reference | Default when `onDelete` is absent |
+|---|---|
+| Column is part of the referencing class's `conflictColumns` | `CASCADE` |
+| Polymorphic `(metaType, metaId)` association row | `CASCADE` |
+| Anything else | `NO ACTION` — the row is left alone |
+
+The natural-key rule is what cleans junction rows up without any per-package
+annotation: a junction declares
+`@smrt({ conflictColumns: ['content_id', 'asset_id', 'relationship'] })`, so the
+row is *identified* by the content and cannot outlive it. An ordinary child
+(`Order.customerId`) is keyed by `(slug, context)` and keeps its pre-#2371
+behaviour unless it opts in explicitly.
+
+Four properties to keep if you touch that module:
+
+- **The plan is registry-derived and rebuilt per delete.** Registration is
+  incremental — manifests load lazily and tests register classes between cases —
+  so a cached plan would silently skip a table that registered later. Cache it
+  only behind an invalidation hook that every registration path calls.
+- **Cascaded rows are removed set-based.** Their `beforeDelete`/`afterDelete`
+  hooks and interceptors do not run and no change-feed tombstone is written for
+  them, which is exactly what a DB-level `ON DELETE CASCADE` does. Only the
+  object `delete()` was called on runs the lifecycle. Do not "improve" this into
+  a per-row model delete without deciding what that means for sync consumers.
+- **Everything is one transaction where the adapter has one**, including the
+  object's own `DELETE`. The `RESTRICT` checks run first, before any mutation,
+  so a refusal costs nothing; the transaction is what makes a refusal *deeper*
+  in the graph safe.
+- **`_smrt_embeddings` and `_smrt_contexts` are matched by id alone.** Their
+  class columns store the *runtime* constructor name, which for an STI hierarchy
+  is the concrete subclass rather than the class the cascade planned from. A
+  failure to clean them is logged, never raised — an application database may
+  predate the table, and losing derived rows must not fail a valid delete.
+
+`_smrt_changes`, `_smrt_ai_usage`, `_smrt_signals` and the dispatch tables are
+deliberately **not** cascaded. They are append-only logs; the change feed in
+particular receives the delete's own tombstone, so cascading it would erase the
+record that tells sync clients the row is gone.
