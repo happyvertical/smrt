@@ -126,9 +126,8 @@ describe.skipIf(!pgUrl)('#2365 read scoping on PostgreSQL (optional)', () => {
     // created from the class's PostgreSQL DDL directly (the issue-2070
     // pattern); getTestDatabase only installs the portable system tables.
     await db.query(`DROP TABLE IF EXISTS "${TABLE}"`);
-    const registration = ObjectRegistry.getClassByConstructor(
-      Issue2365PgReadDoc,
-    );
+    const registration =
+      ObjectRegistry.getClassByConstructor(Issue2365PgReadDoc);
     const className =
       registration?.qualifiedName ||
       registration?.name ||
