@@ -312,12 +312,78 @@ describe('collectManifestTables + renderCollectedManifestTable', () => {
       );
     }
 
+    // An unquoted hand-authored spelling of the same constraint is not
+    // duplicated either.
+    const unquoted = collectManifestTables([
+      {
+        schema: {
+          ...legacy,
+          ddl: legacy.ddl.replace('UNIQUE("tenant_id")', 'UNIQUE( tenant_id )'),
+        },
+        source: 'x:LegacyKey',
+      },
+    ]).get('legacy_keys');
+    if (!unquoted) throw new Error('missing');
+    const duck = renderCollectedManifestTable(unquoted, 'duckdb');
+    expect(
+      duck.createTable.match(/UNIQUE\(\s*"?tenant_id"?\s*\)/g),
+    ).toHaveLength(1);
+
     // SQLite/PostgreSQL keep them as separate unique indexes, string untouched.
     const sqlite = renderCollectedManifestTable(table, 'sqlite');
     expect(sqlite.createTable).toBe(legacy.ddl);
     expect(sqlite.indexes[0]).toBe(
       'CREATE UNIQUE INDEX IF NOT EXISTS "legacy_keys_slug_context_idx" ON "legacy_keys" ("slug", "context");',
     );
+  });
+
+  it('inlines UNIQUE for a mixed table (structured base + column-less subclass) on DuckDB/JSON', () => {
+    const base = {
+      tableName: 'mixed_keys',
+      columns: {
+        id: { type: 'UUID', primaryKey: true, notNull: true },
+        slug: { type: 'TEXT', notNull: true },
+        context: { type: 'TEXT', notNull: true, default: '' },
+      },
+      indexes: [
+        {
+          name: 'mixed_keys_slug_context_idx',
+          columns: ['slug', 'context'],
+          unique: true,
+        },
+      ],
+    };
+    const child = {
+      tableName: 'mixed_keys',
+      ddl: 'CREATE TABLE IF NOT EXISTS "mixed_keys" ("id" TEXT PRIMARY KEY NOT NULL, "external_ref" TEXT);',
+      indexes: [
+        {
+          name: 'mixed_keys_external_ref_idx',
+          columns: ['external_ref'],
+          unique: true,
+        },
+      ],
+    };
+    const table = collectManifestTables([
+      { schema: base, source: 'a:Base' },
+      { schema: child, source: 'b:Child' },
+    ]).get('mixed_keys');
+    if (!table) throw new Error('missing');
+    expect(table.structured).toBe(false);
+
+    for (const engine of ['duckdb', 'json'] as const) {
+      const rendered = renderCollectedManifestTable(table, engine);
+      // Structured part via the strategy (inline UNIQUE for its own index)...
+      expect(rendered.createTable).toContain('UNIQUE("slug", "context")');
+      // ...legacy column merged in, and the legacy contributor's unique index
+      // inlined too, since the strategy skips it in generateIndexes.
+      expect(rendered.createTable).toContain('"external_ref" TEXT');
+      expect(rendered.createTable).toContain('UNIQUE("external_ref")');
+      expect(
+        rendered.createTable.match(/UNIQUE\("slug", "context"\)/g),
+      ).toHaveLength(1);
+      expect(rendered.indexes).toEqual([]);
+    }
   });
 
   it('skips objects with neither columns nor ddl', () => {

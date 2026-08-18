@@ -212,6 +212,13 @@ export function collectManifestTables(
   entries: Iterable<{ schema: ManifestSchemaLike; source: string }>,
 ): Map<string, CollectedManifestTable> {
   const tables = new Map<string, CollectedManifestTable>();
+  // Structured contributors whose cached ddl declares table constraints. Only
+  // a fully structured table drops them (a mixed table re-merges the string),
+  // so the warning is decided after collection.
+  const constraintCarriers = new Map<
+    string,
+    Array<{ source: string; constraints: string[] }>
+  >();
 
   for (const { schema, source } of entries) {
     if (!schema?.tableName) continue;
@@ -221,7 +228,12 @@ export function collectManifestTables(
     if (!hasColumns && !ddl.trim()) continue;
 
     if (hasColumns && ddl.trim()) {
-      warnAboutDroppedTableConstraints(schema.tableName, source, ddl);
+      const constraints = cachedDdlTableConstraints(ddl);
+      if (constraints.length > 0) {
+        const carriers = constraintCarriers.get(schema.tableName) ?? [];
+        carriers.push({ source, constraints });
+        constraintCarriers.set(schema.tableName, carriers);
+      }
     }
 
     const existing = tables.get(schema.tableName);
@@ -244,6 +256,13 @@ export function collectManifestTables(
         : existing.legacyDdl
       : ddl;
     existing.sources.push(source);
+  }
+
+  for (const [tableName, carriers] of constraintCarriers) {
+    if (!tables.get(tableName)?.structured) continue;
+    for (const { source, constraints } of carriers) {
+      warnAboutDroppedTableConstraints(tableName, source, constraints);
+    }
   }
 
   return tables;
@@ -299,10 +318,19 @@ export function renderCollectedManifestTable(
         (index) =>
           `UNIQUE(${index.columns.map((column) => quoteIdentifier(column)).join(', ')})`,
       );
-    if (uniqueElements.length > 0) {
+    // Hand-authored strings may spell the same constraint without quotes
+    // (`UNIQUE(tenant_id)`); compare quote- and whitespace-insensitively so
+    // the synthesized element is not added beside it.
+    const declared = new Set(
+      cachedDdlTableConstraints(createTable).map(normalizeTableElement),
+    );
+    const missing = uniqueElements.filter(
+      (element) => !declared.has(normalizeTableElement(element)),
+    );
+    if (missing.length > 0) {
       createTable = mergeManifestDDL(
         createTable,
-        `CREATE TABLE ${quoteIdentifier(table.tableName)} (\n  ${uniqueElements.join(',\n  ')}\n)`,
+        `CREATE TABLE ${quoteIdentifier(table.tableName)} (\n  ${missing.join(',\n  ')}\n)`,
       );
     }
   }
@@ -356,20 +384,28 @@ export function cachedDdlTableConstraints(ddl: string): string[] {
   return parseDefinitionsFromDDL(ddl).tableElements;
 }
 
+/** Quote/whitespace/case-insensitive key for a table constraint element. */
+function normalizeTableElement(element: string): string {
+  return element.replace(/"/g, '').replace(/\s+/g, '').toLowerCase();
+}
+
+const warnedDroppedConstraints = new Set<string>();
+
 /**
- * Warn once per table+source when a structured contributor's cached `ddl`
- * declares table constraints that the structured render cannot carry. The
- * structured schema is authoritative: a constraint that lives only in the
- * string never reaches `db:migrate` either, so rendering it here would
+ * Warn once per process per table+source when a structured contributor's
+ * cached `ddl` declares table constraints that the structured render cannot
+ * carry. The structured schema is authoritative: a constraint that lives only
+ * in the string never reaches `db:migrate` either, so rendering it here would
  * recreate the test/production drift #2358 removes.
  */
 function warnAboutDroppedTableConstraints(
   tableName: string,
   source: string,
-  ddl: string,
+  constraints: string[],
 ): void {
-  const constraints = cachedDdlTableConstraints(ddl);
-  if (constraints.length === 0) return;
+  const key = `${tableName}\0${source}`;
+  if (warnedDroppedConstraints.has(key)) return;
+  warnedDroppedConstraints.add(key);
   logger.warn(
     `[manifest-schema] ${source}: cached ddl for table "${tableName}" declares ` +
       `${constraints.length} table constraint(s) that structured columns cannot ` +
