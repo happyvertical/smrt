@@ -350,3 +350,13 @@ it, and PostgreSQL disambiguates its own truncations by appending a counter
 rather than collapsing them, so there is no silent-collision hazard there —
 only a name shorter than you would guess. `smrt db:migrate` never matches on it
 either (`isProtectedDbIndexName` skips `_key`/`_pkey`).
+
+### 16. Relationship targets resolve to a class name on both paths
+
+`@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
+`() => Target` thunk. The decorator invokes the thunk and throws when the target
+cannot be resolved (never `related: ''`); the scanner unwraps the same thunk
+from raw source (never `related: '() => Target'`). An unresolved target silently
+costs the relationship edge, `loadRelated()`, and the FK-derived index (#2379).
+A thunk resolves at decoration time, so a target declared later in the same
+module is still in its temporal dead zone — use the string form there.

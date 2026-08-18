@@ -285,10 +285,12 @@ export function findManifestObjectByName(
  * Normalize a relationship field's `related` value to a resolvable class name.
  *
  * Thunk forward-ref decorators — `@foreignKey(() => Scene)`, used heavily in
- * video/voice for models that reference a class declared later — serialize as
- * the RAW arrow-function source string `"() => Scene"` in the manifest, which
- * neither `className` nor `qualifiedName` matches. Extract the target class
- * name from the thunk so the edge resolves. Plain (`"Scene"`) and qualified
+ * video/voice for models that reference a class declared later — used to
+ * serialize as the RAW arrow-function source string `"() => Scene"` in the
+ * manifest, which neither `className` nor `qualifiedName` matches. The scanner
+ * now unwraps the thunk itself (#2379), so this only has to cover manifests
+ * generated before that fix. Extract the target class name from the thunk so
+ * the edge resolves. Plain (`"Scene"`) and qualified
  * (`"@happyvertical/smrt-assets:Asset"`) forms contain no `=>` and pass through
  * untouched — the qualified `:` separator is preserved.
  *
