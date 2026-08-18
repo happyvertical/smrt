@@ -1,5 +1,6 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import { runCascadeDelete } from './cascade';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -2815,25 +2816,64 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Deletes this object from the database.
+   * Deletes this object from the database, cascading to the rows that
+   * reference it.
    *
    * Runs the full lifecycle in order:
    * 1. `beforeDelete` interceptors (e.g. tenant validation)
    * 2. `beforeDelete` lifecycle hook (defined in `@smrt({ hooks })`)
-   * 3. Database row deletion
+   * 3. Referential cleanup and the row deletion (one transaction when there
+   *    is anything to clean up — see below)
    * 4. `afterDelete` lifecycle hook
    * 5. `afterDelete` interceptors
+   *
+   * ## Referential cleanup (#2371)
+   *
+   * SMRT emits no DB-level `FOREIGN KEY` constraints, so step 3 enforces
+   * referential integrity in the application layer instead:
+   *
+   * - `_smrt_embeddings` and `_smrt_contexts` rows owned by this object are
+   *   removed, so a deleted object can no longer win a `semanticSearch` slot
+   *   or resurrect stale `recall()` values.
+   * - Polymorphic association rows whose `(metaType, metaId)` points here are
+   *   removed.
+   * - `@foreignKey` / `@crossPackageRef` columns pointing at this class are
+   *   resolved according to their declared `onDelete` — `'CASCADE'`,
+   *   `'SET NULL'` or `'RESTRICT'`. Without a declaration, a column that is
+   *   part of the referencing class's `conflictColumns` (junction and
+   *   association rows) defaults to `CASCADE`; every other column is left
+   *   untouched, as before.
+   *
+   * Cascaded rows are removed with set-based statements: their own hooks and
+   * interceptors do **not** run and no change-feed tombstone is written for
+   * them, exactly as a DB-level `ON DELETE CASCADE` behaves. Only this object
+   * runs the lifecycle above.
+   *
+   * When anything references this class, step 3 runs inside a single
+   * transaction when the adapter supports one, so a failed cascade cannot
+   * leave the object deleted with its junction rows intact. When nothing
+   * references it, there is nothing to keep consistent and the transaction
+   * is skipped so an ordinary delete costs no extra round trip — but that
+   * skip requires no registered polymorphic association class anywhere in
+   * the process, not just no typed reference to this class (see
+   * `cascade.ts`'s module doc: a `metaType` column can point at any class at
+   * runtime, so a polymorphic association class is always plausibly
+   * relevant).
    *
    * Prefer `collection.delete(id)` from application code — it loads the
    * object first (returning `false` when not found) before calling this method.
    *
    * @returns Promise that resolves when deletion is complete
+   * @throws {DatabaseError} When a referencing column declares
+   *   `onDelete: 'RESTRICT'` and rows still point at this object
    *
    * @example
    * ```typescript
    * const product = await products.get('product-uuid');
    * if (product) await product.delete();
    * ```
+   *
+   * @see {@link foreignKey} for declaring `onDelete` on the referencing side
    */
   public async delete(): Promise<void> {
     // Execute beforeDelete interceptors (e.g., tenant validation)
@@ -2846,14 +2886,39 @@ export class SmrtObject extends SmrtClass {
     await this.runHook('beforeDelete');
 
     await this.verifyStorageReady();
-    await this.db.delete(this.tableName, { id: this.id });
+
+    const { affectedTables, affectedTableClasses } = await runCascadeDelete(
+      this.db,
+      ObjectRegistry,
+      {
+        // R5-canon: the qualified name, not the bare constructor name —
+        // two packages can register a same-named class, and a simple-name
+        // lookup in ObjectRegistry.getClass()/findClass() can silently
+        // resolve the cascade plan against the wrong package's class,
+        // leaving its @crossPackageRef references and polymorphic
+        // meta_type rows uncleaned (the orphaned-reference bug #2371
+        // exists to close, moved to the cross-package case).
+        className: this.getResolvedQualifiedName(),
+        tableName: this.tableName,
+        id: this.id,
+      },
+      (db) => db.delete(this.tableName, { id: this.id }).then(() => undefined),
+    );
 
     // The backing row is gone — a later save() should go through the
     // natural-key insert path again rather than targeting a deleted id.
     this._persisted = false;
 
-    // Bust cached collection reads for this table (issue #1498).
+    // Bust cached collection reads for this table (issue #1498) and for every
+    // table the cascade touched — a stale junction read is as wrong as a stale
+    // read of this object.
     this.invalidateCollectionReadCache();
+    for (const table of affectedTables) {
+      this.invalidateCollectionReadCache(
+        table,
+        affectedTableClasses.get(table),
+      );
+    }
 
     await this.runHook('afterDelete');
 
@@ -2871,18 +2936,33 @@ export class SmrtObject extends SmrtClass {
    * broadcast to peer replicas over the database adapter's notification
    * capability, fire-and-forget. Cache maintenance must never fail the
    * write that triggered it.
+   *
+   * @param tableName - Table to invalidate; defaults to this object's own.
+   * @param ownerQualifiedClassName - Qualified name of the class that owns
+   *   `tableName`, when it differs from this object's own class (a
+   *   cascade-affected table, #2371) — lets the broadcast decision read
+   *   *that* class's `@smrt({ cache })` config instead of only this one's.
    */
-  private invalidateCollectionReadCache(): void {
+  private invalidateCollectionReadCache(
+    tableName = this.tableName,
+    ownerQualifiedClassName?: string,
+  ): void {
     try {
       const dbKey = resolveDbCacheKey(this.db);
-      invalidateCollectionCache(dbKey, this.tableName);
+      invalidateCollectionCache(dbKey, tableName);
 
-      if (this.shouldBroadcastCacheInvalidation(dbKey)) {
-        void broadcastCacheInvalidation(this.db, this.tableName);
+      if (
+        this.shouldBroadcastCacheInvalidation(
+          dbKey,
+          tableName,
+          ownerQualifiedClassName,
+        )
+      ) {
+        void broadcastCacheInvalidation(this.db, tableName);
       }
     } catch (error) {
       logger.warn('Failed to invalidate collection read cache after write', {
-        table: this.tableName,
+        table: tableName,
         error: error instanceof Error ? error.message : error,
       });
     }
@@ -2894,17 +2974,40 @@ export class SmrtObject extends SmrtClass {
    *
    * 1. A per-call `crossProcess` cached read in this process registered
    *    interest in the table — broadcast even without model-level config.
-   * 2. This class's resolved `@smrt({ cache })` config sets `crossProcess`.
+   * 2. The owning class's resolved `@smrt({ cache })` config sets
+   *    `crossProcess`. For this object's own table that class is `this`;
+   *    for a cascade-affected table (#2371) it is whatever class the
+   *    cascade plan attributed the table to, passed in as
+   *    `ownerQualifiedClassName` — a different class's table needs *that*
+   *    class's config checked, not this one's.
    * 3. Any other STI hierarchy member sharing the table resolves to a
    *    `crossProcess` config — a child that opted out with `cache: false`
    *    still mutates the shared table its base/siblings are caching.
+   *
+   * @param ownerQualifiedClassName - Qualified class name to check rules 2
+   *   and 3 against. Defaults to this object's own resolved qualified name
+   *   when `tableName` is this object's own table; when omitted for a
+   *   foreign table (the owning class could not be resolved), rules 2/3 are
+   *   skipped and only rule 1 applies.
    */
-  private shouldBroadcastCacheInvalidation(dbKey: string): boolean {
-    if (hasCrossProcessCacheInterest(dbKey, this.tableName)) {
+  private shouldBroadcastCacheInvalidation(
+    dbKey: string,
+    tableName = this.tableName,
+    ownerQualifiedClassName?: string,
+  ): boolean {
+    if (hasCrossProcessCacheInterest(dbKey, tableName)) {
       return true;
     }
 
-    const qualifiedName = this.getResolvedQualifiedName();
+    const qualifiedName =
+      ownerQualifiedClassName ??
+      (tableName === this.tableName
+        ? this.getResolvedQualifiedName()
+        : undefined);
+    if (!qualifiedName) {
+      return false;
+    }
+
     if (
       ObjectRegistry.resolveCollectionCacheConfig(qualifiedName)?.crossProcess
     ) {

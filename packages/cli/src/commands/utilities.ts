@@ -456,9 +456,9 @@ export function assessDecoratorSupport(input: {
   const hasOxcDecorator =
     viteConfigContent !== null &&
     OXC_DECORATOR_BLOCK_RE.test(viteConfigContent);
-  const hasTsconfigDecorators =
-    tsconfigContent !== null &&
-    tsconfigContent.includes('experimentalDecorators');
+  const hasTsconfigDecorators = tsconfigContent?.includes(
+    'experimentalDecorators',
+  );
   const isVite8Plus = viteMajor !== null && viteMajor >= 8;
 
   if (hasOxcDecorator) {
