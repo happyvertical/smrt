@@ -103,15 +103,20 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
     };
 
     // A transaction-scoped advisory lock only spans both statements when they
-    // run on one transaction. Callers today pass a transaction-bound handle
-    // (the OIDC provisioning coordinator); on a pooled PostgreSQL root handle
-    // (`beginTransaction` present) each query would take its own connection,
-    // so open a transaction for the pair here. Embedded engines run directly:
-    // a nested root transaction would deadlock their single-writer adapters,
-    // and the coordinator's in-process lock already serializes them.
+    // run on one transaction. On PostgreSQL, any handle that is NOT already
+    // transaction-bound may route each query to a different pooled connection
+    // — a root adapter (`beginTransaction` present) and equally a view
+    // wrapper (only `transaction()` present) — so open a transaction for the
+    // pair on every such handle. A transaction-bound handle (fingerprint: it
+    // carries `commit`) already keeps both statements on one client and must
+    // not nest. Embedded engines run directly: a nested root transaction
+    // would deadlock their single-writer adapters, and the provisioning
+    // coordinator's in-process lock already serializes them.
+    const isTransactionBound =
+      typeof (this.db as { commit?: unknown }).commit === 'function';
     if (
       isPostgresUrl(this.db.url) &&
-      typeof this.db.beginTransaction === 'function' &&
+      !isTransactionBound &&
       typeof this.db.transaction === 'function'
     ) {
       await this.db.transaction((tx) => insertIfAbsent(tx));
