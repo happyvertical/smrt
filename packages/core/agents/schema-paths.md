@@ -264,7 +264,70 @@ All the drifted columns of one table share a single rebuild: the first change
 carries the plan and the rest become `no change needed` comments that the CLI
 classifies as no-ops.
 
-### 16. The merged table shape is registration-order independent (#2372)
+## What the differ compares (#2369)
+
+`SchemaComparer` (`src/migrations/differ.ts`) compares each manifest column's
+type, then — unless the type itself is drifting — its nullability and default,
+and always reports what it will not touch:
+
+- **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on
+  PostgreSQL/DuckDB. `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
+  backfill of the manifest default; without a default the live data is probed
+  and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
+  of emitting an ALTER that would abort the atomic batch.
+- **Relaxing** (`DROP NOT NULL`, `DROP DEFAULT`) is a report-only advisory until
+  the caller passes `relaxColumns` (`db:migrate --relax-columns`). The manifest
+  can be under-specified (#2372 registration-order weakness), so a live column
+  that is stricter than the manifest is never weakened silently.
+- **Orphans** — DB columns absent from the manifest, DB tables no manifest
+  declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
+  indexes — are always reported. A NOT NULL orphan without a default is a
+  `warning` advisory (every ORM insert fails on it); `includeDroppedColumns`
+  (`--drop-columns`) drops it, `relaxColumns` relaxes it. Advisory-only changes
+  carry no SQL, never reach the tracker, and do not fail `db:migrate`.
+- **ADD COLUMN** is planned per engine: DuckDB rejects every inline constraint
+  (add with `DEFAULT`, then `SET NOT NULL`, `CREATE UNIQUE INDEX`); SQLite
+  rejects inline `UNIQUE` (separate `CREATE UNIQUE INDEX <table>_<col>_key`, the
+  PostgreSQL constraint-index name, so the orphan sweep leaves it alone) and
+  `NOT NULL` without a default on a populated table; PostgreSQL keeps constraints
+  inline. DuckDB has no `ADD CONSTRAINT`, so the separate index is the only
+  way to add uniqueness there; the bundled DuckDB 1.4.x resolves
+  `ON CONFLICT (col)` through that index (the old #12684 limitation the DuckDB
+  strategy's `requiresInlineUnique()` note describes no longer reproduces —
+  the #2369 DuckDB test pins the upsert), older DuckDB builds may not. A required column with no default is enforced only on an empty table;
+  on a populated one it is added nullable and the `NOT NULL` is reported as a
+  manual follow-up on every engine.
+- **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual
+  (comment SQL → `db:migrate` exit 1). The #2370 rebuild (rule 15) consumes
+  only `type_upgrade` placeholders today; extending it to rewrite constraints
+  would lift this.
+- Defaults compare through `canonicalizeDefault()`, which folds engine
+  renderings (`'x'::text`, `CAST('t' AS BOOLEAN)`, `CURRENT_TIMESTAMP` vs
+  `now()`) by manifest type; an unclassifiable rendering skips the comparison
+  rather than risking a false positive that would churn every run. The
+  round-trip test (create from each DDL strategy → compare → zero changes) in
+  `src/migrations/__tests__/issue-2369-*.test.ts` guards this.
+
+### 16. `schema.ddl` is a preview, not the table
+
+`SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
+CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no
+indexes, no triggers, abstract `REAL`/`JSON`/`UUID`/`TIMESTAMP`. It is kept for
+backward compatibility only. Everything that needs an executable table renders
+`columns` + `indexes` through `getDDLStrategy(engine)` — `db:migrate`
+(`migrations/orchestrate.ts`), `MigrationGenerator` (default
+`materializeStructuredSchema: true`; `false` is a deprecated opt-out),
+`SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
+last two via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is merged in only for a
+table whose contributors expose no structured columns (hand-authored
+manifests); table constraints that exist only in the string are dropped with a
+warning, as `db:migrate` drops them. Do not add a new consumer of the
+string, and do not write a private CREATE INDEX renderer — the retired ones
+dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
+`PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
+
+### 17. The merged table shape is registration-order independent (#2372)
 
 `getAllSchemas()` and `getAllSchemasAsDefinitions()` fold every class that
 shares a physical table — the whole STI hierarchy — into one shape. Both route

@@ -129,7 +129,11 @@ must name its target engine, for example
 `ObjectRegistry.getSchemaDDL('Event', 'postgres')` or
 `ObjectRegistry.getAllSchemas('postgres')`. The one-argument registry forms are
 retained for compatibility with code that inspects cached manifests; their
-engine-neutral `ddl` must not be executed on PostgreSQL.
+engine-neutral `ddl` must not be executed on PostgreSQL. More generally, a
+manifest's `schema.ddl` is a CREATE TABLE preview with no indexes and abstract
+types; `db:migrate`, `MigrationGenerator`, `SchemaAggregator`, and
+`createIsolatedTestDbFromManifest` all render the structured `schema.columns`
+and `schema.indexes` through the engine DDL strategy instead (#2358).
 
 Schemas created before SMRT adopted `TIMESTAMPTZ` may contain PostgreSQL
 `TIMESTAMP` columns. By default SMRT reports these as manual drift and does not

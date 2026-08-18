@@ -72,6 +72,17 @@ same `retry` policy inline in their own `vitest.config.ts`.
 
 **DB adapter auto-detection**: `DATABASE_URL` set → PostgreSQL; otherwise → SQLite temp files.
 
+`createIsolatedTestDbFromManifest()` renders tables **and indexes** from the
+manifest's structured `schema.columns` / `schema.indexes` through the engine
+DDL strategy (`collectManifestTables` + `renderCollectedManifestTable` from
+`@happyvertical/smrt-core/schema/utils`) — the same renderer `db:migrate` uses,
+so partial `WHERE` predicates, JSON-path targets and per-engine types match a
+migrated database (#2358; parity asserted in
+`src/__tests__/manifest-schema-path-parity.test.ts`). The cached `schema.ddl`
+string is a CREATE TABLE preview and is merged in only for a table whose
+contributors expose no `columns` (hand-authored manifests). Do not add a
+private DDL/index renderer here; extend the core strategy instead.
+
 For local file-backed SQLite, identical schemas are prepared once per Vitest
 process and cloned from an immutable schema-only template for later databases.
 The cache key is the full generated DDL, concurrent first callers share one
