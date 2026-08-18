@@ -20,6 +20,7 @@
 import type { DatabaseProvider } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { shortenIdentifier } from '../../schema/index-utils.js';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { SchemaComparer } from '../differ.js';
 
@@ -594,6 +595,122 @@ describe('SchemaComparer index drift', () => {
       // The unrelated maintenance indexes are untouched.
       expect(byTypeAndName).not.toContain('drop_index:tenants_id_idx');
       expect(byTypeAndName).not.toContain('drop_index:tenants_meta_type_idx');
+    });
+  });
+
+  describe('63-byte identifier guard: existing long names migrate by name swap (#2374)', () => {
+    /**
+     * The 66-byte index that shipped before the guard. PostgreSQL accepted the
+     * CREATE and stored it under the first 63 bytes; `pg_indexes` — which is
+     * what the differ introspects — therefore reports the truncated name.
+     */
+    const LEGACY_NAME =
+      'content_contribution_revisions_contribution_id_revision_number_idx';
+    /** What the live database actually holds. */
+    const TRUNCATED_IN_DB = LEGACY_NAME.slice(0, 63);
+    /** What the generator emits now. */
+    const GUARDED_NAME = shortenIdentifier(LEGACY_NAME);
+
+    const revisionsSchema = (
+      indexes: SchemaDefinition['indexes'],
+    ): SchemaDefinition => ({
+      tableName: 'content_contribution_revisions',
+      ddl: '',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        contribution_id: { type: 'TEXT' },
+        revision_number: { type: 'INTEGER' },
+      },
+      indexes,
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    });
+
+    beforeEach(async () => {
+      await db.query(
+        'CREATE TABLE content_contribution_revisions (id TEXT PRIMARY KEY, contribution_id TEXT, revision_number INTEGER);',
+      );
+      // Reproduce what PostgreSQL left behind: the index exists, under the
+      // truncated name, with the right shape.
+      await db.query(
+        `CREATE UNIQUE INDEX "${TRUNCATED_IN_DB}" ON content_contribution_revisions(contribution_id, revision_number);`,
+      );
+    });
+
+    it('sanity: the legacy name overflowed and the guard produces a different, shorter one', () => {
+      expect(LEGACY_NAME.length).toBe(66);
+      expect(TRUNCATED_IN_DB).not.toBe(LEGACY_NAME);
+      expect(GUARDED_NAME.length).toBeLessThanOrEqual(63);
+      expect(GUARDED_NAME).not.toBe(TRUNCATED_IN_DB);
+    });
+
+    it('emits no change: the live index is claimed by signature, not by name', async () => {
+      const comparer = new SchemaComparer(db);
+      const diff = await comparer.compare({
+        content_contribution_revisions: revisionsSchema([
+          {
+            name: GUARDED_NAME,
+            columns: ['contribution_id', 'revision_number'],
+            unique: true,
+          },
+        ]),
+      });
+
+      // The whole point of the swap: an existing deployment does NOT rebuild
+      // the index. It keeps serving under the name PostgreSQL gave it, and the
+      // differ recognises it by column set + uniqueness.
+      expect(
+        diff.changes.filter(
+          (c) => c.type === 'add_index' || c.type === 'drop_index',
+        ),
+      ).toEqual([]);
+    });
+
+    it('does not drop the legacy-named index even with includeDroppedIndexes', async () => {
+      // The orphan sweep would otherwise see a DB index no manifest entry
+      // claims by name. The signature check has to protect it — dropping a
+      // UNIQUE index that backs an UPSERT conflict target mid-migration is the
+      // expensive failure.
+      const comparer = new SchemaComparer(db, { includeDroppedIndexes: true });
+      const diff = await comparer.compare({
+        content_contribution_revisions: revisionsSchema([
+          {
+            name: GUARDED_NAME,
+            columns: ['contribution_id', 'revision_number'],
+            unique: true,
+          },
+        ]),
+      });
+
+      expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+    });
+
+    it('creates both indexes when two guarded names share a 63-byte prefix', async () => {
+      // The bug the guard closes. Unshortened, these two names are identical
+      // for their first 63 bytes, so PostgreSQL stores one and the second
+      // `CREATE INDEX IF NOT EXISTS` silently no-ops — leaving the differ to
+      // emit `add_index` for it on every run, forever.
+      const table = 'content_contribution_revisions';
+      const first = shortenIdentifier(`${table}_contribution_id_number_a_idx`);
+      const second = shortenIdentifier(`${table}_contribution_id_number_b_idx`);
+      expect(first).not.toBe(second);
+
+      const comparer = new SchemaComparer(db);
+      const diff = await comparer.compare({
+        content_contribution_revisions: revisionsSchema([
+          { name: first, columns: ['contribution_id'] },
+          { name: second, columns: ['revision_number'] },
+        ]),
+      });
+
+      expect(
+        diff.changes
+          .filter((c) => c.type === 'add_index')
+          .map((c) => c.name)
+          .sort(),
+      ).toEqual([first, second].sort());
     });
   });
 });

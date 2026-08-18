@@ -297,3 +297,48 @@ because that index cannot order the default page. Declared indexes are appended
 before this helper for exactly that reason; anything that appends an index in
 future goes in the same slot, ahead of `ensureDefaultListOrderingIndex()` and
 `ensureReferenceColumnIndexes()`.
+
+### 15. Every generated identifier is length-guarded before it leaves a path (#2374)
+
+PostgreSQL truncates any identifier past 63 **bytes** and reports nothing;
+SQLite and DuckDB do not, so the entire test suite was blind to it. The 66-byte
+`content_contribution_revisions_contribution_id_revision_number_idx` shipped
+that way — only the differ's signature-equivalence check kept it from emitting
+`add_index` on every run. Two names agreeing for 63 bytes is the real hazard:
+`CREATE INDEX IF NOT EXISTS` no-ops against the wrong index, and the second
+index is never created.
+
+`schema/index-utils.ts` owns the guard, and it splits by who owns the name:
+
+- **Generated index, trigger and PL/pgSQL function names** →
+  `shortenIdentifier()`. Deterministic `<head>_<digest><suffix>`, digest taken
+  over the **full** original so a shared prefix still yields distinct names, and
+  a recognised suffix (`_idx`, `_unique_idx`, `_key`, `_pkey`) preserved.
+- **Table and column names** → `assertIdentifierFits()`, a hard error. The
+  runtime resolves tables and columns *by name*, so a schema-only rename would
+  point the data path at something that does not exist. The message names the
+  fix; there is no silent rewrite.
+- **Hand-declared `@smrt({ indexes: [{ name }] })`** → also a hard error, in
+  `validateDeclaredIndex()`. Renaming what a developer wrote is worse than
+  refusing it, and manifest generation is what `smrt dev:knowledge-check` runs.
+
+`enforceGeneratedIndexNames()` is the single call site per path, placed **after**
+`ensureReferenceColumnIndexes()` — nothing may lengthen a name after it. Doing
+the shortening at the end rather than at each `indexes.push()` is safe because
+the digest covers the whole original name, so entries distinct before shortening
+stay distinct after; the helper still throws if two ever collide. The migrate
+leg's own `withConflictIndex()` (`registry/schema-builder.ts`) and the
+PostgreSQL trigger-function name call `shortenIdentifier()` directly, because
+they build a name outside the generator.
+
+The digest is FNV-1a, not `node:crypto`: `index-utils.ts` is re-exported from
+`schema/utils.ts`, which exists to keep Node built-ins out of browser bundles.
+It only has to be *stable* — a shortened name that changed between releases
+would make every deployment drop and recreate the index — so the parity and
+unit tests pin the literal output rather than recomputing it.
+
+Existing databases migrate **by name swap, without a rebuild**: the live index
+still carries the name PostgreSQL truncated it to, the manifest now carries the
+shortened one, and the differ claims it by signature (columns + uniqueness +
+predicate), emitting nothing — including under `includeDroppedIndexes`. See
+`migrations/__tests__/index-drift.test.ts`.

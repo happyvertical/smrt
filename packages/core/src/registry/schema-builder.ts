@@ -8,6 +8,7 @@ import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
@@ -286,7 +287,10 @@ function withConflictIndex(
   return [
     ...indexes,
     {
-      name,
+      // Both branches above can exceed PostgreSQL's 63-byte identifier limit —
+      // the `_unique` collision suffix in particular only ever lengthens the
+      // name. Kept in step with SchemaGenerator's paths (#2374).
+      name: shortenIdentifier(name),
       columns: conflictColumns,
       unique: true,
     },

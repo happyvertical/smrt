@@ -50,6 +50,7 @@ import type {
 } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { SchemaGenerator } from './generator.js';
+import { identifierByteLength, MAX_IDENTIFIER_BYTES } from './index-utils.js';
 import type { IndexDefinition, SchemaDefinition } from './types.js';
 
 const PKG = '@happyvertical/smrt-parity';
@@ -193,6 +194,22 @@ function buildFixtureManifest(): SmartObjectManifest {
     ),
   );
 
+  // Long-named CTI whose generated conflict index overflows PostgreSQL's
+  // 63-byte identifier limit — the shape that shipped as the 66-byte
+  // `content_contribution_revisions_contribution_id_revision_number_idx`
+  // (#2374, C5). Only that one index overflows, so the rest of the table's
+  // index set doubles as a check that the guard leaves short names alone.
+  add(
+    objectDef(
+      'ParityContentContributionRevision',
+      {
+        contributionId: { type: 'text', required: true },
+        revisionNumber: { type: 'integer', default: 0 },
+      },
+      { conflictColumns: ['contribution_id', 'revision_number'] },
+    ),
+  );
+
   // STI hierarchy: base with a base-declared unique field and tenant scope,
   // two children — one with a same-package FK, an `@meta` field, a
   // descendant-only unique field and an indexed meta field; the sibling
@@ -232,6 +249,18 @@ function buildFixtureManifest(): SmartObjectManifest {
           related: '@happyvertical/smrt-profiles:Profile',
         },
       },
+      {},
+      'ParityEvent',
+    ),
+  );
+  // A third child whose class name is long enough that the descendant-scoped
+  // partial unique index blows the 63-byte limit (#2374). The NAME carries a
+  // short class token; the PREDICATE keeps the fully qualified discriminator,
+  // which is what `_meta_type` actually holds.
+  add(
+    objectDef(
+      'ParityStakeholderCoordinationWorkshop',
+      { bookingRef: { type: 'text', _meta: { unique: true } } },
       {},
       'ParityEvent',
     ),
@@ -413,9 +442,47 @@ describe('schema path parity (#2359)', () => {
     'parity_links',
     'parity_nodes',
     'parity_reports',
+    'parity_content_contribution_revisions',
     'parity_rooms',
     'parity_events',
   ];
+
+  it("keeps every generated identifier inside PostgreSQL's 63-byte limit on every path (#2374, C5)", () => {
+    for (const table of expectedTables) {
+      for (const [leg, schema] of [
+        ['manifest', manifestSchemas.get(table)],
+        ['registry', registrySchemas.get(table)],
+        ['migrate', migrateSchemas[table]],
+      ] as const) {
+        expect(schema).toBeDefined();
+        if (!schema) continue;
+        expect(
+          identifierByteLength(schema.tableName),
+          `${leg} table name ${schema.tableName}`,
+        ).toBeLessThanOrEqual(MAX_IDENTIFIER_BYTES);
+        for (const column of Object.keys(schema.columns)) {
+          expect(
+            identifierByteLength(column),
+            `${leg} ${table}.${column}`,
+          ).toBeLessThanOrEqual(MAX_IDENTIFIER_BYTES);
+        }
+        for (const index of schema.indexes) {
+          expect(
+            identifierByteLength(index.name),
+            `${leg} ${table} index ${index.name}`,
+          ).toBeLessThanOrEqual(MAX_IDENTIFIER_BYTES);
+        }
+        // Distinctness is the point of the guard: PostgreSQL would have
+        // collapsed two names sharing a 63-byte prefix into one index and
+        // silently skipped the second CREATE INDEX IF NOT EXISTS.
+        const names = schema.indexes.map((i) => i.name);
+        expect(
+          new Set(names).size,
+          `${leg} ${table} duplicate index names`,
+        ).toBe(names.length);
+      }
+    }
+  });
 
   it('generates every fixture table on every path', () => {
     for (const table of expectedTables) {
@@ -648,9 +715,27 @@ describe('schema path parity (#2359)', () => {
       expect(idx('parity_reports').some((i) => i.unique)).toBe(false);
     });
 
+    it('an over-long conflict index is shortened; its siblings are untouched (#2374)', () => {
+      const table = 'parity_content_contribution_revisions';
+      // The natural name is
+      // `..._contribution_id_revision_number_idx` — 73 bytes. The literal is
+      // pinned rather than recomputed: if the shortening ever changed, every
+      // deployed database would drop and recreate this index on migrate.
+      expect(names(table)).toEqual([
+        'parity_content_contribution_revisions_contributi_7dccee80ed_idx',
+        'parity_content_contribution_revisions_created_at_idx',
+        'parity_content_contribution_revisions_slug_context_idx',
+      ]);
+      // Shortened, but still the conflict index: same columns, still UNIQUE.
+      const conflict = idx(table).find((i) => i.unique);
+      expect(conflict?.columns).toEqual(['contribution_id', 'revision_number']);
+      expect(conflict?.name.length).toBeLessThanOrEqual(MAX_IDENTIFIER_BYTES);
+    });
+
     it('STI: plain FK/xref/tenant indexes, base-declared unique full, descendant-declared unique partial per class, meta JSON-path index', () => {
       expect(names('parity_events')).toEqual([
         'parity_events_booking_ref_parity_meeting_unique_idx',
+        'parity_events_booking_ref_parity_stakehol_dacfd5775b_unique_idx',
         'parity_events_code_unique_idx',
         'parity_events_host_profile_id_idx',
         'parity_events_meta_priority_idx',
@@ -686,6 +771,28 @@ describe('schema path parity (#2359)', () => {
         idx('parity_events').find((i) => i.name === 'parity_events_room_id_idx')
           ?.where,
       ).toBeUndefined();
+    });
+
+    it('STI partial unique: a long subtype name is shortened but the predicate keeps the qualified discriminator (#2374)', () => {
+      // The natural name,
+      // `parity_events_booking_ref_parity_stakeholder_coordination_workshop_unique_idx`,
+      // is 77 bytes. What must NOT be shortened is the `WHERE` clause: the
+      // `_meta_type` column stores the fully qualified name, so a predicate
+      // built from the simple class name would match zero rows and the
+      // "unique" index would enforce nothing (finding C5).
+      const partial = idx('parity_events').find(
+        (i) =>
+          i.name ===
+          'parity_events_booking_ref_parity_stakehol_dacfd5775b_unique_idx',
+      );
+      expect(partial?.unique).toBe(true);
+      expect(partial?.columns).toEqual(['booking_ref']);
+      expect(partial?.where).toBe(
+        `_meta_type = '${PKG}:ParityStakeholderCoordinationWorkshop'`,
+      );
+      expect(identifierByteLength(partial?.name ?? '')).toBeLessThanOrEqual(
+        MAX_IDENTIFIER_BYTES,
+      );
     });
   });
 });

@@ -98,3 +98,288 @@ export function isStiSubtypeUniqueIndex(
     /^\s*\(*\s*_meta_type\s*(::\w+\s*)?=/.test(index.where)
   );
 }
+
+/**
+ * The strictest identifier length any SMRT-supported engine imposes: 63 bytes.
+ *
+ * PostgreSQL compiles with `NAMEDATALEN = 64`, so every table, column, index,
+ * constraint and trigger name is silently truncated to 63 **bytes** (not
+ * characters — the limit is on the UTF-8 encoding). SQLite and DuckDB have no
+ * practical limit, which is exactly why the overflow went unnoticed: a name
+ * that works in every test truncates in production (#2374, finding C5).
+ *
+ * Silent truncation is not merely cosmetic. `CREATE INDEX IF NOT EXISTS` on a
+ * name whose first 63 bytes match an existing index is a no-op, so a second
+ * index that differs only past byte 63 is never created; the migration differ
+ * then finds it missing on every run and emits `add_index` forever. The shipped
+ * `content_contribution_revisions_contribution_id_revision_number_idx` (66
+ * bytes) is the concrete case — only the differ's signature-equivalence check
+ * kept it from looping.
+ */
+export const MAX_IDENTIFIER_BYTES = 63;
+
+/**
+ * Hex digits of the disambiguating digest appended to a shortened identifier.
+ *
+ * 40 bits. The digest exists to keep two names that share a long prefix apart,
+ * so its only job is collision resistance across the handful of over-length
+ * identifiers a schema produces; {@link enforceIdentifierLimits} additionally
+ * fails loudly if two names on one table ever do collide, so a residual
+ * collision can never reproduce the silent-no-op bug this guard fixes.
+ */
+const IDENTIFIER_DIGEST_HEX = 10;
+
+/**
+ * Trailing tokens preserved across shortening so a shortened name still reads
+ * as what it is (`..._idx` stays an index) and so suffix-based filters — the
+ * differ's `_pkey` / `_key` protection, for one — keep matching.
+ *
+ * Ordered longest-first: `_unique_idx` must win over `_idx`.
+ */
+const PRESERVED_IDENTIFIER_SUFFIXES = [
+  '_unique_idx',
+  '_pkey',
+  '_idx',
+  '_key',
+] as const;
+
+/**
+ * Byte length of `value` when encoded as UTF-8 — what PostgreSQL counts.
+ *
+ * Hand-rolled rather than `Buffer.byteLength` / `TextEncoder`: this module is
+ * re-exported from `schema/utils.ts`, which exists precisely to keep Node-only
+ * code out of browser builds, and allocating an encoder per identifier check
+ * would be wasteful besides.
+ */
+export function identifierByteLength(value: string): number {
+  let bytes = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
+      // High surrogate followed by a low surrogate → one 4-byte code point.
+      bytes += 4;
+      i++;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * Longest prefix of `value` that encodes to at most `maxBytes`, never splitting
+ * a code point or a surrogate pair.
+ */
+function truncateToBytes(value: string, maxBytes: number): string {
+  let bytes = 0;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    let width: number;
+    let step = 1;
+    if (code < 0x80) {
+      width = 1;
+    } else if (code < 0x800) {
+      width = 2;
+    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
+      width = 4;
+      step = 2;
+    } else {
+      width = 3;
+    }
+    if (bytes + width > maxBytes) return value.slice(0, i);
+    bytes += width;
+    i += step - 1;
+  }
+  return value;
+}
+
+/**
+ * Deterministic 64-bit FNV-1a digest of `value`, rendered as lowercase hex.
+ *
+ * Deliberately not `node:crypto`: see {@link identifierByteLength} on why this
+ * module must stay free of Node built-ins. FNV-1a is not a cryptographic hash
+ * and does not need to be — nothing here is a security boundary; the digest
+ * only has to be stable across runtimes, processes and SMRT versions, because
+ * a shortened index name that changed between releases would make every
+ * deployment drop and recreate the index.
+ */
+function identifierDigest(value: string): string {
+  const PRIME = 0x100000001b3n;
+  const MASK = 0xffffffffffffffffn;
+  let hash = 0xcbf29ce484222325n;
+  // Hash the UTF-8 bytes, not the UTF-16 code units, so the digest matches the
+  // encoding the byte limit is measured in.
+  for (let i = 0; i < value.length; i++) {
+    const code = value.codePointAt(i) as number;
+    if (code > 0xffff) i++;
+    const bytes =
+      code < 0x80
+        ? [code]
+        : code < 0x800
+          ? [0xc0 | (code >> 6), 0x80 | (code & 0x3f)]
+          : code < 0x10000
+            ? [
+                0xe0 | (code >> 12),
+                0x80 | ((code >> 6) & 0x3f),
+                0x80 | (code & 0x3f),
+              ]
+            : [
+                0xf0 | (code >> 18),
+                0x80 | ((code >> 12) & 0x3f),
+                0x80 | ((code >> 6) & 0x3f),
+                0x80 | (code & 0x3f),
+              ];
+    for (const byte of bytes) {
+      hash = ((hash ^ BigInt(byte)) * PRIME) & MASK;
+    }
+  }
+  return hash.toString(16).padStart(16, '0').slice(-IDENTIFIER_DIGEST_HEX);
+}
+
+/**
+ * Shorten a **generated** identifier to fit {@link MAX_IDENTIFIER_BYTES},
+ * deterministically and reversibly-by-inspection.
+ *
+ * A name that already fits is returned unchanged — the overwhelming majority,
+ * so existing databases see no churn. An over-long name becomes
+ * `<head>_<digest><suffix>`, where `suffix` is the recognisable trailing token
+ * (`_idx`, `_unique_idx`, …) when one is present and there is room for it, and
+ * `head` is the longest prefix of the remainder that leaves the digest room.
+ *
+ * The digest is taken over the **full original name**, so two names that share
+ * a 63-byte prefix — the case PostgreSQL would collapse into one index — get
+ * different digests and stay distinct.
+ *
+ * Only generator-owned names go through here. A developer's own name
+ * (`@smrt({ indexes: [{ name }] })`) is validated with
+ * {@link assertIdentifierFits} instead: silently renaming what someone wrote by
+ * hand would be worse than refusing it.
+ *
+ * @param name - The generated identifier
+ * @param maxBytes - Override the limit (tests; defaults to the PostgreSQL one)
+ * @returns `name` when it fits, otherwise its deterministic short form
+ * @throws When `maxBytes` is too small to hold even a digest — the one case
+ *   where shortening is genuinely impossible
+ * @example
+ * // 66 bytes → 63
+ * shortenIdentifier('content_contribution_revisions_contribution_id_revision_number_idx')
+ */
+export function shortenIdentifier(
+  name: string,
+  maxBytes: number = MAX_IDENTIFIER_BYTES,
+): string {
+  if (identifierByteLength(name) <= maxBytes) return name;
+
+  const digest = identifierDigest(name);
+  // `_` + digest is the irreducible part of the short form.
+  const digestCost = 1 + digest.length;
+  if (digestCost >= maxBytes) {
+    throw new Error(
+      `[smrt] Cannot shorten identifier "${name}" to ${maxBytes} bytes: the ` +
+        `disambiguating digest alone needs ${digestCost}.`,
+    );
+  }
+
+  const suffix =
+    PRESERVED_IDENTIFIER_SUFFIXES.find(
+      (candidate) =>
+        name.endsWith(candidate) &&
+        // Keep at least one byte of head, or the name becomes just a digest.
+        digestCost + candidate.length < maxBytes,
+    ) ?? '';
+
+  // The trailing `_` is trimmed because the digest brings its own separator.
+  const head = truncateToBytes(
+    name.slice(0, name.length - suffix.length),
+    maxBytes - digestCost - suffix.length,
+  ).replace(/_+$/, '');
+
+  return `${head}_${digest}${suffix}`;
+}
+
+/**
+ * Reject a **hand-declared** identifier that cannot survive PostgreSQL.
+ *
+ * Used for names SMRT does not own — a declared index name, a table name
+ * derived from a class name, a column name derived from a field name. Each of
+ * those is load-bearing somewhere outside schema generation (the runtime reads
+ * and writes columns by name; the collection layer resolves tables by name), so
+ * quietly rewriting it would break the data path instead of the DDL. Refusing
+ * it, with the fix in the message, is the only safe answer.
+ *
+ * @param name - The identifier to check
+ * @param kind - What it is, for the message (`index`, `table`, `column`, …)
+ * @param context - Where it came from (`table "x"`, `class Y`), for the message
+ * @param maxBytes - Override the limit (tests)
+ * @throws When `name` exceeds the limit
+ */
+export function assertIdentifierFits(
+  name: string,
+  kind: string,
+  context: string,
+  maxBytes: number = MAX_IDENTIFIER_BYTES,
+): void {
+  const bytes = identifierByteLength(name);
+  if (bytes <= maxBytes) return;
+  throw new Error(
+    `[smrt] ${kind} name "${name}" on ${context} is ${bytes} bytes; ` +
+      `PostgreSQL truncates identifiers at ${maxBytes} bytes, which silently ` +
+      `collapses distinct names into one. Shorten it to ${maxBytes} bytes or fewer.`,
+  );
+}
+
+/**
+ * Apply the identifier guard to one generated schema, in place.
+ *
+ * Call this as the LAST step of every schema path, after every index pass has
+ * run, so it sees the final set. Shortening is safe to do here rather than at
+ * each `indexes.push()`: the digest is taken over the full original name, so
+ * two entries that were distinct before shortening stay distinct after, and the
+ * "does this name already exist" dedupe the passes perform upstream is
+ * unaffected.
+ *
+ * Table and column names are **checked**, not shortened — see
+ * {@link assertIdentifierFits}.
+ *
+ * @param tableName - The table these identifiers belong to
+ * @param columns - The generated column map (names are validated)
+ * @param indexes - The generated index list (names are shortened in place)
+ * @throws When a table or column name exceeds the limit, or when shortening
+ *   two index names produces a collision
+ */
+export function enforceIdentifierLimits(
+  tableName: string,
+  columns: Record<string, unknown>,
+  indexes: Array<{ name: string }>,
+): void {
+  assertIdentifierFits(
+    tableName,
+    'Table',
+    'the class it is derived from — rename the class',
+  );
+  for (const column of Object.keys(columns)) {
+    assertIdentifierFits(
+      column,
+      'Column',
+      `table "${tableName}" — rename the field`,
+    );
+  }
+
+  const seen = new Map<string, string>();
+  for (const index of indexes) {
+    const shortened = shortenIdentifier(index.name);
+    const previous = seen.get(shortened);
+    if (previous !== undefined && previous !== index.name) {
+      throw new Error(
+        `[smrt] Index names "${previous}" and "${index.name}" on table ` +
+          `"${tableName}" both shorten to "${shortened}". Rename one of them.`,
+      );
+    }
+    seen.set(shortened, index.name);
+    index.name = shortened;
+  }
+}
