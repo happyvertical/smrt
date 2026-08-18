@@ -296,7 +296,7 @@ Central entity representing any profile with type, email, name, and description.
 **Fields:**
 - `id` (UUID): Unique identifier
 - `typeId` (Foreign Key): References ProfileType
-- `email` (Text, unique): Email address
+- `email` (Text, optional): Email address — identity uniqueness is arbitrated by the OIDC email reservation table, not a database constraint
 - `name` (Text, required): Display name
 - `description` (Text): Bio or description
 

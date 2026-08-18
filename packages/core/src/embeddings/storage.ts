@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface, VectorCapabilities } from '@happyvertical/sql';
+import { chunkArray, IN_LIST_CHUNK_SIZE } from '../utils/chunk';
 import { CosineSimilarity } from './similarity';
 import type { StoredEmbedding } from './types';
 
@@ -108,10 +109,23 @@ export class EmbeddingStorage {
       model?: string;
       limit?: number;
       minSimilarity?: number;
+      /**
+       * Restrict candidates to these object ids BEFORE ranking (#2365).
+       * `undefined` means no restriction; an empty array means no candidates
+       * (the search returns no results). Used by tenant-scoped collections so
+       * top-K never ranks rows the caller is not allowed to see.
+       */
+      objectIds?: string[];
     } = {},
     vector?: VectorCapabilities,
   ): Promise<Array<{ objectId: string; similarity: number }>> {
-    const { field, model, limit = 10, minSimilarity = 0 } = options;
+    const { field, model, limit = 10, minSimilarity = 0, objectIds } = options;
+
+    // An explicit empty candidate set means "nothing is visible" — never fall
+    // through to the unrestricted search.
+    if (objectIds !== undefined && objectIds.length === 0) {
+      return [];
+    }
 
     // Native vector search path
     if (vector) {
@@ -132,25 +146,52 @@ export class EmbeddingStorage {
           params.push(model);
         }
 
-        const results = await vector.search(
-          '_smrt_embeddings',
-          VECTOR_COLUMN,
-          embedding,
-          {
-            limit,
-            metric: 'cosine',
-            where: conditions.join(' AND '),
-            params,
-          },
-        );
+        // Candidate restriction (#2365). The id list is chunked so one query
+        // never exceeds the backend's bind-variable limit; per-chunk top-K
+        // results merge into an exact global top-K because every chunk
+        // returns its own best `limit` candidates.
+        const idChunks = objectIds
+          ? chunkArray(objectIds, IN_LIST_CHUNK_SIZE)
+          : [undefined];
 
-        // Convert cosine distance (0=identical, 2=opposite) to similarity (1=identical, -1=opposite)
-        return results
-          .map((r) => ({
-            objectId: r.object_id as string,
-            similarity: 1 - r.distance,
-          }))
-          .filter((r) => r.similarity >= minSimilarity);
+        const merged: Array<{ objectId: string; similarity: number }> = [];
+        for (const chunk of idChunks) {
+          const chunkConditions = [...conditions];
+          const chunkParams = [...params];
+          if (chunk) {
+            const placeholders = chunk.map(
+              (_, index) => `$${chunkParams.length + 2 + index}`,
+            );
+            chunkConditions.push(`object_id IN (${placeholders.join(', ')})`);
+            chunkParams.push(...chunk);
+          }
+
+          const results = await vector.search(
+            '_smrt_embeddings',
+            VECTOR_COLUMN,
+            embedding,
+            {
+              limit,
+              metric: 'cosine',
+              where: chunkConditions.join(' AND '),
+              params: chunkParams,
+            },
+          );
+
+          // Convert cosine distance (0=identical, 2=opposite) to similarity
+          // (1=identical, -1=opposite)
+          merged.push(
+            ...results.map((r) => ({
+              objectId: r.object_id as string,
+              similarity: 1 - r.distance,
+            })),
+          );
+        }
+
+        return merged
+          .filter((r) => r.similarity >= minSimilarity)
+          .sort((a, b) => b.similarity - a.similarity)
+          .slice(0, limit);
       } catch (error) {
         // Fall back to in-memory search on vector search failure
         logger.warn(
@@ -167,11 +208,18 @@ export class EmbeddingStorage {
       model,
     );
 
-    if (storedEmbeddings.length === 0) {
+    // Candidate restriction (#2365): drop invisible rows BEFORE ranking so
+    // top-K is computed only over what the caller may see.
+    const allowedIds = objectIds ? new Set(objectIds) : undefined;
+    const candidates = allowedIds
+      ? storedEmbeddings.filter((stored) => allowedIds.has(stored.object_id))
+      : storedEmbeddings;
+
+    if (candidates.length === 0) {
       return [];
     }
 
-    return storedEmbeddings
+    return candidates
       .map((stored) => ({
         objectId: stored.object_id,
         similarity: CosineSimilarity.calculate(embedding, stored.embedding),

@@ -1185,17 +1185,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         dist: '../scanner.js',
       });
       const manifestGen = new ManifestGenerator();
-      // IMPORTANT: keep this pass order aligned with generateManifest().
-      manifestGen.normalizeReportTenantScope(newManifest);
-      manifestGen.injectTenantScopedFields(newManifest);
-      manifestGen.mergeInheritedFields(newManifest);
-      manifestGen.normalizeReportObjects(newManifest);
-      manifestGen.generateValidationRules(newManifest);
-      manifestGen.generateSchemas(newManifest);
-      manifestGen.assertTenantScopedSchemaContract(newManifest);
-      // Final pass: Generate agent manifests for Agent subclasses
-      // Derives permissions, features, menuItems, and components from code
-      manifestGen.generateAgentManifests(newManifest, packageName, packageJson);
+      // THE pass sequence — shared with generateManifest() and
+      // ManifestBuilder so the three producers cannot drift (#2360).
+      manifestGen.applyGenerationPasses(newManifest, {
+        packageName,
+        packageJson,
+      });
 
       const elapsed = performance.now() - startTime;
 

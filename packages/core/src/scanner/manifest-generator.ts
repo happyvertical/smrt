@@ -10,6 +10,10 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import {
+  defaultConflictColumns,
+  resolveTenantColumn,
+} from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type {
@@ -254,6 +258,31 @@ export class ManifestGenerator {
       }
     }
 
+    this.applyGenerationPasses(manifest, {
+      packageName: options?.packageName,
+      packageJson: options?.packageJson,
+    });
+
+    return manifest;
+  }
+
+  /**
+   * Run every manifest generation pass, in order, on a manifest whose
+   * `objects` have been collected. This is THE pass sequence: the OXC vite
+   * plugin (`vite-plugin/index.ts`) and `ManifestBuilder.buildManifest()`
+   * call it too, so the three producers cannot drift — before #2360
+   * `ManifestBuilder` skipped the report passes and its manifests carried
+   * `(slug, context)` conflict indexes for `@report` classes while the
+   * runtime upserted on the report's group columns.
+   *
+   * @param manifest - manifest with `objects` populated (and
+   *   `smrtDependencies` set, so external STI bases resolve)
+   * @param options - package metadata for the agent-manifest pass
+   */
+  applyGenerationPasses(
+    manifest: SmartObjectManifest,
+    options?: { packageName?: string; packageJson?: PackageJsonLike },
+  ): void {
     // Report cache rows are safe to scope by tenant even when a report is
     // global: optional mode keeps tenant-less rows readable outside a tenant
     // context and gives tenant-scoped reports the tenant_id column their raw
@@ -270,6 +299,11 @@ export class ManifestGenerator {
     // Report models are read-only cache tables. Fill in the generated surface
     // and natural conflict key from report metadata before schema generation.
     this.normalizeReportObjects(manifest);
+
+    // Tenant-scoped classes key on `[tenant column, ...natural key]` (#2360);
+    // materialize that default so schema generation, the knowledge artifact
+    // and the runtime read the same conflict target.
+    this.normalizeConflictColumns(manifest);
 
     // Fourth pass: Generate validation rules for all objects
     // This pre-computes validation rules from field definitions, eliminating
@@ -288,8 +322,6 @@ export class ManifestGenerator {
       options?.packageName,
       options?.packageJson,
     );
-
-    return manifest;
   }
 
   /**
@@ -614,14 +646,6 @@ export class ManifestGenerator {
     // This ensures STI schema generation finds ALL descendants
     const aggregatedManifest = this.createAggregatedManifest(manifest);
 
-    // Track which STI bases have been processed (to avoid duplicate schema generation)
-    const processedSTIBases = new Set<string>();
-
-    // Build lookup map for checking if base is local
-    const localObjects = new Set(
-      Object.values(manifest.objects).map((o) => o.className),
-    );
-
     for (const [name, obj] of Object.entries(manifest.objects)) {
       if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(obj.className)) {
         continue;
@@ -633,55 +657,47 @@ export class ManifestGenerator {
         obj.decoratorConfig?.tableName ||
         this.classNameToTableName(obj.className);
 
-      // Check if this is an STI class
-      if (obj.decoratorConfig?.tableStrategy === 'sti') {
-        // This is an STI base class - generate STI schema with ALL descendants
-        if (processedSTIBases.has(name)) continue;
-        processedSTIBases.add(name);
+      // Check if this is an STI class. `mergeInheritedFields()` copies the
+      // base's `tableStrategy` onto every descendant, so both the root and
+      // its children arrive here; `isSTIChildClass` covers a child whose
+      // strategy was not inherited.
+      if (
+        obj.decoratorConfig?.tableStrategy === 'sti' ||
+        this.isSTIChildClass(obj, manifest)
+      ) {
+        // Every class in an STI hierarchy — root, local child, or a child of
+        // an EXTERNAL base — carries the schema of the ONE shared table,
+        // generated from the ROOT base so descendant discovery, the
+        // discriminator-partial unique indexes and the base-declared /
+        // descendant-declared distinction are computed against the same
+        // hierarchy on every class (#527, #2359). A child generated as if it
+        // were the root would treat its own descendant-only `unique: true`
+        // fields as base-declared and emit a full unique index that
+        // `getAllSchemasAsDefinitions()` then merges into the table beside
+        // the correct partial one.
+        const stiRoot = this.findSTIBaseInfo(obj, manifest);
+        const rootKey = stiRoot
+          ? (this.resolveManifestKey(stiRoot.className, aggregatedManifest) ??
+            stiRoot.className)
+          : name;
+        const rootTableName = stiRoot?.tableName || tableName;
+        const rootConfig =
+          aggregatedManifest.objects[rootKey]?.decoratorConfig ??
+          obj.decoratorConfig;
 
         logger.info(
-          `[manifest-generator] Generating STI schema for ${name} (table: ${tableName})`,
+          `[manifest-generator] Generating STI schema for ${name} (root: ${rootKey}, table: ${rootTableName})`,
         );
 
         // Use aggregated manifest to find descendants from ALL packages
         obj.schema = generator.generateSTISchemaFromManifest(
-          name,
-          tableName,
+          rootKey,
+          rootTableName,
           obj.fields,
           aggregatedManifest,
-          obj.decoratorConfig,
+          rootConfig,
         );
         this.applySqlTypeOverrides(obj);
-      } else if (this.isSTIChildClass(obj, manifest)) {
-        // This is an STI child class - check if base is LOCAL or EXTERNAL
-        const stiBase = this.findSTIBaseInfo(obj, manifest);
-        const baseIsLocal = stiBase && localObjects.has(stiBase.className);
-
-        if (baseIsLocal) {
-          // STI base is in this manifest - skip (schema is on base class)
-          logger.info(
-            `[manifest-generator] Skipping schema for STI child ${name} (base ${stiBase?.className} is local)`,
-          );
-        } else {
-          // STI base is EXTERNAL - generate STI schema for this child
-          // CRITICAL: Use the external base's table name, not the child's!
-          const baseTableName = stiBase?.tableName || tableName;
-          logger.info(
-            `[manifest-generator] Generating STI schema for ${name} (external base: ${stiBase?.className}, table: ${baseTableName})`,
-          );
-
-          // Use aggregated manifest to include all descendants
-          // FIX #527: Use actual STI base class name, not child class name
-          // This ensures findDescendantsInManifest() finds ALL STI children
-          obj.schema = generator.generateSTISchemaFromManifest(
-            stiBase?.className || name,
-            baseTableName,
-            obj.fields,
-            aggregatedManifest,
-            obj.decoratorConfig,
-          );
-          this.applySqlTypeOverrides(obj);
-        }
       } else {
         // CTI class - generate individual table schema
         logger.info(
@@ -741,11 +757,63 @@ export class ManifestGenerator {
     }
   }
 
+  /**
+   * Materialize the tenant-aware default conflict target (#2360).
+   *
+   * A tenant-scoped class that declares no `@smrt({ conflictColumns })` keys
+   * on `[tenant column, ...natural key]` — `(tenant_id, slug, context)` for
+   * a class-per-table object, `(tenant_id, slug, context, _meta_type)` for a
+   * single-table hierarchy — so two tenants can each own the same slug and
+   * neither `save()` adopts the other's row. Writing the resolved key into
+   * `decoratorConfig.conflictColumns` (mirroring `normalizeReportObjects`)
+   * makes the manifest, the generated schema, the knowledge artifact and
+   * `ObjectRegistry.getConflictColumns()` read one value.
+   *
+   * Only schema owners are normalized: an STI child inherits the table (and
+   * therefore the key) from its root, and `getConflictColumns()` resolves a
+   * child through its root at runtime. Explicit `conflictColumns` and
+   * `@report` classes (keyed by `normalizeReportObjects`) are left alone.
+   * Runs after `injectTenantScopedFields()` and `mergeInheritedFields()` so
+   * the tenant field and the inherited `tableStrategy` are in place, and
+   * before `generateSchemas()`.
+   */
+  normalizeConflictColumns(manifest: SmartObjectManifest): void {
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig) continue;
+      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(obj.className)) continue;
+      if (obj.decoratorConfig.conflictColumns) continue;
+      if (obj.decoratorConfig.report) continue;
+      if (this.isSTIChildClass(obj, manifest)) continue;
+
+      const tenantScoped = obj.decoratorConfig.tenantScoped;
+      if (!tenantScoped) continue;
+
+      const { tenantConfig } = this.normalizeTenantScopedConfig(tenantScoped);
+      const tenantColumn = resolveTenantColumn(
+        tenantConfig.field,
+        (fieldName) => Boolean(obj.fields[fieldName]),
+        toSnakeCase,
+      );
+      if (!tenantColumn) continue;
+
+      obj.decoratorConfig.conflictColumns = defaultConflictColumns(
+        obj.decoratorConfig.tableStrategy === 'sti' ? 'sti' : 'cti',
+        tenantColumn,
+      );
+    }
+  }
+
   private resolveSamePackageForeignKeyColumnTypes(
     manifest: SmartObjectManifest,
     generator: SchemaGeneratorLike,
   ): void {
+    // One representative schema per table for target-id lookups, plus EVERY
+    // schema that describes a table: each class of an STI hierarchy carries a
+    // copy of the shared table's schema (#2359), and every copy must receive
+    // the same reconciled type or `getAllSchemasAsDefinitions()`'s
+    // first-wins column merge can surface an unreconciled one.
     const schemaByTable = new Map<string, ManifestSchema>();
+    const schemasByTable = new Map<string, ManifestSchema[]>();
     const ownerBySchema = new Map<
       ManifestSchema,
       { name: string; obj: SmartObjectDefinition }
@@ -755,6 +823,9 @@ export class ManifestGenerator {
     for (const [name, obj] of Object.entries(manifest.objects)) {
       if (obj.schema?.tableName) {
         schemaByTable.set(obj.schema.tableName, obj.schema);
+        const siblings = schemasByTable.get(obj.schema.tableName) ?? [];
+        siblings.push(obj.schema);
+        schemasByTable.set(obj.schema.tableName, siblings);
         ownerBySchema.set(obj.schema, { name, obj });
       }
     }
@@ -765,8 +836,8 @@ export class ManifestGenerator {
         continue;
       }
 
-      const sourceSchema = schemaByTable.get(sourceTable);
-      if (!sourceSchema) {
+      const sourceSchemas = schemasByTable.get(sourceTable);
+      if (!sourceSchemas || sourceSchemas.length === 0) {
         continue;
       }
 
@@ -780,26 +851,27 @@ export class ManifestGenerator {
         }
 
         const columnName = toSnakeCase(fieldName);
-        const sourceColumn = sourceSchema.columns[columnName];
-        if (!sourceColumn) {
-          continue;
-        }
-
         const targetSchema = this.findForeignKeyTargetSchema(
           field.related,
           manifest,
           schemaByTable,
         );
         const targetIdType = targetSchema?.columns.id?.type;
-        if (!targetIdType || sourceColumn.type === targetIdType) {
+        if (!targetIdType) {
           continue;
         }
 
-        sourceSchema.columns[columnName] = {
-          ...sourceColumn,
-          type: targetIdType,
-        };
-        changedSchemas.add(sourceSchema);
+        for (const sourceSchema of sourceSchemas) {
+          const sourceColumn = sourceSchema.columns[columnName];
+          if (!sourceColumn || sourceColumn.type === targetIdType) {
+            continue;
+          }
+          sourceSchema.columns[columnName] = {
+            ...sourceColumn,
+            type: targetIdType,
+          };
+          changedSchemas.add(sourceSchema);
+        }
       }
     }
 
@@ -1155,6 +1227,28 @@ export class ManifestGenerator {
     }
 
     return false;
+  }
+
+  /**
+   * Resolve a class name (simple `Content` or qualified `@pkg:Content`) to
+   * the key it is stored under in `manifest.objects`, or `undefined` when the
+   * manifest does not carry it. Manifest keys are qualified names; `extends`
+   * and {@link findSTIBaseInfo} report simple names.
+   */
+  private resolveManifestKey(
+    className: string,
+    manifest: SmartObjectManifest,
+  ): string | undefined {
+    if (manifest.objects[className]) return className;
+    const simpleName = className.includes(':')
+      ? className.slice(className.lastIndexOf(':') + 1)
+      : className;
+    for (const [key, obj] of Object.entries(manifest.objects)) {
+      if (obj.qualifiedName === className || obj.className === simpleName) {
+        return key;
+      }
+    }
+    return undefined;
   }
 
   /**

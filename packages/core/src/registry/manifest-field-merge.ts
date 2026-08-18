@@ -36,7 +36,18 @@ function readExistingFieldMeta(
   return undefined;
 }
 
-function readManifestFieldMeta(
+/**
+ * Read a schema-shaping field attribute from either placement.
+ *
+ * `required`, `default`, and `description` are written at the top level by
+ * manifest field definitions but are normalized into `_meta` by
+ * {@link createFieldFromManifest} / {@link mergeManifestField}. Any consumer
+ * that shapes a column from a field must therefore check both placements, or
+ * it silently drops NOT NULL and DEFAULT for every registry-sourced field
+ * (issue #2372). Top level wins so an explicit manifest value overrides the
+ * normalized copy.
+ */
+export function readFieldAttribute(
   fieldDef: ManifestFieldInput,
   key: 'required' | 'default' | 'description',
 ) {
@@ -50,6 +61,8 @@ function readManifestFieldMeta(
 
   return undefined;
 }
+
+const readManifestFieldMeta = readFieldAttribute;
 
 function assignDefinedMeta(
   target: Record<string, unknown>,

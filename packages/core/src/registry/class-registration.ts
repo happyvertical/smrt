@@ -1904,6 +1904,14 @@ export function registerFromManifest(
   // property, not the qualified name key. This enables getFields() lookups by simple
   // class name to work correctly. simpleClassName is defined earlier in this function.
   //
+  // A manifest-loaded class carries `tenantScoped` only in its decorator
+  // config; normalize it the way registerClass() does so the schema owner's
+  // tenant column resolves for `getConflictColumns()` / `getTenantColumn()`
+  // on this registration too (#2360). The manifest pipeline already
+  // materialized the tenant field (`injectTenantScopedFields`), so the field
+  // map is left as the manifest describes it.
+  const tenantScopedConfig = normalizeTenantScopedConfig(config.tenantScoped);
+
   // Issue #951: Use registrationKey (qualified when available) as the primary key
   getClasses().set(registrationKey, {
     name: simpleClassName,
@@ -1913,6 +1921,7 @@ export function registerFromManifest(
     fields,
     methods,
     schema,
+    tenantScopedConfig,
     validators,
     validationRules, // Pre-computed rules from manifest (Issue #782)
     tools: objectDef.tools, // AI-callable tool schemas (used for CLI param schemas)

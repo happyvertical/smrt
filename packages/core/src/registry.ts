@@ -147,6 +147,10 @@ import type {
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
+import {
+  defaultConflictColumns,
+  resolveTenantColumn,
+} from './schema/conflict-target.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
 import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { classnameToTablename, toSnakeCase } from './utils';
@@ -2706,16 +2710,29 @@ export class ObjectRegistry {
   /**
    * Get the conflict columns for UPSERT operations on a class
    *
-   * Returns custom conflict columns if specified, otherwise defaults based on
-   * table strategy:
-   * - CTI: ['slug', 'context']
-   * - STI: ['slug', 'context', '_meta_type']
+   * The conflict target is a property of the TABLE, resolved from its
+   * schema-owning class — the STI root for a single-table hierarchy, the
+   * class itself otherwise — so every class sharing a table upserts on the
+   * same key the schema indexes. In order:
+   *
+   * 1. explicit `@smrt({ conflictColumns })` on the schema owner;
+   * 2. `@report` classes: `[tenant column, ...group/bucket columns]`, or
+   *    `['id']` when the report declares no grouping;
+   * 3. a custom primary key (`@field({ primaryKey: true })`): the declared
+   *    primary-key column(s) — the only unique key such a table has;
+   * 4. the strategy default — CTI `['slug', 'context']`, STI
+   *    `['slug', 'context', '_meta_type']` — led by the tenant column when
+   *    the schema owner is tenant-scoped (#2360): tenant-scoped rows are
+   *    unique per tenant, and without the tenant column a second tenant's
+   *    `save()` of the same natural key updated the first tenant's row
+   *    through `DO UPDATE SET`.
    *
    * STI subclasses share a table, so the discriminator participates in
    * identity — two subtypes can coexist with the same (slug, context). The
-   * matching unique constraint on `(slug, context, _meta_type)` must exist
-   * in the live schema; if a deployment carries a stale 2-column unique
-   * instead, run `smrt db:migrate` to repair it (see issue #1165).
+   * matching unique index must exist in the live schema; if a deployment
+   * carries a stale shape, `smrt db:migrate` swaps it in place (issue #1165,
+   * #2360). NULL-tenant rows dedup through the SDK's null-aware upsert
+   * (`IS NOT DISTINCT FROM`), see `schema/conflict-target.ts`.
    *
    * @param className - Name of the class to get conflict columns for
    * @returns Array of column names to use for conflict detection
@@ -2728,42 +2745,94 @@ export class ObjectRegistry {
    *
    * ObjectRegistry.getConflictColumns('EventParticipant');
    * // Returns: ['event_id', 'profile_id']
+   *
+   * @smrt({ tenantScoped: true })
+   * class Document extends SmrtObject {}
+   *
+   * ObjectRegistry.getConflictColumns('Document');
+   * // Returns: ['tenant_id', 'slug', 'context']
    * ```
    */
   static getConflictColumns(className: string): string[] {
     const registered = ObjectRegistry.findClass(className);
     if (!registered) {
-      return ['slug', 'context']; // Default for unregistered classes
+      return defaultConflictColumns('cti'); // Default for unregistered classes
     }
+
+    // The table's key is the schema owner's key: for an STI hierarchy that
+    // is the root, whatever class the caller named.
+    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    const ownerName =
+      tableStrategy === 'sti' ? ObjectRegistry.getSTIBase(className) : null;
+    const owner =
+      ownerName && ownerName !== className
+        ? (ObjectRegistry.findClass(ownerName) ?? registered)
+        : registered;
 
     // Explicit config wins
-    if (registered.config?.conflictColumns) {
-      return registered.config.conflictColumns;
+    if (owner.config?.conflictColumns) {
+      return owner.config.conflictColumns;
     }
 
-    if (registered.config?.report) {
-      const tenantField = registered.tenantScopedConfig?.field;
-      const tenantColumn =
-        tenantField && registered.fields.has(tenantField)
-          ? toSnakeCase(tenantField)
-          : '';
-      const reportConflictColumns = Array.from(registered.fields.entries())
+    if (owner.config?.report) {
+      const reportConflictColumns = Array.from(owner.fields.entries())
         .filter(([, field]) => {
           const kind = field?._meta?.__report?.kind ?? field?.__report?.kind;
           return kind === 'group' || kind === 'bucket';
         })
         .map(([fieldName]) => toSnakeCase(fieldName));
+      const tenantColumn = ObjectRegistry.getTenantColumn(className);
 
       return reportConflictColumns.length > 0
         ? [...(tenantColumn ? [tenantColumn] : []), ...reportConflictColumns]
         : ['id'];
     }
 
-    // Fall back to table strategy-based defaults
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
-    return tableStrategy === 'sti'
-      ? ['slug', 'context', '_meta_type']
-      : ['slug', 'context'];
+    // A custom primary key replaces `id`/`slug`/`context` on the registry
+    // schema path; the primary key is then the table's only unique key.
+    const primaryKeyColumns = Array.from(owner.fields.entries())
+      .filter(([, field]) => field?._meta?.primaryKey === true)
+      .map(([fieldName]) => toSnakeCase(fieldName));
+    if (primaryKeyColumns.length > 0) {
+      return primaryKeyColumns;
+    }
+
+    return defaultConflictColumns(
+      tableStrategy,
+      ObjectRegistry.getTenantColumn(className),
+    );
+  }
+
+  /**
+   * The tenant column of the table a class writes to, or `undefined` when its
+   * schema owner (the STI root for a single-table hierarchy, the class itself
+   * otherwise) is not tenant-scoped (#2360).
+   *
+   * Resolved from the owner's normalized `tenantScoped` configuration
+   * (`@smrt({ tenantScoped })`, or `@TenantScoped()` carried by the
+   * manifest), never from the standalone tenancy registry: the schema
+   * generator and `getConflictColumns()` must agree before any interceptor
+   * is enabled.
+   *
+   * @param className - Name of the class (simple or qualified)
+   * @returns The snake_case tenant column name, e.g. `tenant_id`
+   */
+  static getTenantColumn(className: string): string | undefined {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) return undefined;
+    const ownerName =
+      ObjectRegistry.getTableStrategy(className) === 'sti'
+        ? ObjectRegistry.getSTIBase(className)
+        : null;
+    const owner =
+      ownerName && ownerName !== className
+        ? (ObjectRegistry.findClass(ownerName) ?? registered)
+        : registered;
+    return resolveTenantColumn(
+      owner.tenantScopedConfig?.field,
+      (fieldName) => owner.fields.has(fieldName),
+      toSnakeCase,
+    );
   }
 
   /**

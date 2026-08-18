@@ -607,18 +607,46 @@ describe('TenantInterceptor', () => {
   });
 
   describe('beforeGet', () => {
-    it('should convert string ID filter to object with tenant filter', async () => {
+    it('should convert a UUID string filter to an id lookup with tenant filter', async () => {
       registerTenantScopedClass('Document');
       const interceptor = createTenantInterceptor();
 
       await withTenant({ tenantId: 'tenant-123' }, async () => {
+        const result = interceptor.beforeGet?.(
+          'Document',
+          '550e8400-e29b-41d4-a716-446655440000',
+          {
+            className: 'Document',
+            operation: 'get',
+            timestamp: new Date(),
+          },
+        );
+
+        expect(result).toEqual({
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          tenantId: 'tenant-123',
+        });
+      });
+    });
+
+    it('should convert a non-UUID string filter to a slug lookup with tenant filter (#2365)', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        // Core's get() treats non-UUID strings as slug natural keys; the
+        // interceptor must preserve that semantics, not assume `{ id }`.
         const result = interceptor.beforeGet?.('Document', 'doc-1', {
           className: 'Document',
           operation: 'get',
           timestamp: new Date(),
         });
 
-        expect(result).toEqual({ id: 'doc-1', tenantId: 'tenant-123' });
+        expect(result).toEqual({
+          slug: 'doc-1',
+          context: '',
+          tenantId: 'tenant-123',
+        });
       });
     });
 
