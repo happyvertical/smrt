@@ -7,7 +7,12 @@
  * - Drift detection warnings
  */
 
-import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
+import {
+  checkLiveSchemaParity,
+  type LiveSchemaParityReport,
+  ObjectRegistry,
+  SchemaComparer,
+} from '@happyvertical/smrt-core';
 import type { SchemaDiff } from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
@@ -21,6 +26,10 @@ import {
   getUnresolvedGeneratedMigrationNames,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
+import {
+  collectRegistryConflictTargets,
+  formatParityReport,
+} from './db-parity.js';
 import { assessFailedMigrations } from './migration-failure-analysis.js';
 import {
   evaluateSchemaContract,
@@ -62,6 +71,7 @@ type FailedMigrationBuckets = ReturnType<typeof summarizeFailedMigrations>;
 interface DbStatusOptions {
   json?: boolean;
   verbose?: boolean;
+  parity?: boolean;
 }
 
 const CANONICAL_UUID_RE =
@@ -306,6 +316,13 @@ export const dbStatusCommand: CLICommand = {
       default: false,
       short: 'v',
     },
+    parity: {
+      type: 'boolean',
+      description:
+        'Also compare the live schema to the expected shape (incl. _smrt_* system tables and index policy)',
+      default: false,
+      short: 'p',
+    },
   },
   handler: async (_args: string[], options: DbStatusOptions) => {
     let db: DatabaseInterface | undefined;
@@ -401,6 +418,8 @@ export const dbStatusCommand: CLICommand = {
         preconditions: [] as StatusPrecondition[],
         failedMigrations: summarizeFailedMigrations(failed, null),
         schemaContract: schemaContract as SchemaContractReport,
+        parity: null as LiveSchemaParityReport | null,
+        parityError: null as string | null,
       };
       let diff: SchemaDiff = {
         added_tables: [],
@@ -427,6 +446,29 @@ export const dbStatusCommand: CLICommand = {
           failed,
           getUnresolvedGeneratedMigrationNames(diff.changes),
         );
+
+        // 8b. Optional live-schema parity (#2368). The diff above answers
+        // "does the live schema match the manifest"; this answers "does the
+        // live schema match what the model layer actually needs", which is a
+        // different question whenever the manifest itself is what dropped an
+        // index (#2356) or a system table drifted (they never enter the diff).
+        if (options.parity) {
+          try {
+            status.parity = await checkLiveSchemaParity({
+              db,
+              schemas: manifestSchemas,
+              conflictTargets: collectRegistryConflictTargets(),
+              includeSystemTables: true,
+              engineHint: dbType,
+            });
+          } catch (error) {
+            status.parityError =
+              error instanceof Error ? error.message : String(error);
+          }
+        }
+      } else if (options.parity) {
+        status.parityError =
+          'The configured database adapter cannot describe tables, so live-schema parity cannot be verified.';
       }
 
       const failedAssessments = assessFailedMigrations(
@@ -447,11 +489,17 @@ export const dbStatusCommand: CLICommand = {
         details: failedAssessments,
       };
 
+      // A parity run that could not complete fails closed, and an error-level
+      // parity finding is a live-schema defect, not a hint.
+      const parityFailed =
+        status.parityError !== null || status.parity?.ok === false;
+
       // 9. Output results
       if (options.json) {
         console.log(JSON.stringify(status, null, 2));
         if (
           !schemaContract.ok ||
+          parityFailed ||
           status.preconditions.some((item) => item.status === 'error')
         ) {
           process.exitCode = 1;
@@ -526,6 +574,24 @@ export const dbStatusCommand: CLICommand = {
         console.log();
       } else {
         console.log('✅ Live schema matches current manifests');
+        console.log();
+      }
+
+      if (options.parity) {
+        console.log('🗄️  Live Schema Parity:');
+        if (status.parityError) {
+          console.log(`   ❌ ${status.parityError}`);
+          process.exitCode = 1;
+        } else if (status.parity) {
+          for (const line of formatParityReport(status.parity, {
+            verbose: options.verbose,
+          })) {
+            console.log(line);
+          }
+          if (!status.parity.ok) {
+            process.exitCode = 1;
+          }
+        }
         console.log();
       }
 
