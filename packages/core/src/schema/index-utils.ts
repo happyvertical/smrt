@@ -216,14 +216,19 @@ function identifierDigest(value: string): string {
   const PRIME = 0x100000001b3n;
   const MASK = 0xffffffffffffffffn;
   let hash = 0xcbf29ce484222325n;
-  // Hash the UTF-8 bytes, not the UTF-16 code units, so the digest matches the
-  // encoding the byte limit is measured in. `codePointAt` combines a real
-  // surrogate pair and returns an unpaired surrogate as-is (which then encodes
-  // through the 3-byte branch) — the digest only has to be deterministic and
-  // input-distinguishing, which both cases satisfy.
+  // Hash the UTF-8 bytes, not the UTF-16 code units, so the digest is taken
+  // over exactly what PostgreSQL receives — and over exactly what
+  // `identifierByteLength` counted. An unpaired surrogate is therefore hashed
+  // as its U+FFFD replacement, which is what every real encoder puts on the
+  // wire; emitting the surrogate's own three bytes instead would hash bytes the
+  // server never sees.
   for (let i = 0; i < value.length; i++) {
-    const code = value.codePointAt(i) as number;
-    if (code > 0xffff) i++;
+    let code = value.codePointAt(i) as number;
+    if (code > 0xffff) {
+      i++;
+    } else if (code >= 0xd800 && code <= 0xdfff) {
+      code = 0xfffd;
+    }
     const bytes =
       code < 0x80
         ? [code]

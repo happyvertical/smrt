@@ -144,6 +144,20 @@ describe('shortenIdentifier', () => {
     expect(() => encodeURIComponent(shortened)).not.toThrow();
   });
 
+  it('digests the bytes PostgreSQL will actually receive', () => {
+    // Two names that differ only in WHICH unpaired surrogate they carry encode
+    // to identical UTF-8 (both replaced with U+FFFD), so PostgreSQL sees one
+    // identifier and the guard must produce one name. Hashing the surrogate's
+    // own three bytes instead would split them on bytes the server never sees.
+    const withHigh = `${'x'.repeat(70)}\ud800`;
+    const withLow = `${'x'.repeat(70)}\udc00`;
+    const encoder = new TextEncoder();
+    expect(Array.from(encoder.encode(withHigh))).toEqual(
+      Array.from(encoder.encode(withLow)),
+    );
+    expect(shortenIdentifier(withHigh)).toBe(shortenIdentifier(withLow));
+  });
+
   it('refuses a limit too small to hold even the digest', () => {
     expect(() => shortenIdentifier('some_long_index_name_idx', 8)).toThrow(
       /Cannot shorten identifier/,

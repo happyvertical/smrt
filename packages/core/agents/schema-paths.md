@@ -322,7 +322,7 @@ index is never created.
   `validateDeclaredIndex()`. Renaming what a developer wrote is worse than
   refusing it, and manifest generation is what `smrt dev:knowledge-check` runs.
 
-`enforceGeneratedIndexNames()` is the single call site per path, placed **after**
+`enforceIdentifierLimits()` is the single call site per path, placed **after**
 `ensureReferenceColumnIndexes()` — nothing may lengthen a name after it. Doing
 the shortening at the end rather than at each `indexes.push()` is safe because
 the digest covers the whole original name, so entries distinct before shortening
