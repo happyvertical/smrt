@@ -37,6 +37,39 @@ interface DbPruneOptions {
 }
 
 /**
+ * Packages that contribute retention tasks by registering them on import.
+ *
+ * `db:prune` runs in the CLI's own process, so a task only reaches the sweep
+ * if this process actually loaded the package that registers it. These are
+ * imported optionally — a project that does not depend on jobs or users simply
+ * has no jobs or users tasks, which is the correct outcome, not an error.
+ */
+const RETENTION_TASK_PACKAGES = [
+  '@happyvertical/smrt-jobs',
+  '@happyvertical/smrt-users',
+] as const;
+
+/**
+ * Load every installed package that contributes retention tasks.
+ *
+ * @returns The specifiers that loaded, in declaration order.
+ */
+export async function loadRetentionTaskPackages(
+  importPackage: (specifier: string) => Promise<unknown>,
+): Promise<string[]> {
+  const loaded: string[] = [];
+  for (const specifier of RETENTION_TASK_PACKAGES) {
+    try {
+      await importPackage(specifier);
+      loaded.push(specifier);
+    } catch {
+      // Not installed in this project — nothing to contribute.
+    }
+  }
+  return loaded;
+}
+
+/**
  * Merge command-line overrides onto the configured retention policy.
  *
  * `--skip` names tasks, not tables, so it covers both the built-in tables and
@@ -47,7 +80,9 @@ export function buildPrunePolicy(
   options: DbPruneOptions,
 ): RetentionPolicy {
   const policy: RetentionPolicy = { ...(configured ?? {}) };
-  policy.dryRun = options['dry-run'] ?? false;
+  // `--dry-run` can turn a real run into a preview; nothing on the command
+  // line turns a configured preview back into a real deletion.
+  policy.dryRun = options['dry-run'] || (configured?.dryRun ?? false);
 
   if (options['changes-days'] !== undefined) {
     policy.changes = {
@@ -122,6 +157,24 @@ export function formatSweepResult(result: RetentionSweepResult): string {
   return lines.join('\n');
 }
 
+/**
+ * Names passed to `--skip` that no task in the completed sweep answered to.
+ *
+ * A typo and a package that was never installed look identical on the command
+ * line, so the command says which names it did not recognize rather than
+ * silently doing less than the operator asked for.
+ */
+export function unmatchedSkipNames(
+  skip: string | undefined,
+  result: RetentionSweepResult,
+): string[] {
+  const known = new Set(result.tasks.map((task) => task.task));
+  return (skip ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0 && !known.has(name));
+}
+
 export const dbPruneCommand: CLICommand = {
   name: 'db:prune',
   description: 'Prune framework-owned system tables to their retention windows',
@@ -183,14 +236,34 @@ export const dbPruneCommand: CLICommand = {
       const { getDatabase } = await import('@happyvertical/sql');
       db = await getDatabase({ type: dbType, url: dbUrl });
 
-      const { config: smrtConfig, runRetentionSweep } = await import(
-        '@happyvertical/smrt-core'
+      const {
+        config: smrtConfig,
+        importOptionalDependency,
+        runRetentionSweep,
+      } = await import('@happyvertical/smrt-core');
+
+      // Packages register their retention tasks on import, and this process
+      // has loaded none of them yet — without this the sweep would only ever
+      // see the four built-in tables.
+      const loaded = await loadRetentionTaskPackages((specifier) =>
+        importOptionalDependency(
+          specifier,
+          'Install it in the project to include its retention tasks.',
+        ),
       );
+
       const policy = buildPrunePolicy(smrtConfig.toJSON().retention, options);
       const result = await runRetentionSweep(db, policy);
+      const unmatched = unmatchedSkipNames(options.skip, result);
 
       if (options.json) {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(
+          JSON.stringify(
+            { ...result, contributors: loaded, unmatched },
+            null,
+            2,
+          ),
+        );
       } else {
         console.log(
           `\n🧹 Retention sweep${result.dryRun ? ' (dry run)' : ''}\n`,
@@ -198,6 +271,12 @@ export const dbPruneCommand: CLICommand = {
         console.log(`Database: ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`);
         console.log(formatSweepResult(result));
         console.log();
+        if (unmatched.length > 0) {
+          console.warn(
+            `⚠️  --skip named no known task: ${unmatched.join(', ')}. ` +
+              'Check the spelling, or the package that registers it may not be installed.\n',
+          );
+        }
       }
 
       // A partial sweep must not look like a clean one to cron.

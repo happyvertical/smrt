@@ -12,7 +12,12 @@
  * `smrt db:prune` and the jobs `TaskRunner`'s periodic sweep reap them like
  * every other framework-owned table.
  *
- * Registration is explicit — importing this module schedules nothing.
+ * The package entry point registers all three on import (see `index.ts`), so
+ * any process that loaded `@happyvertical/smrt-users` contributes them.
+ * Registration is not scheduling: nothing is deleted until something runs a
+ * sweep, and a policy can turn any task off by name. Task names are prefixed
+ * with the owning package's short name, because the registry is one
+ * process-global namespace shared with every other package.
  *
  * @see https://github.com/happyvertical/smrt/issues/2375
  * @packageDocumentation

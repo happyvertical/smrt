@@ -45,21 +45,28 @@ export class UsersCliAuthRequestCollection extends SmrtCollection<UsersCliAuthRe
    * @returns Number of requests deleted (or, under `dryRun`, matched)
    */
   async deleteExpired(options: { dryRun?: boolean } = {}): Promise<number> {
-    const requests = await this.list({
-      where: {
-        status: 'pending',
-        'expiresAt <': new Date().toISOString(),
-      },
-    });
+    // One statement, for the same reason `SessionCollection.deleteExpired()`
+    // is one (#1400): this runs unattended on the retention sweep's timer, and
+    // a per-row delete that throws part-way leaves the rest of the expired
+    // requests un-reaped. It also avoids hydrating every row just to delete it.
+    const now = new Date().toISOString();
+    const predicate = "status = 'pending' AND expires_at < ?";
 
-    if (options.dryRun) return requests.length;
+    const counted = await this.db.query(
+      `SELECT COUNT(*) AS total FROM ${this.tableName} WHERE ${predicate}`,
+      now,
+    );
+    const total = Number(counted.rows?.[0]?.total ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return 0;
 
-    let count = 0;
-    for (const request of requests) {
-      await request.delete();
-      count++;
+    if (!options.dryRun) {
+      await this.db.query(
+        `DELETE FROM ${this.tableName} WHERE ${predicate}`,
+        now,
+      );
     }
-    return count;
+
+    return total;
   }
 }
 

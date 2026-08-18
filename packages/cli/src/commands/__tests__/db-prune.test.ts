@@ -13,6 +13,8 @@ import {
   buildPrunePolicy,
   dbPruneCommand,
   formatSweepResult,
+  loadRetentionTaskPackages,
+  unmatchedSkipNames,
 } from '../db-prune.js';
 
 describe('buildPrunePolicy (#2375)', () => {
@@ -63,16 +65,73 @@ describe('buildPrunePolicy (#2375)', () => {
   });
 
   it('skips registered tasks by name', () => {
-    const policy = buildPrunePolicy(undefined, { skip: 'jobs,users-sessions' });
+    const policy = buildPrunePolicy(undefined, {
+      skip: 'jobs-records,users-sessions',
+    });
 
     expect(policy.tasks).toEqual({
-      jobs: false,
+      'jobs-records': false,
       'users-sessions': false,
     });
   });
 
   it('sets dryRun from the flag', () => {
     expect(buildPrunePolicy(undefined, { 'dry-run': true }).dryRun).toBe(true);
+  });
+
+  it('never turns a configured dry run into a real deletion', () => {
+    // The flag can only make a run safer, never more destructive.
+    expect(buildPrunePolicy({ dryRun: true }, {}).dryRun).toBe(true);
+    expect(
+      buildPrunePolicy({ dryRun: true }, { 'dry-run': false }).dryRun,
+    ).toBe(true);
+  });
+});
+
+describe('loadRetentionTaskPackages (#2375)', () => {
+  it('loads every contributing package that resolves', async () => {
+    const seen: string[] = [];
+    const loaded = await loadRetentionTaskPackages(async (specifier) => {
+      seen.push(specifier);
+      return {};
+    });
+
+    expect(seen).toEqual([
+      '@happyvertical/smrt-jobs',
+      '@happyvertical/smrt-users',
+    ]);
+    expect(loaded).toEqual(seen);
+  });
+
+  it('skips a package that is not installed rather than failing', async () => {
+    const loaded = await loadRetentionTaskPackages(async (specifier) => {
+      if (specifier.endsWith('smrt-jobs')) throw new Error('not installed');
+      return {};
+    });
+
+    expect(loaded).toEqual(['@happyvertical/smrt-users']);
+  });
+});
+
+describe('unmatchedSkipNames (#2375)', () => {
+  const swept = {
+    dryRun: false,
+    startedAt: '2026-08-17T00:00:00.000Z',
+    durationMs: 1,
+    pruned: 0,
+    failed: false,
+    tasks: [{ task: 'changes', pruned: 0 }],
+  } satisfies RetentionSweepResult;
+
+  it('names skip entries no task answered to', () => {
+    expect(unmatchedSkipNames('changes, jobs-records', swept)).toEqual([
+      'jobs-records',
+    ]);
+  });
+
+  it('is empty when every skip entry matched, or nothing was skipped', () => {
+    expect(unmatchedSkipNames('changes', swept)).toEqual([]);
+    expect(unmatchedSkipNames(undefined, swept)).toEqual([]);
   });
 });
 

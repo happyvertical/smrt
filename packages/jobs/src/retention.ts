@@ -8,10 +8,15 @@
  * framework retention sweep so `smrt db:prune` and the `TaskRunner`'s periodic
  * sweep drive them like every other framework-owned table.
  *
- * Registration is explicit: importing this module does not schedule anything.
- * {@link registerJobRetentionTasks} is called by {@link startRetentionSweeper}
- * (which the runner starts) and can be called directly by an application that
- * schedules the sweep itself.
+ * The package entry point registers both tasks on import (see `index.ts`), so
+ * any process that loaded `@happyvertical/smrt-jobs` — a worker, an app, or
+ * `smrt db:prune` — contributes them. Registration is not scheduling: a task
+ * runs only when something calls `runRetentionSweep()`, and a policy can turn
+ * it off by name. Call {@link registerJobRetentionTasks} again to change the
+ * windows, or {@link unregisterJobRetentionTasks} to remove them entirely.
+ *
+ * Task names are prefixed with the owning package's short name, because the
+ * registry is one process-global namespace shared with every other package.
  *
  * @see https://github.com/happyvertical/smrt/issues/2375
  * @packageDocumentation
@@ -34,21 +39,21 @@ const logger = createLogger({ level: 'info' });
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Retention task name for terminal rows in `_smrt_jobs`. */
-export const JOBS_RETENTION_TASK = 'jobs';
+export const JOBS_RETENTION_TASK = 'jobs-records';
 
 /** Retention task name for `_smrt_job_events`. */
-export const JOB_EVENTS_RETENTION_TASK = 'job-events';
+export const JOB_EVENTS_RETENTION_TASK = 'jobs-events';
 
 /** Windows applied by the job retention tasks. */
 export interface JobRetentionOptions {
   /** Delete completed jobs finished more than this many days ago (default 7). */
-  completedAfterDays?: number;
+  completedOlderThanDays?: number;
   /** Delete cancelled jobs finished more than this many days ago (default 7). */
-  cancelledAfterDays?: number;
+  cancelledOlderThanDays?: number;
   /** Delete failed jobs finished more than this many days ago (default 30). */
-  failedAfterDays?: number;
+  failedOlderThanDays?: number;
   /** Delete job events recorded more than this many days ago (default 30). */
-  eventsAfterDays?: number;
+  eventsOlderThanDays?: number;
   /** Maximum job rows removed per sweep (default 10 000). */
   batchSize?: number;
 }
@@ -62,10 +67,10 @@ export interface JobRetentionOptions {
  * deleted at 7 days can still have its log read for another three weeks.
  */
 export const DEFAULT_JOB_RETENTION: Required<JobRetentionOptions> = {
-  completedAfterDays: 7,
-  cancelledAfterDays: 7,
-  failedAfterDays: 30,
-  eventsAfterDays: 30,
+  completedOlderThanDays: 7,
+  cancelledOlderThanDays: 7,
+  failedOlderThanDays: 30,
+  eventsOlderThanDays: 30,
   batchSize: 10_000,
 };
 
@@ -90,9 +95,9 @@ export function registerJobRetentionTasks(
         new Date(context.now.getTime() - days * MS_PER_DAY);
 
       return jobs.cleanup({
-        completedBefore: cutoff(config.completedAfterDays),
-        cancelledBefore: cutoff(config.cancelledAfterDays),
-        failedBefore: cutoff(config.failedAfterDays),
+        completedBefore: cutoff(config.completedOlderThanDays),
+        cancelledBefore: cutoff(config.cancelledOlderThanDays),
+        failedBefore: cutoff(config.failedOlderThanDays),
         limit: config.batchSize,
         dryRun: context.dryRun,
       });
@@ -106,7 +111,7 @@ export function registerJobRetentionTasks(
       const events = await SmrtJobEventCollection.create({ db });
       return events.cleanup({
         before: new Date(
-          context.now.getTime() - config.eventsAfterDays * MS_PER_DAY,
+          context.now.getTime() - config.eventsOlderThanDays * MS_PER_DAY,
         ),
         dryRun: context.dryRun,
       });
@@ -142,6 +147,14 @@ export interface RetentionSweeper {
 export const DEFAULT_RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /**
+ * Live sweepers in this process.
+ *
+ * Retention tasks are registered in a process-global registry, so the last
+ * sweeper to stop is the one that may unregister them.
+ */
+let activeSweepers = 0;
+
+/**
  * Start a periodic retention sweep on an interval.
  *
  * The first sweep runs one full interval after start, never at start: a worker
@@ -152,15 +165,21 @@ export const DEFAULT_RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
  * The timer is `unref`'d where the runtime supports it, so a pending sweep
  * never keeps a process alive.
  *
+ * The retention tasks are process-global, so the sweeper refcounts them: two
+ * runners in one process both register, and the tasks are removed only when
+ * the last sweeper stops. Without that, stopping one runner would silently
+ * disarm the other's sweep.
+ *
  * @param db - Database holding the system tables.
  * @param options - Cadence and policy overrides.
- * @returns A handle that stops the sweeper and unregisters its tasks.
+ * @returns A handle that stops the sweeper and releases its task registration.
  */
 export function startRetentionSweeper(
   db: DatabaseInterface,
   options: RetentionSweeperOptions = {},
 ): RetentionSweeper {
   registerJobRetentionTasks(options.jobs);
+  activeSweepers += 1;
 
   const intervalMs = options.intervalMs ?? DEFAULT_RETENTION_SWEEP_INTERVAL_MS;
   let stopped = false;
@@ -185,9 +204,13 @@ export function startRetentionSweeper(
 
   return {
     stop() {
+      if (stopped) return;
       stopped = true;
       clearInterval(timer);
-      unregisterJobRetentionTasks();
+      activeSweepers = Math.max(0, activeSweepers - 1);
+      if (activeSweepers === 0) {
+        unregisterJobRetentionTasks();
+      }
     },
     sweepNow,
   };

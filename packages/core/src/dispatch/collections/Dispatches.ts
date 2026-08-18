@@ -51,9 +51,11 @@ function pushTenantPredicate(
 /**
  * Count the rows a cleanup predicate selects, then delete them (#2375).
  *
- * Counting first makes the reported figure exact on every adapter — `rowCount`
- * is not reliably populated across the engines SMRT supports — and is what
- * lets `dryRun` preview the very same predicate the real cleanup runs.
+ * Counting first gives a usable figure on every adapter — `rowCount` is not
+ * reliably populated across the engines SMRT supports — and is what lets
+ * `dryRun` preview the very same predicate the real cleanup runs. The two
+ * statements are not transactional, so the figure is approximate under
+ * concurrent writers.
  */
 async function deleteOrCount(
   db: DatabaseInterface,

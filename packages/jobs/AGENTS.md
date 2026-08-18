@@ -146,7 +146,9 @@ the framework retention sweep in `@happyvertical/smrt-core`.
   `retention: { intervalMs, policy, jobs }` tunes it. The **first sweep is one
   interval after `start()`, never at start** — a crash-looping worker must not
   become a delete loop, and a short-lived runner must exit having deleted
-  nothing. `stop()` clears the timer and unregisters the tasks.
+  nothing. `stop()` clears the timer and releases the task registration, which
+  is refcounted — two runners in one process both register and the tasks are
+  removed only when the last sweeper stops.
 - Windows (`DEFAULT_JOB_RETENTION`): completed/cancelled 7 days, failed 30
   days, events 30 days, 10 000 job rows per sweep. Events deliberately outlive
   the jobs they describe, so a job row removed at 7 days still has a readable

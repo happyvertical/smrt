@@ -2,6 +2,12 @@
 
 Multi-tenant user management with RBAC, hierarchical tenants, session handling, and SvelteKit integration.
 
+## Modules
+
+| Module | Scope | Module doc |
+|---|---|---|
+| `src/retention.ts` | expired session/token/CLI-auth reaping and its wiring into the framework retention sweep | [agents/retention.md](agents/retention.md) |
+
 ## Models (14)
 
 | Model | Key Pattern |
@@ -327,24 +333,6 @@ the package root).
   transactions never run `_smrt_backfills` DDL and require that table to
   already exist; use the root database when initialization or recovery is
   needed.
-
-## Credential retention (#2375)
-
-`src/retention.ts` contributes the three long-existing but never-scheduled
-`deleteExpired()` calls (sessions, magic-link tokens, CLI-auth requests) to the
-framework retention sweep, so `smrt db:prune` and a running jobs `TaskRunner`
-reap them.
-
-- `registerUserRetentionTasks()` is explicit — importing schedules nothing.
-  Task names `users-sessions`, `users-magic-link-tokens`,
-  `users-cli-auth-requests`; opt out via the sweep's `tasks` map or
-  `smrt db:prune --skip <name>`.
-- No retention *window*: an expired credential has no value to retain, so each
-  task deletes only already-expired rows. Keep them for audit by opting the
-  task out and archiving yourself.
-- `deleteExpired({ dryRun })` counts with the same predicate instead of
-  deleting — that is what makes the sweep preview exact. `expiresAt` is
-  `@field({ indexed: true })` on all three models.
 
 ## Gotchas
 

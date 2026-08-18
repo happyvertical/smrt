@@ -191,36 +191,55 @@ export interface RetentionTask {
   ): Promise<RetentionTaskOutcome>;
 }
 
-const registeredTasks = new Map<string, RetentionTask>();
+const RETENTION_TASKS_KEY = Symbol.for('smrt.retention-tasks');
+
+/**
+ * The task registry, held on `globalThis` rather than in module scope.
+ *
+ * Contributing packages resolve their own copy of `@happyvertical/smrt-core`
+ * whenever a consumer's install is not fully deduped, and the CLI resolves a
+ * third. A module-local `Map` would give each of them a private, empty
+ * registry — the task would register in one and the sweep would run in
+ * another. `ObjectRegistry` is on `globalThis` for the same reason.
+ */
+function registeredTasks(): Map<string, RetentionTask> {
+  const root = globalThis as typeof globalThis & {
+    [RETENTION_TASKS_KEY]?: Map<string, RetentionTask>;
+  };
+  root[RETENTION_TASKS_KEY] ??= new Map<string, RetentionTask>();
+  return root[RETENTION_TASKS_KEY];
+}
 
 /**
  * Register a retention task so {@link runRetentionSweep} includes it.
  *
- * Re-registering the same name replaces the previous task, which keeps module
- * re-evaluation (HMR, repeated test imports) idempotent.
+ * Registering a task does not schedule anything — a task only runs when
+ * something calls {@link runRetentionSweep}, and the policy can still turn it
+ * off by name. Re-registering the same name replaces the previous task, which
+ * keeps module re-evaluation (HMR, repeated test imports) idempotent.
  */
 export function registerRetentionTask(task: RetentionTask): void {
   if (!task.name) {
     throw new Error('registerRetentionTask requires a non-empty task name');
   }
-  registeredTasks.set(task.name, task);
+  registeredTasks().set(task.name, task);
 }
 
 /** Remove a registered retention task. Returns `true` if one was removed. */
 export function unregisterRetentionTask(name: string): boolean {
-  return registeredTasks.delete(name);
+  return registeredTasks().delete(name);
 }
 
 /** Registered retention tasks, ordered by name for deterministic sweeps. */
 export function getRetentionTasks(): RetentionTask[] {
-  return [...registeredTasks.values()].sort((left, right) =>
+  return [...registeredTasks().values()].sort((left, right) =>
     left.name.localeCompare(right.name),
   );
 }
 
 /** Drop every registered retention task (test helper). */
 export function clearRetentionTasks(): void {
-  registeredTasks.clear();
+  registeredTasks().clear();
 }
 
 // ============================================================================
@@ -291,6 +310,14 @@ export async function pruneAiUsage(
   const scope = tenantScopeClause(retention);
   let pruned = 0;
 
+  // Rows the age bound already accounted for. Redundant when they were really
+  // deleted, load-bearing under `dryRun`, where they were not — without it the
+  // row bound would count the same records a second time.
+  const alreadyCounted: { conditions: string[]; params: unknown[] } = {
+    conditions: [],
+    params: [],
+  };
+
   if (maxAgeMs != null) {
     const cutoff = new Date(now.getTime() - maxAgeMs).toISOString();
     pruned += await deleteFrom(
@@ -300,6 +327,8 @@ export async function pruneAiUsage(
       [...scope.params, cutoff],
       dryRun,
     );
+    alreadyCounted.conditions.push('created_at >= ?');
+    alreadyCounted.params.push(cutoff);
   }
 
   if (maxRows != null) {
@@ -308,8 +337,8 @@ export async function pruneAiUsage(
       pruned += await deleteFrom(
         db,
         AI_USAGE_TABLE,
-        scope.conditions,
-        scope.params,
+        [...scope.conditions, ...alreadyCounted.conditions],
+        [...scope.params, ...alreadyCounted.params],
         dryRun,
       );
     } else {
@@ -329,8 +358,8 @@ export async function pruneAiUsage(
         pruned += await deleteFrom(
           db,
           AI_USAGE_TABLE,
-          [...scope.conditions, 'created_at < ?'],
-          [...scope.params, cutoff],
+          [...scope.conditions, 'created_at < ?', ...alreadyCounted.conditions],
+          [...scope.params, cutoff, ...alreadyCounted.params],
           dryRun,
         );
       }
@@ -688,9 +717,15 @@ async function selectOne(
 /**
  * Count matching rows, then delete them unless this is a dry run.
  *
- * Counting first keeps the reported number exact on every adapter — `rowCount`
- * is not reliably populated across the engines SMRT supports — and is what
- * makes `dryRun` a genuine preview of the same predicate.
+ * Counting first gives a usable number on every adapter — `rowCount` is not
+ * reliably populated across the engines SMRT supports — and is what makes
+ * `dryRun` a genuine preview of the same predicate rather than an estimate of
+ * a different one.
+ *
+ * The count and the delete are two statements and deliberately not a
+ * transaction: a maintenance sweep must not hold a write lock over a large
+ * delete. The returned figure is therefore approximate under concurrent
+ * writers, exactly as `pruneChangeFeed` documents.
  */
 async function deleteFrom(
   db: DatabaseInterface,

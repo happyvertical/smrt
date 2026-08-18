@@ -224,6 +224,30 @@ describe('pruneAiUsage (#2375)', () => {
     expect(await countRows('_smrt_ai_usage')).toBe(2);
   });
 
+  it('does not double-count records selected by both bounds under dryRun', async () => {
+    await insertUsage({ id: 'a-ancient', createdAt: daysAgo(200) });
+    await insertUsage({ id: 'b-ancient', createdAt: daysAgo(150) });
+    await insertUsage({ id: 'c-recent', createdAt: daysAgo(2) });
+    await insertUsage({ id: 'd-recent', createdAt: daysAgo(1) });
+
+    // maxAgeMs selects the two ancient rows; maxRows=1 additionally selects
+    // 'c-recent'. The union is three, not the four a naive sum would report.
+    const preview = await pruneAiUsage(db, {
+      maxAgeMs: 90 * DAY_MS,
+      maxRows: 1,
+      dryRun: true,
+    });
+    expect(preview.pruned).toBe(3);
+    expect(await countRows('_smrt_ai_usage')).toBe(4);
+
+    const applied = await pruneAiUsage(db, {
+      maxAgeMs: 90 * DAY_MS,
+      maxRows: 1,
+    });
+    expect(applied.pruned).toBe(3);
+    expect(await idsIn('_smrt_ai_usage')).toEqual(['d-recent']);
+  });
+
   it('rejects a call with no bounds and negative bounds', async () => {
     await expect(pruneAiUsage(db, {})).rejects.toThrow(
       /requires maxAgeMs and\/or maxRows/,
@@ -339,6 +363,43 @@ describe('runRetentionSweep (#2375)', () => {
     expect(await countRows('_smrt_changes')).toBe(1);
     expect(await countRows('_smrt_ai_usage')).toBe(1);
     expect(await countRows('_smrt_contexts')).toBe(1);
+    expect(await countRows('_smrt_dispatch')).toBe(1);
+  });
+
+  it('breaks the dispatch count down by bucket', async () => {
+    await insertDispatch({
+      id: 'd-completed',
+      status: 'completed',
+      processedAt: daysAgo(60),
+      updatedAt: daysAgo(60),
+    });
+    await insertDispatch({
+      id: 'd-failed',
+      status: 'failed',
+      processedAt: null,
+      updatedAt: daysAgo(120),
+    });
+
+    const result = await runRetentionSweep(db);
+    const dispatch = result.tasks.find((task) => task.task === 'dispatch');
+
+    expect(dispatch?.details).toEqual({ completed: 1, failed: 1 });
+    expect(dispatch?.pruned).toBe(2);
+    expect(await countRows('_smrt_dispatch')).toBe(0);
+  });
+
+  it('previews dispatch cleanup without deleting', async () => {
+    await insertDispatch({
+      id: 'd-completed',
+      status: 'completed',
+      processedAt: daysAgo(60),
+      updatedAt: daysAgo(60),
+    });
+
+    const result = await runRetentionSweep(db, { dryRun: true });
+    const dispatch = result.tasks.find((task) => task.task === 'dispatch');
+
+    expect(dispatch?.details).toEqual({ completed: 1, failed: 0 });
     expect(await countRows('_smrt_dispatch')).toBe(1);
   });
 

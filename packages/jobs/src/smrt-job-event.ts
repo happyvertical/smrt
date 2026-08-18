@@ -326,7 +326,13 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
    * their own clock rather than by following job deletion: a long-running job
    * accumulates events for as long as it runs.
    *
-   * The predicate is covered by `idx_smrt_job_events_created_at`.
+   * The cutoff uses the same engine-normalized `created_at` expression the
+   * cursor reads use. On PostgreSQL that is the bare column, so
+   * `idx_smrt_job_events_created_at` serves it; on SQLite the `strftime()`
+   * wrapper makes the comparison non-sargable and the prune is a scan. That is
+   * acceptable for a periodic maintenance pass and is preferable to comparing
+   * two differently-formatted timestamps, which is what the wrapper exists to
+   * prevent.
    *
    * @param options.before - Delete events created strictly before this time.
    * @param options.dryRun - Count matching events without deleting them.

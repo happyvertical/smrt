@@ -25,10 +25,20 @@ import {
   startRetentionSweeper,
   unregisterJobRetentionTasks,
 } from '../retention.js';
+import { TaskRunner } from '../runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
 import { SmrtJobEventCollection } from '../smrt-job-event.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The runner's sweeper handle is private state with no public accessor; the
+ * observable behaviour under test is "a sweeper exists while the runner runs",
+ * so the test reads the field rather than waiting six hours for a tick.
+ */
+function runnerSweeper(runner: TaskRunner): unknown {
+  return (runner as unknown as { retentionSweeper: unknown }).retentionSweeper;
+}
 
 function daysAgo(days: number): Date {
   return new Date(Date.now() - days * DAY_MS);
@@ -217,7 +227,7 @@ describe('job retention tasks (#2375)', () => {
       objectType: 'TenDaysOld',
     });
 
-    registerJobRetentionTasks({ completedAfterDays: 30 });
+    registerJobRetentionTasks({ completedOlderThanDays: 30 });
     const result = await runRetentionSweep(db);
 
     expect(
@@ -279,7 +289,62 @@ describe('startRetentionSweeper (#2375)', () => {
     );
   });
 
+  it('keeps the tasks registered while a second sweeper is still running', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await SmrtJobCollection.create({ db });
+
+    const first = startRetentionSweeper(db);
+    const second = startRetentionSweeper(db);
+    try {
+      first.stop();
+      // Stopping one runner must not disarm the other's sweep.
+      const stillArmed = await runRetentionSweep(db);
+      expect(
+        stillArmed.tasks.some((task) => task.task === JOBS_RETENTION_TASK),
+      ).toBe(true);
+    } finally {
+      second.stop();
+    }
+
+    const disarmed = await runRetentionSweep(db);
+    expect(
+      disarmed.tasks.some((task) => task.task === JOBS_RETENTION_TASK),
+    ).toBe(false);
+  });
+
   it('defaults to a six-hour cadence', () => {
     expect(DEFAULT_RETENTION_SWEEP_INTERVAL_MS).toBe(6 * 60 * 60 * 1000);
+  });
+});
+
+describe('TaskRunner retention wiring (#2375)', () => {
+  it('arms a sweeper on start and disarms it on stop', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await SmrtJobCollection.create({ db });
+
+    const runner = new TaskRunner({ pollInterval: 60_000 });
+    await runner.initialize(db);
+    await runner.start();
+    try {
+      expect(runnerSweeper(runner)).not.toBeNull();
+    } finally {
+      await runner.stop();
+    }
+
+    expect(runnerSweeper(runner)).toBeNull();
+  });
+
+  it('arms nothing when retention is opted out', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await SmrtJobCollection.create({ db });
+
+    const runner = new TaskRunner({ pollInterval: 60_000, retention: false });
+    await runner.initialize(db);
+    await runner.start();
+    try {
+      expect(runnerSweeper(runner)).toBeNull();
+    } finally {
+      await runner.stop();
+    }
   });
 });
