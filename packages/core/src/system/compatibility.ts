@@ -1007,10 +1007,11 @@ export async function ensureDeferredSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,
 ): Promise<{ settled: boolean }> {
-  const [jobsExists, jobEventsExists] = await Promise.all([
-    tableExists(db, '_smrt_jobs', typeHint),
-    tableExists(db, '_smrt_job_events', typeHint),
-  ]);
+  // Sequential, never `Promise.all`: a caller can hand us one shared
+  // single-statement connection (the OIDC provisioning coordinator does), and
+  // two probes in flight at once overlap on it.
+  const jobsExists = await tableExists(db, '_smrt_jobs', typeHint);
+  const jobEventsExists = await tableExists(db, '_smrt_job_events', typeHint);
 
   if (jobsExists) {
     await ensureJobsSystemTableCompatibility(db, typeHint);
