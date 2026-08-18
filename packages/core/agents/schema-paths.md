@@ -219,3 +219,47 @@ from raw source (never `related: '() => Target'`). An unresolved target silently
 costs the relationship edge, `loadRelated()`, and the FK-derived index (#2379).
 A thunk resolves at decoration time, so a target declared later in the same
 module is still in its temporal dead zone — use the string form there.
+
+### 15. A SQLite type change is a table rebuild (#2370)
+
+SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
+`src/migrations/sqlite-rebuild.ts` answers a `type_upgrade` on SQLite with the
+statement list SQLite's own docs prescribe: stage a new table under
+`_smrt_rebuild_<table>`, copy, drop, rename, replay the indexes and triggers.
+`SchemaComparer.compareTable` swaps that plan in for the differ's
+"requires table recreation" placeholder, so `db:migrate` applies it inside the
+normal atomic batch instead of exiting 1 forever.
+
+Four properties of that module are load-bearing; keep them if you touch it:
+
+- **The target shape comes from the live `sqlite_master` DDL**, retyping only
+  the drifted columns. It is not regenerated from the manifest, so the rebuild
+  never becomes an implicit `DROP COLUMN`, and it preserves table constraints,
+  `CHECK`s, and `WITHOUT ROWID`/`STRICT`.
+- **The rebuild is hoisted ahead of the table's other column changes.** Its
+  staging DDL and copy list are captured at diff time, and the differ emits
+  changes in manifest field order, so a new field declared above the retyped
+  one would otherwise run `ALTER TABLE ... ADD COLUMN` first and have the
+  rebuild silently drop it — both statements succeed and the batch commits.
+  Rebuild first, then add columns to the rebuilt table.
+- **The copy carries no `CAST`.** SQLite applies the destination column's
+  affinity on insert — the same conversion a fresh table performs. An explicit
+  cast is worse: non-numeric TEXT cast to REAL/INTEGER silently becomes `0`,
+  and an ISO timestamp cast to NUMERIC-affinity `DATETIME` becomes its year.
+- **It refuses when any table has a foreign key onto the target and
+  `PRAGMA foreign_keys` is ON** (the SMRT adapter's default). `DROP TABLE`
+  performs an implicit `DELETE FROM` that fires `ON DELETE CASCADE` on
+  children, and `defer_foreign_keys` defers constraint *checks*, not FK
+  *actions* — verified: the child rows go. The target's own self-reference
+  counts, because the staging table copies that clause and becomes a child of
+  the table being dropped (verified: a two-row self-referencing table finishes
+  the rebuild holding one row). Such a column stays manual drift.
+- **`PRAGMA legacy_alter_table` brackets the rename**, because SQLite ≥ 3.25
+  re-parses the schema on `ALTER TABLE ... RENAME` and a view still pointing at
+  the just-dropped table makes it fail outright. It is restored immediately
+  after; a rolled-back batch leaves it set on that connection, which is inert
+  here only because nothing else in SMRT renames a table.
+
+All the drifted columns of one table share a single rebuild: the first change
+carries the plan and the rest become `no change needed` comments that the CLI
+classifies as no-ops.
