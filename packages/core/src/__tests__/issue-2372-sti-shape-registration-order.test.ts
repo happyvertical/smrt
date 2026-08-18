@@ -103,7 +103,10 @@ const MIRROR_MANIFEST = {
   decoratorConfig: { tableStrategy: 'sti' },
 };
 
-type ManifestEntry = typeof BASE_MANIFEST | typeof ARTICLE_MANIFEST;
+type ManifestEntry =
+  | typeof BASE_MANIFEST
+  | typeof ARTICLE_MANIFEST
+  | typeof MIRROR_MANIFEST;
 
 const PACKAGE_NAME = '@test/issue-2372';
 
