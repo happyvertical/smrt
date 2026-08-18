@@ -31,3 +31,4 @@ Distributed knowledge base with semantic deduplication, provenance tracking, and
 - **AI disambiguation fallback**: if AI fails, defaults to branch (safer than merge)
 - **Embeddings config**: `fields: ['textRefined'], autoGenerate: true, combinedField: {...}`
 - **Optional tenancy** with nullable tenantId. `findWithGlobals(tenantId)` for tenant + global facts
+- **Confidence/credibility must initialize `0.0`, never `0`**: they are rates, not money — inherently fractional. An integer literal compiles to an INTEGER column and a `[0, 1]` score becomes unstorable, so PostgreSQL raises `22P02` while SQLite silently accepts it. `FactEvidence.confidence` carried that bug until #2361; `pnpm --filter @happyvertical/smrt-facts test:postgres` is the lane that holds the line. (Money elsewhere in the framework goes the other way — integer minor units.)

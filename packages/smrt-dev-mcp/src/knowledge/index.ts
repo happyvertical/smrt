@@ -23,7 +23,13 @@ import {
   readAgentModuleDocs,
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
-import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
+import {
+  lintNumericPrecision,
+  ManifestAdapter,
+  OxcScanner,
+  parseSource,
+  sourceMayContainNumericPrecisionIssue,
+} from '@happyvertical/smrt-scanner';
 import type {
   DomainKnowledgeField,
   DomainKnowledgeFieldConstraints,
@@ -884,6 +890,9 @@ export async function checkKnowledgeFreshnessFromIndex(
   }
 
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
+  issues.push(
+    ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
+  );
 
   const effectiveIssues = issues.map((issue) =>
     issue.code.startsWith('stale-')
@@ -2918,6 +2927,94 @@ function findStalePatternIssues(
     }
   }
   return issues;
+}
+
+/**
+ * Flag fields whose declared numeric precision contradicts their name (#2361):
+ * money declared decimal, or a rate declared integer.
+ *
+ * Severity is split by what the repository can currently satisfy, not by
+ * preference:
+ *
+ * - **rate** findings fail closed on `@happyvertical/smrt-*`. The framework has
+ *   zero violations, so the gate holds the line at zero.
+ * - **money** findings warn everywhere for now. Twenty-one framework fields
+ *   across commerce, projects, subscriptions, support and the conformance
+ *   fixture still declare money decimal, and converting them means changing
+ *   live column types (REAL→INTEGER is not a whitelisted upgrade) and rescaling
+ *   stored values by 100. That is a coordinated migration, not a lint fix, so
+ *   failing closed today would only break every build. This flips to `error`
+ *   once that conversion lands.
+ *
+ * Consumer packages always warn: the framework cannot know a downstream
+ * project's money convention, and a hard failure would make
+ * `dev:knowledge-check` unpassable there.
+ *
+ * Source, not manifest, is the oracle: the manifest records the resulting
+ * column type but not whether the author chose it, so only the source can tell
+ * `@field({ type: 'decimal' })` (a decision) from `= 0.0` (a default nobody
+ * made).
+ */
+function findNumericPrecisionIssues(
+  index: SmrtKnowledgeIndex,
+  authoredPackages: KnowledgePackage[],
+  changedFiles?: string[],
+): KnowledgeIssue[] {
+  const changedAbsolutePaths = changedFiles
+    ? new Set(changedFiles.map((file) => resolve(index.rootDir, file)))
+    : undefined;
+  const issues: KnowledgeIssue[] = [];
+
+  for (const pkg of authoredPackages) {
+    if (pkg.kind === 'sdk') continue;
+    const srcDir = join(pkg.directory, 'src');
+    if (!existsSync(srcDir)) continue;
+    const isFramework = pkg.kind === 'smrt';
+
+    for (const filePath of walkFiles(srcDir)) {
+      if (!isLintableModelSource(filePath)) continue;
+      if (changedAbsolutePaths && !changedAbsolutePaths.has(filePath)) continue;
+      let sourceText: string;
+      try {
+        sourceText = readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      // Parsing every file in the workspace would dominate this check; the
+      // pre-filter is conservative, so it only ever skips files that could not
+      // have produced a finding.
+      if (!sourceMayContainNumericPrecisionIssue(sourceText)) continue;
+
+      const parsed = parseSource(sourceText, filePath);
+      for (const finding of lintNumericPrecision(parsed.classes, sourceText)) {
+        const location = finding.line > 0 ? `:${finding.line}` : '';
+        // See this function's doc comment: rates hold at zero, money waits on
+        // a coordinated column migration.
+        const severity: KnowledgeIssueSeverity =
+          isFramework && finding.kind === 'rate' ? 'error' : 'warning';
+        issues.push({
+          severity,
+          code: `numeric-precision-${finding.kind}`,
+          message: `${finding.message} ${finding.remedy}`,
+          file: `${relative(index.rootDir, filePath)}${location}`,
+          packageName: pkg.name,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/** Only authored, non-generated TypeScript model sources are linted. */
+function isLintableModelSource(filePath: string): boolean {
+  if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return false;
+  if (filePath.endsWith('.d.ts')) return false;
+  if (/\.(test|spec)\.tsx?$/.test(filePath)) return false;
+  const parts = filePath.split(sep);
+  // `template/` holds consumer scaffolding this repo's rules do not govern
+  // (biome skips it too), and `__tests__/` is fixtures.
+  return !parts.includes('__tests__') && !parts.includes('template');
 }
 
 function shouldScanStalePatternFile(

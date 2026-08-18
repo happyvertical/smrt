@@ -67,27 +67,41 @@ export class InvoiceLineItem extends SmrtObject {
   sku: string = '';
 
   /**
-   * Quantity (e.g., impressions, hours, units)
+   * Quantity (e.g., impressions, hours, units).
+   *
+   * Left INTEGER: this package's own example is `quantity: 50000` impressions,
+   * and nothing in it writes a fractional quantity, so whether fractional
+   * quantities are intended here is unresolved. `ContractLineItem.quantity` is
+   * decimal, which is the inconsistency to settle deliberately rather than by
+   * changing a column type in passing (#2361).
    */
   quantity: number = 1;
 
   /**
-   * Unit price before discount
+   * Unit price before discount, in **integer minor units** (cents, satoshis).
+   *
+   * Money is exact, so it is stored as minor units and never as a float —
+   * `$19.99` is `1999`. An integer literal is what maps this to an INTEGER
+   * column (#2361).
    */
   unitPrice: number = 0;
 
   /**
-   * Discount amount (flat, not percentage)
+   * Discount amount (flat, not percentage), in integer minor units (#2361).
    */
   discount: number = 0;
 
   /**
-   * Tax rate as decimal (e.g., 0.05 for 5%)
+   * Tax rate as a decimal fraction (e.g., 0.05 for 5%).
+   *
+   * A genuine rate, not money: it is inherently fractional, so the `0.0`
+   * initializer is load-bearing and maps it to a DECIMAL column. INTEGER would
+   * truncate every rate to 0 (#2361).
    */
-  taxRate: number = 0;
+  taxRate: number = 0.0;
 
   /**
-   * Calculated line amount
+   * Calculated line amount, in integer minor units (#2361).
    */
   amount: number = 0;
 

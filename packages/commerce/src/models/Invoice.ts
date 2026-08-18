@@ -238,22 +238,28 @@ export class Invoice extends SmrtObject {
   // ============================================================================
 
   /**
-   * Subtotal before tax
+   * Subtotal before tax, in **integer minor units** (cents, satoshis).
+   *
+   * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
+   * INTEGER and a decimal literal to DECIMAL. Money is exact, so it is stored
+   * as minor units and never as a float — `$19.99` is `1999`, not `19.99`.
+   * Writing a fractional major-unit value here is the bug; PostgreSQL rejects
+   * it with `22P02` while SQLite's affinity silently stores it (#2361).
    */
   subtotal: number = 0;
 
   /**
-   * Tax amount
+   * Tax amount, in integer minor units (#2361).
    */
   taxAmount: number = 0;
 
   /**
-   * Total amount due (subtotal + tax)
+   * Total amount due (subtotal + tax), in integer minor units (#2361).
    */
   totalAmount: number = 0;
 
   /**
-   * Amount paid (sum of PaymentAllocations)
+   * Amount paid (sum of PaymentAllocations), in integer minor units (#2361).
    */
   amountPaid: number = 0;
 
