@@ -19,7 +19,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildCascadePlan, normalizeOnDelete } from '../cascade';
 import { SmrtCollection } from '../collection';
-import { field, foreignKey } from '../decorators/index';
+import { crossPackageRef, field, foreignKey } from '../decorators/index';
 import { EmbeddingStorage } from '../embeddings/storage';
 import { ConfigurationError, DatabaseError } from '../errors';
 import { SmrtObject } from '../object';
@@ -244,6 +244,82 @@ class CascadeAttachment extends SmrtPolymorphicAssociation {
 @smrt()
 class CascadeAttachmentCollection extends SmrtCollection<CascadeAttachment> {
   static readonly _itemClass = CascadeAttachment;
+}
+
+/**
+ * Two classes, same simple name, different packages — a regression fixture
+ * for the review finding that `delete()` must resolve the cascade plan
+ * through `getResolvedQualifiedName()`, not the ambiguous
+ * `this.constructor.name`. `AmbiguousDocA` registers first and
+ * `AmbiguousDocB` second: `ObjectRegistry`'s ambiguous-name fallback resolves
+ * a bare `'AmbiguousDoc'` lookup to the *first* match (A), so a regression to
+ * `constructor.name` would silently plan B's delete against A's (empty)
+ * reference set and leave the tag below orphaned — not a coincidental pass.
+ */
+const AmbiguousDocA = smrt({
+  packageName: '@ambiguous-a/pkg-2371',
+  tableName: 'cascade_2371_ambiguous_doc_a',
+})(
+  class AmbiguousDoc extends SmrtObject {
+    title = '';
+
+    constructor(options: any = {}) {
+      super(options);
+      if (options.title !== undefined) this.title = options.title;
+    }
+  },
+);
+
+const AmbiguousDocB = smrt({
+  packageName: '@ambiguous-b/pkg-2371',
+  tableName: 'cascade_2371_ambiguous_doc_b',
+})(
+  class AmbiguousDoc extends SmrtObject {
+    title = '';
+
+    constructor(options: any = {}) {
+      super(options);
+      if (options.title !== undefined) this.title = options.title;
+    }
+  },
+);
+
+@smrt()
+class AmbiguousDocACollection extends SmrtCollection<
+  InstanceType<typeof AmbiguousDocA>
+> {
+  static readonly _itemClass = AmbiguousDocA;
+}
+
+@smrt()
+class AmbiguousDocBCollection extends SmrtCollection<
+  InstanceType<typeof AmbiguousDocB>
+> {
+  static readonly _itemClass = AmbiguousDocB;
+}
+
+/** Junction row naming B specifically, via its fully-qualified name. */
+@smrt({
+  tableName: 'cascade_2371_ambiguous_doc_tags',
+  conflictColumns: ['doc_id', 'tag'],
+})
+class AmbiguousDocTag extends SmrtObject {
+  @crossPackageRef('@ambiguous-b/pkg-2371:AmbiguousDoc', { required: true })
+  docId = '';
+
+  @field({ required: true })
+  tag = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+    if (options.tag !== undefined) this.tag = options.tag;
+  }
+}
+
+@smrt()
+class AmbiguousDocTagCollection extends SmrtCollection<AmbiguousDocTag> {
+  static readonly _itemClass = AmbiguousDocTag;
 }
 
 // ---------------------------------------------------------------------------
@@ -513,6 +589,61 @@ describe('delete() referential integrity (#2371)', () => {
 
       expect(await db.count('cascade_2371_docs', { id: doc.id })).toBe(0);
       expect(await docs.get({ id: doc.id })).toBeNull();
+    });
+  });
+
+  describe('ambiguous simple class names (review fix: qualified-name resolution)', () => {
+    it('cascades a cross-package reference to B, not the same-named A registered first', async () => {
+      const docsB = await collectionOn(AmbiguousDocBCollection);
+      const tags = await collectionOn(AmbiguousDocTagCollection);
+
+      const docB = await docsB.create({ title: 'ambiguous-b' } as any);
+      await docB.save();
+
+      const tag = await tags.create({ docId: docB.id, tag: 'alpha' } as any);
+      await tag.save();
+
+      expect(await db.count('cascade_2371_ambiguous_doc_tags')).toBe(1);
+
+      await docB.delete();
+
+      const remaining = await db.list('cascade_2371_ambiguous_doc_tags', {});
+      expect(remaining).toHaveLength(0);
+    });
+
+    it("resolves the target class through the instance's registration, not its bare constructor name", () => {
+      const docB = new (
+        AmbiguousDocB as unknown as {
+          new (options?: any): SmrtObject;
+        }
+      )({});
+      const qualifiedName = (
+        docB as unknown as { getResolvedQualifiedName(): string }
+      ).getResolvedQualifiedName();
+
+      expect(docB.constructor.name).toBe('AmbiguousDoc');
+      expect(qualifiedName).toBe('@ambiguous-b/pkg-2371:AmbiguousDoc');
+
+      // Building the plan from the ambiguous bare name resolves to A (first
+      // registered) and misses B's own reference entirely.
+      const ambiguousPlan = buildCascadePlan(ObjectRegistry, 'AmbiguousDoc');
+      const viaAmbiguousName = ambiguousPlan.references.find(
+        (reference) => reference.className === 'AmbiguousDocTag',
+      );
+      expect(viaAmbiguousName).toBeUndefined();
+
+      // Building it from the qualified name finds it.
+      const qualifiedPlan = buildCascadePlan(
+        ObjectRegistry,
+        '@ambiguous-b/pkg-2371:AmbiguousDoc',
+      );
+      const viaQualifiedName = qualifiedPlan.references.find(
+        (reference) => reference.className === 'AmbiguousDocTag',
+      );
+      expect(viaQualifiedName).toMatchObject({
+        column: 'doc_id',
+        action: 'CASCADE',
+      });
     });
   });
 });

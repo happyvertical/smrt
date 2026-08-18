@@ -2883,7 +2883,14 @@ export class SmrtObject extends SmrtClass {
       this.db,
       ObjectRegistry,
       {
-        className: this.constructor.name,
+        // R5-canon: the qualified name, not the bare constructor name —
+        // two packages can register a same-named class, and a simple-name
+        // lookup in ObjectRegistry.getClass()/findClass() can silently
+        // resolve the cascade plan against the wrong package's class,
+        // leaving its @crossPackageRef references and polymorphic
+        // meta_type rows uncleaned (the orphaned-reference bug #2371
+        // exists to close, moved to the cross-package case).
+        className: this.getResolvedQualifiedName(),
         tableName: this.tableName,
         id: this.id,
       },

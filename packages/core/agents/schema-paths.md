@@ -672,10 +672,10 @@ Properties to keep if you touch that module:
   so a cached plan would silently skip a table that registered later. Cache it
   only behind an invalidation hook that every registration path calls.
 - **A class nothing references skips the transaction entirely.**
-  `hasIncomingReferences()` is checked first, against the class's
-  `getResolvedQualifiedName()` (not the bare constructor name — two packages can
-  register the same simple name), so the common case pays no extra round trip
-  beyond the two side-table statements.
+  `runCascadeDelete()` builds the plan for `getResolvedQualifiedName()` (not the
+  bare constructor name — two packages can register the same simple name) and
+  checks `CascadePlan.isEmpty` before opening anything, so the common case pays
+  no extra round trip beyond the two side-table statements.
 - **Cascaded rows are removed set-based.** Their `beforeDelete`/`afterDelete`
   hooks and interceptors do not run and no change-feed tombstone is written for
   them, which is exactly what a DB-level `ON DELETE CASCADE` does. Only the
