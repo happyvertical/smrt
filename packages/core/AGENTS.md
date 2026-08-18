@@ -213,8 +213,8 @@ Production DDL comes from the **manifest** paths
 **registry** paths feed `getTestDatabase()` and emit foreign-key indexes
 production never gets: the suite runs on a richer schema than it ships.
 
-- Change column/index emission on every shipping path, proven by a path-parity
-  test (#2359 adds one). A "same as migrations" comment is a claim to check.
+- Change column/index emission on every shipping path, proven by the path-parity
+  test `src/schema/schema-path-parity.test.ts` (#2359; index rules in the module doc). A "same as migrations" comment is a claim to check.
 - Every new query predicate ships with its index, or a reason it doesn't.
 - Numeric types, uuid casts, conflict targets, timestamps, migrations: run the
   `test:postgres` lane — SQLite affinity accepts what PostgreSQL rejects.

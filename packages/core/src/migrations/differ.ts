@@ -9,6 +9,7 @@ import { createLogger } from '@happyvertical/logger';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import type {
+  ColumnAlteration,
   ColumnDefinition,
   IndexDefinition,
   SchemaChange,
@@ -16,7 +17,15 @@ import type {
   SchemaDiff,
   SQLDataType,
 } from '../schema/types.js';
-import { isJsonPathIndex, renderIndexTarget } from '../schema/utils.js';
+import {
+  isJsonPathIndex,
+  isStiSubtypeUniqueIndex,
+  renderIndexTarget,
+} from '../schema/utils.js';
+import {
+  planSqliteTableRebuilds,
+  sqliteRebuildPlaceholderSql,
+} from './sqlite-rebuild.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -51,10 +60,29 @@ function isValidSQLDataType(type: string): type is SQLDataType {
  * Options for schema comparison
  */
 export interface DiffOptions {
-  /** Include dropped tables in diff (default: false for safety) */
+  /**
+   * Emit executable `DROP TABLE` entries (`dropped_tables`) for tables that
+   * exist in the database but not in the manifest. Default: false. Orphan
+   * tables are always *reported* via `SchemaDiff.orphan_tables` regardless.
+   */
   includeDroppedTables?: boolean;
-  /** Include dropped columns in diff (default: false for safety) */
+  /**
+   * Emit executable `drop_column` changes for columns that exist in the
+   * database but not in the manifest. Default: false. Orphan columns are
+   * always *reported* as `orphan_column` advisories regardless — a NOT NULL
+   * orphan without a default is flagged as a warning because every ORM
+   * insert (which never supplies the column) will fail on it (#2369).
+   */
   includeDroppedColumns?: boolean;
+  /**
+   * Execute constraint relaxations instead of only reporting them:
+   * `DROP NOT NULL` / `DROP DEFAULT` on live columns that are stricter than
+   * the manifest, and `DROP NOT NULL` on orphan NOT NULL columns. Default:
+   * false — relaxations are reported as advisories with the suggested SQL.
+   * Strengthening repairs (`SET NOT NULL`, `SET DEFAULT`) are always emitted
+   * where the engine supports `ALTER COLUMN` (#2369).
+   */
+  relaxColumns?: boolean;
   /**
    * Drop indexes that exist in the database but are absent from the manifest
    * AND are not functionally equivalent to anything in the manifest. Default:
@@ -62,6 +90,11 @@ export interface DiffOptions {
    * implicit indexes that PostgreSQL creates from inline UNIQUE constraints
    * (`*_key`) — those are owned by table-level constraints, not by the
    * index list, and dropping them here would break the constraint.
+   *
+   * Independent of this flag, a redundant single-column index over the
+   * table's primary key that the manifest no longer declares (the legacy
+   * `<table>_id_idx`, #2359) is always dropped: the primary-key constraint
+   * keeps serving every lookup, so the drop can only save write cost.
    */
   includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
@@ -88,14 +121,67 @@ export interface DiffOptions {
  * Suffix patterns for indexes that the differ refuses to drop.
  * - `_pkey`: PostgreSQL primary key implicit index.
  * - `_key`: PostgreSQL implicit index for inline `UNIQUE (...)` table
- *   constraints. Dropping these by name does not drop the underlying
- *   constraint, and dropping the constraint requires a separate DDL path
+ *   constraints, and the unique index the differ itself creates for a
+ *   `unique: true` column added via ADD COLUMN on engines that reject an
+ *   inline UNIQUE there (SQLite/DuckDB — see {@link uniqueColumnIndexName}).
+ *   Dropping these by name does not drop the underlying constraint on
+ *   PostgreSQL, and dropping the constraint requires a separate DDL path
  *   (`ALTER TABLE ... DROP CONSTRAINT`) the differ does not emit today.
+ *   Unclaimed `_key` unique indexes are instead *reported* as
+ *   `orphan_index` advisories (#2369).
  */
 const PROTECTED_INDEX_SUFFIXES = ['_pkey', '_key'];
 
 function isProtectedDbIndexName(name: string): boolean {
   return PROTECTED_INDEX_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/**
+ * Name of the unique index that backs a `unique: true` column. Mirrors the
+ * `<table>_<column>_key` name PostgreSQL gives the implicit index of an
+ * inline column UNIQUE constraint, so the same column ends up with the same
+ * index name on every engine and the orphan-index sweep treats it as
+ * constraint-owned.
+ */
+export function uniqueColumnIndexName(
+  tableName: string,
+  columnName: string,
+): string {
+  return `${tableName}_${columnName}_key`;
+}
+
+/**
+ * True when a change is report-only: it carries an advisory and no
+ * executable statement. Such changes never reach the migration stream.
+ */
+export function isAdvisoryOnlyChange(change: SchemaChange): boolean {
+  if (!change.advisory) return false;
+  const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+  return statements.length === 0;
+}
+
+/**
+ * True for an info-level report-only change: listed in `SchemaDiff.changes`
+ * for visibility but not counted by `has_changes` (a harmless orphan column,
+ * a live default the manifest no longer declares).
+ */
+export function isInfoOnlyChange(change: SchemaChange): boolean {
+  return isAdvisoryOnlyChange(change) && change.advisory?.severity === 'info';
+}
+
+/**
+ * True when a change has no executable DDL: `type_mismatch`, an advisory-only
+ * change, or a change whose only SQL is an advisory comment (e.g. a SQLite
+ * `ALTER COLUMN` the engine cannot perform in place).
+ */
+export function isManualOrAdvisoryChange(change: SchemaChange): boolean {
+  if (change.type === 'type_mismatch') return true;
+  if (isAdvisoryOnlyChange(change)) return true;
+  const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+  return (
+    statements.length > 0 &&
+    statements.every((statement) => statement.trim().startsWith('--'))
+  );
 }
 
 function resolveDatabaseUrl(db: DatabaseInterface): string {
@@ -197,6 +283,126 @@ export function extractIndexPredicate(createIndexSql: string): string {
 }
 
 /**
+ * Canonical form of a column default for drift comparison (#2369).
+ *
+ * The manifest side is the DDL fragment `formatDefaultValue()` would emit
+ * (`'anon'`, `0`, `TRUE`, `'{}'`, `current_timestamp`); the database side is
+ * whatever the catalog reports, which each engine renders differently:
+ * PostgreSQL appends casts (`'anon'::text`, `'{}'::jsonb`, `'-1'::integer`)
+ * and upper-cases `CURRENT_TIMESTAMP`, DuckDB wraps booleans
+ * (`CAST('t' AS BOOLEAN)`), SQLite echoes the literal verbatim. Both sides
+ * are reduced by the *manifest column type* to a `{kind, key}` pair:
+ *
+ * - `none`   — no default (`undefined`, empty, or the `NULL` keyword)
+ * - `now`    — the current-timestamp family (`current_timestamp`, `now()`,
+ *              `transaction_timestamp()`, `datetime('now')`)
+ * - `number` — numeric columns, compared by numeric value
+ * - `bool`   — boolean columns (`true`/`false`/`t`/`f`/`1`/`0`)
+ * - `text`   — string literal contents (JSON columns compare the parsed
+ *              value when both sides parse)
+ * - `func`   — other function calls / keywords, compared lowercase and
+ *              whitespace-collapsed
+ * - `raw`    — could not be classified; callers must skip the comparison
+ *              rather than risk a false positive
+ */
+export function canonicalizeDefault(
+  fragment: string | undefined,
+  columnType: SQLDataType,
+): {
+  kind: 'none' | 'now' | 'number' | 'bool' | 'text' | 'func' | 'raw';
+  key: string;
+} {
+  if (fragment === undefined) return { kind: 'none', key: '' };
+  let s = fragment.trim();
+  if (s === '') return { kind: 'none', key: '' };
+
+  // Unwrap DuckDB `CAST(<inner> AS <type>)` and PostgreSQL trailing casts /
+  // outer parentheses. Loop because forms can nest (`('x'::text)::text`).
+  for (let guard = 0; guard < 8; guard++) {
+    const before = s;
+    const castMatch = s.match(/^CAST\s*\((.*)\s+AS\s+[A-Za-z_][\w\s()]*\)$/is);
+    if (castMatch) s = castMatch[1].trim();
+    if (s.startsWith('(') && s.endsWith(')')) s = s.slice(1, -1).trim();
+    // Trailing PostgreSQL cast: `::type`, `::character varying`, `::type[]`,
+    // `::timestamp with time zone`, `::numeric(10,2)`.
+    s = s
+      .replace(/::[A-Za-z_][\w ]*(\(\s*\d+(\s*,\s*\d+)?\s*\))?(\[\])?\s*$/i, '')
+      .trim();
+    if (s === before) break;
+  }
+
+  if (/^null$/i.test(s)) return { kind: 'none', key: '' };
+
+  const lower = s.toLowerCase().replace(/\s+/g, ' ');
+  if (
+    lower === 'current_timestamp' ||
+    lower === 'current_timestamp()' ||
+    lower === 'now()' ||
+    lower === 'transaction_timestamp()' ||
+    lower === "datetime('now')" ||
+    lower === 'localtimestamp'
+  ) {
+    return { kind: 'now', key: 'now' };
+  }
+
+  const upperType = String(columnType).toUpperCase();
+  const isNumericType =
+    upperType === 'INTEGER' || upperType === 'REAL' || upperType === 'DECIMAL';
+  const isBooleanType = upperType === 'BOOLEAN';
+  const isJsonType = upperType === 'JSON';
+
+  // String literal (single-quoted, '' escape).
+  const literalMatch = s.match(/^'((?:[^']|'')*)'$/s);
+  const literal =
+    literalMatch !== null ? literalMatch[1].replace(/''/g, "'") : null;
+
+  if (isBooleanType) {
+    const token = (literal ?? s).trim().toLowerCase();
+    if (['true', 't', '1', 'yes', 'on'].includes(token))
+      return { kind: 'bool', key: 'true' };
+    if (['false', 'f', '0', 'no', 'off'].includes(token))
+      return { kind: 'bool', key: 'false' };
+    return { kind: 'raw', key: lower };
+  }
+
+  if (isNumericType) {
+    const token = (literal ?? s).trim();
+    if (/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(token)) {
+      return { kind: 'number', key: String(Number(token)) };
+    }
+    if (literal !== null) {
+      return { kind: 'text', key: literal };
+    }
+    // Not a numeric literal — fall through to function/keyword detection
+    // (e.g. `nextval('seq'::regclass)`).
+  }
+
+  if (literal !== null) {
+    if (isJsonType) {
+      try {
+        return { kind: 'text', key: JSON.stringify(JSON.parse(literal)) };
+      } catch {
+        // Not JSON — compare as plain text below.
+      }
+    }
+    return { kind: 'text', key: literal };
+  }
+
+  // Bare numeric literal on a non-numeric column (e.g. SQLite `DEFAULT 0` on
+  // a TEXT column) — compare textually.
+  if (/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) {
+    return { kind: 'text', key: String(Number(s)) };
+  }
+
+  // Function call / keyword.
+  if (/^[A-Za-z_][\w.]*\s*\(.*\)$/s.test(s) || /^[A-Za-z_]\w*$/.test(s)) {
+    return { kind: 'func', key: lower };
+  }
+
+  return { kind: 'raw', key: lower };
+}
+
+/**
  * SchemaComparer class for comparing manifest schemas to database
  */
 export class SchemaComparer {
@@ -254,23 +460,34 @@ export class SchemaComparer {
         const tableChanges = await this.compareTable(tableName, schema);
         if (tableChanges.length > 0) {
           diff.changes.push(...tableChanges);
-          diff.has_changes = true;
+          // Info-level report-only notes (a harmless orphan column, a stale
+          // default the manifest no longer declares) are listed but do not
+          // make the schema "changed": executable, manual, and warning-level
+          // findings do (#2369).
+          if (tableChanges.some((change) => !isInfoOnlyChange(change))) {
+            diff.has_changes = true;
+          }
         }
       }
     }
 
-    // Check for dropped tables (if enabled)
-    if (this.options.includeDroppedTables) {
-      for (const tableName of existingTables) {
-        // Skip system tables
-        if (tableName.startsWith('_smrt_') || tableName.startsWith('sqlite_')) {
-          continue;
-        }
-        if (!manifestSchemas[tableName]) {
-          diff.dropped_tables.push(tableName);
-          diff.has_changes = true;
-        }
+    // Orphan tables are always reported (never silently retained); the
+    // executable DROP TABLE stays opt-in via `includeDroppedTables` (#2369).
+    const orphanTables: string[] = [];
+    for (const tableName of existingTables) {
+      // Skip system tables
+      if (tableName.startsWith('_smrt_') || tableName.startsWith('sqlite_')) {
+        continue;
       }
+      if (!manifestSchemas[tableName]) {
+        orphanTables.push(tableName);
+      }
+    }
+    orphanTables.sort();
+    diff.orphan_tables = orphanTables;
+    if (this.options.includeDroppedTables && orphanTables.length > 0) {
+      diff.dropped_tables.push(...orphanTables);
+      diff.has_changes = true;
     }
 
     return diff;
@@ -293,8 +510,28 @@ export class SchemaComparer {
     }
 
     // Compare columns
-    const columnChanges = this.compareColumns(tableName, manifest, dbSchema);
-    changes.push(...columnChanges);
+    const columnChanges = await this.compareColumns(
+      tableName,
+      manifest,
+      dbSchema,
+    );
+    // #2370: SQLite cannot change a column's type in place. Turn the
+    // "requires table recreation" placeholders those comparisons emit into an
+    // executable table rebuild (see `./sqlite-rebuild.ts`); anything the
+    // rebuild can't do safely stays manual drift, as before. The planner only
+    // consumes `type_upgrade` placeholders — SQLite `alter_column`
+    // nullability/default drift (#2369) stays manual until the rebuild also
+    // rewrites constraints.
+    changes.push(
+      ...(this.engine === 'sqlite'
+        ? await planSqliteTableRebuilds({
+            db: this.db,
+            tableName,
+            changes: columnChanges,
+            mapType: (type) => this.ddlStrategy.mapType(type),
+          })
+        : columnChanges),
+    );
 
     // Partial-index predicates are not surfaced by `getTableSchema()` (the
     // @happyvertical/sql introspection returns only name/columns/unique), so
@@ -317,13 +554,25 @@ export class SchemaComparer {
   }
 
   /**
-   * Compare columns between manifest and database
+   * Compare columns between manifest and database.
+   *
+   * Three families of drift (#2369):
+   *
+   * 1. **Missing column** — emit `add_column` with an executable plan for the
+   *    engine (see {@link generateAddColumnChanges}).
+   * 2. **Existing column** — type drift (as before), then nullability and
+   *    default drift (see {@link compareColumnConstraints}).
+   * 3. **Orphan column** (in DB, not in manifest) — always reported. With
+   *    `includeDroppedColumns` it becomes an executable `drop_column`; a
+   *    NOT NULL orphan without a default is a `warning` advisory because ORM
+   *    inserts never supply it and will fail (`23502`); with `relaxColumns`
+   *    that orphan gets an executable `DROP NOT NULL` where the engine allows.
    */
-  private compareColumns(
+  private async compareColumns(
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
-  ): SchemaChange[] {
+  ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
     const dbColumnNames = new Set(Object.keys(dbSchema.columns));
 
@@ -331,16 +580,13 @@ export class SchemaComparer {
     for (const [colName, colDef] of Object.entries(manifest.columns)) {
       if (!dbColumnNames.has(colName)) {
         // Column doesn't exist - add it
-        changes.push({
-          type: 'add_column',
-          table: tableName,
-          name: colName,
-          column: colDef,
-          sql: this.generateAddColumnSQL(tableName, colName, colDef),
-        });
+        changes.push(
+          ...(await this.generateAddColumnChanges(tableName, colName, colDef)),
+        );
       } else {
         // Column exists - check for type mismatch
         const dbCol = dbSchema.columns[colName];
+        let typeDrifted = false;
 
         // Map manifest's abstract type to engine-specific type
         // e.g., JSON → TEXT for SQLite, JSON → JSONB for PostgreSQL
@@ -398,6 +644,7 @@ export class SchemaComparer {
           !isUuidTextEquivalent &&
           !isJsonTextEquivalent
         ) {
+          typeDrifted = true;
           // Check if this is a safe type upgrade that SMRT can handle
           // Since SMRT owns the data lifecycle, we know the intent from the manifest
           if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
@@ -434,25 +681,482 @@ export class SchemaComparer {
             });
           }
         }
-      }
-    }
 
-    // Check for dropped columns (if enabled)
-    if (this.options.includeDroppedColumns) {
-      const manifestColumnNames = new Set(Object.keys(manifest.columns));
-      for (const colName of dbColumnNames) {
-        if (!manifestColumnNames.has(colName)) {
-          changes.push({
-            type: 'drop_column',
-            table: tableName,
-            name: colName,
-            sql: this.generateDropColumnSQL(tableName, colName),
-          });
+        // Nullability / default drift. Skipped while the type itself is
+        // drifting: a type repair rewrites the default (PostgreSQL DROP/SET
+        // DEFAULT around ALTER TYPE) and an incompatible mismatch needs a
+        // manual migration anyway, so constraint drift on top would only be
+        // noise until the type is settled.
+        if (!typeDrifted) {
+          changes.push(
+            ...(await this.compareColumnConstraints(
+              tableName,
+              colName,
+              colDef,
+              validatedType,
+              dbCol,
+            )),
+          );
         }
       }
     }
 
+    // Orphan columns: always reported, dropped only on request (#2369).
+    const manifestColumnNames = new Set(Object.keys(manifest.columns));
+    for (const colName of dbColumnNames) {
+      if (manifestColumnNames.has(colName)) continue;
+      const dbCol = dbSchema.columns[colName];
+      if (this.options.includeDroppedColumns) {
+        changes.push({
+          type: 'drop_column',
+          table: tableName,
+          name: colName,
+          mismatch: {
+            expected: '(not in manifest)',
+            actual: this.describeDbColumn(dbCol),
+          },
+          sql: this.generateDropColumnSQL(tableName, colName),
+        });
+        continue;
+      }
+      changes.push(this.describeOrphanColumn(tableName, colName, dbCol));
+    }
+
     return changes;
+  }
+
+  /**
+   * Compare nullability and default between a manifest column and the live
+   * column, emitting `alter_column` changes (#2369).
+   *
+   * Rules:
+   * - Primary-key columns are owned by the PK constraint (SQLite reports a
+   *   `TEXT PRIMARY KEY` as nullable while PostgreSQL/DuckDB imply NOT NULL),
+   *   so they are skipped entirely.
+   * - Strengthening (`SET NOT NULL`, `SET DEFAULT`) is emitted as executable
+   *   SQL on engines with `ALTER COLUMN` (PostgreSQL/DuckDB). A `SET NOT NULL`
+   *   is preceded by a backfill of the manifest default when there is one;
+   *   without a default the live data is probed and, if NULLs exist, the
+   *   change is reported as manual with the suggested backfill instead of
+   *   emitting an ALTER the engine would reject mid-batch.
+   * - Relaxing (`DROP NOT NULL`, `DROP DEFAULT`) is reported as an advisory
+   *   unless `relaxColumns` is set, in which case it is executable.
+   * - SQLite has no `ALTER COLUMN`; every alteration is reported as manual
+   *   (advisory-comment SQL) until the table-rebuild path (#2370) lands.
+   * - Defaults are compared through {@link canonicalizeDefault}; when either
+   *   side cannot be canonicalized the comparison is skipped rather than
+   *   risking a false positive that would churn every run.
+   */
+  private async compareColumnConstraints(
+    tableName: string,
+    colName: string,
+    colDef: ColumnDefinition,
+    validatedType: SQLDataType,
+    dbCol: SqlTableSchemaInfo['columns'][string],
+  ): Promise<SchemaChange[]> {
+    if (colDef.primaryKey || dbCol.primaryKey) {
+      return [];
+    }
+
+    const changes: SchemaChange[] = [];
+    const manifestNotNull = colDef.notNull === true;
+    const dbNotNull = dbCol.notNull === true;
+    const manifestDefaultSql =
+      colDef.defaultValue !== undefined
+        ? this.ddlStrategy.formatDefaultValue(
+            colDef.defaultValue,
+            validatedType,
+          )
+        : undefined;
+    const manifestDefaultCanon = canonicalizeDefault(
+      manifestDefaultSql,
+      validatedType,
+    );
+    const dbDefaultCanon = canonicalizeDefault(
+      dbCol.defaultValue === null || dbCol.defaultValue === undefined
+        ? undefined
+        : String(dbCol.defaultValue),
+      validatedType,
+    );
+    // A manifest `null` default renders as the SQL NULL keyword, i.e. "no
+    // default" — same bucket as an absent default.
+    const hasManifestDefault = manifestDefaultCanon.kind !== 'none';
+    const defaultsComparable =
+      manifestDefaultCanon.kind !== 'raw' && dbDefaultCanon.kind !== 'raw';
+    const defaultDrifted =
+      defaultsComparable &&
+      `${manifestDefaultCanon.kind}:${manifestDefaultCanon.key}` !==
+        `${dbDefaultCanon.kind}:${dbDefaultCanon.key}`;
+    const dbHasDefault = dbDefaultCanon.kind !== 'none';
+
+    // --- Default drift ---------------------------------------------------
+    if (defaultDrifted) {
+      if (hasManifestDefault && manifestDefaultSql !== undefined) {
+        changes.push(
+          this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef,
+            alteration: 'set_default',
+            expected: `DEFAULT ${manifestDefaultSql}`,
+            actual: dbHasDefault
+              ? `DEFAULT ${String(dbCol.defaultValue)}`
+              : '(no default)',
+            statements: this.supportsAlterColumn()
+              ? [
+                  this.generateSetDefaultSQL(
+                    tableName,
+                    colName,
+                    manifestDefaultSql,
+                    validatedType,
+                  ),
+                ]
+              : null,
+          }),
+        );
+      } else if (dbHasDefault) {
+        // Live column carries a default the manifest no longer declares.
+        changes.push(
+          this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef,
+            alteration: 'drop_default',
+            expected: '(no default)',
+            actual: `DEFAULT ${String(dbCol.defaultValue)}`,
+            statements: this.supportsAlterColumn()
+              ? [
+                  `ALTER TABLE ${this.quoteIdentifier(tableName)} ALTER COLUMN ${this.quoteIdentifier(colName)} DROP DEFAULT`,
+                ]
+              : null,
+            relaxation: {
+              severity: 'info',
+              message: `${tableName}.${colName} has a live default (${String(dbCol.defaultValue)}) the manifest no longer declares; inserts that omit the column keep receiving it. ${this.relaxHint('drop it')}`,
+            },
+          }),
+        );
+      }
+    }
+
+    // --- Nullability drift -----------------------------------------------
+    if (manifestNotNull && !dbNotNull) {
+      const quotedTable = this.quoteIdentifier(tableName);
+      const quotedCol = this.quoteIdentifier(colName);
+      const setNotNull = `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} SET NOT NULL`;
+      if (!this.supportsAlterColumn()) {
+        changes.push(
+          this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef,
+            alteration: 'set_not_null',
+            expected: 'NOT NULL',
+            actual: 'NULL',
+            statements: null,
+          }),
+        );
+      } else if (hasManifestDefault && manifestDefaultSql !== undefined) {
+        // Backfill NULLs with the manifest default so the constraint can be
+        // enforced on a populated table, then tighten.
+        changes.push(
+          this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef,
+            alteration: 'set_not_null',
+            expected: 'NOT NULL',
+            actual: 'NULL',
+            statements: [
+              `UPDATE ${quotedTable} SET ${quotedCol} = ${manifestDefaultSql} WHERE ${quotedCol} IS NULL`,
+              setNotNull,
+            ],
+          }),
+        );
+      } else if (await this.columnHasNulls(tableName, colName)) {
+        // No default to backfill with and live NULLs exist: the engine would
+        // reject SET NOT NULL and abort the whole atomic batch. Report it
+        // with the exact remediation instead.
+        changes.push({
+          type: 'alter_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          alteration: 'set_not_null',
+          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+          sql: `-- ${tableName}.${colName} is required by the manifest but live rows hold NULL and the column has no default to backfill; UPDATE those rows, then run: ${setNotNull}`,
+          advisory: {
+            severity: 'warning',
+            message: `${tableName}.${colName} is required by the manifest but live rows hold NULL and there is no default to backfill. Backfill the NULLs, then rerun db:migrate (or declare a default on the field).`,
+            suggestedSql: [
+              `UPDATE ${quotedTable} SET ${quotedCol} = <value> WHERE ${quotedCol} IS NULL`,
+              setNotNull,
+            ],
+          },
+        });
+      } else {
+        changes.push(
+          this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef,
+            alteration: 'set_not_null',
+            expected: 'NOT NULL',
+            actual: 'NULL',
+            statements: [setNotNull],
+          }),
+        );
+      }
+    } else if (!manifestNotNull && dbNotNull) {
+      changes.push(
+        this.buildAlterColumnChange({
+          tableName,
+          colName,
+          colDef,
+          alteration: 'drop_not_null',
+          expected: 'NULL',
+          actual: 'NOT NULL',
+          statements: this.supportsAlterColumn()
+            ? [
+                `ALTER TABLE ${this.quoteIdentifier(tableName)} ALTER COLUMN ${this.quoteIdentifier(colName)} DROP NOT NULL`,
+              ]
+            : null,
+          relaxation: {
+            severity: 'warning',
+            message: `${tableName}.${colName} is NOT NULL in the database but nullable in the manifest; writes that store NULL will fail. ${this.relaxHint('drop the constraint')}`,
+          },
+        }),
+      );
+    }
+
+    return changes;
+  }
+
+  /**
+   * Assemble an `alter_column` change.
+   *
+   * - `statements: null` means the engine cannot alter the column in place
+   *   (SQLite): the change is reported as manual with advisory-comment SQL.
+   * - `relaxation` marks a weakening change: without `relaxColumns` it is
+   *   emitted as a report-only advisory (no SQL); with it, the statements are
+   *   executable.
+   */
+  private buildAlterColumnChange(input: {
+    tableName: string;
+    colName: string;
+    colDef: ColumnDefinition;
+    alteration: ColumnAlteration;
+    expected: string;
+    actual: string;
+    statements: string[] | null;
+    relaxation?: { severity: 'warning' | 'info'; message: string };
+  }): SchemaChange {
+    const {
+      tableName,
+      colName,
+      colDef,
+      alteration,
+      expected,
+      actual,
+      statements,
+      relaxation,
+    } = input;
+    const base: SchemaChange = {
+      type: 'alter_column',
+      table: tableName,
+      name: colName,
+      column: colDef,
+      alteration,
+      mismatch: { expected, actual },
+    };
+
+    if (relaxation && !this.options.relaxColumns) {
+      return {
+        ...base,
+        advisory: {
+          severity: relaxation.severity,
+          message: relaxation.message,
+          suggestedSql: statements ?? [
+            `-- SQLite cannot ALTER COLUMN; ${alteration === 'drop_not_null' ? 'dropping NOT NULL' : 'dropping the default'} requires a table rebuild (#2370)`,
+          ],
+        },
+      };
+    }
+
+    if (statements === null) {
+      const what =
+        alteration === 'set_not_null'
+          ? `enforcing NOT NULL on ${colName}`
+          : alteration === 'drop_not_null'
+            ? `dropping NOT NULL from ${colName}`
+            : alteration === 'set_default'
+              ? `setting the default on ${colName}`
+              : `dropping the default from ${colName}`;
+      return {
+        ...base,
+        sql: `-- SQLite: ${what} requires table recreation (expected ${expected}, found ${actual}; #2370)`,
+      };
+    }
+
+    return {
+      ...base,
+      sql: statements[statements.length - 1],
+      ...(statements.length > 1 ? { sqlStatements: statements } : {}),
+    };
+  }
+
+  /**
+   * Describe a DB column that has no manifest counterpart. Blocking when it
+   * is NOT NULL without a default: ORM inserts never supply it, so every
+   * insert fails with a not-null violation while `db:status` would otherwise
+   * say the schema is in sync (#2369).
+   */
+  private describeOrphanColumn(
+    tableName: string,
+    colName: string,
+    dbCol: SqlTableSchemaInfo['columns'][string],
+  ): SchemaChange {
+    const dbHasDefault =
+      dbCol.defaultValue !== null && dbCol.defaultValue !== undefined;
+    const blocking = dbCol.notNull === true && !dbHasDefault;
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedCol}`;
+    const relaxSql = `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} DROP NOT NULL`;
+    const shape = this.describeDbColumn(dbCol);
+    const base: SchemaChange = {
+      type: 'orphan_column',
+      table: tableName,
+      name: colName,
+      mismatch: { expected: '(not in manifest)', actual: shape },
+    };
+
+    if (!blocking) {
+      return {
+        ...base,
+        advisory: {
+          severity: 'info',
+          message: `${tableName}.${colName} exists in the database but not in the manifest (${shape}). Harmless for inserts; pass includeDroppedColumns / --drop-columns to drop it.`,
+          suggestedSql: [dropSql],
+        },
+      };
+    }
+
+    if (this.options.relaxColumns && this.supportsAlterColumn()) {
+      // Opted-in, engine can relax in place: make it executable so inserts
+      // keep working without destroying the column's data.
+      return {
+        type: 'alter_column',
+        table: tableName,
+        name: colName,
+        alteration: 'drop_not_null',
+        mismatch: { expected: '(not in manifest)', actual: shape },
+        sql: relaxSql,
+      };
+    }
+
+    const fix = this.supportsAlterColumn()
+      ? `Pass relaxColumns / --relax-columns to drop the NOT NULL (keeps data), or includeDroppedColumns / --drop-columns to drop the column.`
+      : `SQLite cannot drop NOT NULL in place; pass includeDroppedColumns / --drop-columns to drop the column (or rebuild the table, #2370).`;
+    return {
+      ...base,
+      advisory: {
+        severity: 'warning',
+        message: `${tableName}.${colName} is NOT NULL without a default and is not in the manifest — every ORM insert into ${tableName} will fail (not-null violation). ${fix}`,
+        suggestedSql: this.supportsAlterColumn()
+          ? [relaxSql, dropSql]
+          : [dropSql],
+      },
+    };
+  }
+
+  /**
+   * Remediation hint for a relaxation advisory. On engines with `ALTER
+   * COLUMN` the flag executes it; SQLite cannot relax in place, so the hint
+   * says so instead of implying the flag will act (#2370).
+   */
+  private relaxHint(action: string): string {
+    return this.supportsAlterColumn()
+      ? `Pass relaxColumns / --relax-columns to ${action}.`
+      : `SQLite cannot ${action} in place (no ALTER COLUMN); it requires a table rebuild (#2370) — relaxColumns / --relax-columns only reports it as manual here.`;
+  }
+
+  private describeDbColumn(
+    dbCol: SqlTableSchemaInfo['columns'][string],
+  ): string {
+    const parts = [String(dbCol.type ?? '').toUpperCase() || 'UNKNOWN'];
+    if (dbCol.notNull) parts.push('NOT NULL');
+    if (dbCol.defaultValue !== null && dbCol.defaultValue !== undefined) {
+      parts.push(`DEFAULT ${String(dbCol.defaultValue)}`);
+    }
+    return parts.join(' ');
+  }
+
+  /**
+   * Whether the engine can alter nullability/defaults of an existing column
+   * in place. SQLite cannot (`ALTER TABLE ... ALTER COLUMN` does not exist);
+   * PostgreSQL, DuckDB and the DuckDB-backed JSON adapter can.
+   */
+  private supportsAlterColumn(): boolean {
+    return this.engine !== 'sqlite';
+  }
+
+  private generateSetDefaultSQL(
+    tableName: string,
+    colName: string,
+    formattedDefault: string,
+    validatedType: SQLDataType,
+  ): string {
+    // Mirror the type-upgrade path: PostgreSQL JSON defaults are cast so the
+    // stored default is the jsonb literal rather than an untyped string.
+    const defaultSql =
+      this.engine === 'postgres' && this.normalizeType(validatedType) === 'JSON'
+        ? `${formattedDefault}::${this.ddlStrategy.mapType(validatedType).toLowerCase()}`
+        : formattedDefault;
+    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ALTER COLUMN ${this.quoteIdentifier(colName)} SET DEFAULT ${defaultSql}`;
+  }
+
+  /**
+   * Live-data probe: does the table hold any row? Used to decide whether an
+   * added required column without a default can be enforced NOT NULL right
+   * away. Errors (adapter without raw query, etc.) resolve to `true` so the
+   * caller takes the conservative path.
+   */
+  private async tableHasRows(tableName: string): Promise<boolean> {
+    try {
+      const result = await this.db.query(
+        `SELECT 1 AS present FROM ${this.quoteIdentifier(tableName)} LIMIT 1`,
+      );
+      return (result.rows?.length ?? 0) > 0;
+    } catch (err) {
+      logger.debug(
+        `[SchemaComparer] Row probe unavailable for ${tableName}; assuming populated`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return true;
+    }
+  }
+
+  /**
+   * Live-data probe: does the column hold any NULL? Used before emitting a
+   * `SET NOT NULL` that has no default to backfill with. Errors resolve to
+   * `true` (conservative: report instead of emitting an ALTER that fails).
+   */
+  private async columnHasNulls(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    try {
+      const result = await this.db.query(
+        `SELECT 1 AS present FROM ${this.quoteIdentifier(tableName)} WHERE ${this.quoteIdentifier(colName)} IS NULL LIMIT 1`,
+      );
+      return (result.rows?.length ?? 0) > 0;
+    } catch (err) {
+      logger.debug(
+        `[SchemaComparer] NULL probe unavailable for ${tableName}.${colName}; assuming NULLs exist`,
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+      return true;
+    }
   }
 
   private isUuidTextEquivalentColumn(
@@ -512,7 +1216,10 @@ export class SchemaComparer {
    *    caller opts in via `includeDroppedIndexes`, and even then never for
    *    PostgreSQL implicit indexes (`*_pkey`, `*_key`) — those are owned by
    *    table-level constraints and need a separate `DROP CONSTRAINT` path
-   *    that the differ does not emit yet.
+   *    that the differ does not emit yet. One exception is unconditional: a
+   *    redundant single-column index over the live primary key (the legacy
+   *    `<table>_id_idx`, #2359) is dropped even without the opt-in, because
+   *    the primary-key constraint already serves it.
    *
    * 4. **Partial-index predicate drift / collision** — two indexes on the
    *    same column(s) and uniqueness that differ only by their `WHERE`
@@ -544,6 +1251,22 @@ export class SchemaComparer {
     const manifestPredicateFor = (idx: IndexDefinition): string =>
       predicateAware ? normalizeIndexPredicate(idx.where) : '';
 
+    // An STI subtype-scoped UNIQUE index (`unique: true` declared only on a
+    // descendant, #2359) has no faithful shape on an engine without partial
+    // indexes: degrading it to a full unique index would enforce one
+    // subtype's constraint across every sibling's rows, so it is skipped
+    // there — same as the DuckDB DDL strategy — rather than compared or
+    // created. Other partial indexes keep degrading to full ones as before.
+    const manifestIndexes = this.supportsPartialIndexes()
+      ? manifest.indexes
+      : manifest.indexes.filter((idx) => !isStiSubtypeUniqueIndex(idx));
+
+    // The live table's primary-key columns, for the redundant-PK-index
+    // sweep below.
+    const primaryKeyColumns = Object.entries(dbSchema.columns)
+      .filter(([, column]) => column.primaryKey === true)
+      .map(([name]) => name);
+
     // Index DB indexes by name and by signature for fast lookup.
     // dbIndexSignatures groups *all* DB index names sharing a signature so
     // duplicates under different names all get claimed by a single matching
@@ -574,7 +1297,7 @@ export class SchemaComparer {
     // that match a manifest entry's signature even if no specific manifest
     // entry "claimed" them by name.
     const manifestSignatureSet = new Set<string>();
-    for (const idx of manifest.indexes) {
+    for (const idx of manifestIndexes) {
       manifestSignatureSet.add(
         this.getIndexSignature(idx, undefined, manifestPredicateFor(idx)),
       );
@@ -584,7 +1307,7 @@ export class SchemaComparer {
     // pass below doesn't re-flag indexes that match by signature alone.
     const claimedDbIndexes = new Set<string>();
 
-    for (const idx of manifest.indexes) {
+    for (const idx of manifestIndexes) {
       const manifestSignature = this.getIndexSignature(
         idx,
         undefined,
@@ -666,32 +1389,94 @@ export class SchemaComparer {
       });
     }
 
-    // Orphan-index sweep (opt-in via includeDroppedIndexes).
-    if (this.options.includeDroppedIndexes) {
-      for (const idx of dbSchema.indexes) {
-        if (claimedDbIndexes.has(idx.name)) continue;
-        if (isProtectedDbIndexName(idx.name)) continue;
+    // Orphan-index sweep. Three tiers:
+    //
+    // - A redundant primary-key index — a non-unique single-column index over
+    //   the table's sole primary-key column that the manifest no longer
+    //   declares — is dropped unconditionally. Every generator path used to
+    //   emit `<table>_id_idx` beside the engine's own primary-key index
+    //   (#2359, A5); the constraint keeps serving every lookup, so the drop
+    //   is a pure write-cost saving and `db:migrate` cleans it up without
+    //   `--drop-indexes`.
+    // - Unclaimed constraint-owned unique indexes (`*_key`) are never dropped
+    //   but always *reported* (#2369) — a stale inline UNIQUE keeps rejecting
+    //   duplicates the model now allows.
+    // - Everything else is dropped only when the caller opts in via
+    //   includeDroppedIndexes.
+    for (const idx of dbSchema.indexes) {
+      if (claimedDbIndexes.has(idx.name)) continue;
 
-        // Belt-and-suspenders: even if a DB index wasn't formally claimed
-        // by a manifest entry (e.g., shape-drift recreate consumed the
-        // claim slot), don't drop it if its signature still matches
-        // something the manifest declares. That would contradict the
-        // option doc ("not functionally equivalent to anything in the
-        // manifest") and risk dropping a still-needed index.
-        const idxSignature = this.getIndexSignature(
-          idx.columns,
-          idx.unique ?? false,
-          dbPredicateFor(idx.name),
-        );
-        if (manifestSignatureSet.has(idxSignature)) continue;
+      // Belt-and-suspenders: even if a DB index wasn't formally claimed
+      // by a manifest entry (e.g., shape-drift recreate consumed the
+      // claim slot), don't drop it if its signature still matches
+      // something the manifest declares. That would contradict the
+      // option doc ("not functionally equivalent to anything in the
+      // manifest") and risk dropping a still-needed index.
+      const idxSignature = this.getIndexSignature(
+        idx.columns,
+        idx.unique ?? false,
+        dbPredicateFor(idx.name),
+      );
+      if (manifestSignatureSet.has(idxSignature)) continue;
 
+      if (isProtectedDbIndexName(idx.name)) {
+        if (!idx.unique || idx.name.endsWith('_pkey')) continue;
+        // A unique constraint index whose column(s) the manifest no longer
+        // declares unique (column `unique: true` flipped off, or the field
+        // was renamed/removed). Column-level `unique` is not represented in
+        // `manifest.indexes`, so check the column definitions too.
+        const backedByUniqueColumn =
+          idx.columns.length === 1 &&
+          manifest.columns[idx.columns[0]]?.unique === true;
+        if (backedByUniqueColumn) continue;
+        const cols = idx.columns.map((c) => this.quoteIdentifier(c)).join(', ');
         changes.push({
-          type: 'drop_index',
+          type: 'orphan_index',
           table: tableName,
           name: idx.name,
-          sql: this.generateDropIndexSQL(idx.name),
+          mismatch: {
+            expected: '(not in manifest)',
+            actual: `UNIQUE (${idx.columns.join(', ')})`,
+          },
+          advisory: {
+            severity: 'warning',
+            message: `Unique constraint ${idx.name} on ${tableName}(${idx.columns.join(', ')}) is no longer declared by the manifest; duplicate values the model now allows will still be rejected. Drop it manually.`,
+            suggestedSql:
+              this.engine === 'postgres'
+                ? [
+                    `ALTER TABLE ${this.quoteIdentifier(tableName)} DROP CONSTRAINT IF EXISTS ${this.quoteIdentifier(idx.name)}`,
+                    `DROP INDEX IF EXISTS ${this.quoteIdentifier(idx.name)} -- if it is a plain unique index on ${cols} rather than a constraint`,
+                  ]
+                : [this.generateDropIndexSQL(idx.name)],
+          },
         });
+        continue;
       }
+
+      // "Sole primary-key column": a single-column index on one column of
+      // a COMPOSITE primary key is not redundant (the PK index only serves
+      // prefixes), so require the table to have exactly one PK column.
+      // Non-unique only: the legacy `<table>_id_idx` never was unique, and a
+      // UNIQUE single-column index on the PK may be the index that backs a
+      // custom-named PRIMARY KEY constraint on PostgreSQL (only `*_pkey` is
+      // filtered by introspection) — `DROP INDEX` on it fails and, because
+      // migrate is atomic, would roll back the whole batch (#2359).
+      const redundantPrimaryKeyIndex =
+        idx.unique !== true &&
+        idx.columns.length === 1 &&
+        dbPredicateFor(idx.name) === '' &&
+        primaryKeyColumns.length === 1 &&
+        primaryKeyColumns[0] === idx.columns[0];
+      if (!redundantPrimaryKeyIndex && !this.options.includeDroppedIndexes) {
+        continue;
+      }
+
+      changes.push({
+        type: 'drop_index',
+        table: tableName,
+        name: idx.name,
+        sql: this.generateDropIndexSQL(idx.name),
+      });
     }
 
     return changes;
@@ -1032,10 +1817,11 @@ export class SchemaComparer {
             sql: `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`,
           };
         }
-        // For other type upgrades, SQLite requires recreating the table
-        return {
-          sql: `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`,
-        };
+        // Every other upgrade needs the whole table rebuilt. `compareTable`
+        // replaces this placeholder with the executable plan (#2370); it
+        // survives only when the rebuild is unsafe or unavailable, and then
+        // means the same thing it always did — manual intervention.
+        return { sql: sqliteRebuildPlaceholderSql(colName) };
 
       case 'postgres': {
         // PostgreSQL defaults must be dropped/reset around some type changes
@@ -1198,21 +1984,46 @@ export class SchemaComparer {
   }
 
   /**
-   * Generate SQL for adding a column
+   * Plan the changes that add a missing column so the emitted DDL is
+   * executable on the active engine (#2369).
+   *
+   * Engines disagree on what `ALTER TABLE ... ADD COLUMN` may carry inline
+   * (probed on SQLite 3.4x/3.5x, DuckDB 1.4.x, PostgreSQL 16/17):
+   *
+   * | clause          | SQLite                         | DuckDB   | PostgreSQL          |
+   * |-----------------|--------------------------------|----------|---------------------|
+   * | NOT NULL + DEF  | ok                             | rejected | ok                  |
+   * | NOT NULL, no DEF| ok on empty, rejected populated| rejected | ok empty, rej. pop. |
+   * | UNIQUE          | rejected                       | rejected | ok                  |
+   * | DEFAULT         | ok                             | ok       | ok                  |
+   * | CHECK           | ok                             | rejected | ok                  |
+   *
+   * so the plan is:
+   * - `NOT NULL` with a default: inline on SQLite/PostgreSQL (existing rows
+   *   receive the default); DuckDB adds with `DEFAULT` then a separate
+   *   `ALTER COLUMN ... SET NOT NULL`.
+   * - `NOT NULL` without a default: enforced only when the table is empty
+   *   (inline on SQLite/PostgreSQL, `SET NOT NULL` step on DuckDB). On a
+   *   populated table there is nothing to backfill with, so the column is
+   *   added nullable and a manual `alter_column` (`set_not_null`) is reported
+   *   with the exact remediation instead of emitting DDL every engine rejects.
+   * - `UNIQUE`: inline on PostgreSQL (a real constraint); SQLite/DuckDB get a
+   *   separate `CREATE UNIQUE INDEX <table>_<col>_key` (the PostgreSQL
+   *   constraint-index name, so the orphan sweep leaves it alone).
+   * - `CHECK`: inline where accepted; DuckDB rejects it in ADD COLUMN, so it
+   *   is dropped there with a warning (SMRT's generators never emit `check`).
+   *
+   * The primary `add_column` change carries the whole plan in
+   * `sqlStatements` (and the last statement in `sql`) so both the CLI and the
+   * orchestrator execute it as one unit.
    */
-  private generateAddColumnSQL(
+  private async generateAddColumnChanges(
     tableName: string,
     colName: string,
     colDef: ColumnDefinition,
-  ): string {
-    // Build the ADD COLUMN definition inline (main) rather than delegating to
-    // the DDL strategy's generateColumnDefinition: that builder is for CREATE
-    // TABLE and would emit `PRIMARY KEY` (invalid in ALTER ... ADD COLUMN) and
-    // suppress single-column UNIQUE on engines that require inline unique at
-    // table-create time (DuckDB) — but an ADD COLUMN has no inline-constraint
-    // pass, so the UNIQUE must be emitted here. mapType still maps abstract
-    // types per dialect (UUID→native uuid / TEXT — R11); invalid types fall
-    // back to TEXT, matching the compareColumns guard.
+  ): Promise<SchemaChange[]> {
+    // mapType maps abstract types per dialect (UUID→native uuid / TEXT — R11);
+    // invalid types fall back to TEXT, matching the compareColumns guard.
     const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
       ? colDef.type
       : 'TEXT';
@@ -1222,31 +2033,105 @@ export class SchemaComparer {
       );
     }
 
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
     const parts: string[] = [
-      this.quoteIdentifier(colName),
+      quotedCol,
       this.ddlStrategy.mapType(validatedType),
     ];
+    const followUps: string[] = [];
+    const extraChanges: SchemaChange[] = [];
 
+    const hasDefault =
+      colDef.defaultValue !== undefined && colDef.defaultValue !== null;
+    const formattedDefault = hasDefault
+      ? this.ddlStrategy.formatDefaultValue(colDef.defaultValue, validatedType)
+      : undefined;
+    const inlineConstraintsAllowed =
+      this.engine !== 'duckdb' && this.engine !== 'json';
+    const setNotNull = `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} SET NOT NULL`;
+
+    let enforceNotNull = false;
     if (colDef.notNull) {
+      if (hasDefault) {
+        enforceNotNull = true;
+      } else if (!(await this.tableHasRows(tableName))) {
+        enforceNotNull = true;
+      } else {
+        // Populated table, no default: nothing to backfill with. Add the
+        // column nullable and report the constraint as a manual follow-up.
+        extraChanges.push({
+          type: 'alter_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          alteration: 'set_not_null',
+          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+          sql: `-- ${tableName}.${colName} is required by the manifest but has no default to backfill existing rows; the column is added nullable. Backfill it, then run: ${setNotNull}`,
+          advisory: {
+            severity: 'warning',
+            message: `${tableName}.${colName} is required by the manifest but has no default, and ${tableName} already holds rows — no engine can add it NOT NULL. It is added nullable; backfill it, then rerun db:migrate (or declare a default on the field).`,
+            suggestedSql: [
+              `UPDATE ${quotedTable} SET ${quotedCol} = <value> WHERE ${quotedCol} IS NULL`,
+              this.supportsAlterColumn()
+                ? setNotNull
+                : `-- SQLite: enforcing NOT NULL afterwards requires a table rebuild (#2370)`,
+            ],
+          },
+        });
+      }
+    }
+
+    if (enforceNotNull && inlineConstraintsAllowed) {
       parts.push('NOT NULL');
     }
-    if (colDef.unique) {
+    if (colDef.unique && this.engine === 'postgres') {
       parts.push('UNIQUE');
     }
-    if (colDef.defaultValue !== undefined) {
-      const defaultVal = this.ddlStrategy.formatDefaultValue(
-        colDef.defaultValue,
-        validatedType,
-      );
-      parts.push(`DEFAULT ${defaultVal}`);
+    if (formattedDefault !== undefined) {
+      parts.push(`DEFAULT ${formattedDefault}`);
     }
     if (colDef.check) {
-      parts.push(`CHECK (${colDef.check})`);
+      if (inlineConstraintsAllowed) {
+        parts.push(`CHECK (${colDef.check})`);
+      } else {
+        logger.warn(
+          `[SchemaComparer] ${this.engine} rejects CHECK constraints in ADD COLUMN; ${tableName}.${colName} is added without CHECK (${colDef.check})`,
+        );
+      }
     }
 
-    const columnDefinition = parts.join(' ');
+    const addColumn = `ALTER TABLE ${quotedTable} ADD COLUMN ${parts.join(' ')}`;
 
-    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${columnDefinition}`;
+    if (enforceNotNull && !inlineConstraintsAllowed) {
+      followUps.push(setNotNull);
+    }
+    if (colDef.unique && this.engine !== 'postgres') {
+      followUps.push(
+        `CREATE UNIQUE INDEX ${this.quoteIdentifier(uniqueColumnIndexName(tableName, colName))} ON ${quotedTable} (${quotedCol})`,
+      );
+      // DuckDB has no `ADD CONSTRAINT`, so this is the only way to add
+      // uniqueness to an existing table there. The DuckDB strategy's
+      // `requiresInlineUnique()` note (DuckDB #12684: ON CONFLICT ignored
+      // separate unique indexes) no longer holds on the bundled DuckDB 1.4.x —
+      // `INSERT … ON CONFLICT (col) DO UPDATE` resolves through this index;
+      // the #2369 DuckDB test pins that. Older DuckDB builds may still need
+      // the inline form for upserts on such a column.
+    }
+
+    const statements = [addColumn, ...followUps];
+    const primary: SchemaChange = {
+      type: 'add_column',
+      table: tableName,
+      name: colName,
+      column: colDef,
+      // `sql` stays the ADD COLUMN itself for single-statement consumers;
+      // `sqlStatements` carries the full ordered plan when there is more.
+      sql: addColumn,
+      ...(statements.length > 1 ? { sqlStatements: statements } : {}),
+    };
+
+    return [primary, ...extraChanges];
   }
 
   /**
@@ -1316,16 +2201,24 @@ export async function generateSchemaDiff(
 }
 
 /**
- * Check if a diff has any actionable changes (excluding type mismatches)
+ * Check if a diff has any actionable changes — a table to create or drop, or
+ * a change with executable DDL. Incompatible type mismatches, report-only
+ * advisories (orphan columns/indexes, relaxations the caller has not opted
+ * into) and comment-only changes (SQLite in-place limitations, live data
+ * blocking a repair) are not actionable; they surface through
+ * `unactionableChanges` / the CLI's manual bucket instead.
  */
 export function hasActionableChanges(diff: SchemaDiff): boolean {
   if (diff.added_tables.length > 0) return true;
   if (diff.dropped_tables.length > 0) return true;
-  return diff.changes.some((c) => c.type !== 'type_mismatch');
+  return diff.changes.some((c) => !isManualOrAdvisoryChange(c));
 }
 
 /**
- * Get SQL statements from a diff for execution
+ * Get SQL statements from a diff for execution. Advisory-only changes carry
+ * no statements and are skipped; comment-only statements (SQLite in-place
+ * limitations) pass through unchanged so callers can filter them the way
+ * they already do for `type_upgrade`.
  */
 export function getSQLFromDiff(diff: SchemaDiff): string[] {
   const statements: string[] = [];
@@ -1335,7 +2228,7 @@ export function getSQLFromDiff(diff: SchemaDiff): string[] {
 
   // Add column and index changes
   for (const change of diff.changes) {
-    if (change.type !== 'type_mismatch') {
+    if (change.type !== 'type_mismatch' && !isAdvisoryOnlyChange(change)) {
       statements.push(
         ...(change.sqlStatements ?? (change.sql ? [change.sql] : [])),
       );

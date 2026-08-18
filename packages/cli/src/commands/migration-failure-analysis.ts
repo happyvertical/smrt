@@ -16,7 +16,13 @@ export type FailedMigrationResolution =
 export interface FailedMigrationAssessment {
   name: string;
   resolution: FailedMigrationResolution;
-  kind: 'add_column' | 'add_index' | 'type_upgrade' | 'other';
+  kind:
+    | 'add_column'
+    | 'drop_column'
+    | 'alter_column'
+    | 'add_index'
+    | 'type_upgrade'
+    | 'other';
   reason: string;
   errorMessage: string | null;
 }
@@ -47,6 +53,8 @@ export function getActionableFailedMigrationNames(
 
 function classifyKind(name: string): FailedMigrationAssessment['kind'] {
   if (name.startsWith('add_column_')) return 'add_column';
+  if (name.startsWith('drop_column_')) return 'drop_column';
+  if (name.startsWith('alter_column_')) return 'alter_column';
   if (name.startsWith('add_index_')) return 'add_index';
   if (name.startsWith('type_upgrade_')) return 'type_upgrade';
   return 'other';
