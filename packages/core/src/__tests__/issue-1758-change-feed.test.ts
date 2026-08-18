@@ -237,6 +237,44 @@ describe('change feed spine (issue #1758)', () => {
       ]);
     });
 
+    it('records nothing for the framework tables a bootstrapped database carries (issue #2376)', async () => {
+      // The allowlist is a closed list, so a table the framework starts
+      // creating — or one a sibling change reclassifies — would silently
+      // acquire feed rows and shift every count in this file. Pin the whole
+      // recorded set against a real bootstrapped database so that failure
+      // surfaces here, as a named assertion, instead of as an off-by-N
+      // elsewhere. This is the shape the #2411 landing steward hit.
+      const liveTables = await db.query(
+        `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name LIKE '\\_smrt\\_%' ESCAPE '\\'
+           ORDER BY name`,
+      );
+      const systemTables = (liveTables.rows as { name: string }[]).map(
+        (row) => row.name,
+      );
+      // Sanity: the database really did bootstrap its framework tables.
+      expect(systemTables).toContain('_smrt_changes');
+      expect(systemTables).toContain('_smrt_contexts');
+
+      // Every framework table present is unobservable; the only `_smrt_`
+      // table this file expects the feed to record is the domain fixture.
+      for (const table of systemTables) {
+        if (table === DOMAIN_SETTINGS_TABLE) continue;
+        expect(
+          isChangeFeedObservableTable(table),
+          `${table} is a framework table the change feed must not record`,
+        ).toBe(false);
+      }
+
+      // A write through the framework produces exactly one row, for the
+      // application table — no incidental framework rows alongside it.
+      const widgets = await ChangeFeedWidgetCollection.create({ db });
+      await widgets.create({ name: 'only-entry' });
+
+      const changes = await allChanges(db);
+      expect(changes.map((change) => change.table)).toEqual([WIDGETS_TABLE]);
+    });
+
     it('classifies framework-owned tables as unobservable and everything else as observable', () => {
       // The feed's own table and the hand-written bookkeeping DDL.
       expect(isChangeFeedObservableTable('_smrt_changes')).toBe(false);
