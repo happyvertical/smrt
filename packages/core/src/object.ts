@@ -13,6 +13,10 @@ import {
   classifyDialectMessage,
   type DatabaseErrorClassification,
 } from './db-errors';
+import {
+  isEmbeddedDatabase,
+  withEmbeddedWriteQueue,
+} from './embedded-write-queue';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
@@ -1920,62 +1924,85 @@ export class SmrtObject extends SmrtClass {
       const upsertConflictColumns =
         this._persisted && data.id ? ['id'] : conflictColumns;
 
-      await ErrorUtils.withRetry(
-        async () => {
-          try {
-            if (writePlan.type === 'updateById') {
-              const { id: _id, ...updateData } = data;
-              await this.db.update(this.tableName, { id: data.id }, updateData);
-              this.setMetaType(writePlan.qualifiedMetaType);
-            } else if (this._insertOnly && !this._persisted) {
-              // Strict-insert mode (#1759): row identity is an explicit
-              // client-supplied id, so never adopt an existing row via
-              // conflict resolution — any PK/unique collision must raise.
-              await this.db.insert(this.tableName, data);
-            } else {
-              await this.db.upsert(this.tableName, upsertConflictColumns, data);
-            }
-          } catch (error) {
-            // Detect specific database error types. `@happyvertical/sql` wraps
-            // every driver error as
-            // `DatabaseError('Failed to upsert record into table', { …,
-            // originalError })`, so the constraint wording never reaches
-            // `error.message`. Classify through the whole cause chain — driver
-            // codes first (SQLSTATE / SQLite result codes), dialect wording
-            // only as the DuckDB fallback — to restore the typed-error parity
-            // the docs promise (#1378, #2366).
-            if (error instanceof Error) {
-              const classification = classifyDatabaseError(error);
-              if (classification.kind === 'unique_violation') {
-                const field = this.extractConstraintFieldFromChain(
-                  error,
-                  classification,
+      // A NULL among the conflict values routes the SDK's upsert through its
+      // null-aware path — on file-backed SQLite a write transaction on a
+      // SECOND connection. Serialize those saves against this process's other
+      // writes (see embedded-write-queue.ts): with the tenant-led conflict
+      // target (#2360) every NULL-tenant create takes that path, and
+      // concurrent creates livelocked into SQLITE_BUSY against the
+      // change-feed append on the root connection.
+      const serializeEmbeddedWrite =
+        writePlan.type !== 'updateById' &&
+        !(this._insertOnly && !this._persisted) &&
+        isEmbeddedDatabase(this.db) &&
+        upsertConflictColumns.some((column) => data[column] == null);
+
+      await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
+        ErrorUtils.withRetry(
+          async () => {
+            try {
+              if (writePlan.type === 'updateById') {
+                const { id: _id, ...updateData } = data;
+                await this.db.update(
+                  this.tableName,
+                  { id: data.id },
+                  updateData,
                 );
-                throw ValidationError.uniqueConstraint(
-                  field,
-                  this.getFieldValue(field),
+                this.setMetaType(writePlan.qualifiedMetaType);
+              } else if (this._insertOnly && !this._persisted) {
+                // Strict-insert mode (#1759): row identity is an explicit
+                // client-supplied id, so never adopt an existing row via
+                // conflict resolution — any PK/unique collision must raise.
+                await this.db.insert(this.tableName, data);
+              } else {
+                await this.db.upsert(
+                  this.tableName,
+                  upsertConflictColumns,
+                  data,
                 );
               }
-              if (classification.kind === 'not_null_violation') {
-                const field = this.extractConstraintFieldFromChain(
-                  error,
-                  classification,
-                );
-                throw ValidationError.requiredField(field, className);
+            } catch (error) {
+              // Detect specific database error types. `@happyvertical/sql` wraps
+              // every driver error as
+              // `DatabaseError('Failed to upsert record into table', { …,
+              // originalError })`, so the constraint wording never reaches
+              // `error.message`. Classify through the whole cause chain — driver
+              // codes first (SQLSTATE / SQLite result codes), dialect wording
+              // only as the DuckDB fallback — to restore the typed-error parity
+              // the docs promise (#1378, #2366).
+              if (error instanceof Error) {
+                const classification = classifyDatabaseError(error);
+                if (classification.kind === 'unique_violation') {
+                  const field = this.extractConstraintFieldFromChain(
+                    error,
+                    classification,
+                  );
+                  throw ValidationError.uniqueConstraint(
+                    field,
+                    this.getFieldValue(field),
+                  );
+                }
+                if (classification.kind === 'not_null_violation') {
+                  const field = this.extractConstraintFieldFromChain(
+                    error,
+                    classification,
+                  );
+                  throw ValidationError.requiredField(field, className);
+                }
+                const operation =
+                  writePlan.type === 'updateById'
+                    ? `UPDATE ${this.tableName} (id-targeted)`
+                    : this._insertOnly && !this._persisted
+                      ? `INSERT INTO ${this.tableName}`
+                      : `UPSERT INTO ${this.tableName}`;
+                throw DatabaseError.queryFailed(operation, error);
               }
-              const operation =
-                writePlan.type === 'updateById'
-                  ? `UPDATE ${this.tableName} (id-targeted)`
-                  : this._insertOnly && !this._persisted
-                    ? `INSERT INTO ${this.tableName}`
-                    : `UPSERT INTO ${this.tableName}`;
-              throw DatabaseError.queryFailed(operation, error);
+              throw error;
             }
-            throw error;
-          }
-        },
-        3,
-        500,
+          },
+          3,
+          500,
+        ),
       );
 
       // The row now exists, so any further save() must update it by primary

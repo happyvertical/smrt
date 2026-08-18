@@ -95,6 +95,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
+import {
+  isEmbeddedDatabase,
+  withEmbeddedWriteQueue,
+} from './embedded-write-queue.js';
 import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
 import type { SmrtObject } from './object.js';
 import { detectEngine } from './schema/ddl/index.js';
@@ -528,7 +532,15 @@ export async function appendChange(
 
   for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
     try {
-      const rows = getQueryRows(await db.query(sql, ...params));
+      // The append is a root-connection write; on embedded engines it goes
+      // through the per-database write queue so it can never overlap a
+      // null-aware upsert's second-connection transaction (#2360 — the pair
+      // livelocked into SQLITE_BUSY under concurrent NULL-tenant creates).
+      const rows = getQueryRows(
+        await withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+          db.query(sql, ...params),
+        ),
+      );
       const row = rows[0];
       if (!row) {
         throw new Error('Change feed append returned no result row');
