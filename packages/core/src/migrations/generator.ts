@@ -225,7 +225,7 @@ export class MigrationGenerator {
       lines.push('-- Add your UP statements here');
     } else {
       for (const stmt of upStatements) {
-        lines.push(`${stmt};`);
+        lines.push(this.terminateStatement(stmt));
       }
     }
 
@@ -236,7 +236,7 @@ export class MigrationGenerator {
       lines.push('-- Add your DOWN statements here');
     } else {
       for (const stmt of downStatements) {
-        lines.push(`${stmt};`);
+        lines.push(this.terminateStatement(stmt));
       }
     }
 
@@ -519,6 +519,17 @@ ${downStatementsStr}
     if (typeof value === 'boolean') return value ? '1' : '0';
     if (typeof value === 'number') return String(value);
     return String(value);
+  }
+
+  /**
+   * Terminate a statement with exactly one `;` for the SQL file format.
+   *
+   * Strategy-rendered statements (`generateCreateTable`, `generateIndexes`,
+   * `generateTriggers`) already end with `;`, while differ-produced ALTERs do
+   * not — appending unconditionally wrote `;;` (#2406 review).
+   */
+  private terminateStatement(stmt: string): string {
+    return stmt.trimEnd().endsWith(';') ? stmt : `${stmt};`;
   }
 
   /**

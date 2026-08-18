@@ -391,6 +391,13 @@ describe('MigrationGenerator', () => {
       expect(
         migration.down.filter((s) => s.startsWith('DROP TABLE')),
       ).toHaveLength(1);
+      // The SQL file terminates every statement with exactly one `;` even
+      // though strategy-rendered statements already carry their own.
+      expect(migration.content).not.toContain(';;');
+      expect(migration.content).toContain(
+        'CREATE INDEX IF NOT EXISTS "events_tenant_id_idx" ON "events" ("tenant_id");\n',
+      );
+      expect(migration.content).toContain('DROP TABLE IF EXISTS "events";');
     });
 
     it('emits SQLite primary keys with an explicit NOT NULL (#2358)', () => {
