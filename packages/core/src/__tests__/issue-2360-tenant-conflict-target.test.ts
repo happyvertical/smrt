@@ -296,10 +296,14 @@ describe('tenant-aware natural keys (#2360)', () => {
     it('emits the STI root custom key as the unique conflict index and keeps the slug lookup index', () => {
       const schema = ObjectRegistry.getSchema('Issue2360Ticket');
       const names = (schema?.indexes ?? []).map((i) => i.name).sort();
+      // The conflict index leads with tenant_id but not with (tenant_id,
+      // created_at) — its second column is code, not created_at — so it
+      // does not suppress the default list-ordering index (#2363).
       expect(names).toEqual([
         'issue_2360_tickets_meta_type_idx',
         'issue_2360_tickets_slug_context_idx',
         'issue_2360_tickets_tenant_id_code_idx',
+        'issue_2360_tickets_tenant_id_created_at_idx',
       ]);
       expect(
         schema?.indexes.find(

@@ -507,6 +507,7 @@ describe('schema path parity (#2359)', () => {
     parity_authors: 'ParityAuthor',
     parity_posts: 'ParityPost',
     parity_scopeds: 'ParityScoped',
+    parity_covereds: 'ParityCovered',
     parity_links: 'ParityLink',
     parity_nodes: 'ParityNode',
     parity_reports: 'ParityReport',
@@ -784,7 +785,14 @@ describe('schema path parity (#2359)', () => {
 
     it('tenant-scoped CTI default key: (tenant_id, slug, context) UNIQUE under the stable name, no standalone tenant index, no extra slug index (#2360)', () => {
       for (const table of ['parity_scoped_docs', 'parity_scoped_notes']) {
-        expect(names(table)).toEqual([`${table}_slug_context_idx`]);
+        // The conflict index leads with tenant_id but not with (tenant_id,
+        // created_at) — its second column is slug, not created_at — so it
+        // does not suppress the default list-ordering index (#2363); the two
+        // together still suppress the standalone tenant index.
+        expect(names(table)).toEqual([
+          `${table}_slug_context_idx`,
+          `${table}_tenant_id_created_at_idx`,
+        ]);
         const conflict = idx(table).find(
           (i) => i.name === `${table}_slug_context_idx`,
         );
@@ -803,6 +811,7 @@ describe('schema path parity (#2359)', () => {
     it('report default key: (tenant_id, group, bucket) UNIQUE on the manifest path too, slug lookup kept', () => {
       expect(names('parity_daily_totals')).toEqual([
         'parity_daily_totals_slug_context_idx',
+        'parity_daily_totals_tenant_id_created_at_idx',
         'parity_daily_totals_tenant_id_store_id_idx',
       ]);
       const conflict = idx('parity_daily_totals').find(
@@ -820,6 +829,7 @@ describe('schema path parity (#2359)', () => {
         'parity_tickets_meta_type_idx',
         'parity_tickets_slug_context_idx',
         'parity_tickets_tenant_id_code_idx',
+        'parity_tickets_tenant_id_created_at_idx',
       ]);
       const conflict = idx('parity_tickets').find(
         (i) => i.name === 'parity_tickets_tenant_id_code_idx',
