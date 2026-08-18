@@ -220,9 +220,11 @@ backward compatibility only. Everything that needs an executable table renders
 (`migrations/orchestrate.ts`), `MigrationGenerator` (default
 `materializeStructuredSchema: true`; `false` is a deprecated opt-out),
 `SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
-last three via `src/schema/manifest-schema.ts` (`collectManifestTables` /
-`renderCollectedManifestTable`). The cached string is executed only for
-manifest objects with no structured columns. Do not add a new consumer of the
+last two via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is merged in only for a
+table whose contributors expose no structured columns (hand-authored
+manifests); table constraints that exist only in the string are dropped with a
+warning, as `db:migrate` drops them. Do not add a new consumer of the
 string, and do not write a private CREATE INDEX renderer — the retired ones
 dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
 `PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.

@@ -40,9 +40,9 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import {
   collectManifestTables,
+  type ManifestColumnLike,
   renderCollectedManifestTable,
 } from './manifest-schema.js';
-import type { ColumnDefinition } from './types.js';
 
 // ============================================================================
 // Types
@@ -56,7 +56,10 @@ export interface AggregatedTable {
   tableName: string;
   /**
    * CREATE TABLE statement rendered by the dialect's DDL strategy from the
-   * merged structured columns of every contributing class (STI union).
+   * merged structured columns of every contributing class (STI union). A
+   * table with a column-less contributor (hand-authored manifest) has that
+   * contributor's cached `ddl` merged on top; a table with no structured
+   * columns at all is the merged cached `ddl`.
    */
   ddl: string;
   /**
@@ -67,8 +70,12 @@ export interface AggregatedTable {
   indexes: string[];
   /** Package:className sources that contribute to this table */
   sources: string[];
-  /** Merged structured columns (first contributor wins per column name) */
-  columns?: Record<string, ColumnDefinition>;
+  /**
+   * Manifest column metadata as published in `manifest.json` (`default`,
+   * not `defaultValue`), merged across contributors — first contributor wins
+   * per column name, matching the rendered DDL.
+   */
+  columns?: Record<string, ManifestColumnLike>;
 }
 
 /**
@@ -308,6 +315,13 @@ export class SchemaAggregator {
       schema: NonNullable<SmartObjectManifest['objects'][string]['schema']>;
       source: string;
     }> = [];
+    // Published manifest column metadata, merged first-wins per table so
+    // `AggregatedTable.columns` keeps its manifest shape for downstream
+    // generate-schema scripts.
+    const manifestColumns = new Map<
+      string,
+      Record<string, ManifestColumnLike>
+    >();
     for (const manifest of manifests) {
       for (const [_key, object] of Object.entries(manifest.objects)) {
         const schema = object.schema;
@@ -317,6 +331,13 @@ export class SchemaAggregator {
           schema,
           source: `${manifest.packageName || '?'}:${className}`,
         });
+        if (schema.columns && Object.keys(schema.columns).length > 0) {
+          const merged = manifestColumns.get(schema.tableName) ?? {};
+          for (const [name, column] of Object.entries(schema.columns)) {
+            if (!(name in merged)) merged[name] = column;
+          }
+          manifestColumns.set(schema.tableName, merged);
+        }
       }
     }
 
@@ -328,10 +349,7 @@ export class SchemaAggregator {
         ddl: rendered.createTable,
         indexes: rendered.indexes,
         sources: table.sources,
-        columns:
-          Object.keys(table.definition.columns).length > 0
-            ? table.definition.columns
-            : undefined,
+        columns: manifestColumns.get(tableName),
       });
     }
 

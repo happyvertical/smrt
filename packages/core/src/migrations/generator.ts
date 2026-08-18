@@ -5,8 +5,10 @@
  * Supports both SQL and TypeScript formats.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import { materializeManifestDDLForEngine } from '../schema/ddl/materialize-manifest.js';
+import { cachedDdlTableConstraints } from '../schema/manifest-schema.js';
 import type {
   MigrationDefinition,
   SchemaChange,
@@ -16,6 +18,8 @@ import type {
 import { renderIndexTarget } from '../schema/utils.js';
 import { computeChecksum } from './checksum.js';
 import type { DatabaseEngine } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Options for migration generation
@@ -311,6 +315,21 @@ ${downStatementsStr}
     // cached string on PostgreSQL would otherwise bypass TIMESTAMPTZ and lose
     // JavaScript Date offsets (#2069). This matches the migration orchestrator
     // and also prevents JSON/REAL/UUID drift after a create.
+    if (schema.ddl?.trim()) {
+      // Table-level constraints that live only in a hand-authored cached
+      // string cannot be represented structurally and are dropped — as
+      // `db:migrate` already drops them. Say so instead of losing them
+      // silently (#2358).
+      const constraints = cachedDdlTableConstraints(schema.ddl);
+      if (constraints.length > 0) {
+        logger.warn(
+          `[MigrationGenerator] cached ddl for table "${schema.tableName}" declares ` +
+            `${constraints.length} table constraint(s) that structured columns cannot ` +
+            `carry (${constraints.join('; ')}); the structured schema is authoritative ` +
+            `and they are not rendered (#2358).`,
+        );
+      }
+    }
     return getDDLStrategy(this.engine).generateCreateTable(schema);
   }
 

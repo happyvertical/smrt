@@ -123,8 +123,8 @@ export interface SchemaDefinition {
    * per-engine type mapping (`REAL`/`JSON`/`UUID`/`TIMESTAMP` stay abstract).
    * Kept for backward compatibility with published manifests and third-party
    * tooling; framework consumers render `columns` and `indexes` through
-   * `getDDLStrategy(engine)` and only fall back to `ddl` when `columns` is
-   * empty (hand-authored manifests).
+   * `getDDLStrategy(engine)` and only merge `ddl` in for a table whose
+   * contributors expose no `columns` (hand-authored manifests).
    */
   ddl?: string;
   columns: Record<string, ColumnDefinition>;

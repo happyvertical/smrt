@@ -31,7 +31,10 @@ export {
   type ManifestColumnLike,
   type ManifestIndexLike,
   type ManifestSchemaLike,
+  manifestColumnsToDefinitions,
+  manifestIndexesToDefinitions,
   manifestSchemaToDefinition,
+  mergeSchemaDefinitionInto,
   renderCollectedManifestTable,
 } from './manifest-schema.js';
 

@@ -137,11 +137,14 @@ describe('collectManifestTables + renderCollectedManifestTable', () => {
     );
   });
 
-  it('is exactly what the migration path renders for the same definition', () => {
-    // Path parity (#2358): the migration orchestrator emits
-    // strategy.generateCreateTable + generateIndexes + generateTriggers for a
-    // new table. Consumers of raw manifests must land on the same statements.
-    // TODO(#2359): fold into src/schema/schema-path-parity.test.ts once it lands.
+  it('renders a structured table with the same strategy calls the migration orchestrator makes', () => {
+    // Guards the wiring only: `migrations/orchestrate.ts` emits
+    // strategy.generateCreateTable + generateIndexes for a new table, and a
+    // structured manifest table must land on those exact statements. The
+    // end-to-end path-parity proof (isolated test DB vs. generated migration
+    // on a real database) lives in
+    // packages/vitest/src/__tests__/manifest-schema-path-parity.test.ts.
+    // TODO(#2359): fold both into src/schema/schema-path-parity.test.ts.
     const tables = collectManifestTables([
       { schema: structuredEvent, source: '@pkg:Event' },
     ]);
@@ -156,9 +159,6 @@ describe('collectManifestTables + renderCollectedManifestTable', () => {
       );
       expect(rendered.indexes).toEqual(
         strategy.generateIndexes(table.definition),
-      );
-      expect(rendered.triggers).toEqual(
-        strategy.generateTriggers(table.definition),
       );
     }
   });

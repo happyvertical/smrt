@@ -13,11 +13,12 @@
  * structured columns at all (hand-authored or pre-structured manifests); that
  * legacy path keeps working but is not engine-complete.
  *
- * IMPORTANT: keep this module a leaf — type-only imports plus the DDL
- * strategies. It is imported by `@happyvertical/smrt-vitest`, and must not
- * pull the registry/collection module graph.
+ * Keep this module light — type-only imports plus the DDL strategies and the
+ * logger — so it can be re-exported from lightweight entry points without
+ * pulling the registry/collection module graph in by itself.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { getDDLStrategy } from './ddl/index.js';
 import {
   findCreateTableBodyRange,
@@ -35,6 +36,8 @@ import type {
   SchemaDefinition,
   SQLDataType,
 } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Column shape as it appears in raw manifest JSON. `ManifestColumnDefinition`
@@ -162,7 +165,8 @@ export interface CollectedManifestTable {
    * table is rendered by a DDL strategy. `false` means at least one
    * contributor carried only a cached `ddl` string: the CREATE TABLE is then
    * the strategy render of the structured contributors (if any) merged with
-   * the cached strings of the column-less ones.
+   * the cached strings of the column-less ones. The decision is per table,
+   * not per contributor.
    */
   structured: boolean;
   /**
@@ -215,6 +219,10 @@ export function collectManifestTables(
     const hasColumns = Object.keys(definition.columns).length > 0;
     const ddl = typeof schema.ddl === 'string' ? schema.ddl : '';
     if (!hasColumns && !ddl.trim()) continue;
+
+    if (hasColumns && ddl.trim()) {
+      warnAboutDroppedTableConstraints(schema.tableName, source, ddl);
+    }
 
     const existing = tables.get(schema.tableName);
     if (!existing) {
@@ -337,16 +345,49 @@ function parseDefinitionsFromDDL(ddl: string): {
 }
 
 /**
+ * Table-level constraints (`UNIQUE(...)`, `CHECK (...)`, `CONSTRAINT ...`,
+ * ...) declared in a cached CREATE TABLE string. Structured `columns` cannot
+ * represent them, so a structured render drops them — exactly as `db:migrate`
+ * does. Exposed so callers can warn instead of losing them silently.
+ *
+ * @internal
+ */
+export function cachedDdlTableConstraints(ddl: string): string[] {
+  return parseDefinitionsFromDDL(ddl).tableElements;
+}
+
+/**
+ * Warn once per table+source when a structured contributor's cached `ddl`
+ * declares table constraints that the structured render cannot carry. The
+ * structured schema is authoritative: a constraint that lives only in the
+ * string never reaches `db:migrate` either, so rendering it here would
+ * recreate the test/production drift #2358 removes.
+ */
+function warnAboutDroppedTableConstraints(
+  tableName: string,
+  source: string,
+  ddl: string,
+): void {
+  const constraints = cachedDdlTableConstraints(ddl);
+  if (constraints.length === 0) return;
+  logger.warn(
+    `[manifest-schema] ${source}: cached ddl for table "${tableName}" declares ` +
+      `${constraints.length} table constraint(s) that structured columns cannot ` +
+      `carry (${constraints.join('; ')}). They are not rendered — the ` +
+      `structured schema is authoritative (#2358). Declare uniqueness through ` +
+      `indexes/conflictColumns or a column-level constraint instead.`,
+  );
+}
+
+/**
  * Merge two cached CREATE TABLE strings for the same table (STI subclasses):
  * the union of columns, existing definitions winning, new columns inserted
  * before any trailing table constraints, missing table constraints appended.
  *
  * Only the legacy column-less manifest path uses this; structured manifests
  * merge through `mergeSchemaDefinitionInto`.
- *
- * @internal
  */
-export function mergeManifestDDL(existingDDL: string, newDDL: string): string {
+function mergeManifestDDL(existingDDL: string, newDDL: string): string {
   const existingDefinitions = parseDefinitionsFromDDL(existingDDL);
   const newDefinitions = parseDefinitionsFromDDL(newDDL);
 

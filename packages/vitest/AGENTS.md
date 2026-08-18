@@ -79,9 +79,9 @@ DDL strategy (`collectManifestTables` + `renderCollectedManifestTable` from
 so partial `WHERE` predicates, JSON-path targets and per-engine types match a
 migrated database (#2358; parity asserted in
 `src/__tests__/manifest-schema-path-parity.test.ts`). The cached `schema.ddl`
-string is a CREATE TABLE preview and is executed only for manifest objects that
-expose no `columns` (hand-authored manifests). Do not add a private DDL/index
-renderer here; extend the core strategy instead.
+string is a CREATE TABLE preview and is merged in only for a table whose
+contributors expose no `columns` (hand-authored manifests). Do not add a
+private DDL/index renderer here; extend the core strategy instead.
 
 For local file-backed SQLite, identical schemas are prepared once per Vitest
 process and cloned from an immutable schema-only template for later databases.

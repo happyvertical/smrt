@@ -101,8 +101,9 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     // behaviour lets a non-INTEGER PRIMARY KEY column hold NULL, so a bare
     // `"id" TEXT PRIMARY KEY` accepts NULL ids there (#2358). PostgreSQL and
     // DuckDB already imply NOT NULL for a primary key; the explicit clause is
-    // redundant but valid on every engine and keeps the rendered DDL identical
-    // to the engine-neutral `SchemaGenerator.generateSQL()` output.
+    // redundant but valid on every engine, and matches the engine-neutral
+    // `SchemaGenerator.generateSQL()` output for SMRT-generated id columns
+    // (which always carry `notNull: true`).
     if (columnDef.primaryKey) {
       parts.push('PRIMARY KEY', 'NOT NULL');
     } else if (columnDef.notNull) {

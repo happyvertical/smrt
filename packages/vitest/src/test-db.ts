@@ -46,7 +46,6 @@ import {
   type CollectedManifestTable,
   collectManifestTables,
   type ManifestSchemaLike,
-  materializeManifestDDLForEngine,
   renderCollectedManifestTable,
 } from '@happyvertical/smrt-core/schema/utils';
 import {
@@ -651,28 +650,6 @@ function collectTableDependencies(table: CollectedManifestTable): string[] {
   return dependencies;
 }
 
-/**
- * Materialize abstract manifest timestamp columns for the selected adapter.
- *
- * Manifests intentionally cache engine-neutral CREATE TABLE text. PostgreSQL
- * interprets a bare `TIMESTAMP` as timezone-naive storage, while SMRT Date
- * fields represent instants and therefore require `TIMESTAMPTZ`. Transform
- * only the leading type token of column definitions so string literals,
- * identifiers, table constraints, and explicitly qualified timestamp types
- * remain untouched.
- *
- * Only the legacy column-less manifest path still executes cached DDL text;
- * structured manifests render through the engine DDL strategy (#2358).
- *
- * @internal
- */
-export function materializeManifestDDLForAdapter(
-  ddl: string,
-  adapter: TestDbAdapter,
-): string {
-  return materializeManifestDDLForEngine(ddl, adapter);
-}
-
 function getPackageNameFromKey(key: string): string | undefined {
   const separatorIndex = key.lastIndexOf(':');
   if (separatorIndex <= 0) {
@@ -1173,6 +1150,9 @@ export async function createIsolatedTestDbFromManifest(
   // CREATE INDEX statements after tables exist. This includes the UNIQUE
   // indexes required for UPSERT/ON CONFLICT to work and, unlike the retired
   // string renderer, keeps partial `WHERE` predicates and JSON-path targets.
+  // Triggers are not applied: manifests carry no trigger definitions
+  // (`ManifestSchema` has no `triggers`), and multi-statement trigger bodies
+  // would not survive the schema splitter below.
   const createIndexDDL = rendered
     .flatMap((ddl) => ddl.indexes)
     .filter(Boolean)
