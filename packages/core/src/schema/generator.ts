@@ -14,8 +14,20 @@ import type {
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { classnameToTablename } from '../utils/naming.js';
+import {
+  type ConflictTableStrategy,
+  conflictIndexName,
+  resolveConflictColumns,
+  resolveTenantColumn,
+  servesSlugLookup,
+} from './conflict-target.js';
 import { getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
+import {
+  assertIdentifierFits,
+  enforceIdentifierLimits,
+  shortenIdentifier,
+} from './index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
@@ -56,7 +68,20 @@ interface RegistryField {
 }
 
 type SchemaGeneratorConfig = {
+  /**
+   * The table's resolved conflict target. Registry callers pass
+   * `ObjectRegistry.getConflictColumns()`; the manifest path passes the
+   * object's `decoratorConfig` after `ManifestGenerator.normalizeConflictColumns()`
+   * materialized the tenant-aware default (#2360). When absent, the generator
+   * derives the default itself from `tenantScoped` and the strategy.
+   */
   conflictColumns?: string[];
+  /**
+   * The schema owner's `@smrt({ tenantScoped })` config as the manifest
+   * carries it — consulted only to derive the default conflict target when
+   * `conflictColumns` is absent.
+   */
+  tenantScoped?: boolean | { field?: string };
   idType?: 'uuid' | 'text';
   /**
    * `@smrt({ indexes: [...] })` declarations (#2357).
@@ -91,8 +116,20 @@ export class SchemaGenerator {
     const dependencies = this.extractDependencies(objectDef, foreignKeys);
     const version = this.generateVersion(objectDef);
 
-    // Tenancy injects `tenant_id` but nothing indexes it (#2356).
-    this.ensureTenantIdIndex(indexes, columns, tableName);
+    // The default list page orders by created_at (#2363) — after the declared
+    // indexes generateIndexes() appended, before the reference-column pass so
+    // the composite suppresses a standalone tenant index.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
+    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
+    // always indexed (#2356, #2359).
+    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
+    for (const trigger of triggers) {
+      trigger.name = shortenIdentifier(trigger.name);
+    }
 
     return {
       tableName,
@@ -353,15 +390,149 @@ export class SchemaGenerator {
   }
 
   /**
+   * Whether an existing index already leads with `leadingColumns`, in order.
+   *
+   * Only an UNQUALIFIED index (no partial `WHERE`, no JSON-path expression)
+   * counts. A partial index such as `... WHERE _meta_type = 'Article'` cannot
+   * serve a base-class polymorphic query, which carries no subtype predicate,
+   * so it must not suppress the standalone index (#2359, review of #2384).
+   *
+   * A B-tree serves any prefix of its column list, so an index over
+   * `(tenant_id, created_at, status)` covers both `(tenant_id)` equality
+   * lookups and `(tenant_id, created_at)` ordering — hence the prefix test
+   * rather than an exact match (#2363).
+   */
+  private hasUnqualifiedLeadingColumns(
+    indexes: ReadonlyArray<{
+      columns: string[];
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    leadingColumns: readonly string[],
+  ): boolean {
+    return indexes.some(
+      (index) =>
+        !index.where &&
+        !index.jsonPath &&
+        (index.columns?.length ?? 0) >= leadingColumns.length &&
+        leadingColumns.every((column, i) => index.columns[i] === column),
+    );
+  }
+
+  /**
+   * Whether an existing index already serves equality lookups on `column`.
+   *
+   * Single-column shorthand for {@link hasUnqualifiedLeadingColumns}.
+   */
+  private hasUnqualifiedLeadingIndex(
+    indexes: ReadonlyArray<{
+      columns: string[];
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    column: string,
+  ): boolean {
+    return this.hasUnqualifiedLeadingColumns(indexes, [column]);
+  }
+
+  /**
+   * The column list of the default list-ordering index for a table.
+   *
+   * Every generated list surface — REST, MCP, and the SvelteKit list route —
+   * pages with `ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`,
+   * #2367). On a tenant-scoped table that page is always preceded by a
+   * `tenant_id = ?` equality filter from the tenancy interceptor, so the
+   * serving index leads with the tenant column and orders inside it.
+   *
+   * `created_at` is generator-owned on every path — a declared `createdAt`
+   * field is rewritten to the same `TIMESTAMP NOT NULL DEFAULT
+   * current_timestamp` column — so it is never a primary key and never
+   * inline-UNIQUE. That is why only `indexes` needs checking for existing
+   * coverage: no constraint-backed index can already order this column.
+   *
+   * Returns `null` when the table has no `created_at` column (no path emits
+   * such a table today, but the helper stays total).
+   */
+  private getDefaultListOrderingColumns(
+    columns: Record<string, { referenceKind?: string } | undefined>,
+  ): string[] | null {
+    if (!columns.created_at) return null;
+
+    // The tenant column name is configurable (`@smrt({ tenantScoped: { field } })`),
+    // so find it by reference kind rather than by the `tenant_id` spelling.
+    const tenantColumn = Object.entries(columns).find(
+      ([, columnDef]) => columnDef?.referenceKind === 'tenantId',
+    )?.[0];
+
+    return tenantColumn ? [tenantColumn, 'created_at'] : ['created_at'];
+  }
+
+  /**
+   * Ensure the table can serve its own default list page from an index.
+   *
+   * Generated REST/MCP/SvelteKit list routes all page with
+   * `ORDER BY created_at DESC, <pk> ASC LIMIT n` and no `created_at` index
+   * existed on any schema path (the dead AST path indexed `updated_at`
+   * instead), so every default list page was a sequential scan plus a top-N
+   * sort of the whole table — 21 ms against 0.1 ms with the right composite on
+   * the workload the assessment measured (#2363, finding A2).
+   *
+   * Emitted shape:
+   *
+   * - tenant-scoped table → `(<tenant column>, created_at)`. The tenancy
+   *   interceptor adds `tenant_id = ?` to every list, so the tenant column
+   *   leads and `created_at` orders within it.
+   * - otherwise → `(created_at)`.
+   *
+   * No `DESC` declaration: PostgreSQL scans a B-tree backwards just as
+   * cheaply, and `IndexDefinition` carries no per-column direction. The
+   * trailing primary-key tiebreak is left out deliberately — its direction is
+   * opposite to `created_at`'s, so no single-direction index can satisfy the
+   * whole key anyway; the leading columns turn a full sort into an index scan
+   * with an incremental sort over rows that share a timestamp.
+   *
+   * Call this AFTER {@link appendDeclaredIndexes} and BEFORE
+   * {@link ensureReferenceColumnIndexes}: a declared composite that already
+   * leads with the same columns suppresses this one, and this composite in
+   * turn suppresses the standalone tenant index that would otherwise be a
+   * redundant prefix of it.
+   */
+  private ensureDefaultListOrderingIndex(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    columns: Record<string, { referenceKind?: string } | undefined>,
+    tableName: string,
+  ): void {
+    const orderingColumns = this.getDefaultListOrderingColumns(columns);
+    if (!orderingColumns) return;
+    if (this.hasUnqualifiedLeadingColumns(indexes, orderingColumns)) return;
+
+    const name = `${tableName}_${orderingColumns.join('_')}_idx`;
+    if (indexes.some((index) => index.name === name)) return;
+
+    // No `description`: ManifestIndexDefinition has no such field, and this
+    // helper feeds the manifest paths as well as the structured ones.
+    indexes.push({ name, columns: orderingColumns });
+  }
+
+  /**
    * Append `@smrt({ indexes: [...] })` declarations to a generated index set
    * (#2357).
    *
    * Shared by every schema path — build-time AST, runtime registry CTI/STI, and
    * manifest CTI/STI — so one declaration behaves identically however the schema
-   * was derived. Call it *before* `ensureTenantIdIndex`: a declared composite
-   * leading with `tenant_id` is exactly what that helper's "already leading"
-   * check is meant to defer to, and appending afterwards would leave the table
-   * with a redundant standalone tenant index (#2384).
+   * was derived. Call it *first*, ahead of
+   * {@link ensureDefaultListOrderingIndex} (#2363) and
+   * {@link ensureReferenceColumnIndexes}: a declared composite leading with a
+   * reference column (e.g. `tenant_id`), or with the default ordering columns,
+   * is exactly what those helpers' leads-with check is meant to defer to, and
+   * appending afterwards would leave the table with a redundant standalone
+   * index (#2384, #2359).
    *
    * Nothing is dropped quietly. A column that resolves to no column on the
    * table, a malformed entry, and a name collision with a different index are
@@ -461,6 +632,11 @@ export class SchemaGenerator {
         `Declared index on "${tableName}" needs a non-empty "name": got ${describe()}.`,
       );
     }
+    // A declared name is the developer's, not the generator's: shortening it
+    // would silently rename what they wrote, so an over-long one is refused
+    // here — at manifest generation, which `smrt dev:knowledge-check` runs —
+    // rather than truncated by PostgreSQL at deploy time (#2374).
+    assertIdentifierFits(spec.name, 'Declared index', `table "${tableName}"`);
     if (
       !Array.isArray(spec.columns) ||
       spec.columns.length === 0 ||
@@ -525,45 +701,298 @@ export class SchemaGenerator {
   }
 
   /**
-   * Ensure a tenancy-injected `tenant_id` column has an index leading with it.
+   * Ensure every reference column — `@foreignKey`, `@crossPackageRef`, and the
+   * tenancy-injected `tenant_id` — has an index leading with it.
    *
-   * Tenancy injects the column but nothing indexed it: the generated set covers
-   * foreign keys, unique columns, `updated_at` and the STI discriminator, and
-   * `tenant_id` is in none of those. Every tenant-scoped read filters on it, so
-   * without an index each one scans the whole multi-tenant table — measured in
-   * one production database, 164 of 212 tenant-scoped tables had no such index
-   * (#2356).
+   * These are the columns every relationship load, `include:` batch, reverse
+   * ownership lookup and tenant-scoped read filters on. Before #2359 only the
+   * registry (test) paths indexed foreign keys, the manifest (production)
+   * paths indexed none of them, and `tenant_id` was indexed nowhere (#2356):
+   * 196/231 `@foreignKey` and 91/92 `@crossPackageRef` columns shipped with no
+   * serving index. Every schema path now calls this helper so the four paths
+   * stay in step (see `schema-path-parity.test.ts`).
    *
-   * "Leading with it" rather than "always add": a table that already has a
-   * composite index starting on `tenant_id` (commonly from `conflictColumns`)
-   * is already served, and a standalone duplicate would only cost writes.
+   * "Leading with it" rather than "always add": a table that already has an
+   * unqualified index starting on the column (commonly the `conflictColumns`
+   * unique index, or an `indexed: true` opt-in) is already served, and a
+   * standalone duplicate would only cost writes. A *partial* index does not
+   * count — see {@link hasUnqualifiedLeadingIndex}.
+   *
+   * Reference columns are therefore always indexed; `indexed: true` on one of
+   * them is redundant and harmless.
+   *
+   * Call this LAST in every path, after every other index (conflict, opt-in,
+   * unique, the declared composites, the default list-ordering composite, and
+   * any future addition) has been appended, so the leads-with suppression sees
+   * the full set. In particular {@link ensureDefaultListOrderingIndex} runs
+   * first on a tenant-scoped table: its `(tenant_id, created_at)` composite
+   * serves the tenant equality filter too, so no standalone tenant index is
+   * added (#2363).
    */
-  private ensureTenantIdIndex(
+  private ensureReferenceColumnIndexes(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    columns: Record<
+      string,
+      | { referenceKind?: string; primaryKey?: boolean; unique?: boolean }
+      | undefined
+    >,
+    tableName: string,
+  ): void {
+    for (const [columnName, columnDef] of Object.entries(columns)) {
+      const kind = columnDef?.referenceKind;
+      if (
+        kind !== 'foreignKey' &&
+        kind !== 'crossPackageRef' &&
+        kind !== 'tenantId'
+      ) {
+        continue;
+      }
+      // The primary key, and a column-level UNIQUE (rendered inline on CTI
+      // tables — PostgreSQL's implicit `_key` index), are already unique
+      // indexes on every engine.
+      if (columnDef?.primaryKey || columnDef?.unique) continue;
+      if (this.hasUnqualifiedLeadingIndex(indexes, columnName)) continue;
+
+      const name = `${tableName}_${columnName}_idx`;
+      if (indexes.some((index) => index.name === name)) continue;
+
+      // No `description`: ManifestIndexDefinition has no such field, and this
+      // helper feeds the manifest paths as well as the structured ones.
+      indexes.push({ name, columns: [columnName] });
+    }
+  }
+
+  /**
+   * Whether `conflictColumns` names exactly the primary key column(s).
+   *
+   * `ON CONFLICT (id)` binds to the primary-key constraint on every engine, so
+   * a separate unique index over the same column set is a second B-tree over
+   * the same random UUIDs with nothing to add (#2359, finding A5).
+   */
+  private conflictColumnsArePrimaryKey(
+    conflictColumns: string[],
+    columns: Record<string, { primaryKey?: boolean } | undefined>,
+  ): boolean {
+    const primaryKeyColumns = Object.entries(columns)
+      .filter(([, columnDef]) => columnDef?.primaryKey === true)
+      .map(([name]) => name);
+    return (
+      primaryKeyColumns.length > 0 &&
+      primaryKeyColumns.length === conflictColumns.length &&
+      primaryKeyColumns.every((column) => conflictColumns.includes(column))
+    );
+  }
+
+  /**
+   * The table's tenant column as the generated columns describe it: the
+   * column carrying `referenceKind: 'tenantId'` (set from the field's
+   * `__tenancy.isTenantIdField` marker on every path).
+   */
+  private findTenantColumn(
+    columns: Record<string, { referenceKind?: string } | undefined>,
+  ): string | undefined {
+    for (const [columnName, columnDef] of Object.entries(columns)) {
+      if (columnDef?.referenceKind === 'tenantId') return columnName;
+    }
+    return undefined;
+  }
+
+  /**
+   * Resolve the conflict target the unique conflict index must cover
+   * (#2360). `config.conflictColumns` wins when the caller resolved it —
+   * registry callers pass `ObjectRegistry.getConflictColumns()`, the manifest
+   * pipeline passes the normalized `decoratorConfig` — otherwise the strategy
+   * default, led by the tenant column when `config.tenantScoped` names a
+   * tenant field that exists as a column. Both roads apply the same rule as
+   * `ObjectRegistry.getConflictColumns()`, so schema and upsert agree by
+   * construction (`schema-path-parity.test.ts`).
+   */
+  private resolveConflictTarget(
+    strategy: ConflictTableStrategy,
+    columns: Record<string, { referenceKind?: string } | undefined>,
+    config: SchemaGeneratorConfig | undefined,
+  ): { conflictColumns: string[]; tenantColumn: string | undefined } {
+    const tenantColumn = this.findTenantColumn(columns);
+    if (config?.conflictColumns && config.conflictColumns.length > 0) {
+      return { conflictColumns: [...config.conflictColumns], tenantColumn };
+    }
+    const tenantScoped = config?.tenantScoped;
+    const configuredTenantColumn = tenantScoped
+      ? resolveTenantColumn(
+          typeof tenantScoped === 'object'
+            ? (tenantScoped.field ?? 'tenantId')
+            : 'tenantId',
+          (fieldName) => Boolean(columns[this.toSnakeCase(fieldName)]),
+          (fieldName) => this.toSnakeCase(fieldName),
+        )
+      : undefined;
+    return {
+      conflictColumns: resolveConflictColumns({
+        strategy,
+        tenantColumn: configuredTenantColumn,
+      }),
+      tenantColumn,
+    };
+  }
+
+  /**
+   * Keep `(slug, context)` lookups served when `conflictColumns` are custom.
+   *
+   * The default conflict index is `(slug, context)`, and `loadFromSlug()`,
+   * `getId()` and `getSavedId()` all filter on `slug`/`context` regardless of
+   * the configured conflict key. A class that declares custom conflict
+   * columns replaces that unique index and, before #2359, left those lookups
+   * with no index at all — 120 tables (finding A7).
+   *
+   * Emitting a plain `(slug, context)` index is the safer of the two fixes:
+   * routing the lookups through the conflict key would change which row a
+   * slug resolves to on every such class, whereas an extra non-unique index
+   * is purely additive. It is skipped when an unqualified index already
+   * serves the lookup — one leading with `slug` (e.g. custom conflict columns
+   * that still start with it), or the tenant-led default key
+   * `(tenant_id, slug, context)` of a tenant-scoped table (#2360): every slug
+   * lookup on such a table carries the tenant predicate (#2365) and is served
+   * by that prefix, so a second index would only cost writes.
+   */
+  private ensureSlugLookupIndex(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    columns: Record<string, { referenceKind?: string } | undefined>,
+    tableName: string,
+  ): void {
+    if (!columns.slug || !columns.context) return;
+    const tenantColumn = this.findTenantColumn(columns);
+    if (
+      indexes.some(
+        (index) =>
+          !index.where &&
+          !index.jsonPath &&
+          servesSlugLookup(index.columns ?? [], tenantColumn),
+      )
+    ) {
+      return;
+    }
+
+    const name = `${tableName}_slug_context_idx`;
+    if (indexes.some((index) => index.name === name)) return;
+
+    indexes.push({ name, columns: ['slug', 'context'] });
+  }
+
+  /**
+   * Emit the unique conflict index of an STI table from the resolved
+   * conflict target (#2360): the STI default `(slug, context, _meta_type)`,
+   * a custom `@smrt({ conflictColumns })` declared on the STI root, or the
+   * default led by the tenant column when the root is tenant-scoped. Shared
+   * by the registry and manifest STI paths so they cannot drift.
+   *
+   * No index is emitted when the target is the primary key itself
+   * (`ON CONFLICT (id)` binds to the PK constraint), matching the CTI paths.
+   */
+  private emitStiConflictIndex(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      description?: string;
+    }>,
+    columns: Record<
+      string,
+      { referenceKind?: string; primaryKey?: boolean } | undefined
+    >,
+    tableName: string,
+    config: SchemaGeneratorConfig | undefined,
+  ): void {
+    const { conflictColumns, tenantColumn } = this.resolveConflictTarget(
+      'sti',
+      columns,
+      config,
+    );
+    if (this.conflictColumnsArePrimaryKey(conflictColumns, columns)) return;
+    indexes.push({
+      name: conflictIndexName(tableName, conflictColumns, tenantColumn),
+      columns: conflictColumns,
+      unique: true,
+    });
+  }
+
+  /**
+   * Emit unique indexes for `@field({ unique: true })` columns on an STI table.
+   *
+   * STI columns are the union of every class in the hierarchy, all nullable,
+   * so a column-level `UNIQUE` (what CTI renders inline) is not enough on its
+   * own: the migration differ cannot add a column constraint to an existing
+   * table, but it can add an index. Two shapes (#2359, finding A4):
+   *
+   * - declared on the STI **base** (and therefore inherited by every class in
+   *   the table): one full unique index, table-wide like CTI;
+   * - declared only on a **descendant**: one partial unique index per class
+   *   that carries the flag (the declaring class and, through inherited field
+   *   metadata, its own descendants), `WHERE _meta_type = '<qualified>'`, so
+   *   siblings that merely share the column name are not constrained.
+   *   Uniqueness is then enforced per concrete class, not across the subtree
+   *   — a documented limitation of the discriminator-partial shape. Engines
+   *   without partial indexes (DuckDB, JSON) skip this shape entirely rather
+   *   than widen it to a table-wide UNIQUE (see DuckDBStrategy.generateIndexes
+   *   and SchemaComparer.compareIndexes).
+   *
+   * @param declarers - column name → classes whose field metadata carries
+   *   `unique: true` for that column, in hierarchy order (base first).
+   */
+  private emitStiUniqueIndexes(
     indexes: Array<{
       name: string;
       columns: string[];
       unique?: boolean;
       where?: string;
     }>,
-    columns: Record<string, { referenceKind?: string } | undefined>,
+    declarers: Map<string, Set<string>>,
+    baseClassName: string,
     tableName: string,
   ): void {
-    const tenantColumn = Object.entries(columns).find(
-      ([, columnDef]) => columnDef?.referenceKind === 'tenantId',
-    )?.[0];
-    if (!tenantColumn) return;
-
-    const alreadyLeading = indexes.some(
-      (index) => index.columns?.[0] === tenantColumn,
-    );
-    if (alreadyLeading) return;
-
-    // No `description`: ManifestIndexDefinition has no such field, and this
-    // helper feeds the manifest paths as well as the structured ones.
-    indexes.push({
-      name: `${tableName}_${tenantColumn}_idx`,
-      columns: [tenantColumn],
-    });
+    for (const [columnName, classNames] of declarers.entries()) {
+      if (classNames.has(baseClassName)) {
+        indexes.push({
+          name: `${tableName}_${columnName}_unique_idx`,
+          columns: [columnName],
+          unique: true,
+        });
+        continue;
+      }
+      for (const className of classNames) {
+        const simpleName = className.includes(':')
+          ? className.slice(className.lastIndexOf(':') + 1)
+          : className;
+        let name = `${tableName}_${columnName}_${this.toSnakeCase(simpleName)}_unique_idx`;
+        // Two classes of one hierarchy may share a simple name across
+        // packages (`@a:Event`, `@b:Event`); the merged index list dedupes by
+        // name, so disambiguate with a short digest of the qualified name.
+        if (indexes.some((index) => index.name === name)) {
+          const digest = createHash('sha256')
+            .update(className)
+            .digest('hex')
+            .slice(0, 6);
+          name = `${tableName}_${columnName}_${this.toSnakeCase(simpleName)}_${digest}_unique_idx`;
+        }
+        indexes.push({
+          name,
+          columns: [columnName],
+          unique: true,
+          where: `_meta_type = ${quoteStringLiteral(className)}`,
+        });
+      }
+    }
   }
 
   /**
@@ -606,7 +1035,7 @@ export class SchemaGenerator {
       }
     }
 
-    // Declared indexes (#2357), before generateSchema()'s ensureTenantIdIndex.
+    // Declared indexes (#2357), before ensureReferenceColumnIndexes below.
     this.appendDeclaredIndexes(
       indexes,
       objectDef.decoratorConfig?.indexes,
@@ -915,52 +1344,33 @@ export class SchemaGenerator {
       config?.registry,
     );
 
-    // Generate indexes
+    // Generate indexes. No `<table>_id_idx`: the primary key is already a
+    // unique index on every engine, and the second B-tree over the same
+    // random UUIDs cost writes on 238/238 tables for nothing (#2359, A5).
+    // The differ drops the legacy one from existing databases.
     const indexes: IndexDefinition[] = [];
 
     if (!hasCustomPK) {
-      indexes.push({
-        name: `${tableName}_id_idx`,
-        columns: ['id'],
-        description: 'Primary key index',
-      });
-
-      const conflictColumns = config?.conflictColumns || ['slug', 'context'];
-      const conflictIndexName =
-        conflictColumns.length > 2
-          ? `${tableName}_${conflictColumns.slice(0, 2).join('_')}_idx`
-          : `${tableName}_${conflictColumns.join('_')}_idx`;
-
-      indexes.push({
-        name: conflictIndexName,
-        columns: conflictColumns,
-        unique: true,
-        description: `Unique conflict index for ${className}`,
-      });
-    } else {
-      // Find custom PK column and create index
-      for (const [colName, colDef] of Object.entries(columns)) {
-        if (colDef.primaryKey) {
-          indexes.push({
-            name: `${tableName}_${colName}_idx`,
-            columns: [colName],
-            description: `Primary key index`,
-          });
-          break;
-        }
-      }
-    }
-
-    // Create indexes for foreign keys
-    for (const [colName, colDef] of Object.entries(columns)) {
-      if (colDef.foreignKey) {
+      // Tenant-scoped tables key on `(tenant_id, slug, context)` under the
+      // stable `<table>_slug_context_idx` name (#2360).
+      const { conflictColumns, tenantColumn } = this.resolveConflictTarget(
+        'cti',
+        columns,
+        config,
+      );
+      if (!this.conflictColumnsArePrimaryKey(conflictColumns, columns)) {
         indexes.push({
-          name: `idx_${tableName}_${colName}`,
-          columns: [colName],
-          description: `Foreign key index for ${colName}`,
+          name: conflictIndexName(tableName, conflictColumns, tenantColumn),
+          columns: conflictColumns,
+          unique: true,
+          description: `Unique conflict index for ${className}`,
         });
       }
     }
+
+    // Custom conflict columns replace the (slug, context) index, but slug
+    // loading still filters on it (#2359, A7).
+    this.ensureSlugLookupIndex(indexes, columns, tableName);
 
     // Emit opt-in column indexes for regular fields tagged with `indexed: true`
     for (const colName of indexedColumns) {
@@ -971,11 +1381,21 @@ export class SchemaGenerator {
       });
     }
 
-    // Indexes declared with `@smrt({ indexes: [...] })` (#2357).
+    // Indexes declared with `@smrt({ indexes: [...] })` (#2357). Appended
+    // before the reference-column helper so a declared composite leading with
+    // a reference column suppresses the standalone auto index.
     this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
 
-    // Tenancy injects `tenant_id` but nothing indexes it (#2356).
-    this.ensureTenantIdIndex(indexes, columns, tableName);
+    // The default list page orders by created_at (#2363) — after the declared
+    // indexes, before the reference-column pass.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
+    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
+    // always indexed (#2356, #2359).
+    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
 
     return {
       tableName,
@@ -1000,7 +1420,14 @@ export class SchemaGenerator {
    * - _meta_type: Discriminator column to identify class type
    * - _meta_data: JSON column for flexible field storage
    * - Union of all FK columns from descendants (all nullable)
-   * - Partial indexes for FK columns (filtered by _meta_type)
+   * - One plain index per reference column (FK / cross-package ref /
+   *   tenant_id). Plain rather than partial-by-class: base-class polymorphic
+   *   queries carry no `_meta_type` predicate, so a partial index could not
+   *   serve them, while a plain index serves both those and the child
+   *   collections' `_meta_type = X AND fk = ?` filters — one index per column
+   *   instead of one per (column, class) (#2359).
+   * - Unique indexes for `@field({ unique: true })` columns — see
+   *   {@link emitStiUniqueIndexes}.
    *
    * @param baseClassName - Base class name for the STI hierarchy
    * @param tableName - Shared table name (from base class)
@@ -1079,18 +1506,17 @@ export class SchemaGenerator {
     const descendants = ObjectRegistry.getDescendants(baseClassName);
     const allClassNames = [baseClassName, ...descendants];
 
-    // Track FK columns by class for partial indexes
-    const fkColumnsByClass = new Map<string, Set<string>>();
     // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
     const indexedMetaFields = new Set<string>();
     // Track regular-field columns opted into plain column indexing
     const indexedStiColumns = new Set<string>();
+    // Track `unique: true` columns and the classes declaring them (#2359, A4)
+    const uniqueColumnDeclarers = new Map<string, Set<string>>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
       const classFields: Map<string, RegistryField> =
         await ObjectRegistry.getAllFields(className);
-      fkColumnsByClass.set(className, new Set());
 
       for (const [fieldName, field] of classFields.entries()) {
         // Skip transient fields
@@ -1151,6 +1577,18 @@ export class SchemaGenerator {
 
         const columnName = this.toSnakeCase(fieldName);
 
+        // `unique: true` is recorded per declaring class (before the
+        // inherited-column skip below, since descendants re-list inherited
+        // fields) so the index shape can depend on where it was declared.
+        if (field._meta?.unique === true) {
+          let declarers = uniqueColumnDeclarers.get(columnName);
+          if (!declarers) {
+            declarers = new Set();
+            uniqueColumnDeclarers.set(columnName, declarers);
+          }
+          declarers.add(className);
+        }
+
         // Check if column already exists (inherited from parent)
         if (columns[columnName]) {
           continue;
@@ -1164,6 +1602,8 @@ export class SchemaGenerator {
           // STI: All columns nullable (union of child fields)
           notNull: false,
           primaryKey: false,
+          // Uniqueness is enforced through indexes (emitStiUniqueIndexes), not
+          // an inline column constraint the differ could never add later.
           unique: false,
           description: field._meta?.description,
         };
@@ -1188,9 +1628,6 @@ export class SchemaGenerator {
               onDelete: onDeleteAction || 'CASCADE',
               onUpdate: 'CASCADE',
             };
-
-            // Track FK column for this class (for partial indexes)
-            fkColumnsByClass.get(className)?.add(columnName);
           }
         }
 
@@ -1232,28 +1669,20 @@ export class SchemaGenerator {
       );
     }
 
-    // Generate indexes
+    // Generate indexes. No `<table>_id_idx` — see generateSchemaFromRegistry.
     const indexes: IndexDefinition[] = [];
 
-    // Primary key index
-    indexes.push({
-      name: `${tableName}_id_idx`,
-      columns: ['id'],
-      description: 'Primary key index',
-    });
-
-    // Unique index for slug, context, and type (STI variation).
-    // STI subclasses share a table, so the discriminator participates in
-    // identity — two subtypes can share the same (slug, context). PostgreSQL
-    // UPSERT requires the live schema to carry a matching unique index; the
-    // migration differ repairs older deployments where this index was created
-    // non-unique or never created at all (issue #1165).
-    indexes.push({
-      name: `${tableName}_slug_context_meta_type_idx`,
-      columns: ['slug', 'context', '_meta_type'],
-      unique: true,
-      description: 'Unique index for slug, context, and type',
-    });
+    // Unique conflict index — by default (slug, context, _meta_type): STI
+    // subclasses share a table, so the discriminator participates in
+    // identity and two subtypes can share the same (slug, context). The key
+    // is derived from the resolved config rather than hard-coded (#2360,
+    // A4): a custom `@smrt({ conflictColumns })` on the STI root replaces it
+    // (previously ignored here while `getConflictColumns()` honoured it, so
+    // every save failed on PostgreSQL), and a tenant-scoped root leads it
+    // with the tenant column. PostgreSQL UPSERT requires the live schema to
+    // carry a matching unique index; the migration differ repairs older
+    // deployments in place by name (issue #1165, #2360).
+    this.emitStiConflictIndex(indexes, columns, tableName, config);
 
     // Index on type column (for polymorphic queries)
     indexes.push({
@@ -1262,17 +1691,17 @@ export class SchemaGenerator {
       description: 'Index for type discriminator queries',
     });
 
-    // Partial indexes for FK columns (filtered by type)
-    for (const [className, fkColumns] of fkColumnsByClass.entries()) {
-      for (const fkColumn of fkColumns) {
-        indexes.push({
-          name: `idx_${tableName}_${fkColumn}_${className.toLowerCase()}`,
-          columns: [fkColumn],
-          where: `_meta_type = ${quoteStringLiteral(className)}`,
-          description: `Partial index for ${fkColumn} in ${className} rows`,
-        });
-      }
-    }
+    // Unique indexes for `@field({ unique: true })` columns (#2359, A4)
+    this.emitStiUniqueIndexes(
+      indexes,
+      uniqueColumnDeclarers,
+      baseClassName,
+      tableName,
+    );
+
+    // Custom conflict columns replace the (slug, context, _meta_type) index,
+    // but slug loading still filters on slug/context (#2359, A7).
+    this.ensureSlugLookupIndex(indexes, columns, tableName);
 
     // JSON-path indexes for @meta({ indexed: true }) fields
     for (const fieldName of indexedMetaFields) {
@@ -1295,11 +1724,21 @@ export class SchemaGenerator {
 
     // Indexes declared on the STI base with `@smrt({ indexes: [...] })`
     // (#2357). Descendants share one table, so the base owns its access paths
-    // and a declaration there applies to every subtype's reads.
+    // and a declaration there applies to every subtype's reads. Appended
+    // before the reference-column helper so a declared composite leading with
+    // a reference column suppresses the standalone auto index.
     this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
 
-    // Tenancy injects `tenant_id` but nothing indexes it (#2356).
-    this.ensureTenantIdIndex(indexes, columns, tableName);
+    // The default list page orders by created_at (#2363) — after the declared
+    // indexes, before the reference-column pass.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
+    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
+    // always indexed (#2356, #2359).
+    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
 
     return {
       tableName,
@@ -1383,23 +1822,26 @@ export class SchemaGenerator {
       default: 'current_timestamp',
     };
 
-    // Find all descendants in manifest
-    const descendants = this.findDescendantsInManifest(baseClassName, manifest);
-    const allClassNames = [baseClassName, ...descendants];
+    // Find all descendants in manifest. Manifest keys are qualified names
+    // while callers may pass the base's simple name (an external STI base is
+    // reported that way); resolve to the key so the base's own fields are
+    // aggregated and the base-declared unique check below sees the same
+    // spelling the descendant loop records.
+    const baseKey = this.resolveManifestClassKey(baseClassName, manifest);
+    const descendants = this.findDescendantsInManifest(baseKey, manifest);
+    const allClassNames = [baseKey, ...descendants];
 
-    // Track FK columns by class for partial indexes
-    const fkColumnsByClass = new Map<string, Set<string>>();
     // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
     const indexedMetaFields = new Set<string>();
     // Track regular columns opted into plain column indexing
     const indexedStiColumns = new Set<string>();
+    // Track `unique: true` columns and the classes declaring them (#2359, A4)
+    const uniqueColumnDeclarers = new Map<string, Set<string>>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
       const objDef = manifest.objects[className];
       if (!objDef) continue;
-
-      fkColumnsByClass.set(className, new Set());
 
       for (const [fieldName, field] of Object.entries(objDef.fields)) {
         // Skip transient fields
@@ -1443,6 +1885,16 @@ export class SchemaGenerator {
 
         const columnName = this.toSnakeCase(fieldName);
 
+        // `unique: true` per declaring class — see generateSTISchemaFromRegistry.
+        if (field._meta?.unique === true) {
+          let declarers = uniqueColumnDeclarers.get(columnName);
+          if (!declarers) {
+            declarers = new Set();
+            uniqueColumnDeclarers.set(columnName, declarers);
+          }
+          declarers.add(className);
+        }
+
         // Check if column already exists (inherited from parent)
         if (columns[columnName]) {
           continue;
@@ -1465,11 +1917,6 @@ export class SchemaGenerator {
           columnDef.default = field.default;
         }
 
-        // Track FK columns for this class (for partial indexes)
-        if (field.type === 'foreignKey') {
-          fkColumnsByClass.get(className)?.add(columnName);
-        }
-
         // Track opt-in column indexes for regular STI columns
         const isIndexed =
           indexedField.indexed === true || field._meta?.indexed === true;
@@ -1481,28 +1928,30 @@ export class SchemaGenerator {
       }
     }
 
-    // Generate indexes
+    // Generate indexes. No `<table>_id_idx` — see generateSchemaFromRegistry.
     const indexes: ManifestIndexDefinition[] = [];
 
-    // Primary key index
-    indexes.push({
-      name: `${tableName}_id_idx`,
-      columns: ['id'],
-    });
-
-    // Unique index for slug, context, and type (STI variation) — see
-    // generateSTISchemaFromRegistry for the rationale.
-    indexes.push({
-      name: `${tableName}_slug_context_meta_type_idx`,
-      columns: ['slug', 'context', '_meta_type'],
-      unique: true,
-    });
+    // Unique conflict index (default slug, context, _meta_type; custom or
+    // tenant-led per the root's config) — see generateSTISchemaFromRegistry.
+    this.emitStiConflictIndex(indexes, columns, tableName, config);
 
     // Index on type column (for polymorphic queries)
     indexes.push({
       name: `${tableName}_meta_type_idx`,
       columns: ['_meta_type'],
     });
+
+    // Unique indexes for `@field({ unique: true })` columns (#2359, A4)
+    this.emitStiUniqueIndexes(
+      indexes,
+      uniqueColumnDeclarers,
+      baseKey,
+      tableName,
+    );
+
+    // Custom conflict columns replace the (slug, context, _meta_type) index,
+    // but slug loading still filters on slug/context (#2359, A7).
+    this.ensureSlugLookupIndex(indexes, columns, tableName);
 
     // JSON-path indexes for @meta({ indexed: true }) fields
     for (const fieldName of indexedMetaFields) {
@@ -1521,13 +1970,24 @@ export class SchemaGenerator {
       });
     }
 
-    // Indexes declared on the STI base with `@smrt({ indexes: [...] })` (#2357).
+    // Indexes declared on the STI base with `@smrt({ indexes: [...] })`
+    // (#2357), before the reference-column helper so a declared composite
+    // leading with a reference column suppresses the standalone auto index.
     this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
 
-    // Generate DDL
-    // Tenancy injects `tenant_id` but nothing indexes it (#2356). Added
-    // before the DDL is rendered so the emitted SQL creates it too.
-    this.ensureTenantIdIndex(indexes, columns, tableName);
+    // The default list page orders by created_at (#2363) — after the declared
+    // indexes, before the reference-column pass.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
+    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
+    // always indexed (#2356, #2359). Runs last so every consumer of the
+    // structured `indexes` array (migrations, test databases, aggregation)
+    // creates them; the cached `ddl` string below is CREATE TABLE only and is
+    // not an executable representation of the table (#2358).
+    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
 
     const schemaDefinition: SchemaDefinition = {
       tableName,
@@ -1675,26 +2135,28 @@ export class SchemaGenerator {
       columns[columnName] = columnDef;
     }
 
-    // Generate indexes
+    // Generate indexes. No `<table>_id_idx` — see generateSchemaFromRegistry.
     const indexes: ManifestIndexDefinition[] = [];
 
-    indexes.push({
-      name: `${tableName}_id_idx`,
-      columns: ['id'],
-    });
+    // Custom conflict columns if provided, otherwise slug+context — led by
+    // the tenant column on a tenant-scoped table, under the same stable
+    // index name (#2360).
+    const { conflictColumns, tenantColumn } = this.resolveConflictTarget(
+      'cti',
+      columns,
+      config,
+    );
+    if (!this.conflictColumnsArePrimaryKey(conflictColumns, columns)) {
+      indexes.push({
+        name: conflictIndexName(tableName, conflictColumns, tenantColumn),
+        columns: conflictColumns,
+        unique: true,
+      });
+    }
 
-    // Use custom conflict columns if provided, otherwise default to slug+context
-    const conflictColumns = config?.conflictColumns || ['slug', 'context'];
-    const indexName =
-      conflictColumns.length > 2
-        ? `${tableName}_${conflictColumns.slice(0, 2).join('_')}_idx`
-        : `${tableName}_${conflictColumns.join('_')}_idx`;
-
-    indexes.push({
-      name: indexName,
-      columns: conflictColumns,
-      unique: true,
-    });
+    // Custom conflict columns replace the (slug, context) index, but slug
+    // loading still filters on it (#2359, A7).
+    this.ensureSlugLookupIndex(indexes, columns, tableName);
 
     // Plain column indexes for regular columns opted in via `indexed: true`.
     for (const colName of indexedColumns) {
@@ -1704,13 +2166,24 @@ export class SchemaGenerator {
       });
     }
 
-    // Indexes declared with `@smrt({ indexes: [...] })` (#2357).
+    // Indexes declared with `@smrt({ indexes: [...] })` (#2357), before the
+    // reference-column helper so a declared composite leading with a
+    // reference column suppresses the standalone auto index.
     this.appendDeclaredIndexes(indexes, config?.indexes, columns, tableName);
 
-    // Generate DDL
-    // Tenancy injects `tenant_id` but nothing indexes it (#2356). Added
-    // before the DDL is rendered so the emitted SQL creates it too.
-    this.ensureTenantIdIndex(indexes, columns, tableName);
+    // The default list page orders by created_at (#2363) — after the declared
+    // indexes, before the reference-column pass.
+    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
+    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
+    // always indexed (#2356, #2359). Runs last so every consumer of the
+    // structured `indexes` array (migrations, test databases, aggregation)
+    // creates them; the cached `ddl` string below is CREATE TABLE only and is
+    // not an executable representation of the table (#2358).
+    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
 
     const schemaDefinition: SchemaDefinition = {
       tableName,
@@ -1744,6 +2217,28 @@ export class SchemaGenerator {
       indexes,
       version,
     };
+  }
+
+  /**
+   * Resolve a class name (simple or qualified) to the key it is stored under
+   * in `manifest.objects`. Falls back to the input when the manifest does not
+   * carry the class (e.g. an external STI base absent from the aggregated
+   * manifest), so callers can keep using it as an opaque label.
+   */
+  private resolveManifestClassKey(
+    className: string,
+    manifest: SmartObjectManifest,
+  ): string {
+    if (manifest.objects[className]) return className;
+    const simpleName = className.includes(':')
+      ? className.slice(className.lastIndexOf(':') + 1)
+      : className;
+    for (const [key, obj] of Object.entries(manifest.objects)) {
+      if (obj.qualifiedName === className || obj.className === simpleName) {
+        return key;
+      }
+    }
+    return className;
   }
 
   /**
@@ -1829,19 +2324,21 @@ export class SchemaGenerator {
   }
 
   /**
-   * Generate SQL CREATE TABLE statement from schema definition
+   * Generate the CREATE TABLE statement for a schema definition.
    *
-   * This is the single source of truth for SQL generation, consolidating
-   * logic that was previously duplicated across multiple code paths.
+   * With an `engine` this delegates to that engine's DDL strategy. Without
+   * one it renders the engine-neutral preview stored in `schema.ddl` and
+   * `manifest.json`: abstract SQL types, no indexes, no triggers. That
+   * preview is NOT an executable representation of the table (#2358) —
+   * executable paths (`db:migrate`, `MigrationGenerator`, `SchemaAggregator`,
+   * `createIsolatedTestDbFromManifest`) render `schema.columns` and
+   * `schema.indexes` through `getDDLStrategy(engine)` instead.
    *
    * @param schema - Schema definition object
-   * @returns SQL CREATE TABLE statement with indexes
+   * @param engine - Optional target engine; omit for the neutral preview
+   * @returns SQL CREATE TABLE statement (no indexes)
    */
   generateSQL(schema: SchemaDefinition, engine?: DatabaseEngine): string {
-    // NOTE: We no longer append indexes to DDL string here.
-    // The SDK expects ddl to contain ONLY the CREATE TABLE statement.
-    // Indexes are stored separately in schema.indexes as SQL strings
-    // and the SDK handles them via syncSchema() or dedicated index creation.
     if (engine) {
       return getDDLStrategy(engine).generateCreateTable(schema);
     }

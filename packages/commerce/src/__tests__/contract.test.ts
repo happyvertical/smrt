@@ -325,14 +325,16 @@ describe('ContractLineItem', () => {
         contractId: contract.id,
         description: 'Widget Pro',
         quantity: 10,
-        unitPrice: 49.99,
-        discount: 10.0,
+        unitPrice: 4999, // $49.99 in cents
+        discount: 1000, // $10.00 in cents
         taxRate: 0.08,
       });
 
-      // Expected: (10 * 49.99 - 10) * 1.08 = 489.9 * 1.08 = 529.092
+      // (10 * 4999 - 1000) * 1.08 = 48990 * 1.08 = 52909.2 → 52909 cents.
+      // Exact equality, not toBeCloseTo: the fractional tax is rounded to a
+      // whole minor unit inside calculateAmount (#2401).
       const amount = item.calculateAmount();
-      expect(amount).toBeCloseTo(529.09, 1);
+      expect(amount).toBe(52909);
     });
 
     it('should update amount manually before save', async () => {
@@ -347,7 +349,7 @@ describe('ContractLineItem', () => {
       const item = await lineItems.create({
         contractId: contract.id,
         quantity: 5,
-        unitPrice: 100.0,
+        unitPrice: 10000, // $100.00 in cents
         taxRate: 0.1,
       });
       // Manually calculate amount before save (SMRT doesn't auto-call beforeSave)
@@ -355,7 +357,7 @@ describe('ContractLineItem', () => {
       await item.save();
 
       const loaded = await lineItems.get({ id: item.id });
-      expect(loaded?.amount).toBeCloseTo(550.0, 2); // 5 * 100 * 1.1
+      expect(loaded?.amount).toBe(55000); // 5 * 10000 * 1.1, in cents
     });
   });
 

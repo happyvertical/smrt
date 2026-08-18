@@ -25,9 +25,10 @@
  * });
  *
  * // Create a customer linked to a profile
+ * // Every money value is integer minor units — $100.00 is 10000 (#2401).
  * const customer = await customers.create({
  *   profileId: 'profile-uuid',
- *   creditLimit: 10000,
+ *   creditLimit: 1000000, // $10,000.00
  *   paymentTerms: 'Net 30'
  * });
  * await customer.save();
@@ -37,7 +38,7 @@
  * const order = await contracts.create({
  *   _meta_type: 'Order',
  *   customerId: customer.id,
- *   totalAmount: 1500.00
+ *   totalAmount: 150000 // $1,500.00
  * });
  * await order.save();
  *
@@ -46,7 +47,7 @@
  * const payment = await payments.create({
  *   contractId: order.id,
  *   customerId: customer.id,
- *   amount: 1500.00
+ *   amount: 150000
  * });
  * await payment.save();
  *
@@ -86,6 +87,14 @@ export {
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
+// Money conventions and the major-units → minor-units migration (#2401)
+export {
+  COMMERCE_MONEY_COLUMNS,
+  COMMERCE_MONEY_MINOR_UNITS_BACKFILL,
+  COMMERCE_NATIVE_UNIT_COLUMNS,
+  migrateCommerceMoneyToMinorUnits,
+  preflightCommerceMoneyMinorUnits,
+} from './migrations/moneyMinorUnits.js';
 // Models
 export {
   Agreement,
@@ -112,6 +121,7 @@ export {
   Vendor,
   WholesaleOrder,
 } from './models/index.js';
+export { assertIntegerMinorUnits } from './money.js';
 
 // Types
 export {

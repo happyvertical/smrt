@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-products",
-  "version": "0.40.69",
+  "version": "0.40.70",
   "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
   "author": "HappyVertical",
   "type": "module",
@@ -112,6 +112,7 @@
     "preview": "vite preview",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/price-field.postgres.test.ts",
     "test:watch": "vitest",
     "test:code-split": "node scripts/check-web-engine-code-split.mjs",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",

@@ -55,9 +55,11 @@ export class Vendor extends SmrtObject {
   leadTimeDays: number = 0;
 
   /**
-   * Minimum order amount required
+   * Minimum order amount required, in **integer minor units** (cents,
+   * satoshis). Compared against `Contract.totalAmount`, which is also minor
+   * units (#2401).
    */
-  minimumOrderAmount: number = 0.0;
+  minimumOrderAmount: number = 0;
 
   /**
    * Payment terms for this vendor (e.g., "Net 60")

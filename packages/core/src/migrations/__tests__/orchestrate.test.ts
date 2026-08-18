@@ -405,6 +405,44 @@ describe('schema orchestration', () => {
     expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
+  it('surfaces a blocking orphan NOT NULL column as unactionable, keeps info notes out, executes nothing for advisories (#2369)', async () => {
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',
+    );
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+    expect(pending.statements).toEqual([]);
+    expect(pending.hasChanges).toBe(false);
+    expect(
+      pending.diff.changes
+        .map((c) => `${c.name}:${c.advisory?.severity}`)
+        .sort(),
+    ).toEqual(['legacy_code:warning', 'legacy_note:info']);
+    // Only the blocking orphan is surfaced as needing an operator.
+    expect(pending.unactionableChanges.map((c) => c.name)).toEqual([
+      'legacy_code',
+    ]);
+    expect(pending.hasManualDrift).toBe(true);
+
+    const result = await migrateSmrtSchemas({ db, packageName: 'test' });
+    expect(result.applied).toBe(false);
+    expect(result.statements).toEqual([]);
+    expect(result.unactionableChanges.map((c) => c.name)).toEqual([
+      'legacy_code',
+    ]);
+  });
+
   it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {
     // The differ emits `type: 'type_mismatch'` (no SQL) for column type
     // changes it can't auto-upgrade. Previously these were invisible to

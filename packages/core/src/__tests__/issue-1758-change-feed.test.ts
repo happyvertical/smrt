@@ -30,6 +30,7 @@ import {
   ensureChangeFeedTable,
   getChangesSince,
   getTenantScopedChangesSince,
+  isChangeFeedObservableTable,
   pruneChangeFeed,
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
@@ -76,15 +77,30 @@ class ChangeFeedTenantDocCollection extends SmrtCollection<ChangeFeedTenantDoc> 
   static readonly _itemClass = ChangeFeedTenantDoc;
 }
 
+// A *domain* table that happens to carry the `_smrt_` prefix — the shape of
+// ~25 real tables (feature flags, prompt overrides, subscription plans, field
+// policies). The writer used to skip these by bare prefix, so clients syncing
+// them through `_changes` never saw an update (issue #2376).
+@smrt({ tableName: '_smrt_change_feed_domain_settings' })
+class ChangeFeedDomainSetting extends SmrtObject {
+  value: string = '';
+}
+
+class ChangeFeedDomainSettingCollection extends SmrtCollection<ChangeFeedDomainSetting> {
+  static readonly _itemClass = ChangeFeedDomainSetting;
+}
+
 const TEST_CLASSES = [
   'ChangeFeedWidget',
   'ChangeFeedGadget',
   'ChangeFeedTenantDoc',
+  'ChangeFeedDomainSetting',
 ];
 
 const WIDGETS_TABLE = 'change_feed_widgets';
 const GADGETS_TABLE = 'change_feed_gadgets';
 const TENANT_DOCS_TABLE = 'change_feed_tenant_docs';
+const DOMAIN_SETTINGS_TABLE = '_smrt_change_feed_domain_settings';
 
 // ============================================================================
 // Helpers
@@ -198,6 +214,95 @@ describe('change feed spine (issue #1758)', () => {
       const changes = await allChanges(db);
       expect(changes).toHaveLength(1);
       expect(changes[0].tenantId).toBe('tenant-a');
+    });
+
+    it('observes `_smrt_`-prefixed domain tables (issue #2376)', async () => {
+      const settings = await ChangeFeedDomainSettingCollection.create({ db });
+
+      const setting = await settings.create({ value: 'on' });
+      setting.value = 'off';
+      await setting.save();
+      await setting.delete();
+
+      const changes = await allChanges(db);
+      expect(changes.map((change) => change.table)).toEqual([
+        DOMAIN_SETTINGS_TABLE,
+        DOMAIN_SETTINGS_TABLE,
+        DOMAIN_SETTINGS_TABLE,
+      ]);
+      expect(changes.map((change) => change.operation)).toEqual([
+        'create',
+        'update',
+        'delete',
+      ]);
+    });
+
+    it('records nothing for the framework tables a bootstrapped database carries (issue #2376)', async () => {
+      // The allowlist is a closed list, so a table the framework starts
+      // creating — or one a sibling change reclassifies — would silently
+      // acquire feed rows and shift every count in this file. Pin the whole
+      // recorded set against a real bootstrapped database so that failure
+      // surfaces here, as a named assertion, instead of as an off-by-N
+      // elsewhere. This is the shape the #2411 landing steward hit.
+      const liveTables = await db.query(
+        `SELECT name FROM sqlite_master
+           WHERE type = 'table' AND name LIKE '\\_smrt\\_%' ESCAPE '\\'
+           ORDER BY name`,
+      );
+      const systemTables = (liveTables.rows as { name: string }[]).map(
+        (row) => row.name,
+      );
+      // Sanity: the database really did bootstrap its framework tables.
+      expect(systemTables).toContain('_smrt_changes');
+      expect(systemTables).toContain('_smrt_contexts');
+
+      // Every framework table present is unobservable; the only `_smrt_`
+      // table this file expects the feed to record is the domain fixture.
+      for (const table of systemTables) {
+        if (table === DOMAIN_SETTINGS_TABLE) continue;
+        expect(
+          isChangeFeedObservableTable(table),
+          `${table} is a framework table the change feed must not record`,
+        ).toBe(false);
+      }
+
+      // A write through the framework produces exactly one row, for the
+      // application table — no incidental framework rows alongside it.
+      const widgets = await ChangeFeedWidgetCollection.create({ db });
+      await widgets.create({ name: 'only-entry' });
+
+      const changes = await allChanges(db);
+      expect(changes.map((change) => change.table)).toEqual([WIDGETS_TABLE]);
+    });
+
+    it('classifies framework-owned tables as unobservable and everything else as observable', () => {
+      // The feed's own table and the hand-written bookkeeping DDL.
+      expect(isChangeFeedObservableTable('_smrt_changes')).toBe(false);
+      expect(isChangeFeedObservableTable('_smrt_contexts')).toBe(false);
+      expect(isChangeFeedObservableTable('_smrt_dispatch')).toBe(false);
+      expect(isChangeFeedObservableTable('_smrt_ai_usage')).toBe(false);
+      // The jobs runner's own state (the claim loop writes several rows per
+      // job per second — that churn is not client-syncable data).
+      expect(isChangeFeedObservableTable('_smrt_jobs')).toBe(false);
+      expect(isChangeFeedObservableTable('_smrt_job_events')).toBe(false);
+      expect(isChangeFeedObservableTable('_smrt_workers')).toBe(false);
+      // Retired tables that may still exist on older databases.
+      expect(isChangeFeedObservableTable('_smrt_signals')).toBe(false);
+      // Domain tables that merely carry the prefix.
+      for (const table of [
+        '_smrt_feature_overrides',
+        '_smrt_prompt_overrides',
+        '_smrt_subscription_plans',
+        '_smrt_report_schedules',
+        '_smrt_field_policies',
+        '_smrt_language_overrides',
+        '_smrt_agent_schedules',
+      ]) {
+        expect(isChangeFeedObservableTable(table)).toBe(true);
+      }
+      // Ordinary application tables and the empty-name guard.
+      expect(isChangeFeedObservableTable('change_feed_widgets')).toBe(true);
+      expect(isChangeFeedObservableTable('')).toBe(false);
     });
 
     it('a feed-write failure never fails the user write', async () => {

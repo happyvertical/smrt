@@ -202,6 +202,8 @@ export {
   generateSchemaDiff,
   getSQLFromDiff,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
+  isManualOrAdvisoryChange,
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';
@@ -254,6 +256,7 @@ export {
 } from './schema/live-parity';
 export {
   getSystemTableShapes,
+  SYSTEM_TABLE_NAMES,
   type SystemTableShape,
 } from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)

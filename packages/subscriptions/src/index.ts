@@ -14,6 +14,13 @@ export {
   TenantSubscriptionCollection,
   TenantUsageMetricCollection,
 } from './collections/index.js';
+// Major-units → integer minor-units migration (#2401)
+export {
+  migrateSubscriptionsMoneyToMinorUnits,
+  preflightSubscriptionsMoneyMinorUnits,
+  SUBSCRIPTIONS_MONEY_COLUMNS,
+  SUBSCRIPTIONS_MONEY_MINOR_UNITS_BACKFILL,
+} from './migrations/moneyMinorUnits.js';
 export type {
   PricingStrategy,
   SpendingPeriod,

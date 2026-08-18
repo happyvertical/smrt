@@ -11,6 +11,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { Journal, JournalEntryData } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertIntegerMinorUnits } from '../money.js';
 import {
   type AccountingInvoiceInput,
   type InvoiceOptions,
@@ -19,19 +20,17 @@ import {
 } from '../types/index.js';
 import type { InvoiceLineItem } from './InvoiceLineItem.js';
 
-/**
- * Sub-cent rounding tolerance for the invoice's own integrity checks (forged
- * total / over-payment / payment-status consistency). Used when comparing
- * caller-supplied totals against recomputed line-item totals so floating-point
- * fuzz doesn't trip the guards.
+/*
+ * There is deliberately no `INVOICE_EPSILON` here any more (#2401).
  *
- * NOTE: this is intentionally looser than the smrt-ledgers `BALANCE_EPSILON`
- * (0.001). To keep a no-line-item invoice ledger-postable, {@link
- * Invoice.assertTotalArithmetic} SNAPS `totalAmount` to exactly
- * `subtotal + taxAmount` after the tolerance check, so every journal built in
- * {@link Invoice.recognizeRevenue} balances under the tighter ledger epsilon.
+ * Every amount on this model is integer minor units, so `subtotal + taxAmount`
+ * is exact, the sum of allocations is exact, and every comparison below is a
+ * plain integer comparison. The old `0.01` tolerance existed because the values
+ * were floats; keeping it against integers would silently forgive a genuine
+ * one-cent discrepancy, and the "snap `totalAmount` to `subtotal + taxAmount`
+ * afterwards" workaround it required (to stay inside the tighter smrt-ledgers
+ * `BALANCE_EPSILON`) is gone with it — exact arithmetic needs no snap.
  */
-const INVOICE_EPSILON = 0.01;
 
 /**
  * Legal status transitions for an Invoice. Keyed by the prior (persisted)
@@ -238,22 +237,28 @@ export class Invoice extends SmrtObject {
   // ============================================================================
 
   /**
-   * Subtotal before tax
+   * Subtotal before tax, in **integer minor units** (cents, satoshis).
+   *
+   * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
+   * INTEGER and a decimal literal to DECIMAL. Money is exact, so it is stored
+   * as minor units and never as a float — `$19.99` is `1999`, not `19.99`.
+   * Writing a fractional major-unit value here is the bug; PostgreSQL rejects
+   * it with `22P02` while SQLite's affinity silently stores it (#2361).
    */
   subtotal: number = 0;
 
   /**
-   * Tax amount
+   * Tax amount, in integer minor units (#2361).
    */
   taxAmount: number = 0;
 
   /**
-   * Total amount due (subtotal + tax)
+   * Total amount due (subtotal + tax), in integer minor units (#2361).
    */
   totalAmount: number = 0;
 
   /**
-   * Amount paid (sum of PaymentAllocations)
+   * Amount paid (sum of PaymentAllocations), in integer minor units (#2361).
    */
   amountPaid: number = 0;
 
@@ -429,14 +434,19 @@ export class Invoice extends SmrtObject {
    *    `totalAmount === subtotal + taxAmount` arithmetic invariant is enforced.
    *  - **amountPaid is derived/validated.** When persisted, it is recomputed
    *    from PaymentAllocations rather than trusted from the caller. It may
-   *    never exceed `totalAmount` (beyond rounding tolerance).
-   *  - **Non-negativity** is enforced on all four amounts.
+   *    never exceed `totalAmount`.
+   *  - **Whole minor units and non-negativity** are enforced on all four
+   *    amounts. The integer check runs FIRST (#2401), before the
+   *    `totalAmount === subtotal + taxAmount` invariant, so a caller who wrote
+   *    major units gets "money is minor units" rather than a confusing
+   *    arithmetic-mismatch error from float addition.
    *  - **Status transitions** are validated against the prior persisted status.
    */
   override async save(): Promise<this> {
     const persisted = await this.isSaved();
     const prior = await this.resolvePriorStatus(persisted);
 
+    this.assertAmountsAreMinorUnits();
     await this.recomputeAmountsForSave(persisted);
     this.assertNonNegativeAmounts();
     this.assertStatusTransition(prior);
@@ -554,26 +564,24 @@ export class Invoice extends SmrtObject {
   }
 
   /**
-   * Whether `amountPaid` covers `totalAmount` within the sub-cent rounding
-   * tolerance. This is the SINGLE source of truth for the **PAID** decision —
-   * both {@link updatePaymentStatus} (which decides PAID) and
-   * {@link assertPaymentStatusConsistent} (which validates PAID on save) call
-   * it, so the PAID-deciding comparison and the PAID-validating comparison can
-   * never drift apart. A strict `amountPaid >= totalAmount` here would diverge
-   * from the epsilon-tolerant guard: a float-summed total paid exactly (e.g.
-   * `0.1 × 3` line items paid `0.3`) reads as "not covered" by `>=` but
-   * "covered" by the guard, so `updatePaymentStatus` would set PARTIAL and the
-   * save-time guard would then reject it — leaving a genuinely-paid invoice
-   * unsaveable (S5 audit #1390 follow-up).
+   * Whether `amountPaid` covers `totalAmount`. This is the SINGLE source of
+   * truth for the **PAID** decision — both {@link updatePaymentStatus} (which
+   * decides PAID) and {@link assertPaymentStatusConsistent} (which validates
+   * PAID on save) call it, so the PAID-deciding comparison and the
+   * PAID-validating comparison can never drift apart (S5 audit #1390
+   * follow-up).
    *
-   * NOTE: the claim is scoped to PAID. The PARTIAL branch is NOT unified the
-   * same way — {@link updatePaymentStatus} treats any `amountPaid > 0` as
-   * PARTIAL, whereas {@link isPartiallyPaid} (used by the save-time guard)
-   * requires `amountPaid > INVOICE_EPSILON`. That pre-existing asymmetry only
-   * matters for a sub-cent dust payment and is intentionally left as-is.
+   * With integer minor units this is a plain `>=` (#2401). The float-era
+   * hazard it used to guard against — a total summed from `0.1 × 3` line items
+   * reading as "not covered" by `>=` but "covered" by an epsilon-tolerant
+   * guard, leaving a genuinely-paid invoice unsaveable — cannot arise when both
+   * sides are exact integers. That also removes the documented PAID/PARTIAL
+   * asymmetry: {@link updatePaymentStatus} and {@link isPartiallyPaid} now
+   * agree that any `amountPaid > 0` is a partial payment, because there is no
+   * such thing as sub-cent dust.
    */
   private isFullyPaid(): boolean {
-    return this.amountPaid - this.totalAmount >= -INVOICE_EPSILON;
+    return this.amountPaid >= this.totalAmount;
   }
 
   /**
@@ -581,7 +589,7 @@ export class Invoice extends SmrtObject {
    * Derived from {@link isFullyPaid} so the two stay mutually exclusive.
    */
   private isPartiallyPaid(): boolean {
-    return this.amountPaid > INVOICE_EPSILON && !this.isFullyPaid();
+    return this.amountPaid > 0 && !this.isFullyPaid();
   }
 
   /**
@@ -621,7 +629,7 @@ export class Invoice extends SmrtObject {
     if (
       (this.status === InvoiceStatus.SENT ||
         this.status === InvoiceStatus.VIEWED) &&
-      this.totalAmount > INVOICE_EPSILON &&
+      this.totalAmount > 0 &&
       fullyPaid
     ) {
       throw new Error(
@@ -633,51 +641,65 @@ export class Invoice extends SmrtObject {
   }
 
   /**
-   * Enforce `totalAmount === subtotal + taxAmount` (within rounding tolerance),
-   * then SNAP `totalAmount` to the exact arithmetic. Used when the invoice has
-   * no line items to recompute from.
+   * Enforce `totalAmount === subtotal + taxAmount` exactly. Used when the
+   * invoice has no line items to recompute from.
    *
-   * The snap closes the invoice-vs-ledger epsilon gap (S5 audit #1390
-   * follow-up): the invoice guard tolerates `INVOICE_EPSILON` (0.01) but the
-   * smrt-ledgers balance check uses a tighter `BALANCE_EPSILON` (0.001). A
-   * no-line-item invoice with, say, subtotal 100.00 / total 100.005 passes this
-   * guard, yet `recognizeRevenue` would build DR 100.005 / CR 100.00 and
-   * `journal.post()` would reject it as unbalanced — voiding the journal and
-   * permanently blocking revenue recognition. Snapping `totalAmount` to
-   * `subtotal + taxAmount` here (after the tolerance check) means the persisted
-   * total and every journal built from it are always ledger-consistent.
+   * Exact because every term is integer minor units (#2401). The float era
+   * needed a `0.01` tolerance here and then had to SNAP `totalAmount` to the
+   * recomputed value afterwards, because a total that passed the invoice's
+   * loose tolerance could still fail smrt-ledgers' tighter `BALANCE_EPSILON`
+   * and void the journal `recognizeRevenue` builds from it. Integer arithmetic
+   * removes both halves of that workaround: what the caller supplied either is
+   * the sum or is rejected, and any journal built from it balances exactly.
    */
   private assertTotalArithmetic(): void {
     const expected = this.subtotal + this.taxAmount;
-    if (Math.abs(this.totalAmount - expected) > INVOICE_EPSILON) {
+    if (this.totalAmount !== expected) {
       throw new Error(
         `Invoice ${this.invoiceNumber || this.id || '<new>'}: totalAmount ${this.totalAmount} ` +
           `must equal subtotal + taxAmount (${expected}).`,
       );
     }
-    this.totalAmount = expected;
   }
 
   /**
-   * Reject negative financial values and an amountPaid that exceeds the total
-   * (beyond rounding tolerance — overpayment is modelled elsewhere, not by
-   * letting amountPaid float above the invoice total).
+   * Reject amounts that are not whole minor units, negative financial values,
+   * and an amountPaid that exceeds the total (overpayment is modelled
+   * elsewhere, not by letting amountPaid float above the invoice total).
    */
+  private assertAmountsAreMinorUnits(): void {
+    assertIntegerMinorUnits(
+      'Invoice',
+      this.invoiceNumber || this.id || '<new>',
+      [
+        ['subtotal', this.subtotal],
+        ['taxAmount', this.taxAmount],
+        ['totalAmount', this.totalAmount],
+        ['amountPaid', this.amountPaid],
+      ],
+    );
+  }
+
   private assertNonNegativeAmounts(): void {
     const label = this.invoiceNumber || this.id || '<new>';
-    for (const [field, value] of [
+    const amounts = [
       ['subtotal', this.subtotal],
       ['taxAmount', this.taxAmount],
       ['totalAmount', this.totalAmount],
       ['amountPaid', this.amountPaid],
-    ] as const) {
-      if (!Number.isFinite(value) || value < 0) {
+    ] as const;
+    // Re-checked after the recompute: line-item sums and the allocation total
+    // feed these, so integer-ness has to hold for the derived values too — it
+    // is what lets every comparison below drop its epsilon.
+    assertIntegerMinorUnits('Invoice', label, amounts);
+    for (const [field, value] of amounts) {
+      if (value < 0) {
         throw new Error(
           `Invoice ${label}: ${field} must be a non-negative number (got ${value}).`,
         );
       }
     }
-    if (this.amountPaid - this.totalAmount > INVOICE_EPSILON) {
+    if (this.amountPaid > this.totalAmount) {
       throw new Error(
         `Invoice ${label}: amountPaid ${this.amountPaid} cannot exceed totalAmount ${this.totalAmount}.`,
       );

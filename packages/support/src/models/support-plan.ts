@@ -119,8 +119,14 @@ export class SupportPlan extends SmrtObject {
   @field({ type: 'text' })
   escalationPolicy: string = '[]';
 
-  /** Recurring availability/retainer fee (0.0 = pure hourly support). */
-  availabilityFeeAmount: number = 0.0;
+  /**
+   * Recurring availability/retainer fee, in **integer minor units** of
+   * {@link currency} — `$19.99` is `1999`; `0` means pure hourly support.
+   *
+   * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
+   * INTEGER and a decimal literal to DECIMAL, and money is exact (#2401).
+   */
+  availabilityFeeAmount: number = 0;
 
   @field({ type: 'text' })
   currency: string = 'USD';
@@ -128,10 +134,18 @@ export class SupportPlan extends SmrtObject {
   /** Included support minutes per period (0 = none included). */
   includedMinutes: number = 0;
 
-  /** Metered hourly rate for time beyond the included minutes. */
+  /**
+   * Metered rate for time beyond the included minutes, in **minor units per
+   * hour**, so `hours * rate` yields minor units. Stays DECIMAL: a rate is
+   * inherently fractional and INTEGER would truncate sub-unit rates (#2401).
+   */
   overageHourlyRate: number = 0.0;
 
-  /** Premium hourly rate for on-call work (0.0 = use overage rate). */
+  /**
+   * Premium rate for on-call work, in minor units per hour (`0.0` = use the
+   * overage rate). Stays DECIMAL for the same reason as
+   * {@link overageHourlyRate} (#2401).
+   */
   onCallHourlyRate: number = 0.0;
 
   /**

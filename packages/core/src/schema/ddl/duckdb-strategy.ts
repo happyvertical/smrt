@@ -11,7 +11,7 @@
  * not with separate UNIQUE indexes. This is a known DuckDB limitation.
  */
 
-import { renderIndexTarget } from '../index-utils.js';
+import { isStiSubtypeUniqueIndex, renderIndexTarget } from '../index-utils.js';
 import type { SchemaDefinition, SQLDataType } from '../types.js';
 import { BaseDDLStrategy } from './base-strategy.js';
 import type { DatabaseEngine } from './types.js';
@@ -48,6 +48,18 @@ export class DuckDBStrategy extends BaseDDLStrategy {
     for (const index of indexes) {
       // Skip UNIQUE indexes - they're inline constraints
       if (index.unique && !index.where && !index.jsonPath) {
+        continue;
+      }
+
+      // An STI subtype-scoped UNIQUE (`unique: true` declared only on a
+      // descendant, #2359) cannot degrade to a full index the way the other
+      // partial indexes below do: dropping the predicate while keeping UNIQUE
+      // would enforce one subtype's constraint across every sibling's rows in
+      // the shared table. DuckDB has no faithful shape for it, so it is not
+      // emitted here (nor by the migration differ on this engine) — the
+      // constraint is simply not enforced on DuckDB/JSON. Caller-declared
+      // partial uniques (`WHERE active = TRUE`) keep degrading to full UNIQUE.
+      if (isStiSubtypeUniqueIndex(index)) {
         continue;
       }
 

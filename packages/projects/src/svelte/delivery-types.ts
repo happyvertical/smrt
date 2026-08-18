@@ -29,7 +29,9 @@ export interface ServiceEvidenceView {
   participant: string;
   durationSeconds: number;
   status: string;
+  /** Integer minor units of `currency` (#2401). */
   chargeAmount?: number;
+  /** Integer minor units of `currency` (#2401). */
   compensationAmount?: number;
   currency?: string;
 }

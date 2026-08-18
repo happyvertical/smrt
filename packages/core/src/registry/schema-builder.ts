@@ -6,8 +6,10 @@
 
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
+import { conflictIndexName } from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
@@ -23,8 +25,10 @@ import {
   type CollectionRegistrationLookup,
   isCollectionRegistration,
 } from './collection-resolution';
+import { readFieldAttribute } from './manifest-field-merge';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
+import type { RegisteredClass } from './types';
 
 type ForeignKeyAction = NonNullable<
   NonNullable<ColumnDefinition['foreignKey']>['onDelete']
@@ -73,11 +77,12 @@ function mergeRuntimeFieldColumns(
   className: string,
   schemaColumns: Record<string, ColumnDefinition> | undefined,
   fields: Map<string, FieldDefinition>,
+  options?: FieldsToColumnsOptions,
 ): Record<string, ColumnDefinition> {
   const columnsToUse = { ...(schemaColumns || {}) };
 
   if (fields.size > 0) {
-    const fieldColumns = fieldsToColumns(fields);
+    const fieldColumns = fieldsToColumns(fields, options);
     for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
       if (!columnsToUse[columnName]) {
         columnsToUse[columnName] = columnDef;
@@ -134,28 +139,63 @@ function getReferenceKind(
   return undefined;
 }
 
-function shouldEmitDefault(fieldDef: FieldDefinition, sqlType: SQLDataType) {
+function shouldEmitDefault(
+  fieldDef: FieldDefinition,
+  sqlType: SQLDataType,
+  defaultValue: unknown,
+) {
   return !(
     getReferenceKind(fieldDef) === 'tenantId' &&
     sqlType === 'UUID' &&
-    fieldDef.default === ''
+    defaultValue === ''
   );
 }
 
-function createBaseColumns(registered: {
-  config?: { idType?: 'uuid' | 'text' };
-}): Record<string, ColumnDefinition> {
-  return {
+/**
+ * Fallback base columns for a table whose contributing class carries no
+ * manifest columns.
+ *
+ * These mirror what the manifest schema generators emit for the same table
+ * (`generateSchemaFromManifest` / `generateSTISchemaFromManifest`), so a table
+ * assembled from runtime field metadata alone has the same NOT NULL and
+ * DEFAULT shape as one assembled from a manifest. Divergence here is what made
+ * the merged table shape depend on which class registered first (#2372).
+ */
+function createBaseColumns(
+  registered: {
+    config?: { idType?: 'uuid' | 'text' };
+  },
+  isSTI: boolean,
+): Record<string, ColumnDefinition> {
+  const baseColumns: Record<string, ColumnDefinition> = {
     id: {
       type: registered.config?.idType === 'text' ? 'TEXT' : 'UUID',
       primaryKey: true,
+      notNull: true,
       referenceKind: 'id',
     },
     slug: { type: 'TEXT', notNull: true },
-    context: { type: 'TEXT' },
-    created_at: { type: 'TIMESTAMP' },
-    updated_at: { type: 'TIMESTAMP' },
+    context: { type: 'TEXT', notNull: true, defaultValue: '' },
+    created_at: {
+      type: 'TIMESTAMP',
+      notNull: true,
+      defaultValue: 'current_timestamp',
+    },
+    updated_at: {
+      type: 'TIMESTAMP',
+      notNull: true,
+      defaultValue: 'current_timestamp',
+    },
   };
+
+  // STI tables also carry the discriminator and the meta payload column
+  // (issue #690: db:diff needs them to detect schema changes).
+  if (isSTI) {
+    baseColumns._meta_type = { type: 'TEXT', notNull: true };
+    baseColumns._meta_data = { type: 'JSON', notNull: false };
+  }
+
+  return baseColumns;
 }
 
 /**
@@ -253,6 +293,20 @@ function withConflictIndex(
     return indexes;
   }
 
+  // `ON CONFLICT (id)` binds to the primary-key constraint itself; a second
+  // unique index over the primary key column set adds nothing (#2359, A5).
+  // Kept in step with SchemaGenerator.conflictColumnsArePrimaryKey().
+  const primaryKeyColumns = Object.entries(columns)
+    .filter(([, column]) => column.primaryKey === true)
+    .map(([name]) => name);
+  if (
+    primaryKeyColumns.length > 0 &&
+    primaryKeyColumns.length === conflictColumns.length &&
+    primaryKeyColumns.every((column) => conflictColumns.includes(column))
+  ) {
+    return indexes;
+  }
+
   const hasConflictIndex = indexes.some(
     (index) =>
       index.unique === true &&
@@ -263,20 +317,277 @@ function withConflictIndex(
   );
   if (hasConflictIndex) return indexes;
 
-  const nameColumns =
-    conflictColumns.length > 2 ? conflictColumns.slice(0, 2) : conflictColumns;
-  const preferredName = `${tableName}_${nameColumns.join('_')}_idx`;
-  const name = indexes.some((index) => index.name === preferredName)
-    ? `${preferredName}_unique`
-    : preferredName;
-  return [
-    ...indexes,
-    {
-      name,
-      columns: conflictColumns,
-      unique: true,
+  // Same stable naming as SchemaGenerator (`schema/conflict-target.ts`), so
+  // a manifest built before the runtime learned the tenant-aware default
+  // (#2360) has its stale `<table>_slug_context_idx` REPLACED in place here
+  // — the differ then swaps the live index by name — instead of a second,
+  // suffixed unique index being appended beside the old global one.
+  const tenantColumn = Object.entries(columns).find(
+    ([, column]) => column.referenceKind === 'tenantId',
+  )?.[0];
+  // The composed name can exceed PostgreSQL's 63-byte limit on a long table.
+  // Shortening here (rather than inside conflictIndexName) keeps the generator
+  // paths, which run enforceIdentifierLimits() over their whole index list,
+  // and this migrate leg agreeing on the final name (#2374).
+  const name = shortenIdentifier(
+    conflictIndexName(tableName, conflictColumns, tenantColumn),
+  );
+  const conflictIndex: IndexDefinition = {
+    name,
+    columns: conflictColumns,
+    unique: true,
+  };
+  if (indexes.some((index) => index.name === name)) {
+    return indexes.map((index) =>
+      index.name === name ? conflictIndex : index,
+    );
+  }
+  return [...indexes, conflictIndex];
+}
+
+/**
+ * A registered class that contributes columns to one physical table.
+ *
+ * For a single-table-inheritance hierarchy every class in the hierarchy is a
+ * contributor to the same table.
+ */
+interface TableContributor {
+  registered: RegisteredClass;
+  simpleName: string;
+  qualifiedName: string;
+  isSTI: boolean;
+  /** True when this class is the STI base that owns the table. */
+  isSTIBase: boolean;
+  /** Inheritance depth; ancestors sort before descendants. */
+  depth: number;
+  /** Conflict-column lookup key (the STI base for STI members). */
+  conflictKey: string;
+}
+
+/**
+ * A merged physical table assembled from every class that contributes to it.
+ */
+interface MergedTableSchema {
+  tableName: string;
+  columns: Record<string, ColumnDefinition>;
+  indexes: IndexDefinition[];
+  ddl: string;
+  isSTI: boolean;
+  conflictColumns: string[];
+}
+
+/**
+ * Resolve the physical table a registered class writes to.
+ *
+ * STI subclasses are folded onto their base's table. Returns `undefined` when
+ * the class has no table (for example an unresolvable manifest stub).
+ *
+ * R5-canon: STI lookups use the qualified key so a colliding simple name in
+ * another package cannot yield the wrong table strategy or STI base and move
+ * this class's columns under that other package's table.
+ */
+function resolveContributorTable(
+  registered: RegisteredClass,
+  fallbackName: string,
+): { tableName: string; contributor: TableContributor } | undefined {
+  const simpleName = registered.name || fallbackName;
+  const qualifiedName = registered.qualifiedName ?? simpleName;
+
+  // STI subclasses loaded from external manifests can arrive with a null
+  // tableName; registerFromManifest() then derives one from the class name.
+  // Adopt the STI base's tableName instead so the subclass lands on the
+  // shared table (issue #703).
+  if (!registered.schema?.tableName && registered.extends) {
+    if (ObjectRegistry.getTableStrategy(qualifiedName) === 'sti') {
+      const stiBaseName = ObjectRegistry.getSTIBase(qualifiedName);
+      if (stiBaseName && stiBaseName !== qualifiedName) {
+        const stiBaseClass = findClass(stiBaseName);
+        if (stiBaseClass?.schema?.tableName) {
+          if (!registered.schema) {
+            registered.schema = {
+              tableName: '',
+              ddl: '',
+              columns: {},
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              dependencies: [],
+              version: '',
+            };
+          }
+          registered.schema.tableName = stiBaseClass.schema.tableName;
+        }
+      }
+    }
+  }
+
+  if (!registered.schema?.tableName) {
+    return undefined;
+  }
+
+  let tableName = registered.schema.tableName;
+  const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
+  const isSTI = tableStrategy === 'sti';
+  let isSTIBase = isSTI;
+  let conflictKey = qualifiedName;
+
+  if (isSTI) {
+    const stiBaseName = ObjectRegistry.getSTIBase(qualifiedName);
+    if (stiBaseName) {
+      conflictKey = stiBaseName;
+      if (stiBaseName !== qualifiedName) {
+        isSTIBase = false;
+        // STI subclasses serialize to the base class's table even when they
+        // carry a tableName of their own (issue #693).
+        const stiBaseClass = findClass(stiBaseName);
+        if (stiBaseClass?.schema?.tableName) {
+          tableName = stiBaseClass.schema.tableName;
+        }
+      }
+    }
+  }
+
+  return {
+    tableName,
+    contributor: {
+      registered,
+      simpleName,
+      qualifiedName,
+      isSTI,
+      isSTIBase,
+      depth: ObjectRegistry.getInheritanceChain(qualifiedName).length,
+      conflictKey,
     },
-  ];
+  };
+}
+
+/**
+ * Order the classes that share one table deterministically.
+ *
+ * The first contributor seeds the table: it supplies the base columns, the
+ * `idType`, the conflict columns and the cached DDL, and its columns win every
+ * merge conflict. Registration order must not decide that, or the same
+ * hierarchy yields a different table shape depending on which class a manifest
+ * happens to list first — child-first dropped NOT NULL and DEFAULT from the
+ * base columns (#2372).
+ *
+ * Order: the STI base first, then ancestors before descendants, then by
+ * qualified name so the result is a total order.
+ */
+function sortTableContributors(contributors: TableContributor[]) {
+  return [...contributors].sort((a, b) => {
+    if (a.isSTIBase !== b.isSTIBase) {
+      return a.isSTIBase ? -1 : 1;
+    }
+    if (a.depth !== b.depth) {
+      return a.depth - b.depth;
+    }
+    return a.qualifiedName.localeCompare(b.qualifiedName);
+  });
+}
+
+/**
+ * Assemble every physical table from the classes that contribute to it.
+ *
+ * Shared by {@link getAllSchemas} and {@link getAllSchemasAsDefinitions} so
+ * both produce the same merged shape. The result depends only on what is
+ * registered, never on the order it was registered in.
+ */
+function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
+  // Pass 1: group contributing classes by physical table.
+  const contributorsByTable = new Map<string, TableContributor[]>();
+
+  for (const [className, registered] of getClasses()) {
+    // Collection classes have no table of their own; their schemas carry
+    // collection properties (loaded, options, ...) rather than columns.
+    if (
+      isCollectionRegistration(
+        className,
+        registered,
+        collectionRegistrationLookup,
+      )
+    ) {
+      continue;
+    }
+
+    const resolved = resolveContributorTable(registered, className);
+    if (!resolved) {
+      continue;
+    }
+
+    const existing = contributorsByTable.get(resolved.tableName);
+    if (existing) {
+      existing.push(resolved.contributor);
+    } else {
+      contributorsByTable.set(resolved.tableName, [resolved.contributor]);
+    }
+  }
+
+  // Pass 2: merge each table's contributors in deterministic order.
+  const tableSchemas: Record<string, MergedTableSchema> = {};
+
+  for (const [tableName, contributors] of contributorsByTable) {
+    for (const contributor of sortTableContributors(contributors)) {
+      const { registered, simpleName, isSTI } = contributor;
+
+      // The manifest schema stays authoritative for the columns it defines.
+      // Runtime field metadata backfills columns the manifest never had (for
+      // example tenantScoped injections) and applies explicit sqlType
+      // overrides, without erasing richer manifest metadata.
+      const columnsToUse = mergeRuntimeFieldColumns(
+        simpleName,
+        registered.schema?.columns,
+        registered.fields,
+        { stiUnionColumns: isSTI },
+      );
+
+      let tableSchema = tableSchemas[tableName];
+      if (!tableSchema) {
+        tableSchema = {
+          tableName,
+          columns: {
+            ...createBaseColumns(registered, isSTI),
+            ...columnsToUse,
+          },
+          indexes: [],
+          ddl: registered.schema?.ddl || '',
+          isSTI,
+          conflictColumns: ObjectRegistry.getConflictColumns(
+            contributor.conflictKey,
+          ),
+        };
+        tableSchemas[tableName] = tableSchema;
+      } else {
+        // Another class sharing this table (STI): add only columns the
+        // seeding contributor did not already define.
+        for (const [colName, colDef] of Object.entries(columnsToUse)) {
+          if (!tableSchema.columns[colName]) {
+            tableSchema.columns[colName] = colDef;
+          }
+        }
+      }
+
+      // Merge indexes, keeping the first definition of each name.
+      const schemaIndexes = registered.schema?.indexes;
+      if (schemaIndexes && schemaIndexes.length > 0) {
+        const existingNames = new Set(
+          tableSchema.indexes.map((index) => index.name),
+        );
+        for (const index of schemaIndexes) {
+          // Legacy string-format indexes carry no columns and cannot be merged.
+          if (typeof index === 'string') {
+            continue;
+          }
+          if (!existingNames.has(index.name)) {
+            tableSchema.indexes.push(index);
+            existingNames.add(index.name);
+          }
+        }
+      }
+    }
+  }
+
+  return tableSchemas;
 }
 
 /**
@@ -297,165 +608,9 @@ function withConflictIndex(
 export function getAllSchemas(
   engine?: DatabaseEngine,
 ): Record<string, { tableName: string; ddl: string; indexes?: string[] }> {
-  // Step 1: Collect all schemas grouped by tableName
-  // For STI, multiple classes may share the same table
-  const tableSchemas: Record<
-    string,
-    {
-      tableName: string;
-      columns: Record<string, ColumnDefinition>;
-      indexes: IndexDefinition[];
-      ddl: string;
-      isSTI: boolean;
-      conflictColumns: string[];
-    }
-  > = {};
-
-  for (const [_className, registered] of getClasses()) {
-    // Skip collection classes - they don't have their own tables
-    // Their schemas incorrectly contain collection properties (loaded, options, etc.)
-    if (
-      isCollectionRegistration(
-        _className,
-        registered,
-        collectionRegistrationLookup,
-      )
-    ) {
-      continue;
-    }
-
-    // Issue #951: Use simple name for STI comparisons (map key may be qualified)
-    const simpleName = registered.name || _className;
-
-    // Issue #703: Handle STI subclasses with null tableName from external manifests
-    // When loaded from external manifests, tableName may be null, causing
-    // registerFromManifest() to derive a tableName from class name.
-    // For STI subclasses, we need to use the STI base's tableName instead.
-    if (!registered.schema?.tableName && registered.extends) {
-      // R5-canon: use the qualified key for STI lookups so colliding
-      // simple names don't resolve to the wrong package's class.
-      // `getTableStrategy` / `getSTIBase` both accept qualified names
-      // via `findClass`'s multi-strategy lookup.
-      const qualifiedName = registered.qualifiedName ?? simpleName;
-      const lookupKey = qualifiedName;
-      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
-      if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
-        if (stiBaseName && stiBaseName !== qualifiedName) {
-          const stiBaseClass = findClass(stiBaseName);
-          if (stiBaseClass?.schema?.tableName) {
-            // Ensure we have a schema object to modify
-            if (!registered.schema) {
-              registered.schema = {
-                tableName: '',
-                ddl: '',
-                columns: {},
-                indexes: [],
-                triggers: [],
-                foreignKeys: [],
-                dependencies: [],
-                version: '',
-              };
-            }
-            // Set tableName from STI base so the following block processes this class
-            registered.schema.tableName = stiBaseClass.schema.tableName;
-          }
-        }
-      }
-    }
-
-    if (registered.schema?.tableName) {
-      // For STI subclasses, use the STI base class's tableName
-      // This ensures all STI subclass columns are merged into the parent table
-      // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
-      let tableName = registered.schema.tableName;
-      // R5-canon: same qualified-key strategy as the block above.
-      const qualifiedName = registered.qualifiedName ?? simpleName;
-      const lookupKey = qualifiedName;
-      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
-      if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
-        if (stiBaseName && stiBaseName !== qualifiedName) {
-          // This is an STI subclass - use the base class's tableName
-          const stiBaseClass = findClass(stiBaseName);
-          if (stiBaseClass?.schema?.tableName) {
-            tableName = stiBaseClass.schema.tableName;
-          }
-        }
-      }
-
-      // Start with manifest columns, then backfill any columns that only exist
-      // in runtime field metadata (for example tenantScoped injections). We do
-      // not replace existing manifest column metadata here, because the manifest
-      // is authoritative for foreign keys, defaults, and other schema details.
-      // Explicit decorator sqlType overrides are patched onto the merged column.
-      const columnsToUse = mergeRuntimeFieldColumns(
-        simpleName,
-        registered.schema.columns,
-        registered.fields,
-      );
-
-      if (!tableSchemas[tableName]) {
-        // First class for this table - initialize with base columns
-        // These are required for all tables but are skipped by fieldsToColumns()
-        const baseColumns = createBaseColumns(registered);
-
-        // For STI tables, add discriminator and data columns
-        // (Issue #690: db:diff needs these columns to detect schema changes)
-        const isSTI = tableStrategy === 'sti';
-        if (isSTI) {
-          baseColumns._meta_type = {
-            type: 'TEXT',
-            notNull: true,
-            defaultValue: '',
-          };
-          baseColumns._meta_data = { type: 'JSON' };
-        }
-
-        tableSchemas[tableName] = {
-          tableName,
-          columns: { ...baseColumns, ...columnsToUse },
-          indexes: [],
-          ddl: registered.schema.ddl || '',
-          isSTI,
-          conflictColumns: ObjectRegistry.getConflictColumns(
-            isSTI
-              ? ObjectRegistry.getSTIBase(lookupKey) || lookupKey
-              : lookupKey,
-          ),
-        };
-      } else {
-        // Additional class sharing this table (STI scenario)
-        // Merge columns from this class into the existing schema
-        for (const [colName, colDef] of Object.entries(columnsToUse)) {
-          if (!tableSchemas[tableName].columns[colName]) {
-            // New column from this subtype - add it
-            tableSchemas[tableName].columns[colName] = colDef;
-          }
-        }
-      }
-
-      // Merge indexes (avoid duplicates by name)
-      if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-        const existingNames = new Set(
-          tableSchemas[tableName].indexes.map((idx) =>
-            typeof idx === 'string' ? idx : idx.name,
-          ),
-        );
-        for (const idx of registered.schema.indexes) {
-          const indexName = typeof idx === 'string' ? idx : idx.name;
-          if (!existingNames.has(indexName)) {
-            if (typeof idx === 'string') {
-              // Legacy string format - skip, can't merge properly
-            } else {
-              tableSchemas[tableName].indexes.push(idx);
-              existingNames.add(idx.name);
-            }
-          }
-        }
-      }
-    }
-  }
+  // Step 1: Assemble every table from its contributing classes. The merge is
+  // deterministic, so the shape does not depend on registration order (#2372).
+  const tableSchemas = buildMergedTableSchemas();
 
   // Step 2: Convert to output format, regenerating DDL for merged schemas
   const schemas: Record<
@@ -549,142 +704,9 @@ export function getAllSchemas(
  * @returns Map of tableName to SchemaDefinition
  */
 export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
-  // Step 1: Collect all schemas grouped by tableName
-  // For STI, multiple classes may share the same table
-  const tableSchemas: Record<
-    string,
-    {
-      tableName: string;
-      columns: Record<string, ColumnDefinition>;
-      indexes: IndexDefinition[];
-      isSTI: boolean;
-      conflictColumns: string[];
-    }
-  > = {};
-
-  for (const [_className, registered] of getClasses()) {
-    // Skip collection classes - they don't have their own tables
-    if (
-      isCollectionRegistration(
-        _className,
-        registered,
-        collectionRegistrationLookup,
-      )
-    ) {
-      continue;
-    }
-
-    // Issue #951: Use simple name for STI comparisons (map key may be qualified)
-    const simpleName = registered.name || _className;
-
-    // Handle STI subclasses with null tableName from external manifests
-    if (!registered.schema?.tableName && registered.extends) {
-      // R5-canon: use the qualified key for STI lookups so colliding
-      // simple names don't resolve to the wrong package's class.
-      // `getTableStrategy` / `getSTIBase` both accept qualified names
-      // via `findClass`'s multi-strategy lookup.
-      const qualifiedName = registered.qualifiedName ?? simpleName;
-      const lookupKey = qualifiedName;
-      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
-      if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
-        if (stiBaseName && stiBaseName !== qualifiedName) {
-          const stiBaseClass = findClass(stiBaseName);
-          if (stiBaseClass?.schema?.tableName) {
-            if (!registered.schema) {
-              registered.schema = {
-                tableName: '',
-                ddl: '',
-                columns: {},
-                indexes: [],
-                triggers: [],
-                foreignKeys: [],
-                dependencies: [],
-                version: '',
-              };
-            }
-            registered.schema.tableName = stiBaseClass.schema.tableName;
-          }
-        }
-      }
-    }
-
-    if (registered.schema?.tableName) {
-      // For STI subclasses, use the STI base class's tableName.
-      // R5-canon: qualified-key lookup so a colliding simple name in
-      // another package can't yield the wrong tableStrategy / STI base
-      // and move this class's columns under that other package's table.
-      let tableName = registered.schema.tableName;
-      const qualifiedName = registered.qualifiedName ?? simpleName;
-      const lookupKey = qualifiedName;
-      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
-      if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
-        if (stiBaseName && stiBaseName !== qualifiedName) {
-          const stiBaseClass = findClass(stiBaseName);
-          if (stiBaseClass?.schema?.tableName) {
-            tableName = stiBaseClass.schema.tableName;
-          }
-        }
-      }
-
-      // Manifest schema remains authoritative for existing columns. Runtime
-      // field metadata can backfill missing columns and apply explicit sqlType
-      // overrides without erasing richer manifest metadata.
-      const columnsToUse = mergeRuntimeFieldColumns(
-        simpleName,
-        registered.schema.columns,
-        registered.fields,
-      );
-
-      if (!tableSchemas[tableName]) {
-        // First class for this table - initialize with base columns
-        const baseColumns = createBaseColumns(registered);
-
-        const isSTI = tableStrategy === 'sti';
-        if (isSTI) {
-          baseColumns._meta_type = {
-            type: 'TEXT',
-            notNull: true,
-            defaultValue: '',
-          };
-          baseColumns._meta_data = { type: 'JSON' };
-        }
-
-        tableSchemas[tableName] = {
-          tableName,
-          columns: { ...baseColumns, ...columnsToUse },
-          indexes: [],
-          isSTI,
-          conflictColumns: ObjectRegistry.getConflictColumns(
-            isSTI
-              ? ObjectRegistry.getSTIBase(lookupKey) || lookupKey
-              : lookupKey,
-          ),
-        };
-      } else {
-        // Additional class sharing this table (STI scenario) - merge columns
-        for (const [colName, colDef] of Object.entries(columnsToUse)) {
-          if (!tableSchemas[tableName].columns[colName]) {
-            tableSchemas[tableName].columns[colName] = colDef;
-          }
-        }
-      }
-
-      // Merge indexes (avoid duplicates by name)
-      if (registered.schema.indexes && registered.schema.indexes.length > 0) {
-        const existingNames = new Set(
-          tableSchemas[tableName].indexes.map((idx) => idx.name),
-        );
-        for (const idx of registered.schema.indexes) {
-          if (!existingNames.has(idx.name)) {
-            tableSchemas[tableName].indexes.push(idx);
-            existingNames.add(idx.name);
-          }
-        }
-      }
-    }
-  }
+  // Step 1: Assemble every table from its contributing classes. The merge is
+  // deterministic, so the shape does not depend on registration order (#2372).
+  const tableSchemas = buildMergedTableSchemas();
 
   // Step 2: Convert to SchemaDefinition format
   const schemas: Record<string, SchemaDefinition> = {};
@@ -812,17 +834,40 @@ export function formatDefaultValue(value: unknown, type: string): string {
 }
 
 /**
+ * Options for {@link fieldsToColumns}.
+ */
+export interface FieldsToColumnsOptions {
+  /**
+   * Shape the columns for a single-table-inheritance table.
+   *
+   * An STI table holds the union of every subtype's fields, so a column that
+   * only one subtype declares must stay nullable — rows of sibling subtypes
+   * never populate it. This matches `generateSTISchemaFromManifest`, which
+   * emits `notNull: false` for every non-system column on an STI table.
+   * Declared defaults are still emitted.
+   */
+  stiUnionColumns?: boolean;
+}
+
+/**
  * Convert a Map of field definitions to column definitions
  *
  * Used by getAllSchemas() to generate columns from fields when a class
  * has no pre-generated schema (e.g., STI subclasses registered from manifest).
  *
+ * `required`, `default`, and `description` are read from either the top level
+ * or `_meta`: registry-sourced fields normalize them into `_meta`, so reading
+ * only the top level dropped NOT NULL and DEFAULT for every such field
+ * (#2372).
+ *
  * @param fields - Map of field name to field definition
+ * @param options - Table-shape options (see {@link FieldsToColumnsOptions})
  * @returns Record of column name to column definition
  * @private
  */
 export function fieldsToColumns(
   fields: Map<string, FieldDefinition>,
+  options?: FieldsToColumnsOptions,
 ): Record<string, ColumnDefinition> {
   const columns: Record<string, ColumnDefinition> = {};
 
@@ -865,20 +910,28 @@ export function fieldsToColumns(
     const normalizedSqlType = String(sqlType).toUpperCase() as SQLDataType;
     const referenceKind = getReferenceKind(fieldDef);
 
+    const required = readFieldAttribute(fieldDef, 'required');
+    const defaultValue = readFieldAttribute(fieldDef, 'default');
+    const description = readFieldAttribute(fieldDef, 'description');
+
     const column: ColumnDefinition = {
       type: normalizedSqlType,
       referenceKind,
-      notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
+      notNull: options?.stiUnionColumns
+        ? false
+        : fieldDef._meta?.nullable
+          ? false
+          : Boolean(required),
       unique: fieldDef._meta?.unique || false,
-      description: fieldDef.description,
+      description: description as string | undefined,
     };
 
     // Handle default values
     if (
-      fieldDef.default !== undefined &&
-      shouldEmitDefault(fieldDef, normalizedSqlType)
+      defaultValue !== undefined &&
+      shouldEmitDefault(fieldDef, normalizedSqlType, defaultValue)
     ) {
-      column.defaultValue = fieldDef.default;
+      column.defaultValue = defaultValue;
     }
 
     // Handle foreign keys

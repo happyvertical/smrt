@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-projects",
-  "version": "0.40.69",
+  "version": "0.40.70",
   "description": "Provider-agnostic project management models (Issues, PRs, Repositories, Projects) for SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",
@@ -42,6 +42,7 @@
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },

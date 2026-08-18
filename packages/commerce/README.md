@@ -23,7 +23,7 @@ import {
 const customers = await CustomerCollection.create({ db });
 const customer = await customers.create({
   profileId: 'profile-uuid',
-  creditLimit: 10000.00,
+  creditLimit: 1000000, // $10,000.00 — money is integer minor units
   paymentTerms: 'Net 30',
 });
 await customer.save();
@@ -33,9 +33,9 @@ const contracts = await ContractCollection.create({ db });
 const order = await contracts.create({
   _meta_type: 'Order',
   customerId: customer.id,
-  subtotal: 1000.00,
-  taxAmount: 50.00,
-  totalAmount: 1050.00,
+  subtotal: 100000, // $1,000.00
+  taxAmount: 5000, // $50.00
+  totalAmount: 105000, // $1,050.00
   currency: 'CAD',
 });
 await order.save();
@@ -47,9 +47,9 @@ const invoice = await invoices.create({
   customerId: customer.id,
   contractId: order.id,
   invoiceNumber,
-  subtotal: 1000.00,
-  taxAmount: 50.00,
-  totalAmount: 1050.00,
+  subtotal: 100000, // $1,000.00
+  taxAmount: 5000, // $50.00
+  totalAmount: 105000, // $1,050.00
 });
 await invoice.save();
 
@@ -65,7 +65,7 @@ const payments = await PaymentCollection.create({ db });
 const payment = await payments.create({
   contractId: order.id,
   customerId: customer.id,
-  amount: 1050.00,
+  amount: 105000,
   method: PaymentMethod.CREDIT_CARD,
 });
 await payment.save();

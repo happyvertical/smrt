@@ -8,9 +8,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
 import {
   getSystemTableShapes,
   parseTableShapes,
+  SYSTEM_TABLE_NAMES,
 } from './system-table-shapes.js';
 
 describe('parseTableShapes', () => {
@@ -109,10 +111,26 @@ describe('getSystemTableShapes', () => {
       '_smrt_dispatch_subscriptions',
       '_smrt_embeddings',
       '_smrt_migrations',
-      '_smrt_registry',
       '_smrt_schema_migrations',
-      '_smrt_signals',
     ]);
+  });
+
+  it('publishes the same table list as SYSTEM_TABLE_NAMES', () => {
+    // One list, one parse: the change-feed allowlist and the parity check must
+    // never disagree about what a system table is (issue #2376).
+    expect([...SYSTEM_TABLE_NAMES].sort()).toEqual(
+      [...getSystemTableShapes('sqlite').keys()].sort(),
+    );
+    expect([...SYSTEM_TABLE_NAMES].sort()).toEqual(
+      [...getSystemTableShapes('postgres').keys()].sort(),
+    );
+  });
+
+  it('excludes the retired system tables', () => {
+    const names = new Set(SYSTEM_TABLE_NAMES);
+    for (const retired of RETIRED_SYSTEM_TABLES) {
+      expect(names.has(retired)).toBe(false);
+    }
   });
 
   it('recovers the change-feed shape the framework depends on', () => {

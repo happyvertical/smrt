@@ -18,9 +18,11 @@ export interface TimeEntry {
   hours: number;
   description: string;
   status: TimeEntryStatus;
+  /** Integer minor units of the display currency — $19.99 is 1999 (#2401). */
   amount?: number;
   workerName?: string;
   mileage?: number;
+  /** Minor units per hour, so `hours * hourlyRate` is minor units (#2401). */
   hourlyRate?: number;
 }
 
@@ -43,17 +45,32 @@ export function formatDate(date: Date | string): string {
 }
 
 /**
- * Format currency amount for display
+ * Format a minor-units amount for display.
+ *
+ * Money in this package is integer minor units (#2401) — `$19.99` is `1999` —
+ * and `Intl.NumberFormat` expects major units, so the scale is undone here.
+ * Without it a $19.99 charge renders as $1,999.00.
+ *
+ * The currency's own minor-unit exponent is used rather than a hard-coded 100,
+ * so zero-decimal currencies (JPY, KRW) are not divided by anything.
  */
 export function formatCurrency(
   amount: number,
   currency: Currency = 'CAD',
 ): string {
-  return new Intl.NumberFormat('en-CA', {
+  // No fraction-digit override: the currency's own exponent is both the scale
+  // to undo and the precision to print. Forcing `minimumFractionDigits: 2`
+  // (as this did before minor units) would pin `maximumFractionDigits` to 2 as
+  // well, so a zero-decimal currency like JPY would report a scale of 2 — and
+  // then render `¥1,999.00` for a currency that has no fractional part at all.
+  // For CAD/USD the resolved default is already 2, so their output is
+  // unchanged.
+  const format = new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
-    minimumFractionDigits: 2,
-  }).format(amount);
+  });
+  const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format.format(amount / 10 ** digits);
 }
 
 /**

@@ -266,6 +266,79 @@ describe('MigrationGenerator branch coverage', () => {
       expect(migration.down).toHaveLength(0);
     });
 
+    it('emits alter_column statements, comments orphan advisories by severity, and skips report-only relaxations (#2369)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [],
+        dropped_tables: [],
+        changes: [
+          {
+            type: 'alter_column',
+            table: 'items',
+            name: 'status',
+            alteration: 'set_not_null',
+            mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+            sql: 'ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL',
+            sqlStatements: [
+              `UPDATE "items" SET "status" = 'draft' WHERE "status" IS NULL`,
+              'ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL',
+            ],
+          },
+          {
+            type: 'alter_column',
+            table: 'items',
+            name: 'note',
+            alteration: 'drop_not_null',
+            mismatch: { expected: 'NULL', actual: 'NOT NULL' },
+            advisory: { severity: 'warning', message: 'relax me' },
+          },
+          {
+            type: 'orphan_column',
+            table: 'items',
+            name: 'legacy',
+            mismatch: { expected: '(not in manifest)', actual: 'TEXT' },
+            advisory: {
+              severity: 'info',
+              message: 'harmless',
+              suggestedSql: ['ALTER TABLE "items" DROP COLUMN "legacy"'],
+            },
+          },
+          {
+            type: 'orphan_column',
+            table: 'items',
+            name: 'old_code',
+            mismatch: {
+              expected: '(not in manifest)',
+              actual: 'TEXT NOT NULL',
+            },
+            advisory: { severity: 'warning', message: 'breaks inserts' },
+          },
+        ],
+      };
+
+      const generator = new MigrationGenerator({ engine: 'postgres' });
+      const migration = generator.generateFromDiff(diff, {
+        name: '0002_column_drift',
+      });
+
+      const up = migration.up.join('\n');
+      expect(migration.up).toEqual(
+        expect.arrayContaining([
+          `UPDATE "items" SET "status" = 'draft' WHERE "status" IS NULL`,
+          'ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL',
+        ]),
+      );
+      expect(up).not.toContain('DROP NOT NULL');
+      expect(up).toContain('-- NOTE: Orphan column items.legacy (TEXT)');
+      expect(up).toContain(
+        '-- suggested: ALTER TABLE "items" DROP COLUMN "legacy"',
+      );
+      expect(up).toContain(
+        '-- WARNING: Orphan column items.old_code (TEXT NOT NULL)',
+      );
+      expect(migration.down).toHaveLength(0);
+    });
+
     it('ignores unknown change types without emitting SQL', () => {
       const diff: SchemaDiff = {
         has_changes: true,

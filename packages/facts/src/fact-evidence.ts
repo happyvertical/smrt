@@ -64,8 +64,15 @@ export class FactEvidence extends SmrtObject {
   @field()
   extractionMethod: string = '';
 
+  /**
+   * Extraction confidence in `[0, 1]`. The `0.0` initializer is load-bearing:
+   * SMRT maps `= 0` to INTEGER and `= 0.0` to DECIMAL, so an INTEGER column
+   * would truncate every meaningful score to 0 or 1 and PostgreSQL would
+   * reject the save outright (`22P02`). Matches `Fact.confidence` and
+   * `FactSource.credibility` (#2361).
+   */
   @field()
-  confidence: number = 0;
+  confidence: number = 0.0;
 
   @field()
   metadata: string = '';

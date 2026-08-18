@@ -77,12 +77,15 @@ async function seedCompletedPayment(
   return payment.id;
 }
 
+// Every amount below is integer minor units (#2401): USDC in cents, BTC in
+// satoshis. `normalizePaymentOptions` drops a fractional `nativeAmount`, since
+// the reconciliation against `Payment.nativeAmount` is an exact comparison.
 const usdcOption: PaymentOption = {
   backendId: 'base-usdc',
   currency: 'USDC-base',
   chain: 'base',
   payTo: '0xabc0000000000000000000000000000000000001',
-  nativeAmount: 199.0,
+  nativeAmount: 19900, // $199.00
   x402Capable: true,
 };
 
@@ -90,7 +93,7 @@ const btcOption: PaymentOption = {
   backendId: 'btc',
   currency: 'BTC',
   payTo: 'bc1qexampleexampleexampleexampleexample0',
-  nativeAmount: 0.00713,
+  nativeAmount: 713_000, // 0.00713 BTC in satoshis
 };
 
 describe('PaymentIntent', () => {
@@ -124,7 +127,7 @@ describe('PaymentIntent', () => {
       offeringRef: 'sku-ergot-1',
       licenseeEmail: 'buyer@example.test',
       idempotencyKey: 'idem-create-1',
-      usdPriceLocked: 199.0,
+      usdPriceLocked: 19900, // $199.00 in cents
       paymentOptions: [usdcOption, btcOption],
     });
     await intent.save();
@@ -137,7 +140,7 @@ describe('PaymentIntent', () => {
     expect(intent.priceLockExpiresAt?.getTime()).toBeGreaterThan(Date.now());
 
     const loaded = await intents.get({ id: intent.id });
-    expect(loaded?.usdPriceLocked).toBe(199.0);
+    expect(loaded?.usdPriceLocked).toBe(19900);
     expect(loaded?.paymentOptions).toEqual(intent.paymentOptions);
     expect(loaded?.priceLockExpiresAt).toBeInstanceOf(Date);
   });
@@ -436,7 +439,7 @@ describe('PaymentIntentCollection — idempotency', () => {
       offeringRef: 'sku-idem-1',
       licenseeEmail: 'buyer@example.test',
       idempotencyKey: 'caller-supplied-uuid-1',
-      usdPriceLocked: 199.0,
+      usdPriceLocked: 19900, // $199.00 in cents
       paymentOptions: [usdcOption, btcOption],
     };
 

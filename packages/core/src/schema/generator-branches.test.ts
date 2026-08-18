@@ -90,8 +90,13 @@ describe('SchemaGenerator.generateSchema (build-time AST path)', () => {
     expect(schema.dependencies).toContain('users');
 
     // FK index + updated_at index + slug/email unique indexes are generated.
+    // The FK loop's own `idx_` index already leads with the column, so the
+    // shared reference-column helper adds no duplicate.
     const indexNames = schema.indexes.map((i) => i.name);
     expect(indexNames).toContain('idx_comments_authorId');
+    expect(
+      schema.indexes.filter((i) => i.columns[0] === 'authorId'),
+    ).toHaveLength(1);
     expect(indexNames).toContain('idx_comments_updated_at');
     expect(
       schema.indexes.some((i) => i.unique && i.columns[0] === 'slug'),
@@ -194,12 +199,74 @@ describe('SchemaGenerator.generateSchemaFromRegistry', () => {
     // No synthetic defaults when a custom PK is present.
     expect(schema.columns.slug).toBeUndefined();
     expect(schema.columns.context).toBeUndefined();
-    // PK index points at the custom column.
+    // No redundant index on the primary key column: the PK constraint is
+    // already a unique index on every engine (#2359, A5).
     expect(schema.indexes.some((i) => i.columns[0] === 'external_id')).toBe(
-      true,
+      false,
     );
     // No unique conflict index in custom-PK mode.
     expect(schema.indexes.some((i) => i.unique)).toBe(false);
+  });
+
+  it('does not emit a <table>_id_idx beside the primary key (#2359, A5)', () => {
+    const fields = new Map<string, any>([['title', { type: 'text' }]]);
+    const schema = generator.generateSchemaFromRegistry(
+      'Post',
+      'posts',
+      fields,
+    );
+    expect(schema.indexes.some((i) => i.name === 'posts_id_idx')).toBe(false);
+    expect(
+      schema.indexes.some(
+        (i) => i.columns.length === 1 && i.columns[0] === 'id',
+      ),
+    ).toBe(false);
+  });
+
+  it('skips the conflict index when conflictColumns is exactly the primary key', () => {
+    const fields = new Map<string, any>([['title', { type: 'text' }]]);
+    const schema = generator.generateSchemaFromRegistry(
+      'Report',
+      'reports',
+      fields,
+      { conflictColumns: ['id'] },
+    );
+    // `ON CONFLICT (id)` binds to the PK constraint; no second unique index.
+    expect(schema.indexes.some((i) => i.unique)).toBe(false);
+    expect(schema.indexes.some((i) => i.columns[0] === 'id')).toBe(false);
+  });
+
+  it('keeps a plain (slug, context) lookup index when conflictColumns are custom (#2359, A7)', () => {
+    const fields = new Map<string, any>([
+      ['leftId', { type: 'text' }],
+      ['rightId', { type: 'text' }],
+    ]);
+    const schema = generator.generateSchemaFromRegistry(
+      'Link',
+      'links',
+      fields,
+      { conflictColumns: ['left_id', 'right_id'] },
+    );
+    const slugLookup = schema.indexes.find(
+      (i) => i.name === 'links_slug_context_idx',
+    );
+    expect(slugLookup?.columns).toEqual(['slug', 'context']);
+    expect(Boolean(slugLookup?.unique)).toBe(false);
+    // The custom conflict index is still the only unique one.
+    expect(schema.indexes.filter((i) => i.unique)).toHaveLength(1);
+  });
+
+  it('does not add the slug lookup index when the conflict key already leads with slug', () => {
+    const fields = new Map<string, any>([['tenantId', { type: 'text' }]]);
+    const schema = generator.generateSchemaFromRegistry(
+      'Scoped',
+      'scoped',
+      fields,
+      { conflictColumns: ['slug', 'context', 'tenant_id'] },
+    );
+    expect(schema.indexes.filter((i) => i.columns[0] === 'slug')).toHaveLength(
+      1,
+    );
   });
 
   it('uses explicit timestamp fields and dedupes them', () => {
@@ -273,8 +340,71 @@ describe('SchemaGenerator.generateSchemaFromRegistry', () => {
       onDelete: 'SET NULL',
       onUpdate: 'CASCADE',
     });
-    expect(schema.indexes.some((i) => i.name === 'idx_docs_owner_id')).toBe(
+    // Reference columns share one naming scheme across every path (#2359).
+    expect(schema.indexes.some((i) => i.name === 'docs_owner_id_idx')).toBe(
       true,
+    );
+  });
+
+  it('indexes @crossPackageRef columns like foreign keys (#2359, A1)', () => {
+    const fields = new Map<string, any>([
+      [
+        'profileId',
+        {
+          type: 'crossPackageRef',
+          related: '@happyvertical/smrt-profiles:Profile',
+        },
+      ],
+    ]);
+    const schema = generator.generateSchemaFromRegistry('Doc', 'docs', fields);
+    expect(schema.columns.profile_id.referenceKind).toBe('crossPackageRef');
+    const idx = schema.indexes.find((i) => i.name === 'docs_profile_id_idx');
+    expect(idx?.columns).toEqual(['profile_id']);
+  });
+
+  it('does not duplicate a reference index that already leads a unique conflict index', () => {
+    const fields = new Map<string, any>([
+      ['leftId', { type: 'foreignKey', related: 'Left' }],
+      ['rightId', { type: 'foreignKey', related: 'Right' }],
+    ]);
+    const schema = generator.generateSchemaFromRegistry(
+      'Link',
+      'links',
+      fields,
+      { conflictColumns: ['left_id', 'right_id'] },
+    );
+    // left_id leads the conflict index → no standalone index; right_id does
+    // not lead anything → it gets one.
+    expect(
+      schema.indexes.filter((i) => i.columns[0] === 'left_id'),
+    ).toHaveLength(1);
+    expect(schema.indexes.some((i) => i.name === 'links_right_id_idx')).toBe(
+      true,
+    );
+  });
+
+  it('does not add a reference index for a column that is already inline UNIQUE', () => {
+    // A unique reference column (e.g. a one-to-one crossPackageRef) renders
+    // an inline UNIQUE on CTI tables — an implicit unique index on every
+    // engine — so a second plain index would be redundant.
+    const fields = new Map<string, any>([
+      [
+        'profileId',
+        {
+          type: 'crossPackageRef',
+          related: '@happyvertical/smrt-profiles:Profile',
+          _meta: { unique: true },
+        },
+      ],
+    ]);
+    const schema = generator.generateSchemaFromRegistry(
+      'User',
+      'users',
+      fields,
+    );
+    expect(schema.columns.profile_id.unique).toBe(true);
+    expect(schema.indexes.some((i) => i.columns[0] === 'profile_id')).toBe(
+      false,
     );
   });
 });
@@ -324,13 +454,16 @@ describe('SchemaGenerator.generateSTISchemaFromRegistry (injected registry)', ()
     expect(schema.columns.room_id.notNull).toBe(false);
 
     const indexNames = schema.indexes.map((i) => i.name);
-    // Base STI indexes.
-    expect(indexNames).toContain('events_id_idx');
+    // Base STI indexes — no `<table>_id_idx` beside the PK (#2359, A5).
+    expect(indexNames).not.toContain('events_id_idx');
     expect(indexNames).toContain('events_slug_context_meta_type_idx');
     expect(indexNames).toContain('events_meta_type_idx');
-    // Partial FK index filtered by discriminator.
-    const partial = schema.indexes.find((i) => i.where?.includes('Meeting'));
-    expect(partial?.columns).toEqual(['room_id']);
+    // One plain (unqualified) FK index — not a per-class partial index, so
+    // base-class polymorphic queries can use it too (#2359).
+    const fkIndexes = schema.indexes.filter((i) => i.columns[0] === 'room_id');
+    expect(fkIndexes).toHaveLength(1);
+    expect(fkIndexes[0].name).toBe('events_room_id_idx');
+    expect(fkIndexes[0].where).toBeUndefined();
     // JSON-path index for the @meta indexed field.
     const jsonIdx = schema.indexes.find((i) => i.jsonPath);
     expect(jsonIdx?.jsonPath).toEqual({
@@ -339,6 +472,199 @@ describe('SchemaGenerator.generateSTISchemaFromRegistry (injected registry)', ()
     });
     // Plain column index for the indexed regular field.
     expect(indexNames).toContain('events_search_key_idx');
+  });
+
+  it('emits a full unique index for a unique field declared on the STI base (#2359, A4)', async () => {
+    const baseFields = new Map<string, any>([
+      ['email', { type: 'text', _meta: { unique: true } }],
+    ]);
+    // Descendants re-list inherited fields with the same metadata.
+    const childFields = new Map<string, any>([
+      ['email', { type: 'text', _meta: { unique: true } }],
+      ['nickname', { type: 'text' }],
+    ]);
+    const registry = fakeRegistry(
+      { Profile: baseFields, Person: childFields },
+      ['Person'],
+    );
+
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Profile',
+      'profiles',
+      new Map(),
+      { registry: registry as any },
+    );
+
+    const unique = schema.indexes.filter(
+      (i) => i.unique && i.columns[0] === 'email',
+    );
+    expect(unique).toHaveLength(1);
+    expect(unique[0].name).toBe('profiles_email_unique_idx');
+    expect(unique[0].where).toBeUndefined();
+    // Enforced through the index, not an inline column constraint the differ
+    // could never add to an existing table.
+    expect(schema.columns.email.unique).toBe(false);
+  });
+
+  it('emits per-class partial unique indexes for a unique field declared only on descendants', async () => {
+    const baseFields = new Map<string, any>([['title', { type: 'text' }]]);
+    const meetingFields = new Map<string, any>([
+      ['title', { type: 'text' }],
+      ['bookingRef', { type: 'text', _meta: { unique: true } }],
+    ]);
+    // Sibling shares the column name without the unique flag → unaffected.
+    const webinarFields = new Map<string, any>([
+      ['title', { type: 'text' }],
+      ['bookingRef', { type: 'text' }],
+    ]);
+    const registry = fakeRegistry(
+      {
+        Event: baseFields,
+        '@test/pkg:Meeting': meetingFields,
+        '@test/pkg:Webinar': webinarFields,
+      },
+      ['@test/pkg:Meeting', '@test/pkg:Webinar'],
+    );
+
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+
+    const unique = schema.indexes.filter(
+      (i) => i.unique && i.columns[0] === 'booking_ref',
+    );
+    expect(unique).toHaveLength(1);
+    expect(unique[0].name).toBe('events_booking_ref_meeting_unique_idx');
+    expect(unique[0].where).toBe("_meta_type = '@test/pkg:Meeting'");
+  });
+
+  it('disambiguates per-class unique index names when two packages share a simple class name', async () => {
+    const uniqueField = new Map<string, any>([
+      ['code', { type: 'text', _meta: { unique: true } }],
+    ]);
+    const registry = fakeRegistry(
+      {
+        Event: new Map(),
+        '@a/pkg:Meeting': uniqueField,
+        '@b/pkg:Meeting': uniqueField,
+      },
+      ['@a/pkg:Meeting', '@b/pkg:Meeting'],
+    );
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+    const unique = schema.indexes.filter((i) => i.unique && i.where);
+    expect(unique).toHaveLength(2);
+    expect(new Set(unique.map((i) => i.name)).size).toBe(2);
+    expect(unique.map((i) => i.where).sort()).toEqual([
+      "_meta_type = '@a/pkg:Meeting'",
+      "_meta_type = '@b/pkg:Meeting'",
+    ]);
+  });
+
+  it('is not rendered as a table-wide UNIQUE by the DuckDB strategy (no partial indexes there)', async () => {
+    const { getDDLStrategy } = await import('./ddl/index.js');
+    const registry = fakeRegistry(
+      {
+        Event: new Map(),
+        Meeting: new Map<string, any>([
+          ['bookingRef', { type: 'text', _meta: { unique: true } }],
+        ]),
+      },
+      ['Meeting'],
+    );
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+    const duckdb = getDDLStrategy('duckdb').generateIndexes(schema).join('\n');
+    // Widening the descendant-scoped unique to the whole table would reject
+    // sibling rows; DuckDB simply does not get this constraint.
+    expect(duckdb).not.toContain('booking_ref');
+    expect(getDDLStrategy('duckdb').generateCreateTable(schema)).not.toContain(
+      'UNIQUE("booking_ref")',
+    );
+    // SQLite/PostgreSQL keep the predicate.
+    const sqlite = getDDLStrategy('sqlite').generateIndexes(schema).join('\n');
+    expect(sqlite).toContain('UNIQUE INDEX');
+    expect(sqlite).toContain("WHERE _meta_type = 'Meeting'");
+  });
+
+  it('isStiSubtypeUniqueIndex matches only the exact generated discriminator predicate', async () => {
+    const { isStiSubtypeUniqueIndex } = await import('./index-utils.js');
+    const generator2 = new SchemaGenerator();
+    const registry = fakeRegistry(
+      {
+        Event: new Map(),
+        '@a/pkg:Meeting': new Map<string, any>([
+          ['bookingRef', { type: 'text', _meta: { unique: true } }],
+        ]),
+      },
+      ['@a/pkg:Meeting'],
+    );
+    const schema = await generator2.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+    const emitted = schema.indexes.find((i) => i.unique && i.where);
+    // The generator's own shape (qualified name with '@', '/', ':') matches,
+    // and so does PostgreSQL's cosmetic re-rendering of it.
+    expect(isStiSubtypeUniqueIndex(emitted as any)).toBe(true);
+    expect(
+      isStiSubtypeUniqueIndex({
+        unique: true,
+        where: "((_meta_type)::text = '@a/pkg:Meeting'::text)",
+      }),
+    ).toBe(true);
+    // A caller-declared partial unique (@smrt({ indexes }), #2357) that merely
+    // STARTS with the discriminator but carries more conjuncts is NOT the STI
+    // subtype shape and must keep the ordinary DuckDB degrade-to-full-UNIQUE
+    // behaviour; nor is a non-unique or a differently-scoped predicate.
+    expect(
+      isStiSubtypeUniqueIndex({
+        unique: true,
+        where: "_meta_type = '@a/pkg:Meeting' AND active = TRUE",
+      }),
+    ).toBe(false);
+    expect(
+      isStiSubtypeUniqueIndex({
+        unique: true,
+        where: "_meta_type = '@a/pkg:Meeting' OR archived = FALSE",
+      }),
+    ).toBe(false);
+    expect(
+      isStiSubtypeUniqueIndex({ unique: true, where: 'active = TRUE' }),
+    ).toBe(false);
+    expect(
+      isStiSubtypeUniqueIndex({ unique: false, where: "_meta_type = 'X'" }),
+    ).toBe(false);
+    // Only that shape is dropped by the DuckDB strategy; the conjunct form
+    // still degrades to a full UNIQUE index there.
+    const { getDDLStrategy } = await import('./ddl/index.js');
+    const duckdb = getDDLStrategy('duckdb').generateIndexes({
+      ...schema,
+      indexes: [
+        {
+          name: 'events_booking_ref_active_uq',
+          columns: ['booking_ref'],
+          unique: true,
+          where: "_meta_type = '@a/pkg:Meeting' AND active = TRUE",
+        },
+      ],
+    });
+    expect(duckdb.join('\n')).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "events_booking_ref_active_uq"',
+    );
   });
 
   it('loads ObjectRegistry from config when none is injected (default branch covered elsewhere)', async () => {
@@ -605,31 +931,359 @@ describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
     );
   });
 
-  it('does not duplicate when an index already leads with tenant_id', () => {
+  // The build-time AST path never emits the conflictColumns composite, so a
+  // suppression test there cannot fail. Exercise the paths that do emit it:
+  // the registry CTI path and both manifest paths.
+  const tenantField = {
+    type: 'text' as const,
+    _meta: { __tenancy: { isTenantIdField: true } },
+  };
+
+  it('does not duplicate when the registry conflict index already leads with tenant_id', () => {
     const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef(
-        'Scoped',
-        {
-          tenantId: {
-            type: 'text',
-            _meta: { __tenancy: { isTenantIdField: true } },
-          },
-          externalId: { type: 'text' },
-        },
-        // conflictColumns produce a unique index leading on tenant_id, which
-        // already serves tenant-scoped lookups.
-        { conflictColumns: ['tenantId', 'externalId'] },
-      ),
+    const schema = generator.generateSchemaFromRegistry(
+      'Scoped',
+      'scoped',
+      new Map<string, any>([
+        ['tenantId', tenantField],
+        ['externalId', { type: 'text' }],
+      ]),
+      { conflictColumns: ['tenant_id', 'external_id'] },
     );
 
-    const tenantColumn = Object.entries(schema.columns).find(
-      ([, column]) => column.referenceKind === 'tenantId',
-    )?.[0];
+    // No standalone `scoped_tenant_id_idx`: the unique conflict key already
+    // serves tenant equality. The list-ordering composite (#2363) is a
+    // different access path, so it is emitted beside it.
+    expect(
+      schema.indexes.filter(
+        (index) =>
+          index.columns.length === 1 && index.columns[0] === 'tenant_id',
+      ),
+    ).toHaveLength(0);
     const leading = schema.indexes.filter(
-      (index) => index.columns[0] === tenantColumn,
+      (index) => index.columns[0] === 'tenant_id',
     );
-    expect(leading.length).toBe(1);
+    expect(leading.map((index) => index.name).sort()).toEqual([
+      'scoped_tenant_id_created_at_idx',
+      'scoped_tenant_id_external_id_idx',
+    ]);
+    expect(
+      leading.find((index) => index.name === 'scoped_tenant_id_external_id_idx')
+        ?.unique,
+    ).toBe(true);
+  });
+
+  it('does not duplicate when the manifest CTI conflict index already leads with tenant_id', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateCTISchemaFromManifest(
+      'Scoped',
+      'scoped',
+      {
+        tenantId: tenantField,
+        externalId: { type: 'text' },
+      },
+      { conflictColumns: ['tenant_id', 'external_id'] },
+    );
+
+    expect(
+      schema.indexes.filter(
+        (index) =>
+          index.columns.length === 1 && index.columns[0] === 'tenant_id',
+      ),
+    ).toHaveLength(0);
+    const leading = schema.indexes.filter(
+      (index) => index.columns[0] === 'tenant_id',
+    );
+    expect(leading.map((index) => index.name).sort()).toEqual([
+      'scoped_tenant_id_created_at_idx',
+      'scoped_tenant_id_external_id_idx',
+    ]);
+    expect(
+      leading.find((index) => index.name === 'scoped_tenant_id_external_id_idx')
+        ?.unique,
+    ).toBe(true);
+  });
+
+  it('adds the tenant index on the manifest STI path (the STI conflict index leads with slug)', () => {
+    const generator = new SchemaGenerator();
+    const m: SmartObjectManifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: '@happyvertical/smrt-test',
+      objects: {
+        Note: objectDef('Note', {
+          tenantId: tenantField,
+          body: { type: 'text' },
+        }),
+      },
+    };
+    const schema = generator.generateSTISchemaFromManifest(
+      'Note',
+      'notes',
+      m.objects.Note.fields,
+      m,
+    );
+    const leading = schema.indexes.filter(
+      (index) => index.columns[0] === 'tenant_id',
+    );
+    expect(leading).toHaveLength(1);
+    // The list-ordering composite (#2363) leads with the tenant column, so it
+    // serves the tenant filter too and no standalone index is added.
+    expect(leading[0].name).toBe('notes_tenant_id_created_at_idx');
+    expect(leading[0].columns).toEqual(['tenant_id', 'created_at']);
+  });
+
+  it('is not suppressed by a PARTIAL index that leads with the reference column', async () => {
+    // A `WHERE _meta_type = ...` index cannot serve a base-class polymorphic
+    // query, which carries no subtype predicate — only an unqualified leading
+    // index counts as coverage (#2359, review of #2384). A descendant-only
+    // unique FK produces exactly such a partial index on the STI path.
+    const generator = new SchemaGenerator();
+    const registry = {
+      getDescendants: () => ['Meeting'],
+      getAllFields: async (className: string) =>
+        className === 'Meeting'
+          ? new Map<string, any>([
+              [
+                'roomId',
+                {
+                  type: 'foreignKey',
+                  related: 'Room',
+                  _meta: { unique: true },
+                },
+              ],
+            ])
+          : new Map<string, any>(),
+    };
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+
+    const onRoom = schema.indexes.filter((i) => i.columns[0] === 'room_id');
+    expect(onRoom.map((i) => i.name).sort()).toEqual([
+      'events_room_id_idx',
+      'events_room_id_meeting_unique_idx',
+    ]);
+    expect(onRoom.find((i) => i.name === 'events_room_id_idx')?.where).toBe(
+      undefined,
+    );
+  });
+});
+
+/**
+ * Every generated list surface pages with `ORDER BY created_at DESC, <pk> ASC`
+ * (`DEFAULT_LIST_ORDER_BY`, #2367) and before this change no schema path
+ * indexed `created_at` — the dead AST path indexed `updated_at` instead — so
+ * the default page was a full scan plus a top-N sort. All four live paths must
+ * emit the serving index, and a tenant-scoped table must get the composite
+ * rather than a bare `created_at` index (the tenancy interceptor always adds
+ * `tenant_id = ?` first).
+ */
+describe('SchemaGenerator default list-ordering index (#2363)', () => {
+  const tenantField = {
+    type: 'text' as const,
+    _meta: { __tenancy: { isTenantIdField: true } },
+  };
+
+  it('indexes created_at on the build-time AST path', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchema(
+      objectDef('Note', { title: { type: 'text' } }),
+    );
+
+    const ordering = schema.indexes.find(
+      (index) => index.name === 'notes_created_at_idx',
+    );
+    expect(ordering?.columns).toEqual(['created_at']);
+    expect(Boolean(ordering?.unique)).toBe(false);
+  });
+
+  it('indexes created_at on the registry CTI path', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchemaFromRegistry(
+      'Note',
+      'notes',
+      new Map<string, any>([['title', { type: 'text' }]]),
+    );
+
+    expect(
+      schema.indexes.find((index) => index.name === 'notes_created_at_idx')
+        ?.columns,
+    ).toEqual(['created_at']);
+  });
+
+  it('indexes created_at on the manifest CTI path', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateCTISchemaFromManifest('Note', 'notes', {
+      title: { type: 'text' },
+    });
+
+    expect(
+      schema.indexes.find((index) => index.name === 'notes_created_at_idx')
+        ?.columns,
+    ).toEqual(['created_at']);
+  });
+
+  it('indexes created_at on the manifest STI path, unqualified', () => {
+    const generator = new SchemaGenerator();
+    const m: SmartObjectManifest = {
+      version: '1.0.0',
+      timestamp: 0,
+      packageName: '@happyvertical/smrt-test',
+      objects: {
+        Note: objectDef('Note', { body: { type: 'text' } }),
+      },
+    };
+    const schema = generator.generateSTISchemaFromManifest(
+      'Note',
+      'notes',
+      m.objects.Note.fields,
+      m,
+    );
+
+    // Unqualified, not per-subtype: a base-class polymorphic list carries no
+    // `_meta_type` predicate, so a `(_meta_type, created_at)` composite could
+    // not serve it (same reasoning as the plain STI reference indexes, #2359).
+    const ordering = schema.indexes.find(
+      (index) => index.name === 'notes_created_at_idx',
+    );
+    expect(ordering?.columns).toEqual(['created_at']);
+    expect(ordering?.where).toBeUndefined();
+  });
+
+  it('indexes created_at on the registry STI path', async () => {
+    const generator = new SchemaGenerator();
+    const registry = {
+      getDescendants: () => ['Meeting'],
+      getAllFields: async () => new Map<string, any>(),
+    };
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+
+    expect(
+      schema.indexes.find((index) => index.name === 'events_created_at_idx')
+        ?.columns,
+    ).toEqual(['created_at']);
+  });
+
+  it('emits (tenant_id, created_at) instead of a bare created_at index when the table is tenant-scoped', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateCTISchemaFromManifest('Note', 'notes', {
+      tenantId: tenantField,
+      title: { type: 'text' },
+    });
+
+    const names = schema.indexes.map((index) => index.name);
+    expect(names).toContain('notes_tenant_id_created_at_idx');
+    expect(names).not.toContain('notes_created_at_idx');
+    // ...and the composite replaces the standalone tenant index (#2359).
+    expect(names).not.toContain('notes_tenant_id_idx');
+    expect(
+      schema.indexes.find(
+        (index) => index.name === 'notes_tenant_id_created_at_idx',
+      )?.columns,
+    ).toEqual(['tenant_id', 'created_at']);
+  });
+
+  it('follows a renamed tenant column rather than the tenant_id spelling', () => {
+    const generator = new SchemaGenerator();
+    const schema = generator.generateCTISchemaFromManifest('Note', 'notes', {
+      orgId: {
+        type: 'text',
+        _meta: { __tenancy: { isTenantIdField: true } },
+      },
+      title: { type: 'text' },
+    });
+
+    expect(
+      schema.indexes.find(
+        (index) => index.name === 'notes_org_id_created_at_idx',
+      )?.columns,
+    ).toEqual(['org_id', 'created_at']);
+  });
+
+  it('is suppressed by an existing unqualified index that already leads with the ordering columns', () => {
+    // The declaration surface #2357 adds feeds exactly this rule; a custom
+    // conflict key leading with the same columns exercises it today. A B-tree
+    // serves every prefix of its column list, so a second index would only
+    // cost writes.
+    const generator = new SchemaGenerator();
+    const schema = generator.generateCTISchemaFromManifest(
+      'Snapshot',
+      'snapshots',
+      { externalId: { type: 'text' } },
+      { conflictColumns: ['created_at', 'external_id'] },
+    );
+
+    const leading = schema.indexes.filter(
+      (index) => index.columns[0] === 'created_at',
+    );
+    expect(leading.map((index) => index.name)).toEqual([
+      'snapshots_created_at_external_id_idx',
+    ]);
+    expect(leading[0].unique).toBe(true);
+  });
+
+  it('keeps emitting the index when a class declares its own createdAt field', () => {
+    // Every path rewrites a declared `createdAt` to the generator's own
+    // TIMESTAMP column, dropping `primaryKey`/`unique`, so no constraint-backed
+    // index can already order it and `indexes` is the only place to look for
+    // existing coverage.
+    const generator = new SchemaGenerator();
+    const schema = generator.generateSchemaFromRegistry(
+      'Tick',
+      'ticks',
+      new Map<string, any>([
+        ['createdAt', { type: 'datetime', _meta: { primaryKey: true } }],
+        ['label', { type: 'text' }],
+      ]),
+    );
+
+    expect(schema.columns.created_at.primaryKey).toBeUndefined();
+    expect(schema.columns.created_at.unique).toBeUndefined();
+    expect(schema.indexes.map((index) => index.name)).toContain(
+      'ticks_created_at_idx',
+    );
+  });
+
+  it('is emitted beside the partial unique indexes of an STI table, unqualified', async () => {
+    // Partial indexes (`WHERE _meta_type = ...`) never count as coverage —
+    // the base-class list carries no subtype predicate (#2359, review of
+    // #2384) — so the ordering index is emitted regardless of them.
+    const generator = new SchemaGenerator();
+    const registry = {
+      getDescendants: () => ['Meeting'],
+      getAllFields: async (className: string) =>
+        className === 'Meeting'
+          ? new Map<string, any>([
+              ['bookingRef', { type: 'text', _meta: { unique: true } }],
+            ])
+          : new Map<string, any>(),
+    };
+    const schema = await generator.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+
+    expect(
+      schema.indexes.some(
+        (index) => index.name === 'events_booking_ref_meeting_unique_idx',
+      ),
+    ).toBe(true);
+    const ordering = schema.indexes.find(
+      (index) => index.name === 'events_created_at_idx',
+    );
+    expect(ordering?.columns).toEqual(['created_at']);
+    expect(ordering?.where).toBeUndefined();
   });
 });
 
@@ -905,9 +1559,11 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
     });
 
     it('a name already taken by a different generated index', () => {
+      // #2359 removed the legacy `<table>_id_idx`; the conflict index is the
+      // generated name a declaration can now collide with.
       expect(() =>
         generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
-          indexes: [{ name: 'posts_id_idx', columns: ['title'] }],
+          indexes: [{ name: 'posts_slug_context_idx', columns: ['title'] }],
         }),
       ).toThrow(/collides with a different index/);
     });
@@ -917,10 +1573,20 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
         'Post',
         'posts',
         titleOnly(),
-        { indexes: [{ name: 'posts_id_idx', columns: ['id'] }] },
+        {
+          indexes: [
+            {
+              name: 'posts_slug_context_idx',
+              columns: ['slug', 'context'],
+              unique: true,
+            },
+          ],
+        },
       );
       expect(
-        schema.indexes.filter((index) => index.name === 'posts_id_idx').length,
+        schema.indexes.filter(
+          (index) => index.name === 'posts_slug_context_idx',
+        ).length,
       ).toBe(1);
     });
   });
@@ -946,9 +1612,16 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
     const leading = schema.indexes.filter(
       (index) => index.columns[0] === tenantColumn,
     );
-    // Only the declared composite — no redundant standalone tenant index.
-    expect(leading.map((index) => index.name)).toEqual([
+    // No redundant standalone tenant index — the declared composite already
+    // serves the tenant filter. The default list-ordering composite (#2363)
+    // stands beside it: `(tenant_id, publish_date)` cannot order a page by
+    // `created_at`, so it is a second access path, not a duplicate.
+    expect(leading.map((index) => index.name).sort()).toEqual([
+      'posts_tenant_id_created_at_idx',
       'posts_tenant_id_publish_date_idx',
     ]);
+    expect(leading.map((index) => index.name)).not.toContain(
+      'posts_tenant_id_idx',
+    );
   });
 });
