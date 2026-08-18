@@ -118,14 +118,18 @@ divergence is a bug in the generator, not an exception to add to the test.
   `DROP INDEX` + `CREATE UNIQUE INDEX` per table under the SAME name (a
   superset key, so the build cannot fail when the old same-name index was a
   valid UNIQUE over the subset key; a #1165-class table whose old index was
-  non-unique or missing may still hold duplicates that a superset UNIQUE
-  rejects — run `db:diff` first). Atomic mode swaps every table in one
-  transaction (`DROP INDEX` takes ACCESS EXCLUSIVE, the rebuild SHARE, on each
-  table until commit — creates on those tables block for the batch); size
-  `statementTimeout` for the largest tenant-scoped table. `--postgres-safe`
-  runs the two statements sequentially per table, so each table has NO
-  conflict index between them and a failed rebuild leaves it without one until
-  the re-run — prefer atomic mode for this wave. The recreate has no automatic
+  non-unique or missing may hold duplicates that a superset UNIQUE rejects —
+  `db:diff` shows which tables' old index is non-unique or missing; dedupe
+  those rows before migrating). Atomic mode swaps every table in one
+  transaction: `DROP INDEX` takes ACCESS EXCLUSIVE and holds it until commit,
+  which blocks ALL access to those tables — reads included — for the batch;
+  size `statementTimeout` for the largest tenant-scoped table. That is the
+  maintenance window this rollout requires anyway (no mixed-version state), so
+  run this wave — the #2359 index wave included — in atomic mode inside it;
+  the "roll out with `--postgres-safe`" advice above applies to a #2359-only
+  wave, because `--postgres-safe` runs the two statements sequentially per
+  table, so each table has NO conflict index between them and a failed rebuild
+  leaves it without one until the re-run. The recreate has no automatic
   DOWN: reverting the code means re-creating the old index by hand. And
   legacy NULL-tenant rows fork rather than get adopted — a tenant-context save
   whose slug matches a `(NULL, slug, ctx)` row now inserts `(tenant, slug,
