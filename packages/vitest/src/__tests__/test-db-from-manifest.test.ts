@@ -7,13 +7,10 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { materializeManifestDDLForEngine } from '@happyvertical/smrt-core/schema/utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
 // Import the function we're testing
-import {
-  createIsolatedTestDbFromManifest,
-  materializeManifestDDLForAdapter,
-} from '../test-db.js';
+import { createIsolatedTestDbFromManifest } from '../test-db.js';
 
 // Test fixtures directory
 const testDir = join(tmpdir(), `smrt-vitest-test-${Date.now()}`);
@@ -43,7 +40,7 @@ describe('createIsolatedTestDbFromManifest', () => {
       FOREIGN KEY ("id") REFERENCES "parents"("id")
     );`;
 
-    const postgres = materializeManifestDDLForAdapter(ddl, 'postgres');
+    const postgres = materializeManifestDDLForEngine(ddl, 'postgres');
     expect(postgres).toContain('"occurred_at" TIMESTAMPTZ(3) NOT NULL');
     expect(postgres).toContain(
       '"legacy_wall_time" TIMESTAMP WITHOUT TIME ZONE',
@@ -57,7 +54,7 @@ describe('createIsolatedTestDbFromManifest', () => {
     expect(postgres).toContain('"label" TEXT DEFAULT \'TIMESTAMP\'');
     expect(postgres).toContain('"payload" TEXT DEFAULT $tag$a,b(c)$tag$');
     expect(postgres).toContain('FOREIGN KEY ("id") REFERENCES "parents"("id")');
-    expect(materializeManifestDDLForAdapter(ddl, 'sqlite')).toBe(ddl);
+    expect(materializeManifestDDLForEngine(ddl, 'sqlite')).toBe(ddl);
   });
 
   describe('manifest loading', () => {

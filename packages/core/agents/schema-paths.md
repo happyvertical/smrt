@@ -35,18 +35,62 @@ Production DDL takes the manifest route:
                         use; no in-repo caller outside its own tests)
 ```
 
-The suite takes the registry route, and the registry route emits indexes the
-manifest route does not — per-column foreign-key indexes, and STI partial FK
-indexes filtered by `_meta_type`. Tests therefore run against a richer schema
-than any deployment receives. `src/testing/database.ts`'s "Generate schema using
-SchemaGenerator (same as migrations)" comment describes an intent, not the code.
+The suite takes the registry route. Before #2359 the registry route emitted
+indexes the manifest route did not — per-column foreign-key indexes, and STI
+partial FK indexes filtered by `_meta_type` — so tests ran against a richer
+schema than any deployment received, the manifest STI path populated a
+`fkColumnsByClass` map it never read, and the manifest CTI path had no FK loop
+at all. `src/testing/database.ts`'s "same as migrations" comment described an
+intent, not the code.
 
-The manifest STI path even populates a `fkColumnsByClass` map and never reads it
-— only its registry counterpart iterates one — and the manifest CTI path has no
-FK loop at all. Both manifest paths then skip the explicit
-`@foreignKey(X, { indexed: true })` opt-in — the CTI one under a comment claiming
-"FK columns and unique columns get their own indexes", which holds on the
-registry paths and not on this one.
+Since #2359 the two families share one set of index helpers and
+`src/schema/schema-path-parity.test.ts` runs the same fixture manifest through
+the manifest paths, through `ObjectRegistry.registerFromManifest()` + the
+registry paths, and through `getAllSchemasAsDefinitions()`, asserting identical
+column and index sets. Extend that fixture with every generator change; a
+divergence is a bug in the generator, not an exception to add to the test.
+
+### Index rules (#2359)
+
+- **Reference columns are always indexed.** `ensureReferenceColumnIndexes()`
+  runs last on every path and gives each `@foreignKey`, `@crossPackageRef` and
+  tenant column `<table>_<column>_idx` unless an UNQUALIFIED index (no `WHERE`,
+  no JSON path) already leads with it — the `conflictColumns` unique index or an
+  `indexed: true` opt-in, or the column's own inline UNIQUE. A partial
+  `WHERE _meta_type = …` index does not count: base-class polymorphic queries
+  carry no discriminator predicate. `indexed: true` on a reference column is
+  redundant. Roll the index wave out to production with
+  `smrt db:migrate --postgres-safe` (concurrent-index mode, #2362): a plain
+  atomic batch takes SHARE/ACCESS EXCLUSIVE locks for ~230 index builds. STI FK indexes are plain, one per
+  column, not per-class partial.
+- **No index on the primary key.** `<table>_id_idx` is gone from every path,
+  and `conflictColumns` equal to the PK column set emit no conflict index
+  (`ON CONFLICT (id)` binds to the PK constraint). `SchemaComparer` drops the
+  legacy non-unique single-column PK index from existing databases without
+  `--drop-indexes` when the live table reports that column as its sole primary
+  key (never a UNIQUE one — on PostgreSQL that may back a custom-named PRIMARY
+  KEY constraint, and `DROP INDEX` on it would fail the atomic batch).
+- **Slug loading keeps its index.** Custom `conflictColumns` replace the
+  `(slug, context)` unique index; `loadFromSlug()`/`getId()`/`getSavedId()`
+  still filter on slug/context, so a plain `<table>_slug_context_idx` is kept
+  (additive; routing those lookups through the conflict key would change which
+  row a slug resolves to).
+- **STI `@field({ unique: true })` is enforced through indexes** (the differ can
+  add an index to an existing table, never a column constraint): a full
+  `<table>_<col>_unique_idx` when the STI base declares it, one
+  `<table>_<col>_<class>_unique_idx WHERE _meta_type = '<qualified>'` per class
+  when only descendants do — uniqueness per concrete class, not across the
+  subtree. DuckDB/JSON have no partial indexes, so the descendant-scoped shape
+  (`isStiSubtypeUniqueIndex`) is not emitted there — degrading it to a full
+  UNIQUE would constrain every subtype; the DDL strategy and the differ both
+  skip it, while other partial indexes keep degrading to full ones as before. Remember the
+  framework serializes an unset text field as `''`, so a unique optional text
+  field must be `nullable: true` with a `null` initializer or every unset row
+  collides.
+- **Every class in an STI hierarchy carries the schema of the one shared
+  table**, generated from the root base (`ManifestGenerator.generateSchemas()`
+  resolves the root through `findSTIBaseInfo`), so a child never treats its own
+  descendant-only unique field as base-declared.
 
 `src/schema/utils.ts` sits in between, and the two exports differ:
 
@@ -94,10 +138,10 @@ epic's fixes land.
 ### 1. Verify against the production path, not the test path
 
 Any change to column or index emission goes on **all** paths that ship and is
-proven by a path-parity test. #2359 adds that test under `src/schema/`; until it
-lands, assert the parity yourself in the nearest generator test — a green suite
-otherwise proves the registry paths only. Read the call graph before believing a
-comment: "same as migrations" was wrong for years.
+proven by the path-parity test (`src/schema/schema-path-parity.test.ts`, #2359)
+— extend its fixture; a green suite otherwise proves the registry paths only.
+Read the call graph before believing a comment: "same as migrations" was wrong
+for years.
 
 ### 2. Every new query predicate ships with its index
 
@@ -129,9 +173,10 @@ every package; do not sample a few and extrapolate.
 ### 5. Index intent belongs on both the constraint and the read path
 
 A conflict target is not automatically a unique index, and a unique index is not
-automatically the index a read path uses. Custom `conflictColumns` replace the
-`(slug, context)` index while `loadFromSlug`/`getId` still query slug+context;
-STI drops `@field({ unique: true })`. Check the pair, not the declaration.
+automatically the index a read path uses. Custom `conflictColumns` used to
+replace the `(slug, context)` index while `loadFromSlug`/`getId` still queried
+slug+context, and STI dropped `@field({ unique: true })` — both fixed in #2359,
+see "Index rules" above. Check the pair, not the declaration.
 
 ### 6. Multi-tenancy is a whole-path property
 
@@ -308,7 +353,68 @@ and always reports what it will not touch:
   round-trip test (create from each DDL strategy → compare → zero changes) in
   `src/migrations/__tests__/issue-2369-*.test.ts` guards this.
 
-### 16. The `_smrt_` prefix does not mean "system table" (#2376)
+### 16. `schema.ddl` is a preview, not the table
+
+`SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
+CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no
+indexes, no triggers, abstract `REAL`/`JSON`/`UUID`/`TIMESTAMP`. It is kept for
+backward compatibility only. Everything that needs an executable table renders
+`columns` + `indexes` through `getDDLStrategy(engine)` — `db:migrate`
+(`migrations/orchestrate.ts`), `MigrationGenerator` (default
+`materializeStructuredSchema: true`; `false` is a deprecated opt-out),
+`SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
+last two via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is merged in only for a
+table whose contributors expose no structured columns (hand-authored
+manifests); table constraints that exist only in the string are dropped with a
+warning, as `db:migrate` drops them. Do not add a new consumer of the
+string, and do not write a private CREATE INDEX renderer — the retired ones
+dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
+`PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
+
+### 17. The merged table shape is registration-order independent (#2372)
+
+`getAllSchemas()` and `getAllSchemasAsDefinitions()` fold every class that
+shares a physical table — the whole STI hierarchy — into one shape. Both route
+through `buildMergedTableSchemas()`, which groups contributors by table and
+then merges them in a **deterministic** order: the STI base first, then
+ancestors before descendants, then by qualified name.
+
+That order matters because the first contributor seeds the table: it supplies
+the fallback base columns, the `idType`, the conflict columns and the cached
+DDL, and its columns win every merge conflict. When registration order decided
+it, an STI child that carries no manifest `schema` — the external- and
+consumer-manifest case — seeded the table from bare fallback columns and the
+base class's richer ones were skipped when it registered later, yielding
+`context TEXT` instead of `context TEXT NOT NULL DEFAULT ''` and timestamps
+with no NOT NULL/DEFAULT. The shipped content manifest lists `Article` before
+`Content`, so the losing order was the one that shipped, and the differ
+compares types only, so the weak fresh-create was never repaired.
+
+Two invariants keep the two assembly paths agreeing:
+
+- `createBaseColumns()` mirrors what `generateSchemaFromManifest` /
+  `generateSTISchemaFromManifest` emit for the same table, so a table built
+  from runtime field metadata alone has the same NOT NULL/DEFAULT shape as one
+  built from a manifest. Note `_meta_type` is `TEXT NOT NULL` with **no**
+  default, matching the generator.
+- `fieldsToColumns()` reads `required`, `default`, and `description` from the
+  top level *or* `_meta`. Registry fields normalize them into `_meta`
+  (`manifest-field-merge.ts`), so reading only the top level silently dropped
+  NOT NULL and DEFAULT for every registry-sourced field.
+
+STI columns stay nullable regardless of the field's `required` flag
+(`fieldsToColumns(fields, { stiUnionColumns: true })`): the table holds the
+union of all subtypes' fields, so a column only one subtype declares is never
+populated on a sibling's row. Declared defaults are still emitted. This matches
+`generateSTISchemaFromManifest`, which sets `notNull: false` on every non-system
+STI column.
+
+When adding a class-level input to the merged shape, take it from the seeding
+contributor rather than "whichever class arrives first", and cover it with a
+child-first/base-first equality test.
+
+### 18. The `_smrt_` prefix does not mean "system table" (#2376)
 
 `bootstrapSystemTables()` owns nine hand-written tables; ~25 more `_smrt_*`
 tables belong to `@smrt()` models and are created by `db:migrate` (feature

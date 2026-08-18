@@ -17,7 +17,11 @@ import type {
   SchemaDiff,
   SQLDataType,
 } from '../schema/types.js';
-import { isJsonPathIndex, renderIndexTarget } from '../schema/utils.js';
+import {
+  isJsonPathIndex,
+  isStiSubtypeUniqueIndex,
+  renderIndexTarget,
+} from '../schema/utils.js';
 import {
   planSqliteTableRebuilds,
   sqliteRebuildPlaceholderSql,
@@ -86,6 +90,11 @@ export interface DiffOptions {
    * implicit indexes that PostgreSQL creates from inline UNIQUE constraints
    * (`*_key`) — those are owned by table-level constraints, not by the
    * index list, and dropping them here would break the constraint.
+   *
+   * Independent of this flag, a redundant single-column index over the
+   * table's primary key that the manifest no longer declares (the legacy
+   * `<table>_id_idx`, #2359) is always dropped: the primary-key constraint
+   * keeps serving every lookup, so the drop can only save write cost.
    */
   includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
@@ -1207,7 +1216,10 @@ export class SchemaComparer {
    *    caller opts in via `includeDroppedIndexes`, and even then never for
    *    PostgreSQL implicit indexes (`*_pkey`, `*_key`) — those are owned by
    *    table-level constraints and need a separate `DROP CONSTRAINT` path
-   *    that the differ does not emit yet.
+   *    that the differ does not emit yet. One exception is unconditional: a
+   *    redundant single-column index over the live primary key (the legacy
+   *    `<table>_id_idx`, #2359) is dropped even without the opt-in, because
+   *    the primary-key constraint already serves it.
    *
    * 4. **Partial-index predicate drift / collision** — two indexes on the
    *    same column(s) and uniqueness that differ only by their `WHERE`
@@ -1239,6 +1251,22 @@ export class SchemaComparer {
     const manifestPredicateFor = (idx: IndexDefinition): string =>
       predicateAware ? normalizeIndexPredicate(idx.where) : '';
 
+    // An STI subtype-scoped UNIQUE index (`unique: true` declared only on a
+    // descendant, #2359) has no faithful shape on an engine without partial
+    // indexes: degrading it to a full unique index would enforce one
+    // subtype's constraint across every sibling's rows, so it is skipped
+    // there — same as the DuckDB DDL strategy — rather than compared or
+    // created. Other partial indexes keep degrading to full ones as before.
+    const manifestIndexes = this.supportsPartialIndexes()
+      ? manifest.indexes
+      : manifest.indexes.filter((idx) => !isStiSubtypeUniqueIndex(idx));
+
+    // The live table's primary-key columns, for the redundant-PK-index
+    // sweep below.
+    const primaryKeyColumns = Object.entries(dbSchema.columns)
+      .filter(([, column]) => column.primaryKey === true)
+      .map(([name]) => name);
+
     // Index DB indexes by name and by signature for fast lookup.
     // dbIndexSignatures groups *all* DB index names sharing a signature so
     // duplicates under different names all get claimed by a single matching
@@ -1269,7 +1297,7 @@ export class SchemaComparer {
     // that match a manifest entry's signature even if no specific manifest
     // entry "claimed" them by name.
     const manifestSignatureSet = new Set<string>();
-    for (const idx of manifest.indexes) {
+    for (const idx of manifestIndexes) {
       manifestSignatureSet.add(
         this.getIndexSignature(idx, undefined, manifestPredicateFor(idx)),
       );
@@ -1279,7 +1307,7 @@ export class SchemaComparer {
     // pass below doesn't re-flag indexes that match by signature alone.
     const claimedDbIndexes = new Set<string>();
 
-    for (const idx of manifest.indexes) {
+    for (const idx of manifestIndexes) {
       const manifestSignature = this.getIndexSignature(
         idx,
         undefined,
@@ -1361,10 +1389,20 @@ export class SchemaComparer {
       });
     }
 
-    // Orphan-index sweep. Executable drops are opt-in via
-    // includeDroppedIndexes; unclaimed constraint-owned unique indexes
-    // (`*_key`) are never dropped but always *reported* (#2369) — a stale
-    // inline UNIQUE keeps rejecting duplicates the model now allows.
+    // Orphan-index sweep. Three tiers:
+    //
+    // - A redundant primary-key index — a non-unique single-column index over
+    //   the table's sole primary-key column that the manifest no longer
+    //   declares — is dropped unconditionally. Every generator path used to
+    //   emit `<table>_id_idx` beside the engine's own primary-key index
+    //   (#2359, A5); the constraint keeps serving every lookup, so the drop
+    //   is a pure write-cost saving and `db:migrate` cleans it up without
+    //   `--drop-indexes`.
+    // - Unclaimed constraint-owned unique indexes (`*_key`) are never dropped
+    //   but always *reported* (#2369) — a stale inline UNIQUE keeps rejecting
+    //   duplicates the model now allows.
+    // - Everything else is dropped only when the caller opts in via
+    //   includeDroppedIndexes.
     for (const idx of dbSchema.indexes) {
       if (claimedDbIndexes.has(idx.name)) continue;
 
@@ -1415,7 +1453,23 @@ export class SchemaComparer {
         continue;
       }
 
-      if (!this.options.includeDroppedIndexes) continue;
+      // "Sole primary-key column": a single-column index on one column of
+      // a COMPOSITE primary key is not redundant (the PK index only serves
+      // prefixes), so require the table to have exactly one PK column.
+      // Non-unique only: the legacy `<table>_id_idx` never was unique, and a
+      // UNIQUE single-column index on the PK may be the index that backs a
+      // custom-named PRIMARY KEY constraint on PostgreSQL (only `*_pkey` is
+      // filtered by introspection) — `DROP INDEX` on it fails and, because
+      // migrate is atomic, would roll back the whole batch (#2359).
+      const redundantPrimaryKeyIndex =
+        idx.unique !== true &&
+        idx.columns.length === 1 &&
+        dbPredicateFor(idx.name) === '' &&
+        primaryKeyColumns.length === 1 &&
+        primaryKeyColumns[0] === idx.columns[0];
+      if (!redundantPrimaryKeyIndex && !this.options.includeDroppedIndexes) {
+        continue;
+      }
 
       changes.push({
         type: 'drop_index',

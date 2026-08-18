@@ -162,6 +162,152 @@ describe('SchemaComparer index drift', () => {
       expect(drops).toHaveLength(0);
     });
 
+    describe('redundant primary-key index (#2359, A5)', () => {
+      it('drops the legacy <table>_id_idx without --drop-indexes once the manifest stops declaring it', async () => {
+        // Every generator path used to emit this beside the engine's own
+        // primary-key index; the differ must clean it up on existing DBs
+        // without the orphan-sweep opt-in.
+        await db.query('CREATE INDEX tenants_id_idx ON tenants(id);');
+        // A genuine orphan on a non-PK column must still be left alone.
+        await db.query('CREATE INDEX tenants_legacy_idx ON tenants(slug);');
+
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: tableSchema() });
+
+        const droppedNames = diff.changes
+          .filter((c) => c.type === 'drop_index')
+          .map((c) => c.name);
+        expect(droppedNames).toEqual(['tenants_id_idx']);
+        expect(diff.changes.some((c) => c.type === 'add_index')).toBe(false);
+      });
+
+      it('applies cleanly and leaves the primary key serving lookups', async () => {
+        await db.query('CREATE INDEX tenants_id_idx ON tenants(id);');
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: tableSchema() });
+        for (const change of diff.changes) {
+          if (change.sql) await db.query(change.sql);
+        }
+        const after = await comparer.compare({ tenants: tableSchema() });
+        expect(after.changes.filter((c) => c.type === 'drop_index')).toEqual(
+          [],
+        );
+        // The table is still keyed: PRIMARY KEY lookups keep working.
+        await db.query(
+          "INSERT INTO tenants (id, slug, context, _meta_type) VALUES ('a', 's', '', 'T');",
+        );
+        await expect(
+          db.query(
+            "INSERT INTO tenants (id, slug, context, _meta_type) VALUES ('a', 's2', '', 'T');",
+          ),
+        ).rejects.toThrow();
+      });
+
+      it('keeps a primary-key-column index the manifest still declares', async () => {
+        await db.query('CREATE INDEX tenants_id_idx ON tenants(id);');
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({
+          tenants: tableSchema({
+            indexes: [{ name: 'tenants_id_idx', columns: ['id'] }],
+          }),
+        });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
+      it('does not treat a single-column index on a non-PK column as redundant', async () => {
+        await db.query('CREATE INDEX tenants_slug_only_idx ON tenants(slug);');
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: tableSchema() });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
+      it('leaves a single-column index on one column of a COMPOSITE primary key alone', async () => {
+        // The composite PK index only serves prefixes; an index on the
+        // second column is load-bearing, not redundant.
+        await db.query(
+          'CREATE TABLE pairs (a TEXT, b TEXT, note TEXT, PRIMARY KEY (a, b));',
+        );
+        await db.query('CREATE INDEX pairs_b_idx ON pairs(b);');
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({
+          pairs: tableSchema({
+            tableName: 'pairs',
+            ddl: '',
+            columns: {
+              a: { type: 'TEXT', primaryKey: true },
+              b: { type: 'TEXT', primaryKey: true },
+              note: { type: 'TEXT' },
+            },
+          }),
+        });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+
+      it('never drops a UNIQUE index on the primary key column (it may back a named PK constraint)', async () => {
+        // On PostgreSQL a `CONSTRAINT foo_primary PRIMARY KEY (id)` is listed
+        // by introspection (only `*_pkey` is filtered) as a unique index on
+        // the PK column; DROP INDEX on it fails and would roll back the
+        // atomic migrate batch. The legacy `<table>_id_idx` was never unique.
+        await db.query('CREATE UNIQUE INDEX tenants_primary ON tenants(id);');
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ tenants: tableSchema() });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+      });
+    });
+
+    describe('STI subtype-scoped UNIQUE indexes on engines without partial indexes (#2359)', () => {
+      it('neither compares nor creates a descendant-scoped unique index when the engine cannot express it', async () => {
+        // The STI descendant-scoped `unique: true` shape is a partial UNIQUE
+        // index on `_meta_type`. Degrading it to a full UNIQUE on DuckDB would
+        // constrain every subtype's rows, so the differ skips it there
+        // entirely (a caller-declared partial unique such as
+        // `WHERE active = TRUE` still degrades to a full UNIQUE as before).
+        const comparer = new SchemaComparer(db, { engineHint: 'duckdb' });
+        const diff = await comparer.compare({
+          tenants: tableSchema({
+            indexes: [
+              {
+                name: 'tenants_slug_meeting_unique_idx',
+                columns: ['slug'],
+                unique: true,
+                where: "_meta_type = 'Meeting'",
+              },
+              // A plain partial index still degrades to a full index as before.
+              {
+                name: 'tenants_slug_meeting_idx',
+                columns: ['slug'],
+                where: "_meta_type = 'Meeting'",
+              },
+            ],
+          }),
+        });
+        const adds = diff.changes
+          .filter((c) => c.type === 'add_index')
+          .map((c) => c.name);
+        expect(adds).toEqual(['tenants_slug_meeting_idx']);
+      });
+
+      it('still creates it on SQLite/PostgreSQL, predicate included', async () => {
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({
+          tenants: tableSchema({
+            indexes: [
+              {
+                name: 'tenants_slug_meeting_unique_idx',
+                columns: ['slug'],
+                unique: true,
+                where: "_meta_type = 'Meeting'",
+              },
+            ],
+          }),
+        });
+        const add = diff.changes.find((c) => c.type === 'add_index');
+        expect(add?.name).toBe('tenants_slug_meeting_unique_idx');
+        expect(add?.sql).toContain('UNIQUE');
+        expect(add?.sql).toContain("WHERE _meta_type = 'Meeting'");
+      });
+    });
+
     it('drops orphan indexes when includeDroppedIndexes is enabled', async () => {
       await db.query(
         'CREATE UNIQUE INDEX tenants_slug_context_idx ON tenants(slug, context);',
