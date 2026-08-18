@@ -20,6 +20,7 @@ import {
   LiveSchemaParityError,
   parseIndexDefColumns,
 } from './live-parity.js';
+import { SYSTEM_TABLE_NAMES } from './system-table-shapes.js';
 import type { SchemaDefinition } from './types.js';
 
 let db: DatabaseProvider | undefined;
@@ -383,7 +384,7 @@ describe('checkLiveSchemaParity (system tables)', () => {
     const report = await checkLiveSchemaParity({ db: database });
 
     expect(report.systemTablesIncluded).toBe(true);
-    expect(report.tablesChecked).toBe(11);
+    expect(report.tablesChecked).toBe(SYSTEM_TABLE_NAMES.length);
     expect(report.findings).toEqual([]);
   });
 

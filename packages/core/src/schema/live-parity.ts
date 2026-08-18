@@ -24,6 +24,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
 import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import { getSystemTableShapes } from './system-table-shapes.js';
@@ -233,14 +234,21 @@ export async function checkLiveSchemaParity(
       // Without system tables in scope, every `_smrt_*` table would be
       // reported as unexplained; that is a scoping artifact, not drift.
       if (!includeSystemTables && liveName.startsWith('_smrt_')) continue;
+      // A retired system table is not unexplained drift — the framework
+      // deliberately stopped creating it and deliberately does not drop it
+      // (issue #2376). Name the exact remedy instead of the generic advice.
+      const retired = RETIRED_SYSTEM_TABLES.includes(liveName);
       findings.push({
         kind: 'extra_table',
         severity: 'info',
         table: liveName,
         origin: liveName.startsWith('_smrt_') ? 'system' : 'application',
-        message: `Live table \`${liveName}\` is not covered by any declared schema.`,
-        recommendation:
-          'Confirm the table belongs to another application sharing this database, or remove it once its owning model is gone.',
+        message: retired
+          ? `Live table \`${liveName}\` is a retired SMRT system table; nothing reads or writes it.`
+          : `Live table \`${liveName}\` is not covered by any declared schema.`,
+        recommendation: retired
+          ? `Drop it once you have confirmed it is unused: DROP TABLE IF EXISTS ${liveName};`
+          : 'Confirm the table belongs to another application sharing this database, or remove it once its owning model is gone.',
       });
     }
   }

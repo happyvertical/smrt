@@ -268,3 +268,19 @@ function splitTopLevel(body: string): string[] {
 function unquoteIdentifier(identifier: string): string {
   return identifier.replace(/^["`[]|["`\]]$/g, '');
 }
+
+/**
+ * Names of every table the hand-written system DDL creates.
+ *
+ * This is the framework's definition of "a system table" — bookkeeping DDL
+ * replayed by `bootstrapSystemTables()` — as opposed to the ~25
+ * `_smrt_`-prefixed *domain* tables that belong to `@smrt()` models and are
+ * created by `db:migrate` from the manifest. Derived from the same parse the
+ * parity check uses so the two can never disagree (issue #2376).
+ *
+ * Declared last in the module because it evaluates the parser at load time,
+ * which needs every helper above to be initialized.
+ */
+export const SYSTEM_TABLE_NAMES: readonly string[] = Object.freeze([
+  ...getSystemTableShapes('sqlite').keys(),
+]);

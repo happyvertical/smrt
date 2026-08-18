@@ -31,6 +31,7 @@ export { createSchemaManager, SchemaManager } from './schema-manager.js';
 export {
   getSystemTableShapes,
   parseTableShapes,
+  SYSTEM_TABLE_NAMES,
   type SystemTableColumnShape,
   type SystemTableIndexShape,
   type SystemTableShape,

@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  ensureDeferredSystemTableCompatibility,
   generateDDLForEngine,
   isQualifiedName,
   migratePostgresSystemTimestamps,
@@ -152,6 +153,46 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
       return 'postgres';
     default:
       return 'sqlite';
+  }
+}
+
+/**
+ * Run the framework's deferred system-table compatibility pass after
+ * `db:migrate` has created the tables it reshapes (issue #2376).
+ *
+ * `_smrt_jobs` and `_smrt_job_events` are dual-owned — created here from the
+ * jobs manifest, then given their compatibility columns and indexes by
+ * `@happyvertical/smrt-core`. On a fresh install the framework bootstrap runs
+ * before those tables exist, so without this call the pass would first become
+ * reachable at the next process start.
+ *
+ * Best-effort: the pass is idempotent and re-runs on the next boot, so a
+ * failure here must not fail an otherwise-successful migration.
+ */
+async function settleDeferredCompatibilityAfterMigrate(
+  db: DatabaseInterface,
+  dbType: string,
+  { verbose }: { verbose: boolean },
+): Promise<void> {
+  try {
+    const { settled } = await ensureDeferredSystemTableCompatibility(
+      db,
+      dbType,
+    );
+    if (verbose) {
+      console.log(
+        settled
+          ? 'Deferred system-table compatibility settled (_smrt_jobs, _smrt_job_events)\n'
+          : 'Deferred system-table compatibility pending (jobs tables not present)\n',
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `⚠️  Deferred system-table compatibility did not complete: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    console.warn('   It will be retried the next time the framework starts.\n');
   }
 }
 
@@ -2177,6 +2218,15 @@ export default testManifest;
         }
 
         if (!isDryRun) {
+          // `_smrt_jobs` / `_smrt_job_events` are dual-owned: created here from
+          // the manifest, then reshaped by the framework compatibility pass.
+          // On a fresh install the framework's bootstrap ran before these
+          // tables existed, so run the deferred pass now rather than leaving it
+          // to the next process start (issue #2376).
+          await settleDeferredCompatibilityAfterMigrate(db, dbType, {
+            verbose: Boolean(options.verbose),
+          });
+
           assertSchemaContract(
             await evaluateSchemaContract({
               discovered,
