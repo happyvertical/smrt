@@ -190,6 +190,11 @@ export interface RelationshipFieldOptions extends FieldOptions {
    * When omitted, a column that is part of this class's `conflictColumns`
    * (junction and association rows, which are *identified* by the reference)
    * defaults to `CASCADE`; every other column is left untouched on delete.
+   * `@tenantId()` fields are the one exception: `smrt-tenancy` leads a
+   * tenant-scoped class's default `conflictColumns` with the tenant column,
+   * but that column scopes ownership rather than identifying the row, so it
+   * is never defaulted to `CASCADE` — deleting a `Tenant` must not cascade
+   * through every tenant-scoped table.
    *
    * Cascaded rows are removed set-based: their `beforeDelete`/`afterDelete`
    * hooks and interceptors do not run and no change-feed entry is written, the

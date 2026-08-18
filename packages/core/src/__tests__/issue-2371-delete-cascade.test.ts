@@ -19,12 +19,50 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildCascadePlan, normalizeOnDelete } from '../cascade';
 import { SmrtCollection } from '../collection';
+import { CACHE_INVALIDATION_CHANNEL } from '../collection-cache';
+import type {
+  CompatiblePropertyDecorator,
+  CompatiblePropertyDecoratorContext,
+  LegacyPropertyDecoratorTarget,
+} from '../decorators/compatibility';
+import { registerCompatibleFieldDecorator } from '../decorators/compatibility';
 import { crossPackageRef, field, foreignKey } from '../decorators/index';
 import { EmbeddingStorage } from '../embeddings/storage';
 import { ConfigurationError, DatabaseError } from '../errors';
 import { SmrtObject } from '../object';
 import { SmrtPolymorphicAssociation } from '../polymorphic-association';
 import { ObjectRegistry, smrt } from '../registry';
+
+/**
+ * Minimal stand-in for `@tenantId()` (`@happyvertical/smrt-tenancy`), which
+ * `packages/core` cannot import (tenancy depends on core, not the reverse).
+ * Registers the exact shape `packages/tenancy/src/decorators.ts` registers —
+ * `type: 'foreignKey'` at the given target plus the `__tenancy.isTenantIdField`
+ * marker `FieldMeta` documents — so the CRITICAL review fixture below proves
+ * `cascade.ts` reads that marker correctly, not a stand-in for the whole
+ * tenancy package.
+ */
+function testTenantIdField(relatedClass: string) {
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<unknown, unknown>,
+  ) => {
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          type: 'foreignKey',
+          related: relatedClass,
+          sqlType: 'UUID',
+          required: true,
+          nullable: false,
+          __tenancy: { isTenantIdField: true },
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
+}
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -320,6 +358,98 @@ class AmbiguousDocTag extends SmrtObject {
 @smrt()
 class AmbiguousDocTagCollection extends SmrtCollection<AmbiguousDocTag> {
   static readonly _itemClass = AmbiguousDocTag;
+}
+
+/**
+ * Review fixture: a parent with no cache config, and a junction class that
+ * opts into cross-process cache invalidation. Cascading the parent's delete
+ * into the junction table must broadcast using the *junction's* own
+ * `@smrt({ cache })` config, not the parent's (which has none) — see the
+ * "cascade cache broadcast" describe block below.
+ */
+@smrt({ tableName: 'cascade_2371_cache_parents' })
+class CascadeCacheParent extends SmrtObject {
+  title = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.title !== undefined) this.title = options.title;
+  }
+}
+
+@smrt()
+class CascadeCacheParentCollection extends SmrtCollection<CascadeCacheParent> {
+  static readonly _itemClass = CascadeCacheParent;
+}
+
+@smrt({
+  tableName: 'cascade_2371_cache_tags',
+  conflictColumns: ['parent_id', 'tag'],
+  cache: { ttl: 60_000, crossProcess: true },
+})
+class CascadeCacheTag extends SmrtObject {
+  @foreignKey('CascadeCacheParent', { required: true })
+  parentId = '';
+
+  @field({ required: true })
+  tag = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.parentId !== undefined) this.parentId = options.parentId;
+    if (options.tag !== undefined) this.tag = options.tag;
+  }
+}
+
+@smrt()
+class CascadeCacheTagCollection extends SmrtCollection<CascadeCacheTag> {
+  static readonly _itemClass = CascadeCacheTag;
+}
+
+/**
+ * CRITICAL review fixture: deleting a tenant-like parent must NOT cascade
+ * through a tenant-scoped child that declares no explicit `conflictColumns`.
+ * `smrt-tenancy` (#2360) leads such a class's *default* natural key with the
+ * tenant column, which would otherwise put it in `conflictColumns` and trip
+ * the natural-key-implies-CASCADE default — turning a `Tenant.delete()` into
+ * a recursive wipe of every tenant-scoped table in the schema. `tenantId`
+ * below is registered exactly like `@tenantId()` does (see
+ * `testTenantIdField` above), without declaring `conflictColumns`, so its
+ * default natural key is tenant-led per #2360 and would land `tenant_id` in
+ * `conflictColumns` if that rule were not excluded for tenant fields.
+ */
+@smrt({ tableName: 'cascade_2371_tenants' })
+class CascadeTenant extends SmrtObject {
+  name = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+  }
+}
+
+@smrt()
+class CascadeTenantCollection extends SmrtCollection<CascadeTenant> {
+  static readonly _itemClass = CascadeTenant;
+}
+
+@smrt({ tableName: 'cascade_2371_tenant_docs', tenantScoped: true })
+class CascadeTenantDoc extends SmrtObject {
+  @testTenantIdField('CascadeTenant')
+  tenantId = '';
+
+  title = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.title !== undefined) this.title = options.title;
+  }
+}
+
+@smrt()
+class CascadeTenantDocCollection extends SmrtCollection<CascadeTenantDoc> {
+  static readonly _itemClass = CascadeTenantDoc;
 }
 
 // ---------------------------------------------------------------------------
@@ -648,6 +778,62 @@ describe('delete() referential integrity (#2371)', () => {
   });
 });
 
+describe('tenant column exclusion (CRITICAL review fix)', () => {
+  let dbPath: string;
+  let dbUrl: string;
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    dbUrl = tmpDbUrl('tenant-cascade');
+    dbPath = dbUrl.replace('file:', '');
+    const tenants = await CascadeTenantCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    db = (tenants as unknown as { _db: DatabaseInterface })._db;
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) unlinkSync(dbPath);
+  });
+
+  it('never defaults a tenantId reference to CASCADE, even though it is part of the default conflictColumns', () => {
+    // Sanity-check the premise: the tenant column really is in the class's
+    // default natural key (#2360) — this is what made the pre-fix code
+    // treat it as CASCADE-eligible.
+    expect(ObjectRegistry.getConflictColumns('CascadeTenantDoc')).toEqual(
+      expect.arrayContaining(['tenant_id']),
+    );
+
+    const plan = buildCascadePlan(ObjectRegistry, 'CascadeTenant');
+    const tenantDocReference = plan.references.find(
+      (reference) => reference.className === 'CascadeTenantDoc',
+    );
+    expect(tenantDocReference).toBeUndefined();
+  });
+
+  it('deleting the tenant leaves every tenant-scoped row in place — no recursive wipe', async () => {
+    const tenants = await CascadeTenantCollection.create({ db });
+    const docs = await CascadeTenantDocCollection.create({ db });
+
+    const tenant = await tenants.create({ name: 'Acme' } as any);
+    await tenant.save();
+    await (
+      await docs.create({ tenantId: tenant.id, title: 'private doc' } as any)
+    ).save();
+
+    expect(await db.count('cascade_2371_tenant_docs')).toBe(1);
+
+    await tenant.delete();
+
+    // The tenant row is gone; every row it scoped is NOT — the opposite of
+    // what the natural-key-implies-CASCADE default would otherwise do.
+    expect(await db.count('cascade_2371_tenants', { id: tenant.id })).toBe(0);
+    expect(await db.count('cascade_2371_tenant_docs')).toBe(1);
+    const remaining = await db.list('cascade_2371_tenant_docs', {});
+    expect(remaining[0]?.tenant_id).toBe(tenant.id);
+  });
+});
+
 describe('cascade plan (#2371)', () => {
   it('normalizes declared onDelete values', () => {
     expect(normalizeOnDelete('cascade')).toBe('CASCADE');
@@ -696,5 +882,108 @@ describe('cascade plan (#2371)', () => {
     expect(() => buildCascadePlan(ObjectRegistry, 'CascadeStrict')).toThrow(
       /SET NULL/,
     );
+  });
+});
+
+/**
+ * Cross-process cache broadcast on a cascade-affected table (review fix).
+ *
+ * `shouldBroadcastCacheInvalidation()` used to check only the *deleted*
+ * object's own `@smrt({ cache })` config (rules 2/3) for a table that
+ * matches `this.tableName`, and fell back to "was there a per-call
+ * crossProcess read in this process" (rule 1) for every other table —
+ * including a table the cascade just cleaned up on a *different* class's
+ * behalf. A class that opts into `crossProcess` caching never got its
+ * invalidation broadcast when its rows were removed as a side effect of a
+ * parent's delete, so peer replicas could keep serving the deleted junction
+ * rows until TTL. `runCascadeDelete()` now returns which qualified class
+ * owns each affected table so `delete()` can check *that* class's config.
+ */
+describe('cascade cache broadcast (review fix: owning-class config)', () => {
+  let dbPath: string;
+  let dbUrl: string;
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    dbUrl = tmpDbUrl('cache-cascade');
+    dbPath = dbUrl.replace('file:', '');
+    const parents = await CascadeCacheParentCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    db = (parents as unknown as { _db: DatabaseInterface })._db;
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) unlinkSync(dbPath);
+  });
+
+  /** Minimal stub of the sql package's NotificationCapabilities: notify only. */
+  function stubNotifications(): Array<{ channel: string; payload: any }> {
+    const broadcasts: Array<{ channel: string; payload: any }> = [];
+    (db as any).notifications = {
+      async notify(channel: string, payload: any) {
+        broadcasts.push({ channel, payload });
+        return 1;
+      },
+      listen() {
+        return {
+          [Symbol.asyncIterator]() {
+            return {
+              next: () => new Promise<never>(() => {}),
+              return: () =>
+                Promise.resolve({ value: undefined, done: true as const }),
+            };
+          },
+        };
+      },
+    };
+    return broadcasts;
+  }
+
+  const cacheBroadcastsOf = (
+    broadcasts: Array<{ channel: string; payload: any }>,
+  ) => broadcasts.filter((b) => b.channel === CACHE_INVALIDATION_CHANNEL);
+
+  it("broadcasts a cascade-deleted junction table using the junction class's own crossProcess config", async () => {
+    const broadcasts = stubNotifications();
+    const parents = await CascadeCacheParentCollection.create({ db });
+    const tags = await CascadeCacheTagCollection.create({ db });
+
+    const parent = await parents.create({ title: 'root' } as any);
+    await parent.save();
+    await (
+      await tags.create({ parentId: parent.id, tag: 'alpha' } as any)
+    ).save();
+
+    // The parent's own class has no cache config, so any broadcast for the
+    // junction table can only come from that table's own class config.
+    await parent.delete();
+
+    const cacheBroadcasts = cacheBroadcastsOf(broadcasts);
+    const junctionBroadcast = cacheBroadcasts.find(
+      (b) => b.payload.table === 'cascade_2371_cache_tags',
+    );
+    expect(junctionBroadcast).toBeDefined();
+  });
+
+  it('still broadcasts the deleted object’s own table when it opts into crossProcess', async () => {
+    // Sanity check: the fix must not have broken the direct (non-cascade)
+    // rule 2/3 path this same function serves.
+    const broadcasts = stubNotifications();
+    const tags = await CascadeCacheTagCollection.create({ db });
+    const parents = await CascadeCacheParentCollection.create({ db });
+    const parent = await parents.create({ title: 'root' } as any);
+    await parent.save();
+    const tag = await tags.create({ parentId: parent.id, tag: 'solo' } as any);
+    await tag.save();
+
+    await tag.delete();
+
+    const cacheBroadcasts = cacheBroadcastsOf(broadcasts);
+    expect(
+      cacheBroadcasts.some(
+        (b) => b.payload.table === 'cascade_2371_cache_tags',
+      ),
+    ).toBe(true);
   });
 });

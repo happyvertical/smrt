@@ -31,9 +31,9 @@
  *
  * | Reference | Default when `onDelete` is absent |
  * |---|---|
- * | Column is part of the referencing class's `conflictColumns` | `CASCADE` |
+ * | Column is part of the referencing class's `conflictColumns`, and is not a `@tenantId()` field | `CASCADE` |
  * | Polymorphic `(metaType, metaId)` association row | `CASCADE` |
- * | Anything else | `NO ACTION` (legacy behaviour — the row is left alone) |
+ * | Anything else, including every `@tenantId()` field | `NO ACTION` (legacy behaviour — the row is left alone) |
  *
  * The natural-key rule is what makes junction rows work without any
  * per-package annotation: a junction declares
@@ -42,6 +42,19 @@
  * links. An ordinary child (`Order.customerId`) is keyed by `(slug, context)`,
  * so it keeps today's behaviour unless it opts in with
  * `@foreignKey(Customer, { onDelete: 'CASCADE' })`.
+ *
+ * `@tenantId()` fields are excluded from the natural-key rule even though
+ * `@happyvertical/smrt-tenancy` leads a tenant-scoped class's *default*
+ * `conflictColumns` with the tenant column (#2360): the tenant column scopes
+ * ownership, it does not identify the row the way a junction's foreign key
+ * does, and it targets a class (`Tenant`) that is virtually always
+ * referenced. Without this exclusion, deleting one `Tenant` row would
+ * recursively CASCADE through every tenant-scoped table that has not
+ * declared its own `conflictColumns` — the overwhelming majority. The field
+ * is detected via the `__tenancy.isTenantIdField` marker `@tenantId()`
+ * attaches to its own registration (`FieldMeta.__tenancy`, read structurally
+ * so `smrt-core` never depends on `smrt-tenancy`). `@tenantId()` exposes no
+ * `onDelete` option today, so this cannot currently be overridden per field.
  *
  * @see https://github.com/happyvertical/smrt/issues/2371
  * @module
@@ -226,9 +239,25 @@ export function buildCascadePlan(
         conflictColumns = new Set(registry.getConflictColumns(sourceClass));
       }
 
+      // A `@tenantId()` field is a structural scoping marker, not a
+      // junction/ownership key — it lands in `conflictColumns` only because
+      // #2360 leads every tenant-scoped class's *default* natural key with
+      // the tenant column, not because the referencing row is *identified*
+      // by its tenant the way a junction row is identified by its parent.
+      // Without this guard, deleting a `Tenant` would silently CASCADE
+      // through the tenant column of every tenant-scoped class in the
+      // schema that has not declared its own `conflictColumns` — the
+      // overwhelming majority. `@tenantId()` exposes no `onDelete` today, so
+      // an explicit declaration can never widen this back to CASCADE; that
+      // is deliberate until tenant-delete cascade is an explicit decision.
+      const isTenantIdField =
+        relationship.options?.__tenancy?.isTenantIdField === true;
+
       const action =
         declaredAction ??
-        (conflictColumns.has(column) ? 'CASCADE' : 'NO ACTION');
+        (!isTenantIdField && conflictColumns.has(column)
+          ? 'CASCADE'
+          : 'NO ACTION');
 
       if (action === 'NO ACTION') continue;
 
@@ -278,6 +307,22 @@ interface CascadeContext {
   visited: Set<string>;
   /** Tables touched by the cascade, for read-cache invalidation. */
   affectedTables: Set<string>;
+  /**
+   * Qualified name of the class that owns each affected table, so the
+   * caller can resolve *that* class's own `@smrt({ cache })` config —
+   * cross-process cache invalidation is a per-class opt-in, and a table
+   * cascaded into belongs to a different class than the one `delete()` was
+   * called on.
+   */
+  affectedTableClasses: Map<string, string>;
+}
+
+/** Resolve a registry-recorded class name to its qualified form, when known. */
+function toQualifiedClassName(
+  registry: CascadeRegistryView,
+  className: string,
+): string {
+  return registry.getClass(className)?.qualifiedName ?? className;
 }
 
 /**
@@ -423,6 +468,10 @@ async function resolveReferences(
         );
       }
       ctx.affectedTables.add(reference.tableName);
+      ctx.affectedTableClasses.set(
+        reference.tableName,
+        toQualifiedClassName(ctx.registry, reference.className),
+      );
       continue;
     }
 
@@ -446,6 +495,10 @@ async function resolveReferences(
     await deleteSystemRows(ctx.db, childIds);
     await deleteByIds(ctx.db, reference.tableName, childIds);
     ctx.affectedTables.add(reference.tableName);
+    ctx.affectedTableClasses.set(
+      reference.tableName,
+      toQualifiedClassName(ctx.registry, reference.className),
+    );
   }
 
   for (const association of plan.polymorphic) {
@@ -461,6 +514,10 @@ async function resolveReferences(
       const result = await ctx.db.delete(association.tableName, where);
       if ((result?.affected ?? 0) > 0) {
         ctx.affectedTables.add(association.tableName);
+        ctx.affectedTableClasses.set(
+          association.tableName,
+          toQualifiedClassName(ctx.registry, association.className),
+        );
       }
     }
   }
@@ -470,6 +527,12 @@ async function resolveReferences(
 export interface CascadeResult {
   /** Tables whose rows were removed or nulled, excluding the target's own. */
   affectedTables: Set<string>;
+  /**
+   * Qualified class name that owns each entry in {@link affectedTables},
+   * where resolvable — lets the caller check *that* class's own
+   * cross-process cache config rather than only its own.
+   */
+  affectedTableClasses: Map<string, string>;
 }
 
 /**
@@ -489,6 +552,7 @@ export async function cascadeReferencesTo(
     registry,
     visited: new Set(),
     affectedTables: new Set(),
+    affectedTableClasses: new Map(),
   };
   await resolveReferences(
     ctx,
@@ -498,7 +562,10 @@ export async function cascadeReferencesTo(
     0,
   );
   await deleteSystemRows(db, target.ids);
-  return { affectedTables: ctx.affectedTables };
+  return {
+    affectedTables: ctx.affectedTables,
+    affectedTableClasses: ctx.affectedTableClasses,
+  };
 }
 
 type TransactionCapable = DatabaseInterface & {
@@ -550,7 +617,7 @@ export async function runCascadeDelete(
   if (buildCascadePlan(registry, target.className).isEmpty) {
     await deleteSelf(db);
     await deleteSystemRows(db, ids);
-    return { affectedTables: new Set() };
+    return { affectedTables: new Set(), affectedTableClasses: new Map() };
   }
 
   const run = async (bound: DatabaseInterface): Promise<CascadeResult> => {

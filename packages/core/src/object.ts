@@ -2879,7 +2879,7 @@ export class SmrtObject extends SmrtClass {
 
     await this.verifyStorageReady();
 
-    const { affectedTables } = await runCascadeDelete(
+    const { affectedTables, affectedTableClasses } = await runCascadeDelete(
       this.db,
       ObjectRegistry,
       {
@@ -2906,7 +2906,10 @@ export class SmrtObject extends SmrtClass {
     // read of this object.
     this.invalidateCollectionReadCache();
     for (const table of affectedTables) {
-      this.invalidateCollectionReadCache(table);
+      this.invalidateCollectionReadCache(
+        table,
+        affectedTableClasses.get(table),
+      );
     }
 
     await this.runHook('afterDelete');
@@ -2925,13 +2928,28 @@ export class SmrtObject extends SmrtClass {
    * broadcast to peer replicas over the database adapter's notification
    * capability, fire-and-forget. Cache maintenance must never fail the
    * write that triggered it.
+   *
+   * @param tableName - Table to invalidate; defaults to this object's own.
+   * @param ownerQualifiedClassName - Qualified name of the class that owns
+   *   `tableName`, when it differs from this object's own class (a
+   *   cascade-affected table, #2371) — lets the broadcast decision read
+   *   *that* class's `@smrt({ cache })` config instead of only this one's.
    */
-  private invalidateCollectionReadCache(tableName = this.tableName): void {
+  private invalidateCollectionReadCache(
+    tableName = this.tableName,
+    ownerQualifiedClassName?: string,
+  ): void {
     try {
       const dbKey = resolveDbCacheKey(this.db);
       invalidateCollectionCache(dbKey, tableName);
 
-      if (this.shouldBroadcastCacheInvalidation(dbKey, tableName)) {
+      if (
+        this.shouldBroadcastCacheInvalidation(
+          dbKey,
+          tableName,
+          ownerQualifiedClassName,
+        )
+      ) {
         void broadcastCacheInvalidation(this.db, tableName);
       }
     } catch (error) {
@@ -2948,29 +2966,40 @@ export class SmrtObject extends SmrtClass {
    *
    * 1. A per-call `crossProcess` cached read in this process registered
    *    interest in the table — broadcast even without model-level config.
-   * 2. This class's resolved `@smrt({ cache })` config sets `crossProcess`.
+   * 2. The owning class's resolved `@smrt({ cache })` config sets
+   *    `crossProcess`. For this object's own table that class is `this`;
+   *    for a cascade-affected table (#2371) it is whatever class the
+   *    cascade plan attributed the table to, passed in as
+   *    `ownerQualifiedClassName` — a different class's table needs *that*
+   *    class's config checked, not this one's.
    * 3. Any other STI hierarchy member sharing the table resolves to a
    *    `crossProcess` config — a child that opted out with `cache: false`
    *    still mutates the shared table its base/siblings are caching.
    *
-   * Rules 2 and 3 read *this* class's configuration, so they only apply to
-   * this object's own table. A cascade-affected table (#2371) is another
-   * class's, and reaches rule 1 only — which is the correct test for it: the
-   * broadcast exists to serve readers that registered cross-process interest.
+   * @param ownerQualifiedClassName - Qualified class name to check rules 2
+   *   and 3 against. Defaults to this object's own resolved qualified name
+   *   when `tableName` is this object's own table; when omitted for a
+   *   foreign table (the owning class could not be resolved), rules 2/3 are
+   *   skipped and only rule 1 applies.
    */
   private shouldBroadcastCacheInvalidation(
     dbKey: string,
     tableName = this.tableName,
+    ownerQualifiedClassName?: string,
   ): boolean {
     if (hasCrossProcessCacheInterest(dbKey, tableName)) {
       return true;
     }
 
-    if (tableName !== this.tableName) {
+    const qualifiedName =
+      ownerQualifiedClassName ??
+      (tableName === this.tableName
+        ? this.getResolvedQualifiedName()
+        : undefined);
+    if (!qualifiedName) {
       return false;
     }
 
-    const qualifiedName = this.getResolvedQualifiedName();
     if (
       ObjectRegistry.resolveCollectionCacheConfig(qualifiedName)?.crossProcess
     ) {

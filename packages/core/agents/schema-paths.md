@@ -654,9 +654,9 @@ applied by `SmrtObject.delete()` through `src/cascade.ts` (#2371):
 
 | Reference | Default when `onDelete` is absent |
 |---|---|
-| Column is part of the referencing class's `conflictColumns` | `CASCADE` |
+| Column is part of the referencing class's `conflictColumns`, and is not a `@tenantId()` field | `CASCADE` |
 | Polymorphic `(metaType, metaId)` association row | `CASCADE` |
-| Anything else | `NO ACTION` — the row is left alone |
+| Anything else, including every `@tenantId()` field | `NO ACTION` — the row is left alone |
 
 The natural-key rule is what cleans junction rows up without any per-package
 annotation: a junction declares
@@ -664,6 +664,18 @@ annotation: a junction declares
 row is *identified* by the content and cannot outlive it. An ordinary child
 (`Order.customerId`) is keyed by `(slug, context)` and keeps its pre-#2371
 behaviour unless it opts in explicitly.
+
+**`@tenantId()` is excluded even though it lands in `conflictColumns`.**
+#2360 leads every tenant-scoped class's *default* natural key with the
+tenant column, so without this exclusion, deleting one `Tenant` row would
+recursively CASCADE through every tenant-scoped table in the schema that has
+not declared its own `conflictColumns` — the overwhelming majority. The
+tenant column scopes ownership; it does not identify the row the way a
+junction's foreign key does. Detected via the `__tenancy.isTenantIdField`
+marker on `FieldMeta` (`smrt-core` reads it structurally so it never depends
+on `smrt-tenancy`). `@tenantId()` exposes no `onDelete` option today, so
+this cannot currently be overridden per field — found in review before this
+landed (originally reachable, untested, and undocumented).
 
 Properties to keep if you touch that module:
 
