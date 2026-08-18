@@ -59,6 +59,49 @@ class Issue35PostgresLockObject extends SmrtObject {
   value: string = '';
 }
 
+/**
+ * Outer (non-transactional) handle behaviour for the PostgreSQL bootstrap
+ * tests: catalog reads succeed, any DDL is a hard error.
+ *
+ * System-table DDL must run inside the advisory-locked transaction. The
+ * deferred-compatibility pass (issue #2376) deliberately runs outside it and
+ * probes `information_schema` on this handle, so "untouched" is no longer the
+ * invariant — "no DDL" is.
+ */
+function createOuterHandleQuery() {
+  return async (sql: string) => {
+    if (/^\s*(CREATE|ALTER|DROP)\b/i.test(sql)) {
+      throw new Error('system table DDL should run through transaction');
+    }
+    return { rows: [], rowCount: 0 };
+  };
+}
+
+function expectNoDdlOnOuterHandle(query: ReturnType<typeof vi.fn>): void {
+  const ddl = query.mock.calls
+    .map((call) => String(call[0]))
+    .filter((sql) => /^\s*(CREATE|ALTER|DROP)\b/i.test(sql));
+  expect(ddl).toEqual([]);
+}
+
+/**
+ * Assert the `_smrt_migrations` version probe never runs before the table it
+ * reads exists. On PostgreSQL a `SELECT` against a missing relation aborts the
+ * surrounding transaction (25P02), which is what made the fast path unsafe.
+ */
+function expectVersionProbeAfterMigrationsTable(txQueries: string[]): void {
+  const createdAt = txQueries.findIndex((sql) =>
+    sql.includes('CREATE TABLE IF NOT EXISTS _smrt_migrations'),
+  );
+  const probedAt = txQueries.findIndex((sql) =>
+    sql.includes('SELECT 1 FROM _smrt_migrations'),
+  );
+  expect(createdAt).toBeGreaterThanOrEqual(0);
+  if (probedAt !== -1) {
+    expect(probedAt).toBeGreaterThan(createdAt);
+  }
+}
+
 function createPostgresBootstrapTx({
   migrationsTableExists = false,
   versionApplied = false,
@@ -334,9 +377,7 @@ describe('Issue #35: System Tables Initialization', () => {
         createPostgresBootstrapTx();
       const db = {
         url: tx.url,
-        query: vi.fn(async () => {
-          throw new Error('system table DDL should run through transaction');
-        }),
+        query: vi.fn(createOuterHandleQuery()),
         beginTransaction: vi.fn(async () => tx),
       } as unknown as DatabaseInterface;
 
@@ -363,9 +404,11 @@ describe('Issue #35: System Tables Initialization', () => {
       );
       expect(tableLookups[0]).toBe('_smrt_migrations');
       expect(tableLookupParams[0]).toEqual(['_smrt_migrations']);
-      expect(
-        txQueries.some((sql) => sql.includes('SELECT 1 FROM _smrt_migrations')),
-      ).toBe(false);
+      // The fast-path version probe must never precede the table's creation —
+      // on a fresh PostgreSQL database it would abort the transaction. It may
+      // legitimately run afterwards (the deferred-compatibility marker check,
+      // issue #2376), so assert the ORDER, not the absence.
+      expectVersionProbeAfterMigrationsTable(txQueries);
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
@@ -376,7 +419,7 @@ describe('Issue #35: System Tables Initialization', () => {
       ).toBe(true);
       expect(tx.commit).toHaveBeenCalledOnce();
       expect(tx.rollback).not.toHaveBeenCalled();
-      expect(db.query).not.toHaveBeenCalled();
+      expectNoDdlOnOuterHandle(db.query as ReturnType<typeof vi.fn>);
     });
 
     it('should use transaction callback fallback for Postgres adapters without beginTransaction', async () => {
@@ -388,9 +431,7 @@ describe('Issue #35: System Tables Initialization', () => {
       );
       const db = {
         url: tx.url,
-        query: vi.fn(async () => {
-          throw new Error('system table DDL should run through transaction');
-        }),
+        query: vi.fn(createOuterHandleQuery()),
         transaction,
       } as unknown as DatabaseInterface;
 
@@ -417,13 +458,15 @@ describe('Issue #35: System Tables Initialization', () => {
       );
       expect(tableLookups[0]).toBe('_smrt_migrations');
       expect(tableLookupParams[0]).toEqual(['_smrt_migrations']);
-      expect(
-        txQueries.some((sql) => sql.includes('SELECT 1 FROM _smrt_migrations')),
-      ).toBe(false);
+      // The fast-path version probe must never precede the table's creation —
+      // on a fresh PostgreSQL database it would abort the transaction. It may
+      // legitimately run afterwards (the deferred-compatibility marker check,
+      // issue #2376), so assert the ORDER, not the absence.
+      expectVersionProbeAfterMigrationsTable(txQueries);
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
-      expect(db.query).not.toHaveBeenCalled();
+      expectNoDdlOnOuterHandle(db.query as ReturnType<typeof vi.fn>);
     });
 
     it('should use explicit Postgres type hint when the database URL is omitted', async () => {
@@ -436,9 +479,7 @@ describe('Issue #35: System Tables Initialization', () => {
       const db = {
         type: 'postgres',
         url: '',
-        query: vi.fn(async () => {
-          throw new Error('system table DDL should run through transaction');
-        }),
+        query: vi.fn(createOuterHandleQuery()),
         transaction,
       } as unknown as DatabaseInterface;
 
@@ -465,13 +506,15 @@ describe('Issue #35: System Tables Initialization', () => {
       );
       expect(tableLookups[0]).toBe('_smrt_migrations');
       expect(tableLookupParams[0]).toEqual(['_smrt_migrations']);
-      expect(
-        txQueries.some((sql) => sql.includes('SELECT 1 FROM _smrt_migrations')),
-      ).toBe(false);
+      // The fast-path version probe must never precede the table's creation —
+      // on a fresh PostgreSQL database it would abort the transaction. It may
+      // legitimately run afterwards (the deferred-compatibility marker check,
+      // issue #2376), so assert the ORDER, not the absence.
+      expectVersionProbeAfterMigrationsTable(txQueries);
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
-      expect(db.query).not.toHaveBeenCalled();
+      expectNoDdlOnOuterHandle(db.query as ReturnType<typeof vi.fn>);
     });
 
     it('should keep the initialized Postgres fast path free of DDL', async () => {
@@ -481,9 +524,7 @@ describe('Issue #35: System Tables Initialization', () => {
       });
       const db = {
         url: tx.url,
-        query: vi.fn(async () => {
-          throw new Error('system table DDL should run through transaction');
-        }),
+        query: vi.fn(createOuterHandleQuery()),
         beginTransaction: vi.fn(async () => tx),
       } as unknown as DatabaseInterface;
 
@@ -503,7 +544,7 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(tx.execute).not.toHaveBeenCalled();
       expect(tx.commit).toHaveBeenCalledOnce();
       expect(tx.rollback).not.toHaveBeenCalled();
-      expect(db.query).not.toHaveBeenCalled();
+      expectNoDdlOnOuterHandle(db.query as ReturnType<typeof vi.fn>);
     });
   });
 

@@ -45,13 +45,20 @@ import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
   assertPostgresSystemTimestampsCurrent,
-  ensureLegacySystemTableCompatibility,
+  ensureBootstrapSystemTableCompatibility,
+  ensureDeferredSystemTableCompatibility,
   tableExists,
 } from './system/compatibility.js';
 import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
+
+/**
+ * `_smrt_migrations.version` suffix marking that the deferred (manifest-created)
+ * system tables have been through their compatibility pass (issue #2376).
+ */
+const DEFERRED_COMPATIBILITY_VERSION_SUFFIX = '+deferred-compat';
 
 /**
  * Timeout budget for the PostgreSQL system-table bootstrap transaction.
@@ -850,11 +857,20 @@ export class SmrtClass {
   /**
    * Ensure SMRT system tables exist in the database
    *
-   * System tables use _smrt_ prefix and store framework metadata:
+   * System tables use the _smrt_ prefix and store framework metadata:
    * - _smrt_contexts: Context memory storage for remembered patterns
    * - _smrt_migrations: Schema version tracking
-   * - _smrt_registry: Object registry persistence
-   * - _smrt_signals: Signal history/audit log
+   * - _smrt_schema_migrations / _smrt_backfills: Migration and backfill ledgers
+   * - _smrt_embeddings: Embedding vectors for semantic search
+   * - _smrt_dispatch / _smrt_dispatch_subscriptions: Inter-agent dispatch queue
+   * - _smrt_ai_usage: AI usage telemetry
+   * - _smrt_changes: Append-only change feed
+   *
+   * Note that the _smrt_ prefix alone does NOT mean "system table" — ~25
+   * `@smrt()` domain tables (feature flags, prompt overrides, subscription
+   * plans, …) carry it too and are created by `db:migrate`, not here. The
+   * framework's own list is `SYSTEM_TABLE_NAMES` in
+   * `schema/system-table-shapes.ts`, derived from this DDL.
    *
    * This method is idempotent and safe to call multiple times.
    * Tables are only created once per database connection.
@@ -891,6 +907,7 @@ export class SmrtClass {
       await this.withSystemTableBootstrapLock((db) =>
         this.bootstrapSystemTables(db),
       );
+      await this.settleDeferredSystemTableCompatibility(this._db);
       await this.ensureNativeVectorStorage();
 
       // Mark as initialized using appropriate tracking mechanism
@@ -993,8 +1010,11 @@ export class SmrtClass {
 
     // Older installs can have a subset of system columns already created.
     // Upgrade those tables before replaying idempotent DDL so index creation
-    // does not fail on missing legacy columns.
-    await ensureLegacySystemTableCompatibility(db, this._dbEngineHint);
+    // does not fail on missing legacy columns. Only the tables this DDL creates
+    // are reshaped here — the manifest-owned deferred tables are settled after
+    // the lock releases, so a failure against a table the framework does not
+    // own cannot roll back system-table creation (issue #2376).
+    await ensureBootstrapSystemTableCompatibility(db, this._dbEngineHint);
 
     // Create all system tables
     // Split multi-statement SQL into individual statements to avoid race conditions
@@ -1037,6 +1057,63 @@ export class SmrtClass {
       VALUES (${id}, ${version}, ${description})
       ON CONFLICT(version) DO NOTHING
     `;
+  }
+
+  /**
+   * Run the compatibility pass for the system tables `db:migrate` creates, then
+   * stamp its own marker in `_smrt_migrations` (issue #2376).
+   *
+   * Deliberately runs OUTSIDE the bootstrap lock/transaction, and deliberately
+   * cannot fail startup:
+   *
+   * - `_smrt_jobs` / `_smrt_job_events` are created by `db:migrate` from the
+   *   jobs manifest, which on a fresh install runs AFTER the framework's first
+   *   bootstrap. Gating this pass on {@link SMRT_SCHEMA_VERSION} would mean the
+   *   version gets stamped while the tables are still absent and the pass never
+   *   runs on that database again. It therefore carries its own marker, which
+   *   is written only once every deferred table exists and has been upgraded.
+   * - Its statements are ALTER TABLE / CREATE INDEX against tables the
+   *   framework does not own. Inside the PostgreSQL bootstrap transaction one
+   *   failure (a permissions problem, say) would abort the transaction and roll
+   *   back system-table creation with it. Outside, a failure is a logged
+   *   warning and the next process start retries — the pass is idempotent and
+   *   already tolerates concurrent creators.
+   *
+   * Until the tables exist this costs two catalog probes per process per
+   * database; afterwards the marker short-circuits it.
+   */
+  private async settleDeferredSystemTableCompatibility(
+    db: DatabaseInterface,
+  ): Promise<void> {
+    const marker = `${SMRT_SCHEMA_VERSION}${DEFERRED_COMPATIBILITY_VERSION_SUFFIX}`;
+
+    try {
+      if (await this.isSystemSchemaVersionApplied(db, marker)) {
+        return;
+      }
+
+      const { settled } = await ensureDeferredSystemTableCompatibility(
+        db,
+        this._dbEngineHint,
+      );
+      if (!settled) {
+        return;
+      }
+
+      const id = crypto.randomUUID();
+      const description = 'Deferred SMRT system table compatibility';
+      await db.execute`
+        INSERT INTO _smrt_migrations (id, version, description)
+        VALUES (${id}, ${marker}, ${description})
+        ON CONFLICT(version) DO NOTHING
+      `;
+    } catch (error) {
+      logger.warn(
+        `[smrt] Deferred system table compatibility did not complete; retrying on the next start: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private async ensureNativeVectorStorage(): Promise<void> {

@@ -822,8 +822,9 @@ export interface RelationshipMetadata {
  * objects by folding decorator options into the AST-scanned field, which
  * attaches a few extra runtime-only members beyond the scanner contract:
  *
- * - `options`: legacy mirror of the decorator option bag, persisted into the
- *   `_smrt_registry` snapshot row (see `registry.ts` `saveRegistry`).
+ * - `options`: legacy mirror of the decorator option bag. It used to be
+ *   persisted into the retired `_smrt_registry` snapshot row and is now only
+ *   read in-process (issue #2376).
  * - `validate`: optional cross-package-ref validation hint read off either the
  *   field or its `_meta` bag (`object.ts` `validateCrossPackageRefs`).
  * - `__report`: report-aggregate marker mirrored at the top level for the

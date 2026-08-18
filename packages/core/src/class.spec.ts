@@ -161,8 +161,10 @@ describe('SmrtClass', () => {
       expect(tableNames).toContain('_smrt_ai_usage');
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
-      expect(tableNames).toContain('_smrt_registry');
-      expect(tableNames).toContain('_smrt_signals');
+      expect(tableNames).toContain('_smrt_changes');
+      // Retired in 1.10.0 — never written, no longer created (issue #2376).
+      expect(tableNames).not.toContain('_smrt_registry');
+      expect(tableNames).not.toContain('_smrt_signals');
     });
 
     it('should create system tables in DuckDB JSON mode', async () => {
@@ -192,8 +194,10 @@ describe('SmrtClass', () => {
       expect(tableNames).toContain('_smrt_ai_usage');
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
-      expect(tableNames).toContain('_smrt_registry');
-      expect(tableNames).toContain('_smrt_signals');
+      expect(tableNames).toContain('_smrt_changes');
+      // Retired in 1.10.0 — never written, no longer created (issue #2376).
+      expect(tableNames).not.toContain('_smrt_registry');
+      expect(tableNames).not.toContain('_smrt_signals');
     });
 
     it('should support INSERT ... ON CONFLICT in DuckDB', async () => {

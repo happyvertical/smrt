@@ -134,8 +134,8 @@ export interface DiscoveryStrategy {
  * System table configuration
  */
 export interface SystemTableConfig {
-  /** Enable signal history persistence */
-  persistSignalHistory?: boolean;
+  // `persistSignalHistory` was removed with the never-written `_smrt_signals`
+  // table it configured (issue #2376); nothing ever read it.
   /** Note retention in days */
   noteRetentionDays?: number;
   /** Cleanup interval */

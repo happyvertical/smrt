@@ -602,3 +602,40 @@ CTI table's inline `UNIQUE` produces an implicit `<table>_<column>_key`, which
 can exceed 63 bytes even when the table and column each fit. SMRT never names
 it, and PostgreSQL disambiguates its own truncations by appending a counter
 rather than collapsing them, so there is no silent-collision hazard there.
+
+### 21. The `_smrt_` prefix does not mean "system table" (#2376)
+
+`bootstrapSystemTables()` owns nine hand-written tables; ~25 more `_smrt_*`
+tables belong to `@smrt()` models and are created by `db:migrate` (feature
+flags, prompt overrides, subscription plans, report schedules, field policies,
+jobs). Never classify by prefix — use `SYSTEM_TABLE_NAMES`
+(`schema/system-table-shapes.ts`, derived from the DDL parse) plus
+`FRAMEWORK_OPERATIONAL_TABLES` / `RETIRED_SYSTEM_TABLES` in `system/schema.ts`.
+The change-feed writer skipped by prefix, so clients syncing those domain
+tables through `_changes` never saw an update.
+
+Editing `ALL_SYSTEM_TABLES` requires bumping `SMRT_SCHEMA_VERSION` *and*
+appending to `SMRT_SCHEMA_DDL_CHECKSUMS` — the version gates the DDL replay, so
+without a bump no existing database ever applies the change. A new **column**
+additionally needs an `addColumnIfMissing()` entry in `system/compatibility.ts`
+(`CREATE TABLE IF NOT EXISTS` is a no-op on an existing table).
+`system-schema-evolution.test.ts` enforces both, and asserts a legacy database
+upgrades to exactly the shape a fresh install gets.
+
+`_smrt_jobs` / `_smrt_job_events` are dual-owned: `db:migrate` creates them,
+the compatibility pass reshapes them. On a fresh install bootstrap runs first,
+so their pass is deferred — `ensureDeferredSystemTableCompatibility()` re-runs
+until the tables exist, then stamps a `<version>+deferred-compat` marker. It
+runs OUTSIDE the bootstrap lock and swallows its own failures: those statements
+target tables the framework does not own, and inside the PostgreSQL transaction
+one failure would roll back system-table creation with it. Only
+`ensureBootstrapSystemTableCompatibility()` (the tables the DDL itself creates)
+belongs inside the lock.
+
+Reconciling `_smrt_jobs.task_id` uniqueness reads the live index catalog, which
+is implemented for PostgreSQL and SQLite only; DuckDB and the JSON adapter keep
+the redundant compat index rather than risk dropping the one that enforces the
+upsert conflict target. When reading a PostgreSQL catalog array, cast it
+(`attname::text`) and parse both shapes — a driver with no parser registered for
+the array OID returns the raw `{a,b}` literal, and reading that as "no columns"
+silently inverts an index-existence decision.

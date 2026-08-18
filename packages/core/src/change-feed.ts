@@ -102,19 +102,53 @@ import {
 import { GlobalInterceptors, type InterceptorContext } from './interceptors.js';
 import type { SmrtObject } from './object.js';
 import { detectEngine } from './schema/ddl/index.js';
+import { SYSTEM_TABLE_NAMES } from './schema/system-table-shapes.js';
 import {
   CREATE_SMRT_CHANGES_TABLE,
   ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
+  FRAMEWORK_OPERATIONAL_TABLES,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_APPEND_FUNCTION_NAME,
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+  RETIRED_SYSTEM_TABLES,
 } from './system/schema.js';
 
 const logger = createLogger({ level: 'info' });
 
 /** Name of the append-only change-feed system table. */
 export const CHANGE_FEED_TABLE = '_smrt_changes';
+
+/**
+ * Tables the change-feed writer never records (issue #2376).
+ *
+ * The writer used to skip every table whose name started with `_smrt_`. That
+ * prefix stopped meaning "framework bookkeeping" once packages began naming
+ * their *domain* tables `_smrt_feature_overrides`, `_smrt_prompt_overrides`,
+ * `_smrt_subscription_plans`, `_smrt_report_schedules`, `_smrt_field_policies`
+ * and ~20 more: clients syncing those through `_changes` never saw an update.
+ *
+ * The exclusion is now an allowlist of tables the framework actually owns —
+ * the hand-written bookkeeping DDL ({@link SYSTEM_TABLE_NAMES}, which includes
+ * the feed's own table so it can never observe itself), the model-backed
+ * operational plumbing ({@link FRAMEWORK_OPERATIONAL_TABLES}), and the retired
+ * system tables that may still exist on older databases.
+ */
+export const CHANGE_FEED_EXCLUDED_TABLES: ReadonlySet<string> = new Set([
+  ...SYSTEM_TABLE_NAMES,
+  ...FRAMEWORK_OPERATIONAL_TABLES,
+  ...RETIRED_SYSTEM_TABLES,
+]);
+
+/**
+ * Whether framework writes to `tableName` are recorded in the change feed.
+ *
+ * Exported so tooling and tests can reason about feed coverage without
+ * re-deriving the rule. See {@link CHANGE_FEED_EXCLUDED_TABLES}.
+ */
+export function isChangeFeedObservableTable(tableName: string): boolean {
+  return Boolean(tableName) && !CHANGE_FEED_EXCLUDED_TABLES.has(tableName);
+}
 
 /** Interceptor name of the framework's change-feed writer. */
 export const CHANGE_FEED_INTERCEPTOR_NAME = 'smrt-change-feed';
@@ -974,7 +1008,8 @@ const warnedSignalPublishFailures = new Set<string>();
  * - `beforeSave` stashes whether the instance was already persisted (this
  *   is what distinguishes `create` from `update` in the feed).
  * - `afterSave`/`afterDelete` append exactly one change entry per framework
- *   save/delete. `_smrt_*` system tables are skipped — the feed observes
+ *   save/delete. Framework-owned tables listed in
+ *   {@link CHANGE_FEED_EXCLUDED_TABLES} are skipped — the feed observes
  *   application data, not framework bookkeeping (and never itself).
  *
  * Failure policy: appends run after the user's write succeeded and must not
@@ -1034,9 +1069,11 @@ async function appendForInstance(
   let table: string;
   try {
     table = instance.tableName;
-    // System tables are framework bookkeeping, not client-syncable data —
-    // recording them would let the feed observe (and re-observe) itself.
-    if (!table || table.startsWith('_smrt_')) return;
+    // Framework-owned tables are bookkeeping, not client-syncable data —
+    // recording them would let the feed observe (and re-observe) itself. The
+    // test is an allowlist, not the `_smrt_` prefix: ~25 domain tables carry
+    // that prefix and must be observed (issue #2376).
+    if (!isChangeFeedObservableTable(table)) return;
     db = instance.db;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
