@@ -58,6 +58,13 @@ export { ProjectCollection } from './collections/Projects';
 export { PullRequestCollection } from './collections/PullRequests';
 export { RepositoryCollection } from './collections/Repositories';
 export { ManagedProjectClient } from './managed-client';
+// Major-units → integer minor-units migration (#2401)
+export {
+  migrateProjectsMoneyToMinorUnits,
+  PROJECTS_MONEY_COLUMNS,
+  PROJECTS_MONEY_MINOR_UNITS_BACKFILL,
+  preflightProjectsMoneyMinorUnits,
+} from './migrations/moneyMinorUnits.js';
 // Export models
 export { Comment, type CommentOptions } from './models/Comment';
 export {

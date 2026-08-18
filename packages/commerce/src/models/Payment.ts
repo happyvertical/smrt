@@ -11,6 +11,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { Journal } from '@happyvertical/smrt-ledgers';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertIntegerMinorUnits } from '../money.js';
 import {
   PaymentMethod,
   type PaymentOptions,
@@ -153,9 +154,14 @@ export class Payment extends SmrtObject {
   customerId: string = '';
 
   /**
-   * Payment amount
+   * Payment amount, in **integer minor units** (cents, satoshis).
+   *
+   * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
+   * INTEGER and a decimal literal to DECIMAL. This is the figure
+   * `PaymentAllocation.save()` caps allocations against and `Invoice.amountPaid`
+   * is summed from, so it must be in the same exact units as both (#2401).
    */
-  amount: number = 0.0;
+  amount: number = 0;
 
   /**
    * Currency code (ISO 4217)
@@ -256,12 +262,17 @@ export class Payment extends SmrtObject {
   backendTxRef: string = '';
 
   /**
-   * The amount the backend actually moved, in its own native currency.
-   * For stablecoin rails this typically equals `amount`; for volatile-
-   * currency rails (BTC, ETH) it's the satoshi/wei figure that the chain
-   * recorded, independent of any USD valuation.
+   * The amount the backend actually moved, in the native currency's own
+   * **integer minor units** — satoshis for BTC, cents for a fiat rail. For
+   * stablecoin rails this typically equals `amount`; for volatile-currency
+   * rails it's the satoshi/wei figure the chain recorded, independent of any
+   * USD valuation.
+   *
+   * Range note (#2401): INTEGER is `int4` on PostgreSQL, so this column tops
+   * out near 2.1e9 minor units — about 21 BTC in satoshis. Widening to BIGINT
+   * is the decision parked in #2373; INTEGER→BIGINT is a plain widening later.
    */
-  nativeAmount: number = 0.0;
+  nativeAmount: number = 0;
 
   /**
    * Code identifying the native currency `nativeAmount` is denominated
@@ -274,21 +285,25 @@ export class Payment extends SmrtObject {
 
   /**
    * USD valuation of the payment at the moment the price was quoted to
-   * the buyer (typically the moment a `PaymentIntent` was issued).
-   * Stored at decimal precision; empty default `0.0` means no USD-quote
+   * the buyer (typically the moment a `PaymentIntent` was issued), in
+   * **integer minor units** (US cents). A default of `0` means no USD-quote
    * snapshot was taken (the payment was already USD-denominated or the
    * backend doesn't require drift accounting).
+   *
+   * This is money describing the same funds as {@link Payment.amount}, so it
+   * converts with it — a dollars-here / cents-there split would make
+   * {@link Payment.usdDrift} meaningless (#2401).
    */
-  usdAtQuote: number = 0.0;
+  usdAtQuote: number = 0;
 
   /**
    * USD valuation of the payment at the moment it was confirmed on the
-   * backend (chain confirmation, gateway settlement, etc.). The delta
-   * between {@link usdAtQuote} and `usdAtConfirmation` is the USD drift
-   * the operator absorbs (positive or negative) when accepting payment
-   * in a volatile native currency.
+   * backend (chain confirmation, gateway settlement, etc.), in integer minor
+   * units (US cents). The delta between {@link usdAtQuote} and
+   * `usdAtConfirmation` is the USD drift the operator absorbs (positive or
+   * negative) when accepting payment in a volatile native currency (#2401).
    */
-  usdAtConfirmation: number = 0.0;
+  usdAtConfirmation: number = 0;
 
   constructor(options: PaymentOptions = {}) {
     super(options);
@@ -361,6 +376,17 @@ export class Payment extends SmrtObject {
    *    must drive it through `recordPayment()` (or start non-COMPLETED).
    */
   override async save(): Promise<this> {
+    // Whole minor units on every surface (#2401). `amount` is what
+    // `PaymentAllocation.save()` and `Payout.assertCappedBySourcePayment()` cap
+    // against with exact integer comparisons, so a fractional major-unit write
+    // here would silently break both.
+    assertIntegerMinorUnits('Payment', this.id || '<new>', [
+      ['amount', this.amount],
+      ['nativeAmount', this.nativeAmount],
+      ['usdAtQuote', this.usdAtQuote],
+      ['usdAtConfirmation', this.usdAtConfirmation],
+    ]);
+
     const priorRow = await this.loadPersistedRow();
     const prior =
       priorRow && priorRow.status != null
@@ -551,6 +577,12 @@ export class Payment extends SmrtObject {
    * Creates a journal entry in smrt-ledgers:
    * - Debit: Cash/Bank account (assets increase)
    * - Credit: Accounts Receivable (receivables decrease)
+   *
+   * Both sides carry `this.amount`, so the journal posted from commerce is
+   * denominated in **integer minor units** like the rest of this package
+   * (#2401). smrt-ledgers is unit-agnostic — its `BALANCE_EPSILON` only checks
+   * that debits equal credits — and integer entries balance exactly, so this is
+   * strictly tighter than the major-unit journals commerce used to post.
    *
    * @param options - Ledger and account configuration
    * @returns The created journal

@@ -3,12 +3,11 @@
  *
  * Each `describe` block maps to a confirmed finding:
  *
- *  1. [blocking] Invoice.updatePaymentStatus decides PAID with the SAME
- *     epsilon-tolerant test the save-time guard uses, so a float-summed total
- *     paid exactly is PAID-and-saveable (not PARTIAL-then-rejected).
- *  2. [major] A no-line-item invoice whose totalAmount differs from
- *     subtotal+tax by < INVOICE_EPSILON but > the ledger's BALANCE_EPSILON can
- *     still recognize revenue, because totalAmount is snapped to subtotal+tax.
+ *  1. [blocking] Invoice.updatePaymentStatus decides PAID with the SAME test
+ *     the save-time guard uses, so a fully-paid invoice is PAID-and-saveable
+ *     (not PARTIAL-then-rejected).
+ *  2. [major] A no-line-item invoice's totalAmount must equal subtotal+tax, and
+ *     the journal `recognizeRevenue` builds from it balances.
  *  3. [major] Fulfillment rejects illegal status transitions on save and via
  *     its mark* helpers (e.g. DELIVERED → PENDING).
  *  4. [major] FulfillmentLineItem rejects over-fulfilling a contract line
@@ -25,6 +24,12 @@
  *
  * Real in-memory SQLite (no DB mocking), per repo testing conventions. Money
  * math is executed, not asserted from comments.
+ *
+ * The float-drift premise findings 1 and 2 were written against is retired
+ * (#2401): every money value here is integer minor units, so `0.1 × 3` fuzz and
+ * the invoice-vs-ledger epsilon gap cannot occur. The business assertions are
+ * kept and tightened — exact coverage decides PAID, a one-minor-unit shortfall
+ * is PARTIAL, and a mismatched total is rejected rather than snapped.
  */
 
 import { existsSync, rmSync } from 'node:fs';
@@ -83,11 +88,13 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
     }
   });
 
-  it('marks an invoice PAID and saves it when a float-summed total is paid exactly (0.1×3 line items, pay 0.3)', async () => {
-    // Confirm the float pitfall is real, executed (not assumed): three 0.1
-    // line items sum to slightly MORE than 0.3 under IEEE-754.
-    expect(0.1 + 0.1 + 0.1).toBeGreaterThan(0.3);
-
+  it('marks an invoice PAID and saves it when the line-item total is paid exactly (3×10¢ line items, pay 30¢)', async () => {
+    // The float-drift premise this case was written for is retired (#2401):
+    // amounts are integer minor units now, so `0.1 × 3 !== 0.3` cannot arise.
+    // The BUSINESS assertion is unchanged and is what actually mattered —
+    // `updatePaymentStatus` (which decides PAID) and the save-time guard
+    // (which validates PAID) must agree, so a fully-paid invoice is
+    // PAID-and-saveable rather than PARTIAL-then-rejected.
     const invoice = await invoices.create({
       invoiceNumber: 'INV-EPS-1',
       totalAmount: 0,
@@ -96,13 +103,13 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
     invoice.markSent();
     await invoice.save();
 
-    // Three line items of 0.1 each → authoritative total 0.30000000000000004.
+    // Three line items of 10 cents each → authoritative total 30 cents, exact.
     for (let i = 0; i < 3; i++) {
       const li = await lineItems.create({
         invoiceId: invoice.id,
         description: `Item ${i}`,
         quantity: 1,
-        unitPrice: 0.1,
+        unitPrice: 10,
       });
       li.amount = li.calculateAmount();
       await li.save();
@@ -112,26 +119,26 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
     const reloaded = await invoices.get({ id: invoice.id });
     if (!reloaded) throw new Error('invoice did not reload');
     await reloaded.save(); // recompute totalAmount from line items
-    expect(reloaded.totalAmount).toBeGreaterThan(0.3);
+    expect(reloaded.totalAmount).toBe(30);
 
-    // Pay EXACTLY 0.3 via an allocation, then update payment status.
-    const payment = await payments.create({ amount: 0.3, currency: 'USD' });
+    // Pay EXACTLY 30 cents via an allocation, then update payment status.
+    const payment = await payments.create({ amount: 30, currency: 'USD' });
     await payment.save();
     const alloc = await allocations.create({
       paymentId: payment.id,
       invoiceId: reloaded.id,
-      amount: 0.3,
+      amount: 30,
     });
     await alloc.save();
 
     const total = await allocations.getTotalAllocatedToInvoice(
       reloaded.id ?? '',
     );
-    // Strict `>=` would read 0.3 >= 0.30000000000000004 as false here.
-    expect(total >= reloaded.totalAmount).toBe(false);
+    // The comparison the float era could not make: exact coverage, no epsilon.
+    expect(total).toBe(reloaded.totalAmount);
+    expect(total >= reloaded.totalAmount).toBe(true);
 
     reloaded.updatePaymentStatus(total);
-    // Epsilon-aware: status is PAID, not PARTIAL.
     expect(reloaded.status).toBe(InvoiceStatus.PAID);
 
     // …and the save-time guard agrees, so the fully-paid invoice persists.
@@ -139,6 +146,35 @@ describe('Invoice payment-status epsilon (#1389 blocking)', () => {
 
     const final = await invoices.get({ id: reloaded.id });
     expect(final?.status).toBe(InvoiceStatus.PAID);
+  });
+
+  it('treats a one-minor-unit shortfall as PARTIAL, not PAID', async () => {
+    // The other half of the retired epsilon: 1¢ short used to fall inside the
+    // 0.01 tolerance and read as fully paid. It is a shortfall (#2401).
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-EPS-2',
+      subtotal: 30,
+      taxAmount: 0,
+      totalAmount: 30,
+    });
+    invoice.markSent();
+    await invoice.save();
+
+    const payment = await payments.create({ amount: 29, currency: 'USD' });
+    await payment.save();
+    const alloc = await allocations.create({
+      paymentId: payment.id,
+      invoiceId: invoice.id,
+      amount: 29,
+    });
+    await alloc.save();
+
+    const total = await allocations.getTotalAllocatedToInvoice(
+      invoice.id ?? '',
+    );
+    invoice.updatePaymentStatus(total);
+    expect(invoice.status).toBe(InvoiceStatus.PARTIAL);
+    await expect(invoice.save()).resolves.toBeTruthy();
   });
 });
 
@@ -167,24 +203,32 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
     }
   });
 
-  it('snaps totalAmount to subtotal+tax so a no-line-item invoice recognizes revenue without a ledger-imbalance throw', async () => {
-    // subtotal 100.00 / total 100.005: the gap (0.005) is inside the invoice
-    // epsilon (0.01) but outside the ledger epsilon (0.001). Confirm the gap
-    // straddles both tolerances, executed.
-    const gap = Math.abs(100.005 - 100.0);
-    expect(gap).toBeLessThanOrEqual(0.01); // passes invoice guard
-    expect(gap).toBeGreaterThan(0.001); // would fail ledger balance pre-snap
+  it('rejects a no-line-item invoice whose total does not equal subtotal+tax, and posts a balanced journal when it does', async () => {
+    // The "snap" this case was written for is retired (#2401). It existed
+    // because the invoice tolerated a 0.01 gap that the ledger's tighter
+    // 0.001 balance check would then reject, so the total had to be silently
+    // rewritten to keep revenue recognition possible. With integer minor units
+    // there is no gap to tolerate: a total that is not `subtotal + taxAmount`
+    // is rejected outright, and every journal built from an accepted total
+    // balances exactly — which is the property the snap was protecting.
+    await expect(
+      invoices.create({
+        invoiceNumber: 'INV-SNAP-MISMATCH',
+        subtotal: 10000, // $100.00
+        taxAmount: 0,
+        totalAmount: 10001, // one cent adrift
+      }),
+    ).rejects.toThrow(/must equal subtotal \+ taxAmount/);
 
     const invoice = await invoices.create({
       invoiceNumber: 'INV-SNAP-1',
-      subtotal: 100.0,
+      subtotal: 10000,
       taxAmount: 0,
-      totalAmount: 100.005,
+      totalAmount: 10000,
     });
     await invoice.save();
 
-    // The snap fired: total is exactly subtotal+tax now.
-    expect(invoice.totalAmount).toBe(100.0);
+    expect(invoice.totalAmount).toBe(10000);
 
     // Real ledger accounts so revenue recognition can actually post.
     const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
@@ -204,8 +248,6 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
     });
     await revAcct.save();
 
-    // Pre-snap this would build DR 100.005 / CR 100.00 and journal.post()
-    // would throw "not balanced", void, and rethrow. Post-snap it balances.
     const journal = await invoice.recognizeRevenue({
       arAccountId: arAcct.id!,
       revenueAccountId: revAcct.id!,
@@ -218,7 +260,9 @@ describe('Invoice/ledger epsilon snap (#1389 major)', () => {
       (s: number, e: any) => s + (e.credit || 0),
       0,
     );
-    expect(Math.abs(debit - credit)).toBeLessThan(0.001); // ledger-balanced
+    // Integer minor units on both sides — exactly balanced, not merely inside
+    // the ledger's BALANCE_EPSILON.
+    expect(debit).toBe(credit);
   });
 });
 

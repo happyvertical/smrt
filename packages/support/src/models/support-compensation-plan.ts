@@ -42,7 +42,12 @@ export class SupportCompensationPlan extends SmrtObject {
   /** Display name (inherited `name`; uniqueness comes from conflictColumns). */
   name: string = '';
 
-  /** Hourly earning rate for delivered support time. */
+  /**
+   * Earning rate for delivered support time, in **minor units per hour**, so
+   * `hours * hourlyRate` yields integer minor units once rounded. Stays
+   * DECIMAL: a rate is inherently fractional and INTEGER would truncate
+   * sub-unit rates (#2401).
+   */
   hourlyRate: number = 0.0;
 
   @field({ type: 'text' })

@@ -54,9 +54,15 @@ export class Customer extends SmrtObject {
   profileId: string = '';
 
   /**
-   * Maximum credit extended to this customer
+   * Maximum credit extended to this customer, in **integer minor units**
+   * (cents, satoshis).
+   *
+   * Converts with the rest of commerce because
+   * {@link Customer.hasAvailableCredit} compares it directly against a money
+   * amount; a dollars-vs-cents split there would approve every request off by
+   * a factor of 100 (#2401).
    */
-  creditLimit: number = 0.0;
+  creditLimit: number = 0;
 
   /**
    * Payment terms (e.g., "Net 30", "Due on receipt", "2/10 Net 30")

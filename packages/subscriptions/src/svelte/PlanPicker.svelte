@@ -16,12 +16,32 @@ export interface PlanPickerPlan {
   planKey: string;
   name: string;
   description?: string | null;
+  /** Integer minor units of `currency` — `$19.99` is `1999` (#2401). */
   priceAmount: number;
   currency: string;
   billingInterval: string;
   featureKeys?: string[];
   features?: string | SerializedFeatureGrant[];
   getFeatureKeys?: () => string[];
+}
+
+/**
+ * Render `priceAmount` for display.
+ *
+ * The stored value is integer minor units (#2401), and `Intl.NumberFormat`
+ * expects major units, so the scale has to be undone here — without it a
+ * $10.00 plan renders as $1,000.00.
+ *
+ * Uses the currency's own minor-unit exponent rather than a hard-coded 100, so
+ * zero-decimal currencies (JPY, KRW) are not divided by anything.
+ */
+function formatPrice(plan: PlanPickerPlan): string {
+  const format = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency: plan.currency,
+  });
+  const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format.format(plan.priceAmount / 10 ** digits);
 }
 
 function featureCount(plan: PlanPickerPlan): number {
@@ -71,10 +91,7 @@ let {
     >
       <span class="smrt-plan-picker__name">{plan.name}</span>
       <span class="smrt-plan-picker__price">
-        {new Intl.NumberFormat(undefined, {
-          style: 'currency',
-          currency: plan.currency,
-        }).format(plan.priceAmount)}
+        {formatPrice(plan)}
         <small>/ {plan.billingInterval}</small>
       </span>
       {#if plan.description}

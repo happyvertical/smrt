@@ -23,9 +23,10 @@ function entryView(
     hours: 1.5,
     description: 'Debugged the login loop',
     status: 'submitted',
-    amount: 180,
+    amount: 18000, // $180.00 in cents (#2401)
+    currency: 'USD',
     workerName: 'Ada',
-    hourlyRate: 120,
+    hourlyRate: 12000, // $120.00/h in cents
     source: 'timer',
     participantKind: 'human',
     caseId: 'case-1',
@@ -51,6 +52,16 @@ describe('TimeEntryApprovalQueue', () => {
     render(TimeEntryApprovalQueue, {
       props: { entries: [entryView({ amount: undefined })] },
     });
+    expect(screen.queryByText('180.00')).not.toBeInTheDocument();
+  });
+
+  it('scales by the currency exponent, not a hard-coded 100', () => {
+    // ¥18000 is 18000 minor units — JPY has no minor unit — so dividing by 100
+    // here would understate the charge a hundredfold (#2401).
+    render(TimeEntryApprovalQueue, {
+      props: { entries: [entryView({ currency: 'JPY' })] },
+    });
+    expect(screen.getByText('18000')).toBeInTheDocument();
     expect(screen.queryByText('180.00')).not.toBeInTheDocument();
   });
 

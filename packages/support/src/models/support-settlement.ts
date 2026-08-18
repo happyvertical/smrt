@@ -50,8 +50,13 @@ export class SupportCharge extends SmrtObject {
   @foreignKey('SupportPlan')
   planId: string | null = null;
 
-  /** Client charge amount for the billable time. */
-  amount: number = 0.0;
+  /**
+   * Client charge for the billable time, in **integer minor units** of
+   * {@link currency} (#2401). Derived by the approval service, which rounds
+   * `(hours * rate)` to a whole minor unit at the one boundary where a rate
+   * meets money, so every comparison downstream is exact.
+   */
+  amount: number = 0;
 
   @field({ type: 'text' })
   currency: string = 'USD';
@@ -122,8 +127,12 @@ export class SupportCompensation extends SmrtObject {
   @foreignKey('SupportCompensationPlan')
   compensationPlanId: string | null = null;
 
-  /** Provider earning amount for the payable time. */
-  amount: number = 0.0;
+  /**
+   * Provider earning for the payable time, in **integer minor units** of
+   * {@link currency} (#2401). Converts with {@link SupportCharge.amount}: the
+   * delivery margin is the difference between the two.
+   */
+  amount: number = 0;
 
   @field({ type: 'text' })
   currency: string = 'USD';

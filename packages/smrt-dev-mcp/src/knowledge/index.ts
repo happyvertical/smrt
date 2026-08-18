@@ -2933,18 +2933,12 @@ function findStalePatternIssues(
  * Flag fields whose declared numeric precision contradicts their name (#2361):
  * money declared decimal, or a rate declared integer.
  *
- * Severity is split by what the repository can currently satisfy, not by
- * preference:
- *
- * - **rate** findings fail closed on `@happyvertical/smrt-*`. The framework has
- *   zero violations, so the gate holds the line at zero.
- * - **money** findings warn everywhere for now. Twenty-one framework fields
- *   across commerce, projects, subscriptions, support and the conformance
- *   fixture still declare money decimal, and converting them means changing
- *   live column types (REAL→INTEGER is not a whitelisted upgrade) and rescaling
- *   stored values by 100. That is a coordinated migration, not a lint fix, so
- *   failing closed today would only break every build. This flips to `error`
- *   once that conversion lands.
+ * Both kinds fail closed on `@happyvertical/smrt-*`. The framework has zero
+ * violations of either rule: the rates were already correct (#2361), and the
+ * twenty-one money fields across commerce, projects, subscriptions, support and
+ * the conformance fixture converted to integer minor units in #2401, along with
+ * the data migration that rescales existing columns. The gate now holds both
+ * lines at zero rather than watching money drift back.
  *
  * Consumer packages always warn: the framework cannot know a downstream
  * project's money convention, and a hard failure would make
@@ -2988,10 +2982,11 @@ function findNumericPrecisionIssues(
       const parsed = parseSource(sourceText, filePath);
       for (const finding of lintNumericPrecision(parsed.classes, sourceText)) {
         const location = finding.line > 0 ? `:${finding.line}` : '';
-        // See this function's doc comment: rates hold at zero, money waits on
-        // a coordinated column migration.
-        const severity: KnowledgeIssueSeverity =
-          isFramework && finding.kind === 'rate' ? 'error' : 'warning';
+        // See this function's doc comment: the framework is at zero for both
+        // rules, so both fail closed there; consumers always warn.
+        const severity: KnowledgeIssueSeverity = isFramework
+          ? 'error'
+          : 'warning';
         issues.push({
           severity,
           code: `numeric-precision-${finding.kind}`,

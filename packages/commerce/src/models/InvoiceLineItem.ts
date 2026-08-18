@@ -27,7 +27,7 @@ import type {
  *   invoiceId: invoice.id,
  *   description: 'Display Advertising - Summer Campaign',
  *   quantity: 50000,  // impressions
- *   unitPrice: 0.01,  // per impression
+ *   unitPrice: 1,     // 1 cent per impression (minor units)
  *   taxRate: 0.05,
  *   sourceType: 'campaign',
  *   sourceId: 'campaign-uuid',
@@ -168,9 +168,10 @@ export class InvoiceLineItem extends SmrtObject {
   }
 
   /**
-   * Calculate the line amount.
+   * Calculate the line amount, in integer minor units.
    *
-   * Formula: (quantity * unitPrice - discount) * (1 + taxRate)
+   * Formula: `getSubtotal() + getTaxAmount()`, i.e.
+   * `(quantity * unitPrice - discount) * (1 + taxRate)` with the tax rounded.
    *
    * Tax is calculated on the discounted subtotal. This follows the common
    * "discount before tax" approach used in most North American jurisdictions.
@@ -178,23 +179,30 @@ export class InvoiceLineItem extends SmrtObject {
    * this method or calculate amounts externally.
    */
   calculateAmount(): number {
-    const subtotal = this.quantity * this.unitPrice - this.discount;
-    const tax = subtotal * this.taxRate;
-    return subtotal + tax;
+    return this.getSubtotal() + this.getTaxAmount();
   }
 
   /**
-   * Get subtotal (before tax)
+   * Get subtotal (before tax), in integer minor units.
+   *
+   * `quantity` is an integer and `unitPrice` / `discount` are integer minor
+   * units, so this is exact with no rounding.
    */
   getSubtotal(): number {
     return this.quantity * this.unitPrice - this.discount;
   }
 
   /**
-   * Get tax amount
+   * Get tax amount, in integer minor units.
+   *
+   * `taxRate` is a genuine fraction, so this product is where a rate meets
+   * money and the only place rounding is needed. Rounding here — rather than
+   * letting a fractional tax leak into `Invoice.taxAmount` — is what lets the
+   * invoice's guards compare integers exactly instead of tolerating an epsilon
+   * (#2401).
    */
   getTaxAmount(): number {
-    return this.getSubtotal() * this.taxRate;
+    return Math.round(this.getSubtotal() * this.taxRate);
   }
 
   /**

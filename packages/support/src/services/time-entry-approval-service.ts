@@ -133,14 +133,27 @@ interface ChargeDerivation {
   billableSeconds: number;
   includedSecondsBefore: number;
   includedSecondsApplied: number;
+  /** Minor units per hour — see {@link SupportPlan.overageHourlyRate}. */
   hourlyRate: number;
   rateSource: 'overage' | 'on_call' | 'none';
+  /** Integer minor units (#2401). */
   amount: number;
 }
 
-/** Round a currency amount to 2 decimals. */
+/**
+ * Round a computed amount to whole minor units.
+ *
+ * This is the single boundary in the package where a rate meets money: rates
+ * are minor units per hour and hours are fractional, so the product is not
+ * generally integral. Rounding it here means every stored amount and every
+ * threshold comparison downstream is exact integer arithmetic (#2401).
+ *
+ * Replaces the old two-decimal rounding (`Math.round((v + EPSILON) * 100) /
+ * 100`), which existed to keep float drift out of a DECIMAL column that is now
+ * integral.
+ */
 function roundMoney(value: number): number {
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Math.round(value);
 }
 
 /**
@@ -496,6 +509,7 @@ export class TimeEntryApprovalService {
   protected determinePath(
     entry: ServiceTimeEntry,
     policy: TimeApprovalPolicy,
+    /** Integer minor units, same unit as `policy.thresholdAmount` (#2401). */
     chargeAmount: number,
     principal: SupportPrincipal | undefined,
     supportCase: SupportCase | null,

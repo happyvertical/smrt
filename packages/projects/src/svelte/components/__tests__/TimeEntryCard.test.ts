@@ -17,8 +17,8 @@ const entry = {
   description: 'Implement feature',
   status: 'draft',
   hours: 3,
-  hourlyRate: 100,
-  amount: 300,
+  hourlyRate: 10000, // $100.00/h in cents (#2401)
+  amount: 30000, // 3 h x $100.00
   workerName: 'Ada Lovelace',
 } as any;
 
