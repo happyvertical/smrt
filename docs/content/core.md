@@ -1808,6 +1808,12 @@ declares it), and classes with custom `conflictColumns` keep a plain
 `(slug, context)` index for slug loading. `smrt db:migrate` adds the missing
 indexes to existing databases and drops the legacy `<table>_id_idx`.
 
+The ordering every generated list route uses is indexed automatically too:
+`(tenant_id, created_at)` on a tenant-scoped table and `(created_at)` otherwise,
+so the default page (`ORDER BY created_at DESC` behind the tenant filter) is an
+ordered index scan rather than a full scan plus a sort. The composite stands in
+for the standalone tenant index rather than adding to it.
+
 A list workload usually needs more than one column: it filters on one or more
 columns and sorts on another, and only a composite index in that order serves it
 as an ordered scan. Declare those with `@smrt({ indexes })` (#2357):
@@ -1833,7 +1839,9 @@ scans a btree either way, so an ascending index also serves the matching
 `ORDER BY ... DESC` without a sort step. A column the object does not have, or a
 name that collides with a different generated index, fails schema generation
 rather than silently dropping the index. An index leading with a reference column (`tenant_id`, a foreign key, a
-cross-package ref) also stands in for that column's automatic index.
+cross-package ref) also stands in for that column's automatic index, and one
+leading with `(tenant_id, created_at)` stands in for the default list-ordering
+index.
 
 ### 5. Cache AI Responses
 

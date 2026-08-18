@@ -255,6 +255,99 @@ describe('SchemaComparer index drift', () => {
       });
     });
 
+    describe('default list-ordering index (#2363, A2)', () => {
+      /**
+       * The index wave only helps if `smrt db:migrate` actually adds it to
+       * databases created before the generator emitted it — that is the whole
+       * point of the epic's schema-path work, and the differ is the component
+       * that turns the new manifest index into DDL.
+       */
+      const orderedTable = (): SchemaDefinition =>
+        tableSchema({
+          tableName: 'listables',
+          ddl: '',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            slug: { type: 'TEXT' },
+            context: { type: 'TEXT' },
+            tenant_id: { type: 'TEXT', referenceKind: 'tenantId' },
+            created_at: { type: 'TIMESTAMP' },
+          },
+          indexes: [
+            {
+              name: 'listables_slug_context_idx',
+              columns: ['slug', 'context'],
+              unique: true,
+            },
+            {
+              name: 'listables_tenant_id_created_at_idx',
+              columns: ['tenant_id', 'created_at'],
+            },
+          ],
+        });
+
+      beforeEach(async () => {
+        // A database created before #2363: conflict index only.
+        await db.query(
+          'CREATE TABLE listables (id TEXT PRIMARY KEY, slug TEXT, context TEXT, tenant_id TEXT, created_at TIMESTAMP);',
+        );
+        await db.query(
+          'CREATE UNIQUE INDEX listables_slug_context_idx ON listables(slug, context);',
+        );
+      });
+
+      it('adds the (tenant_id, created_at) index to a pre-#2363 database', async () => {
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ listables: orderedTable() });
+
+        const adds = diff.changes.filter((c) => c.type === 'add_index');
+        expect(adds.map((c) => c.name)).toEqual([
+          'listables_tenant_id_created_at_idx',
+        ]);
+        expect(adds[0].sql).toContain('"tenant_id", "created_at"');
+        expect(adds[0].sql).not.toContain('UNIQUE');
+      });
+
+      it('applies cleanly and then reports no further drift', async () => {
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ listables: orderedTable() });
+        for (const change of diff.changes) {
+          if (change.sql) await db.query(change.sql);
+        }
+
+        const after = await comparer.compare({ listables: orderedTable() });
+        expect(
+          after.changes.filter(
+            (c) => c.type === 'add_index' || c.type === 'drop_index',
+          ),
+        ).toEqual([]);
+      });
+
+      it('leaves the legacy standalone tenant index in place without --drop-indexes', async () => {
+        // #2359 shipped `listables_tenant_id_idx`; #2363 replaces it with the
+        // composite that already serves the tenant filter. Dropping it is an
+        // opt-in orphan sweep, not something a routine migrate does — the
+        // composite has to exist and be warm first.
+        await db.query(
+          'CREATE INDEX listables_tenant_id_idx ON listables(tenant_id);',
+        );
+
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare({ listables: orderedTable() });
+        expect(diff.changes.filter((c) => c.type === 'drop_index')).toEqual([]);
+
+        const sweeping = new SchemaComparer(db, {
+          includeDroppedIndexes: true,
+        });
+        const sweep = await sweeping.compare({ listables: orderedTable() });
+        expect(
+          sweep.changes
+            .filter((c) => c.type === 'drop_index')
+            .map((c) => c.name),
+        ).toEqual(['listables_tenant_id_idx']);
+      });
+    });
+
     describe('STI subtype-scoped UNIQUE indexes on engines without partial indexes (#2359)', () => {
       it('neither compares nor creates a descendant-scoped unique index when the engine cannot express it', async () => {
         // The STI descendant-scoped `unique: true` shape is a partial UNIQUE

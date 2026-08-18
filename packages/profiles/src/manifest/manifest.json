@@ -170,6 +170,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "api_keys_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "a8704e4a"
@@ -357,6 +363,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "audit_logs_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "8934683a"
@@ -571,6 +583,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "magic_link_tokens_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "1276befb"
@@ -801,6 +819,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "nostr_identities_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "042a84e0"
@@ -951,6 +975,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "oidc_identities_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "38013ce3"
@@ -1010,6 +1040,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "oidc_profile_email_reservations_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "2c5044ab"
@@ -1256,6 +1292,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_assets_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "e6aeda33"
@@ -1569,6 +1611,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "324ffa91"
@@ -1674,6 +1722,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_metadata_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "388f4e8b"
@@ -1765,6 +1819,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_metafield_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "50171869"
@@ -1904,6 +1964,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_relationship_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "27e5548a"
@@ -2004,6 +2070,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_relationship_term_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "5905c22e"
@@ -2111,6 +2183,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_relationship_type_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "f2c054a3"
@@ -2221,6 +2299,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "profile_type_collections_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "b169ded1"
@@ -2494,6 +2578,12 @@
             "unique": true
           },
           {
+            "name": "api_keys_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
+          },
+          {
             "name": "api_keys_profile_id_idx",
             "columns": [
               "profile_id"
@@ -2733,9 +2823,10 @@
             "unique": true
           },
           {
-            "name": "audit_logs_tenant_id_idx",
+            "name": "audit_logs_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -3005,6 +3096,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "magic_link_tokens_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           },
           {
             "name": "magic_link_tokens_nostr_identity_id_idx",
@@ -3327,6 +3424,12 @@
             "unique": true
           },
           {
+            "name": "nostr_identities_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
+          },
+          {
             "name": "nostr_identities_profile_id_idx",
             "columns": [
               "profile_id"
@@ -3606,6 +3709,12 @@
             ]
           },
           {
+            "name": "oidc_identities_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
+          },
+          {
             "name": "oidc_identities_profile_id_idx",
             "columns": [
               "profile_id"
@@ -3714,6 +3823,12 @@
               "context"
             ],
             "unique": true
+          },
+          {
+            "name": "oidc_profile_email_reservations_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "311f2b6f"
@@ -4823,9 +4938,10 @@
             ]
           },
           {
-            "name": "profiles_tenant_id_idx",
+            "name": "profiles_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -5007,9 +5123,10 @@
             ]
           },
           {
-            "name": "profile_assets_tenant_id_idx",
+            "name": "profile_assets_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -5705,9 +5822,10 @@
             ]
           },
           {
-            "name": "profile_metadata_tenant_id_idx",
+            "name": "profile_metadata_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -6433,9 +6551,10 @@
             ]
           },
           {
-            "name": "profile_metafields_tenant_id_idx",
+            "name": "profile_metafields_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           }
         ],
@@ -7180,9 +7299,10 @@
             ]
           },
           {
-            "name": "profile_relationships_tenant_id_idx",
+            "name": "profile_relationships_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -7872,6 +7992,12 @@
             ]
           },
           {
+            "name": "profile_relationship_terms_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
+          },
+          {
             "name": "profile_relationship_terms_relationship_id_idx",
             "columns": [
               "relationship_id"
@@ -8554,6 +8680,12 @@
             "columns": [
               "_meta_type"
             ]
+          },
+          {
+            "name": "profile_relationship_types_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
           }
         ],
         "version": "719fe0d9"
@@ -9211,9 +9343,10 @@
             ]
           },
           {
-            "name": "profile_types_tenant_id_idx",
+            "name": "profile_types_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           }
         ],
@@ -10301,9 +10434,10 @@
             ]
           },
           {
-            "name": "profiles_tenant_id_idx",
+            "name": "profiles_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -11397,9 +11531,10 @@
             ]
           },
           {
-            "name": "profiles_tenant_id_idx",
+            "name": "profiles_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
@@ -12493,9 +12628,10 @@
             ]
           },
           {
-            "name": "profiles_tenant_id_idx",
+            "name": "profiles_tenant_id_created_at_idx",
             "columns": [
-              "tenant_id"
+              "tenant_id",
+              "created_at"
             ]
           },
           {
