@@ -65,6 +65,21 @@ after that commit. This is the mode for large index rollouts.
 - Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
   before the transaction opens — PostgreSQL cannot run it there.
 
+## `db:migrate` on SQLite: type changes rebuild the table
+
+SQLite has no `ALTER COLUMN ... TYPE`, so a type-bucket change (the common one
+being a numeric default edited `0` → `0.0`) is applied as the documented table
+rebuild — stage, copy, drop, rename, replay indexes and triggers — planned by
+`smrt-core`'s `migrations/sqlite-rebuild.ts` and executed inside the same
+atomic batch as everything else. It is no longer a "manual intervention" that
+makes `db:migrate` exit 1 on every run (#2370). All drifted columns of one
+table are fixed by one rebuild; `--dry-run` prints the whole statement list.
+
+The rebuild refuses — and the column stays manual drift — when another table
+declares a foreign key onto the target while `PRAGMA foreign_keys` is ON,
+because `DROP TABLE` would fire those children's `ON DELETE` actions. Fix that
+one by hand (or against a connection with enforcement disabled).
+
 ## `db:rollback` is execute-or-refuse
 
 Schema state is diff-driven: `db:migrate` derives every migration from the

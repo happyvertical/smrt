@@ -126,6 +126,42 @@ describe('partitionSchemaChanges', () => {
     ]);
   });
 
+  it('executes a SQLite table-rebuild type upgrade instead of asking for manual work (#2370)', () => {
+    // The differ now answers a SQLite type change with the executable
+    // table-rebuild plan. It must land in the executable migration set —
+    // `db:migrate` exiting 1 on "manual intervention" was the whole bug.
+    const rebuild = [
+      'PRAGMA defer_foreign_keys = ON',
+      'DROP TABLE IF EXISTS "_smrt_rebuild_contents"',
+      'CREATE TABLE "_smrt_rebuild_contents" (\n  "id" TEXT PRIMARY KEY,\n  "score" REAL\n)',
+      'INSERT INTO "_smrt_rebuild_contents" ("id", "score") SELECT "id", "score" FROM "contents"',
+      'DROP TABLE "contents"',
+      'PRAGMA legacy_alter_table = ON',
+      'ALTER TABLE "_smrt_rebuild_contents" RENAME TO "contents"',
+      'PRAGMA legacy_alter_table = OFF',
+    ];
+
+    const { migrations, manualInterventions } = partitionSchemaChanges(
+      [
+        {
+          type: 'type_upgrade',
+          table: 'contents',
+          name: 'score',
+          column: { type: 'REAL' },
+          mismatch: { expected: 'REAL', actual: 'INTEGER' },
+          sql: rebuild[0],
+          sqlStatements: rebuild,
+        },
+      ],
+      () => 'Content',
+    );
+
+    expect(manualInterventions).toEqual([]);
+    expect(migrations).toHaveLength(1);
+    expect(migrations[0].type).toBe('type_upgrade');
+    expect(migrations[0].sqlStatements).toEqual(rebuild);
+  });
+
   it('drops no-op type upgrades from the action lists', () => {
     const { migrations, manualInterventions } = partitionSchemaChanges(
       [

@@ -268,14 +268,70 @@ describe('schema orchestration', () => {
     expect(tables.rows).toHaveLength(1);
   });
 
-  it('surfaces SQLite type-upgrade comments as unactionableChanges, not as applied DDL', async () => {
+  it('plans an executable SQLite table rebuild for a type upgrade (#2370)', async () => {
     // Pre-create the column with INTEGER; manifest declares REAL. SQLite
-    // can't widen the type in place — the differ emits an advisory
-    // comment-only "requires table recreation" SQL. Before the fix, that
-    // comment was passed to the tracker and recorded as a successful
-    // migration, so the drift would re-appear every run.
+    // can't widen the type in place, and the differ used to emit an advisory
+    // comment that left the drift unfixable forever. It now emits the
+    // table-rebuild plan, which the orchestrator must pass through as real
+    // DDL (comment-only statements are still filtered out).
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
+    );
+    await db.query("INSERT INTO documents VALUES ('d1', 4);");
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'REAL' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+
+    expect(pending.hasChanges).toBe(true);
+    expect(pending.statements.some((sql) => sql.startsWith('--'))).toBe(false);
+    expect(pending.statements).toContain(
+      'ALTER TABLE "_smrt_rebuild_documents" RENAME TO "documents"',
+    );
+    // Nothing is left for a human to do.
+    expect(pending.unactionableChanges).toEqual([]);
+    expect(pending.hasManualDrift).toBe(false);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@test/app',
+      name: '20260818_000000_sqlite_rebuild',
+    });
+    expect(result.applied).toBe(true);
+
+    const columns = (await db.query('PRAGMA table_info("documents")')).rows as {
+      name: string;
+      type: string;
+    }[];
+    expect(columns.find((c) => c.name === 'score')?.type).toBe('REAL');
+    expect((await db.query('SELECT score FROM documents')).rows[0]).toEqual({
+      score: 4,
+    });
+  });
+
+  it('still surfaces an unplannable SQLite type upgrade as unactionable drift', async () => {
+    // A child table with ON DELETE CASCADE makes the rebuild unsafe (the
+    // DROP TABLE step would cascade its rows away), so the differ keeps the
+    // advisory comment. The orchestrator must strip that comment from the
+    // executable statements and report the drift as manual.
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
+    );
+    await db.query(
+      'CREATE TABLE document_notes (id TEXT PRIMARY KEY, document_id TEXT REFERENCES documents(id) ON DELETE CASCADE);',
     );
 
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
@@ -295,16 +351,7 @@ describe('schema orchestration', () => {
 
     const pending = await getPendingSchemaStatements(db);
 
-    // The pre-created table already exists and the only divergence is the
-    // SQLite type-widening (which can't be applied in-place). The filter
-    // should strip the comment-only "requires table recreation" SQL, so
-    // nothing executable survives — tighter than the previous
-    // every-statement loop (which couldn't distinguish "filter dropped
-    // all candidates" from "filter saw nothing").
     expect(pending.statements).toEqual([]);
-
-    // The unresolved drift should surface via unactionableChanges so the
-    // caller can prompt for manual remediation. Exactly one column drifted.
     expect(pending.unactionableChanges).toHaveLength(1);
     expect(pending.hasManualDrift).toBe(true);
     expect(pending.unactionableChanges[0].type).toBe('type_upgrade');
