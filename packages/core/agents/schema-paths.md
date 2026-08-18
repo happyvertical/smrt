@@ -537,3 +537,68 @@ generator's `resolveConflictTarget()` together, and extend the parity test's
 schema does not index is a hard PostgreSQL error (42P10) on the first save,
 and a key the schema indexes without the tenant column is the silent
 cross-tenant overwrite this rule exists for.
+
+### 20. Every generated index name is length-guarded before it leaves a path (#2374)
+
+PostgreSQL truncates any identifier past 63 **bytes** and reports nothing;
+SQLite and DuckDB do not, so the entire test suite was blind to it. The 66-byte
+`content_contribution_revisions_contribution_id_revision_number_idx` shipped
+that way — only the differ's signature-equivalence check kept it from emitting
+`add_index` on every run. Two names agreeing for 63 bytes is the real hazard:
+`CREATE INDEX IF NOT EXISTS` no-ops against the wrong index, and the second
+index is never created.
+
+`schema/index-utils.ts` owns the guard, and it splits by who owns the name:
+
+- **Generated index, trigger and PL/pgSQL function names** →
+  `shortenIdentifier()`. Deterministic `<head>_<digest><suffix>`, digest taken
+  over the **full** original so a shared prefix still yields distinct names, and
+  a recognised suffix (`_idx`, `_unique_idx`, `_key`, `_pkey`) preserved.
+- **Hand-declared `@smrt({ indexes: [{ name }] })`** → `assertIdentifierFits()`,
+  a hard error in `validateDeclaredIndex()`. Renaming what a developer wrote is
+  worse than refusing it, and `SchemaComparer` matches indexes **by name**
+  first, so a 70-byte declaration could never match the 63-byte index
+  PostgreSQL stored and `db:migrate` would emit `add_index` forever.
+- **Table and column names** → deliberately **not** guarded. PostgreSQL
+  truncates identifiers *consistently on every reference*: `CREATE TABLE
+  "<80 bytes>"` and a later `SELECT ... FROM "<the same 80 bytes>"` both resolve
+  to the same stored 63-byte name, so one long name round-trips fine end to end.
+  `smrt-users` depends on this — it ships an intentional 80-byte
+  `@smrt({ tableName })` (`permission_policy_table_name_that_is_far_too_long…`)
+  and derives unique Postgres RLS policy names from it. An earlier revision of
+  this rule hard-errored here on the theory that the runtime resolves tables by
+  name and would break; that theory is wrong for the reason above, and the error
+  broke `packages/users`. The residual collision risk is over a name the
+  developer chose, not one the generator manufactured.
+
+`enforceIdentifierLimits()` is the single call site per path, placed **after**
+`ensureReferenceColumnIndexes()` — nothing may lengthen a name after it. Doing
+the shortening at the end rather than at each `indexes.push()` is safe because
+the digest covers the whole original name, so entries distinct before shortening
+stay distinct after; the helper still throws if two ever collide. The migrate
+leg's `withConflictIndex()` (`registry/schema-builder.ts`) and the PostgreSQL
+trigger-function name call `shortenIdentifier()` directly, because they compose
+a name outside the generator's index list. Note that an over-long *table* name
+still yields in-limit, distinct *index* names, because the shortening runs over
+the whole composed name.
+
+The digest is FNV-1a, not `node:crypto`: `index-utils.ts` is re-exported from
+`schema/utils.ts`, which exists to keep Node built-ins out of browser bundles.
+It only has to be *stable* — a shortened name that changed between releases
+would make every deployment drop and recreate the index — so the parity and
+unit tests pin the literal output rather than recomputing it. Unpaired
+surrogates are folded to U+FFFD before both counting and hashing, so the digest
+is taken over exactly the bytes the driver transmits.
+
+Existing databases migrate **by name swap, without a rebuild**: the live index
+still carries the name PostgreSQL truncated it to, the manifest now carries the
+shortened one, and the differ claims it by signature (columns + uniqueness +
+predicate), emitting nothing — including under `includeDroppedIndexes`. See
+`migrations/__tests__/index-drift.test.ts` and the PostgreSQL lane test
+`schema/issue-2374-identifier-length-postgres.optional.test.ts`.
+
+Out of scope, deliberately: constraint names PostgreSQL invents for itself. A
+CTI table's inline `UNIQUE` produces an implicit `<table>_<column>_key`, which
+can exceed 63 bytes even when the table and column each fit. SMRT never names
+it, and PostgreSQL disambiguates its own truncations by appending a counter
+rather than collapsing them, so there is no silent-collision hazard there.

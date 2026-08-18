@@ -9,6 +9,7 @@
  * - Supports CAST in DEFAULT values
  */
 
+import { shortenIdentifier } from '../index-utils.js';
 import type { SQLDataType, TriggerDefinition } from '../types.js';
 import { BaseDDLStrategy } from './base-strategy.js';
 import type { DatabaseEngine } from './types.js';
@@ -54,8 +55,12 @@ export class PostgresStrategy extends BaseDDLStrategy {
 
     // Check if this is an updated_at trigger
     if (trigger.name.includes('updated_at')) {
-      // Generate the function and trigger for updated_at
-      const functionName = `update_${tableName}_updated_at`;
+      // Generate the function and trigger for updated_at. The function name is
+      // a PostgreSQL identifier like any other, so it is subject to the same
+      // 63-byte limit — and unlike an index it is *referenced* by the trigger
+      // below, so a truncation that CREATE FUNCTION accepts would leave
+      // EXECUTE FUNCTION pointing at a name PostgreSQL never stored (#2374).
+      const functionName = shortenIdentifier(`update_${tableName}_updated_at`);
 
       let sql = `-- Function for ${trigger.name}\n`;
       sql += `CREATE OR REPLACE FUNCTION ${functionName}()\n`;
