@@ -308,3 +308,21 @@ and always reports what it will not touch:
   round-trip test (create from each DDL strategy → compare → zero changes) in
   `src/migrations/__tests__/issue-2369-*.test.ts` guards this.
 
+### 16. `schema.ddl` is a preview, not the table
+
+`SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
+CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no
+indexes, no triggers, abstract `REAL`/`JSON`/`UUID`/`TIMESTAMP`. It is kept for
+backward compatibility only. Everything that needs an executable table renders
+`columns` + `indexes` through `getDDLStrategy(engine)` — `db:migrate`
+(`migrations/orchestrate.ts`), `MigrationGenerator` (default
+`materializeStructuredSchema: true`; `false` is a deprecated opt-out),
+`SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
+last two via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is merged in only for a
+table whose contributors expose no structured columns (hand-authored
+manifests); table constraints that exist only in the string are dropped with a
+warning, as `db:migrate` drops them. Do not add a new consumer of the
+string, and do not write a private CREATE INDEX renderer — the retired ones
+dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
+`PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
