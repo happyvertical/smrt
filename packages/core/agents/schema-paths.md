@@ -229,7 +229,7 @@ production down on rollout (#2362).
 ### 13. Composite indexes are declared, not inferred (#2357)
 
 The generated set only covers foreign keys, unique/conflict columns, the STI
-discriminator, reference columns (#2359), the default list ordering (rule 17
+discriminator, reference columns (#2359), the default list ordering (rule 18
 below), and single columns opted in with `@field({ indexed: true })`. A list
 workload's access path is composite, so declare it:
 
@@ -249,7 +249,7 @@ scans a btree either way, so an ascending index also serves the matching
 (partial index) are honoured.
 
 `appendDeclaredIndexes()` runs first on all five entry points, ahead of
-`ensureDefaultListOrderingIndex()` (rule 17) and `ensureReferenceColumnIndexes()`,
+`ensureDefaultListOrderingIndex()` (rule 18) and `ensureReferenceColumnIndexes()`,
 so a declared composite leading with the tenant column replaces the automatic
 standalone `tenant_id` index rather than duplicating it.
 Unknown columns, malformed entries, and a name collision with a different index
@@ -373,7 +373,49 @@ string, and do not write a private CREATE INDEX renderer — the retired ones
 dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
 `PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
 
-### 17. The generator owns the index for its own default ordering (#2363)
+### 17. The merged table shape is registration-order independent (#2372)
+
+`getAllSchemas()` and `getAllSchemasAsDefinitions()` fold every class that
+shares a physical table — the whole STI hierarchy — into one shape. Both route
+through `buildMergedTableSchemas()`, which groups contributors by table and
+then merges them in a **deterministic** order: the STI base first, then
+ancestors before descendants, then by qualified name.
+
+That order matters because the first contributor seeds the table: it supplies
+the fallback base columns, the `idType`, the conflict columns and the cached
+DDL, and its columns win every merge conflict. When registration order decided
+it, an STI child that carries no manifest `schema` — the external- and
+consumer-manifest case — seeded the table from bare fallback columns and the
+base class's richer ones were skipped when it registered later, yielding
+`context TEXT` instead of `context TEXT NOT NULL DEFAULT ''` and timestamps
+with no NOT NULL/DEFAULT. The shipped content manifest lists `Article` before
+`Content`, so the losing order was the one that shipped, and the differ
+compares types only, so the weak fresh-create was never repaired.
+
+Two invariants keep the two assembly paths agreeing:
+
+- `createBaseColumns()` mirrors what `generateSchemaFromManifest` /
+  `generateSTISchemaFromManifest` emit for the same table, so a table built
+  from runtime field metadata alone has the same NOT NULL/DEFAULT shape as one
+  built from a manifest. Note `_meta_type` is `TEXT NOT NULL` with **no**
+  default, matching the generator.
+- `fieldsToColumns()` reads `required`, `default`, and `description` from the
+  top level *or* `_meta`. Registry fields normalize them into `_meta`
+  (`manifest-field-merge.ts`), so reading only the top level silently dropped
+  NOT NULL and DEFAULT for every registry-sourced field.
+
+STI columns stay nullable regardless of the field's `required` flag
+(`fieldsToColumns(fields, { stiUnionColumns: true })`): the table holds the
+union of all subtypes' fields, so a column only one subtype declares is never
+populated on a sibling's row. Declared defaults are still emitted. This matches
+`generateSTISchemaFromManifest`, which sets `notNull: false` on every non-system
+STI column.
+
+When adding a class-level input to the merged shape, take it from the seeding
+contributor rather than "whichever class arrives first", and cover it with a
+child-first/base-first equality test.
+
+### 18. The generator owns the index for its own default ordering (#2363)
 
 Every generated list surface — REST, MCP, the SvelteKit list route — pages with
 `ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`, #2367), and
