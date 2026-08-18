@@ -154,20 +154,37 @@ const PRESERVED_IDENTIFIER_SUFFIXES = [
 export function identifierByteLength(value: string): number {
   let bytes = 0;
   for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code < 0x80) {
-      bytes += 1;
-    } else if (code < 0x800) {
-      bytes += 2;
-    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
-      // High surrogate followed by a low surrogate → one 4-byte code point.
-      bytes += 4;
-      i++;
-    } else {
-      bytes += 3;
-    }
+    bytes += codeUnitWidth(value, i);
+    if (isSurrogatePair(value, i)) i++;
   }
   return bytes;
+}
+
+/**
+ * True when `value[index]` is a high surrogate genuinely followed by a low one.
+ *
+ * The low-surrogate half matters: an unpaired high surrogate is NOT half of a
+ * 4-byte code point. Every UTF-8 encoder replaces it with U+FFFD, which is
+ * three bytes, so treating "high surrogate, something follows" as a pair
+ * *under*-counts a malformed name and can let it past the guard — exactly the
+ * silent truncation this module exists to prevent.
+ */
+function isSurrogatePair(value: string, index: number): boolean {
+  const high = value.charCodeAt(index);
+  if (high < 0xd800 || high > 0xdbff) return false;
+  const low = value.charCodeAt(index + 1);
+  return low >= 0xdc00 && low <= 0xdfff;
+}
+
+/**
+ * UTF-8 byte width of the code point starting at `value[index]`. An unpaired
+ * surrogate counts as the three bytes of its U+FFFD replacement.
+ */
+function codeUnitWidth(value: string, index: number): number {
+  const code = value.charCodeAt(index);
+  if (code < 0x80) return 1;
+  if (code < 0x800) return 2;
+  return isSurrogatePair(value, index) ? 4 : 3;
 }
 
 /**
@@ -177,22 +194,10 @@ export function identifierByteLength(value: string): number {
 function truncateToBytes(value: string, maxBytes: number): string {
   let bytes = 0;
   for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    let width: number;
-    let step = 1;
-    if (code < 0x80) {
-      width = 1;
-    } else if (code < 0x800) {
-      width = 2;
-    } else if (code >= 0xd800 && code <= 0xdbff && i + 1 < value.length) {
-      width = 4;
-      step = 2;
-    } else {
-      width = 3;
-    }
+    const width = codeUnitWidth(value, i);
     if (bytes + width > maxBytes) return value.slice(0, i);
     bytes += width;
-    i += step - 1;
+    if (isSurrogatePair(value, i)) i++;
   }
   return value;
 }
@@ -212,7 +217,10 @@ function identifierDigest(value: string): string {
   const MASK = 0xffffffffffffffffn;
   let hash = 0xcbf29ce484222325n;
   // Hash the UTF-8 bytes, not the UTF-16 code units, so the digest matches the
-  // encoding the byte limit is measured in.
+  // encoding the byte limit is measured in. `codePointAt` combines a real
+  // surrogate pair and returns an unpaired surrogate as-is (which then encodes
+  // through the 3-byte branch) — the digest only has to be deterministic and
+  // input-distinguishing, which both cases satisfy.
   for (let i = 0; i < value.length; i++) {
     const code = value.codePointAt(i) as number;
     if (code > 0xffff) i++;

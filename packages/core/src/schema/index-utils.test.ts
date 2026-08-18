@@ -46,6 +46,24 @@ describe('identifierByteLength', () => {
     // Astral plane: one code point, one surrogate pair, four bytes.
     expect(identifierByteLength('𝄞')).toBe(4);
   });
+
+  it('does not under-count unpaired surrogates', () => {
+    // A high surrogate NOT followed by a low one is not half of a 4-byte code
+    // point — every UTF-8 encoder replaces it with U+FFFD, three bytes. Reading
+    // it as a pair under-counts, which would let a malformed name past the
+    // guard and reintroduce the silent truncation this module prevents.
+    for (const malformed of [
+      '\ud800', // lone high surrogate
+      '\ud800\ud800', // two high surrogates, no low one
+      '\udc00', // lone low surrogate
+      '\ud800a', // high surrogate followed by ASCII
+      `${'\ud800'.repeat(20)}${'a'.repeat(4)}`,
+    ]) {
+      expect(identifierByteLength(malformed)).toBe(
+        new TextEncoder().encode(malformed).length,
+      );
+    }
+  });
 });
 
 describe('shortenIdentifier', () => {

@@ -342,3 +342,11 @@ still carries the name PostgreSQL truncated it to, the manifest now carries the
 shortened one, and the differ claims it by signature (columns + uniqueness +
 predicate), emitting nothing — including under `includeDroppedIndexes`. See
 `migrations/__tests__/index-drift.test.ts`.
+
+Out of scope, deliberately: constraint names PostgreSQL invents for itself. A
+CTI table's inline `UNIQUE` produces an implicit `<table>_<column>_key`, which
+can exceed 63 bytes even when the table and column each fit. SMRT never names
+it, and PostgreSQL disambiguates its own truncations by appending a counter
+rather than collapsing them, so there is no silent-collision hazard there —
+only a name shorter than you would guess. `smrt db:migrate` never matches on it
+either (`isProtectedDbIndexName` skips `_key`/`_pkey`).
