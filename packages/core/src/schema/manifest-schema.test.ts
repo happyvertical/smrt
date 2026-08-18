@@ -274,6 +274,52 @@ describe('collectManifestTables + renderCollectedManifestTable', () => {
     ]);
   });
 
+  it('inlines UNIQUE for a column-less contributor on inline-unique engines (DuckDB/JSON)', () => {
+    const legacy = {
+      tableName: 'legacy_keys',
+      ddl: 'CREATE TABLE IF NOT EXISTS "legacy_keys" ("id" TEXT PRIMARY KEY NOT NULL, "slug" TEXT NOT NULL, "context" TEXT NOT NULL, "tenant_id" TEXT, UNIQUE("tenant_id"));',
+      indexes: [
+        {
+          name: 'legacy_keys_slug_context_idx',
+          columns: ['slug', 'context'],
+          unique: true,
+        },
+        // Already declared inline by the cached string — must not duplicate.
+        {
+          name: 'legacy_keys_tenant_id_idx',
+          columns: ['tenant_id'],
+          unique: true,
+        },
+        { name: 'legacy_keys_slug_idx', columns: ['slug'] },
+      ],
+    };
+    const tables = collectManifestTables([
+      { schema: legacy, source: 'x:LegacyKey' },
+    ]);
+    const table = tables.get('legacy_keys');
+    if (!table) throw new Error('missing');
+
+    for (const engine of ['duckdb', 'json'] as const) {
+      const rendered = renderCollectedManifestTable(table, engine);
+      // The strategy skips plain unique indexes on these engines...
+      expect(rendered.indexes).toEqual([
+        'CREATE INDEX IF NOT EXISTS "legacy_keys_slug_idx" ON "legacy_keys" ("slug");',
+      ]);
+      // ...so the uniqueness must be inline in the CREATE TABLE.
+      expect(rendered.createTable).toContain('UNIQUE("slug", "context")');
+      expect(rendered.createTable.match(/UNIQUE\("tenant_id"\)/g)).toHaveLength(
+        1,
+      );
+    }
+
+    // SQLite/PostgreSQL keep them as separate unique indexes, string untouched.
+    const sqlite = renderCollectedManifestTable(table, 'sqlite');
+    expect(sqlite.createTable).toBe(legacy.ddl);
+    expect(sqlite.indexes[0]).toBe(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "legacy_keys_slug_context_idx" ON "legacy_keys" ("slug", "context");',
+    );
+  });
+
   it('skips objects with neither columns nor ddl', () => {
     const tables = collectManifestTables([
       { schema: { tableName: 'ghost' }, source: 'x:Ghost' },

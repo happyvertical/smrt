@@ -76,9 +76,11 @@ export class MigrationGenerator {
        * on the next run.
        *
        * @deprecated Passing `false` re-enables the retired cached-`ddl` string
-       * path (#2358): it emits the manifest's engine-neutral CREATE TABLE with
-       * only bare PostgreSQL `TIMESTAMP` rewritten, so `REAL`/`JSON` drift on
-       * PostgreSQL and no indexes are created. Schemas that expose no
+       * path for the CREATE TABLE only (#2358): it emits the manifest's
+       * engine-neutral CREATE TABLE with only bare PostgreSQL `TIMESTAMP`
+       * rewritten, so `REAL`/`JSON` drift on PostgreSQL. The table's indexes
+       * and triggers are still rendered through the engine strategy either
+       * way — the flag never suppresses them. Schemas that expose no
        * structured columns always fall back to their cached `ddl` regardless
        * of this flag.
        */

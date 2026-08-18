@@ -465,6 +465,43 @@ describe('MigrationGenerator', () => {
       expect(duckdb).not.toContain('WHERE');
     });
 
+    it('still emits the table indexes on the deprecated cached-ddl path (#2358)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'events',
+            ddl: 'CREATE TABLE IF NOT EXISTS "events" ("id" TEXT PRIMARY KEY NOT NULL, "tenant_id" TEXT);',
+            columns: {
+              id: { type: 'UUID', primaryKey: true, notNull: true },
+              tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
+            },
+            indexes: [{ name: 'events_tenant_id_idx', columns: ['tenant_id'] }],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          },
+        ],
+        dropped_tables: [],
+        changes: [],
+      };
+
+      const migration = new MigrationGenerator({
+        engine: 'sqlite',
+        materializeStructuredSchema: false,
+      }).generateFromDiff(diff, { name: '0001_events' });
+
+      // The opt-out only affects the CREATE TABLE rendering...
+      expect(migration.up[0]).toBe(
+        'CREATE TABLE IF NOT EXISTS "events" ("id" TEXT PRIMARY KEY NOT NULL, "tenant_id" TEXT);',
+      );
+      // ...the indexes still come from the strategy.
+      expect(migration.up).toContain(
+        'CREATE INDEX IF NOT EXISTS "events_tenant_id_idx" ON "events" ("tenant_id");',
+      );
+    });
+
     it('makes cached manifest DDL instant-safe for PostgreSQL on the deprecated cached-ddl path (#2069)', () => {
       const diff: SchemaDiff = {
         has_changes: true,

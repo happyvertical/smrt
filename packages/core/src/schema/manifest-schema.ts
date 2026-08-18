@@ -28,6 +28,7 @@ import {
   tokenizeSQLDDLBody,
 } from './ddl/materialize-manifest.js';
 import type { DatabaseEngine, EngineSpecificDDL } from './ddl/types.js';
+import { quoteIdentifier } from './sql-identifiers.js';
 import type {
   ColumnDefinition,
   IndexDefinition,
@@ -270,6 +271,34 @@ export function renderCollectedManifestTable(
   } else {
     createTable = materializeManifestDDLForEngine(table.legacyDdl, engine);
   }
+
+  // Engines that need UNIQUE inline for ON CONFLICT (DuckDB, JSON) get it
+  // from `generateCreateTable` on the structured path and skip those indexes
+  // in `generateIndexes`. A cached string never carried them, so a table with
+  // a column-less contributor would lose its uniqueness entirely; append the
+  // missing constraints as table elements (deduplicated against any the
+  // string already declares).
+  if (!table.structured && strategy.requiresInlineUnique()) {
+    const uniqueElements = table.definition.indexes
+      .filter(
+        (index) =>
+          index.unique &&
+          !index.where &&
+          !index.jsonPath &&
+          index.columns.length > 0,
+      )
+      .map(
+        (index) =>
+          `UNIQUE(${index.columns.map((column) => quoteIdentifier(column)).join(', ')})`,
+      );
+    if (uniqueElements.length > 0) {
+      createTable = mergeManifestDDL(
+        createTable,
+        `CREATE TABLE ${quoteIdentifier(table.tableName)} (\n  ${uniqueElements.join(',\n  ')}\n)`,
+      );
+    }
+  }
+
   return {
     createTable,
     indexes: strategy.generateIndexes(table.definition),
