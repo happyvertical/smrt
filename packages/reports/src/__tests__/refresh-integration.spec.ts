@@ -441,8 +441,11 @@ async function createRuntimeTables(db: DatabaseInterface): Promise<void> {
       updated_at TEXT
     )
   `);
+  // SmrtJob is @TenantScoped, so its natural key leads with the tenant
+  // column (smrt#2360) — the hand-built table must carry the same unique
+  // index the framework schema emits or `save()`'s ON CONFLICT cannot bind.
   await db.query(
-    'CREATE UNIQUE INDEX smrt_jobs_slug_context_idx ON _smrt_jobs (slug, context)',
+    'CREATE UNIQUE INDEX smrt_jobs_slug_context_idx ON _smrt_jobs (tenant_id, slug, context)',
   );
   await db.query(`
     CREATE TABLE _smrt_report_runs (

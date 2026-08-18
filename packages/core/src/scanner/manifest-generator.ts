@@ -10,6 +10,10 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import {
+  defaultConflictColumns,
+  resolveTenantColumn,
+} from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type {
@@ -254,6 +258,31 @@ export class ManifestGenerator {
       }
     }
 
+    this.applyGenerationPasses(manifest, {
+      packageName: options?.packageName,
+      packageJson: options?.packageJson,
+    });
+
+    return manifest;
+  }
+
+  /**
+   * Run every manifest generation pass, in order, on a manifest whose
+   * `objects` have been collected. This is THE pass sequence: the OXC vite
+   * plugin (`vite-plugin/index.ts`) and `ManifestBuilder.buildManifest()`
+   * call it too, so the three producers cannot drift — before #2360
+   * `ManifestBuilder` skipped the report passes and its manifests carried
+   * `(slug, context)` conflict indexes for `@report` classes while the
+   * runtime upserted on the report's group columns.
+   *
+   * @param manifest - manifest with `objects` populated (and
+   *   `smrtDependencies` set, so external STI bases resolve)
+   * @param options - package metadata for the agent-manifest pass
+   */
+  applyGenerationPasses(
+    manifest: SmartObjectManifest,
+    options?: { packageName?: string; packageJson?: PackageJsonLike },
+  ): void {
     // Report cache rows are safe to scope by tenant even when a report is
     // global: optional mode keeps tenant-less rows readable outside a tenant
     // context and gives tenant-scoped reports the tenant_id column their raw
@@ -270,6 +299,11 @@ export class ManifestGenerator {
     // Report models are read-only cache tables. Fill in the generated surface
     // and natural conflict key from report metadata before schema generation.
     this.normalizeReportObjects(manifest);
+
+    // Tenant-scoped classes key on `[tenant column, ...natural key]` (#2360);
+    // materialize that default so schema generation, the knowledge artifact
+    // and the runtime read the same conflict target.
+    this.normalizeConflictColumns(manifest);
 
     // Fourth pass: Generate validation rules for all objects
     // This pre-computes validation rules from field definitions, eliminating
@@ -288,8 +322,6 @@ export class ManifestGenerator {
       options?.packageName,
       options?.packageJson,
     );
-
-    return manifest;
   }
 
   /**
@@ -722,6 +754,52 @@ export class ManifestGenerator {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.decoratorConfig?.report) continue;
       obj.decoratorConfig.tenantScoped ??= { mode: 'optional' };
+    }
+  }
+
+  /**
+   * Materialize the tenant-aware default conflict target (#2360).
+   *
+   * A tenant-scoped class that declares no `@smrt({ conflictColumns })` keys
+   * on `[tenant column, ...natural key]` — `(tenant_id, slug, context)` for
+   * a class-per-table object, `(tenant_id, slug, context, _meta_type)` for a
+   * single-table hierarchy — so two tenants can each own the same slug and
+   * neither `save()` adopts the other's row. Writing the resolved key into
+   * `decoratorConfig.conflictColumns` (mirroring `normalizeReportObjects`)
+   * makes the manifest, the generated schema, the knowledge artifact and
+   * `ObjectRegistry.getConflictColumns()` read one value.
+   *
+   * Only schema owners are normalized: an STI child inherits the table (and
+   * therefore the key) from its root, and `getConflictColumns()` resolves a
+   * child through its root at runtime. Explicit `conflictColumns` and
+   * `@report` classes (keyed by `normalizeReportObjects`) are left alone.
+   * Runs after `injectTenantScopedFields()` and `mergeInheritedFields()` so
+   * the tenant field and the inherited `tableStrategy` are in place, and
+   * before `generateSchemas()`.
+   */
+  normalizeConflictColumns(manifest: SmartObjectManifest): void {
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.decoratorConfig) continue;
+      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(obj.className)) continue;
+      if (obj.decoratorConfig.conflictColumns) continue;
+      if (obj.decoratorConfig.report) continue;
+      if (this.isSTIChildClass(obj, manifest)) continue;
+
+      const tenantScoped = obj.decoratorConfig.tenantScoped;
+      if (!tenantScoped) continue;
+
+      const { tenantConfig } = this.normalizeTenantScopedConfig(tenantScoped);
+      const tenantColumn = resolveTenantColumn(
+        tenantConfig.field,
+        (fieldName) => Boolean(obj.fields[fieldName]),
+        toSnakeCase,
+      );
+      if (!tenantColumn) continue;
+
+      obj.decoratorConfig.conflictColumns = defaultConflictColumns(
+        obj.decoratorConfig.tableStrategy === 'sti' ? 'sti' : 'cti',
+        tenantColumn,
+      );
     }
   }
 
