@@ -26,10 +26,15 @@ export {
 export type { DiffOptions } from './differ.js';
 // Schema comparison
 export {
+  canonicalizeDefault,
   generateSchemaDiff,
   getSQLFromDiff,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
+  isInfoOnlyChange,
+  isManualOrAdvisoryChange,
   SchemaComparer,
+  uniqueColumnIndexName,
 } from './differ.js';
 export type {
   GeneratedMigration,

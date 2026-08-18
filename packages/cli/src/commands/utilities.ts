@@ -38,6 +38,7 @@ import {
   getSyntheticMigrationNameForAction,
   type MigrationAction,
   partitionSchemaChanges,
+  printSchemaAdvisories,
   type SchemaChangeLike,
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
@@ -255,6 +256,8 @@ interface DbMigrateOptions {
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
+  'drop-columns'?: boolean;
+  'relax-columns'?: boolean;
   verbose?: boolean;
 }
 
@@ -1373,6 +1376,18 @@ export default testManifest;
           'Drop orphan indexes (in DB but not in manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default.',
         default: false,
       },
+      'drop-columns': {
+        type: 'boolean',
+        description:
+          'DESTRUCTIVE: drop orphan columns (in DB but not in manifest). Off by default; orphans are always reported.',
+        default: false,
+      },
+      'relax-columns': {
+        type: 'boolean',
+        description:
+          'Apply constraint relaxations the manifest implies: DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns (PostgreSQL/DuckDB). Off by default; relaxations are always reported.',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1629,6 +1644,8 @@ export default testManifest;
         // --drop-indexes for safety.
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
+          includeDroppedColumns: Boolean(options['drop-columns']),
+          relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
         });
         const diff = await comparer.compare(manifestSchemas);
@@ -1668,6 +1685,7 @@ export default testManifest;
         );
         migrations.push(...partitionedChanges.migrations);
         manualInterventions.push(...partitionedChanges.manualInterventions);
+        const advisories = partitionedChanges.advisories;
 
         assertForceMigrationTargetsExist(forceSelection.forceMigrations, [
           ...diff.added_tables.map(
@@ -1692,7 +1710,9 @@ export default testManifest;
             const detail =
               change.type === 'type_upgrade'
                 ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
-                : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
+                : change.type === 'alter_column'
+                  ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (${change.alteration ?? 'alter_column'}; ${change.sql?.replace(/^--\s*/, '') ?? 'cannot auto-apply on this database engine'})`
+                  : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
 
             console.log(`   ${detail}`);
           }
@@ -1702,6 +1722,15 @@ export default testManifest;
           );
         }
 
+        // 9b. Report-only advisories (#2369): orphan columns / stale unique
+        // constraints / relaxations not opted into. Printed every run so a
+        // NOT NULL orphan that breaks inserts is never silent; they do not
+        // fail the command by themselves.
+        printSchemaAdvisories(advisories, {
+          orphanTables: diff.orphan_tables ?? [],
+          verbose: Boolean(options.verbose),
+        });
+
         // 10. Handle no migrations needed
         const tablesCreated = diff.added_tables.length > 0;
         const schemaUpToDate =
@@ -1710,13 +1739,19 @@ export default testManifest;
           !tablesCreated &&
           systemTimestampPreview.length === 0;
 
+        // Report-only findings (#2369) were printed above; keep the summary
+        // line honest when some of them are warnings.
+        const upToDateMessage = advisories.some(
+          (a) => a.advisory.severity === 'warning',
+        )
+          ? '✅ No migrations needed - see the live schema findings above\n'
+          : '✅ Database schema is up to date - no migrations needed\n';
+
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
         if (isDryRun) {
           if (schemaUpToDate && !repairData) {
-            console.log(
-              '✅ Database schema is up to date - no migrations needed\n',
-            );
+            console.log(upToDateMessage);
             return;
           }
 
@@ -1751,12 +1786,39 @@ export default testManifest;
               (m) => m.type === 'drop_index',
             );
 
+            const columnAlterations = migrations.filter(
+              (m) => m.type === 'alter_column',
+            );
+            const columnDrops = migrations.filter(
+              (m) => m.type === 'drop_column',
+            );
+
             if (columnMigrations.length > 0) {
               console.log(`  📊 Columns to add: ${columnMigrations.length}`);
               for (const m of columnMigrations) {
                 console.log(
                   `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
                 );
+              }
+              console.log();
+            }
+
+            if (columnAlterations.length > 0) {
+              console.log(`  🔧 Columns to alter: ${columnAlterations.length}`);
+              for (const m of columnAlterations) {
+                console.log(
+                  `     ${m.tableName}.${m.columnName ?? m.column?.name} (${m.alteration ?? 'alter'}: ${m.mismatch?.actual ?? '?'} → ${m.mismatch?.expected ?? '?'})`,
+                );
+              }
+              console.log();
+            }
+
+            if (columnDrops.length > 0) {
+              console.log(
+                `  🗑️  Columns to drop (DESTRUCTIVE, --drop-columns): ${columnDrops.length}`,
+              );
+              for (const m of columnDrops) {
+                console.log(`     ${m.tableName}.${m.columnName}`);
               }
               console.log();
             }
@@ -1854,6 +1916,18 @@ export default testManifest;
             if (migration.type === 'add_column' && migration.column) {
               migrationSql = migration.sql || '';
               actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+            } else if (
+              migration.type === 'alter_column' &&
+              (migration.columnName || migration.column)
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Altered column ${migration.tableName}.${migration.columnName ?? migration.column?.name} (${migration.alteration ?? 'alter'})`;
+            } else if (
+              migration.type === 'drop_column' &&
+              migration.columnName
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
             } else if (migration.type === 'type_upgrade' && migration.column) {
               migrationSql = migration.sql || '';
               actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
@@ -1875,11 +1949,15 @@ export default testManifest;
               description:
                 migration.type === 'add_column'
                   ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : migration.type === 'type_upgrade'
-                    ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                    : migration.type === 'drop_index'
-                      ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                      : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                  : migration.type === 'alter_column'
+                    ? `Alter column ${migration.columnName ?? migration.column?.name} on ${migration.tableName} (${migration.alteration ?? 'alter'}: ${migration.mismatch?.actual ?? '?'} → ${migration.mismatch?.expected ?? '?'})`
+                    : migration.type === 'drop_column'
+                      ? `Drop column ${migration.columnName} from ${migration.tableName}`
+                      : migration.type === 'type_upgrade'
+                        ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                        : migration.type === 'drop_index'
+                          ? `Drop index ${migration.indexName} on ${migration.tableName}`
+                          : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on
@@ -2008,9 +2086,7 @@ export default testManifest;
         }
 
         if (schemaUpToDate && !repairData) {
-          console.log(
-            '✅ Database schema is up to date - no migrations needed\n',
-          );
+          console.log(upToDateMessage);
         }
 
         // 13.5 Handle safe data repair requested via --repair-data
