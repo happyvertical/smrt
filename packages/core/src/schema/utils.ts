@@ -22,7 +22,11 @@ export {
 } from './ddl/materialize-manifest.js';
 // Index-rendering helpers live in a separate file to avoid pulling the
 // heavyweight registry/collection module graph into the DDL strategies.
-export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
+export {
+  isJsonPathIndex,
+  isStiSubtypeUniqueIndex,
+  renderIndexTarget,
+} from './index-utils.js';
 // Structured manifest → executable DDL helpers (#2358). Re-exported here for
 // `@happyvertical/smrt-vitest`, which already imports this subpath.
 export {

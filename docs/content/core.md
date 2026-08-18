@@ -1798,6 +1798,16 @@ class Product extends SmrtObject {
 }
 ```
 
+Reference columns need no opt-in: every `@foreignKey`, `@crossPackageRef` and
+tenant column is indexed automatically on every schema path (test databases,
+`manifest.json`, `smrt db:migrate`) unless an index already leads with it — for
+example a `conflictColumns` unique index that starts on that column. The
+primary key is not indexed twice, `unique: true` on a single-table-inheritance
+field becomes a unique index (partial by discriminator when only a subclass
+declares it), and classes with custom `conflictColumns` keep a plain
+`(slug, context)` index for slug loading. `smrt db:migrate` adds the missing
+indexes to existing databases and drops the legacy `<table>_id_idx`.
+
 A list workload usually needs more than one column: it filters on one or more
 columns and sorts on another, and only a composite index in that order serves it
 as an ordered scan. Declare those with `@smrt({ indexes })` (#2357):
@@ -1822,8 +1832,8 @@ columns first, sort column last. Declare columns, not a direction: PostgreSQL
 scans a btree either way, so an ascending index also serves the matching
 `ORDER BY ... DESC` without a sort step. A column the object does not have, or a
 name that collides with a different generated index, fails schema generation
-rather than silently dropping the index. An index leading with the tenant column
-also stands in for the automatic `tenant_id` index.
+rather than silently dropping the index. An index leading with a reference column (`tenant_id`, a foreign key, a
+cross-package ref) also stands in for that column's automatic index.
 
 ### 5. Cache AI Responses
 

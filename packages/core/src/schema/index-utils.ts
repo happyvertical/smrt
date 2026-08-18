@@ -74,3 +74,39 @@ export function isJsonPathIndex(
 ): boolean {
   return !!(index.jsonPath?.column && index.jsonPath.path);
 }
+
+/**
+ * The exact predicate `SchemaGenerator.emitStiUniqueIndexes()` emits —
+ * `_meta_type = '<qualified class>'` and nothing else — with tolerance for the
+ * cosmetic re-rendering PostgreSQL applies when it echoes a predicate back
+ * (`::text` casts, wrapping parentheses). A predicate that merely STARTS with
+ * `_meta_type = …` but carries further conjuncts (`AND active = TRUE`) is a
+ * caller-declared partial unique (#2357 `@smrt({ indexes })`) and must keep
+ * the ordinary degrade-to-full-UNIQUE behaviour, so it does not match.
+ */
+const STI_SUBTYPE_PREDICATE =
+  /^\s*\(*\s*_meta_type\s*\)?\s*(?:::\w+)?\s*=\s*'(?:[^']|'')*'\s*(?:::\w+)?\s*\)*\s*$/;
+
+/**
+ * True for a UNIQUE index whose predicate scopes it to one STI subtype
+ * (`WHERE _meta_type = '<qualified class>'`) — the shape `SchemaGenerator`
+ * emits for `@field({ unique: true })` declared only on an STI descendant
+ * (#2359).
+ *
+ * Engines without partial indexes (DuckDB, and the JSON adapter it backs)
+ * degrade an ordinary partial index to a full index, and a caller-declared
+ * partial UNIQUE (`WHERE active = TRUE`) to a full UNIQUE — a stricter but
+ * intended approximation. This shape is the exception: widening it would
+ * enforce one subtype's uniqueness across every sibling's rows in the shared
+ * table, so those engines skip it instead. Kept here so the DDL strategy and
+ * the migration differ apply the same test.
+ */
+export function isStiSubtypeUniqueIndex(
+  index: Pick<IndexDefinition, 'unique' | 'where'>,
+): boolean {
+  return (
+    index.unique === true &&
+    typeof index.where === 'string' &&
+    STI_SUBTYPE_PREDICATE.test(index.where)
+  );
+}

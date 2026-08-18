@@ -4,7 +4,7 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 
 ## Models
 
-- **Profile** (STI base → Bot, Organization, Person): email (globally unique exact value), readonly indexed `emailKey` derived with `normalizeIdentityEmail()` for adapter-independent identity lookup, `typeId` FK to ProfileType, plus a `metadata` `@oneToMany('ProfileMetadata')` relationship for controlled per-profile values.
+- **Profile** (STI base → Bot, Organization, Person): email (optional; identity uniqueness is arbitrated by `oidc_profile_email_reservations.email_key`, not a DB constraint — legacy duplicates are tolerated and fail closed, #2359), readonly indexed `emailKey` derived with `normalizeIdentityEmail()` for adapter-independent identity lookup, `typeId` FK to ProfileType, plus a `metadata` `@oneToMany('ProfileMetadata')` relationship for controlled per-profile values.
 - **ProfileAsset**: dedicated owned-asset join in `profile_assets` with `relationship` and `sortOrder`.
 - **ProfileRelationship**: bidirectional — creating one auto-creates reciprocal inverse. `contextProfileId` for tertiary relationships. `ProfileRelationshipTerm` tracks start/end dates.
 - **ProfileMetafield**: controlled vocabulary with `validationSchema`. **ProfileMetadata**: per-profile values linked to metafields.
