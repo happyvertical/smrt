@@ -26,6 +26,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
+- `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
 
@@ -75,7 +76,7 @@ references). Re-adding either requires the query builder to support it first;
 `src/__tests__/issue-2276-where-contract.test.ts` executes every accepted
 operator against a database to keep the two in step.
 
-STI child collections auto-filter by `_meta_type`.
+STI child collections auto-filter by `_meta_type`. Query bounds — `LIMIT 1` on `get()`, the `limit`/`offset` parser, the `orderBy` whitelist and sensitive/permission refusals, and the deterministic generated-list ordering (#2367) — are in [agents/query-bounds.md](agents/query-bounds.md).
 
 ## Bounded Collection Read Plans
 
@@ -98,7 +99,7 @@ Two persistence primitives every `SmrtObject`/`SmrtCollection` inherits — load
 
 ## @smrt() Decorator Options
 
-Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
+Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `indexes` (declared multi-column indexes, #2357 — see "Schema paths"), `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`, `ui` (`{ icon, label, description }` — nav/help hints round-tripped through the manifest as plain data; `description` is the object-level seed for form-level help, #2046).
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).
 
@@ -233,7 +234,7 @@ production never gets: the suite runs on a richer schema than it ships.
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check
 - **PostgreSQL migrate batches are always time-bounded (#2362)**: `MigrationTracker.applyAll({ atomic: true })` emits `SET LOCAL lock_timeout`/`statement_timeout` before any DDL, so a batch blocked on one table cannot hold its earlier locks indefinitely. `postgresSafe: true` adds concurrent-index mode — non-index DDL commits atomically, then index DDL runs `CONCURRENTLY` on a session pinned via `db.acquireSession()` (a pooled `db.query` would not keep the `SET` and the DDL on one connection). That mode is deliberately **not atomic**: unfinished index migrations are recorded `failed`, not `running`, and their `error_message` carries a `[smrt: concurrent-index phase 1 committed]` marker so a reconciling re-run resumes at the index build instead of replaying committed DDL. INVALID indexes are found via `pg_index.indisvalid` (`pg_indexes` reports them as present) and dropped before rebuild. Operational detail: `packages/cli/AGENTS.md`.
-- **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry
+- **Retry logic is transient-only (#2366)**: `db.get()`/`db.upsert()` retry 4× total (initial + 3), but `ErrorUtils.withRetry` classifies via the cause chain (`src/db-errors.ts`) and rethrows deterministic failures immediately — constraint violations, bad input syntax, missing tables, aborted PG tx (`25P02`). `@happyvertical/sql` stringifies the driver text into `context.originalError`, so **never match `error.message`**; use `classifyDatabaseError()` / `isUniqueViolationError()` / `isAbortedTransactionError()`.
 - **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query
 - **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)
 - **Table verification cache**: `isTableVerified(dbUrl, tableName)` avoids redundant `tableExists()` calls

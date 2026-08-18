@@ -325,6 +325,79 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     expect(out).toContain('idx_widgets_name');
   });
 
+  it('never hides an orphan NOT NULL column behind "up to date" (#2369)', async () => {
+    // Renamed required field: `title` lingers NOT NULL in the DB while the
+    // manifest only knows `headline`. Nothing is executable without a flag,
+    // but the finding must be printed — this is exactly the state where
+    // every ORM insert fails while the old differ said "in sync".
+    await createTable(
+      "CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, headline TEXT NOT NULL DEFAULT '')",
+    );
+    declareSchema({
+      posts: {
+        tableName: 'posts',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          headline: { type: 'TEXT', notNull: true, defaultValue: '' },
+        },
+        indexes: [],
+      },
+    });
+
+    await dbDiffCommand.handler([], {});
+
+    const out = output();
+    expect(out).toContain('no migrations needed (see notes below)');
+    expect(out).toContain('need an operator decision');
+    expect(out).toContain('posts.title: orphan column (TEXT NOT NULL)');
+    expect(out).toContain('--drop-columns');
+    expect(out).not.toContain('Changes Detected');
+  });
+
+  it('lists orphan-column drops when --drop-columns is set (#2369)', async () => {
+    await createTable(
+      'CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)',
+    );
+    declareSchema({
+      posts: {
+        tableName: 'posts',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+      },
+    });
+
+    await dbDiffCommand.handler([], { 'drop-columns': true });
+
+    const out = output();
+    expect(out).toContain('Columns to drop (1, --drop-columns)');
+    expect(out).toContain('- posts.title');
+  });
+
+  it('exposes orphan tables and advisory changes in JSON mode (#2369)', async () => {
+    await createTable('CREATE TABLE posts (id TEXT PRIMARY KEY, legacy TEXT)');
+    await createTable('CREATE TABLE zombie (id TEXT PRIMARY KEY)');
+    declareSchema({
+      posts: {
+        tableName: 'posts',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+      },
+    });
+
+    await dbDiffCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(output());
+    expect(parsed.orphanTables).toEqual(['zombie']);
+    expect(parsed.changes).toEqual([
+      expect.objectContaining({
+        type: 'orphan_column',
+        table: 'posts',
+        name: 'legacy',
+        advisory: expect.objectContaining({ severity: 'info' }),
+      }),
+    ]);
+  });
+
   it('reports a failure when schema comparison throws', async () => {
     // An invalid schema definition (missing the columns/indexes shape) makes
     // the real comparer throw, exercising the command's error branch.

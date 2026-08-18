@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-chat",
-  "version": "0.40.69",
+  "version": "0.40.70",
   "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
   "type": "module",
   "smrtRawPrimitives": "strict",

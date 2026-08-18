@@ -23,7 +23,14 @@ export default defineConfig({
     },
   },
   test: {
-    // Include all test file types
+    // Include all test file types.
+    //
+    // `test:postgres` runs this same config with the positional filter
+    // `optional.test.ts` rather than an explicit file list: every suite that
+    // needs a real external service is named `*.optional.test.ts` and gates
+    // itself on its own env var (`describe.skipIf(!pgUrl)`), so the filter
+    // picks up new PostgreSQL suites with no script edit — and stops every
+    // concurrent PR from appending to the same one-line script and conflicting.
     include: ['src/**/*.{test,spec}.{ts,mts}'],
 
     // Exclude what Vitest shouldn't handle

@@ -90,6 +90,18 @@ export {
   type ResolveDatabaseOptions,
   resolveDatabase,
 } from './database';
+// Driver-error classification for the persistence path (#2366)
+export {
+  classifyDatabaseError,
+  classifyDialectMessage,
+  type DatabaseErrorClassification,
+  type DatabaseErrorKind,
+  isAbortedTransactionError,
+  isDeterministicDatabaseError,
+  isNotNullViolationError,
+  isTransientDatabaseError,
+  isUniqueViolationError,
+} from './db-errors';
 export {
   applyPendingDecoratorRegistrations,
   type CompatiblePropertyDecorator,
@@ -177,6 +189,8 @@ export {
   generateSchemaDiff,
   getSQLFromDiff,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
+  isManualOrAdvisoryChange,
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';
@@ -184,11 +198,53 @@ export {
   SmrtPolymorphicAssociation,
   type SmrtPolymorphicAssociationOptions,
 } from './polymorphic-association';
+// Runtime PostgreSQL pool timeouts (#2377). Deliberately narrow: this is what
+// another package needs to bound a pool it builds itself, and nothing more.
+// The URL rewriter and the engine predicate stay internal, and the parser is
+// public through `./migrations` as `parsePostgresTimeoutMs` — one name, one
+// place.
+export {
+  applyPostgresRuntimeTimeouts,
+  DEFAULT_POSTGRES_TIMEOUTS,
+  POSTGRES_TIMEOUT_ENV_VARS,
+  type PostgresTimeoutConfig,
+  type ResolvedPostgresTimeouts,
+  resolvePostgresTimeouts,
+} from './postgres-timeouts';
+// Shared list query bounds for every generated read surface (#2367)
+export {
+  buildDefaultListOrderBy,
+  DEFAULT_LIST_LIMIT,
+  DEFAULT_LIST_ORDER_BY,
+  type ListBoundOptions,
+  MAX_LIST_LIMIT,
+  QueryBoundsError,
+  QueryOrderByError,
+  resolveListLimit,
+  resolveListOffset,
+} from './query-bounds';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
 export * from './runtime/index';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
+// Live-schema parity check (#2368) — compares a live database to the shape
+// the model layer assumes, including hand-DDL `_smrt_*` system tables.
+export {
+  type ConflictTargetInput,
+  checkLiveSchemaParity,
+  type ExpectedTableOrigin,
+  type LiveParityFinding,
+  type LiveParityFindingKind,
+  type LiveParitySeverity,
+  LiveSchemaParityError,
+  type LiveSchemaParityOptions,
+  type LiveSchemaParityReport,
+} from './schema/live-parity';
+export {
+  getSystemTableShapes,
+  type SystemTableShape,
+} from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
 // Universal signaling system

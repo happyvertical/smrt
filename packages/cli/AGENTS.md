@@ -7,13 +7,16 @@ Developer CLI with lazy-loaded commands, manifest discovery, and class introspec
 ```
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
+smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification
+smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:migrate              # Apply migrations
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:diff                 # Show schema differences without generating migration files
-smrt db:rollback             # Rollback migrations
+smrt db:rollback             # Roll back migrations by executing their recorded DOWN
+smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
@@ -64,6 +67,78 @@ after that commit. This is the mode for large index rollouts.
 - Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
   before the transaction opens — PostgreSQL cannot run it there.
 
+## Live-schema parity (#2368)
+
+`doctor --db` and `db:status --parity` share `src/commands/db-parity.ts`, which
+runs core's `checkLiveSchemaParity()`. This answers a different question than
+`db:status`/`db:diff`: those compare the live database to the **manifest**, i.e.
+to the artifact that dropped the index in the first place, which is why a
+database missing 164 tenant-column indexes reported "in sync" (#2356).
+
+Expected shape comes from the manifest schemas, the hand-DDL `_smrt_*` system
+tables (parsed by core's `system-table-shapes.ts` — they are in no manifest and
+enter no diff), and an index policy that consults no manifest at all: every
+foreign-key/cross-package-ref/tenant column leads an index, every registry
+conflict target has a matching UNIQUE index, every `unique: true` column is
+unique live. Conflict targets come from `ObjectRegistry.getConflictColumns()`,
+not from the schema definition.
+
+- Severity is the contract: `error` fails the command (missing table/column,
+  type drift, orphan NOT NULL, conflict target unindexed or non-unique,
+  PostgreSQL INVALID index), `warning` does not (index coverage), `info` is
+  hidden without `--verbose` (undeclared tables/columns/indexes).
+- Both surfaces **fail closed**: an unreachable database, or an adapter with no
+  `getTableSchema`, is an error, never a silent pass. Where index metadata
+  cannot be read at all, index checks are skipped and the report says so
+  (`indexIntrospection: 'unavailable'`) rather than inventing missing indexes.
+- The check is read-only and lives in a new core module; it does not share code
+  with `migrations/differ.ts`.
+
+## `db:migrate` on SQLite: type changes rebuild the table
+
+SQLite has no `ALTER COLUMN ... TYPE`, so a type-bucket change (the common one
+being a numeric default edited `0` → `0.0`) is applied as the documented table
+rebuild — stage, copy, drop, rename, replay indexes and triggers — planned by
+`smrt-core`'s `migrations/sqlite-rebuild.ts` and executed inside the same
+atomic batch as everything else. It is no longer a "manual intervention" that
+makes `db:migrate` exit 1 on every run (#2370). All drifted columns of one
+table are fixed by one rebuild; `--dry-run` prints the whole statement list.
+
+The rebuild refuses — and the column stays manual drift — when another table
+declares a foreign key onto the target while `PRAGMA foreign_keys` is ON,
+because `DROP TABLE` would fire those children's `ON DELETE` actions. Fix that
+one by hand (or against a connection with enforcement disabled).
+
+## `db:rollback` is execute-or-refuse
+
+Schema state is diff-driven: `db:migrate` derives every migration from the
+manifest at run time and stores **no SQL** in `_smrt_schema_migrations`. So
+`db:rollback` can only honour the one DOWN script that is reconstructible from
+a tracking row — `create_table_<table>` → `DROP TABLE IF EXISTS "<table>"`,
+the exact statement `db:migrate` records for `diff.added_tables`.
+
+- Rows with a reconstructible DOWN are **executed** through
+  `MigrationTracker.rollback` (transactional), then marked `rolled_back`.
+- Anything else is **refused**: non-zero exit, an error naming each migration
+  and why, and no row touched. Refusal is all-or-nothing across the selected
+  set — a partial revert would leave the chain in a state the remaining DOWN
+  scripts were not written against. This includes rows recorded
+  `is_reversible` under a caller-chosen name: reversible at apply time, but the
+  SQL was never persisted, so it cannot be replayed (#2378).
+- `--mark-only` is the explicit opt-in for the record-only flip (for an
+  operator who already reverted the schema by hand). It says in its own output
+  that the schema was not changed, and it is the only path that moves a row
+  without running DDL.
+- A failed DOWN stops the batch; the migrations behind it are reported
+  `Not attempted` and left `completed`.
+- `--dry-run` previews the DOWN statements and still exits non-zero when the
+  real run would refuse. Both `--dry-run` and `--mark-only` are declared
+  kebab-cased, so handlers must read `options['dry-run']` / `options['mark-only']`
+  (`parseCliArgs` returns keys verbatim — the #1385 data-loss class).
+
+Reverting a non-`create_table` change is a forward operation: update the
+`@smrt` object definitions and run `db:migrate` again.
+
 ## Architecture
 
 - **Lazy command loading**: commands loaded on-demand via dynamic import (~100ms overhead on first use)
@@ -94,3 +169,7 @@ after that commit. This is the mode for large index rollouts.
   global when it appears before or without a subcommand (#2279). `--help` is
   deliberately untouched.
 - **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed generated schema repairs instead of treating all failed rows as current blockers
+- **Decorator check follows the Vite major**: doctor requires `oxc.decorator` in
+  vite.config on Vite 8+ and accepts tsconfig `experimentalDecorators` only
+  below it. The old unconditional tsconfig check flagged correct Vite 8 projects
+  and passed broken ones (#2368)

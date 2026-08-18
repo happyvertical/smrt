@@ -7,7 +7,12 @@
  * - Drift detection warnings
  */
 
-import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
+import {
+  checkLiveSchemaParity,
+  type LiveSchemaParityReport,
+  ObjectRegistry,
+  SchemaComparer,
+} from '@happyvertical/smrt-core';
 import type { SchemaDiff } from '@happyvertical/smrt-core/migrations';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
@@ -21,6 +26,10 @@ import {
   getUnresolvedGeneratedMigrationNames,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
+import {
+  collectRegistryConflictTargets,
+  formatParityReport,
+} from './db-parity.js';
 import { assessFailedMigrations } from './migration-failure-analysis.js';
 import {
   evaluateSchemaContract,
@@ -50,7 +59,13 @@ type FailedMigrationSummary = {
   details: Array<{
     name: string;
     resolution: 'action_required' | 'superseded' | 'manual_review';
-    kind: 'add_column' | 'add_index' | 'type_upgrade' | 'other';
+    kind:
+      | 'add_column'
+      | 'drop_column'
+      | 'alter_column'
+      | 'add_index'
+      | 'type_upgrade'
+      | 'other';
     reason: string;
     errorMessage: string | null;
   }>;
@@ -62,6 +77,7 @@ type FailedMigrationBuckets = ReturnType<typeof summarizeFailedMigrations>;
 interface DbStatusOptions {
   json?: boolean;
   verbose?: boolean;
+  parity?: boolean;
 }
 
 const CANONICAL_UUID_RE =
@@ -214,7 +230,10 @@ export function summarizeSchemaDiff(diff: {
       expected: string;
       actual: string;
     };
+    alteration?: string;
+    advisory?: { severity: 'warning' | 'info'; message: string };
     sql?: string;
+    sqlStatements?: string[];
   }>;
 }): StatusDrift[] {
   const drift: StatusDrift[] = [];
@@ -282,10 +301,121 @@ export function summarizeSchemaDiff(diff: {
             : 'Manual intervention required to reconcile this incompatible live column type.',
         });
         break;
+
+      // Nullability / default drift (#2369). Executable repairs are applied
+      // by db:migrate; comment-only ones need a manual step; report-only
+      // relaxations carry the differ's advisory.
+      case 'alter_column': {
+        const name = `${change.table}.${change.name ?? '(unknown)'}`;
+        const driftType =
+          change.alteration === 'set_not_null' ||
+          change.alteration === 'drop_not_null'
+            ? 'nullability_drift'
+            : 'default_drift';
+        const hasSql = Boolean(change.sql || change.sqlStatements?.length);
+        if (!hasSql && change.advisory) {
+          if (change.advisory.severity !== 'warning') break; // note, not drift
+          drift.push({
+            name,
+            type: driftType,
+            recommendation: change.advisory.message,
+          });
+        } else if (classifyTypeUpgradeSql(change.sql) === 'executable') {
+          drift.push({
+            name,
+            type: driftType,
+            recommendation: `Run \`smrt db:migrate\` to repair this live column (${change.alteration ?? 'alter_column'}: expected ${change.mismatch?.expected ?? '?'}, found ${change.mismatch?.actual ?? '?'}).`,
+          });
+        } else {
+          drift.push({
+            name,
+            type: driftType,
+            recommendation: change.advisory?.message
+              ? `Manual intervention required: ${change.advisory.message}`
+              : `Manual intervention required: expected ${change.mismatch?.expected ?? '?'}, found ${change.mismatch?.actual ?? '?'} (${change.alteration ?? 'alter_column'}; cannot auto-apply on this database engine).`,
+          });
+        }
+        break;
+      }
+
+      case 'orphan_column':
+        // Info-level orphans (nullable / defaulted, harmless for inserts)
+        // are notes, not drift — see summarizeSchemaNotes.
+        if (change.advisory?.severity !== 'warning') break;
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'orphan_column_blocking',
+          recommendation:
+            change.advisory?.message ??
+            'Column exists in the database but not in the manifest.',
+        });
+        break;
+
+      case 'orphan_index':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'orphan_unique_constraint',
+          recommendation:
+            change.advisory?.message ??
+            'Unique constraint exists in the database but not in the manifest.',
+        });
+        break;
+
+      case 'drop_column':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'orphan_column',
+          recommendation:
+            'Run `smrt db:migrate --drop-columns` to drop this orphan column (destructive).',
+        });
+        break;
     }
   }
 
   return drift;
+}
+
+/**
+ * Info-level live-schema notes (#2369): harmless orphan columns, live
+ * defaults the manifest no longer declares, and tables no loaded manifest
+ * declares. Reported separately from `drift` so a JSON consumer counting
+ * drift entries is not tripped by findings that need no action.
+ */
+export function summarizeSchemaNotes(diff: {
+  orphan_tables?: string[];
+  changes: Array<{
+    type: string;
+    table: string;
+    name?: string;
+    advisory?: { severity: 'warning' | 'info'; message: string };
+    sql?: string;
+    sqlStatements?: string[];
+  }>;
+}): StatusDrift[] {
+  const notes: StatusDrift[] = [];
+  for (const change of diff.changes) {
+    const hasSql = Boolean(change.sql || change.sqlStatements?.length);
+    if (hasSql || change.advisory?.severity !== 'info') continue;
+    notes.push({
+      name: `${change.table}.${change.name ?? '(unknown)'}`,
+      type:
+        change.type === 'orphan_column'
+          ? 'orphan_column'
+          : change.type === 'alter_column'
+            ? 'default_drift'
+            : change.type,
+      recommendation: change.advisory.message,
+    });
+  }
+  for (const table of diff.orphan_tables ?? []) {
+    notes.push({
+      name: table,
+      type: 'orphan_table',
+      recommendation:
+        'Table exists in the database but no loaded manifest declares it. Not dropped; remove it manually if it is stale.',
+    });
+  }
+  return notes;
 }
 
 export const dbStatusCommand: CLICommand = {
@@ -305,6 +435,13 @@ export const dbStatusCommand: CLICommand = {
       description: 'Show detailed migration information',
       default: false,
       short: 'v',
+    },
+    parity: {
+      type: 'boolean',
+      description:
+        'Also compare the live schema to the expected shape (incl. _smrt_* system tables and index policy)',
+      default: false,
+      short: 'p',
     },
   },
   handler: async (_args: string[], options: DbStatusOptions) => {
@@ -398,9 +535,12 @@ export const dbStatusCommand: CLICommand = {
           })),
         },
         drift: [] as StatusDrift[],
+        notes: [] as StatusDrift[],
         preconditions: [] as StatusPrecondition[],
         failedMigrations: summarizeFailedMigrations(failed, null),
         schemaContract: schemaContract as SchemaContractReport,
+        parity: null as LiveSchemaParityReport | null,
+        parityError: null as string | null,
       };
       let diff: SchemaDiff = {
         added_tables: [],
@@ -417,6 +557,7 @@ export const dbStatusCommand: CLICommand = {
         const comparer = new SchemaComparer(db);
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
+        status.notes = summarizeSchemaNotes(diff);
         status.preconditions = await checkTenantIdUuidPreconditions({
           db,
           dbType,
@@ -427,6 +568,29 @@ export const dbStatusCommand: CLICommand = {
           failed,
           getUnresolvedGeneratedMigrationNames(diff.changes),
         );
+
+        // 8b. Optional live-schema parity (#2368). The diff above answers
+        // "does the live schema match the manifest"; this answers "does the
+        // live schema match what the model layer actually needs", which is a
+        // different question whenever the manifest itself is what dropped an
+        // index (#2356) or a system table drifted (they never enter the diff).
+        if (options.parity) {
+          try {
+            status.parity = await checkLiveSchemaParity({
+              db,
+              schemas: manifestSchemas,
+              conflictTargets: collectRegistryConflictTargets(),
+              includeSystemTables: true,
+              engineHint: dbType,
+            });
+          } catch (error) {
+            status.parityError =
+              error instanceof Error ? error.message : String(error);
+          }
+        }
+      } else if (options.parity) {
+        status.parityError =
+          'The configured database adapter cannot describe tables, so live-schema parity cannot be verified.';
       }
 
       const failedAssessments = assessFailedMigrations(
@@ -447,11 +611,17 @@ export const dbStatusCommand: CLICommand = {
         details: failedAssessments,
       };
 
+      // A parity run that could not complete fails closed, and an error-level
+      // parity finding is a live-schema defect, not a hint.
+      const parityFailed =
+        status.parityError !== null || status.parity?.ok === false;
+
       // 9. Output results
       if (options.json) {
         console.log(JSON.stringify(status, null, 2));
         if (
           !schemaContract.ok ||
+          parityFailed ||
           status.preconditions.some((item) => item.status === 'error')
         ) {
           process.exitCode = 1;
@@ -526,6 +696,37 @@ export const dbStatusCommand: CLICommand = {
         console.log();
       } else {
         console.log('✅ Live schema matches current manifests');
+        console.log();
+      }
+
+      if (status.notes.length > 0) {
+        console.log(
+          `ℹ️  Live schema notes (${status.notes.length}, no action required):`,
+        );
+        for (const note of status.notes) {
+          console.log(`   • ${note.name}: ${note.type}`);
+          if (options.verbose) {
+            console.log(`     ${note.recommendation}`);
+          }
+        }
+        console.log();
+      }
+
+      if (options.parity) {
+        console.log('🗄️  Live Schema Parity:');
+        if (status.parityError) {
+          console.log(`   ❌ ${status.parityError}`);
+          process.exitCode = 1;
+        } else if (status.parity) {
+          for (const line of formatParityReport(status.parity, {
+            verbose: options.verbose,
+          })) {
+            console.log(line);
+          }
+          if (!status.parity.ok) {
+            process.exitCode = 1;
+          }
+        }
         console.log();
       }
 

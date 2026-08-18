@@ -12,6 +12,11 @@ import {
   resolveDispatchTenantScope,
 } from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
+import {
+  buildDefaultListOrderBy,
+  resolveListLimit,
+  resolveListOffset,
+} from '../query-bounds';
 import { ObjectRegistry } from '../registry';
 import type {
   ApiCustomRouteConfig,
@@ -1085,10 +1090,24 @@ export class APIGenerator {
   ): Promise<Response> {
     const cacheControl = this.resolveReadCachePolicy(objectName);
 
+    // #2367: parse the page bounds BEFORE any ETag/version work, and outside
+    // `buildPayload`, so a malformed `?limit=abc` costs one rejection rather
+    // than a table-version read plus a `LIMIT NaN` round-trip to the driver.
+    // `resolveListLimit` throws a 400-typed `QueryBoundsError`, which
+    // `handleRequest`'s `normalizeTypedHttpError` catch renders as a structured
+    // client error instead of the 500 `Number.parseInt('abc')` used to produce.
+    const limit = resolveListLimit(params.get('limit'));
+    const offset = resolveListOffset(params.get('offset'));
+
     const buildPayload = async () => {
-      const limit = Number.parseInt(params.get('limit') || '50', 10);
-      const offset = Number.parseInt(params.get('offset') || '0', 10);
-      const orderBy = params.get('orderBy') || 'created_at DESC';
+      // #2367: the default ordering carries a primary-key tiebreak. Rows sharing
+      // a `created_at` tick tie under `created_at DESC` alone, and a tie leaves
+      // the order unspecified — so successive LIMIT/OFFSET pages could repeat
+      // and skip those rows. An explicit `?orderBy` still wins.
+      const orderByParam = params.get('orderBy');
+      const orderBy: string | string[] = orderByParam
+        ? orderByParam
+        : this.resolveDefaultListOrderBy(objectName);
 
       // Build where clause from query params
       // Convert REST-style operators (price[gt]) to SQL-style (price >)
@@ -1485,6 +1504,42 @@ export class APIGenerator {
       tenantScoped,
       permissionScoped,
     });
+  }
+
+  /**
+   * Deterministic default ordering for a generated list page (#2367).
+   *
+   * The tiebreak follows the model's actual primary key. A class declaring
+   * `@field({ primaryKey: true })` has no synthetic `id` column — schema
+   * generation omits `id`/`slug`/`context` for custom-primary-key classes — so a
+   * hard-coded `id ASC` would name a column that does not exist and fail every
+   * unqualified list request for that model.
+   *
+   * The flag is read from both `_meta.primaryKey` and the top level: manifest
+   * field definitions carry it under `_meta`, decorator option bags mirror some
+   * flags at the top level.
+   *
+   * Deliberately reads only this object's own + inherited fields, NOT
+   * `getFieldMapsForPublicPolicy()`. That helper unions the STI base and every
+   * descendant because it answers a union question ("does any variant carry a
+   * read-permission field?"). Used here it would let a *sibling's* primary key
+   * become this object's tiebreak — and since STI variants share one table, the
+   * query would still succeed while tie-breaking on a mostly-NULL sibling
+   * column, silently defeating the total ordering this exists to provide.
+   */
+  private resolveDefaultListOrderBy(objectName: string | undefined): string[] {
+    if (!objectName) return buildDefaultListOrderBy();
+    const registered = ObjectRegistry.getClass(objectName);
+    const className =
+      registered?.qualifiedName ?? registered?.name ?? objectName;
+    const fields =
+      registered?.inheritedFields || ObjectRegistry.getFields(className);
+    for (const [fieldName, def] of fields) {
+      if (def?._meta?.primaryKey === true || def?.primaryKey === true) {
+        return buildDefaultListOrderBy(fieldName);
+      }
+    }
+    return buildDefaultListOrderBy();
   }
 
   private hasReadPermissionFields(objectName: string | undefined): boolean {

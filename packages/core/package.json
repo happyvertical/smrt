@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-core",
-  "version": "0.40.69",
+  "version": "0.40.70",
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "HappyVertical",
   "type": "module",
@@ -173,7 +173,7 @@
     "generate": "node scripts/generate-manifest.js",
     "generate:test": "node scripts/generate-test-manifest.js",
     "test": "node scripts/generate-test-manifest.js && vitest run",
-    "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/change-feed-concurrency.optional.test.ts src/__tests__/collection-read-plan-postgres.optional.test.ts src/__tests__/issue-2069-postgres-date-instant.optional.test.ts src/__tests__/issue-2070-postgres-hydration.optional.test.ts src/migrations/__tests__/issue-2362-postgres-migrate-timeouts.optional.test.ts",
+    "test:postgres": "node scripts/generate-test-manifest.js && NODE_OPTIONS=--trace-deprecation node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:integration": "TEST_INTEGRATION=1 vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "node scripts/generate-test-manifest.js && vitest",
     "build": "node scripts/generate-manifest.js && vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json && cp src/manifest/smrt-knowledge.json dist/smrt-knowledge.json",

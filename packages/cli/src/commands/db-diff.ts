@@ -9,6 +9,12 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
+import {
+  classifyTypeUpgradeSql,
+  partitionSchemaChanges,
+  printSchemaAdvisories,
+  type SchemaChangeLike,
+} from './db-migrate-actions.js';
 import { resolvePostgresTimestampMigration } from './postgres-timestamp-migration.js';
 
 const UNSUPPORTED_GENERATE_MESSAGE =
@@ -26,6 +32,8 @@ interface DbDiffOptions {
   json?: boolean;
   verbose?: boolean;
   'drop-indexes'?: boolean;
+  'drop-columns'?: boolean;
+  'relax-columns'?: boolean;
   'postgres-timestamp-legacy-timezone'?: string;
 }
 
@@ -77,6 +85,18 @@ export const dbDiffCommand: CLICommand = {
       type: 'boolean',
       description:
         'Include orphan-index drops in the diff (indexes in DB but not in the manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default for safety.',
+      default: false,
+    },
+    'drop-columns': {
+      type: 'boolean',
+      description:
+        'Include orphan-column drops in the diff (columns in DB but not in the manifest). Off by default; orphans are always reported.',
+      default: false,
+    },
+    'relax-columns': {
+      type: 'boolean',
+      description:
+        'Include constraint relaxations in the diff (DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, DROP NOT NULL on orphan NOT NULL columns). Off by default; relaxations are always reported.',
       default: false,
     },
     'postgres-timestamp-legacy-timezone': {
@@ -188,8 +208,9 @@ export const dbDiffCommand: CLICommand = {
       // of what migrate will do.
       const comparer = new SchemaComparer(db, {
         includeDroppedTables: false,
-        includeDroppedColumns: false,
+        includeDroppedColumns: Boolean(options['drop-columns']),
         includeDroppedIndexes: Boolean(options['drop-indexes']),
+        relaxColumns: Boolean(options['relax-columns']),
         postgresTimestampMigration,
       });
 
@@ -203,6 +224,7 @@ export const dbDiffCommand: CLICommand = {
               hasChanges: diff.has_changes,
               addedTables: diff.added_tables.map((t) => t.tableName),
               droppedTables: diff.dropped_tables,
+              orphanTables: diff.orphan_tables ?? [],
               changes: diff.changes,
             },
             null,
@@ -212,8 +234,40 @@ export const dbDiffCommand: CLICommand = {
         return;
       }
 
+      // Report-only findings (#2369) are printed even when nothing is
+      // executable so an orphan NOT NULL column is never hidden behind an
+      // "up to date" line.
+      const { advisories } = partitionSchemaChanges(
+        diff.changes as SchemaChangeLike[],
+        (tableName) => tableName,
+      );
+
       if (!diff.has_changes) {
         console.log('✅ Database schema is up to date - no changes detected\n');
+        // Info-level notes (harmless orphans, stale defaults) do not count
+        // as changes but are still worth a line.
+        printSchemaAdvisories(advisories, {
+          orphanTables: diff.orphan_tables,
+          verbose: options.verbose,
+        });
+        return;
+      }
+
+      const executableOrManual = diff.changes.filter(
+        (c) => !(c.advisory && !c.sql && !c.sqlStatements),
+      );
+      if (
+        executableOrManual.length === 0 &&
+        diff.added_tables.length === 0 &&
+        diff.dropped_tables.length === 0
+      ) {
+        console.log(
+          '✅ Database schema is up to date - no migrations needed (see notes below)\n',
+        );
+        printSchemaAdvisories(advisories, {
+          orphanTables: diff.orphan_tables,
+          verbose: options.verbose,
+        });
         return;
       }
 
@@ -253,6 +307,56 @@ export const dbDiffCommand: CLICommand = {
         console.log(`  📊 New columns (${columnChanges.length}):`);
         for (const change of columnChanges) {
           console.log(`     + ${change.table}.${change.name}`);
+        }
+        console.log();
+      }
+
+      // Nullability/default repairs (#2369): executable ones are auto-applied
+      // by db:migrate; comment-only ones need a manual step (SQLite, or live
+      // NULLs blocking SET NOT NULL). Report-only relaxations print with the
+      // advisories below.
+      const columnAlterations = diff.changes.filter(
+        (c) => c.type === 'alter_column' && (c.sql || c.sqlStatements),
+      );
+      const autoAlterations = columnAlterations.filter(
+        (c) => classifyTypeUpgradeSql(c.sql) === 'executable',
+      );
+      const manualAlterations = columnAlterations.filter(
+        (c) => classifyTypeUpgradeSql(c.sql) !== 'executable',
+      );
+      if (autoAlterations.length > 0) {
+        console.log(
+          `  🔧 Column constraint repairs (${autoAlterations.length}):`,
+        );
+        for (const change of autoAlterations) {
+          console.log(
+            `     ~ ${change.table}.${change.name}: ${change.mismatch?.actual} → ${change.mismatch?.expected} (${change.alteration})`,
+          );
+        }
+        console.log('     (auto-applied by smrt db:migrate)\n');
+      }
+      if (manualAlterations.length > 0) {
+        console.log(
+          `  ⚠️  Column constraint drift needing a manual step (${manualAlterations.length}):`,
+        );
+        for (const change of manualAlterations) {
+          console.log(
+            `     ! ${change.table}.${change.name}: ${change.mismatch?.actual} → ${change.mismatch?.expected} (${change.alteration})`,
+          );
+          if (options.verbose && change.sql) {
+            console.log(`       ${change.sql.replace(/^--\s*/, '')}`);
+          }
+        }
+        console.log();
+      }
+
+      const columnDrops = diff.changes.filter((c) => c.type === 'drop_column');
+      if (columnDrops.length > 0) {
+        console.log(
+          `  🗑️  Columns to drop (${columnDrops.length}, --drop-columns):`,
+        );
+        for (const change of columnDrops) {
+          console.log(`     - ${change.table}.${change.name}`);
         }
         console.log();
       }
@@ -317,6 +421,11 @@ export const dbDiffCommand: CLICommand = {
         }
         console.log('     (Type changes require manual migration)\n');
       }
+
+      printSchemaAdvisories(advisories, {
+        orphanTables: diff.orphan_tables,
+        verbose: options.verbose,
+      });
 
       console.log('━'.repeat(50));
       console.log('\n💡 Schema migrations are manifest-driven.');

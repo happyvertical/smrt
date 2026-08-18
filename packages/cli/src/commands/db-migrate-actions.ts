@@ -1,8 +1,30 @@
 import { createHash } from 'node:crypto';
 
+/**
+ * Which column property an `alter_column` change repairs (mirrors
+ * `ColumnAlteration` in @happyvertical/smrt-core).
+ */
+export type ColumnAlterationLike =
+  | 'set_not_null'
+  | 'drop_not_null'
+  | 'set_default'
+  | 'drop_default';
+
+/**
+ * Report-only detail attached to a change the differ surfaces but does not
+ * execute (mirrors `SchemaChangeAdvisory` in @happyvertical/smrt-core).
+ */
+export interface SchemaChangeAdvisoryLike {
+  severity: 'warning' | 'info';
+  message: string;
+  suggestedSql?: string[];
+}
+
 export interface MigrationAction {
   type:
     | 'add_column'
+    | 'drop_column'
+    | 'alter_column'
     | 'add_index'
     | 'drop_index'
     | 'type_mismatch'
@@ -28,6 +50,13 @@ export interface MigrationAction {
    * DB-side index that's being removed.
    */
   indexName?: string;
+  /**
+   * Set on `drop_column` / `alter_column` actions — the live column name.
+   * `column` is only populated when the differ had a manifest definition.
+   */
+  columnName?: string;
+  /** Set on `alter_column` actions (#2369). */
+  alteration?: ColumnAlterationLike;
   mismatch?: {
     column: string;
     expected: string;
@@ -37,14 +66,32 @@ export interface MigrationAction {
   sqlStatements?: string[];
 }
 
+/**
+ * A change the differ reports but does not execute: orphan columns/indexes
+ * and relaxations not opted into (#2369). Surfaced by db:migrate/db:diff/
+ * db:status; never turned into a tracker migration.
+ */
+export interface SchemaAdvisory {
+  type: 'orphan_column' | 'orphan_index' | 'alter_column';
+  tableName: string;
+  className: string;
+  name: string;
+  alteration?: ColumnAlterationLike;
+  actual?: string;
+  advisory: SchemaChangeAdvisoryLike;
+}
+
 export interface SchemaChangeLike {
   type:
     | 'add_table'
     | 'drop_table'
     | 'add_column'
     | 'drop_column'
+    | 'alter_column'
+    | 'orphan_column'
     | 'add_index'
     | 'drop_index'
+    | 'orphan_index'
     | 'type_mismatch'
     | 'type_upgrade';
   table: string;
@@ -64,8 +111,21 @@ export interface SchemaChangeLike {
     expected: string;
     actual: string;
   };
+  alteration?: ColumnAlterationLike;
+  advisory?: SchemaChangeAdvisoryLike;
   sql?: string;
   sqlStatements?: string[];
+}
+
+/** True when a change carries an advisory and no executable statement. */
+export function isAdvisoryOnlyChangeLike(change: {
+  advisory?: SchemaChangeAdvisoryLike;
+  sql?: string;
+  sqlStatements?: string[];
+}): boolean {
+  if (!change.advisory) return false;
+  const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+  return statements.length === 0;
 }
 
 export type TypeUpgradeExecutionKind = 'executable' | 'manual' | 'noop';
@@ -189,6 +249,24 @@ export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
   return 'manual';
 }
 
+/**
+ * `alter_column` identities embed the alteration kind and the SQL shape so a
+ * column that is tightened, relaxed, and tightened again over its lifetime
+ * never reuses an applied tracker id with a different checksum (#2369).
+ */
+function alterColumnMigrationName(
+  tableName: string,
+  columnName: string,
+  alteration: ColumnAlterationLike | undefined,
+  action: { sql?: string; sqlStatements?: string[] },
+): string {
+  const kind = alteration ?? 'alter';
+  const fingerprint = sqlShapeFingerprint(action);
+  return fingerprint
+    ? `alter_column_${tableName}_${columnName}_${kind}_${fingerprint}`
+    : `alter_column_${tableName}_${columnName}_${kind}`;
+}
+
 export function getSyntheticMigrationNameForAction(
   action: MigrationAction,
 ): string | null {
@@ -197,6 +275,25 @@ export function getSyntheticMigrationNameForAction(
       return action.column
         ? `add_column_${action.tableName}_${action.column.name}`
         : null;
+
+    case 'drop_column': {
+      const columnName = action.columnName ?? action.column?.name;
+      return columnName
+        ? `drop_column_${action.tableName}_${columnName}`
+        : null;
+    }
+
+    case 'alter_column': {
+      const columnName = action.columnName ?? action.column?.name;
+      return columnName
+        ? alterColumnMigrationName(
+            action.tableName,
+            columnName,
+            action.alteration,
+            action,
+          )
+        : null;
+    }
 
     case 'add_index': {
       if (!action.index) return null;
@@ -238,6 +335,19 @@ export function getSyntheticMigrationNameForChange(
   switch (change.type) {
     case 'add_column':
       return change.name ? `add_column_${change.table}_${change.name}` : null;
+
+    case 'drop_column':
+      return change.name ? `drop_column_${change.table}_${change.name}` : null;
+
+    case 'alter_column':
+      return change.name && !isAdvisoryOnlyChangeLike(change)
+        ? alterColumnMigrationName(
+            change.table,
+            change.name,
+            change.alteration,
+            change,
+          )
+        : null;
 
     case 'add_index': {
       const indexName = change.index?.name ?? change.name;
@@ -323,6 +433,8 @@ export function classifyFailedMigration(
 ): FailedMigrationClassification {
   if (
     !migrationName.startsWith('add_column_') &&
+    !migrationName.startsWith('drop_column_') &&
+    !migrationName.startsWith('alter_column_') &&
     !migrationName.startsWith('add_index_') &&
     !migrationName.startsWith('drop_index_') &&
     !migrationName.startsWith('type_upgrade_')
@@ -343,6 +455,8 @@ export function getUnresolvedGeneratedMigrationNames(
   for (const change of changes) {
     if (
       change.type !== 'add_column' &&
+      change.type !== 'drop_column' &&
+      change.type !== 'alter_column' &&
       change.type !== 'add_index' &&
       change.type !== 'drop_index' &&
       change.type !== 'type_upgrade'
@@ -354,6 +468,11 @@ export function getUnresolvedGeneratedMigrationNames(
       change.type === 'type_upgrade' &&
       classifyTypeUpgradeSql(change.sql) === 'noop'
     ) {
+      continue;
+    }
+
+    // Report-only relaxations never become tracker migrations.
+    if (change.type === 'alter_column' && isAdvisoryOnlyChangeLike(change)) {
       continue;
     }
 
@@ -424,14 +543,111 @@ export function partitionSchemaChanges(
 ): {
   migrations: MigrationAction[];
   manualInterventions: MigrationAction[];
+  /**
+   * Report-only findings (#2369): orphan columns/indexes and relaxations the
+   * operator has not opted into. Printed, never executed, and they never
+   * fail db:migrate on their own.
+   */
+  advisories: SchemaAdvisory[];
 } {
   const migrations: MigrationAction[] = [];
   const manualInterventions: MigrationAction[] = [];
+  const advisories: SchemaAdvisory[] = [];
 
   for (const change of changes) {
     const className = getClassForTable(change.table);
 
     switch (change.type) {
+      case 'orphan_column':
+      case 'orphan_index': {
+        if (!change.name || !change.advisory) continue;
+        advisories.push({
+          type: change.type,
+          tableName: change.table,
+          className,
+          name: change.name,
+          actual: change.mismatch?.actual,
+          advisory: change.advisory,
+        });
+        break;
+      }
+
+      case 'drop_column': {
+        if (!change.name) continue;
+        migrations.push({
+          type: 'drop_column',
+          tableName: change.table,
+          className,
+          columnName: change.name,
+          mismatch: change.mismatch
+            ? {
+                column: change.name,
+                expected: change.mismatch.expected,
+                actual: change.mismatch.actual,
+              }
+            : undefined,
+          sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
+        });
+        break;
+      }
+
+      case 'alter_column': {
+        if (!change.name) continue;
+        if (isAdvisoryOnlyChangeLike(change) && change.advisory) {
+          advisories.push({
+            type: 'alter_column',
+            tableName: change.table,
+            className,
+            name: change.name,
+            alteration: change.alteration,
+            actual: change.mismatch?.actual,
+            advisory: change.advisory,
+          });
+          break;
+        }
+        const action: MigrationAction = {
+          type: 'alter_column',
+          tableName: change.table,
+          className,
+          columnName: change.name,
+          alteration: change.alteration,
+          ...(change.column
+            ? {
+                column: {
+                  name: change.name,
+                  type: change.column.type,
+                  notNull: change.column.notNull,
+                  defaultValue: change.column.defaultValue,
+                  unique: change.column.unique,
+                },
+              }
+            : {}),
+          mismatch: change.mismatch
+            ? {
+                column: change.name,
+                expected: change.mismatch.expected,
+                actual: change.mismatch.actual,
+              }
+            : undefined,
+          sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
+        };
+        // Same executable / manual split as type upgrades: comment-only SQL
+        // means the engine cannot alter the column in place (SQLite) or the
+        // differ found live data that blocks the repair.
+        if (classifyTypeUpgradeSql(change.sql) === 'executable') {
+          migrations.push(action);
+        } else {
+          manualInterventions.push(action);
+        }
+        break;
+      }
+
       case 'add_column': {
         const col = change.column;
         if (!change.name || !col) continue;
@@ -549,5 +765,73 @@ export function partitionSchemaChanges(
     }
   }
 
-  return { migrations, manualInterventions };
+  return { migrations, manualInterventions, advisories };
+}
+
+/**
+ * Print report-only schema findings (#2369) in a stable order: warnings
+ * first (an orphan NOT NULL column that breaks inserts, a stale unique
+ * constraint, a relaxation not opted into), then info, then orphan tables
+ * (verbose only — shared databases legitimately hold tables from other
+ * apps). Shared by db:migrate and db:diff so both commands report the same
+ * findings the same way.
+ */
+export function printSchemaAdvisories(
+  advisories: SchemaAdvisory[],
+  options: {
+    orphanTables?: string[];
+    verbose?: boolean;
+    log?: (line: string) => void;
+  } = {},
+): void {
+  const log = options.log ?? ((line: string) => console.log(line));
+  const warnings = advisories.filter((a) => a.advisory.severity === 'warning');
+  const infos = advisories.filter((a) => a.advisory.severity !== 'warning');
+
+  if (warnings.length > 0) {
+    log(
+      '⚠️  Live schema findings that need an operator decision (not applied):\n',
+    );
+    for (const item of warnings) {
+      log(`   ${describeAdvisory(item)}`);
+      log(`     ${item.advisory.message}`);
+      for (const suggestion of item.advisory.suggestedSql ?? []) {
+        log(`     ↳ ${suggestion}`);
+      }
+    }
+    log('');
+  }
+
+  if (infos.length > 0) {
+    log(`ℹ️  Live schema notes (${infos.length}, not applied):`);
+    for (const item of infos) {
+      log(`   ${describeAdvisory(item)}`);
+      if (options.verbose) {
+        log(`     ${item.advisory.message}`);
+        for (const suggestion of item.advisory.suggestedSql ?? []) {
+          log(`     ↳ ${suggestion}`);
+        }
+      }
+    }
+    log('');
+  }
+
+  const orphanTables = options.orphanTables ?? [];
+  if (orphanTables.length > 0 && options.verbose) {
+    log(
+      `ℹ️  Tables in the database that no loaded manifest declares (${orphanTables.length}): ${orphanTables.join(', ')}`,
+    );
+    log('   Not dropped; remove them manually if they are stale.\n');
+  }
+}
+
+function describeAdvisory(item: SchemaAdvisory): string {
+  switch (item.type) {
+    case 'orphan_column':
+      return `${item.tableName}.${item.name}: orphan column${item.actual ? ` (${item.actual})` : ''}`;
+    case 'orphan_index':
+      return `${item.tableName}.${item.name}: unique constraint not in manifest${item.actual ? ` (${item.actual})` : ''}`;
+    default:
+      return `${item.tableName}.${item.name}: ${item.alteration ?? 'alter_column'}${item.actual ? ` (live: ${item.actual})` : ''}`;
+  }
 }
