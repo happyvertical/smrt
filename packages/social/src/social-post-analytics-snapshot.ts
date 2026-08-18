@@ -59,7 +59,7 @@ export class SocialPostAnalyticsSnapshot extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @foreignKey(() => SocialPost)
+  @foreignKey(SocialPost)
   socialPostId: string | null = null;
 
   @field({ required: true })

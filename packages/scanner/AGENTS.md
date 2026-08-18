@@ -112,3 +112,11 @@ exhausts the heap when the scanner is pointed at an application root (#2275):
   but its taint replays into the diagnostics of every decorator that spreads
   it, transitively through constant chains. Without that the silent drop simply
   moves one level up. An unused tainted constant reports nothing.
+- **Relationship targets are resolved, not copied**: `@foreignKey`,
+  `@oneToMany` and `@manyToMany` arguments arrive as raw source text.
+  `'Target'`/`Target` pass through and a forward-reference thunk
+  (`() => Target`, including the dotted `() => Target.column` form) is unwrapped
+  to its target, matching the runtime decorator, which resolves the thunk by
+  invoking it. Any other expression (a call, a computed reference) yields
+  `related: undefined` — writing the raw source through produced a garbage FK
+  table name and, once FK columns are indexed, a garbage index (#2379).
