@@ -62,6 +62,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { classifyDatabaseError } from './db-errors.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
 // Type-only: erased at runtime, so it cannot re-enter the
 // `registry → object → cascade` import cycle.
@@ -197,6 +198,13 @@ export function buildCascadePlan(
   registry: CascadeRegistryView,
   className: string,
 ): CascadePlan {
+  // `className` is normally already qualified (delete() passes
+  // getResolvedQualifiedName()), but a common same-package `@foreignKey('X')`
+  // still stores its target as the bare simple name `X`. That still matches:
+  // getSelfReferableNames() walks the full ancestor chain (self included) and
+  // adds each ancestor's *simple* name via `getClass(ancestor)?.name`, so the
+  // simple form is already in the seed set below, not just the loop's
+  // qualified-variant augmentation.
   const targetNames = new Set(registry.getSelfReferableNames(className));
   for (const name of [...targetNames]) {
     const qualified = registry.getClass(name)?.qualifiedName;
@@ -285,6 +293,14 @@ export function buildCascadePlan(
     }
   }
 
+  // Both forms are matched deliberately: an association row written before a
+  // class was package-qualified still carries the simple `meta_type`. This
+  // does not reopen the ambiguous-name hazard `getResolvedQualifiedName()`
+  // guards against elsewhere in this module — a same-simple-name sibling
+  // class's rows only match if they also share a `meta_id`, and ids are
+  // `crypto.randomUUID()`-generated, so a cross-class collision on the
+  // *pair* is not a realistic risk (the same argument `deleteSystemRows()`
+  // relies on for `_smrt_embeddings` / `_smrt_contexts`, matched by id alone).
   const metaTypes: string[] = [];
   const qualified = registry.getClass(className)?.qualifiedName;
   if (qualified) metaTypes.push(qualified);
@@ -335,6 +351,40 @@ function idPredicate(column: string, ids: string[]): Record<string, unknown> {
   return ids.length === 1 ? { [column]: ids[0] } : { [`${column} in`]: ids };
 }
 
+/**
+ * Run a cascade statement against a *referencing* table, tolerating the
+ * table (or an expected column) not existing in this database.
+ *
+ * The cascade plan is built from the in-process registry, which can carry a
+ * class from any imported package — including one whose table this specific
+ * database was never migrated to include (a partially adopted feature, a
+ * package pulled in for its types, or, in a test process, a fixture some
+ * other test file registered). A missing referencing table trivially has no
+ * rows to act on, so the correct behaviour is identical to the table
+ * existing and being empty — this must never abort an otherwise valid
+ * delete. Any other failure (a real constraint violation, a lock timeout, a
+ * genuine SQL error unrelated to the table's existence) still propagates.
+ */
+async function tolerateMissingTable<T>(
+  operation: () => Promise<T>,
+  fallback: T,
+  context: { table: string; action: string },
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (classifyDatabaseError(error).kind === 'undefined_object') {
+      logger.warn(
+        `Cascade delete skipped ${context.action} on '${context.table}': ` +
+          'table or column not found in this database.',
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+      return fallback;
+    }
+    throw error;
+  }
+}
+
 async function selectIds(
   db: DatabaseInterface,
   tableName: string,
@@ -343,7 +393,11 @@ async function selectIds(
 ): Promise<string[]> {
   const found: string[] = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    const rows = await db.list(tableName, idPredicate(column, batch));
+    const rows = await tolerateMissingTable(
+      () => db.list(tableName, idPredicate(column, batch)),
+      [] as Record<string, unknown>[],
+      { table: tableName, action: 'CASCADE select' },
+    );
     for (const row of rows) {
       const id = row?.id;
       if (typeof id === 'string' && id.length > 0) found.push(id);
@@ -358,7 +412,11 @@ async function deleteByIds(
   ids: string[],
 ): Promise<void> {
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    await db.delete(tableName, idPredicate('id', batch));
+    await tolerateMissingTable(
+      () => db.delete(tableName, idPredicate('id', batch)),
+      undefined,
+      { table: tableName, action: 'CASCADE delete' },
+    );
   }
 }
 
@@ -442,9 +500,14 @@ async function resolveReferences(
     if (reference.action !== 'RESTRICT') continue;
     let remaining = 0;
     for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
-      remaining += await ctx.db.count(
-        reference.tableName,
-        idPredicate(reference.column, batch),
+      remaining += await tolerateMissingTable(
+        () =>
+          ctx.db.count(
+            reference.tableName,
+            idPredicate(reference.column, batch),
+          ),
+        0,
+        { table: reference.tableName, action: 'RESTRICT check' },
       );
       if (remaining > 0) break;
     }
@@ -461,10 +524,15 @@ async function resolveReferences(
   for (const reference of plan.references) {
     if (reference.action === 'SET NULL') {
       for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
-        await ctx.db.update(
-          reference.tableName,
-          idPredicate(reference.column, batch),
-          { [reference.column]: null },
+        await tolerateMissingTable(
+          () =>
+            ctx.db.update(
+              reference.tableName,
+              idPredicate(reference.column, batch),
+              { [reference.column]: null },
+            ),
+          undefined,
+          { table: reference.tableName, action: 'SET NULL' },
         );
       }
       ctx.affectedTables.add(reference.tableName);
@@ -511,7 +579,14 @@ async function resolveReferences(
       } else {
         where['meta_type in'] = plan.metaTypes;
       }
-      const result = await ctx.db.delete(association.tableName, where);
+      const result = await tolerateMissingTable(
+        () => ctx.db.delete(association.tableName, where),
+        undefined,
+        {
+          table: association.tableName,
+          action: 'polymorphic association cleanup',
+        },
+      );
       if ((result?.affected ?? 0) > 0) {
         ctx.affectedTables.add(association.tableName);
         ctx.affectedTableClasses.set(

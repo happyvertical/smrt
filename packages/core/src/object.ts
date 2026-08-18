@@ -2848,9 +2848,11 @@ export class SmrtObject extends SmrtClass {
    * them, exactly as a DB-level `ON DELETE CASCADE` behaves. Only this object
    * runs the lifecycle above.
    *
-   * Everything in step 3 runs inside a single transaction when the adapter
-   * supports one, so a failed cascade cannot leave the object deleted with its
-   * junction rows intact.
+   * When anything references this class, step 3 runs inside a single
+   * transaction when the adapter supports one, so a failed cascade cannot
+   * leave the object deleted with its junction rows intact. When nothing
+   * references it, there is nothing to keep consistent and the transaction
+   * is skipped so an ordinary delete costs no extra round trip.
    *
    * Prefer `collection.delete(id)` from application code — it loads the
    * object first (returning `false` when not found) before calling this method.

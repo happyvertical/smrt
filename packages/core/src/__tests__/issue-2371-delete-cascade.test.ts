@@ -452,6 +452,53 @@ class CascadeTenantDocCollection extends SmrtCollection<CascadeTenantDoc> {
   static readonly _itemClass = CascadeTenantDoc;
 }
 
+/**
+ * Review fixture: registered process-wide (so it appears in every delete's
+ * `plan.polymorphic`), but its collection is *never* created by any test in
+ * this file — its table therefore never exists in any of this suite's
+ * per-test SQLite files. This reproduces the CI failure caught after the
+ * qualified-name fix landed: `packages/profiles`'s
+ * `OidcProfileEmailReservation.delete()` tried to clean up
+ * `packages/assets`'s polymorphic association table, which the
+ * `packages/users` test process had registered (both packages loaded in the
+ * same worker) but never migrated into that specific test database — the
+ * cascade planner is registry-derived and package-agnostic, so it always
+ * plans against every polymorphic class the *process* knows about, not just
+ * ones this delete's own database happens to have tables for. Every test in
+ * this file exercises the fix incidentally (any `.delete()` call hits this
+ * table), and the tests below assert it directly against RESTRICT/SET
+ * NULL/CASCADE references too.
+ */
+@smrt({
+  tableName: 'cascade_2371_unmigrated_assoc',
+  conflictColumns: ['owner_key', 'meta_type', 'meta_id', 'role'],
+})
+class CascadeUnmigratedAssociation extends SmrtPolymorphicAssociation {
+  @field({ required: true })
+  ownerKey = '';
+}
+
+/**
+ * Ordinary (non-polymorphic) reference whose table is likewise never
+ * created — proves the same tolerance for RESTRICT / SET NULL / CASCADE
+ * against a referencing table, not just the polymorphic path CI caught.
+ */
+@smrt({ tableName: 'cascade_2371_unmigrated_children' })
+class CascadeUnmigratedChild extends SmrtObject {
+  @foreignKey('CascadeDoc', { onDelete: 'CASCADE' })
+  docId = '';
+}
+
+@smrt()
+class CascadeUnmigratedAssociationCollection extends SmrtCollection<CascadeUnmigratedAssociation> {
+  static readonly _itemClass = CascadeUnmigratedAssociation;
+}
+
+@smrt()
+class CascadeUnmigratedChildCollection extends SmrtCollection<CascadeUnmigratedChild> {
+  static readonly _itemClass = CascadeUnmigratedChild;
+}
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -831,6 +878,78 @@ describe('tenant column exclusion (CRITICAL review fix)', () => {
     expect(await db.count('cascade_2371_tenant_docs')).toBe(1);
     const remaining = await db.list('cascade_2371_tenant_docs', {});
     expect(remaining[0]?.tenant_id).toBe(tenant.id);
+  });
+});
+
+/**
+ * Review fixture (CI-caught regression): the cascade plan is built from the
+ * process-wide registry, which can carry a class from any imported package —
+ * including one whose table this specific database was never migrated to
+ * include. This broke `packages/profiles`'s `OidcProfileEmailReservation.
+ * delete()` in CI: the process also had `packages/assets`'s polymorphic
+ * association class registered, and that table did not exist in
+ * `packages/users`'s isolated test database, so the whole delete (including
+ * the object's own row, since it shares the transaction) threw and aborted.
+ * Each test here creates the referencing table normally, then drops it, to
+ * deterministically reproduce "registered but not migrated" regardless of
+ * how a given harness happens to sync schema.
+ */
+describe('missing referencing table tolerance (CI-caught review fix)', () => {
+  let dbPath: string;
+  let dbUrl: string;
+  let db: DatabaseInterface;
+  let docs: CascadeDocCollection;
+
+  beforeEach(async () => {
+    dbUrl = tmpDbUrl('missing-table');
+    dbPath = dbUrl.replace('file:', '');
+    docs = await CascadeDocCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    db = (docs as unknown as { _db: DatabaseInterface })._db;
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) unlinkSync(dbPath);
+  });
+
+  it('does not fail the delete when a registered polymorphic association table does not exist', async () => {
+    // Materialize the table via its own collection, then drop it — the
+    // class stays registered (so it stays in plan.polymorphic), only the
+    // table is gone.
+    await CascadeUnmigratedAssociationCollection.create({ db });
+    await db.query('DROP TABLE cascade_2371_unmigrated_assoc');
+
+    const doc = await docs.create({ title: 'owner' } as any);
+    await doc.save();
+
+    await expect(doc.delete()).resolves.toBeUndefined();
+    expect(await docs.get({ id: doc.id })).toBeNull();
+  });
+
+  it('does not fail a CASCADE reference whose table does not exist', async () => {
+    await CascadeUnmigratedChildCollection.create({ db });
+    await db.query('DROP TABLE cascade_2371_unmigrated_children');
+
+    const doc = await docs.create({ title: 'cascade-owner' } as any);
+    await doc.save();
+
+    await expect(doc.delete()).resolves.toBeUndefined();
+  });
+
+  it('treats a missing RESTRICT-referencing table as zero references, not a failure', async () => {
+    // Reuse the existing RESTRICT fixture (CascadeVault / CascadeVaultLock)
+    // against this suite's own db: materialize the lock table, then drop it
+    // entirely — a RESTRICT check against a nonexistent table must resolve
+    // to "no rows," not throw and block a valid delete.
+    const vaults = await CascadeVaultCollection.create({ db });
+    await CascadeVaultLockCollection.create({ db });
+    await db.query('DROP TABLE cascade_2371_vault_locks');
+
+    const vault = await vaults.create({ label: 'no-lock-table' } as any);
+    await vault.save();
+
+    await expect(vault.delete()).resolves.toBeUndefined();
   });
 });
 
