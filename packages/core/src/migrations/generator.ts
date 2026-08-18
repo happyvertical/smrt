@@ -385,6 +385,36 @@ ${downStatementsStr}
         up.push(`-- Manual migration required`);
         break;
 
+      case 'alter_column':
+        // Nullability/default repairs (#2369). Executable statements come
+        // from the differ (backfill + ALTER COLUMN); comment-only SQL marks
+        // an in-place limitation (SQLite) and is surfaced as a note. Report-
+        // only advisories (relaxations not opted into) are not emitted.
+        if (change.advisory && sqlStatements.length === 0) {
+          break;
+        }
+        for (const sql of sqlStatements) {
+          up.push(sql);
+        }
+        // No automatic DOWN: the previous nullability/default is not
+        // captured with enough fidelity to restore it safely.
+        break;
+
+      case 'orphan_column':
+      case 'orphan_index':
+        // Report-only: surface the advisory as comments so a generated
+        // migration file documents the drift without acting on it.
+        up.push(
+          `-- ${change.advisory?.severity === 'warning' ? 'WARNING' : 'NOTE'}: ${change.type === 'orphan_column' ? 'Orphan column' : 'Orphan unique constraint'} ${change.table}.${change.name} (${change.mismatch?.actual ?? 'unknown shape'})`,
+        );
+        if (change.advisory?.message) {
+          up.push(`-- ${change.advisory.message}`);
+        }
+        for (const suggestion of change.advisory?.suggestedSql ?? []) {
+          up.push(`-- suggested: ${suggestion}`);
+        }
+        break;
+
       default:
         // Unknown change type
         break;
