@@ -165,6 +165,117 @@ describe('ManifestAdapter', () => {
       });
     });
 
+    describe('@foreignKey forward-reference thunks - Issue #2379', () => {
+      const thunkField = (
+        decoratorName: string,
+        target: string,
+      ): RawFieldDefinition => ({
+        name: 'socialPostId',
+        accessibility: 'public',
+        typeAnnotation: 'string',
+        initializer: 'null',
+        optional: false,
+        hasDecimalPoint: false,
+        numericValue: null,
+        decorators: [{ name: decoratorName, arguments: [target] }],
+      });
+
+      it('resolves `() => Target` to the target class name', () => {
+        const result = adapter.inferFieldType(
+          thunkField('foreignKey', '() => SocialPost'),
+        );
+
+        expect(result.type).toBe('foreignKey');
+        // Previously stored the raw "() => SocialPost" source, which resolves
+        // to no class and yields a garbage FK table name.
+        expect(result.related).toBe('SocialPost');
+      });
+
+      it('resolves a compact `()=>Target` thunk', () => {
+        const result = adapter.inferFieldType(
+          thunkField('foreignKey', '()=>SocialPost'),
+        );
+
+        expect(result.related).toBe('SocialPost');
+      });
+
+      it('resolves a block-bodied `() => { return Target; }` thunk', () => {
+        expect(
+          adapter.inferFieldType(
+            thunkField('foreignKey', '() => { return SocialPost; }'),
+          ).related,
+        ).toBe('SocialPost');
+      });
+
+      it('rejects a parameterised arrow', () => {
+        expect(
+          adapter.inferFieldType(thunkField('foreignKey', '(x) => SocialPost'))
+            .related,
+        ).toBeUndefined();
+      });
+
+      it('preserves plain and quoted class references', () => {
+        expect(
+          adapter.inferFieldType(thunkField('foreignKey', 'SocialPost'))
+            .related,
+        ).toBe('SocialPost');
+        expect(
+          adapter.inferFieldType(thunkField('foreignKey', "'SocialPost'"))
+            .related,
+        ).toBe('SocialPost');
+      });
+
+      it('preserves the dotted `Target.column` reference form', () => {
+        expect(
+          adapter.inferFieldType(thunkField('foreignKey', 'SocialPost.id'))
+            .related,
+        ).toBe('SocialPost.id');
+        expect(
+          adapter.inferFieldType(
+            thunkField('foreignKey', '() => SocialPost.id'),
+          ).related,
+        ).toBe('SocialPost.id');
+      });
+
+      it('passes an explicit string target through verbatim', () => {
+        // Matches the runtime decorator, which accepts any non-empty name.
+        expect(
+          adapter.inferFieldType(
+            thunkField(
+              'foreignKey',
+              "'@happyvertical/smrt-video:VideoContent'",
+            ),
+          ).related,
+        ).toBe('@happyvertical/smrt-video:VideoContent');
+      });
+
+      it('rejects an unresolvable target instead of writing it through', () => {
+        const result = adapter.inferFieldType(
+          thunkField('foreignKey', 'resolveTarget()'),
+        );
+
+        expect(result.type).toBe('foreignKey');
+        expect(result.related).toBeUndefined();
+      });
+
+      it('rejects an empty string target', () => {
+        expect(
+          adapter.inferFieldType(thunkField('foreignKey', "'  '")).related,
+        ).toBeUndefined();
+      });
+
+      it('resolves thunks for @oneToMany and @manyToMany', () => {
+        expect(
+          adapter.inferFieldType(thunkField('oneToMany', '() => SocialPost'))
+            .related,
+        ).toBe('SocialPost');
+        expect(
+          adapter.inferFieldType(thunkField('manyToMany', '() => SocialPost'))
+            .related,
+        ).toBe('SocialPost');
+      });
+    });
+
     describe('@tenantId decorator', () => {
       it('should mark tenant ID fields as UUID tenant references', () => {
         const field: RawFieldDefinition = {

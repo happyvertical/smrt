@@ -276,6 +276,56 @@ function stripQuotes(value: string | undefined): string | undefined {
   return match ? match[2] : value;
 }
 
+/** A quoted string literal in raw decorator source: `'Target'` / `"Target"`. */
+const QUOTED_LITERAL_PATTERN = /^(['"`])(.*)\1$/s;
+
+/**
+ * A bare class reference: `Target`, or the dotted `Target.column` form the
+ * schema generator splits on.
+ */
+const RELATED_TARGET_PATTERN = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/;
+
+/**
+ * A forward-reference thunk argument: `() => Target`, `() => Target.column`, or
+ * the block-bodied `() => { return Target; }`. The scanner only ever sees raw
+ * source text, so the thunk has to be unwrapped textually — parameterised
+ * arrows are not relationship targets and fall through to the reject path
+ * below.
+ */
+const RELATED_THUNK_PATTERN =
+  /^\(\s*\)\s*=>\s*(?:([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)|\{\s*return\s+([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\s*;?\s*\})$/;
+
+/**
+ * Resolve a relationship decorator's first argument (raw source text) to the
+ * target class name stored as `related`.
+ *
+ * Handles the three supported call forms — `@foreignKey('Target')`,
+ * `@foreignKey(Target)` and the forward-reference thunk `@foreignKey(() =>
+ * Target)` — so the manifest path agrees with the runtime decorator, which
+ * resolves the same thunk by invoking it (issue #2379). Without this, thunk
+ * call sites stored the literal `"() => Target"` source in `related`, which
+ * resolves to no class and yields a garbage FK table name (and, once FK
+ * columns are indexed, a garbage index).
+ *
+ * String literals pass through verbatim, matching the runtime decorator, which
+ * accepts any non-empty name. A bare expression that is neither an identifier
+ * nor a thunk (a call, a computed reference) is rejected as `undefined` rather
+ * than written through: an unresolvable `related` produces invalid schema, and
+ * the runtime decorator throws on the same source.
+ */
+function resolveRelatedArgument(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+
+  const quoted = value.match(QUOTED_LITERAL_PATTERN);
+  if (quoted) return quoted[2].trim() || undefined;
+
+  if (RELATED_TARGET_PATTERN.test(value)) return value;
+
+  const thunk = value.match(RELATED_THUNK_PATTERN);
+  return thunk ? (thunk[1] ?? thunk[2]) : undefined;
+}
+
 // ============================================================================
 // Manifest Adapter
 // ============================================================================
@@ -830,10 +880,11 @@ export class ManifestAdapter {
 
     // @foreignKey(RelatedClass) decorator
     if (decorator.name === 'foreignKey') {
-      // First argument is the related class name
-      // Strip surrounding quotes — sliceSource() returns raw source text
-      // which includes quotes for string literals (e.g., "'TestProfile'")
-      const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
+      // First argument is the related class — a name string, a class
+      // reference, or a `() => Target` forward-reference thunk. sliceSource()
+      // returns raw source text, so quotes and thunk syntax are unwrapped here
+      // (issue #2379).
+      const relatedClass = resolveRelatedArgument(decorator.arguments[0]);
       const parsedOptions = this.parseFieldDecoratorOptions(
         decorator.arguments[1],
       );
@@ -944,7 +995,7 @@ export class ManifestAdapter {
 
     // @oneToMany(RelatedClass, { foreignKey? }) decorator
     if (decorator.name === 'oneToMany') {
-      const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
+      const relatedClass = resolveRelatedArgument(decorator.arguments[0]);
       // Preserve an explicit inverse `foreignKey` so manifest-only consumers
       // disambiguate the inverse side the same way the runtime decorator does
       // (needed when the target declares multiple FKs back to this class).
@@ -966,7 +1017,7 @@ export class ManifestAdapter {
 
     // @manyToMany(RelatedClass, { through?, sourceKey?, targetKey? }) decorator
     if (decorator.name === 'manyToMany') {
-      const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
+      const relatedClass = resolveRelatedArgument(decorator.arguments[0]);
       // Preserve junction-table coordinates so manifest-only consumers can
       // execute manyToMany loads without the decorator firing in-process.
       const parsedOptions = this.parseFieldDecoratorOptions(
