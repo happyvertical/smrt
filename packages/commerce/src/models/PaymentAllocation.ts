@@ -5,13 +5,18 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertIntegerMinorUnits } from '../money.js';
 import type { PaymentAllocationOptions } from '../types/index.js';
 
-/**
- * Sub-cent rounding tolerance for over-allocation checks, matching the rest
- * of the package's EPSILON convention.
+/*
+ * There is deliberately no `ALLOCATION_EPSILON` here any more (#2401).
+ *
+ * `Payment.amount`, `Invoice.totalAmount` and this row's `amount` are all
+ * integer minor units, so "does this allocation over-apply the payment" is an
+ * exact integer question. The old `0.01` tolerance let an allocation exceed its
+ * payment by up to a cent — real money, not rounding fuzz — and only existed
+ * because the payment side was a float.
  */
-const ALLOCATION_EPSILON = 0.01;
 
 /**
  * PaymentAllocation tracks how payments are applied to invoices.
@@ -33,7 +38,7 @@ const ALLOCATION_EPSILON = 0.01;
  * // Get the collection
  * const allocations = await PaymentAllocationCollection.create(options);
  *
- * // Check available funds before allocating
+ * // Check available funds before allocating (all amounts are minor units)
  * const available = await allocations.getUnallocatedFromPayment(
  *   payment.id,
  *   payment.amount
@@ -95,16 +100,14 @@ export class PaymentAllocation extends SmrtObject {
   invoiceId: string = '';
 
   /**
-   * Amount allocated from payment to invoice.
+   * Amount allocated from payment to invoice, in **integer minor units**
+   * (cents, satoshis).
    *
-   * Left INTEGER, matching `Invoice.amountPaid`, which is derived by summing
-   * these rows.
-   *
-   * NOTE (#2361): this field cannot move to integer minor units on its own.
-   * `save()` caps an allocation against the persisted `Payment.amount`, which
-   * is DECIMAL major units, so mixing the two units would make every
-   * allocation read as over-applying its payment. Converting this pair is a
-   * single unit of work with `Payment`, not a per-field change.
+   * Matches `Invoice.amountPaid` (derived by summing these rows) and
+   * `Payment.amount` (which `save()` caps against). All three converted
+   * together in #2401 — the cap is a subtraction across the pair, so a
+   * dollars-vs-cents split there would reject every allocation as
+   * over-applying.
    */
   amount: number = 0;
 
@@ -165,7 +168,12 @@ export class PaymentAllocation extends SmrtObject {
    * not-yet-persisted) so it never blocks an otherwise-valid allocation.
    */
   override async save(): Promise<this> {
-    if (!Number.isFinite(this.amount) || this.amount <= 0) {
+    // Whole minor units first — every cap below is an exact integer comparison
+    // and is only sound if the value really is an integer (#2401).
+    assertIntegerMinorUnits('PaymentAllocation', this.id ?? '<new>', [
+      ['amount', this.amount],
+    ]);
+    if (this.amount <= 0) {
       throw new Error(
         `PaymentAllocation ${this.id ?? '<new>'}: amount must be a positive number (got ${this.amount}).`,
       );
@@ -196,7 +204,7 @@ export class PaymentAllocation extends SmrtObject {
           alloc.id === this.id ? sum : sum + alloc.amount,
         0,
       );
-      if (otherTotal + this.amount - payment.amount > ALLOCATION_EPSILON) {
+      if (otherTotal + this.amount > payment.amount) {
         throw new Error(
           `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-apply ` +
             `payment '${this.paymentId}' — already allocated ${otherTotal} of ${payment.amount}.`,
@@ -213,11 +221,11 @@ export class PaymentAllocation extends SmrtObject {
       // Only enforce when the invoice resolves and carries a real positive
       // total — a missing/zero-total invoice (not yet persisted, ledger-less
       // test fixture) skips the cap rather than blocking a valid allocation.
-      // `Number.isFinite(0)` is `true`, so the prior `isFinite` guard wrongly
+      // `Number.isFinite(0)` is `true`, so an `isFinite` guard here wrongly
       // capped a freshly-created total=0 invoice at 0 and rejected every
-      // allocation against it; gate on `> ALLOCATION_EPSILON` to match the
-      // documented "zero/missing total skips the cap" intent.
-      if (invoice && invoice.totalAmount > ALLOCATION_EPSILON) {
+      // allocation against it; gate on `> 0` to match the documented
+      // "zero/missing total skips the cap" intent.
+      if (invoice && invoice.totalAmount > 0) {
         const { PaymentAllocationCollection } = await import(
           '../collections/PaymentAllocationCollection.js'
         );
@@ -232,10 +240,7 @@ export class PaymentAllocation extends SmrtObject {
             alloc.id === this.id ? sum : sum + alloc.amount,
           0,
         );
-        if (
-          otherInvoiceTotal + this.amount - invoice.totalAmount >
-          ALLOCATION_EPSILON
-        ) {
+        if (otherInvoiceTotal + this.amount > invoice.totalAmount) {
           throw new Error(
             `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-pay ` +
               `invoice '${this.invoiceId}' — already allocated ${otherInvoiceTotal} of ` +

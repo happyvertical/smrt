@@ -61,11 +61,11 @@ describe('Payout', () => {
     const payment = await payments.create({
       contractId: 'contract-1',
       customerId: 'customer-1',
-      amount: 199.0,
+      amount: 19900, // $199.00 in cents
       currency: 'USD',
       backendId: 'base-usdc',
       backendTxRef: '0xtx-1',
-      nativeAmount: 199.0,
+      nativeAmount: 19900,
       nativeCurrency: 'USDC-base',
     });
     await payment.save();
@@ -73,7 +73,7 @@ describe('Payout', () => {
     const payout = await payouts.createFromPayment({
       payment,
       vendorId: 'vendor-1',
-      operatorFee: 19.9,
+      operatorFee: 1990, // $19.90
       notes: 'first remit',
     });
     expect(payout.id).toBeFalsy();
@@ -82,16 +82,18 @@ describe('Payout', () => {
     expect(payout.status).toBe(PayoutStatus.PENDING);
     expect(payout.paymentId).toBe(payment.id);
     expect(payout.vendorId).toBe('vendor-1');
-    expect(payout.grossAmount).toBe(199.0);
-    expect(payout.operatorFee).toBe(19.9);
-    expect(payout.supplierNet).toBeCloseTo(179.1);
+    expect(payout.grossAmount).toBe(19900);
+    expect(payout.operatorFee).toBe(1990);
+    // Exact, not toBeCloseTo: the gross/fee/net triple is integer minor units
+    // and the invariant is checked with `!==` (#2401).
+    expect(payout.supplierNet).toBe(17910);
     expect(payout.backendId).toBe('base-usdc');
     expect(payout.currency).toBe('USDC-base');
     expect(payout.notes).toBe('first remit');
 
     const loaded = await payouts.get({ id: payout.id });
     expect(loaded?.paymentId).toBe(payment.id);
-    expect(loaded?.grossAmount).toBe(199.0);
+    expect(loaded?.grossAmount).toBe(19900);
   });
 
   it('carries the source payment tenant onto the payout (no active context)', async () => {
@@ -312,20 +314,51 @@ describe('Payout', () => {
     await expect(payout.save()).rejects.toThrow(/amount invariant/);
   });
 
-  it('tolerates sub-cent rounding noise', async () => {
-    // Decimal arithmetic on stablecoins can introduce floating-point
-    // fuzz; the model tolerates up to 1¢ of drift before flagging it
-    // as a real invariant violation.
-    const payout = await payouts.create({
+  it('enforces the gross/fee/net invariant exactly, with no rounding slack', async () => {
+    // This replaces the old "tolerates sub-cent rounding noise" case (#2401).
+    // The triple is integer minor units now, so there is no float fuzz to
+    // absorb — and a one-minor-unit gap is real money the operator would keep,
+    // which the previous 1¢ tolerance silently allowed.
+    const exact = await payouts.create({
       paymentId: await fundedPaymentId(),
-      vendorId: 'vendor-rounding',
-      grossAmount: 0.3,
-      operatorFee: 0.1,
-      supplierNet: 0.2 + 1e-12, // a hair over 0.2 from arithmetic
+      vendorId: 'vendor-exact',
+      grossAmount: 30,
+      operatorFee: 10,
+      supplierNet: 20,
       currency: 'USDC-base',
       backendId: 'base-usdc',
     });
-    await expect(payout.save()).resolves.toBeDefined();
+    await expect(exact.save()).resolves.toBeDefined();
+
+    // `PayoutCollection.create()` saves, so the guard fires there.
+    await expect(
+      payouts.create({
+        paymentId: await fundedPaymentId(),
+        vendorId: 'vendor-off-by-one',
+        grossAmount: 30,
+        operatorFee: 10,
+        supplierNet: 21, // one minor unit too much
+        currency: 'USDC-base',
+        backendId: 'base-usdc',
+      }),
+    ).rejects.toThrow(/amount invariant/);
+  });
+
+  it('rejects a fractional major-unit amount before it reaches the database', async () => {
+    // The bug the convention exists to prevent: $0.30 written as `0.3`.
+    // PostgreSQL would reject it with 22P02 and SQLite's affinity would store
+    // it silently, so the model rejects it first, on every engine (#2401).
+    await expect(
+      payouts.create({
+        paymentId: await fundedPaymentId(),
+        vendorId: 'vendor-major-units',
+        grossAmount: 0.3,
+        operatorFee: 0.1,
+        supplierNet: 0.2,
+        currency: 'USDC-base',
+        backendId: 'base-usdc',
+      }),
+    ).rejects.toThrow(/grossAmount must be an integer number of minor units/);
   });
 
   it('re-coerces ISO-string timestamps after collection initialization', async () => {
@@ -498,6 +531,7 @@ describe('PayoutCollection — queries', () => {
       supplierNet: 900,
     });
 
-    expect(await payouts.getConfirmedTotalForVendor('v-sum')).toBeCloseTo(135);
+    // Exact: the total is a sum of integer minor units (#2401).
+    expect(await payouts.getConfirmedTotalForVendor('v-sum')).toBe(135);
   });
 });

@@ -145,8 +145,8 @@ describe('Contract STI extensions', () => {
     it('persists a Cart and round-trips it', async () => {
       const cart = new Cart({
         customerId: 'cust-guest-123',
-        subtotal: 199.99,
-        totalAmount: 199.99,
+        subtotal: 19999, // $199.99 in cents
+        totalAmount: 19999,
         channelId: 'dtc-web',
         db: { type: 'sqlite', url: dbPath },
       });

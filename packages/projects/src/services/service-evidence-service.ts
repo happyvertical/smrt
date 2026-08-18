@@ -30,6 +30,14 @@ export interface RecordServiceTimeInput {
 }
 
 export interface CommercialSnapshot {
+  /**
+   * Integer minor units of `currency` — `$19.99` is `1999` (#2401).
+   *
+   * Written straight into `ServiceChargeSnapshot.amount` /
+   * `ServiceCompensationSnapshot.amount`, which are INTEGER columns, so a
+   * resolver that returns major units corrupts the snapshot silently on SQLite
+   * and fails with `22P02` on PostgreSQL.
+   */
   amount: number;
   currency?: string;
   version: string;

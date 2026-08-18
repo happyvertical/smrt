@@ -120,9 +120,35 @@ function rewriteWorkspaceDeclarationImports(
       return specifier;
     }
 
-    const relativeToPackage = normalizePath(
+    let relativeToPackage = normalizePath(
       relative(targetPackage.dir, resolvedSpecifier),
     );
+
+    // Un-transpose a workspace *subpath* import.
+    //
+    // `vite-plugin-dts` rebuilds `@happyvertical/smrt-core/migrations` by
+    // splicing the alias target in front of the specifier's own subpath, which
+    // swaps the segments: the emitted path is `…/core/migrations/src/index.ts`
+    // even though the file is `…/core/src/migrations/index.ts`. That shape
+    // starts with neither `src/` nor `dist/`, so without this the specifier
+    // falls through unchanged and ships as a relative path escaping `dist/` —
+    // which is exactly what the package-artifact check rejects.
+    //
+    // Only rewrite when the un-transposed path is a file that actually exists,
+    // so a package that genuinely nests `<subpath>/src/…` is left alone.
+    if (
+      !relativeToPackage.startsWith('src/') &&
+      !relativeToPackage.startsWith('dist/')
+    ) {
+      const transposed = relativeToPackage.match(/^(.+)\/(src|dist)\/(.*)$/);
+      const candidate = transposed
+        ? `${transposed[2]}/${transposed[1]}/${transposed[3]}`
+        : undefined;
+      if (candidate && existsSync(resolve(targetPackage.dir, candidate))) {
+        relativeToPackage = candidate;
+      }
+    }
+
     if (
       !relativeToPackage.startsWith('src/') &&
       !relativeToPackage.startsWith('dist/')

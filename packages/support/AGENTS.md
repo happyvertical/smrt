@@ -238,9 +238,41 @@ by #1955. No inter-`smrt-*` `peerDependencies`.
 
 ```sh
 pnpm --filter @happyvertical/smrt-support test
+pnpm --filter @happyvertical/smrt-support test:postgres
 pnpm --filter @happyvertical/smrt-support typecheck
 pnpm --filter @happyvertical/smrt-support build
 ```
+
+`test:postgres` is the lane that holds the money/rate line — SQLite's type
+affinity stores a REAL in an INTEGER column without complaint, so a money field
+that reverted to DECIMAL passes every SQLite suite.
+
+## Money and rates
+
+- **Money is integer minor units** (cents) — `$19.99` is `1999`.
+  `SupportPlan.availabilityFeeAmount`, `SupportCharge.amount` and
+  `SupportCompensation.amount` initialize `= 0`, never `= 0.0`: the integer
+  literal is what maps them to INTEGER columns (#2401).
+- **Rates stay DECIMAL but their unit changed.**
+  `SupportPlan.overageHourlyRate` / `onCallHourlyRate` and
+  `SupportCompensationPlan.hourlyRate` are **minor units per hour**, so
+  `hours * rate` yields minor units. INTEGER would truncate a sub-unit rate to
+  zero, which is why they keep a decimal initializer.
+- **`roundMoney()` is the single rate↔money boundary.** It rounds
+  `(seconds / 3600) * hourlyRate` to a whole minor unit, which is what lets the
+  `thresholdAmount` comparison in `determinePath()` be an exact `>` with no
+  tolerance. `TimeApprovalPolicy.thresholdAmount` is in the same unit as
+  `SupportCharge.amount`.
+- **Migrating an existing database**: `preflightSupportMoneyMinorUnits(db)`
+  reports which columns still hold major units and which rows would be rounded
+  or overflow `int4`; `migrateSupportMoneyToMinorUnits(db)` converts them
+  (idempotent via `_smrt_backfills`). The **rate columns are not in that list**
+  — their type does not change, but their stored values must still be
+  multiplied by the same scale in the same deploy step. Frozen `rateSnapshot`
+  JSON on settled charges is history and is left alone. On SQLite the values
+  are rescaled but the declared type needs the table-rebuild path (#2370); the
+  `int4` ceiling is ~2.1e9 minor units (~$21.4M) per column, with BIGINT parked
+  in #2373.
 
 ## Gotchas
 

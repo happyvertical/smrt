@@ -123,7 +123,7 @@ describe('Payment', () => {
       const payment = await payments.create({
         contractId: contract.id,
         customerId: customer.id,
-        amount: 1500.5,
+        amount: 150050, // €1,500.50 in cents
         currency: 'EUR',
         method: PaymentMethod.BANK_TRANSFER,
         reference: 'PAY-2024-001',
@@ -133,7 +133,7 @@ describe('Payment', () => {
 
       const loaded = await payments.get({ id: payment.id });
       expect(loaded).toBeDefined();
-      expect(loaded?.amount).toBe(1500.5);
+      expect(loaded?.amount).toBe(150050);
       expect(loaded?.currency).toBe('EUR');
       expect(loaded?.method).toBe(PaymentMethod.BANK_TRANSFER);
       expect(loaded?.reference).toBe('PAY-2024-001');

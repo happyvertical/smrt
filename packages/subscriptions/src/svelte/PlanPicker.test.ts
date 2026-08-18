@@ -31,6 +31,43 @@ describe('PlanPicker', () => {
     expect(planPickerSource).toContain('{#each plans as plan (plan.planKey)}');
   });
 
+  it('renders a minor-units price as major units', () => {
+    // `priceAmount` is integer minor units (#2401), so 1999 is $19.99 — not
+    // $1,999.00. Nothing asserted the rendered string before, which is exactly
+    // how a unit change slips through a currency formatter unnoticed.
+    const plans: PlanPickerPlan[] = [
+      {
+        planKey: 'pro',
+        name: 'Pro',
+        priceAmount: 1999,
+        currency: 'USD',
+        billingInterval: 'month',
+      },
+    ];
+
+    const { body } = render(PlanPicker, { props: { plans } });
+
+    expect(body).toContain('19.99');
+    expect(body).not.toContain('1,999');
+  });
+
+  it('renders a zero-decimal currency without rescaling it', () => {
+    // JPY has no minor unit, so ¥1999 must render as ¥1,999 rather than ¥19.99.
+    const plans: PlanPickerPlan[] = [
+      {
+        planKey: 'jp',
+        name: 'Japan',
+        priceAmount: 1999,
+        currency: 'JPY',
+        billingInterval: 'month',
+      },
+    ];
+
+    const { body } = render(PlanPicker, { props: { plans } });
+
+    expect(body).toContain('1,999');
+  });
+
   it('counts enabled features from the normal model serialization shape', () => {
     const plan = new SubscriptionPlan({
       planKey: 'pro',

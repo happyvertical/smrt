@@ -8,9 +8,44 @@ resolution for SMRT applications.
 
 ```bash
 pnpm --filter @happyvertical/smrt-subscriptions test
+pnpm --filter @happyvertical/smrt-subscriptions test:postgres
 pnpm --filter @happyvertical/smrt-subscriptions typecheck
 pnpm --filter @happyvertical/smrt-subscriptions build
 ```
+
+`test:postgres` is the lane that holds the money-column line — SQLite's type
+affinity stores a REAL in an INTEGER column without complaint, so a money field
+that reverted to DECIMAL passes every SQLite suite.
+
+## Money
+
+- **Money is integer minor units** (cents) — `$19.99` is `1999`.
+  `SubscriptionPlan.priceAmount`, `ClientCharge.amount`,
+  `BillingAdjustment.amount` and `SpendingPolicy.limitAmount` all initialize
+  `= 0`, never `= 0.0`: the integer literal is what maps them to INTEGER
+  columns (#2401). `ClientCharge.quantity` and `TenantUsageMetric.quantity` are
+  the opposite case — metered quantities are genuinely fractional and stay
+  DECIMAL.
+- **`PricingRule.terms` are minor units *per unit of usage*, and stay
+  fractional.** A per-token rate is routinely a fraction of a cent, so an
+  integer `unitPrice` would truncate it to zero. `calculateAmount()` rounds the
+  computed result to a whole minor unit — that is the single boundary in the
+  package where a rate meets money, and it is what lets `evaluateSpending()`
+  compare charge sums against `limitAmount` exactly.
+- **`adjust()` rejects a fractional amount.** Negative amounts are legitimate
+  (a credit); fractional ones almost always mean the caller passed major units.
+- **UI formats by dividing, never by `toFixed`.** `PlanPicker` and
+  `CommercialOverview` scale back to major units using the currency's own
+  minor-unit exponent, so zero-decimal currencies (JPY, KRW) are not divided.
+- **Migrating an existing database**: `preflightSubscriptionsMoneyMinorUnits(db)`
+  reports which columns still hold major units and which rows would be rounded
+  or overflow `int4`; `migrateSubscriptionsMoneyToMinorUnits(db)` converts them
+  (idempotent via `_smrt_backfills`). On SQLite the values are rescaled but the
+  declared type needs the table-rebuild path (#2370). Existing
+  `PricingRule.terms` are **not** migrated automatically — only the operator
+  knows which keys in a given rule are prices rather than quantities or ratios.
+- **`int4` ceiling**: about 2.1e9 minor units (~$21.4M) per column. Widening to
+  BIGINT is parked in #2373.
 
 ## Notes
 

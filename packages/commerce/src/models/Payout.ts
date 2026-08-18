@@ -24,14 +24,19 @@
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertIntegerMinorUnits } from '../money.js';
 import { type PayoutOptions, PayoutStatus } from '../types/index.js';
 import { Vendor } from './Vendor.js';
 
-/**
- * Sub-cent rounding tolerance, matching the rest of the package's EPSILON
- * convention.
+/*
+ * There is deliberately no `PAYOUT_EPSILON` here any more (#2401).
+ *
+ * The gross/fee/net triple and the source `Payment.amount` it is capped
+ * against are all integer minor units, so both the invariant and the cap are
+ * exact. A payout that remits one cent more than its funding payment brought
+ * in is over-remittance, not rounding, and the old `0.01` tolerance silently
+ * allowed it.
  */
-const PAYOUT_EPSILON = 0.01;
 
 /**
  * Legal status transitions for a Payout, keyed by the prior persisted status.
@@ -63,7 +68,8 @@ const loadedPayoutStatus = new WeakMap<Payout, PayoutStatus>();
 @smrt({
   // ROOT FIX (S5 audit #1390 round 4): a Payout has NO safe generated write.
   // Its status drives an outgoing remittance and its amount triple
-  // (grossAmount / operatorFee / supplierNet) is the integrity core — none may
+  // (grossAmount / operatorFee / supplierNet, all integer minor units) is the
+  // integrity core — none may
   // be set by a caller. The only legitimate way to mint a payout is the
   // verified `PayoutCollection.createFromPayment()` domain path (which derives
   // the amounts from the source Payment and starts PENDING), and the only legal
@@ -107,24 +113,28 @@ export class Payout extends SmrtObject {
   vendorId: string = '';
 
   /**
-   * Total funds moved, in the originating payment's native currency.
-   * Stored at decimal precision (matches `Payment.amount` /
-   * `Payment.nativeAmount` convention).
+   * Total funds moved, in the originating payment's native currency, as
+   * **integer minor units** (cents, satoshis) — the same convention as
+   * `Payment.amount` / `Payment.nativeAmount` (#2401).
    */
-  grossAmount: number = 0.0;
+  grossAmount: number = 0;
 
   /**
-   * Operator's take from `grossAmount`. Must equal
-   * `grossAmount - supplierNet` at save time — the model enforces
+   * Operator's take from `grossAmount`, in integer minor units. Must equal
+   * `grossAmount - supplierNet` **exactly** at save time — the model enforces
    * the invariant via `validateAmounts()`.
    */
-  operatorFee: number = 0.0;
+  operatorFee: number = 0;
 
   /**
-   * Net funds the supplier receives. Must equal
-   * `grossAmount - operatorFee` at save time.
+   * Net funds the supplier receives, in integer minor units. Must equal
+   * `grossAmount - operatorFee` exactly at save time.
+   *
+   * Converts with the other two: the invariant is a subtraction over all
+   * three, so a decimal member would reintroduce the fuzz the tolerance used
+   * to hide (#2401).
    */
-  supplierNet: number = 0.0;
+  supplierNet: number = 0;
 
   /**
    * Native currency the funds are denominated in — payout-rail-
@@ -323,28 +333,31 @@ export class Payout extends SmrtObject {
   }
 
   /**
-   * Throws if the gross/fee/net invariant doesn't hold. Tolerates a
-   * sub-cent rounding fuzz (`EPSILON = 0.01`) to match the rest of
-   * the smrt-ledgers package's tolerance.
+   * Throws if the gross/fee/net invariant doesn't hold.
+   *
+   * Exact: all three are integer minor units, so `supplierNet` must equal
+   * `grossAmount - operatorFee` on the nose (#2401).
    */
   validateAmounts(): void {
-    const EPSILON = 0.01;
-    // Non-negativity guard (S5 audit #1390). A negative operatorFee would let
-    // an operator manufacture a supplierNet larger than the gross it took in
-    // (paying out more than it received); negative gross/net are nonsensical.
-    for (const [field, value] of [
+    const amounts = [
       ['grossAmount', this.grossAmount],
       ['operatorFee', this.operatorFee],
       ['supplierNet', this.supplierNet],
-    ] as const) {
-      if (!Number.isFinite(value) || value < 0) {
+    ] as const;
+    // Whole minor units first — the exact invariant below depends on it.
+    assertIntegerMinorUnits('Payout', this.id ?? '<new>', amounts);
+    // Non-negativity guard (S5 audit #1390). A negative operatorFee would let
+    // an operator manufacture a supplierNet larger than the gross it took in
+    // (paying out more than it received); negative gross/net are nonsensical.
+    for (const [field, value] of amounts) {
+      if (value < 0) {
         throw new Error(
           `Payout ${this.id ?? '<new>'}: ${field} must be a non-negative number (got ${value}).`,
         );
       }
     }
     const expectedNet = this.grossAmount - this.operatorFee;
-    if (Math.abs(this.supplierNet - expectedNet) > EPSILON) {
+    if (this.supplierNet !== expectedNet) {
       throw new Error(
         `Payout ${this.id ?? '<new>'}: amount invariant violated — ` +
           `gross=${this.grossAmount} fee=${this.operatorFee} net=${this.supplierNet} ` +
@@ -507,7 +520,7 @@ export class Payout extends SmrtObject {
       typeof payment.nativeAmount === 'number' && payment.nativeAmount > 0
         ? payment.nativeAmount
         : payment.amount;
-    if (this.grossAmount - settled > PAYOUT_EPSILON) {
+    if (this.grossAmount > settled) {
       throw new Error(
         `Payout ${this.id ?? '<new>'}: grossAmount ${this.grossAmount} exceeds the ` +
           `source Payment '${this.paymentId}' funded amount ${settled}.`,

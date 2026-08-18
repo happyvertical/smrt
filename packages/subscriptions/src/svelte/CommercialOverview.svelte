@@ -7,6 +7,7 @@ export interface CommercialMetricView {
   usage: number;
   allowance?: number;
   forecast?: number;
+  /** Integer minor units of `currency` — `$19.99` is `1999` (#2401). */
   charge?: number;
   currency?: string;
   thresholdState?:
@@ -19,6 +20,25 @@ export interface CommercialMetricView {
 
 let { metrics = [] }: { metrics?: CommercialMetricView[] } = $props();
 const { t } = useI18n();
+
+/**
+ * Render `charge` for display.
+ *
+ * The stored value is integer minor units (#2401), so it has to be scaled back
+ * to major units before formatting — otherwise a $0.40 charge renders as 40.00.
+ * The currency's own minor-unit exponent is used rather than a hard-coded 100,
+ * so zero-decimal currencies (JPY, KRW) are left alone.
+ */
+function formatCharge(metric: CommercialMetricView): string {
+  if (metric.charge == null) return '—';
+  const currency = metric.currency ?? 'USD';
+  const format = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+  });
+  const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format.format(metric.charge / 10 ** digits);
+}
 </script>
 
 <section class="commercial-overview" aria-label={t(M['subscriptions.commercial.overview_label'])}>
@@ -29,7 +49,7 @@ const { t } = useI18n();
         <div><dt>Usage</dt><dd>{metric.usage}</dd></div>
         <div><dt>Allowance</dt><dd>{metric.allowance ?? '—'}</dd></div>
         <div><dt>Forecast</dt><dd>{metric.forecast ?? '—'}</dd></div>
-        <div><dt>Charge</dt><dd>{metric.charge == null ? '—' : `${metric.currency ?? 'USD'} ${metric.charge.toFixed(2)}`}</dd></div>
+        <div><dt>Charge</dt><dd>{formatCharge(metric)}</dd></div>
       </dl>
     </article>
   {/each}

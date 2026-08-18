@@ -861,10 +861,11 @@ describe('SMRT knowledge index', () => {
       expect(finding?.message).toContain('taxRate = 0.0');
     });
 
-    it('warns rather than fails on framework money declared decimal', async () => {
-      // Twenty-one framework fields still declare money decimal; converting
-      // them means changing live column types and rescaling stored values, so
-      // this warns until that migration lands.
+    it('fails closed on framework money declared decimal', async () => {
+      // Warned until #2401: the twenty-one framework fields that still
+      // declared money decimal converted to integer minor units there, along
+      // with the migration that rescales existing columns, so the gate now
+      // holds this line at zero instead of watching money drift back.
       await writeModel(model(['totalAmount: number = 0.0;']));
 
       const result = await checkKnowledgeFreshness({ rootDir });
@@ -872,10 +873,10 @@ describe('SMRT knowledge index', () => {
         (issue) => issue.code === 'numeric-precision-money',
       );
 
-      expect(finding?.severity).toBe('warning');
+      expect(finding?.severity).toBe('error');
       expect(finding?.message).toContain('minor units');
-      expect(result.errorCount).toBe(0);
-      expect(result.ok).toBe(true);
+      expect(result.errorCount).toBeGreaterThan(0);
+      expect(result.ok).toBe(false);
     });
 
     it('accepts money as integer minor units and rates as decimal', async () => {

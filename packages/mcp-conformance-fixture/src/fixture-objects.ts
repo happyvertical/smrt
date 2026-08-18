@@ -16,7 +16,13 @@ export class ConformanceWidgetCollection extends SmrtCollection<ConformanceWidge
 export class ConformanceGadget extends SmrtObject {
   name = '';
   label = '';
-  price = 0.0;
+  /**
+   * Price in **integer minor units** (cents), matching the framework money rule
+   * (#2401). The initializer literal is what picks the column type — `= 0.0`
+   * would compile this to a floating-point column and put the fixture at odds
+   * with the convention the conformance surface is meant to demonstrate.
+   */
+  price = 0;
 }
 
 export class ConformanceGadgetCollection extends SmrtCollection<ConformanceGadget> {

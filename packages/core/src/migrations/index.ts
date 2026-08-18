@@ -47,6 +47,21 @@ export {
   generateMigrationTimestamp,
   MigrationGenerator,
 } from './generator.js';
+// Money major-units → integer minor-units rescale (#2401)
+export {
+  buildMinorUnitsStatements,
+  type MinorUnitsColumnReport,
+  type MinorUnitsColumnState,
+  type MinorUnitsOptions,
+  MinorUnitsPreflightError,
+  type MinorUnitsPreflightResult,
+  type MinorUnitsProblemRow,
+  type MinorUnitsRescaleOptions,
+  type MinorUnitsRescaleResult,
+  type MoneyColumnTarget,
+  preflightMinorUnitsRescale,
+  rescaleMoneyColumnsToMinorUnits,
+} from './minor-units.js';
 // High-level schema orchestration over ObjectRegistry
 export {
   getPendingSchemaStatements,

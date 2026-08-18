@@ -10,10 +10,23 @@ export interface Props {
 let { entries = [] }: Props = $props();
 const { t } = useI18n();
 
-const money = (amount = 0, currency = 'USD') =>
-  new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(
-    amount,
-  );
+/**
+ * Format a minor-units amount for display.
+ *
+ * Charge and compensation amounts are integer minor units (#2401), so the
+ * scale has to be undone before `Intl.NumberFormat`, which expects major units.
+ * The currency's own exponent is used rather than a hard-coded 100, so
+ * zero-decimal currencies (JPY, KRW) are left alone. The margin below is a
+ * subtraction of two integers, so it is exact and needs no tolerance.
+ */
+const money = (amount = 0, currency = 'USD') => {
+  const format = new Intl.NumberFormat(undefined, {
+    style: 'currency',
+    currency,
+  });
+  const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format.format(amount / 10 ** digits);
+};
 </script>
 
 <section

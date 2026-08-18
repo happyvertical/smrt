@@ -245,7 +245,16 @@ export class ServiceTimeEntry extends SmrtObject {
 export class ServiceChargeSnapshot extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
   @foreignKey('ServiceTimeEntry', { required: true }) timeEntryId: string = '';
-  amount: number = 0.0;
+  /**
+   * Client charge in **integer minor units** of {@link currency} — `$19.99` is
+   * `1999`. The `= 0` initializer is load-bearing: SMRT maps an integer literal
+   * to INTEGER and a decimal literal to DECIMAL (#2401).
+   *
+   * Copied verbatim from the upstream `ClientCharge.amount`, so the two carry
+   * the same unit by construction; a split would land cents in a major-units
+   * column with no error anywhere.
+   */
+  amount: number = 0;
   @field({ type: 'text' }) currency: string = 'USD';
   @field({ type: 'text' }) pricingVersion: string = '';
   @field({ type: 'text' }) strategy: string = '';
@@ -296,7 +305,14 @@ export class ServiceChargeSnapshot extends SmrtObject {
 export class ServiceCompensationSnapshot extends SmrtObject {
   @tenantId({ nullable: true }) tenantId: string | null = null;
   @foreignKey('ServiceTimeEntry', { required: true }) timeEntryId: string = '';
-  amount: number = 0.0;
+  /**
+   * Provider earning in **integer minor units** of {@link currency} (#2401).
+   *
+   * Converts with {@link ServiceChargeSnapshot.amount}: the delivery margin is
+   * `charge - compensation`, so a mixed pair would make that subtraction
+   * meaningless.
+   */
+  amount: number = 0;
   @field({ type: 'text' }) currency: string = 'USD';
   @field({ type: 'text' }) termsVersion: string = '';
   @field({ type: 'text' }) rateSnapshot: string = '{}';
