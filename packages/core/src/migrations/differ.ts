@@ -1391,25 +1391,18 @@ export class SchemaComparer {
 
     // Orphan-index sweep. Three tiers:
     //
-    // - A constraint-owned unique index (`*_key`) the manifest no longer
-    //   declares is never dropped but always *reported* (#2369) — a stale
-    //   inline UNIQUE keeps rejecting duplicates the model now allows.
-    // - A redundant primary-key index — a single-column index over the
-    //   table's primary key that the manifest no longer declares — is
-    //   dropped unconditionally. Every generator path used to emit
-    //   `<table>_id_idx` beside the engine's own primary-key index (#2359,
-    //   A5); the constraint keeps serving every lookup, so the drop is a
-    //   pure write-cost saving and `db:migrate` cleans it up without
-    //   `--drop-indexes`. Requires the live table to report the column as
-    //   its primary key, so a legacy table whose `id` is not actually a
-    //   primary key keeps its only index on that column.
-    // - Everything else in the DB with no manifest counterpart by name or
-    //   signature is dropped only when the caller opts in via
+    // - A redundant primary-key index — a non-unique single-column index over
+    //   the table's sole primary-key column that the manifest no longer
+    //   declares — is dropped unconditionally. Every generator path used to
+    //   emit `<table>_id_idx` beside the engine's own primary-key index
+    //   (#2359, A5); the constraint keeps serving every lookup, so the drop
+    //   is a pure write-cost saving and `db:migrate` cleans it up without
+    //   `--drop-indexes`.
+    // - Unclaimed constraint-owned unique indexes (`*_key`) are never dropped
+    //   but always *reported* (#2369) — a stale inline UNIQUE keeps rejecting
+    //   duplicates the model now allows.
+    // - Everything else is dropped only when the caller opts in via
     //   includeDroppedIndexes.
-    //
-    // Protected names are handled inside the loop rather than skipped up
-    // front, because #2369's advisory needs them to reach it; every branch
-    // there still `continue`s, so a protected index is never dropped.
     for (const idx of dbSchema.indexes) {
       if (claimedDbIndexes.has(idx.name)) continue;
 
@@ -1467,7 +1460,7 @@ export class SchemaComparer {
       // UNIQUE single-column index on the PK may be the index that backs a
       // custom-named PRIMARY KEY constraint on PostgreSQL (only `*_pkey` is
       // filtered by introspection) — `DROP INDEX` on it fails and, because
-      // migrate is atomic, would roll back the whole batch.
+      // migrate is atomic, would roll back the whole batch (#2359).
       const redundantPrimaryKeyIndex =
         idx.unique !== true &&
         idx.columns.length === 1 &&

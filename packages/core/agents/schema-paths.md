@@ -74,7 +74,69 @@ divergence is a bug in the generator, not an exception to add to the test.
   `(slug, context)` unique index; `loadFromSlug()`/`getId()`/`getSavedId()`
   still filter on slug/context, so a plain `<table>_slug_context_idx` is kept
   (additive; routing those lookups through the conflict key would change which
-  row a slug resolves to).
+  row a slug resolves to). The tenant-led default key below counts as serving
+  it (`servesSlugLookup()`): a tenant-scoped slug lookup carries the tenant
+  predicate (#2365) and is served by the prefix, so no second index.
+- **Tenant-scoped tables key per tenant (#2360).** A tenant-scoped class with
+  no explicit `conflictColumns` upserts on, and indexes,
+  `(tenant_id, slug, context)` — `(tenant_id, slug, context, _meta_type)` for
+  an STI hierarchy — resolved by one rule on both paths:
+  `ManifestGenerator.normalizeConflictColumns()` materializes it into
+  `decoratorConfig.conflictColumns` for the manifest paths (so the manifest,
+  the schema, `smrt-knowledge.json` and the runtime read one value), and
+  `ObjectRegistry.getConflictColumns()` derives the same value at runtime from
+  the schema owner's `tenantScoped` config (`ObjectRegistry.getTenantColumn()`;
+  an STI child resolves through its root; a `@report` class through its
+  group/bucket columns; a custom primary key through that key). Explicit
+  `conflictColumns` are never rewritten. `src/schema/conflict-target.ts` holds
+  the shared helpers. Consequences: the index NAME stays
+  `<table>_slug_context_idx` / `_slug_context_meta_type_idx`, so the differ
+  swaps the columns of an existing global unique in place by name (a superset
+  key — creating it cannot fail on existing rows); the tenant-led key also
+  serves the tenant column, so `<table>_tenant_id_idx` is no longer emitted
+  for those tables (an existing one is an orphan the differ drops only with
+  `--drop-indexes`); NULL-tenant rows (`mode: 'optional'` outside a tenant
+  context) dedup among themselves through the SDK's null-aware upsert
+  (`IS NOT DISTINCT FROM` under a PostgreSQL advisory lock / an in-process
+  lock on SQLite) — application-enforced now, where the old global index was
+  database-enforced: the tenant-led index treats NULLs as distinct, so raw SQL
+  can insert two global rows with one slug, and a raw
+  `ON CONFLICT (slug, context…)` against such a table no longer binds (use
+  `WHERE NOT EXISTS`, plus an advisory lock on PostgreSQL). Emitting
+  `NULLS NOT DISTINCT` on PostgreSQL ≥ 15 (the SDK already detects it) would
+  restore the database arbiter — a follow-up. The `save()` path serializes an
+  unset tenant field as an explicit `NULL` whatever its registered type,
+  because the SDK rejects an upsert whose conflict column is missing from the
+  row.
+- **Rolling the tenant-led key out (#2360).** There is no mixed-version state:
+  new code against the old index fails every NEW-object create on a
+  tenant-scoped default-key table (PostgreSQL 42P10, SQLite "ON CONFLICT
+  clause does not match…"), and old code against the new index fails the same
+  way, because the conflict target must match the unique index's column set
+  exactly; only persisted objects (upsert on `id`) keep saving. Deploy the code
+  and run `smrt db:migrate` in the same maintenance step. The plan is one
+  `DROP INDEX` + `CREATE UNIQUE INDEX` per table under the SAME name (a
+  superset key, so the build cannot fail when the old same-name index was a
+  valid UNIQUE over the subset key; a #1165-class table whose old index was
+  non-unique or missing may hold duplicates that a superset UNIQUE rejects —
+  `db:diff` shows which tables' old index is non-unique or missing; dedupe
+  those rows before migrating). Atomic mode swaps every table in one
+  transaction: `DROP INDEX` takes ACCESS EXCLUSIVE and holds it until commit,
+  which blocks ALL access to those tables — reads included — for the batch;
+  size `statementTimeout` for the largest tenant-scoped table. That is the
+  maintenance window this rollout requires anyway (no mixed-version state), so
+  run this wave — the #2359 index wave included — in atomic mode inside it;
+  the "roll out with `--postgres-safe`" advice above applies to a #2359-only
+  wave, because `--postgres-safe` runs the two statements sequentially per
+  table, so each table has NO conflict index between them and a failed rebuild
+  leaves it without one until the re-run. The recreate has no automatic
+  DOWN: reverting the code means re-creating the old index by hand. And
+  legacy NULL-tenant rows fork rather than get adopted — a tenant-context save
+  whose slug matches a `(NULL, slug, ctx)` row now inserts `(tenant, slug,
+  ctx)` beside it, and that tenant no longer sees the legacy row — so backfill
+  `tenant_id` (anytown: `SET tenant_id = context::uuid`) BEFORE this release.
+  Ingestion that relied on natural-key dedup across tenants now inserts one
+  row per tenant (release note).
 - **STI `@field({ unique: true })` is enforced through indexes** (the differ can
   add an index to an existing table, never a column constraint): a full
   `<table>_<col>_unique_idx` when the STI base declares it, one
@@ -182,9 +244,12 @@ see "Index rules" above. Check the pair, not the declaration.
 
 Every unique constraint and every conflict target on a tenant-scoped table
 includes the tenant column — otherwise a second tenant's `save()` of the same
-natural key updates the first tenant's row through `DO UPDATE SET` (#2360). And
-every read path is interceptor-aware: hydration (`loadFromId`/`loadFromSlug`),
-get-by-slug, vector search, and collection memory, not only `list()` (#2365).
+natural key updates the first tenant's row through `DO UPDATE SET` (#2360; the
+default key now does, see "Index rules" — an explicit `conflictColumns` that
+omits the tenant column is the class author's own key and is not rewritten).
+And every read path is interceptor-aware: hydration
+(`loadFromId`/`loadFromSlug`), get-by-slug, vector search, and collection
+memory, not only `list()` (#2365).
 
 ### 7. Retry only transient errors
 
@@ -229,7 +294,7 @@ production down on rollout (#2362).
 ### 13. Composite indexes are declared, not inferred (#2357)
 
 The generated set only covers foreign keys, unique/conflict columns, the STI
-discriminator, reference columns (#2359), the default list ordering (rule 14
+discriminator, reference columns (#2359), the default list ordering (rule 18
 below), and single columns opted in with `@field({ indexed: true })`. A list
 workload's access path is composite, so declare it:
 
@@ -249,119 +314,14 @@ scans a btree either way, so an ascending index also serves the matching
 (partial index) are honoured.
 
 `appendDeclaredIndexes()` runs first on all five entry points, ahead of
-`ensureDefaultListOrderingIndex()` and `ensureReferenceColumnIndexes()`, so a
-declared composite leading with the tenant column replaces the automatic
-standalone `tenant_id` index rather than duplicating it. Unknown columns,
-malformed entries, and a name collision with a different index all fail
-generation — a silently dropped index only surfaces later as a production
-slowdown. Rule 8 above is why this works at runtime at all.
+`ensureDefaultListOrderingIndex()` (rule 18) and `ensureReferenceColumnIndexes()`,
+so a declared composite leading with the tenant column (or any reference column)
+replaces the automatic standalone index rather than duplicating it.
+Unknown columns, malformed entries, and a name collision with a different index
+all fail generation — a silently dropped index only surfaces later as a
+production slowdown. Rule 8 above is why this works at runtime at all.
 
-### 14. The generator owns the index for its own default ordering (#2363)
-
-Every generated list surface — REST, MCP, the SvelteKit list route — pages with
-`ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`, #2367), and
-until #2363 no schema path indexed `created_at` (the dead AST path indexed
-`updated_at`), so the framework's own default page was a sequential scan plus a
-top-N sort. `ensureDefaultListOrderingIndex()` now runs on all five paths and
-emits:
-
-- `(<tenant column>, created_at)` on a tenant-scoped table — the tenancy
-  interceptor puts `tenant_id = ?` in front of every list, so the tenant column
-  leads and `created_at` orders within it. This composite **replaces** the
-  standalone tenant index from #2359: a B-tree serves every prefix of its
-  column list, so `ensureDefaultListOrderingIndex()` is called first and
-  `ensureReferenceColumnIndexes()` then sees the column as already served. The
-  tenant column is found by `referenceKind === 'tenantId'`, never by the
-  `tenant_id` spelling — `@smrt({ tenantScoped: { field } })` renames it.
-- `(created_at)` otherwise.
-
-Three deliberate omissions, so nobody "fixes" them later:
-
-- **No `DESC`.** `IndexDefinition` carries no per-column direction and
-  PostgreSQL scans a B-tree backwards just as cheaply.
-- **No primary-key tiebreak column.** The default order mixes directions
-  (`created_at DESC, id ASC`), so no single-direction index satisfies the whole
-  key; the leading columns already turn a full sort into an index scan plus an
-  incremental sort over rows sharing a timestamp.
-- **Not scoped per STI subtype.** `(_meta_type, created_at)` would serve a
-  child collection's list but not the base class's polymorphic one, which
-  carries no discriminator predicate — the same reasoning that keeps STI
-  reference indexes plain (#2359). One unqualified index per shared table.
-
-An existing UNQUALIFIED index that already leads with the same columns
-suppresses it — a partial or JSON-path index never counts. That is how a
-declared `@smrt({ indexes: [...] })` composite (#2357) takes over: declaring
-`(tenant_id, created_at, status)` replaces the generated pair, while declaring
-a different sort column such as `(tenant_id, publish_date)` sits **beside** it,
-because that index cannot order the default page. Declared indexes are appended
-before this helper for exactly that reason; anything that appends an index in
-future goes in the same slot, ahead of `ensureDefaultListOrderingIndex()` and
-`ensureReferenceColumnIndexes()`.
-
-### 15. Every generated index name is length-guarded before it leaves a path (#2374)
-
-PostgreSQL truncates any identifier past 63 **bytes** and reports nothing;
-SQLite and DuckDB do not, so the entire test suite was blind to it. The 66-byte
-`content_contribution_revisions_contribution_id_revision_number_idx` shipped
-that way — only the differ's signature-equivalence check kept it from emitting
-`add_index` on every run. Two names agreeing for 63 bytes is the real hazard:
-`CREATE INDEX IF NOT EXISTS` no-ops against the wrong index, and the second
-index is never created.
-
-`schema/index-utils.ts` owns the guard, and it splits by who owns the name:
-
-- **Generated index, trigger and PL/pgSQL function names** →
-  `shortenIdentifier()`. Deterministic `<head>_<digest><suffix>`, digest taken
-  over the **full** original so a shared prefix still yields distinct names, and
-  a recognised suffix (`_idx`, `_unique_idx`, `_key`, `_pkey`) preserved.
-- **Hand-declared `@smrt({ indexes: [{ name }] })`** → `assertIdentifierFits()`,
-  a hard error in `validateDeclaredIndex()`. Renaming what a developer wrote is
-  worse than refusing it, and `SchemaComparer` matches indexes **by name**
-  first, so a 70-byte declaration could never match the 63-byte index
-  PostgreSQL stored and `db:migrate` would emit `add_index` forever. Manifest
-  generation is what `smrt dev:knowledge-check` runs, so it surfaces there.
-- **Table and column names** → deliberately **not** guarded. PostgreSQL
-  truncates identifiers *consistently on every reference*: `CREATE TABLE
-  "<80 bytes>"` and a later `SELECT ... FROM "<the same 80 bytes>"` both resolve
-  to the same stored 63-byte name, so one long name round-trips fine end to end.
-  `smrt-users` depends on this — it ships an intentional 80-byte
-  `@smrt({ tableName })` (`permission_policy_table_name_that_is_far_too_long…`)
-  and derives unique Postgres RLS policy names from it. An earlier revision of
-  this rule hard-errored here on the theory that the runtime resolves tables by
-  name and would break; that theory is wrong for the reason above, and the error
-  broke `packages/users`. The residual collision risk is over a name the
-  developer chose, not one the generator manufactured.
-
-`enforceIdentifierLimits()` is the single call site per path, placed **after**
-`ensureReferenceColumnIndexes()` — nothing may lengthen a name after it. Doing
-the shortening at the end rather than at each `indexes.push()` is safe because
-the digest covers the whole original name, so entries distinct before shortening
-stay distinct after; the helper still throws if two ever collide. The migrate
-leg's own `withConflictIndex()` (`registry/schema-builder.ts`) and the
-PostgreSQL trigger-function name call `shortenIdentifier()` directly, because
-they build a name outside the generator.
-
-The digest is FNV-1a, not `node:crypto`: `index-utils.ts` is re-exported from
-`schema/utils.ts`, which exists to keep Node built-ins out of browser bundles.
-It only has to be *stable* — a shortened name that changed between releases
-would make every deployment drop and recreate the index — so the parity and
-unit tests pin the literal output rather than recomputing it.
-
-Existing databases migrate **by name swap, without a rebuild**: the live index
-still carries the name PostgreSQL truncated it to, the manifest now carries the
-shortened one, and the differ claims it by signature (columns + uniqueness +
-predicate), emitting nothing — including under `includeDroppedIndexes`. See
-`migrations/__tests__/index-drift.test.ts`.
-
-Out of scope, deliberately: constraint names PostgreSQL invents for itself. A
-CTI table's inline `UNIQUE` produces an implicit `<table>_<column>_key`, which
-can exceed 63 bytes even when the table and column each fit. SMRT never names
-it, and PostgreSQL disambiguates its own truncations by appending a counter
-rather than collapsing them, so there is no silent-collision hazard there —
-only a name shorter than you would guess. `smrt db:migrate` never matches on it
-either (`isProtectedDbIndexName` skips `_key`/`_pkey`).
-
-### 16. Relationship targets resolve to a class name on both paths
+### 14. Relationship targets resolve to a class name on both paths
 
 `@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
 `() => Target` thunk. The decorator invokes the thunk and throws when the target
@@ -459,3 +419,186 @@ and always reports what it will not touch:
   round-trip test (create from each DDL strategy → compare → zero changes) in
   `src/migrations/__tests__/issue-2369-*.test.ts` guards this.
 
+### 16. `schema.ddl` is a preview, not the table
+
+`SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
+CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no
+indexes, no triggers, abstract `REAL`/`JSON`/`UUID`/`TIMESTAMP`. It is kept for
+backward compatibility only. Everything that needs an executable table renders
+`columns` + `indexes` through `getDDLStrategy(engine)` — `db:migrate`
+(`migrations/orchestrate.ts`), `MigrationGenerator` (default
+`materializeStructuredSchema: true`; `false` is a deprecated opt-out),
+`SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
+last two via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is merged in only for a
+table whose contributors expose no structured columns (hand-authored
+manifests); table constraints that exist only in the string are dropped with a
+warning, as `db:migrate` drops them. Do not add a new consumer of the
+string, and do not write a private CREATE INDEX renderer — the retired ones
+dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
+`PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
+
+### 17. The merged table shape is registration-order independent (#2372)
+
+`getAllSchemas()` and `getAllSchemasAsDefinitions()` fold every class that
+shares a physical table — the whole STI hierarchy — into one shape. Both route
+through `buildMergedTableSchemas()`, which groups contributors by table and
+then merges them in a **deterministic** order: the STI base first, then
+ancestors before descendants, then by qualified name.
+
+That order matters because the first contributor seeds the table: it supplies
+the fallback base columns, the `idType`, the conflict columns and the cached
+DDL, and its columns win every merge conflict. When registration order decided
+it, an STI child that carries no manifest `schema` — the external- and
+consumer-manifest case — seeded the table from bare fallback columns and the
+base class's richer ones were skipped when it registered later, yielding
+`context TEXT` instead of `context TEXT NOT NULL DEFAULT ''` and timestamps
+with no NOT NULL/DEFAULT. The shipped content manifest lists `Article` before
+`Content`, so the losing order was the one that shipped, and the differ
+compares types only, so the weak fresh-create was never repaired.
+
+Two invariants keep the two assembly paths agreeing:
+
+- `createBaseColumns()` mirrors what `generateSchemaFromManifest` /
+  `generateSTISchemaFromManifest` emit for the same table, so a table built
+  from runtime field metadata alone has the same NOT NULL/DEFAULT shape as one
+  built from a manifest. Note `_meta_type` is `TEXT NOT NULL` with **no**
+  default, matching the generator.
+- `fieldsToColumns()` reads `required`, `default`, and `description` from the
+  top level *or* `_meta`. Registry fields normalize them into `_meta`
+  (`manifest-field-merge.ts`), so reading only the top level silently dropped
+  NOT NULL and DEFAULT for every registry-sourced field.
+
+STI columns stay nullable regardless of the field's `required` flag
+(`fieldsToColumns(fields, { stiUnionColumns: true })`): the table holds the
+union of all subtypes' fields, so a column only one subtype declares is never
+populated on a sibling's row. Declared defaults are still emitted. This matches
+`generateSTISchemaFromManifest`, which sets `notNull: false` on every non-system
+STI column.
+
+When adding a class-level input to the merged shape, take it from the seeding
+contributor rather than "whichever class arrives first", and cover it with a
+child-first/base-first equality test.
+
+### 18. The generator owns the index for its own default ordering (#2363)
+
+Every generated list surface — REST, MCP, the SvelteKit list route — pages with
+`ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`, #2367), and
+until #2363 no schema path indexed `created_at` (the dead AST path indexed
+`updated_at`), so the framework's own default page was a sequential scan plus a
+top-N sort. `ensureDefaultListOrderingIndex()` now runs on all five paths and
+emits:
+
+- `(<tenant column>, created_at)` on a tenant-scoped table — the tenancy
+  interceptor puts `tenant_id = ?` in front of every list, so the tenant column
+  leads and `created_at` orders within it. This composite **replaces** the
+  standalone tenant index from #2359: a B-tree serves every prefix of its
+  column list, so `ensureDefaultListOrderingIndex()` is called first and
+  `ensureReferenceColumnIndexes()` then sees the column as already served. The
+  tenant column is found by `referenceKind === 'tenantId'`, never by the
+  `tenant_id` spelling — `@smrt({ tenantScoped: { field } })` renames it.
+- `(created_at)` otherwise.
+
+Three deliberate omissions, so nobody "fixes" them later:
+
+- **No `DESC`.** `IndexDefinition` carries no per-column direction and
+  PostgreSQL scans a B-tree backwards just as cheaply.
+- **No primary-key tiebreak column.** The default order mixes directions
+  (`created_at DESC, id ASC`), so no single-direction index satisfies the whole
+  key; the leading columns already turn a full sort into an index scan plus an
+  incremental sort over rows sharing a timestamp.
+- **Not scoped per STI subtype.** `(_meta_type, created_at)` would serve a
+  child collection's list but not the base class's polymorphic one, which
+  carries no discriminator predicate — the same reasoning that keeps STI
+  reference indexes plain (#2359). One unqualified index per shared table.
+
+An existing UNQUALIFIED index that already leads with the same columns
+suppresses it — a partial or JSON-path index never counts. That is how a
+declared `@smrt({ indexes: [...] })` composite (#2357) takes over: declaring
+`(tenant_id, created_at, status)` replaces the generated pair, while declaring
+a different sort column such as `(tenant_id, publish_date)` sits **beside** it,
+because that index cannot order the default page. Declared indexes are appended
+before this helper for exactly that reason; anything that appends an index in
+future goes in the same slot, ahead of `ensureDefaultListOrderingIndex()` and
+`ensureReferenceColumnIndexes()`.
+
+### 19. One conflict-target rule, applied on every producer
+
+`save()` upserts on `ObjectRegistry.getConflictColumns()`; the schema must
+carry exactly one unique index over those columns (or they must be the
+primary key). Keep the derivation in `src/schema/conflict-target.ts` and let
+every producer call it — the three manifest pipelines share
+`ManifestGenerator.applyGenerationPasses()` since #2360 because
+`ManifestBuilder` had silently skipped the report passes for months. When you
+add a way for the key to vary (a new decorator option, a new class kind),
+thread it through `getConflictColumns()`, `normalizeConflictColumns()` and the
+generator's `resolveConflictTarget()` together, and extend the parity test's
+"unique index == conflict target" assertion; a key the runtime uses and the
+schema does not index is a hard PostgreSQL error (42P10) on the first save,
+and a key the schema indexes without the tenant column is the silent
+cross-tenant overwrite this rule exists for.
+
+### 20. Every generated index name is length-guarded before it leaves a path (#2374)
+
+PostgreSQL truncates any identifier past 63 **bytes** and reports nothing;
+SQLite and DuckDB do not, so the entire test suite was blind to it. The 66-byte
+`content_contribution_revisions_contribution_id_revision_number_idx` shipped
+that way — only the differ's signature-equivalence check kept it from emitting
+`add_index` on every run. Two names agreeing for 63 bytes is the real hazard:
+`CREATE INDEX IF NOT EXISTS` no-ops against the wrong index, and the second
+index is never created.
+
+`schema/index-utils.ts` owns the guard, and it splits by who owns the name:
+
+- **Generated index, trigger and PL/pgSQL function names** →
+  `shortenIdentifier()`. Deterministic `<head>_<digest><suffix>`, digest taken
+  over the **full** original so a shared prefix still yields distinct names, and
+  a recognised suffix (`_idx`, `_unique_idx`, `_key`, `_pkey`) preserved.
+- **Hand-declared `@smrt({ indexes: [{ name }] })`** → `assertIdentifierFits()`,
+  a hard error in `validateDeclaredIndex()`. Renaming what a developer wrote is
+  worse than refusing it, and `SchemaComparer` matches indexes **by name**
+  first, so a 70-byte declaration could never match the 63-byte index
+  PostgreSQL stored and `db:migrate` would emit `add_index` forever.
+- **Table and column names** → deliberately **not** guarded. PostgreSQL
+  truncates identifiers *consistently on every reference*: `CREATE TABLE
+  "<80 bytes>"` and a later `SELECT ... FROM "<the same 80 bytes>"` both resolve
+  to the same stored 63-byte name, so one long name round-trips fine end to end.
+  `smrt-users` depends on this — it ships an intentional 80-byte
+  `@smrt({ tableName })` (`permission_policy_table_name_that_is_far_too_long…`)
+  and derives unique Postgres RLS policy names from it. An earlier revision of
+  this rule hard-errored here on the theory that the runtime resolves tables by
+  name and would break; that theory is wrong for the reason above, and the error
+  broke `packages/users`. The residual collision risk is over a name the
+  developer chose, not one the generator manufactured.
+
+`enforceIdentifierLimits()` is the single call site per path, placed **after**
+`ensureReferenceColumnIndexes()` — nothing may lengthen a name after it. Doing
+the shortening at the end rather than at each `indexes.push()` is safe because
+the digest covers the whole original name, so entries distinct before shortening
+stay distinct after; the helper still throws if two ever collide. The migrate
+leg's `withConflictIndex()` (`registry/schema-builder.ts`) and the PostgreSQL
+trigger-function name call `shortenIdentifier()` directly, because they compose
+a name outside the generator's index list. Note that an over-long *table* name
+still yields in-limit, distinct *index* names, because the shortening runs over
+the whole composed name.
+
+The digest is FNV-1a, not `node:crypto`: `index-utils.ts` is re-exported from
+`schema/utils.ts`, which exists to keep Node built-ins out of browser bundles.
+It only has to be *stable* — a shortened name that changed between releases
+would make every deployment drop and recreate the index — so the parity and
+unit tests pin the literal output rather than recomputing it. Unpaired
+surrogates are folded to U+FFFD before both counting and hashing, so the digest
+is taken over exactly the bytes the driver transmits.
+
+Existing databases migrate **by name swap, without a rebuild**: the live index
+still carries the name PostgreSQL truncated it to, the manifest now carries the
+shortened one, and the differ claims it by signature (columns + uniqueness +
+predicate), emitting nothing — including under `includeDroppedIndexes`. See
+`migrations/__tests__/index-drift.test.ts` and the PostgreSQL lane test
+`schema/issue-2374-identifier-length-postgres.optional.test.ts`.
+
+Out of scope, deliberately: constraint names PostgreSQL invents for itself. A
+CTI table's inline `UNIQUE` produces an implicit `<table>_<column>_key`, which
+can exceed 63 bytes even when the table and column each fit. SMRT never names
+it, and PostgreSQL disambiguates its own truncations by appending a counter
+rather than collapsing them, so there is no silent-collision hazard there.

@@ -309,4 +309,50 @@ describe('schema-builder: fieldsToColumns', () => {
     );
     expect(columns.status.defaultValue).toBe('active');
   });
+
+  it('reads required/default/description from _meta (issue #2372)', () => {
+    // Registry-sourced fields normalize these into `_meta`; reading only the
+    // top level dropped NOT NULL and DEFAULT for every such field.
+    const columns = fieldsToColumns(
+      fieldMap({
+        status: {
+          type: 'text',
+          _meta: {
+            required: true,
+            default: 'active',
+            description: 'lifecycle state',
+          },
+        },
+      }),
+    );
+    expect(columns.status.notNull).toBe(true);
+    expect(columns.status.defaultValue).toBe('active');
+    expect(columns.status.description).toBe('lifecycle state');
+  });
+
+  it('prefers a top-level value over the _meta copy', () => {
+    const columns = fieldsToColumns(
+      fieldMap({
+        status: {
+          type: 'text',
+          default: 'top',
+          _meta: { default: 'meta' },
+        },
+      }),
+    );
+    expect(columns.status.defaultValue).toBe('top');
+  });
+
+  it('keeps STI union columns nullable while still emitting defaults', () => {
+    // An STI table is the union of every subtype's fields, so a column only
+    // one subtype declares must stay nullable — sibling rows never fill it.
+    const columns = fieldsToColumns(
+      fieldMap({
+        byline: { type: 'text', _meta: { required: true, default: 'staff' } },
+      }),
+      { stiUnionColumns: true },
+    );
+    expect(columns.byline.notNull).toBe(false);
+    expect(columns.byline.defaultValue).toBe('staff');
+  });
 });

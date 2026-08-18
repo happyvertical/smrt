@@ -578,6 +578,36 @@ export class GlobalInterceptors {
 }
 
 /**
+ * Canonical UUID shape used by `SmrtCollection.get()` to decide whether a
+ * string filter is an id or a slug.
+ */
+const GET_STRING_FILTER_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Resolve a string filter to the WHERE shape `SmrtCollection.get()` gives it:
+ * a UUID string becomes `{ id }`, anything else becomes the natural-key lookup
+ * `{ slug, context: '' }`.
+ *
+ * This is the single source of truth for that string-filter contract. Any
+ * `beforeGet` interceptor that rewrites a string filter into an object filter
+ * MUST resolve it through this helper first — the tenancy interceptor used to
+ * rewrite every string to `{ id: filter, tenantId }`, which broke get-by-slug
+ * under an active tenant context (null on SQLite, a uuid cast error on
+ * PostgreSQL native-uuid id columns). See #2365.
+ *
+ * @param filter - The string filter passed to `get()`
+ * @returns The object filter `get()` would build for that string
+ */
+export function resolveGetStringFilter(
+  filter: string,
+): { id: string } | { slug: string; context: string } {
+  return GET_STRING_FILTER_UUID_PATTERN.test(filter)
+    ? { id: filter }
+    : { slug: filter, context: '' };
+}
+
+/**
  * Helper function to create an interceptor context
  * @internal
  */
