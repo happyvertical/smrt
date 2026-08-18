@@ -129,7 +129,11 @@ must name its target engine, for example
 `ObjectRegistry.getSchemaDDL('Event', 'postgres')` or
 `ObjectRegistry.getAllSchemas('postgres')`. The one-argument registry forms are
 retained for compatibility with code that inspects cached manifests; their
-engine-neutral `ddl` must not be executed on PostgreSQL.
+engine-neutral `ddl` must not be executed on PostgreSQL. More generally, a
+manifest's `schema.ddl` is a CREATE TABLE preview with no indexes and abstract
+types; `db:migrate`, `MigrationGenerator`, `SchemaAggregator`, and
+`createIsolatedTestDbFromManifest` all render the structured `schema.columns`
+and `schema.indexes` through the engine DDL strategy instead (#2358).
 
 Schemas created before SMRT adopted `TIMESTAMPTZ` may contain PostgreSQL
 `TIMESTAMP` columns. By default SMRT reports these as manual drift and does not
@@ -1828,8 +1832,8 @@ columns first, sort column last. Declare columns, not a direction: PostgreSQL
 scans a btree either way, so an ascending index also serves the matching
 `ORDER BY ... DESC` without a sort step. A column the object does not have, or a
 name that collides with a different generated index, fails schema generation
-rather than silently dropping the index. An index leading with the tenant column
-also stands in for the automatic `tenant_id` index.
+rather than silently dropping the index. An index leading with a reference column (`tenant_id`, a foreign key, a
+cross-package ref) also stands in for that column's automatic index.
 
 ### 5. Cache AI Responses
 

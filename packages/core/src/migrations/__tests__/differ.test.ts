@@ -700,7 +700,10 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     ]);
   });
 
-  it('should preserve DuckDB UNIQUE constraints in ADD COLUMN SQL', async () => {
+  it('splits a DuckDB unique column into ADD COLUMN + CREATE UNIQUE INDEX (DuckDB rejects inline UNIQUE) (#2369)', async () => {
+    // DuckDB: `ALTER TABLE ... ADD COLUMN ... UNIQUE` → "Adding columns with
+    // constraints not yet supported". The previous assertion enshrined that
+    // rejected SQL; the plan must be executable instead.
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
       query: async () => ({ rows: [{ name: 'users' }] }),
@@ -736,9 +739,16 @@ describe('SchemaComparer engine-specific SQL generation', () => {
         type: 'add_column',
         table: 'users',
         name: 'email',
-        sql: `ALTER TABLE "users" ADD COLUMN "email" TEXT UNIQUE`,
+        sql: `ALTER TABLE "users" ADD COLUMN "email" TEXT`,
+        sqlStatements: [
+          `ALTER TABLE "users" ADD COLUMN "email" TEXT`,
+          `CREATE UNIQUE INDEX "users_email_key" ON "users" ("email")`,
+        ],
       }),
     ]);
+    for (const sql of getSQLFromDiff(diff)) {
+      expect(sql).not.toMatch(/ADD COLUMN .* UNIQUE/);
+    }
   });
 
   it('should not emit PRIMARY KEY constraints in ADD COLUMN SQL', async () => {

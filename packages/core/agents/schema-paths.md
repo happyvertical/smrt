@@ -331,7 +331,156 @@ costs the relationship edge, `loadRelated()`, and the FK-derived index (#2379).
 A thunk resolves at decoration time, so a target declared later in the same
 module is still in its temporal dead zone — use the string form there.
 
-### 15. One conflict-target rule, applied on every producer
+### 15. A SQLite type change is a table rebuild (#2370)
+
+SQLite has no `ALTER TABLE ... ALTER COLUMN ... TYPE`, so
+`src/migrations/sqlite-rebuild.ts` answers a `type_upgrade` on SQLite with the
+statement list SQLite's own docs prescribe: stage a new table under
+`_smrt_rebuild_<table>`, copy, drop, rename, replay the indexes and triggers.
+`SchemaComparer.compareTable` swaps that plan in for the differ's
+"requires table recreation" placeholder, so `db:migrate` applies it inside the
+normal atomic batch instead of exiting 1 forever.
+
+Four properties of that module are load-bearing; keep them if you touch it:
+
+- **The target shape comes from the live `sqlite_master` DDL**, retyping only
+  the drifted columns. It is not regenerated from the manifest, so the rebuild
+  never becomes an implicit `DROP COLUMN`, and it preserves table constraints,
+  `CHECK`s, and `WITHOUT ROWID`/`STRICT`.
+- **The rebuild is hoisted ahead of the table's other column changes.** Its
+  staging DDL and copy list are captured at diff time, and the differ emits
+  changes in manifest field order, so a new field declared above the retyped
+  one would otherwise run `ALTER TABLE ... ADD COLUMN` first and have the
+  rebuild silently drop it — both statements succeed and the batch commits.
+  Rebuild first, then add columns to the rebuilt table.
+- **The copy carries no `CAST`.** SQLite applies the destination column's
+  affinity on insert — the same conversion a fresh table performs. An explicit
+  cast is worse: non-numeric TEXT cast to REAL/INTEGER silently becomes `0`,
+  and an ISO timestamp cast to NUMERIC-affinity `DATETIME` becomes its year.
+- **It refuses when any table has a foreign key onto the target and
+  `PRAGMA foreign_keys` is ON** (the SMRT adapter's default). `DROP TABLE`
+  performs an implicit `DELETE FROM` that fires `ON DELETE CASCADE` on
+  children, and `defer_foreign_keys` defers constraint *checks*, not FK
+  *actions* — verified: the child rows go. The target's own self-reference
+  counts, because the staging table copies that clause and becomes a child of
+  the table being dropped (verified: a two-row self-referencing table finishes
+  the rebuild holding one row). Such a column stays manual drift.
+- **`PRAGMA legacy_alter_table` brackets the rename**, because SQLite ≥ 3.25
+  re-parses the schema on `ALTER TABLE ... RENAME` and a view still pointing at
+  the just-dropped table makes it fail outright. It is restored immediately
+  after; a rolled-back batch leaves it set on that connection, which is inert
+  here only because nothing else in SMRT renames a table.
+
+All the drifted columns of one table share a single rebuild: the first change
+carries the plan and the rest become `no change needed` comments that the CLI
+classifies as no-ops.
+
+## What the differ compares (#2369)
+
+`SchemaComparer` (`src/migrations/differ.ts`) compares each manifest column's
+type, then — unless the type itself is drifting — its nullability and default,
+and always reports what it will not touch:
+
+- **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on
+  PostgreSQL/DuckDB. `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
+  backfill of the manifest default; without a default the live data is probed
+  and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
+  of emitting an ALTER that would abort the atomic batch.
+- **Relaxing** (`DROP NOT NULL`, `DROP DEFAULT`) is a report-only advisory until
+  the caller passes `relaxColumns` (`db:migrate --relax-columns`). The manifest
+  can be under-specified (#2372 registration-order weakness), so a live column
+  that is stricter than the manifest is never weakened silently.
+- **Orphans** — DB columns absent from the manifest, DB tables no manifest
+  declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
+  indexes — are always reported. A NOT NULL orphan without a default is a
+  `warning` advisory (every ORM insert fails on it); `includeDroppedColumns`
+  (`--drop-columns`) drops it, `relaxColumns` relaxes it. Advisory-only changes
+  carry no SQL, never reach the tracker, and do not fail `db:migrate`.
+- **ADD COLUMN** is planned per engine: DuckDB rejects every inline constraint
+  (add with `DEFAULT`, then `SET NOT NULL`, `CREATE UNIQUE INDEX`); SQLite
+  rejects inline `UNIQUE` (separate `CREATE UNIQUE INDEX <table>_<col>_key`, the
+  PostgreSQL constraint-index name, so the orphan sweep leaves it alone) and
+  `NOT NULL` without a default on a populated table; PostgreSQL keeps constraints
+  inline. DuckDB has no `ADD CONSTRAINT`, so the separate index is the only
+  way to add uniqueness there; the bundled DuckDB 1.4.x resolves
+  `ON CONFLICT (col)` through that index (the old #12684 limitation the DuckDB
+  strategy's `requiresInlineUnique()` note describes no longer reproduces —
+  the #2369 DuckDB test pins the upsert), older DuckDB builds may not. A required column with no default is enforced only on an empty table;
+  on a populated one it is added nullable and the `NOT NULL` is reported as a
+  manual follow-up on every engine.
+- **SQLite** has no `ALTER COLUMN`: nullability/default alterations are manual
+  (comment SQL → `db:migrate` exit 1). The #2370 rebuild (rule 15) consumes
+  only `type_upgrade` placeholders today; extending it to rewrite constraints
+  would lift this.
+- Defaults compare through `canonicalizeDefault()`, which folds engine
+  renderings (`'x'::text`, `CAST('t' AS BOOLEAN)`, `CURRENT_TIMESTAMP` vs
+  `now()`) by manifest type; an unclassifiable rendering skips the comparison
+  rather than risking a false positive that would churn every run. The
+  round-trip test (create from each DDL strategy → compare → zero changes) in
+  `src/migrations/__tests__/issue-2369-*.test.ts` guards this.
+
+### 16. `schema.ddl` is a preview, not the table
+
+`SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
+CREATE TABLE string from `SchemaGenerator.generateSQL()` with no engine: no
+indexes, no triggers, abstract `REAL`/`JSON`/`UUID`/`TIMESTAMP`. It is kept for
+backward compatibility only. Everything that needs an executable table renders
+`columns` + `indexes` through `getDDLStrategy(engine)` — `db:migrate`
+(`migrations/orchestrate.ts`), `MigrationGenerator` (default
+`materializeStructuredSchema: true`; `false` is a deprecated opt-out),
+`SchemaAggregator`, and `createIsolatedTestDbFromManifest` in smrt-vitest, the
+last two via `src/schema/manifest-schema.ts` (`collectManifestTables` /
+`renderCollectedManifestTable`). The cached string is merged in only for a
+table whose contributors expose no structured columns (hand-authored
+manifests); table constraints that exist only in the string are dropped with a
+warning, as `db:migrate` drops them. Do not add a new consumer of the
+string, and do not write a private CREATE INDEX renderer — the retired ones
+dropped `where` and `jsonPath` (#2358). Every DDL strategy also spells out
+`PRIMARY KEY NOT NULL`: SQLite lets a bare non-INTEGER PRIMARY KEY hold NULL.
+
+### 17. The merged table shape is registration-order independent (#2372)
+
+`getAllSchemas()` and `getAllSchemasAsDefinitions()` fold every class that
+shares a physical table — the whole STI hierarchy — into one shape. Both route
+through `buildMergedTableSchemas()`, which groups contributors by table and
+then merges them in a **deterministic** order: the STI base first, then
+ancestors before descendants, then by qualified name.
+
+That order matters because the first contributor seeds the table: it supplies
+the fallback base columns, the `idType`, the conflict columns and the cached
+DDL, and its columns win every merge conflict. When registration order decided
+it, an STI child that carries no manifest `schema` — the external- and
+consumer-manifest case — seeded the table from bare fallback columns and the
+base class's richer ones were skipped when it registered later, yielding
+`context TEXT` instead of `context TEXT NOT NULL DEFAULT ''` and timestamps
+with no NOT NULL/DEFAULT. The shipped content manifest lists `Article` before
+`Content`, so the losing order was the one that shipped, and the differ
+compares types only, so the weak fresh-create was never repaired.
+
+Two invariants keep the two assembly paths agreeing:
+
+- `createBaseColumns()` mirrors what `generateSchemaFromManifest` /
+  `generateSTISchemaFromManifest` emit for the same table, so a table built
+  from runtime field metadata alone has the same NOT NULL/DEFAULT shape as one
+  built from a manifest. Note `_meta_type` is `TEXT NOT NULL` with **no**
+  default, matching the generator.
+- `fieldsToColumns()` reads `required`, `default`, and `description` from the
+  top level *or* `_meta`. Registry fields normalize them into `_meta`
+  (`manifest-field-merge.ts`), so reading only the top level silently dropped
+  NOT NULL and DEFAULT for every registry-sourced field.
+
+STI columns stay nullable regardless of the field's `required` flag
+(`fieldsToColumns(fields, { stiUnionColumns: true })`): the table holds the
+union of all subtypes' fields, so a column only one subtype declares is never
+populated on a sibling's row. Declared defaults are still emitted. This matches
+`generateSTISchemaFromManifest`, which sets `notNull: false` on every non-system
+STI column.
+
+When adding a class-level input to the merged shape, take it from the seeding
+contributor rather than "whichever class arrives first", and cover it with a
+child-first/base-first equality test.
+
+### 18. One conflict-target rule, applied on every producer
 
 `save()` upserts on `ObjectRegistry.getConflictColumns()`; the schema must
 carry exactly one unique index over those columns (or they must be the

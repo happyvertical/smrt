@@ -736,6 +736,8 @@ describe('diverse-schema migration fixture (#1335)', () => {
       // The manifest renamed `title` → `headline`. The differ is additive-only:
       // it adds `headline` and leaves the orphan `title` untouched (no
       // drop_column unless explicitly opted in), so no data is lost or coerced.
+      // Since #2369 the orphan is still *reported* (info-level advisory, no
+      // SQL) so it is never silently retained.
       await db.query('CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)');
       await db.query("INSERT INTO posts (id, title) VALUES ('p1','Hello')");
 
@@ -756,11 +758,19 @@ describe('diverse-schema migration fixture (#1335)', () => {
       };
 
       const diff = await generateSchemaDiff(db, manifest);
-      expect(diff.changes).toHaveLength(1);
+      expect(diff.changes).toHaveLength(2);
       expect(diff.changes[0].type).toBe('add_column');
       expect(diff.changes[0].name).toBe('headline');
+      expect(diff.changes[1]).toMatchObject({
+        type: 'orphan_column',
+        name: 'title',
+        advisory: expect.objectContaining({ severity: 'info' }),
+      });
+      expect(diff.changes[1].sql).toBeUndefined();
 
-      for (const sql of getSQLFromDiff(diff)) {
+      const statements = getSQLFromDiff(diff);
+      expect(statements).toHaveLength(1);
+      for (const sql of statements) {
         await db.query(sql);
       }
 
