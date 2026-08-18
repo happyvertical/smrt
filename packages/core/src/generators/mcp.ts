@@ -8,6 +8,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { SmrtCollection } from '../collection';
 import type { PublicJsonOptions, SmrtObject } from '../object';
+import {
+  buildDefaultListOrderBy,
+  resolveListLimit,
+  resolveListOffset,
+} from '../query-bounds';
 import { ObjectRegistry } from '../registry';
 import type { RegisteredClass } from '../registry/types.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
@@ -1434,18 +1439,27 @@ export class MCPGenerator {
         // Args arrive as untyped JSON; narrow each query field at this
         // boundary. `where`/`orderBy` are passed through to the collection's
         // typed query API.
+        // #2367: one shared bounds parser instead of `x || 50` — which turned a
+        // deliberate `limit: 0` into 50 — and instead of trusting the arg to be
+        // a number at all: MCP args are untyped JSON, so `limit: "abc"` reached
+        // the driver as `LIMIT NaN`. Malformed bounds now throw a 400-typed
+        // error the MCP error path reports as a tool failure.
         const listOptions: Parameters<typeof collection.list>[0] = {
-          limit: Math.min((args.limit as number | undefined) || 50, 1000),
-          offset: (args.offset as number | undefined) || 0,
+          limit: resolveListLimit(args.limit),
+          offset: resolveListOffset(args.offset),
         };
 
         if (args.where) {
           listOptions.where = args.where as (typeof listOptions)['where'];
         }
 
-        if (args.orderBy) {
-          listOptions.orderBy = args.orderBy as string | string[];
-        }
+        // #2367: page deterministically when the caller supplies no ordering.
+        // LIMIT/OFFSET with no ORDER BY is not pagination — PostgreSQL may
+        // return rows in any order and choose a different one per query, so
+        // successive pages repeat and skip rows.
+        listOptions.orderBy = args.orderBy
+          ? (args.orderBy as string | string[])
+          : this.resolveDefaultListOrderBy(objectName);
 
         const results = await collection.list(listOptions);
         const total = await collection.count({
@@ -1785,6 +1799,7 @@ export class MCPGenerator {
         customActions: await this.runtimeCustomActions(tools),
         taskActions: await this.runtimeTaskActions(tools),
         tenantScopedObjects,
+        listOrderBy: this.runtimeListOrderBy(tools),
         stiTargets: this.runtimeStiTargets(tools),
         toolListCacheHint: resolveMCPToolListCacheHint(
           this.config.cache?.toolsList,
@@ -1905,6 +1920,60 @@ export class MCPGenerator {
    * qualified target through `getCollection()` both validates the declaration
    * and lets the public registry loader register the selected subtype.
    */
+  /**
+   * Deterministic default list ordering for an MCP object (#2367).
+   *
+   * The tiebreak follows the model's declared `@field({ primaryKey: true })`
+   * column — custom-primary-key classes have no synthetic `id` column, so a
+   * hard-coded `id ASC` would name a column that does not exist. The flag lives
+   * under `_meta.primaryKey` on manifest field definitions and is mirrored at
+   * the top level on decorator option bags, so both are checked.
+   */
+  private resolveDefaultListOrderBy(objectName: string | undefined): string[] {
+    if (!objectName) return buildDefaultListOrderBy();
+    const registered = ObjectRegistry.getClass(objectName) ?? undefined;
+    const className =
+      registered?.qualifiedName ?? registered?.name ?? objectName;
+    const fields =
+      registered?.inheritedFields || ObjectRegistry.getFields(className);
+    for (const [fieldName, def] of fields) {
+      if (def?._meta?.primaryKey === true || def?.primaryKey === true) {
+        return buildDefaultListOrderBy(fieldName);
+      }
+    }
+    return buildDefaultListOrderBy();
+  }
+
+  /**
+   * Per-object default list ordering baked into the emitted stdio server
+   * (#2367), keyed by the lowercased MCP object prefix — the generated runtime
+   * cannot resolve a model's primary key on its own.
+   */
+  private runtimeListOrderBy(
+    tools: MCPTool[],
+  ): Record<string, readonly string[]> {
+    const orderings: Record<string, readonly string[]> = {};
+    const classes = ObjectRegistry.getAllClasses();
+
+    for (const tool of tools) {
+      const separator = tool.name.indexOf('_');
+      if (separator === -1 || tool.name.slice(separator + 1) !== 'list') {
+        continue;
+      }
+      const objectPrefix = tool.name.slice(0, separator);
+      if (orderings[objectPrefix]) continue;
+      const matched = Array.from(classes.entries()).find(
+        ([key, info]) => (info.name || key).toLowerCase() === objectPrefix,
+      );
+      if (!matched) continue;
+      orderings[objectPrefix] = this.resolveDefaultListOrderBy(
+        matched[1].name || matched[0],
+      );
+    }
+
+    return orderings;
+  }
+
   private runtimeStiTargets(
     tools: MCPTool[],
   ): Record<string, Record<string, string>> {

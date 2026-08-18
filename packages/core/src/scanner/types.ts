@@ -208,6 +208,11 @@ export interface ManifestIndexDefinition {
  */
 export interface ManifestSchema {
   tableName: string;
+  /**
+   * Engine-neutral CREATE TABLE preview. Not executable as-is: no indexes,
+   * abstract SQL types. Consumers render `columns` + `indexes` through the
+   * engine DDL strategy (see `schema/manifest-schema.ts`, #2358).
+   */
   ddl: string;
   columns: Record<string, ManifestColumnDefinition>;
   indexes: ManifestIndexDefinition[];

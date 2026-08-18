@@ -110,8 +110,9 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 - Restart Vitest after adding decorated classes; manifests are generated at
   startup.
 - `ObjectRegistry` uses a `globalThis` singleton so it survives HMR.
-- Runtime verifies schema but does not create application tables; use explicit
-  migrations/tooling.
+- Runtime only checks that a table exists — no column, type, or index check —
+  and never creates application tables; use explicit migrations/tooling, and
+  `smrt doctor --db` / `db:status --parity` to compare a live database.
 - Vite 8 decorators require the repository's documented Oxc legacy decorator
   configuration; do not restore obsolete Vite 7 workarounds.
 - Svelte subpath packages must run `svelte-check`, not only `tsc`.

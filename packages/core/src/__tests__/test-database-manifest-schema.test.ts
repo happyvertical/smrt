@@ -251,11 +251,16 @@ describe('getTestDatabase manifest schemas', () => {
 
     expect(conflictIndex).toBeDefined();
     expect(Boolean(conflictIndex?.unique)).toBe(true);
-    expect(
-      indexList.some(
-        (row) => row.name === 'manifest_indexed_joins_slug_context_idx',
-      ),
-    ).toBe(false);
+    // Custom conflict columns replace the default UNIQUE (slug, context)
+    // conflict index. Slug loading still filters on slug/context, so a plain
+    // lookup index under that name is kept — but it must not be unique
+    // (#2359, A7).
+    const slugLookup = indexList.find(
+      (row: { name: string }) =>
+        row.name === 'manifest_indexed_joins_slug_context_idx',
+    );
+    expect(slugLookup).toBeDefined();
+    expect(Boolean(slugLookup?.unique)).toBe(false);
 
     const indexInfoResult = await db.query(
       `PRAGMA index_info('manifest_indexed_joins_fact_id_content_id_idx')`,

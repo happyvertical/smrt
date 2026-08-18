@@ -7,6 +7,7 @@
 import type { DatabaseProvider } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SchemaGenerator } from '../../schema/generator.js';
 import type { SchemaDefinition, SchemaDiff } from '../../schema/types.js';
 import {
   getSQLFromDiff,
@@ -141,6 +142,88 @@ describe('SchemaComparer', () => {
       const indexChanges = diff.changes.filter((c) => c.type === 'add_index');
       expect(indexChanges).toHaveLength(1);
       expect(indexChanges[0].name).toBe('idx_users_email');
+    });
+
+    it('migrates a declared composite index onto an existing deployment (#2357)', async () => {
+      // A table that predates the `@smrt({ indexes: [...] })` declaration.
+      await db.query(
+        'CREATE TABLE posts (id TEXT PRIMARY KEY, tenant_id TEXT, publish_date TIMESTAMP);',
+      );
+
+      // Target schema comes from the generator, so this asserts the whole
+      // declaration → schema → migration path rather than a hand-written index.
+      const generated = new SchemaGenerator().generateSchemaFromRegistry(
+        'Post',
+        'posts',
+        new Map<string, { type: string }>([
+          ['tenantId', { type: 'text' }],
+          ['publish_date', { type: 'datetime' }],
+        ]) as never,
+        {
+          indexes: [
+            {
+              name: 'posts_tenant_id_publish_date_idx',
+              columns: ['tenantId', 'publish_date'],
+            },
+          ],
+        },
+      );
+
+      const diff = await comparer.compare({ posts: generated });
+
+      const add = diff.changes.find(
+        (c) =>
+          c.type === 'add_index' &&
+          c.name === 'posts_tenant_id_publish_date_idx',
+      );
+      expect(add).toBeDefined();
+      // And the emitted statement is executable against the live table.
+      expect(add?.sql).toBeTruthy();
+      await db.query(add?.sql as string);
+      const indexes = await db.query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'posts';",
+      );
+      expect(indexes.rows.map((row) => row.name)).toContain(
+        'posts_tenant_id_publish_date_idx',
+      );
+    });
+
+    it('emits add-index SQL with IF NOT EXISTS so a retry repairs (issue #2362)', async () => {
+      // A batch that fails part way through — a lock_timeout during the epic's
+      // ~200-index rollout, a cancelled deploy — leaves some indexes created.
+      // Without IF NOT EXISTS the retry errors on those instead of repairing
+      // the rest. This also matches the canonical `generateIndexes()` DDL used
+      // for new tables, so both schema paths emit the same clause.
+      await db.query('CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT);');
+
+      const manifest: Record<string, SchemaDefinition> = {
+        users: {
+          tableName: 'users',
+          ddl: 'CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT);',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            email: { type: 'TEXT' },
+          },
+          indexes: [
+            { name: 'idx_users_email', columns: ['email'], unique: true },
+          ],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      };
+
+      const diff = await comparer.compare(manifest);
+      const add = diff.changes.find((c) => c.type === 'add_index');
+
+      expect(add?.sql).toBe(
+        'CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email")',
+      );
+
+      // Executable, and idempotent on a second run.
+      await db.query(add?.sql as string);
+      await expect(db.query(add?.sql as string)).resolves.toBeDefined();
     });
 
     it('should not report existing indexes as new', async () => {
@@ -617,7 +700,10 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     ]);
   });
 
-  it('should preserve DuckDB UNIQUE constraints in ADD COLUMN SQL', async () => {
+  it('splits a DuckDB unique column into ADD COLUMN + CREATE UNIQUE INDEX (DuckDB rejects inline UNIQUE) (#2369)', async () => {
+    // DuckDB: `ALTER TABLE ... ADD COLUMN ... UNIQUE` → "Adding columns with
+    // constraints not yet supported". The previous assertion enshrined that
+    // rejected SQL; the plan must be executable instead.
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
       query: async () => ({ rows: [{ name: 'users' }] }),
@@ -653,9 +739,16 @@ describe('SchemaComparer engine-specific SQL generation', () => {
         type: 'add_column',
         table: 'users',
         name: 'email',
-        sql: `ALTER TABLE "users" ADD COLUMN "email" TEXT UNIQUE`,
+        sql: `ALTER TABLE "users" ADD COLUMN "email" TEXT`,
+        sqlStatements: [
+          `ALTER TABLE "users" ADD COLUMN "email" TEXT`,
+          `CREATE UNIQUE INDEX "users_email_key" ON "users" ("email")`,
+        ],
       }),
     ]);
+    for (const sql of getSQLFromDiff(diff)) {
+      expect(sql).not.toMatch(/ADD COLUMN .* UNIQUE/);
+    }
   });
 
   it('should not emit PRIMARY KEY constraints in ADD COLUMN SQL', async () => {

@@ -345,13 +345,22 @@ export async function getTestDatabase(
 
     const fields = await ObjectRegistry.getAllFields(className);
     const strategy = ObjectRegistry.getTableStrategy(className);
+    // Mirrors `schema/utils.ts`: this bag is rebuilt by hand, so every `@smrt()`
+    // option the generator reads has to be listed or tests silently diverge
+    // from the production schema. `indexes` (#2357) was missing from both.
     const runtimeSchemaConfig = {
       conflictColumns: ObjectRegistry.getConflictColumns(className),
       idType: registered?.config.idType,
+      indexes: registered?.config.indexes,
       registry: ObjectRegistry,
     };
 
-    // Generate schema using SchemaGenerator (same as migrations)
+    // Generate schema through the registry paths. Production (`manifest.json`
+    // and therefore `smrt db:migrate`) uses the manifest paths
+    // (`generateSTISchemaFromManifest` / `generateCTISchemaFromManifest`);
+    // the two families are held to the same column and index sets by
+    // `src/schema/schema-path-parity.test.ts` (#2359) — do not assume they
+    // agree by construction.
     const schema =
       strategy === 'sti'
         ? await schemaGenerator.generateSTISchemaFromRegistry(

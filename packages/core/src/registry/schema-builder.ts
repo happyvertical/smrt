@@ -253,6 +253,20 @@ function withConflictIndex(
     return indexes;
   }
 
+  // `ON CONFLICT (id)` binds to the primary-key constraint itself; a second
+  // unique index over the primary key column set adds nothing (#2359, A5).
+  // Kept in step with SchemaGenerator.conflictColumnsArePrimaryKey().
+  const primaryKeyColumns = Object.entries(columns)
+    .filter(([, column]) => column.primaryKey === true)
+    .map(([name]) => name);
+  if (
+    primaryKeyColumns.length > 0 &&
+    primaryKeyColumns.length === conflictColumns.length &&
+    primaryKeyColumns.every((column) => conflictColumns.includes(column))
+  ) {
+    return indexes;
+  }
+
   const hasConflictIndex = indexes.some(
     (index) =>
       index.unique === true &&

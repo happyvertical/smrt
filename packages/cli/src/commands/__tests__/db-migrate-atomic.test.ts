@@ -25,7 +25,11 @@ const {
     reconcile?: boolean;
   }> = [];
   const committedAppliedMigrations: string[] = [];
-  const trackerOptions: Array<{ useConcurrentIndexes?: boolean }> = [];
+  const trackerOptions: Array<{
+    lockTimeout?: number;
+    statementTimeout?: number;
+    useConcurrentIndexes?: boolean;
+  }> = [];
   const transactionRolledBack = { value: false };
 
   class MockSchemaComparer {
@@ -35,9 +39,16 @@ const {
   class MockMigrationTracker {
     private db: any;
 
-    constructor(options: { db: any; useConcurrentIndexes?: boolean }) {
+    constructor(options: {
+      db: any;
+      lockTimeout?: number;
+      statementTimeout?: number;
+      useConcurrentIndexes?: boolean;
+    }) {
       this.db = options.db;
       trackerOptions.push({
+        lockTimeout: options.lockTimeout,
+        statementTimeout: options.statementTimeout,
         useConcurrentIndexes: options.useConcurrentIndexes,
       });
     }
@@ -169,10 +180,20 @@ vi.mock('@happyvertical/smrt-core', () => ({
   isQualifiedName: vi.fn((value: string) => value.includes(':')),
 }));
 
-vi.mock('@happyvertical/smrt-core/migrations', () => ({
-  MigrationTracker: MockMigrationTracker,
-  shortChecksum: vi.fn((checksum: string) => checksum),
-}));
+vi.mock('@happyvertical/smrt-core/migrations', async () => {
+  // The timeout parser is pure and is the contract under test here, so use the
+  // real implementation rather than a stub that could drift from it.
+  const actual = await vi.importActual<
+    typeof import('@happyvertical/smrt-core/migrations')
+  >('@happyvertical/smrt-core/migrations');
+
+  return {
+    buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
+    MigrationTracker: MockMigrationTracker,
+    parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
+    shortChecksum: vi.fn((checksum: string) => checksum),
+  };
+});
 
 describe('db:migrate atomic schema execution', () => {
   beforeEach(() => {
@@ -281,7 +302,8 @@ describe('db:migrate atomic schema execution', () => {
         atomic: true,
         force: false,
         forceMigrations: undefined,
-        postgresSafe: false,
+        // --postgres-safe now actually reaches the tracker (issue #2362).
+        postgresSafe: true,
         reconcile: true,
       },
     ]);
@@ -356,7 +378,7 @@ describe('db:migrate atomic schema execution', () => {
     );
   }, 15_000);
 
-  it('warns when postgres-safe index operations are folded into the atomic batch', async () => {
+  it('warns that concurrent-index mode is not atomic and routes the flag through (issue #2362)', async () => {
     compareMock.mockResolvedValue({
       added_tables: [],
       dropped_tables: [],
@@ -369,7 +391,7 @@ describe('db:migrate atomic schema execution', () => {
             name: 'contents_first_column_idx',
             columns: ['first_column'],
           },
-          sql: 'CREATE INDEX "contents_first_column_idx" ON "contents" ("first_column")',
+          sql: 'CREATE INDEX IF NOT EXISTS "contents_first_column_idx" ON "contents" ("first_column")',
         },
       ],
     });
@@ -382,15 +404,15 @@ describe('db:migrate atomic schema execution', () => {
       'postgres-safe': true,
     });
 
-    expect(warnSpy.mock.calls.flat().join('\n')).toContain(
-      '--postgres-safe requested',
-    );
+    const warnings = warnSpy.mock.calls.flat().join('\n');
+    expect(warnings).toContain('concurrent-index mode');
+    expect(warnings).toContain('NOT atomic');
     expect(migrationAttempts).toEqual([
       expect.stringMatching(/^add_index_contents_first_column_idx_/),
     ]);
     expect(migrationApplyAllOptions[0]).toMatchObject({
       atomic: true,
-      postgresSafe: false,
+      postgresSafe: true,
       reconcile: true,
     });
     expect(errorSpy).not.toHaveBeenCalledWith(
@@ -398,6 +420,99 @@ describe('db:migrate atomic schema execution', () => {
     );
     expect(logSpy.mock.calls.flat().join('\n')).toContain(
       'Created index contents_first_column_idx on contents',
+    );
+  }, 15_000);
+
+  it('does not enable concurrent-index mode without --postgres-safe', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {});
+
+    expect(trackerOptions[0].useConcurrentIndexes).toBe(false);
+    expect(migrationApplyAllOptions[0]).toMatchObject({ postgresSafe: false });
+  }, 15_000);
+
+  it('passes the configured PostgreSQL timeouts into the tracker (issue #2362)', async () => {
+    // `migrations.postgres.lockTimeout` / `.statementTimeout` were previously
+    // read by nothing, so every production migration ran unbounded.
+    getPackageConfigMock.mockReturnValue({
+      database: {
+        type: 'postgres',
+        url: 'postgresql://test:test@localhost:5432/test_db',
+      },
+      migrations: {
+        postgres: {
+          useConcurrently: true,
+          lockTimeout: '5s',
+          statementTimeout: '2min',
+        },
+      },
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {});
+
+    expect(trackerOptions[0]).toMatchObject({
+      lockTimeout: 5000,
+      statementTimeout: 120_000,
+    });
+  }, 15_000);
+
+  it('defaults the PostgreSQL timeouts when no migrations config exists', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {});
+
+    expect(trackerOptions[0]).toMatchObject({
+      lockTimeout: 30_000,
+      statementTimeout: 60_000,
+    });
+  }, 15_000);
+
+  it('lets migrations.postgres.useConcurrently = false veto --postgres-safe', async () => {
+    getPackageConfigMock.mockReturnValue({
+      database: {
+        type: 'postgres',
+        url: 'postgresql://test:test@localhost:5432/test_db',
+      },
+      migrations: { postgres: { useConcurrently: false } },
+    });
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'add_index',
+          table: 'contents',
+          index: {
+            name: 'contents_first_column_idx',
+            columns: ['first_column'],
+          },
+          sql: 'CREATE INDEX IF NOT EXISTS "contents_first_column_idx" ON "contents" ("first_column")',
+        },
+      ],
+    });
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {
+      'postgres-safe': true,
+    });
+
+    expect(trackerOptions[0].useConcurrentIndexes).toBe(false);
+    expect(migrationApplyAllOptions[0]).toMatchObject({ postgresSafe: false });
+    expect(warnSpy.mock.calls.flat().join('\n')).toContain(
+      'useConcurrently is false',
     );
   }, 15_000);
 });

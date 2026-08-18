@@ -26,10 +26,15 @@ export {
 export type { DiffOptions } from './differ.js';
 // Schema comparison
 export {
+  canonicalizeDefault,
   generateSchemaDiff,
   getSQLFromDiff,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
+  isInfoOnlyChange,
+  isManualOrAdvisoryChange,
   SchemaComparer,
+  uniqueColumnIndexName,
 } from './differ.js';
 export type {
   GeneratedMigration,
@@ -50,8 +55,26 @@ export {
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
 } from './orchestrate.js';
+// SQLite table rebuild (type changes SQLite cannot ALTER in place)
+export {
+  type BuildSqliteRebuildStatementsInput,
+  buildSqliteRebuildStatements,
+  isSqliteRebuildPlaceholder,
+  type PlanSqliteTableRebuildsOptions,
+  planSqliteTableRebuilds,
+  rewriteSqliteCreateTable,
+  SQLITE_REBUILD_TABLE_PREFIX,
+  type SqliteTableRebuildPlan,
+  sqliteRebuildPlaceholderSql,
+} from './sqlite-rebuild.js';
 // Core classes
-export { MigrationTracker, planPostgresStatements } from './tracker.js';
+export {
+  buildConcurrentIndexPlan,
+  extractCreatedIndexName,
+  MigrationTracker,
+  parsePostgresTimeoutMs,
+  planPostgresStatements,
+} from './tracker.js';
 
 // Types
 export type {

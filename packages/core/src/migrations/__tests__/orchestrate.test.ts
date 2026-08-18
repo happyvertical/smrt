@@ -268,14 +268,117 @@ describe('schema orchestration', () => {
     expect(tables.rows).toHaveLength(1);
   });
 
-  it('surfaces SQLite type-upgrade comments as unactionableChanges, not as applied DDL', async () => {
+  it('plans an executable SQLite table rebuild for a type upgrade (#2370)', async () => {
     // Pre-create the column with INTEGER; manifest declares REAL. SQLite
-    // can't widen the type in place — the differ emits an advisory
-    // comment-only "requires table recreation" SQL. Before the fix, that
-    // comment was passed to the tracker and recorded as a successful
-    // migration, so the drift would re-appear every run.
+    // can't widen the type in place, and the differ used to emit an advisory
+    // comment that left the drift unfixable forever. It now emits the
+    // table-rebuild plan, which the orchestrator must pass through as real
+    // DDL (comment-only statements are still filtered out).
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
+    );
+    await db.query("INSERT INTO documents VALUES ('d1', 4);");
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'REAL' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+
+    expect(pending.hasChanges).toBe(true);
+    expect(pending.statements.some((sql) => sql.startsWith('--'))).toBe(false);
+    expect(pending.statements).toContain(
+      'ALTER TABLE "_smrt_rebuild_documents" RENAME TO "documents"',
+    );
+    // Nothing is left for a human to do.
+    expect(pending.unactionableChanges).toEqual([]);
+    expect(pending.hasManualDrift).toBe(false);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@test/app',
+      name: '20260818_000000_sqlite_rebuild',
+    });
+    expect(result.applied).toBe(true);
+
+    const columns = (await db.query('PRAGMA table_info("documents")')).rows as {
+      name: string;
+      type: string;
+    }[];
+    expect(columns.find((c) => c.name === 'score')?.type).toBe('REAL');
+    expect((await db.query('SELECT score FROM documents')).rows[0]).toEqual({
+      score: 4,
+    });
+  });
+
+  it('does not report a column covered by a sibling rebuild as manual drift (#2370)', async () => {
+    // Two drifted columns on one table share a single rebuild: the second
+    // change is a `no change needed` comment. Comment-only SQL normally means
+    // "a human must act", so without the no-op exemption this fully
+    // auto-repairable migration would report hasManualDrift.
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER, weight INTEGER);',
+    );
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'REAL' },
+          weight: { type: 'REAL' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+
+    expect(pending.unactionableChanges).toEqual([]);
+    expect(pending.hasManualDrift).toBe(false);
+    expect(pending.statements.some((sql) => sql.startsWith('--'))).toBe(false);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@test/app',
+      name: '20260818_000100_sqlite_rebuild_multi',
+    });
+    expect(result.applied).toBe(true);
+    expect(result.hasManualDrift).toBe(false);
+
+    const columns = (await db.query('PRAGMA table_info("documents")')).rows as {
+      name: string;
+      type: string;
+    }[];
+    expect(columns.find((c) => c.name === 'score')?.type).toBe('REAL');
+    expect(columns.find((c) => c.name === 'weight')?.type).toBe('REAL');
+  });
+
+  it('still surfaces an unplannable SQLite type upgrade as unactionable drift', async () => {
+    // A child table with ON DELETE CASCADE makes the rebuild unsafe (the
+    // DROP TABLE step would cascade its rows away), so the differ keeps the
+    // advisory comment. The orchestrator must strip that comment from the
+    // executable statements and report the drift as manual.
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
+    );
+    await db.query(
+      'CREATE TABLE document_notes (id TEXT PRIMARY KEY, document_id TEXT REFERENCES documents(id) ON DELETE CASCADE);',
     );
 
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
@@ -295,20 +398,49 @@ describe('schema orchestration', () => {
 
     const pending = await getPendingSchemaStatements(db);
 
-    // The pre-created table already exists and the only divergence is the
-    // SQLite type-widening (which can't be applied in-place). The filter
-    // should strip the comment-only "requires table recreation" SQL, so
-    // nothing executable survives — tighter than the previous
-    // every-statement loop (which couldn't distinguish "filter dropped
-    // all candidates" from "filter saw nothing").
     expect(pending.statements).toEqual([]);
-
-    // The unresolved drift should surface via unactionableChanges so the
-    // caller can prompt for manual remediation. Exactly one column drifted.
     expect(pending.unactionableChanges).toHaveLength(1);
     expect(pending.hasManualDrift).toBe(true);
     expect(pending.unactionableChanges[0].type).toBe('type_upgrade');
     expect(pending.unactionableChanges[0].name).toBe('score');
+  });
+
+  it('surfaces a blocking orphan NOT NULL column as unactionable, keeps info notes out, executes nothing for advisories (#2369)', async () => {
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',
+    );
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+    expect(pending.statements).toEqual([]);
+    expect(pending.hasChanges).toBe(false);
+    expect(
+      pending.diff.changes
+        .map((c) => `${c.name}:${c.advisory?.severity}`)
+        .sort(),
+    ).toEqual(['legacy_code:warning', 'legacy_note:info']);
+    // Only the blocking orphan is surfaced as needing an operator.
+    expect(pending.unactionableChanges.map((c) => c.name)).toEqual([
+      'legacy_code',
+    ]);
+    expect(pending.hasManualDrift).toBe(true);
+
+    const result = await migrateSmrtSchemas({ db, packageName: 'test' });
+    expect(result.applied).toBe(false);
+    expect(result.statements).toEqual([]);
+    expect(result.unactionableChanges.map((c) => c.name)).toEqual([
+      'legacy_code',
+    ]);
   });
 
   it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {

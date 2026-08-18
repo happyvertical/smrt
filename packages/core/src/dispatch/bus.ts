@@ -27,6 +27,7 @@
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
+import { applyPostgresRuntimeTimeouts } from '../postgres-timeouts.js';
 import {
   assertPostgresSystemTimestampsCurrent,
   ensureDispatchSubscriptionsSystemTableCompatibility,
@@ -836,16 +837,27 @@ export async function createDispatchBus(
   // Get or create database interface
   let db: DatabaseInterface;
   if (typeof dbConfig === 'string') {
-    db = await getDatabase(dbConfig);
+    // `DispatchBusOptions.db` does not admit a bare string, but this branch is
+    // live code and must not be the one unbounded pool a reader finds while
+    // auditing this file (#2377).
+    db = await getDatabase(
+      applyPostgresRuntimeTimeouts({
+        url: dbConfig,
+      }) as Parameters<typeof getDatabase>[0],
+    );
   } else if ('query' in dbConfig) {
     // Already a DatabaseInterface (has query method)
     db = dbConfig as DatabaseInterface;
   } else if ('type' in dbConfig && 'url' in dbConfig) {
-    // Database config object - use getDatabase with type and url
-    db = await getDatabase({
-      type: dbConfig.type as 'sqlite' | 'postgres' | 'duckdb',
-      url: dbConfig.url,
-    });
+    // Database config object - use getDatabase with type and url.
+    // Bounded like every other runtime pool so a dispatch-bus connection is
+    // not the one unbounded PostgreSQL client in the process (#2377).
+    db = await getDatabase(
+      applyPostgresRuntimeTimeouts({
+        type: dbConfig.type as 'sqlite' | 'postgres' | 'duckdb',
+        url: dbConfig.url,
+      }) as Parameters<typeof getDatabase>[0],
+    );
   } else {
     throw new Error('Invalid database configuration for DispatchBus');
   }

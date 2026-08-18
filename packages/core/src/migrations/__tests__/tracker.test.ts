@@ -653,7 +653,9 @@ describe('MigrationTracker', () => {
               down: [],
             },
           ],
-          { atomic: true, postgresSafe: true },
+          // Without concurrent-index mode (issue #2362) there is nowhere for a
+          // CONCURRENTLY statement to run, so the batch must refuse up front.
+          { atomic: true, postgresSafe: false },
         ),
       ).rejects.toThrow(/cannot include CONCURRENTLY index DDL/);
     });

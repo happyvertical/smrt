@@ -37,11 +37,17 @@ import {
   getSyntheticMigrationNameForAction,
   type MigrationAction,
   partitionSchemaChanges,
+  printSchemaAdvisories,
   type SchemaChangeLike,
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
 } from './db-migrate-actions.js';
 import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
+import {
+  formatParityReport,
+  runLiveSchemaParity,
+  selectFindings,
+} from './db-parity.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
@@ -64,6 +70,16 @@ import {
   resolveStiDiscriminatorUpgrade,
   type StiDiscriminatorRepairConflict,
 } from './sti-upgrade.js';
+
+/**
+ * Fallbacks for `migrations.postgres.lockTimeout` / `.statementTimeout`.
+ *
+ * These mirror `DEFAULT_CLI_CONFIG.migrations.postgres` ('30s' / '60s') so a
+ * project that never wrote a `migrations` block still gets a bounded
+ * PostgreSQL migration rather than an unbounded lock wait (issue #2362).
+ */
+const DEFAULT_MIGRATION_LOCK_TIMEOUT_MS = 30_000;
+const DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS = 60_000;
 
 function formatSchemaCommandFailureHeader(
   error: unknown,
@@ -199,11 +215,15 @@ interface DbMigrateOptions {
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
+  'drop-columns'?: boolean;
+  'relax-columns'?: boolean;
   verbose?: boolean;
 }
 
 interface DoctorOptions {
   fix?: boolean;
+  db?: boolean;
+  verbose?: boolean;
   'generation-snapshot'?: string;
   'generation-snapshot-sha256'?: string;
   'generation-snapshot-provenance'?: string;
@@ -323,6 +343,119 @@ interface DoctorPackageJson {
   svelte?: unknown;
   types?: unknown;
   exports?: unknown;
+}
+
+/** Outcome of the doctor's decorator-transform check. */
+export interface DecoratorSupportAssessment {
+  status: 'ok' | 'warning' | 'error';
+  message: string;
+}
+
+/**
+ * Match an actual `oxc: { … decorator: … }` configuration block.
+ *
+ * Deliberately stricter than "the words `oxc` and `decorator` both appear":
+ * a stray mention in a comment or an unrelated import would otherwise mark the
+ * transform configured on a Vite 8 project that throws
+ * `SyntaxError: Invalid or unexpected token` on its first SSR request — the
+ * exact failure this check exists to catch. The lazy body stops at the first
+ * `decorator:` key after the `oxc` object opens.
+ *
+ * A config that assembles `oxc` indirectly (a spread, or an imported base
+ * config) is reported as unconfigured. That direction is the safe one: the
+ * recommendation names the exact key to add, whereas the opposite error is
+ * silent until runtime.
+ */
+const OXC_DECORATOR_BLOCK_RE = /\boxc\s*:\s*\{[\s\S]*?\bdecorator\s*:/;
+
+/**
+ * Read the declared Vite major version from a project's package.json.
+ *
+ * Returns `null` when Vite is absent or the range is not a simple one whose
+ * major can be read off the front (`workspace:*`, `*`, a git URL, …); callers
+ * treat that as "unknown major" and accept either decorator recipe.
+ */
+export function resolveDeclaredViteMajor(
+  packageJson: DoctorPackageJson,
+): number | null {
+  const range =
+    packageJson.devDependencies?.vite ?? packageJson.dependencies?.vite;
+  if (typeof range !== 'string') return null;
+
+  const match = range.match(/(\d+)\s*\./);
+  if (!match) return null;
+
+  const major = Number.parseInt(match[1], 10);
+  return Number.isFinite(major) ? major : null;
+}
+
+/**
+ * Assess whether a project's decorator transform is actually configured.
+ *
+ * The doctor used to require `experimentalDecorators` in tsconfig.json
+ * unconditionally, which contradicts the framework's own Vite 8 guidance: the
+ * oxc transform does not honor tsconfig `experimentalDecorators` (nor the
+ * pre-Vite-8 `esbuild.tsconfigRaw` recipe), so a correctly configured Vite 8
+ * project — decorators declared under `oxc.decorator` — was reported broken,
+ * and a Vite 8 project relying on tsconfig alone was reported healthy right up
+ * until the first SSR request threw `SyntaxError: Invalid or unexpected token`.
+ *
+ * The check now follows the documented recipe per Vite major:
+ * - Vite 8+: `oxc.decorator` in vite.config is the only working configuration.
+ * - Vite <8 (or no declared Vite): tsconfig `experimentalDecorators` is the
+ *   legacy recipe and remains valid.
+ */
+export function assessDecoratorSupport(input: {
+  viteMajor: number | null;
+  viteConfigContent: string | null;
+  tsconfigContent: string | null;
+}): DecoratorSupportAssessment {
+  const { viteMajor, viteConfigContent, tsconfigContent } = input;
+
+  const hasOxcDecorator =
+    viteConfigContent !== null &&
+    OXC_DECORATOR_BLOCK_RE.test(viteConfigContent);
+  const hasTsconfigDecorators =
+    tsconfigContent !== null &&
+    tsconfigContent.includes('experimentalDecorators');
+  const isVite8Plus = viteMajor !== null && viteMajor >= 8;
+
+  if (hasOxcDecorator) {
+    return {
+      status: 'ok',
+      message: 'oxc.decorator configured in vite.config',
+    };
+  }
+
+  if (isVite8Plus) {
+    return {
+      status: 'error',
+      message: hasTsconfigDecorators
+        ? 'Vite 8 ignores tsconfig experimentalDecorators - add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config'
+        : 'Add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config (required for @smrt() under Vite 8+)',
+    };
+  }
+
+  if (hasTsconfigDecorators) {
+    return {
+      status: 'ok',
+      message: 'experimentalDecorators enabled in tsconfig.json',
+    };
+  }
+
+  if (viteConfigContent === null && tsconfigContent === null) {
+    return {
+      status: 'warning',
+      message:
+        'No vite.config or tsconfig.json found - configure the decorator transform wherever this project compiles @smrt() classes',
+    };
+  }
+
+  return {
+    status: 'error',
+    message:
+      'No decorator transform configured - add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config (Vite 8+), or "experimentalDecorators": true to tsconfig.json (vite<8)',
+  };
 }
 
 /**
@@ -1165,7 +1298,7 @@ export default testManifest;
       'postgres-safe': {
         type: 'boolean',
         description:
-          'Use PostgreSQL-safe operations (CONCURRENTLY for indexes, lock_timeout)',
+          'PostgreSQL concurrent-index mode: commit non-index DDL atomically, then build each index with CREATE INDEX CONCURRENTLY outside that transaction. Trades batch atomicity for availability; lock_timeout/statement_timeout apply either way.',
         default: false,
       },
       'postgres-timestamp-legacy-timezone': {
@@ -1200,6 +1333,18 @@ export default testManifest;
         type: 'boolean',
         description:
           'Drop orphan indexes (in DB but not in manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default.',
+        default: false,
+      },
+      'drop-columns': {
+        type: 'boolean',
+        description:
+          'DESTRUCTIVE: drop orphan columns (in DB but not in manifest). Off by default; orphans are always reported.',
+        default: false,
+      },
+      'relax-columns': {
+        type: 'boolean',
+        description:
+          'Apply constraint relaxations the manifest implies: DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns (PostgreSQL/DuckDB). Off by default; relaxations are always reported.',
         default: false,
       },
       verbose: {
@@ -1373,13 +1518,35 @@ export default testManifest;
         }
 
         // 7.5. Initialize MigrationTracker for tracking applied migrations
-        const { MigrationTracker, shortChecksum } = await import(
-          '@happyvertical/smrt-core/migrations'
+        const {
+          buildConcurrentIndexPlan,
+          MigrationTracker,
+          parsePostgresTimeoutMs,
+          shortChecksum,
+        } = await import('@happyvertical/smrt-core/migrations');
+
+        // `migrations.postgres.*` is live configuration, not documentation:
+        // the timeouts bound every PostgreSQL migration statement, and
+        // `useConcurrently: false` vetoes concurrent-index mode even when
+        // --postgres-safe is passed (issue #2362).
+        const postgresMigrationConfig = config.migrations?.postgres;
+        const lockTimeout = parsePostgresTimeoutMs(
+          postgresMigrationConfig?.lockTimeout,
+          DEFAULT_MIGRATION_LOCK_TIMEOUT_MS,
         );
+        const statementTimeout = parsePostgresTimeoutMs(
+          postgresMigrationConfig?.statementTimeout,
+          DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS,
+        );
+        const concurrentIndexMode =
+          Boolean(options['postgres-safe']) &&
+          (postgresMigrationConfig?.useConcurrently ?? true);
 
         const tracker = new MigrationTracker({
           db,
-          useConcurrentIndexes: options['postgres-safe'] ?? false,
+          lockTimeout,
+          statementTimeout,
+          useConcurrentIndexes: concurrentIndexMode,
         });
         if (!isDryRun) {
           await tracker.initialize();
@@ -1392,10 +1559,19 @@ export default testManifest;
               ? `Migration tracker preview configured (engine: ${engine})`
               : `Migration tracker initialized (engine: ${engine})`,
           );
-          if (options['postgres-safe'] && engine === 'postgres') {
+          if (engine === 'postgres') {
             console.log(
-              'PostgreSQL-safe mode enabled (CONCURRENTLY, lock_timeout)',
+              `PostgreSQL lock_timeout: ${lockTimeout}ms, statement_timeout: ${statementTimeout}ms`,
             );
+            if (concurrentIndexMode) {
+              console.log(
+                'PostgreSQL concurrent-index mode enabled (CREATE INDEX CONCURRENTLY outside the atomic batch)',
+              );
+            } else if (options['postgres-safe']) {
+              console.log(
+                'PostgreSQL concurrent-index mode disabled by migrations.postgres.useConcurrently = false',
+              );
+            }
           }
           console.log();
         }
@@ -1427,6 +1603,8 @@ export default testManifest;
         // --drop-indexes for safety.
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
+          includeDroppedColumns: Boolean(options['drop-columns']),
+          relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
         });
         const diff = await comparer.compare(manifestSchemas);
@@ -1466,6 +1644,7 @@ export default testManifest;
         );
         migrations.push(...partitionedChanges.migrations);
         manualInterventions.push(...partitionedChanges.manualInterventions);
+        const advisories = partitionedChanges.advisories;
 
         assertForceMigrationTargetsExist(forceSelection.forceMigrations, [
           ...diff.added_tables.map(
@@ -1490,7 +1669,9 @@ export default testManifest;
             const detail =
               change.type === 'type_upgrade'
                 ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
-                : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
+                : change.type === 'alter_column'
+                  ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (${change.alteration ?? 'alter_column'}; ${change.sql?.replace(/^--\s*/, '') ?? 'cannot auto-apply on this database engine'})`
+                  : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
 
             console.log(`   ${detail}`);
           }
@@ -1500,6 +1681,15 @@ export default testManifest;
           );
         }
 
+        // 9b. Report-only advisories (#2369): orphan columns / stale unique
+        // constraints / relaxations not opted into. Printed every run so a
+        // NOT NULL orphan that breaks inserts is never silent; they do not
+        // fail the command by themselves.
+        printSchemaAdvisories(advisories, {
+          orphanTables: diff.orphan_tables ?? [],
+          verbose: Boolean(options.verbose),
+        });
+
         // 10. Handle no migrations needed
         const tablesCreated = diff.added_tables.length > 0;
         const schemaUpToDate =
@@ -1508,13 +1698,19 @@ export default testManifest;
           !tablesCreated &&
           systemTimestampPreview.length === 0;
 
+        // Report-only findings (#2369) were printed above; keep the summary
+        // line honest when some of them are warnings.
+        const upToDateMessage = advisories.some(
+          (a) => a.advisory.severity === 'warning',
+        )
+          ? '✅ No migrations needed - see the live schema findings above\n'
+          : '✅ Database schema is up to date - no migrations needed\n';
+
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
         if (isDryRun) {
           if (schemaUpToDate && !repairData) {
-            console.log(
-              '✅ Database schema is up to date - no migrations needed\n',
-            );
+            console.log(upToDateMessage);
             return;
           }
 
@@ -1549,12 +1745,39 @@ export default testManifest;
               (m) => m.type === 'drop_index',
             );
 
+            const columnAlterations = migrations.filter(
+              (m) => m.type === 'alter_column',
+            );
+            const columnDrops = migrations.filter(
+              (m) => m.type === 'drop_column',
+            );
+
             if (columnMigrations.length > 0) {
               console.log(`  📊 Columns to add: ${columnMigrations.length}`);
               for (const m of columnMigrations) {
                 console.log(
                   `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
                 );
+              }
+              console.log();
+            }
+
+            if (columnAlterations.length > 0) {
+              console.log(`  🔧 Columns to alter: ${columnAlterations.length}`);
+              for (const m of columnAlterations) {
+                console.log(
+                  `     ${m.tableName}.${m.columnName ?? m.column?.name} (${m.alteration ?? 'alter'}: ${m.mismatch?.actual ?? '?'} → ${m.mismatch?.expected ?? '?'})`,
+                );
+              }
+              console.log();
+            }
+
+            if (columnDrops.length > 0) {
+              console.log(
+                `  🗑️  Columns to drop (DESTRUCTIVE, --drop-columns): ${columnDrops.length}`,
+              );
+              for (const m of columnDrops) {
+                console.log(`     ${m.tableName}.${m.columnName}`);
               }
               console.log();
             }
@@ -1611,13 +1834,6 @@ export default testManifest;
 
         const schemaChangeCount = diff.added_tables.length + migrations.length;
 
-        // Only show migration execution header if there are schema changes to apply
-        if (applySchemaMigrations && schemaChangeCount > 0) {
-          console.log(
-            `🔨 Applying ${schemaChangeCount} schema change(s) atomically...\n`,
-          );
-        }
-
         if (applySchemaMigrations && schemaChangeCount > 0) {
           const migrationDefs: MigrationDefinition[] = [];
           const migrationLogs = new Map<string, SchemaMigrationLogInfo>();
@@ -1659,6 +1875,18 @@ export default testManifest;
             if (migration.type === 'add_column' && migration.column) {
               migrationSql = migration.sql || '';
               actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+            } else if (
+              migration.type === 'alter_column' &&
+              (migration.columnName || migration.column)
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Altered column ${migration.tableName}.${migration.columnName ?? migration.column?.name} (${migration.alteration ?? 'alter'})`;
+            } else if (
+              migration.type === 'drop_column' &&
+              migration.columnName
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
             } else if (migration.type === 'type_upgrade' && migration.column) {
               migrationSql = migration.sql || '';
               actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
@@ -1680,11 +1908,15 @@ export default testManifest;
               description:
                 migration.type === 'add_column'
                   ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : migration.type === 'type_upgrade'
-                    ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                    : migration.type === 'drop_index'
-                      ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                      : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                  : migration.type === 'alter_column'
+                    ? `Alter column ${migration.columnName ?? migration.column?.name} on ${migration.tableName} (${migration.alteration ?? 'alter'}: ${migration.mismatch?.actual ?? '?'} → ${migration.mismatch?.expected ?? '?'})`
+                    : migration.type === 'drop_column'
+                      ? `Drop column ${migration.columnName} from ${migration.tableName}`
+                      : migration.type === 'type_upgrade'
+                        ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                        : migration.type === 'drop_index'
+                          ? `Drop index ${migration.indexName} on ${migration.tableName}`
+                          : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on
@@ -1698,27 +1930,49 @@ export default testManifest;
             });
           }
 
-          if (
-            options['postgres-safe'] &&
-            engine === 'postgres' &&
-            migrations.some(
-              (migration) =>
-                migration.type === 'add_index' ||
-                migration.type === 'drop_index',
-            )
-          ) {
+          // Ask core for the exact split it will perform, rather than
+          // re-deriving it here: this counts the index DDL a `create_table_*`
+          // migration carries as well as standalone add_index/drop_index.
+          const deferredIndexMigrations =
+            concurrentIndexMode && engine === 'postgres'
+              ? buildConcurrentIndexPlan(migrationDefs, true).size
+              : 0;
+          const batchHasIndexDDL = migrations.some(
+            (migration) =>
+              migration.type === 'add_index' || migration.type === 'drop_index',
+          );
+
+          console.log(
+            deferredIndexMigrations > 0
+              ? `🔨 Applying ${schemaChangeCount} schema change(s) (non-index DDL atomically, ${deferredIndexMigrations} index migration(s) CONCURRENTLY)...\n`
+              : `🔨 Applying ${schemaChangeCount} schema change(s) atomically...\n`,
+          );
+
+          if (deferredIndexMigrations > 0) {
             console.warn(
-              '⚠️  --postgres-safe requested, but db:migrate applies generated schema changes atomically.',
+              '⚠️  PostgreSQL concurrent-index mode: index DDL runs CONCURRENTLY after the non-index batch commits.',
             );
             console.warn(
-              '   Index DDL in this batch will run without CONCURRENTLY so PostgreSQL can roll back the full batch on failure.\n',
+              '   This batch is therefore NOT atomic — committed column/table changes survive a later index failure, and unfinished index migrations are recorded failed so the next db:migrate retries them.\n',
+            );
+          } else if (
+            engine === 'postgres' &&
+            batchHasIndexDDL &&
+            options['postgres-safe'] &&
+            !concurrentIndexMode
+          ) {
+            console.warn(
+              '⚠️  --postgres-safe requested, but migrations.postgres.useConcurrently is false.',
+            );
+            console.warn(
+              '   Index DDL in this batch will run inside the atomic transaction (bounded by lock_timeout/statement_timeout).\n',
             );
           }
 
           try {
             const results = await tracker.applyAll(migrationDefs, {
               atomic: true,
-              postgresSafe: false,
+              postgresSafe: concurrentIndexMode,
               force: forceSelection.force,
               forceMigrations: forceSelection.forceMigrations,
               // The diff was computed from the live schema moments earlier, so
@@ -1783,15 +2037,15 @@ export default testManifest;
               console.error(`\n${error.stack}\n`);
             }
             console.error(
-              '     Rolled back all schema changes from this migration batch, including any successful steps shown above.',
+              deferredIndexMigrations > 0
+                ? '     Non-index changes in this batch were committed; concurrent index builds that did not finish are recorded failed and will be retried on the next db:migrate.'
+                : '     Rolled back all schema changes from this migration batch, including any successful steps shown above.',
             );
           }
         }
 
         if (schemaUpToDate && !repairData) {
-          console.log(
-            '✅ Database schema is up to date - no migrations needed\n',
-          );
+          console.log(upToDateMessage);
         }
 
         // 13.5 Handle safe data repair requested via --repair-data
@@ -2055,6 +2309,18 @@ export default testManifest;
         default: false,
         short: 'f',
       },
+      db: {
+        type: 'boolean',
+        description:
+          'Compare the live database to the expected schema shape (incl. _smrt_* system tables)',
+        default: false,
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'Show recommendations and informational findings',
+        default: false,
+        short: 'v',
+      },
       'generation-snapshot': {
         type: 'string',
         description: 'Verify a transported SMRT generation snapshot',
@@ -2286,32 +2552,26 @@ export default testManifest;
       );
 
       // 6. Check vite.config contains smrtPlugin
-      if (hasViteConfig) {
-        const viteConfigPath = existsSync(viteConfigTs)
-          ? viteConfigTs
-          : viteConfigJs;
-        const viteConfigContent = readFileSync(viteConfigPath, 'utf-8');
-        const hasSmrtPlugin = viteConfigContent.includes('smrtPlugin');
+      const viteConfigContent = hasViteConfig
+        ? readFileSync(
+            existsSync(viteConfigTs) ? viteConfigTs : viteConfigJs,
+            'utf-8',
+          )
+        : null;
+      if (viteConfigContent !== null) {
         check(
           'smrtPlugin in vite.config',
-          hasSmrtPlugin,
+          viteConfigContent.includes('smrtPlugin'),
           'Missing smrtPlugin - add: import { smrtPlugin } from "@happyvertical/smrt-core/vite-plugin"',
         );
       }
 
-      // 7. Check tsconfig.json for decorators
+      // 7. Check that the decorator transform is configured for this Vite major
       const tsconfigPath = resolve(cwd, 'tsconfig.json');
+      let tsconfigContent: string | null = null;
       if (existsSync(tsconfigPath)) {
         try {
-          const tsconfigContent = readFileSync(tsconfigPath, 'utf-8');
-          const hasDecorators = tsconfigContent.includes(
-            'experimentalDecorators',
-          );
-          check(
-            'experimentalDecorators enabled',
-            hasDecorators,
-            'Add "experimentalDecorators": true to tsconfig.json',
-          );
+          tsconfigContent = readFileSync(tsconfigPath, 'utf-8');
         } catch {
           check(
             'tsconfig.json readable',
@@ -2327,6 +2587,22 @@ export default testManifest;
           'No tsconfig.json found (optional for JavaScript projects)',
         );
       }
+
+      const decoratorSupport = assessDecoratorSupport({
+        viteMajor: resolveDeclaredViteMajor(packageJson),
+        viteConfigContent,
+        tsconfigContent,
+      });
+      check(
+        'Decorator transform configured',
+        decoratorSupport.status === 'ok',
+        decoratorSupport.status === 'error'
+          ? decoratorSupport.message
+          : undefined,
+        decoratorSupport.status === 'warning'
+          ? decoratorSupport.message
+          : undefined,
+      );
 
       console.log();
 
@@ -2506,6 +2782,57 @@ export default testManifest;
       }
 
       console.log();
+
+      // ========== Live Database Parity (opt-in) ==========
+      // Off by default because it opens a connection and issues catalog
+      // queries; `--db` is what turns doctor's database section from "a URL is
+      // configured" into "the live schema matches what the model layer
+      // assumes".
+      if (options.db) {
+        console.log('🗄️  Live Database Parity\n');
+
+        const { report, error, database } = await runLiveSchemaParity({
+          discover: false,
+        });
+
+        if (!report) {
+          // Fail closed: an unreachable or undescribable database is an issue,
+          // never a silent pass.
+          check(
+            'Live schema parity',
+            false,
+            error ?? 'Could not verify the live schema',
+          );
+        } else {
+          if (database) {
+            console.log(`   Database: ${database.url}`);
+          }
+          for (const line of formatParityReport(report, {
+            verbose: options.verbose,
+          })) {
+            console.log(line);
+          }
+
+          const parityErrors = selectFindings(report, 'error');
+          const parityWarnings = selectFindings(report, 'warning');
+
+          for (const finding of parityErrors) {
+            issues.push(
+              `live schema: ${finding.table}${finding.target ? `.${finding.target}` : ''} (${finding.kind})`,
+            );
+          }
+          for (const finding of parityWarnings) {
+            warnings.push(
+              `live schema: ${finding.table}${finding.target ? `.${finding.target}` : ''} (${finding.kind})`,
+            );
+          }
+          if (parityErrors.length === 0 && parityWarnings.length === 0) {
+            passed.push('Live schema parity');
+          }
+        }
+
+        console.log();
+      }
 
       // ========== Summary ==========
       console.log('━'.repeat(50));

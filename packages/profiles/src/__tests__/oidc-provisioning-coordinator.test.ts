@@ -1,7 +1,10 @@
 import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { createProfileFromOidc } from '../auth/index.js';
-import { coordinateOidcProvisioning } from '../auth/oidcProvisioningCoordinator';
+import {
+  coordinateOidcProvisioning,
+  isOidcAbortedTransactionError,
+} from '../auth/oidcProvisioningCoordinator';
 import { ProfileTypeCollection } from '../collections/ProfileTypeCollection.js';
 import { backfillProfileEmailKeys } from '../migrations/backfillProfileEmailKeys.js';
 
@@ -213,5 +216,75 @@ describe('coordinateOidcProvisioning shared-connection ordering', () => {
     } finally {
       await db.close?.();
     }
+  });
+});
+
+/**
+ * `isOidcAbortedTransactionError` used to match a bare `/transaction.*aborted/`
+ * against every message in the cause chain. #2366 narrowed it to the framework
+ * classifier, which keys on PostgreSQL's own `25P02` SQLSTATE (or the exact
+ * "current transaction is aborted" wording DuckDB also uses).
+ *
+ * Both directions of that narrowing are load-bearing and were previously
+ * untested: the provisioning loop treats a true aborted transaction as a
+ * retryable race, so a false negative stalls provisioning while a false
+ * positive retries a deterministic constraint failure until it exhausts.
+ */
+describe('isOidcAbortedTransactionError narrowing (#2366)', () => {
+  /** The shape `@happyvertical/sql` actually throws. */
+  function wrappedDriverError(originalError: string): Error {
+    return Object.assign(new Error('Failed to upsert record into table'), {
+      code: 'DATABASE_ERROR',
+      context: { originalError },
+    });
+  }
+
+  it('detects a real aborted transaction through the adapter wrapper', () => {
+    expect(
+      isOidcAbortedTransactionError(
+        wrappedDriverError(
+          'current transaction is aborted, commands ignored until end of transaction block, code=25P02, severity=ERROR',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('detects DuckDB wording, which carries no SQLSTATE', () => {
+    expect(
+      isOidcAbortedTransactionError(
+        new Error(
+          'TransactionContext Error: Current transaction is aborted (please ROLLBACK)',
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('no longer fires on a constraint failure that merely mentions a transaction', () => {
+    // The old heuristic matched this and would have retried a deterministic
+    // foreign-key violation as if it were a provisioning race.
+    expect(
+      isOidcAbortedTransactionError(
+        wrappedDriverError(
+          'insert or update on table "oidc_identities" violates foreign key constraint "oidc_identities_profile_id_fkey", code=23503, detail=the aborted transaction log is unrelated',
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it('does not treat an idle-in-transaction session timeout as an aborted transaction', () => {
+    // 25P03 terminates the session; a fresh connection can succeed, so it must
+    // not be reported as a provisioning race conflict.
+    expect(
+      isOidcAbortedTransactionError(
+        wrappedDriverError(
+          'terminating connection due to idle-in-transaction timeout, code=25P03, severity=FATAL',
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it('ignores an unrelated error', () => {
+    expect(isOidcAbortedTransactionError(new Error('boom'))).toBe(false);
+    expect(isOidcAbortedTransactionError(undefined)).toBe(false);
   });
 });

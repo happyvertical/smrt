@@ -2354,6 +2354,20 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'return conditionalJson(request, { items: serializedItems, count, limit, offset });',
       );
+      // #2367: the page is bounded and ordered, including on the custom-serializer
+      // (v1 ETag) branch — the ordering is a property of the query, not of the
+      // caching strategy.
+      expect(collectionContent).toContain(
+        'const LIST_ORDER_BY = ["created_at DESC","id ASC"];',
+      );
+      expect(collectionContent).toContain('function listBounds(url: URL)');
+      expect(collectionContent).toContain(
+        'const { limit, offset } = listBounds(url);',
+      );
+      expect(collectionContent).toContain('orderBy: LIST_ORDER_BY');
+      expect(collectionContent).not.toContain(
+        "Number(url.searchParams.get('limit')) || 50",
+      );
       expect(collectionContent).not.toContain('conditionalVersionedRead');
       expect(collectionContent).toContain(
         'const serializedItem = await serializeItemResponse(item);',
