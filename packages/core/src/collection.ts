@@ -3952,6 +3952,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const candidateWhere = this.convertWhereKeys(tenantPrefilter.where);
       const { sql: candidateWhereSql, values: candidateValues } =
         buildWhere(candidateWhere);
+      // Deliberately unbounded: _smrt_embeddings has no tenant column, so the
+      // only exact way to scope ranking is the full id set of the tenant's
+      // rows. Capping it here would silently drop rows from the ranking —
+      // wrong results, not a perf tweak. The native path chunks the ids
+      // against bind-variable limits (see searchSimilar); the id-only
+      // projection keeps the row cost minimal. If this becomes a hot spot for
+      // very large tenants, the durable fix is a tenant column on
+      // _smrt_embeddings, not a cap.
       const { rows: candidateRows } = await this.db.query(
         `SELECT id FROM ${this.tableName} ${candidateWhereSql}`,
         ...candidateValues,

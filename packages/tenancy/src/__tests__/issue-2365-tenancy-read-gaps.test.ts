@@ -325,6 +325,23 @@ describe('Tenancy read gaps (#2365)', () => {
       });
     });
 
+    it("getId() never adopts another tenant's same-slug row id", async () => {
+      // getId() feeds save(): adopting a foreign row id would both disclose
+      // the id and steer the subsequent upsert onto the foreign row.
+      await withTenant({ tenantId: TENANT_B }, async () => {
+        const probe = new ReadGapDoc({ db, slug: 'secret-a' });
+        await probe.initialize();
+        const id = await probe.getId();
+        expect(id).not.toBe(VICTIM_UUID);
+      });
+
+      await withTenant({ tenantId: TENANT_A }, async () => {
+        const probe = new ReadGapDoc({ db, slug: 'secret-a' });
+        await probe.initialize();
+        expect(await probe.getId()).toBe(VICTIM_UUID);
+      });
+    });
+
     it('getSavedId()/isSaved() only see rows visible to the active tenant', async () => {
       await withTenant({ tenantId: TENANT_B }, async () => {
         const probe = new ReadGapDoc({ db, slug: 'secret-a' });

@@ -1519,6 +1519,12 @@ export class SmrtObject extends SmrtClass {
   /**
    * Gets or generates a unique ID for this object
    *
+   * The natural-key lookup runs through the `beforeGet` interceptor pipeline
+   * (#2365), so under an active tenant context this can only adopt the id of
+   * a row visible to that tenant — never another tenant's same-slug row,
+   * which would both disclose the foreign id and steer a subsequent `save()`
+   * onto the foreign row.
+   *
    * @returns Promise resolving to the object's ID
    */
   async getId() {
@@ -1526,10 +1532,13 @@ export class SmrtObject extends SmrtClass {
       await this.verifyStorageReady();
 
       // lookup by slug and context using adapter method
-      const saved = await this.db.get(this.tableName, {
-        slug: this.slug,
-        context: this.context,
-      });
+      const saved = await this.db.get(
+        this.tableName,
+        await this.interceptGetFilter({
+          slug: this.slug,
+          context: this.context,
+        }),
+      );
       if (saved) {
         this.id = saved.id;
       }
@@ -1634,9 +1643,9 @@ export class SmrtObject extends SmrtClass {
    * Run the registered `beforeGet` interceptors over a direct hydration filter
    * and return it in database column form (#2365).
    *
-   * `loadFromId()`, `loadFromSlug()` and `getSavedId()` query `this.db.get`
-   * directly instead of going through `SmrtCollection.get()`, so before this
-   * hook they bypassed every read interceptor: under an active tenant context,
+   * `loadFromId()`, `loadFromSlug()`, `getSavedId()` and `getId()` query
+   * `this.db.get` directly instead of going through `SmrtCollection.get()`, so
+   * before this hook they bypassed every read interceptor: under an active tenant context,
    * `new Model({ slug }).initialize()` happily hydrated another tenant's row
    * even though every collection read was filtered. Routing the filter through
    * `GlobalInterceptors.executeBeforeGet` gives hydration the same read

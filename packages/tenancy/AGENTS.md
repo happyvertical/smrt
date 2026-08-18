@@ -47,9 +47,11 @@ not only collection list/get:
   interceptor resolves string filters with core's `resolveGetStringFilter()`
   instead of assuming they are ids. Any custom `beforeGet` interceptor that
   rewrites a string filter must do the same.
-- **Hydration**: `new Model({ id | slug }).initialize()`, `loadFromId()`,
-  `loadFromSlug()` and `getSavedId()` run their filters through the `beforeGet`
-  pipeline, so constructor hydration cannot read another tenant's row.
+- **Hydration and identity**: `new Model({ id | slug }).initialize()`,
+  `loadFromId()`, `loadFromSlug()`, `getSavedId()` and `getId()` run their
+  filters through the `beforeGet` pipeline, so constructor hydration cannot
+  read another tenant's row and `getId()` can never adopt another tenant's
+  same-slug row id (which would steer a later `save()` onto the foreign row).
   Required-mode classes fail closed (`TenantContextError`) when hydrated
   outside a tenant context; `withSystemContext()` / super-admin bypass remain
   the explicit cross-tenant paths.
@@ -62,6 +64,10 @@ not only collection list/get:
   (`__collection__:<tenantId>`) under an active tenant context. Isolation is
   strict: tenant-keyed memory never falls back to the shared `__collection__`
   key, and memory learned outside a tenant context is invisible inside one.
+  Two edge semantics to know: under `withSuperAdminBypass()` reads skip
+  filtering but memory still keys to the active tenant (scoped tighter, not a
+  leak), and an empty-string tenant id resolves to the shared key (an
+  empty-string tenant is a misconfiguration — real tenant ids are uuids).
 
 ## Registration — Two Patterns
 

@@ -181,6 +181,20 @@ describe('read-path interceptor plumbing (#2365)', () => {
     expect(await outOfScope.getSavedId()).toBeNull();
   });
 
+  it('getId() never adopts an out-of-scope row id', async () => {
+    const inScope = new ReadPlumbingDoc({ db, slug: 'alpha-doc' });
+    await inScope.initialize();
+    expect(await inScope.getId()).toBe(ROW_ALPHA_ID);
+
+    // Out of scope: the natural-key lookup must miss, so getId() mints a
+    // fresh uuid instead of adopting beta's row id (which would steer a
+    // subsequent save() onto beta's row).
+    const outOfScope = new ReadPlumbingDoc({ db, slug: 'beta-doc' });
+    await outOfScope.initialize();
+    const id = await outOfScope.getId();
+    expect(id).not.toBe(ROW_BETA_ID);
+  });
+
   it('a beforeGet interceptor returning a string still resolves through the shared helper', async () => {
     const rewriting: CollectionInterceptor = {
       name: 'issue-2365-string-rewrite',
