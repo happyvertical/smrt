@@ -8,6 +8,10 @@ import { SmrtCollection } from '@happyvertical/smrt-core';
 import { isSystemContext } from '@happyvertical/smrt-tenancy';
 import { ProfileType } from '../models/ProfileType';
 
+function isPostgresUrl(url: string | undefined): boolean {
+  return /^postgres(?:ql)?:/iu.test(url ?? '');
+}
+
 export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
   static readonly _itemClass = ProfileType;
 
@@ -62,16 +66,63 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
     // A plain SMRT create is an upsert and may replace the winning row's id
     // when two first-login transactions race. Keep the canonical id stable by
     // using a cross-adapter insert-if-absent and then hydrating the winner.
-    await this.db.query(
-      `INSERT INTO profile_types
-        (id, slug, context, _meta_type, tenant_id, name, description)
-       VALUES (?, ?, '', '@happyvertical/smrt-profiles:ProfileType', NULL, ?, ?)
-       ON CONFLICT (slug, context, _meta_type) DO NOTHING`,
-      crypto.randomUUID(),
-      slug,
-      defaults.name,
-      defaults.description ?? null,
-    );
+    //
+    // The table's unique key is `(tenant_id, slug, context, _meta_type)` since
+    // smrt#2360, and a global row's NULL tenant never conflicts at the
+    // database level (NULLs are distinct in a unique index), so a raw
+    // `ON CONFLICT (…) DO NOTHING` can no longer arbitrate this race. Serialize
+    // the global create per slug instead: PostgreSQL through a
+    // transaction-scoped advisory lock (the arbiter the SDK's null-aware
+    // upsert uses too); the embedded engines through the provisioning
+    // coordinator's in-process lock plus their single-writer transactions.
+    const insertIfAbsent = async (db: typeof this.db): Promise<void> => {
+      if (isPostgresUrl(db.url)) {
+        await db.query(
+          'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+          '@happyvertical/smrt-profiles:profile_types:global',
+          slug,
+        );
+      }
+      await db.query(
+        `INSERT INTO profile_types
+          (id, slug, context, _meta_type, tenant_id, name, description)
+         SELECT ?, ?, '', '@happyvertical/smrt-profiles:ProfileType', NULL, ?, ?
+         WHERE NOT EXISTS (
+           SELECT 1 FROM profile_types
+           WHERE slug = ?
+             AND context = ''
+             AND _meta_type = '@happyvertical/smrt-profiles:ProfileType'
+             AND tenant_id IS NULL
+         )`,
+        crypto.randomUUID(),
+        slug,
+        defaults.name,
+        defaults.description ?? null,
+        slug,
+      );
+    };
+
+    // A transaction-scoped advisory lock only spans both statements when they
+    // run on one transaction. On PostgreSQL, any handle that is NOT already
+    // transaction-bound may route each query to a different pooled connection
+    // — a root adapter (`beginTransaction` present) and equally a view
+    // wrapper (only `transaction()` present) — so open a transaction for the
+    // pair on every such handle. A transaction-bound handle (fingerprint: it
+    // carries `commit`) already keeps both statements on one client and must
+    // not nest. Embedded engines run directly: a nested root transaction
+    // would deadlock their single-writer adapters, and the provisioning
+    // coordinator's in-process lock already serializes them.
+    const isTransactionBound =
+      typeof (this.db as { commit?: unknown }).commit === 'function';
+    if (
+      isPostgresUrl(this.db.url) &&
+      !isTransactionBound &&
+      typeof this.db.transaction === 'function'
+    ) {
+      await this.db.transaction((tx) => insertIfAbsent(tx));
+    } else {
+      await insertIfAbsent(this.db);
+    }
     const profileType = await this.loadGlobalBySlug(slug);
     if (!profileType) {
       throw new Error(

@@ -332,14 +332,11 @@ export class ManifestBuilder {
       manifest.smrtDependencies = config.smrtDependencies;
     }
 
-    // Run manifest generation passes (same as Vite plugin path)
+    // Run THE manifest generation pass sequence (shared with
+    // ManifestGenerator.generateManifest() and the Vite plugin, #2360 — this
+    // path used to skip the report and conflict-key passes).
     const manifestGen = new ManifestGenerator();
-    manifestGen.injectTenantScopedFields(manifest);
-    manifestGen.mergeInheritedFields(manifest);
-    manifestGen.generateValidationRules(manifest);
-    manifestGen.generateSchemas(manifest);
-    manifestGen.assertTenantScopedSchemaContract(manifest);
-    manifestGen.generateAgentManifests(manifest, packageName, packageJson);
+    manifestGen.applyGenerationPasses(manifest, { packageName, packageJson });
 
     return manifest;
   }

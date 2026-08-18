@@ -74,7 +74,69 @@ divergence is a bug in the generator, not an exception to add to the test.
   `(slug, context)` unique index; `loadFromSlug()`/`getId()`/`getSavedId()`
   still filter on slug/context, so a plain `<table>_slug_context_idx` is kept
   (additive; routing those lookups through the conflict key would change which
-  row a slug resolves to).
+  row a slug resolves to). The tenant-led default key below counts as serving
+  it (`servesSlugLookup()`): a tenant-scoped slug lookup carries the tenant
+  predicate (#2365) and is served by the prefix, so no second index.
+- **Tenant-scoped tables key per tenant (#2360).** A tenant-scoped class with
+  no explicit `conflictColumns` upserts on, and indexes,
+  `(tenant_id, slug, context)` — `(tenant_id, slug, context, _meta_type)` for
+  an STI hierarchy — resolved by one rule on both paths:
+  `ManifestGenerator.normalizeConflictColumns()` materializes it into
+  `decoratorConfig.conflictColumns` for the manifest paths (so the manifest,
+  the schema, `smrt-knowledge.json` and the runtime read one value), and
+  `ObjectRegistry.getConflictColumns()` derives the same value at runtime from
+  the schema owner's `tenantScoped` config (`ObjectRegistry.getTenantColumn()`;
+  an STI child resolves through its root; a `@report` class through its
+  group/bucket columns; a custom primary key through that key). Explicit
+  `conflictColumns` are never rewritten. `src/schema/conflict-target.ts` holds
+  the shared helpers. Consequences: the index NAME stays
+  `<table>_slug_context_idx` / `_slug_context_meta_type_idx`, so the differ
+  swaps the columns of an existing global unique in place by name (a superset
+  key — creating it cannot fail on existing rows); the tenant-led key also
+  serves the tenant column, so `<table>_tenant_id_idx` is no longer emitted
+  for those tables (an existing one is an orphan the differ drops only with
+  `--drop-indexes`); NULL-tenant rows (`mode: 'optional'` outside a tenant
+  context) dedup among themselves through the SDK's null-aware upsert
+  (`IS NOT DISTINCT FROM` under a PostgreSQL advisory lock / an in-process
+  lock on SQLite) — application-enforced now, where the old global index was
+  database-enforced: the tenant-led index treats NULLs as distinct, so raw SQL
+  can insert two global rows with one slug, and a raw
+  `ON CONFLICT (slug, context…)` against such a table no longer binds (use
+  `WHERE NOT EXISTS`, plus an advisory lock on PostgreSQL). Emitting
+  `NULLS NOT DISTINCT` on PostgreSQL ≥ 15 (the SDK already detects it) would
+  restore the database arbiter — a follow-up. The `save()` path serializes an
+  unset tenant field as an explicit `NULL` whatever its registered type,
+  because the SDK rejects an upsert whose conflict column is missing from the
+  row.
+- **Rolling the tenant-led key out (#2360).** There is no mixed-version state:
+  new code against the old index fails every NEW-object create on a
+  tenant-scoped default-key table (PostgreSQL 42P10, SQLite "ON CONFLICT
+  clause does not match…"), and old code against the new index fails the same
+  way, because the conflict target must match the unique index's column set
+  exactly; only persisted objects (upsert on `id`) keep saving. Deploy the code
+  and run `smrt db:migrate` in the same maintenance step. The plan is one
+  `DROP INDEX` + `CREATE UNIQUE INDEX` per table under the SAME name (a
+  superset key, so the build cannot fail when the old same-name index was a
+  valid UNIQUE over the subset key; a #1165-class table whose old index was
+  non-unique or missing may hold duplicates that a superset UNIQUE rejects —
+  `db:diff` shows which tables' old index is non-unique or missing; dedupe
+  those rows before migrating). Atomic mode swaps every table in one
+  transaction: `DROP INDEX` takes ACCESS EXCLUSIVE and holds it until commit,
+  which blocks ALL access to those tables — reads included — for the batch;
+  size `statementTimeout` for the largest tenant-scoped table. That is the
+  maintenance window this rollout requires anyway (no mixed-version state), so
+  run this wave — the #2359 index wave included — in atomic mode inside it;
+  the "roll out with `--postgres-safe`" advice above applies to a #2359-only
+  wave, because `--postgres-safe` runs the two statements sequentially per
+  table, so each table has NO conflict index between them and a failed rebuild
+  leaves it without one until the re-run. The recreate has no automatic
+  DOWN: reverting the code means re-creating the old index by hand. And
+  legacy NULL-tenant rows fork rather than get adopted — a tenant-context save
+  whose slug matches a `(NULL, slug, ctx)` row now inserts `(tenant, slug,
+  ctx)` beside it, and that tenant no longer sees the legacy row — so backfill
+  `tenant_id` (anytown: `SET tenant_id = context::uuid`) BEFORE this release.
+  Ingestion that relied on natural-key dedup across tenants now inserts one
+  row per tenant (release note).
 - **STI `@field({ unique: true })` is enforced through indexes** (the differ can
   add an index to an existing table, never a column constraint): a full
   `<table>_<col>_unique_idx` when the STI base declares it, one
@@ -182,9 +244,12 @@ see "Index rules" above. Check the pair, not the declaration.
 
 Every unique constraint and every conflict target on a tenant-scoped table
 includes the tenant column — otherwise a second tenant's `save()` of the same
-natural key updates the first tenant's row through `DO UPDATE SET` (#2360). And
-every read path is interceptor-aware: hydration (`loadFromId`/`loadFromSlug`),
-get-by-slug, vector search, and collection memory, not only `list()` (#2365).
+natural key updates the first tenant's row through `DO UPDATE SET` (#2360; the
+default key now does, see "Index rules" — an explicit `conflictColumns` that
+omits the tenant column is the class author's own key and is not rewritten).
+And every read path is interceptor-aware: hydration
+(`loadFromId`/`loadFromSlug`), get-by-slug, vector search, and collection
+memory, not only `list()` (#2365).
 
 ### 7. Retry only transient errors
 
@@ -250,8 +315,8 @@ scans a btree either way, so an ascending index also serves the matching
 
 `appendDeclaredIndexes()` runs first on all five entry points, ahead of
 `ensureDefaultListOrderingIndex()` (rule 18) and `ensureReferenceColumnIndexes()`,
-so a declared composite leading with the tenant column replaces the automatic
-standalone `tenant_id` index rather than duplicating it.
+so a declared composite leading with the tenant column (or any reference column)
+replaces the automatic standalone index rather than duplicating it.
 Unknown columns, malformed entries, and a name collision with a different index
 all fail generation — a silently dropped index only surfaces later as a
 production slowdown. Rule 8 above is why this works at runtime at all.
@@ -457,3 +522,18 @@ before this helper for exactly that reason; anything that appends an index in
 future goes in the same slot, ahead of `ensureDefaultListOrderingIndex()` and
 `ensureReferenceColumnIndexes()`.
 
+### 19. One conflict-target rule, applied on every producer
+
+`save()` upserts on `ObjectRegistry.getConflictColumns()`; the schema must
+carry exactly one unique index over those columns (or they must be the
+primary key). Keep the derivation in `src/schema/conflict-target.ts` and let
+every producer call it — the three manifest pipelines share
+`ManifestGenerator.applyGenerationPasses()` since #2360 because
+`ManifestBuilder` had silently skipped the report passes for months. When you
+add a way for the key to vary (a new decorator option, a new class kind),
+thread it through `getConflictColumns()`, `normalizeConflictColumns()` and the
+generator's `resolveConflictTarget()` together, and extend the parity test's
+"unique index == conflict target" assertion; a key the runtime uses and the
+schema does not index is a hard PostgreSQL error (42P10) on the first save,
+and a key the schema indexes without the tenant column is the silent
+cross-tenant overwrite this rule exists for.

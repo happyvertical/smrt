@@ -13,6 +13,10 @@ import {
   classifyDialectMessage,
   type DatabaseErrorClassification,
 } from './db-errors';
+import {
+  isEmbeddedDatabase,
+  withEmbeddedWriteQueue,
+} from './embedded-write-queue';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
@@ -1251,39 +1255,43 @@ export class SmrtObject extends SmrtClass {
           (prop && typeof prop === 'object' && 'type' in prop && prop.type) ||
           fieldDef?.type;
 
-        if (fieldType === 'text') {
-          // Don't convert tenant ID fields to empty string (Issue #841)
-          // Tenant fields should remain null/undefined for interceptor to auto-populate.
-          // Check both the property instance and field definition for __tenancy marker.
-          // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
-          // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
-          // `prop` may be a Field-helper instance carrying a `__tenancy`
-          // marker; read it through a narrow indexable view after the
-          // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
-          const propTenancy =
-            prop && typeof prop === 'object' && '__tenancy' in prop
-              ? (prop as { __tenancy?: { isTenantIdField?: boolean } })
-                  .__tenancy
-              : undefined;
-          const hasTenancyMarker =
-            propTenancy?.isTenantIdField ||
-            fieldDef?.__tenancy?.isTenantIdField ||
-            fieldDef?._meta?.__tenancy?.isTenantIdField;
+        // Don't convert tenant ID fields to empty string (Issue #841)
+        // Tenant fields should remain null/undefined for interceptor to auto-populate.
+        // Check both the property instance and field definition for __tenancy marker.
+        // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
+        // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
+        // `prop` may be a Field-helper instance carrying a `__tenancy`
+        // marker; read it through a narrow indexable view after the
+        // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
+        //
+        // Checked before the type switch (#2360): the registry injects the
+        // tenant field of a `tenantScoped` class as `foreignKey` when no
+        // manifest carries it, and the tenant column is part of the
+        // conflict target, so it must reach the row as an explicit NULL —
+        // an omitted key would fail `ON CONFLICT` validation ("conflict
+        // columns missing from data") instead of taking the null-aware path.
+        const propTenancy =
+          prop && typeof prop === 'object' && '__tenancy' in prop
+            ? (prop as { __tenancy?: { isTenantIdField?: boolean } }).__tenancy
+            : undefined;
+        const hasTenancyMarker =
+          propTenancy?.isTenantIdField ||
+          fieldDef?.__tenancy?.isTenantIdField ||
+          fieldDef?._meta?.__tenancy?.isTenantIdField;
 
-          if (hasTenancyMarker) {
-            // Leave tenant field as null so interceptor can auto-populate
-            if (isSTI && fieldDef?.type === 'meta') {
-              metaData[key] = null;
-            } else {
-              data[key] = null;
-            }
+        if (hasTenancyMarker) {
+          // Leave tenant field as null so interceptor can auto-populate
+          if (isSTI && fieldDef?.type === 'meta') {
+            metaData[key] = null;
           } else {
-            // For regular TEXT fields, convert undefined to an empty string.
-            if (isSTI && fieldDef?.type === 'meta') {
-              metaData[key] = '';
-            } else {
-              data[key] = '';
-            }
+            data[key] = null;
+          }
+        } else if (fieldType === 'text') {
+          // For regular TEXT fields, convert undefined to an empty string.
+          if (isSTI && fieldDef?.type === 'meta') {
+            metaData[key] = '';
+          } else {
+            data[key] = '';
           }
         } else if (fieldType === 'json') {
           // For JSON fields, use the default value from manifest to prevent:
@@ -1987,62 +1995,85 @@ export class SmrtObject extends SmrtClass {
       const upsertConflictColumns =
         this._persisted && data.id ? ['id'] : conflictColumns;
 
-      await ErrorUtils.withRetry(
-        async () => {
-          try {
-            if (writePlan.type === 'updateById') {
-              const { id: _id, ...updateData } = data;
-              await this.db.update(this.tableName, { id: data.id }, updateData);
-              this.setMetaType(writePlan.qualifiedMetaType);
-            } else if (this._insertOnly && !this._persisted) {
-              // Strict-insert mode (#1759): row identity is an explicit
-              // client-supplied id, so never adopt an existing row via
-              // conflict resolution — any PK/unique collision must raise.
-              await this.db.insert(this.tableName, data);
-            } else {
-              await this.db.upsert(this.tableName, upsertConflictColumns, data);
-            }
-          } catch (error) {
-            // Detect specific database error types. `@happyvertical/sql` wraps
-            // every driver error as
-            // `DatabaseError('Failed to upsert record into table', { …,
-            // originalError })`, so the constraint wording never reaches
-            // `error.message`. Classify through the whole cause chain — driver
-            // codes first (SQLSTATE / SQLite result codes), dialect wording
-            // only as the DuckDB fallback — to restore the typed-error parity
-            // the docs promise (#1378, #2366).
-            if (error instanceof Error) {
-              const classification = classifyDatabaseError(error);
-              if (classification.kind === 'unique_violation') {
-                const field = this.extractConstraintFieldFromChain(
-                  error,
-                  classification,
+      // A NULL among the conflict values routes the SDK's upsert through its
+      // null-aware path — on file-backed SQLite a write transaction on a
+      // SECOND connection. Serialize those saves against this process's other
+      // writes (see embedded-write-queue.ts): with the tenant-led conflict
+      // target (#2360) every NULL-tenant create takes that path, and
+      // concurrent creates livelocked into SQLITE_BUSY against the
+      // change-feed append on the root connection.
+      const serializeEmbeddedWrite =
+        writePlan.type !== 'updateById' &&
+        !(this._insertOnly && !this._persisted) &&
+        isEmbeddedDatabase(this.db) &&
+        upsertConflictColumns.some((column) => data[column] == null);
+
+      await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
+        ErrorUtils.withRetry(
+          async () => {
+            try {
+              if (writePlan.type === 'updateById') {
+                const { id: _id, ...updateData } = data;
+                await this.db.update(
+                  this.tableName,
+                  { id: data.id },
+                  updateData,
                 );
-                throw ValidationError.uniqueConstraint(
-                  field,
-                  this.getFieldValue(field),
+                this.setMetaType(writePlan.qualifiedMetaType);
+              } else if (this._insertOnly && !this._persisted) {
+                // Strict-insert mode (#1759): row identity is an explicit
+                // client-supplied id, so never adopt an existing row via
+                // conflict resolution — any PK/unique collision must raise.
+                await this.db.insert(this.tableName, data);
+              } else {
+                await this.db.upsert(
+                  this.tableName,
+                  upsertConflictColumns,
+                  data,
                 );
               }
-              if (classification.kind === 'not_null_violation') {
-                const field = this.extractConstraintFieldFromChain(
-                  error,
-                  classification,
-                );
-                throw ValidationError.requiredField(field, className);
+            } catch (error) {
+              // Detect specific database error types. `@happyvertical/sql` wraps
+              // every driver error as
+              // `DatabaseError('Failed to upsert record into table', { …,
+              // originalError })`, so the constraint wording never reaches
+              // `error.message`. Classify through the whole cause chain — driver
+              // codes first (SQLSTATE / SQLite result codes), dialect wording
+              // only as the DuckDB fallback — to restore the typed-error parity
+              // the docs promise (#1378, #2366).
+              if (error instanceof Error) {
+                const classification = classifyDatabaseError(error);
+                if (classification.kind === 'unique_violation') {
+                  const field = this.extractConstraintFieldFromChain(
+                    error,
+                    classification,
+                  );
+                  throw ValidationError.uniqueConstraint(
+                    field,
+                    this.getFieldValue(field),
+                  );
+                }
+                if (classification.kind === 'not_null_violation') {
+                  const field = this.extractConstraintFieldFromChain(
+                    error,
+                    classification,
+                  );
+                  throw ValidationError.requiredField(field, className);
+                }
+                const operation =
+                  writePlan.type === 'updateById'
+                    ? `UPDATE ${this.tableName} (id-targeted)`
+                    : this._insertOnly && !this._persisted
+                      ? `INSERT INTO ${this.tableName}`
+                      : `UPSERT INTO ${this.tableName}`;
+                throw DatabaseError.queryFailed(operation, error);
               }
-              const operation =
-                writePlan.type === 'updateById'
-                  ? `UPDATE ${this.tableName} (id-targeted)`
-                  : this._insertOnly && !this._persisted
-                    ? `INSERT INTO ${this.tableName}`
-                    : `UPSERT INTO ${this.tableName}`;
-              throw DatabaseError.queryFailed(operation, error);
+              throw error;
             }
-            throw error;
-          }
-        },
-        3,
-        500,
+          },
+          3,
+          500,
+        ),
       );
 
       // The row now exists, so any further save() must update it by primary
