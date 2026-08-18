@@ -17,6 +17,10 @@ import type {
   SQLDataType,
 } from '../schema/types.js';
 import { isJsonPathIndex, renderIndexTarget } from '../schema/utils.js';
+import {
+  planSqliteTableRebuilds,
+  sqliteRebuildPlaceholderSql,
+} from './sqlite-rebuild.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -294,7 +298,20 @@ export class SchemaComparer {
 
     // Compare columns
     const columnChanges = this.compareColumns(tableName, manifest, dbSchema);
-    changes.push(...columnChanges);
+    // #2370: SQLite cannot change a column's type in place. Turn the
+    // "requires table recreation" placeholders those comparisons emit into an
+    // executable table rebuild (see `./sqlite-rebuild.ts`); anything the
+    // rebuild can't do safely stays manual drift, as before.
+    changes.push(
+      ...(this.engine === 'sqlite'
+        ? await planSqliteTableRebuilds({
+            db: this.db,
+            tableName,
+            changes: columnChanges,
+            mapType: (type) => this.ddlStrategy.mapType(type),
+          })
+        : columnChanges),
+    );
 
     // Partial-index predicates are not surfaced by `getTableSchema()` (the
     // @happyvertical/sql introspection returns only name/columns/unique), so
@@ -1032,10 +1049,11 @@ export class SchemaComparer {
             sql: `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`,
           };
         }
-        // For other type upgrades, SQLite requires recreating the table
-        return {
-          sql: `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`,
-        };
+        // Every other upgrade needs the whole table rebuilt. `compareTable`
+        // replaces this placeholder with the executable plan (#2370); it
+        // survives only when the rebuild is unsafe or unavailable, and then
+        // means the same thing it always did — manual intervention.
+        return { sql: sqliteRebuildPlaceholderSql(colName) };
 
       case 'postgres': {
         // PostgreSQL defaults must be dropped/reset around some type changes

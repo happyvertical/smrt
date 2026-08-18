@@ -50,6 +50,18 @@ export {
   migrateSmrtSchemas,
   type PendingSchemaStatementsResult,
 } from './orchestrate.js';
+// SQLite table rebuild (type changes SQLite cannot ALTER in place)
+export {
+  type BuildSqliteRebuildStatementsInput,
+  buildSqliteRebuildStatements,
+  isSqliteRebuildPlaceholder,
+  type PlanSqliteTableRebuildsOptions,
+  planSqliteTableRebuilds,
+  rewriteSqliteCreateTable,
+  SQLITE_REBUILD_TABLE_PREFIX,
+  type SqliteTableRebuildPlan,
+  sqliteRebuildPlaceholderSql,
+} from './sqlite-rebuild.js';
 // Core classes
 export {
   buildConcurrentIndexPlan,
