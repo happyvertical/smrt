@@ -683,11 +683,19 @@ Properties to keep if you touch that module:
   incremental — manifests load lazily and tests register classes between cases —
   so a cached plan would silently skip a table that registered later. Cache it
   only behind an invalidation hook that every registration path calls.
-- **A class nothing references skips the transaction entirely.**
+- **A class with nothing pointing at it skips the transaction entirely — but
+  `CascadePlan.isEmpty` requires no polymorphic association class anywhere in
+  the process, not just no typed references.** `buildCascadePlan()` pushes
+  *every* registered `SmrtPolymorphicAssociation` subclass into
+  `plan.polymorphic` unconditionally (`cascade.ts` around
+  `isPolymorphicAssociationClass`): a `metaType` column can point at any class
+  at runtime, so there is no static metadata to scope it by the target being
+  deleted. One registered polymorphic class anywhere makes `isEmpty` false for
+  every delete in that process — do not read "the common case skips the
+  transaction" as "most deletes in a real app skip it"; in a multi-package app
+  that registers even one polymorphic association, almost none do.
   `runCascadeDelete()` builds the plan for `getResolvedQualifiedName()` (not the
-  bare constructor name — two packages can register the same simple name) and
-  checks `CascadePlan.isEmpty` before opening anything, so the common case pays
-  no extra round trip beyond the two side-table statements.
+  bare constructor name — two packages can register the same simple name).
 - **Cascaded rows are removed set-based.** Their `beforeDelete`/`afterDelete`
   hooks and interceptors do not run and no change-feed tombstone is written for
   them, which is exactly what a DB-level `ON DELETE CASCADE` does. Only the
@@ -697,11 +705,17 @@ Properties to keep if you touch that module:
   object's own `DELETE`, whenever there is anything to cascade. The `RESTRICT`
   checks run first, before any mutation, so a refusal costs nothing; the
   transaction is what makes a refusal *deeper* in the graph safe.
-- **`_smrt_embeddings` and `_smrt_contexts` are matched by id alone.** Their
-  class columns store the *runtime* constructor name, which for an STI hierarchy
-  is the concrete subclass rather than the class the cascade planned from. A
-  failure to clean them is logged, never raised — an application database may
-  predate the table, and losing derived rows must not fail a valid delete.
+- **`_smrt_embeddings` and `_smrt_contexts` are matched by id *and* a
+  class-name candidate set, not id alone.** Their class columns store the
+  *runtime* constructor name, which for an STI hierarchy is a concrete
+  subclass rather than the class the cascade planned from — id-alone matching
+  looked STI-safe, but let two unrelated classes using `idType: 'text'`
+  (non-UUID, not guaranteed globally unique) collide on a shared id value and
+  delete each other's rows (review fix). `ownerClassCandidates()` expands to
+  every STI hierarchy member of the class the ids actually belong to, in both
+  qualified and simple form. A failure to clean them is logged, never raised —
+  an application database may predate the table, and losing derived rows must
+  not fail a valid delete.
 
 `_smrt_changes`, `_smrt_ai_usage`, `_smrt_signals` and the dispatch tables are
 deliberately **not** cascaded. They are append-only logs; the change feed in

@@ -12,6 +12,7 @@
  * mocked database would prove nothing.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -719,6 +720,31 @@ describe('delete() referential integrity (#2371)', () => {
       await doc.delete();
 
       expect(await db.count('_smrt_contexts', { owner_id: doc.id })).toBe(0);
+    });
+
+    it("does not delete an unrelated class's memory row that happens to share this object's id (review fix)", async () => {
+      // Realistic for two different `idType: 'text'` classes (non-UUID, not
+      // guaranteed globally unique) coincidentally sharing an id value.
+      // Written directly since `remember()` always stamps *this* object's
+      // own class — the review fix is what `deleteSystemRows()` does with a
+      // row whose owner_class does NOT match the class being deleted.
+      const doc = await makeDoc('collides');
+      await db.insert('_smrt_contexts', {
+        id: randomUUID(),
+        owner_class: 'SomeUnrelatedTextIdClass',
+        owner_id: doc.id,
+        scope: 'test',
+        key: 'k',
+        value: 'unrelated',
+      });
+      await doc.remember({ scope: 'test', key: 'k', value: 'mine' });
+      expect(await db.count('_smrt_contexts', { owner_id: doc.id })).toBe(2);
+
+      await doc.delete();
+
+      const remaining = await db.list('_smrt_contexts', { owner_id: doc.id });
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0]?.owner_class).toBe('SomeUnrelatedTextIdClass');
     });
 
     it('keeps collection-scoped memory, which no object owns', async () => {

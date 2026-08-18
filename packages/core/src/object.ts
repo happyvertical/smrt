@@ -2822,7 +2822,8 @@ export class SmrtObject extends SmrtClass {
    * Runs the full lifecycle in order:
    * 1. `beforeDelete` interceptors (e.g. tenant validation)
    * 2. `beforeDelete` lifecycle hook (defined in `@smrt({ hooks })`)
-   * 3. Referential cleanup and the row deletion, in one transaction
+   * 3. Referential cleanup and the row deletion (one transaction when there
+   *    is anything to clean up — see below)
    * 4. `afterDelete` lifecycle hook
    * 5. `afterDelete` interceptors
    *
@@ -2852,7 +2853,12 @@ export class SmrtObject extends SmrtClass {
    * transaction when the adapter supports one, so a failed cascade cannot
    * leave the object deleted with its junction rows intact. When nothing
    * references it, there is nothing to keep consistent and the transaction
-   * is skipped so an ordinary delete costs no extra round trip.
+   * is skipped so an ordinary delete costs no extra round trip — but that
+   * skip requires no registered polymorphic association class anywhere in
+   * the process, not just no typed reference to this class (see
+   * `cascade.ts`'s module doc: a `metaType` column can point at any class at
+   * runtime, so a polymorphic association class is always plausibly
+   * relevant).
    *
    * Prefer `collection.delete(id)` from application code — it loads the
    * object first (returning `false` when not found) before calling this method.

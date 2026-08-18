@@ -16,8 +16,14 @@
  *   `afterDelete` hooks and interceptors do **not** run, and no change-feed
  *   tombstone is written for them — exactly as `ON DELETE CASCADE` behaves.
  *   Only the object `delete()` was called on runs the full lifecycle.
- * - Everything runs inside a single transaction when the adapter exposes one,
- *   so a partial cascade cannot survive a failure.
+ * - When anything needs cascading, everything runs inside a single
+ *   transaction when the adapter exposes one, so a partial cascade cannot
+ *   survive a failure. A class with no typed references AND no registered
+ *   polymorphic association class anywhere in the process skips the
+ *   transaction — see {@link runCascadeDelete}. A `metaType` column can point
+ *   at any class at runtime, so a polymorphic association class is always
+ *   plausibly relevant; in an app with even one registered, this fast path is
+ *   rare, not the common case.
  *
  * ## Which references are followed
  *
@@ -152,6 +158,8 @@ export type CascadeRegistryView = Pick<
   | 'getTableName'
   | 'getSelfReferableNames'
   | 'getClass'
+  | 'getSTIBase'
+  | 'getDescendants'
 >;
 
 const CASCADE_ACTIONS = new Set<OnDeleteAction>([
@@ -294,13 +302,17 @@ export function buildCascadePlan(
   }
 
   // Both forms are matched deliberately: an association row written before a
-  // class was package-qualified still carries the simple `meta_type`. This
-  // does not reopen the ambiguous-name hazard `getResolvedQualifiedName()`
-  // guards against elsewhere in this module — a same-simple-name sibling
-  // class's rows only match if they also share a `meta_id`, and ids are
-  // `crypto.randomUUID()`-generated, so a cross-class collision on the
-  // *pair* is not a realistic risk (the same argument `deleteSystemRows()`
-  // relies on for `_smrt_embeddings` / `_smrt_contexts`, matched by id alone).
+  // class was package-qualified still carries the simple `meta_type`. The
+  // qualified form alone is unambiguous; the simple-name fallback can still
+  // match a same-simple-name sibling class's row if it also shares a
+  // `meta_id` — a real, not just theoretical, risk for a class declaring
+  // `idType: 'text'` (non-UUID, not guaranteed globally unique), the same gap
+  // `deleteSystemRows()` closed for `_smrt_contexts` / `_smrt_embeddings`
+  // (review fix) by adding a class-name filter. Closing it here needs the
+  // same STI-and-legacy-name-aware filter this module already builds for
+  // `deleteSystemRows()` narrowed further to registry-unambiguous simple
+  // names; tracked under #2419 alongside the other same-simple-name
+  // collision gaps rather than reworked here.
   const metaTypes: string[] = [];
   const qualified = registry.getClass(className)?.qualifiedName;
   if (qualified) metaTypes.push(qualified);
@@ -339,6 +351,42 @@ function toQualifiedClassName(
   className: string,
 ): string {
   return registry.getClass(className)?.qualifiedName ?? className;
+}
+
+/**
+ * Every value `_smrt_contexts.owner_class` / `_smrt_embeddings.object_class`
+ * could plausibly hold for a row belonging to an id of `className` (review
+ * fix): both name forms (qualified + simple — older rows predate package
+ * qualification) of `className` itself, plus every other member of its STI
+ * hierarchy sharing its table. A CASCADE-collected id can belong to any
+ * concrete STI subclass of the declaring reference, which stamps its own
+ * (more specific) runtime class name at write time, not the reference's.
+ *
+ * Narrowing by this set — instead of matching by id alone — closes a
+ * cross-class collision: two unrelated classes using `idType: 'text'`
+ * (non-UUID, not guaranteed globally unique) could otherwise share an id
+ * value and have one's `remember()`/embeddings rows deleted by the other's
+ * cascade.
+ */
+function ownerClassCandidates(
+  registry: CascadeRegistryView,
+  className: string,
+): string[] {
+  const stiBase = registry.getSTIBase(className) ?? className;
+  const members = new Set<string>([
+    className,
+    stiBase,
+    ...registry.getDescendants(stiBase),
+  ]);
+
+  const names = new Set<string>();
+  for (const member of members) {
+    names.add(member);
+    const registered = registry.getClass(member);
+    if (registered?.qualifiedName) names.add(registered.qualifiedName);
+    if (registered?.name) names.add(registered.name);
+  }
+  return [...names];
 }
 
 /**
@@ -424,10 +472,15 @@ async function deleteByIds(
  * Remove the framework-managed side rows owned by the given object ids.
  *
  * `_smrt_contexts` and `_smrt_embeddings` are keyed by `(owner_class, owner_id)`
- * and `(object_class, object_id)` respectively. Both are matched by id alone:
- * ids are UUIDs, and the class column stores the *runtime* constructor name,
- * which for an STI hierarchy is the concrete subclass rather than the class the
- * cascade was planned from.
+ * and `(object_class, object_id)` respectively. Matched by id *and* class
+ * (review fix): id alone would let two unrelated classes using
+ * `idType: 'text'` (non-UUID, not guaranteed globally unique) collide on a
+ * shared id value and delete each other's memory/embeddings rows. `classNames`
+ * is the STI-hierarchy-expanded candidate set from
+ * {@link ownerClassCandidates} — the class column stores the *runtime*
+ * constructor name, which for an STI hierarchy is a concrete subclass rather
+ * than the class the cascade was planned from, so a single exact name is not
+ * enough.
  *
  * A missing system table is not an error — an application database may predate
  * the table, and losing derived rows must never fail an otherwise valid delete.
@@ -435,6 +488,7 @@ async function deleteByIds(
 async function deleteSystemRows(
   db: DatabaseInterface,
   ids: string[],
+  classNames: string[],
 ): Promise<void> {
   const ownerIds = ids.filter(
     (id) =>
@@ -442,15 +496,18 @@ async function deleteSystemRows(
       id.length > 0 &&
       id !== COLLECTION_OWNER_SENTINEL,
   );
-  if (ownerIds.length === 0) return;
+  if (ownerIds.length === 0 || classNames.length === 0) return;
 
-  for (const [table, column] of [
-    [CONTEXTS_TABLE, 'owner_id'],
-    [EMBEDDINGS_TABLE, 'object_id'],
+  for (const [table, idColumn, classColumn] of [
+    [CONTEXTS_TABLE, 'owner_id', 'owner_class'],
+    [EMBEDDINGS_TABLE, 'object_id', 'object_class'],
   ] as const) {
     for (const batch of chunkArray(ownerIds, IN_LIST_CHUNK_SIZE)) {
       try {
-        await db.delete(table, idPredicate(column, batch));
+        await db.delete(table, {
+          ...idPredicate(idColumn, batch),
+          ...idPredicate(classColumn, classNames),
+        });
       } catch (error) {
         logger.warn(
           `Failed to clean ${table} rows during cascade delete: ${
@@ -560,7 +617,11 @@ async function resolveReferences(
       childIds,
       depth + 1,
     );
-    await deleteSystemRows(ctx.db, childIds);
+    await deleteSystemRows(
+      ctx.db,
+      childIds,
+      ownerClassCandidates(ctx.registry, reference.className),
+    );
     await deleteByIds(ctx.db, reference.tableName, childIds);
     ctx.affectedTables.add(reference.tableName);
     ctx.affectedTableClasses.set(
@@ -636,7 +697,11 @@ export async function cascadeReferencesTo(
     target.ids,
     0,
   );
-  await deleteSystemRows(db, target.ids);
+  await deleteSystemRows(
+    db,
+    target.ids,
+    ownerClassCandidates(registry, target.className),
+  );
   return {
     affectedTables: ctx.affectedTables,
     affectedTableClasses: ctx.affectedTableClasses,
@@ -682,16 +747,28 @@ export async function runCascadeDelete(
 ): Promise<CascadeResult> {
   const ids = target.id ? [target.id] : [];
 
-  // Nothing references this class — the overwhelmingly common case. Opening a
-  // transaction to wrap statements that cannot disagree with each other would
-  // cost two extra round trips on every delete, and on single-connection
-  // adapters it would serialize concurrent deletes behind the transaction
-  // queue. Order the two statements instead: the row goes first, so a failure
-  // leaves everything as it was, and the derived side rows follow under the
+  // Nothing references this class AND no polymorphic association class is
+  // registered anywhere in the process. `plan.polymorphic` is unconditionally
+  // every registered `SmrtPolymorphicAssociation` subclass — a `metaType`
+  // column can point at any class at runtime, so there is no static metadata
+  // to scope it by, unlike a typed `@foreignKey`/`@crossPackageRef`. This
+  // branch is therefore common for a class with no incoming references in an
+  // app with no polymorphic associations at all, but rare — not "the
+  // overwhelmingly common case" — once even one polymorphic class exists
+  // anywhere in the process, since every delete's plan then carries it.
+  // Opening a transaction to wrap statements that cannot disagree with each
+  // other would cost two extra round trips, and on single-connection adapters
+  // it would serialize concurrent deletes behind the transaction queue. Order
+  // the two statements instead: the row goes first, so a failure leaves
+  // everything as it was, and the derived side rows follow under the
   // best-effort contract they already carry.
   if (buildCascadePlan(registry, target.className).isEmpty) {
     await deleteSelf(db);
-    await deleteSystemRows(db, ids);
+    await deleteSystemRows(
+      db,
+      ids,
+      ownerClassCandidates(registry, target.className),
+    );
     return { affectedTables: new Set(), affectedTableClasses: new Map() };
   }
 
