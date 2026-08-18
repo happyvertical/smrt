@@ -228,10 +228,10 @@ production down on rollout (#2362).
 
 ### 13. Composite indexes are declared, not inferred (#2357)
 
-The generated set only covers foreign keys, unique/conflict columns,
-`updated_at`, the STI discriminator, `tenant_id`, and single columns opted in
-with `@field({ indexed: true })`. A list workload's access path is composite,
-so declare it:
+The generated set only covers foreign keys, unique/conflict columns, the STI
+discriminator, reference columns (#2359), the default list ordering (rule 18
+below), and single columns opted in with `@field({ indexed: true })`. A list
+workload's access path is composite, so declare it:
 
 ```ts
 @smrt({
@@ -248,9 +248,10 @@ scans a btree either way, so an ascending index also serves the matching
 `ORDER BY ... DESC` as an ordered scan with no Sort node. `unique` and `where`
 (partial index) are honoured.
 
-`appendDeclaredIndexes()` runs on all five entry points, before
-`ensureTenantIdIndex()`, so a declared composite leading with the tenant column
-replaces the automatic standalone `tenant_id` index rather than duplicating it.
+`appendDeclaredIndexes()` runs first on all five entry points, ahead of
+`ensureDefaultListOrderingIndex()` (rule 18) and `ensureReferenceColumnIndexes()`,
+so a declared composite leading with the tenant column replaces the automatic
+standalone `tenant_id` index rather than duplicating it.
 Unknown columns, malformed entries, and a name collision with a different index
 all fail generation — a silently dropped index only surfaces later as a
 production slowdown. Rule 8 above is why this works at runtime at all.
@@ -413,3 +414,46 @@ STI column.
 When adding a class-level input to the merged shape, take it from the seeding
 contributor rather than "whichever class arrives first", and cover it with a
 child-first/base-first equality test.
+
+### 18. The generator owns the index for its own default ordering (#2363)
+
+Every generated list surface — REST, MCP, the SvelteKit list route — pages with
+`ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`, #2367), and
+until #2363 no schema path indexed `created_at` (the dead AST path indexed
+`updated_at`), so the framework's own default page was a sequential scan plus a
+top-N sort. `ensureDefaultListOrderingIndex()` now runs on all five paths and
+emits:
+
+- `(<tenant column>, created_at)` on a tenant-scoped table — the tenancy
+  interceptor puts `tenant_id = ?` in front of every list, so the tenant column
+  leads and `created_at` orders within it. This composite **replaces** the
+  standalone tenant index from #2359: a B-tree serves every prefix of its
+  column list, so `ensureDefaultListOrderingIndex()` is called first and
+  `ensureReferenceColumnIndexes()` then sees the column as already served. The
+  tenant column is found by `referenceKind === 'tenantId'`, never by the
+  `tenant_id` spelling — `@smrt({ tenantScoped: { field } })` renames it.
+- `(created_at)` otherwise.
+
+Three deliberate omissions, so nobody "fixes" them later:
+
+- **No `DESC`.** `IndexDefinition` carries no per-column direction and
+  PostgreSQL scans a B-tree backwards just as cheaply.
+- **No primary-key tiebreak column.** The default order mixes directions
+  (`created_at DESC, id ASC`), so no single-direction index satisfies the whole
+  key; the leading columns already turn a full sort into an index scan plus an
+  incremental sort over rows sharing a timestamp.
+- **Not scoped per STI subtype.** `(_meta_type, created_at)` would serve a
+  child collection's list but not the base class's polymorphic one, which
+  carries no discriminator predicate — the same reasoning that keeps STI
+  reference indexes plain (#2359). One unqualified index per shared table.
+
+An existing UNQUALIFIED index that already leads with the same columns
+suppresses it — a partial or JSON-path index never counts. That is how a
+declared `@smrt({ indexes: [...] })` composite (#2357) takes over: declaring
+`(tenant_id, created_at, status)` replaces the generated pair, while declaring
+a different sort column such as `(tenant_id, publish_date)` sits **beside** it,
+because that index cannot order the default page. Declared indexes are appended
+before this helper for exactly that reason; anything that appends an index in
+future goes in the same slot, ahead of `ensureDefaultListOrderingIndex()` and
+`ensureReferenceColumnIndexes()`.
+
