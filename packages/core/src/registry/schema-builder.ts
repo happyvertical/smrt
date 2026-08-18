@@ -7,9 +7,9 @@
 import { ObjectRegistry } from '../registry';
 import type { FieldDefinition } from '../scanner/types.js';
 import { conflictIndexName } from '../schema/conflict-target.js';
-import { shortenIdentifier } from '../schema/index-utils.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
