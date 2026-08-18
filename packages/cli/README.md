@@ -48,7 +48,8 @@ The four snapshot options are atomic: supplying any one requires all four.
 | `smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...]` | Force one or more exact generated migrations in one atomic batch while preserving every other guard |
 | `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:diff` | Show schema differences without generating migration files |
-| `smrt db:rollback` | Rollback last migration |
+| `smrt db:rollback` | Roll back the last migration by executing its recorded DOWN script; refuses when no DOWN script exists |
+| `smrt db:rollback --mark-only` | Record-only: mark migrations rolled back without running any DOWN script (schema untouched) |
 | `smrt db:history` | Show migration history with active-vs-superseded failure classification |
 
 File-backed SQL/TypeScript migration generation is not supported. s-m-r-t schema
