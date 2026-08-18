@@ -7,7 +7,9 @@ Developer CLI with lazy-loaded commands, manifest discovery, and class introspec
 ```
 smrt introspect              # Discover SMRT objects in project
 smrt doctor                  # Umbrella diagnostics; can verify a generation snapshot
+smrt doctor --db             # Add the live-schema parity section (see below)
 smrt db:status               # Pending schema changes + failed migration classification
+smrt db:status --parity      # Same, plus live-schema parity (see below)
 smrt db:migrate              # Apply migrations
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
@@ -64,6 +66,33 @@ after that commit. This is the mode for large index rollouts.
   runs inside the atomic transaction (still bounded by the timeouts).
 - Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
   before the transaction opens — PostgreSQL cannot run it there.
+
+## Live-schema parity (#2368)
+
+`doctor --db` and `db:status --parity` share `src/commands/db-parity.ts`, which
+runs core's `checkLiveSchemaParity()`. This answers a different question than
+`db:status`/`db:diff`: those compare the live database to the **manifest**, i.e.
+to the artifact that dropped the index in the first place, which is why a
+database missing 164 tenant-column indexes reported "in sync" (#2356).
+
+Expected shape comes from the manifest schemas, the hand-DDL `_smrt_*` system
+tables (parsed by core's `system-table-shapes.ts` — they are in no manifest and
+enter no diff), and an index policy that consults no manifest at all: every
+foreign-key/cross-package-ref/tenant column leads an index, every registry
+conflict target has a matching UNIQUE index, every `unique: true` column is
+unique live. Conflict targets come from `ObjectRegistry.getConflictColumns()`,
+not from the schema definition.
+
+- Severity is the contract: `error` fails the command (missing table/column,
+  type drift, orphan NOT NULL, conflict target unindexed or non-unique,
+  PostgreSQL INVALID index), `warning` does not (index coverage), `info` is
+  hidden without `--verbose` (undeclared tables/columns/indexes).
+- Both surfaces **fail closed**: an unreachable database, or an adapter with no
+  `getTableSchema`, is an error, never a silent pass. Where index metadata
+  cannot be read at all, index checks are skipped and the report says so
+  (`indexIntrospection: 'unavailable'`) rather than inventing missing indexes.
+- The check is read-only and lives in a new core module; it does not share code
+  with `migrations/differ.ts`.
 
 ## `db:rollback` is execute-or-refuse
 
@@ -125,3 +154,7 @@ Reverting a non-`create_table` change is a forward operation: update the
   global when it appears before or without a subcommand (#2279). `--help` is
   deliberately untouched.
 - **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed generated schema repairs instead of treating all failed rows as current blockers
+- **Decorator check follows the Vite major**: doctor requires `oxc.decorator` in
+  vite.config on Vite 8+ and accepts tsconfig `experimentalDecorators` only
+  below it. The old unconditional tsconfig check flagged correct Vite 8 projects
+  and passed broken ones (#2368)

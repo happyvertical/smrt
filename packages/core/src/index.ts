@@ -228,6 +228,23 @@ export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
 export * from './runtime/index';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
+// Live-schema parity check (#2368) — compares a live database to the shape
+// the model layer assumes, including hand-DDL `_smrt_*` system tables.
+export {
+  type ConflictTargetInput,
+  checkLiveSchemaParity,
+  type ExpectedTableOrigin,
+  type LiveParityFinding,
+  type LiveParityFindingKind,
+  type LiveParitySeverity,
+  LiveSchemaParityError,
+  type LiveSchemaParityOptions,
+  type LiveSchemaParityReport,
+} from './schema/live-parity';
+export {
+  getSystemTableShapes,
+  type SystemTableShape,
+} from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
 // Universal signaling system
