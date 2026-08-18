@@ -1,5 +1,37 @@
 # @happyvertical/smrt-core
 
+## 0.40.70
+
+### Patch Changes
+
+- ### Features
+
+  - live-schema parity check for doctor and db:status (#2399) (core,cli)
+  - declare multi-column indexes with @smrt({ indexes }) (#2395) (core)
+
+  ### Bug Fixes
+
+  - render manifest tables and indexes through the DDL strategy (#2358) (#2406) (core,vitest)
+  - differ nullability/default drift, orphan report, executable ADD COLUMN (#2398) (core,cli)
+  - rebuild the table for SQLite type changes instead of exiting 1 (#2407) (core)
+  - resolve arrow-thunk relationship targets (#2403) (core,scanner,social)
+  - make db:rollback execute the recorded DOWN or refuse loudly (#2400) (cli)
+  - bound runtime PostgreSQL pools with configurable timeouts (#2397) (core)
+  - bound generated list queries and gate orderBy on protected fields (#2394) (core)
+  - classify database errors by SQLSTATE, never retry deterministic ones (#2393) (core)
+  - bound PostgreSQL db:migrate and add concurrent-index mode (#2390) (core,cli)
+  - index tenancy-injected tenant_id columns (#2384) (core)
+  - override deepmerge-ts <8.0.0 for GHSA-ggr8-5vv4-36mx (#2387) (deps)
+  - serialize backfill setup with OIDC provisioning transactions (#2353) (profiles,users)
+
+  ### Other Changes
+
+  - docs: record schema-path invariants and #2382 agent lessons (#2389) (core)
+  - perf: make test matrix throttles lane-conditional (#2386) (ci)
+  - @happyvertical/smrt-config@0.40.70
+  - @happyvertical/smrt-types@0.40.70
+  - @happyvertical/smrt-scanner@0.40.70
+
 ## 0.40.69
 
 ### Patch Changes

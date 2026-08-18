@@ -538,7 +538,7 @@ describe('utilities', () => {
     expect(output).toContain('package.json exists');
     expect(output).toContain('SvelteKit detected');
     expect(output).toContain('smrtPlugin in vite.config');
-    expect(output).toContain('experimentalDecorators enabled');
+    expect(output).toContain('Decorator transform configured');
     expect(output).toContain('.env file exists');
     expect(output).toContain('Summary');
 

@@ -76,6 +76,18 @@ export function isJsonPathIndex(
 }
 
 /**
+ * The exact predicate `SchemaGenerator.emitStiUniqueIndexes()` emits —
+ * `_meta_type = '<qualified class>'` and nothing else — with tolerance for the
+ * cosmetic re-rendering PostgreSQL applies when it echoes a predicate back
+ * (`::text` casts, wrapping parentheses). A predicate that merely STARTS with
+ * `_meta_type = …` but carries further conjuncts (`AND active = TRUE`) is a
+ * caller-declared partial unique (#2357 `@smrt({ indexes })`) and must keep
+ * the ordinary degrade-to-full-UNIQUE behaviour, so it does not match.
+ */
+const STI_SUBTYPE_PREDICATE =
+  /^\s*\(*\s*_meta_type\s*\)?\s*(?:::\w+)?\s*=\s*'(?:[^']|'')*'\s*(?:::\w+)?\s*\)*\s*$/;
+
+/**
  * True for a UNIQUE index whose predicate scopes it to one STI subtype
  * (`WHERE _meta_type = '<qualified class>'`) — the shape `SchemaGenerator`
  * emits for `@field({ unique: true })` declared only on an STI descendant
@@ -95,6 +107,6 @@ export function isStiSubtypeUniqueIndex(
   return (
     index.unique === true &&
     typeof index.where === 'string' &&
-    /^\s*\(*\s*_meta_type\s*(::\w+\s*)?=/.test(index.where)
+    STI_SUBTYPE_PREDICATE.test(index.where)
   );
 }

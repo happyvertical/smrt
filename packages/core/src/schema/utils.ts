@@ -27,6 +27,20 @@ export {
   isStiSubtypeUniqueIndex,
   renderIndexTarget,
 } from './index-utils.js';
+// Structured manifest → executable DDL helpers (#2358). Re-exported here for
+// `@happyvertical/smrt-vitest`, which already imports this subpath.
+export {
+  type CollectedManifestTable,
+  collectManifestTables,
+  type ManifestColumnLike,
+  type ManifestIndexLike,
+  type ManifestSchemaLike,
+  manifestColumnsToDefinitions,
+  manifestIndexesToDefinitions,
+  manifestSchemaToDefinition,
+  mergeSchemaDefinitionInto,
+  renderCollectedManifestTable,
+} from './manifest-schema.js';
 
 /**
  * Generates a complete database schema SQL statement for a class

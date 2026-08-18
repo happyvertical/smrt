@@ -598,6 +598,75 @@ describe('SchemaGenerator.generateSTISchemaFromRegistry (injected registry)', ()
     expect(sqlite).toContain("WHERE _meta_type = 'Meeting'");
   });
 
+  it('isStiSubtypeUniqueIndex matches only the exact generated discriminator predicate', async () => {
+    const { isStiSubtypeUniqueIndex } = await import('./index-utils.js');
+    const generator2 = new SchemaGenerator();
+    const registry = fakeRegistry(
+      {
+        Event: new Map(),
+        '@a/pkg:Meeting': new Map<string, any>([
+          ['bookingRef', { type: 'text', _meta: { unique: true } }],
+        ]),
+      },
+      ['@a/pkg:Meeting'],
+    );
+    const schema = await generator2.generateSTISchemaFromRegistry(
+      'Event',
+      'events',
+      new Map(),
+      { registry: registry as any },
+    );
+    const emitted = schema.indexes.find((i) => i.unique && i.where);
+    // The generator's own shape (qualified name with '@', '/', ':') matches,
+    // and so does PostgreSQL's cosmetic re-rendering of it.
+    expect(isStiSubtypeUniqueIndex(emitted as any)).toBe(true);
+    expect(
+      isStiSubtypeUniqueIndex({
+        unique: true,
+        where: "((_meta_type)::text = '@a/pkg:Meeting'::text)",
+      }),
+    ).toBe(true);
+    // A caller-declared partial unique (@smrt({ indexes }), #2357) that merely
+    // STARTS with the discriminator but carries more conjuncts is NOT the STI
+    // subtype shape and must keep the ordinary DuckDB degrade-to-full-UNIQUE
+    // behaviour; nor is a non-unique or a differently-scoped predicate.
+    expect(
+      isStiSubtypeUniqueIndex({
+        unique: true,
+        where: "_meta_type = '@a/pkg:Meeting' AND active = TRUE",
+      }),
+    ).toBe(false);
+    expect(
+      isStiSubtypeUniqueIndex({
+        unique: true,
+        where: "_meta_type = '@a/pkg:Meeting' OR archived = FALSE",
+      }),
+    ).toBe(false);
+    expect(
+      isStiSubtypeUniqueIndex({ unique: true, where: 'active = TRUE' }),
+    ).toBe(false);
+    expect(
+      isStiSubtypeUniqueIndex({ unique: false, where: "_meta_type = 'X'" }),
+    ).toBe(false);
+    // Only that shape is dropped by the DuckDB strategy; the conjunct form
+    // still degrades to a full UNIQUE index there.
+    const { getDDLStrategy } = await import('./ddl/index.js');
+    const duckdb = getDDLStrategy('duckdb').generateIndexes({
+      ...schema,
+      indexes: [
+        {
+          name: 'events_booking_ref_active_uq',
+          columns: ['booking_ref'],
+          unique: true,
+          where: "_meta_type = '@a/pkg:Meeting' AND active = TRUE",
+        },
+      ],
+    });
+    expect(duckdb.join('\n')).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "events_booking_ref_active_uq"',
+    );
+  });
+
   it('loads ObjectRegistry from config when none is injected (default branch covered elsewhere)', async () => {
     // Provide a registry to avoid importing the real one, but with no
     // descendants and only the base — exercises the empty-descendants path
@@ -1490,8 +1559,8 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
     });
 
     it('a name already taken by a different generated index', () => {
-      // `posts_slug_context_idx` is the generated conflict index; #2359 stopped
-      // emitting `posts_id_idx`, so that name is no longer taken.
+      // #2359 removed the legacy `<table>_id_idx`; the conflict index is the
+      // generated name a declaration can now collide with.
       expect(() =>
         generator.generateSchemaFromRegistry('Post', 'posts', titleOnly(), {
           indexes: [{ name: 'posts_slug_context_idx', columns: ['title'] }],

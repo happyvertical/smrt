@@ -13,7 +13,6 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { VideoContent } from '@happyvertical/smrt-video';
 import { SocialAccount } from './social-account.js';
 
 /**
@@ -221,13 +220,17 @@ export class SocialPost extends SmrtObject {
   /**
    * Social account to publish to
    */
-  @foreignKey(() => SocialAccount)
+  @foreignKey(SocialAccount)
   socialAccountId: string | null = null;
 
   /**
    * Video content to publish
+   *
+   * Cross-package target (`@happyvertical/smrt-video`), so it is a
+   * `@crossPackageRef` rather than a `@foreignKey`: no DDL FK constraint and
+   * no value import back into this package.
    */
-  @foreignKey(() => VideoContent)
+  @crossPackageRef('@happyvertical/smrt-video:VideoContent')
   videoContentId: string | null = null;
 
   /**
