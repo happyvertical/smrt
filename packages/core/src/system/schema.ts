@@ -573,7 +573,7 @@ export function getSystemTableDDLForEngine(
 export const SMRT_SCHEMA_VERSION = '1.10.0';
 
 /**
- * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUM} covers.
+ * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
  *
  * Whitespace is normalized so reformatting alone does not trip the guard while
  * any token change does.

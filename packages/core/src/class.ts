@@ -869,7 +869,8 @@ export class SmrtClass {
    * Note that the _smrt_ prefix alone does NOT mean "system table" — ~25
    * `@smrt()` domain tables (feature flags, prompt overrides, subscription
    * plans, …) carry it too and are created by `db:migrate`, not here. The
-   * framework's own list is `SYSTEM_TABLE_NAMES` in `system/schema.ts`.
+   * framework's own list is `SYSTEM_TABLE_NAMES` in
+   * `schema/system-table-shapes.ts`, derived from this DDL.
    *
    * This method is idempotent and safe to call multiple times.
    * Tables are only created once per database connection.
