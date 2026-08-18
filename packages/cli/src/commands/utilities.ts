@@ -42,6 +42,11 @@ import {
   shouldFailDbMigrate,
 } from './db-migrate-actions.js';
 import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
+import {
+  formatParityReport,
+  runLiveSchemaParity,
+  selectFindings,
+} from './db-parity.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
@@ -214,6 +219,8 @@ interface DbMigrateOptions {
 
 interface DoctorOptions {
   fix?: boolean;
+  db?: boolean;
+  verbose?: boolean;
   'generation-snapshot'?: string;
   'generation-snapshot-sha256'?: string;
   'generation-snapshot-provenance'?: string;
@@ -333,6 +340,119 @@ interface DoctorPackageJson {
   svelte?: unknown;
   types?: unknown;
   exports?: unknown;
+}
+
+/** Outcome of the doctor's decorator-transform check. */
+export interface DecoratorSupportAssessment {
+  status: 'ok' | 'warning' | 'error';
+  message: string;
+}
+
+/**
+ * Match an actual `oxc: { … decorator: … }` configuration block.
+ *
+ * Deliberately stricter than "the words `oxc` and `decorator` both appear":
+ * a stray mention in a comment or an unrelated import would otherwise mark the
+ * transform configured on a Vite 8 project that throws
+ * `SyntaxError: Invalid or unexpected token` on its first SSR request — the
+ * exact failure this check exists to catch. The lazy body stops at the first
+ * `decorator:` key after the `oxc` object opens.
+ *
+ * A config that assembles `oxc` indirectly (a spread, or an imported base
+ * config) is reported as unconfigured. That direction is the safe one: the
+ * recommendation names the exact key to add, whereas the opposite error is
+ * silent until runtime.
+ */
+const OXC_DECORATOR_BLOCK_RE = /\boxc\s*:\s*\{[\s\S]*?\bdecorator\s*:/;
+
+/**
+ * Read the declared Vite major version from a project's package.json.
+ *
+ * Returns `null` when Vite is absent or the range is not a simple one whose
+ * major can be read off the front (`workspace:*`, `*`, a git URL, …); callers
+ * treat that as "unknown major" and accept either decorator recipe.
+ */
+export function resolveDeclaredViteMajor(
+  packageJson: DoctorPackageJson,
+): number | null {
+  const range =
+    packageJson.devDependencies?.vite ?? packageJson.dependencies?.vite;
+  if (typeof range !== 'string') return null;
+
+  const match = range.match(/(\d+)\s*\./);
+  if (!match) return null;
+
+  const major = Number.parseInt(match[1], 10);
+  return Number.isFinite(major) ? major : null;
+}
+
+/**
+ * Assess whether a project's decorator transform is actually configured.
+ *
+ * The doctor used to require `experimentalDecorators` in tsconfig.json
+ * unconditionally, which contradicts the framework's own Vite 8 guidance: the
+ * oxc transform does not honor tsconfig `experimentalDecorators` (nor the
+ * pre-Vite-8 `esbuild.tsconfigRaw` recipe), so a correctly configured Vite 8
+ * project — decorators declared under `oxc.decorator` — was reported broken,
+ * and a Vite 8 project relying on tsconfig alone was reported healthy right up
+ * until the first SSR request threw `SyntaxError: Invalid or unexpected token`.
+ *
+ * The check now follows the documented recipe per Vite major:
+ * - Vite 8+: `oxc.decorator` in vite.config is the only working configuration.
+ * - Vite <8 (or no declared Vite): tsconfig `experimentalDecorators` is the
+ *   legacy recipe and remains valid.
+ */
+export function assessDecoratorSupport(input: {
+  viteMajor: number | null;
+  viteConfigContent: string | null;
+  tsconfigContent: string | null;
+}): DecoratorSupportAssessment {
+  const { viteMajor, viteConfigContent, tsconfigContent } = input;
+
+  const hasOxcDecorator =
+    viteConfigContent !== null &&
+    OXC_DECORATOR_BLOCK_RE.test(viteConfigContent);
+  const hasTsconfigDecorators =
+    tsconfigContent !== null &&
+    tsconfigContent.includes('experimentalDecorators');
+  const isVite8Plus = viteMajor !== null && viteMajor >= 8;
+
+  if (hasOxcDecorator) {
+    return {
+      status: 'ok',
+      message: 'oxc.decorator configured in vite.config',
+    };
+  }
+
+  if (isVite8Plus) {
+    return {
+      status: 'error',
+      message: hasTsconfigDecorators
+        ? 'Vite 8 ignores tsconfig experimentalDecorators - add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config'
+        : 'Add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config (required for @smrt() under Vite 8+)',
+    };
+  }
+
+  if (hasTsconfigDecorators) {
+    return {
+      status: 'ok',
+      message: 'experimentalDecorators enabled in tsconfig.json',
+    };
+  }
+
+  if (viteConfigContent === null && tsconfigContent === null) {
+    return {
+      status: 'warning',
+      message:
+        'No vite.config or tsconfig.json found - configure the decorator transform wherever this project compiles @smrt() classes',
+    };
+  }
+
+  return {
+    status: 'error',
+    message:
+      'No decorator transform configured - add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config (Vite 8+), or "experimentalDecorators": true to tsconfig.json (vite<8)',
+  };
 }
 
 /**
@@ -2113,6 +2233,18 @@ export default testManifest;
         default: false,
         short: 'f',
       },
+      db: {
+        type: 'boolean',
+        description:
+          'Compare the live database to the expected schema shape (incl. _smrt_* system tables)',
+        default: false,
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'Show recommendations and informational findings',
+        default: false,
+        short: 'v',
+      },
       'generation-snapshot': {
         type: 'string',
         description: 'Verify a transported SMRT generation snapshot',
@@ -2344,32 +2476,26 @@ export default testManifest;
       );
 
       // 6. Check vite.config contains smrtPlugin
-      if (hasViteConfig) {
-        const viteConfigPath = existsSync(viteConfigTs)
-          ? viteConfigTs
-          : viteConfigJs;
-        const viteConfigContent = readFileSync(viteConfigPath, 'utf-8');
-        const hasSmrtPlugin = viteConfigContent.includes('smrtPlugin');
+      const viteConfigContent = hasViteConfig
+        ? readFileSync(
+            existsSync(viteConfigTs) ? viteConfigTs : viteConfigJs,
+            'utf-8',
+          )
+        : null;
+      if (viteConfigContent !== null) {
         check(
           'smrtPlugin in vite.config',
-          hasSmrtPlugin,
+          viteConfigContent.includes('smrtPlugin'),
           'Missing smrtPlugin - add: import { smrtPlugin } from "@happyvertical/smrt-core/vite-plugin"',
         );
       }
 
-      // 7. Check tsconfig.json for decorators
+      // 7. Check that the decorator transform is configured for this Vite major
       const tsconfigPath = resolve(cwd, 'tsconfig.json');
+      let tsconfigContent: string | null = null;
       if (existsSync(tsconfigPath)) {
         try {
-          const tsconfigContent = readFileSync(tsconfigPath, 'utf-8');
-          const hasDecorators = tsconfigContent.includes(
-            'experimentalDecorators',
-          );
-          check(
-            'experimentalDecorators enabled',
-            hasDecorators,
-            'Add "experimentalDecorators": true to tsconfig.json',
-          );
+          tsconfigContent = readFileSync(tsconfigPath, 'utf-8');
         } catch {
           check(
             'tsconfig.json readable',
@@ -2385,6 +2511,22 @@ export default testManifest;
           'No tsconfig.json found (optional for JavaScript projects)',
         );
       }
+
+      const decoratorSupport = assessDecoratorSupport({
+        viteMajor: resolveDeclaredViteMajor(packageJson),
+        viteConfigContent,
+        tsconfigContent,
+      });
+      check(
+        'Decorator transform configured',
+        decoratorSupport.status === 'ok',
+        decoratorSupport.status === 'error'
+          ? decoratorSupport.message
+          : undefined,
+        decoratorSupport.status === 'warning'
+          ? decoratorSupport.message
+          : undefined,
+      );
 
       console.log();
 
@@ -2564,6 +2706,57 @@ export default testManifest;
       }
 
       console.log();
+
+      // ========== Live Database Parity (opt-in) ==========
+      // Off by default because it opens a connection and issues catalog
+      // queries; `--db` is what turns doctor's database section from "a URL is
+      // configured" into "the live schema matches what the model layer
+      // assumes".
+      if (options.db) {
+        console.log('🗄️  Live Database Parity\n');
+
+        const { report, error, database } = await runLiveSchemaParity({
+          discover: false,
+        });
+
+        if (!report) {
+          // Fail closed: an unreachable or undescribable database is an issue,
+          // never a silent pass.
+          check(
+            'Live schema parity',
+            false,
+            error ?? 'Could not verify the live schema',
+          );
+        } else {
+          if (database) {
+            console.log(`   Database: ${database.url}`);
+          }
+          for (const line of formatParityReport(report, {
+            verbose: options.verbose,
+          })) {
+            console.log(line);
+          }
+
+          const parityErrors = selectFindings(report, 'error');
+          const parityWarnings = selectFindings(report, 'warning');
+
+          for (const finding of parityErrors) {
+            issues.push(
+              `live schema: ${finding.table}${finding.target ? `.${finding.target}` : ''} (${finding.kind})`,
+            );
+          }
+          for (const finding of parityWarnings) {
+            warnings.push(
+              `live schema: ${finding.table}${finding.target ? `.${finding.target}` : ''} (${finding.kind})`,
+            );
+          }
+          if (parityErrors.length === 0 && parityWarnings.length === 0) {
+            passed.push('Live schema parity');
+          }
+        }
+
+        console.log();
+      }
 
       // ========== Summary ==========
       console.log('━'.repeat(50));
