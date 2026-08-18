@@ -322,6 +322,53 @@ describe('schema orchestration', () => {
     });
   });
 
+  it('does not report a column covered by a sibling rebuild as manual drift (#2370)', async () => {
+    // Two drifted columns on one table share a single rebuild: the second
+    // change is a `no change needed` comment. Comment-only SQL normally means
+    // "a human must act", so without the no-op exemption this fully
+    // auto-repairable migration would report hasManualDrift.
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER, weight INTEGER);',
+    );
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'REAL' },
+          weight: { type: 'REAL' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+
+    expect(pending.unactionableChanges).toEqual([]);
+    expect(pending.hasManualDrift).toBe(false);
+    expect(pending.statements.some((sql) => sql.startsWith('--'))).toBe(false);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@test/app',
+      name: '20260818_000100_sqlite_rebuild_multi',
+    });
+    expect(result.applied).toBe(true);
+    expect(result.hasManualDrift).toBe(false);
+
+    const columns = (await db.query('PRAGMA table_info("documents")')).rows as {
+      name: string;
+      type: string;
+    }[];
+    expect(columns.find((c) => c.name === 'score')?.type).toBe('REAL');
+    expect(columns.find((c) => c.name === 'weight')?.type).toBe('REAL');
+  });
+
   it('still surfaces an unplannable SQLite type upgrade as unactionable drift', async () => {
     // A child table with ON DELETE CASCADE makes the rebuild unsafe (the
     // DROP TABLE step would cascade its rows away), so the differ keeps the

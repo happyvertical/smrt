@@ -35,9 +35,10 @@
  * manifest does not model or does not own here: columns the manifest has
  * dropped (SMRT is additive — a rebuild must not become an implicit
  * `DROP COLUMN`), table-level constraints, `CHECK`s, collations, and table
- * options such as `WITHOUT ROWID`. It also keeps this path from colliding
- * with the `add_column` changes in the same batch, which still run their own
- * `ALTER TABLE ... ADD COLUMN` against the rebuilt table.
+ * options such as `WITHOUT ROWID`. The `add_column` changes in the same batch
+ * still run their own `ALTER TABLE ... ADD COLUMN`, against the rebuilt table
+ * — {@link planSqliteTableRebuilds} hoists the rebuild ahead of them for
+ * exactly that reason.
  *
  * ## Why the copy carries no CAST
  *
@@ -157,6 +158,16 @@ export interface PlanSqliteTableRebuildsOptions {
  * leaves the placeholders in place (annotated with the reason) when the
  * rebuild cannot be planned safely — the pre-#2370 manual-intervention
  * behavior.
+ *
+ * When a plan is produced, the rebuild is hoisted to the front of the table's
+ * changes. The plan's staging DDL and copy list are captured from the live
+ * schema *at diff time*, so a same-batch `ALTER TABLE ... ADD COLUMN` that ran
+ * first would be silently undone by the rebuild — both statements succeed, the
+ * transaction commits, and the new column is simply gone. The differ emits
+ * changes in manifest field order, which puts an `add_column` first whenever
+ * the new field is declared above the retyped one, so the order has to be
+ * imposed here rather than assumed. Rebuild first, then add columns to the
+ * rebuilt table.
  */
 export async function planSqliteTableRebuilds(
   options: PlanSqliteTableRebuildsOptions,
@@ -234,7 +245,7 @@ export async function planSqliteTableRebuilds(
   }
 
   const [primary, ...covered] = pending;
-  return changes.map((change) => {
+  const rebuilt = changes.map((change) => {
     if (change === primary) {
       return {
         ...change,
@@ -254,6 +265,17 @@ export async function planSqliteTableRebuilds(
     }
     return change;
   });
+
+  // Hoist the rebuild ahead of the table's other column changes, keeping both
+  // groups in their original relative order. Consumers execute `diff.changes`
+  // in order, and the plan was built from the pre-batch table shape.
+  const rebuildPositions = new Set(
+    pending.map((change) => changes.indexOf(change)),
+  );
+  return [
+    ...rebuilt.filter((_, index) => rebuildPositions.has(index)),
+    ...rebuilt.filter((_, index) => !rebuildPositions.has(index)),
+  ];
 }
 
 /**

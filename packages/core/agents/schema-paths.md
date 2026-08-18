@@ -224,9 +224,14 @@ Four properties of that module are load-bearing; keep them if you touch it:
 
 - **The target shape comes from the live `sqlite_master` DDL**, retyping only
   the drifted columns. It is not regenerated from the manifest, so the rebuild
-  never becomes an implicit `DROP COLUMN`, never fights the `add_column`
-  changes in the same batch, and preserves table constraints, `CHECK`s, and
-  `WITHOUT ROWID`/`STRICT`.
+  never becomes an implicit `DROP COLUMN`, and it preserves table constraints,
+  `CHECK`s, and `WITHOUT ROWID`/`STRICT`.
+- **The rebuild is hoisted ahead of the table's other column changes.** Its
+  staging DDL and copy list are captured at diff time, and the differ emits
+  changes in manifest field order, so a new field declared above the retyped
+  one would otherwise run `ALTER TABLE ... ADD COLUMN` first and have the
+  rebuild silently drop it — both statements succeed and the batch commits.
+  Rebuild first, then add columns to the rebuilt table.
 - **The copy carries no `CAST`.** SQLite applies the destination column's
   affinity on insert — the same conversion a fresh table performs. An explicit
   cast is worse: non-numeric TEXT cast to REAL/INTEGER silently becomes `0`,

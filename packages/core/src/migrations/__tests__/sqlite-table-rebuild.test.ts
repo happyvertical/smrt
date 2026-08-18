@@ -367,6 +367,75 @@ describe('#2370 SQLite table rebuild — live database', () => {
     expect(row.price).toBe(7);
   });
 
+  it('keeps a same-batch added column when the manifest declares it first', async () => {
+    // The differ emits changes in manifest field order, so a new field
+    // declared above the retyped one puts `add_column` before the rebuild.
+    // The rebuild's staging DDL and copy list were captured before the batch
+    // ran, so executing in that order would silently drop the freshly added
+    // column — both statements succeed and the transaction commits.
+    await db.query(
+      `CREATE TABLE "products" ("id" TEXT PRIMARY KEY, "price" INTEGER)`,
+    );
+    await db.query(`INSERT INTO "products" VALUES ('p1', 5)`);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      products: {
+        tableName: 'products',
+        ddl: '',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          // Declared before the drifted column on purpose.
+          sku: { type: 'TEXT' },
+          price: { type: 'REAL' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await new SchemaComparer(db).compare(manifest);
+    const columnChanges = diff.changes.filter(
+      (c) => c.type === 'add_column' || c.type === 'type_upgrade',
+    );
+    expect(columnChanges.map((c) => c.type)).toEqual([
+      'type_upgrade',
+      'add_column',
+    ]);
+
+    const tracker = new MigrationTracker({ db });
+    const [result] = await tracker.applyAll(
+      [
+        {
+          id: 'rebuild_and_add',
+          description: 'rebuild + add column',
+          version: '1.0.0',
+          up: executableSql(diff),
+          down: [],
+        },
+      ],
+      { atomic: true },
+    );
+    expect(result.success).toBe(true);
+
+    const columns = (await db.query(`PRAGMA table_info("products")`)).rows as {
+      name: string;
+      type: string;
+    }[];
+    expect(columns.map((c) => c.name).sort()).toEqual(['id', 'price', 'sku']);
+    expect(columns.find((c) => c.name === 'price')?.type).toBe('REAL');
+    expect((await db.query(`SELECT * FROM "products"`)).rows[0]).toMatchObject({
+      id: 'p1',
+      price: 5,
+    });
+
+    // And the schema is fully reconciled — no drift left over.
+    const reDiff = await new SchemaComparer(db).compare(manifest);
+    expect(reDiff.changes).toEqual([]);
+  });
+
   it('refuses the rebuild when another table has a foreign key onto it', async () => {
     await seedProducts();
     await db.query(
