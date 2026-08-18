@@ -210,7 +210,17 @@ Unknown columns, malformed entries, and a name collision with a different index
 all fail generation — a silently dropped index only surfaces later as a
 production slowdown. Rule 8 above is why this works at runtime at all.
 
-### 14. The `_smrt_` prefix does not mean "system table" (#2376)
+### 14. Relationship targets resolve to a class name on both paths
+
+`@foreignKey`/`@oneToMany`/`@manyToMany` accept a class, a name string, or a
+`() => Target` thunk. The decorator invokes the thunk and throws when the target
+cannot be resolved (never `related: ''`); the scanner unwraps the same thunk
+from raw source (never `related: '() => Target'`). An unresolved target silently
+costs the relationship edge, `loadRelated()`, and the FK-derived index (#2379).
+A thunk resolves at decoration time, so a target declared later in the same
+module is still in its temporal dead zone — use the string form there.
+
+### 15. The `_smrt_` prefix does not mean "system table" (#2376)
 
 `bootstrapSystemTables()` owns nine hand-written tables; ~25 more `_smrt_*`
 tables belong to `@smrt()` models and are created by `db:migrate` (feature
@@ -222,7 +232,7 @@ The change-feed writer skipped by prefix, so clients syncing those domain
 tables through `_changes` never saw an update.
 
 Editing `ALL_SYSTEM_TABLES` requires bumping `SMRT_SCHEMA_VERSION` *and*
-updating `SMRT_SCHEMA_DDL_CHECKSUM` — the version gates the DDL replay, so
+appending to `SMRT_SCHEMA_DDL_CHECKSUMS` — the version gates the DDL replay, so
 without a bump no existing database ever applies the change. A new **column**
 additionally needs an `addColumnIfMissing()` entry in `system/compatibility.ts`
 (`CREATE TABLE IF NOT EXISTS` is a no-op on an existing table).
