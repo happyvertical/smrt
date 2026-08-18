@@ -315,18 +315,27 @@ export function shortenIdentifier(
 }
 
 /**
- * Reject a **hand-declared** identifier that cannot survive PostgreSQL.
+ * Reject a **hand-declared index name** that cannot survive PostgreSQL.
  *
- * Used for names SMRT does not own — a declared index name, a table name
- * derived from a class name, a column name derived from a field name. Each of
- * those is load-bearing somewhere outside schema generation (the runtime reads
- * and writes columns by name; the collection layer resolves tables by name), so
- * quietly rewriting it would break the data path instead of the DDL. Refusing
- * it, with the fix in the message, is the only safe answer.
+ * Scoped deliberately narrowly — to names SMRT neither owns nor ever compares
+ * loosely. A declared index name is both: the generator may not rewrite what a
+ * developer wrote, and `SchemaComparer` matches indexes **by name** first, so a
+ * 70-byte declaration can never match the 63-byte index PostgreSQL actually
+ * stored and `db:migrate` would emit `add_index` for it on every run, forever.
+ *
+ * This does NOT apply to table or column names, and deliberately so. PostgreSQL
+ * truncates identifiers *consistently on every reference* — `CREATE TABLE
+ * "<80 bytes>"` and a later `SELECT ... FROM "<the same 80 bytes>"` both resolve
+ * to the same stored 63-byte name — so a single long table name round-trips
+ * fine end to end. `smrt-users` relies on exactly that: it ships an intentional
+ * 80-byte `@smrt({ tableName })` and generates unique Postgres RLS policy names
+ * from it. Erroring there would break a supported, tested case for no safety
+ * gain; the collision hazard that remains is a name the developer chose, not
+ * one the generator manufactured.
  *
  * @param name - The identifier to check
- * @param kind - What it is, for the message (`index`, `table`, `column`, …)
- * @param context - Where it came from (`table "x"`, `class Y`), for the message
+ * @param kind - What it is, for the message (`Declared index`, …)
+ * @param context - Where it came from (`table "x"`), for the message
  * @param maxBytes - Override the limit (tests)
  * @throws When `name` exceeds the limit
  */
@@ -355,33 +364,20 @@ export function assertIdentifierFits(
  * "does this name already exist" dedupe the passes perform upstream is
  * unaffected.
  *
- * Table and column names are **checked**, not shortened — see
- * {@link assertIdentifierFits}.
+ * Only index names are touched. The table name is taken as given — see
+ * {@link assertIdentifierFits} on why a long table name is not an error — and
+ * is used solely to build the collision message. Note that an over-long table
+ * name still yields *in-limit, distinct* index names, because the shortening
+ * runs over the whole composed name.
  *
- * @param tableName - The table these identifiers belong to
- * @param columns - The generated column map (names are validated)
+ * @param tableName - The table these indexes belong to, for the message
  * @param indexes - The generated index list (names are shortened in place)
- * @throws When a table or column name exceeds the limit, or when shortening
- *   two index names produces a collision
+ * @throws When shortening two index names produces a collision
  */
 export function enforceIdentifierLimits(
   tableName: string,
-  columns: Record<string, unknown>,
   indexes: Array<{ name: string }>,
 ): void {
-  assertIdentifierFits(
-    tableName,
-    'Table',
-    'the class it is derived from — rename the class',
-  );
-  for (const column of Object.keys(columns)) {
-    assertIdentifierFits(
-      column,
-      'Column',
-      `table "${tableName}" — rename the field`,
-    );
-  }
-
   const seen = new Map<string, string>();
   for (const index of indexes) {
     const shortened = shortenIdentifier(index.name);

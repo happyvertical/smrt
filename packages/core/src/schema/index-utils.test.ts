@@ -168,7 +168,7 @@ describe('shortenIdentifier', () => {
 describe('assertIdentifierFits', () => {
   it('accepts a name at the limit', () => {
     expect(() =>
-      assertIdentifierFits('a'.repeat(63), 'Table', 'test'),
+      assertIdentifierFits('a'.repeat(63), 'Declared index', 'test'),
     ).not.toThrow();
   });
 
@@ -180,7 +180,7 @@ describe('assertIdentifierFits', () => {
 
   it('measures bytes, so a 32-character name can still be rejected', () => {
     expect(() =>
-      assertIdentifierFits('é'.repeat(32), 'Column', 'test'),
+      assertIdentifierFits('é'.repeat(32), 'Declared index', 'test'),
     ).toThrow(/is 64 bytes/);
   });
 });
@@ -191,25 +191,36 @@ describe('enforceIdentifierLimits', () => {
       { name: 'widgets_slug_context_idx' },
       { name: SHIPPED_OVERLONG },
     ];
-    enforceIdentifierLimits('widgets', { id: {}, slug: {} }, indexes);
+    enforceIdentifierLimits('widgets', indexes);
 
     expect(indexes[0].name).toBe('widgets_slug_context_idx');
     expect(indexes[1].name).toBe(shortenIdentifier(SHIPPED_OVERLONG));
   });
 
-  it('rejects an over-long table name rather than renaming the table', () => {
-    // Shortening here is not an option: the runtime resolves the table by the
-    // name it derives from the class, so a schema-only rename would point the
-    // data path at a table that does not exist.
-    expect(() => enforceIdentifierLimits('t'.repeat(64), {}, [])).toThrow(
-      /^\[smrt\] Table name/,
-    );
-  });
+  it('accepts an over-long table name and still emits in-limit index names', () => {
+    // A long table name is NOT an error. PostgreSQL truncates identifiers
+    // consistently on every reference, so `CREATE TABLE "<80 bytes>"` and a
+    // later `SELECT ... FROM "<the same 80 bytes>"` resolve to the same stored
+    // name and the table round-trips fine. `smrt-users` ships an intentional
+    // 80-byte `@smrt({ tableName })` and builds unique Postgres RLS policy
+    // names from it, so erroring here would break a supported, tested case.
+    // What must still hold is that indexes derived from it stay in limit.
+    const table =
+      'permission_policy_table_name_that_is_far_too_long_for_postgres_identifier_limits';
+    expect(identifierByteLength(table)).toBeGreaterThan(MAX_IDENTIFIER_BYTES);
 
-  it('rejects an over-long column name', () => {
-    expect(() =>
-      enforceIdentifierLimits('widgets', { ['c'.repeat(64)]: {} }, []),
-    ).toThrow(/^\[smrt\] Column name/);
+    const indexes = [
+      { name: `${table}_tenant_id_created_at_idx` },
+      { name: `${table}_slug_context_idx` },
+    ];
+    expect(() => enforceIdentifierLimits(table, indexes)).not.toThrow();
+
+    expect(indexes[0].name).not.toBe(indexes[1].name);
+    for (const index of indexes) {
+      expect(identifierByteLength(index.name)).toBeLessThanOrEqual(
+        MAX_IDENTIFIER_BYTES,
+      );
+    }
   });
 
   it('tolerates two entries that started from the same name', () => {
@@ -219,7 +230,7 @@ describe('enforceIdentifierLimits', () => {
     // collision, which the throw turns into a build failure instead of a
     // silently missing index).
     const indexes = [{ name: SHIPPED_OVERLONG }, { name: SHIPPED_OVERLONG }];
-    expect(() => enforceIdentifierLimits('widgets', {}, indexes)).not.toThrow();
+    expect(() => enforceIdentifierLimits('widgets', indexes)).not.toThrow();
     expect(indexes[0].name).toBe(indexes[1].name);
   });
 
@@ -232,7 +243,7 @@ describe('enforceIdentifierLimits', () => {
       { name: `${table}_contribution_id_idx` },
       { name: `${table}_revision_number_idx` },
     ];
-    enforceIdentifierLimits(table, {}, indexes);
+    enforceIdentifierLimits(table, indexes);
 
     expect(indexes[0].name).not.toBe(indexes[1].name);
     for (const index of indexes) {

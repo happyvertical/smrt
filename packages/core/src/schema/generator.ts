@@ -106,7 +106,7 @@ export class SchemaGenerator {
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
     // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, columns, indexes);
+    enforceIdentifierLimits(tableName, indexes);
     for (const trigger of triggers) {
       trigger.name = shortenIdentifier(trigger.name);
     }
@@ -1270,7 +1270,7 @@ export class SchemaGenerator {
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
     // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, columns, indexes);
+    enforceIdentifierLimits(tableName, indexes);
 
     return {
       tableName,
@@ -1609,7 +1609,7 @@ export class SchemaGenerator {
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
     // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, columns, indexes);
+    enforceIdentifierLimits(tableName, indexes);
 
     return {
       tableName,
@@ -1856,7 +1856,7 @@ export class SchemaGenerator {
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
     // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, columns, indexes);
+    enforceIdentifierLimits(tableName, indexes);
 
     const schemaDefinition: SchemaDefinition = {
       tableName,
@@ -2049,7 +2049,7 @@ export class SchemaGenerator {
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
     // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, columns, indexes);
+    enforceIdentifierLimits(tableName, indexes);
 
     const schemaDefinition: SchemaDefinition = {
       tableName,

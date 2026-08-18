@@ -298,7 +298,7 @@ before this helper for exactly that reason; anything that appends an index in
 future goes in the same slot, ahead of `ensureDefaultListOrderingIndex()` and
 `ensureReferenceColumnIndexes()`.
 
-### 15. Every generated identifier is length-guarded before it leaves a path (#2374)
+### 15. Every generated index name is length-guarded before it leaves a path (#2374)
 
 PostgreSQL truncates any identifier past 63 **bytes** and reports nothing;
 SQLite and DuckDB do not, so the entire test suite was blind to it. The 66-byte
@@ -314,13 +314,23 @@ index is never created.
   `shortenIdentifier()`. Deterministic `<head>_<digest><suffix>`, digest taken
   over the **full** original so a shared prefix still yields distinct names, and
   a recognised suffix (`_idx`, `_unique_idx`, `_key`, `_pkey`) preserved.
-- **Table and column names** → `assertIdentifierFits()`, a hard error. The
-  runtime resolves tables and columns *by name*, so a schema-only rename would
-  point the data path at something that does not exist. The message names the
-  fix; there is no silent rewrite.
-- **Hand-declared `@smrt({ indexes: [{ name }] })`** → also a hard error, in
-  `validateDeclaredIndex()`. Renaming what a developer wrote is worse than
-  refusing it, and manifest generation is what `smrt dev:knowledge-check` runs.
+- **Hand-declared `@smrt({ indexes: [{ name }] })`** → `assertIdentifierFits()`,
+  a hard error in `validateDeclaredIndex()`. Renaming what a developer wrote is
+  worse than refusing it, and `SchemaComparer` matches indexes **by name**
+  first, so a 70-byte declaration could never match the 63-byte index
+  PostgreSQL stored and `db:migrate` would emit `add_index` forever. Manifest
+  generation is what `smrt dev:knowledge-check` runs, so it surfaces there.
+- **Table and column names** → deliberately **not** guarded. PostgreSQL
+  truncates identifiers *consistently on every reference*: `CREATE TABLE
+  "<80 bytes>"` and a later `SELECT ... FROM "<the same 80 bytes>"` both resolve
+  to the same stored 63-byte name, so one long name round-trips fine end to end.
+  `smrt-users` depends on this — it ships an intentional 80-byte
+  `@smrt({ tableName })` (`permission_policy_table_name_that_is_far_too_long…`)
+  and derives unique Postgres RLS policy names from it. An earlier revision of
+  this rule hard-errored here on the theory that the runtime resolves tables by
+  name and would break; that theory is wrong for the reason above, and the error
+  broke `packages/users`. The residual collision risk is over a name the
+  developer chose, not one the generator manufactured.
 
 `enforceIdentifierLimits()` is the single call site per path, placed **after**
 `ensureReferenceColumnIndexes()` — nothing may lengthen a name after it. Doing
