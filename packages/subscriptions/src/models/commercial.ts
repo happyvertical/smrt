@@ -73,8 +73,20 @@ export class ClientCharge extends SmrtObject {
   provider: string = '';
   serviceKey: string = '';
   metricKey: string = '';
+  /**
+   * Metered quantity — genuinely fractional (`duration.seconds`, token counts
+   * scaled by a rate), so it stays DECIMAL.
+   */
   quantity: number = 0.0;
-  amount: number = 0.0;
+  /**
+   * Charge in **integer minor units** of {@link currency} (#2401).
+   *
+   * Summed against {@link BillingAdjustment.amount} and compared against
+   * {@link SpendingPolicy.limitAmount}, so all three carry the same unit —
+   * `CommercialService.calculateAmount()` rounds to a whole minor unit at the
+   * one boundary where the fractional pricing terms meet money.
+   */
+  amount: number = 0;
   currency: string = 'USD';
   @foreignKey('PricingRule')
   pricingRuleId: string = '';
@@ -166,7 +178,13 @@ export class BillingAdjustment extends SmrtObject {
   @tenantId() tenantId?: string;
   @foreignKey('ClientCharge')
   clientChargeId: string = '';
-  amount: number = 0.0;
+  /**
+   * Signed correction in **integer minor units**, same unit as
+   * {@link ClientCharge.amount} it adjusts. Negative values are legitimate
+   * (a credit) — that is why the non-negative guard in
+   * `CommercialService.calculateAmount()` does not apply here (#2401).
+   */
+  amount: number = 0;
   currency: string = 'USD';
   reason: string = '';
   source: string = '';
@@ -212,7 +230,12 @@ export class SpendingPolicy extends SmrtObject {
   metricKey: string = '';
   period: SpendingPeriod = 'month';
   rollingSeconds: number = 0;
-  limitAmount: number = 0.0;
+  /**
+   * Spending cap in **integer minor units** of {@link currency}. Compared
+   * directly against the sum of `ClientCharge.amount` + `BillingAdjustment`s
+   * plus the caller's estimate, so it must carry the same unit (#2401).
+   */
+  limitAmount: number = 0;
   currency: string = 'USD';
   behavior: SpendingPolicyBehavior = 'observe';
   priority: number = 0;

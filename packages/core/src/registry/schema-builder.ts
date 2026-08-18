@@ -9,6 +9,7 @@ import type { FieldDefinition } from '../scanner/types.js';
 import { conflictIndexName } from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
@@ -324,7 +325,13 @@ function withConflictIndex(
   const tenantColumn = Object.entries(columns).find(
     ([, column]) => column.referenceKind === 'tenantId',
   )?.[0];
-  const name = conflictIndexName(tableName, conflictColumns, tenantColumn);
+  // The composed name can exceed PostgreSQL's 63-byte limit on a long table.
+  // Shortening here (rather than inside conflictIndexName) keeps the generator
+  // paths, which run enforceIdentifierLimits() over their whole index list,
+  // and this migrate leg agreeing on the final name (#2374).
+  const name = shortenIdentifier(
+    conflictIndexName(tableName, conflictColumns, tenantColumn),
+  );
   const conflictIndex: IndexDefinition = {
     name,
     columns: conflictColumns,

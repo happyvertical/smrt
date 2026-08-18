@@ -473,15 +473,15 @@ describe('managed application delivery control plane (#1949)', () => {
       { db },
       {
         priceClient: async () => ({
-          amount: 150,
+          amount: 15000, // $150.00 in cents
           version: 'pricing-v2',
           strategy: 'fixed_unit',
-          terms: { hourlyRate: 150 },
+          terms: { hourlyRate: 15000 },
         }),
         compensateProvider: async () => ({
-          amount: 90,
+          amount: 9000, // $90.00 in cents
           version: 'terms-v4',
-          terms: { hourlyRate: 90 },
+          terms: { hourlyRate: 9000 },
         }),
       },
     );
@@ -555,7 +555,8 @@ describe('managed application delivery control plane (#1949)', () => {
     const compensation = await (
       await ServiceCompensationSnapshotCollection.create({ db })
     ).list();
-    expect(charges[0].amount - compensation[0].amount).toBe(60);
+    // Exact integer subtraction: $150.00 - $90.00 = $60.00 margin (#2401).
+    expect(charges[0].amount - compensation[0].amount).toBe(6000);
     await service.approve(entry, { approvalPath: 'retry' });
     expect(
       await (await ServiceChargeSnapshotCollection.create({ db })).list(),
@@ -684,9 +685,9 @@ describe('managed application delivery control plane (#1949)', () => {
 
   it('does not price the client when provider compensation fails after approval', async () => {
     const priceClient = vi.fn(async () => ({
-      amount: 150,
+      amount: 15000, // $150.00 in cents
       version: 'pricing-v2',
-      terms: { hourlyRate: 150 },
+      terms: { hourlyRate: 15000 },
     }));
     const service = await ServiceEvidenceService.create(
       { db },
@@ -727,13 +728,14 @@ describe('managed application delivery control plane (#1949)', () => {
         effectiveFrom: new Date('2026-01-01'),
       }),
     );
-    rule.setTerms({ unitPrice: 0.02 });
+    // Terms are minor units per unit of usage (#2401): 2 cents per second.
+    rule.setTerms({ unitPrice: 2 });
     await withTenant({ tenantId: 'tenant-1' }, () => rule.save());
     const commercial = await SubscriptionServiceCommercialResolver.create(
       { db },
       {
         compensate: async () => ({
-          amount: 25,
+          amount: 2500, // $25.00 in cents
           version: 'provider-v1',
           terms: { fixed: true },
         }),
@@ -756,7 +758,11 @@ describe('managed application delivery control plane (#1949)', () => {
     const charge = (
       await (await ServiceChargeSnapshotCollection.create({ db })).list()
     )[0];
-    expect(charge).toMatchObject({ amount: 36, pricingVersion: 'services-v1' });
+    // 1800 s x 2 cents = 3600 cents ($36.00).
+    expect(charge).toMatchObject({
+      amount: 3600,
+      pricingVersion: 'services-v1',
+    });
     expect(charge.sourceChargeRef).toContain(
       '@happyvertical/smrt-subscriptions:ClientCharge:',
     );

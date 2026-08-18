@@ -180,9 +180,9 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // Caller submits the *correct* total — accepted and snapped to line items.
     invoice.totalAmount = 210;
     await invoice.save();
-    expect(invoice.subtotal).toBeCloseTo(200);
-    expect(invoice.taxAmount).toBeCloseTo(10);
-    expect(invoice.totalAmount).toBeCloseTo(210);
+    expect(invoice.subtotal).toBe(200);
+    expect(invoice.taxAmount).toBe(10);
+    expect(invoice.totalAmount).toBe(210);
   });
 
   it('overwrites a forged total with the authoritative line-item total (no throw, self-heals)', async () => {
@@ -206,12 +206,12 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // overwritten rather than throwing (which also self-heals stale totals).
     invoice.totalAmount = 1;
     await invoice.save();
-    expect(invoice.totalAmount).toBeCloseTo(1000);
-    expect(invoice.subtotal).toBeCloseTo(1000);
+    expect(invoice.totalAmount).toBe(1000);
+    expect(invoice.subtotal).toBe(1000);
 
     // And the persisted row reflects the authoritative total, not the forgery.
     const reloaded = await invoices.get({ id: invoice.id });
-    expect(reloaded?.totalAmount).toBeCloseTo(1000);
+    expect(reloaded?.totalAmount).toBe(1000);
   });
 
   it('self-heals a stale stored total when a line item changes (no throw)', async () => {
@@ -232,7 +232,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
     // First save snaps the total to the current line-item sum (100).
     await invoice.save();
-    expect(invoice.totalAmount).toBeCloseTo(100);
+    expect(invoice.totalAmount).toBe(100);
 
     // The line item is revised upward; the invoice still carries the old 100.
     li.unitPrice = 250;
@@ -242,7 +242,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // Re-saving the (legitimately) stale invoice must NOT throw — it recomputes
     // and overwrites to the new authoritative total.
     await invoice.save();
-    expect(invoice.totalAmount).toBeCloseTo(250);
+    expect(invoice.totalAmount).toBe(250);
   });
 
   it('rejects negative amounts', async () => {
@@ -291,7 +291,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // amountPaid from the single $40 allocation.
     invoice.amountPaid = 100;
     await invoice.save();
-    expect(invoice.amountPaid).toBeCloseTo(40);
+    expect(invoice.amountPaid).toBe(40);
   });
 
   it('rejects an illegal status flip done via raw assignment', async () => {
@@ -377,7 +377,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
 
     invoice.status = InvoiceStatus.PAID;
     await expect(invoice.save()).resolves.toBeDefined();
-    expect(invoice.amountPaid).toBeCloseTo(100);
+    expect(invoice.amountPaid).toBe(100);
     expect(invoice.status).toBe(InvoiceStatus.PAID);
   });
 
@@ -1396,13 +1396,13 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
 
     // The forged total was overwritten to the authoritative line-item total,
     // and the posted journal reflects 1000 — never the forged 1.
-    expect(invoice.totalAmount).toBeCloseTo(1000);
+    expect(invoice.totalAmount).toBe(1000);
     const entries = await journal.getEntries();
     const arEntry = entries.find((e: any) => e.debit > 0);
-    expect(arEntry?.debit).toBeCloseTo(1000);
+    expect(arEntry?.debit).toBe(1000);
 
     const reloaded = await invoices.get({ id: invoice.id });
-    expect(reloaded?.totalAmount).toBeCloseTo(1000);
+    expect(reloaded?.totalAmount).toBe(1000);
   });
 });
 
@@ -1755,7 +1755,7 @@ describe('Payment settled-amount freeze after COMPLETED (#1390 round 6)', () => 
     );
 
     const reloaded = await payments.get({ id });
-    expect(reloaded?.amount).toBeCloseTo(199);
+    expect(reloaded?.amount).toBe(199);
   });
 
   it('rejects mutating nativeAmount / currency / usd valuation fields after COMPLETED', async () => {
@@ -1806,7 +1806,7 @@ describe('Payment settled-amount freeze after COMPLETED (#1390 round 6)', () => 
     ).rejects.toThrow(/is frozen/);
 
     const reloaded = await payments.get({ id });
-    expect(reloaded?.amount).toBeCloseTo(199);
+    expect(reloaded?.amount).toBe(199);
   });
 
   it('allows the legal COMPLETED → REFUNDED transition when the amounts are unchanged', async () => {
@@ -1824,7 +1824,7 @@ describe('Payment settled-amount freeze after COMPLETED (#1390 round 6)', () => 
 
     const reloaded = await payments.get({ id });
     expect(reloaded?.status).toBe(PaymentStatus.REFUNDED);
-    expect(reloaded?.amount).toBeCloseTo(199);
+    expect(reloaded?.amount).toBe(199);
   });
 
   it('allows freely editing monetary fields while still PENDING', async () => {
@@ -1838,6 +1838,6 @@ describe('Payment settled-amount freeze after COMPLETED (#1390 round 6)', () => 
     payment.amount = 75;
     payment.nativeAmount = 75;
     await expect(payment.save()).resolves.toBeDefined();
-    expect(payment.amount).toBeCloseTo(75);
+    expect(payment.amount).toBe(75);
   });
 });

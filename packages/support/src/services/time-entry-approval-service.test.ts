@@ -116,7 +116,7 @@ describe('TimeEntryApprovalService', () => {
     it('approves under-threshold entries automatically, with no principal', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 100.0 },
+        { overageHourlyRate: 10000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -135,7 +135,7 @@ describe('TimeEntryApprovalService', () => {
     it('escalates over-threshold automatic entries to an operator', async () => {
       const plan = await planWith(
         { mode: 'automatic', thresholdMinutes: 60 },
-        { overageHourlyRate: 100.0 },
+        { overageHourlyRate: 10000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -209,7 +209,7 @@ describe('TimeEntryApprovalService', () => {
     it('consumes included time first, then meters the overage per case', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { includedMinutes: 60, overageHourlyRate: 120.0 },
+        { includedMinutes: 60, overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan);
 
@@ -220,13 +220,13 @@ describe('TimeEntryApprovalService', () => {
       const firstResult = await approvalService.approve(first.id ?? '', {
         at: APPROVE_AT,
       });
-      expect(firstResult.charge.amount).toBeCloseTo(60.0, 2);
+      expect(firstResult.charge.amount).toBe(6000);
       expect(firstResult.charge.includedSecondsApplied).toBe(3600);
       expect(firstResult.charge.billableSeconds).toBe(5400);
       expect(firstResult.charge.status).toBe('final');
       expect(firstResult.charge.finalizedAt).toEqual(APPROVE_AT);
       expect(firstResult.charge.getRateSnapshot()).toMatchObject({
-        hourlyRate: 120,
+        hourlyRate: 12000,
         rateSource: 'overage',
         planKey: 'managed',
         includedMinutes: 60,
@@ -242,7 +242,7 @@ describe('TimeEntryApprovalService', () => {
       const secondResult = await approvalService.approve(second.id ?? '', {
         at: APPROVE_AT,
       });
-      expect(secondResult.charge.amount).toBeCloseTo(120.0, 2);
+      expect(secondResult.charge.amount).toBe(12000);
       expect(secondResult.charge.includedSecondsApplied).toBe(0);
       expect(secondResult.charge.getRateSnapshot()).toMatchObject({
         includedSecondsBefore: 0,
@@ -268,7 +268,7 @@ describe('TimeEntryApprovalService', () => {
     it('uses the on-call rate for entries flagged onCall', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 120.0, onCallHourlyRate: 200.0 },
+        { overageHourlyRate: 12000, onCallHourlyRate: 20000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -278,9 +278,9 @@ describe('TimeEntryApprovalService', () => {
       const { charge } = await approvalService.approve(entry.id ?? '', {
         at: APPROVE_AT,
       });
-      expect(charge.amount).toBeCloseTo(200.0, 2);
+      expect(charge.amount).toBe(20000);
       expect(charge.getRateSnapshot()).toMatchObject({
-        hourlyRate: 200,
+        hourlyRate: 20000,
         rateSource: 'on_call',
       });
     });
@@ -291,19 +291,19 @@ describe('TimeEntryApprovalService', () => {
       await approvalService.compensationPlans.create({
         specialistId: 'spec-1',
         name: 'Specific',
-        hourlyRate: 45.0,
+        hourlyRate: 4500,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
       });
       await approvalService.compensationPlans.create({
         specialistId: null,
         name: 'Default',
-        hourlyRate: 30.0,
+        hourlyRate: 3000,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
       });
 
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 120.0 },
+        { overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -315,17 +315,17 @@ describe('TimeEntryApprovalService', () => {
         entry.id ?? '',
         { at: APPROVE_AT },
       );
-      expect(compensation.amount).toBeCloseTo(90.0, 2);
+      expect(compensation.amount).toBe(9000);
       expect(compensation.payableSeconds).toBe(7200);
       expect(compensation.status).toBe('final');
       expect(compensation.getRateSnapshot()).toMatchObject({
-        hourlyRate: 45,
+        hourlyRate: 4500,
         derivedAt: APPROVE_AT.toISOString(),
       });
 
       // Margin stays computable by readers and is NEVER stored — the two
       // sides live in separate tables with no margin column anywhere.
-      expect(charge.amount - compensation.amount).toBeCloseTo(150.0, 2);
+      expect(charge.amount - compensation.amount).toBe(15000);
       expect(charge.tableName).toBe('support_charges');
       expect(compensation.tableName).toBe('support_compensations');
       expect(charge.tableName).not.toBe(compensation.tableName);
@@ -341,20 +341,20 @@ describe('TimeEntryApprovalService', () => {
         tenantId: 'tenant-other',
         specialistId: null,
         name: 'Foreign default',
-        hourlyRate: 500.0,
+        hourlyRate: 50000,
         effectiveFrom: new Date('2026-01-02T00:00:00.000Z'),
       });
       await approvalService.compensationPlans.create({
         tenantId: 'tenant-1',
         specialistId: null,
         name: 'Own default',
-        hourlyRate: 30.0,
+        hourlyRate: 3000,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
       });
 
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 120.0 },
+        { overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan, { tenantId: 'tenant-1' });
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -367,22 +367,24 @@ describe('TimeEntryApprovalService', () => {
       });
       // Resolution is scoped to the entry's tenant (codex review, PR
       // #1943): the foreign default never applies.
-      expect(compensation.amount).toBeCloseTo(30.0, 2);
-      expect(compensation.getRateSnapshot()).toMatchObject({ hourlyRate: 30 });
+      expect(compensation.amount).toBe(3000);
+      expect(compensation.getRateSnapshot()).toMatchObject({
+        hourlyRate: 3000,
+      });
     });
 
     it('falls back to the tenant default when the specific plan has expired', async () => {
       await approvalService.compensationPlans.create({
         specialistId: 'spec-1',
         name: 'Expired specific',
-        hourlyRate: 45.0,
+        hourlyRate: 4500,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
         effectiveTo: new Date('2026-06-01T00:00:00.000Z'),
       });
       await approvalService.compensationPlans.create({
         specialistId: null,
         name: 'Default',
-        hourlyRate: 30.0,
+        hourlyRate: 3000,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
       });
 
@@ -397,14 +399,16 @@ describe('TimeEntryApprovalService', () => {
       const { compensation } = await approvalService.approve(entry.id ?? '', {
         at: APPROVE_AT,
       });
-      expect(compensation.amount).toBeCloseTo(60.0, 2);
-      expect(compensation.getRateSnapshot()).toMatchObject({ hourlyRate: 30 });
+      expect(compensation.amount).toBe(6000);
+      expect(compensation.getRateSnapshot()).toMatchObject({
+        hourlyRate: 3000,
+      });
     });
 
     it('settles a zero compensation when no specialist delivered the work', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 120.0 },
+        { overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '');
@@ -424,7 +428,7 @@ describe('TimeEntryApprovalService', () => {
     it('freezes the work-defining fields and refuses a second approval', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 100.0 },
+        { overageHourlyRate: 10000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '');
@@ -451,7 +455,7 @@ describe('TimeEntryApprovalService', () => {
     it('never over-consumes included time when two approvals race on one case', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { includedMinutes: 60, overageHourlyRate: 120.0 },
+        { includedMinutes: 60, overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan);
       const first = await submittedEntry(supportCase.id ?? '', {
@@ -470,8 +474,8 @@ describe('TimeEntryApprovalService', () => {
       ]);
 
       const amounts = [a.charge.amount, b.charge.amount].sort((x, y) => x - y);
-      expect(amounts[0]).toBeCloseTo(0, 2);
-      expect(amounts[1]).toBeCloseTo(120.0, 2);
+      expect(amounts[0]).toBe(0);
+      expect(amounts[1]).toBe(12000);
       const consumed =
         (a.charge.includedSecondsApplied ?? 0) +
         (b.charge.includedSecondsApplied ?? 0);
@@ -483,7 +487,7 @@ describe('TimeEntryApprovalService', () => {
     it('re-approving after a partial settlement write refreshes the same rows without double-counting', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { includedMinutes: 60, overageHourlyRate: 120.0 },
+        { includedMinutes: 60, overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -499,7 +503,7 @@ describe('TimeEntryApprovalService', () => {
         timeEntryId: entry.id ?? '',
         caseId: entry.caseId,
         planId: plan.id,
-        amount: 999,
+        amount: 99900,
         currency: 'USD',
         billableSeconds: 5400,
         includedSecondsApplied: 3600,
@@ -515,7 +519,7 @@ describe('TimeEntryApprovalService', () => {
       // The retry refreshed the SAME row: correct amount, no self
       // double-count of the included allowance, and still exactly one
       // charge + one compensation for the entry.
-      expect(result.charge.amount).toBeCloseTo(60.0, 2);
+      expect(result.charge.amount).toBe(6000);
       expect(result.charge.includedSecondsApplied).toBe(3600);
       expect(result.charge.getRateSnapshot()).toMatchObject({
         includedSecondsBefore: 3600,
@@ -535,7 +539,7 @@ describe('TimeEntryApprovalService', () => {
     it('releases the corrected charge’s included time back to the case', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { includedMinutes: 60, overageHourlyRate: 120.0 },
+        { includedMinutes: 60, overageHourlyRate: 12000 },
       );
       const supportCase = await caseUnder(plan);
 
@@ -546,7 +550,7 @@ describe('TimeEntryApprovalService', () => {
       const approved = await approvalService.approve(entry.id ?? '', {
         at: APPROVE_AT,
       });
-      expect(approved.charge.amount).toBeCloseTo(0, 2);
+      expect(approved.charge.amount).toBe(0);
       expect(approved.charge.includedSecondsApplied).toBe(3600);
 
       // Correcting it down to 30 minutes releases the allowance — the
@@ -564,7 +568,7 @@ describe('TimeEntryApprovalService', () => {
         at: APPROVE_AT,
       });
       expect(reApproved.charge.includedSecondsApplied).toBe(1800);
-      expect(reApproved.charge.amount).toBeCloseTo(0, 2);
+      expect(reApproved.charge.amount).toBe(0);
       expect(reApproved.charge.getRateSnapshot()).toMatchObject({
         includedSecondsBefore: 3600,
       });
@@ -573,7 +577,7 @@ describe('TimeEntryApprovalService', () => {
     it('supersedes the original and re-derives fresh snapshots from the patch', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { includedMinutes: 0, overageHourlyRate: 100.0 },
+        { includedMinutes: 0, overageHourlyRate: 10000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
@@ -582,7 +586,7 @@ describe('TimeEntryApprovalService', () => {
       const approvedResult = await approvalService.approve(entry.id ?? '', {
         at: APPROVE_AT,
       });
-      expect(approvedResult.charge.amount).toBeCloseTo(100.0, 2);
+      expect(approvedResult.charge.amount).toBe(10000);
       const originalChargeSnapshot = approvedResult.charge.getRateSnapshot();
 
       const { original, correction } = await approvalService.correct(
@@ -613,7 +617,7 @@ describe('TimeEntryApprovalService', () => {
         await approvalService.compensations.forTimeEntry(entry.id ?? '');
       expect(originalCharge?.status).toBe('corrected');
       expect(originalCompensation?.status).toBe('corrected');
-      expect(originalCharge?.amount).toBeCloseTo(100.0, 2);
+      expect(originalCharge?.amount).toBe(10000);
       expect(originalCharge?.getRateSnapshot()).toEqual(originalChargeSnapshot);
 
       // The correction is a linked draft carrying the patch.
@@ -633,7 +637,7 @@ describe('TimeEntryApprovalService', () => {
       const corrected = await approvalService.approve(correction.id ?? '', {
         at: CORRECT_AT,
       });
-      expect(corrected.charge.amount).toBeCloseTo(150.0, 2);
+      expect(corrected.charge.amount).toBe(15000);
       expect(corrected.charge.status).toBe('final');
       expect(corrected.charge.getRateSnapshot().derivedAt).toBe(
         CORRECT_AT.toISOString(),
@@ -643,7 +647,7 @@ describe('TimeEntryApprovalService', () => {
       const originalChargeAfter = await approvalService.charges.forTimeEntry(
         entry.id ?? '',
       );
-      expect(originalChargeAfter?.amount).toBeCloseTo(100.0, 2);
+      expect(originalChargeAfter?.amount).toBe(10000);
       expect(originalChargeAfter?.getRateSnapshot()).toEqual(
         originalChargeSnapshot,
       );
@@ -652,7 +656,7 @@ describe('TimeEntryApprovalService', () => {
     it('requires the operator split and an approved original', async () => {
       const plan = await planWith(
         { mode: 'automatic' },
-        { overageHourlyRate: 100.0 },
+        { overageHourlyRate: 10000 },
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '');
@@ -677,7 +681,7 @@ describe('TimeEntryApprovalService', () => {
   it('derives from the case planSnapshot even after the live plan is edited', async () => {
     const plan = await planWith(
       { mode: 'automatic' },
-      { includedMinutes: 0, overageHourlyRate: 100.0 },
+      { includedMinutes: 0, overageHourlyRate: 10000 },
     );
     const supportCase = await caseUnder(plan);
 
@@ -685,10 +689,10 @@ describe('TimeEntryApprovalService', () => {
     const firstResult = await approvalService.approve(first.id ?? '', {
       at: APPROVE_AT,
     });
-    expect(firstResult.charge.amount).toBeCloseTo(100.0, 2);
+    expect(firstResult.charge.amount).toBe(10000);
 
     // Edit the live plan AFTER the case captured its snapshot.
-    plan.overageHourlyRate = 500.0;
+    plan.overageHourlyRate = 50000;
     await plan.save();
 
     const second = await submittedEntry(supportCase.id ?? '');
@@ -696,9 +700,9 @@ describe('TimeEntryApprovalService', () => {
       at: APPROVE_AT,
     });
     // History never rewritten: still the snapshot's 100/h, not the live 500/h.
-    expect(secondResult.charge.amount).toBeCloseTo(100.0, 2);
+    expect(secondResult.charge.amount).toBe(10000);
     expect(secondResult.charge.getRateSnapshot()).toMatchObject({
-      hourlyRate: 100,
+      hourlyRate: 10000,
     });
   });
 
@@ -750,11 +754,11 @@ describe('TimeEntryApprovalService', () => {
     await approvalService.compensationPlans.create({
       specialistId: 'spec-1',
       name: 'Comp',
-      hourlyRate: 45.0,
+      hourlyRate: 4500,
     });
     const plan = await planWith(
       { mode: 'automatic' },
-      { overageHourlyRate: 120.0 },
+      { overageHourlyRate: 12000 },
     );
     const supportCase = await caseUnder(plan);
     const entry = await submittedEntry(supportCase.id ?? '', {
@@ -765,7 +769,7 @@ describe('TimeEntryApprovalService', () => {
       entry.id ?? '',
       { at: APPROVE_AT },
     );
-    expect(compensation.amount).toBeCloseTo(45.0, 2);
+    expect(compensation.amount).toBe(4500);
 
     const events = await caseService.events.forCase(supportCase.id ?? '', {
       eventType: 'time_recorded',

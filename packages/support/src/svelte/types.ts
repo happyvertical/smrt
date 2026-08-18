@@ -67,10 +67,23 @@ export interface SupportTimeEntryView {
   hours: number;
   description: string;
   status: string;
-  /** Client charge amount, when a derived {@link SupportCharge} is supplied. */
+  /**
+   * Client charge in integer minor units, when a derived
+   * {@link SupportCharge} is supplied — `$19.99` is `1999` (#2401).
+   */
   amount?: number;
+  /**
+   * ISO 4217 code `amount` / `hourlyRate` are denominated in, when a charge is
+   * supplied. Carried on the view because the minor-unit exponent is a property
+   * of the currency, not a constant: `¥1999` is 1999 minor units, not 19.99
+   * (#2401).
+   */
+  currency?: string;
   workerName?: string;
-  /** Hourly rate from the charge's frozen `rateSnapshot`, when supplied. */
+  /**
+   * Hourly rate from the charge's frozen `rateSnapshot`, when supplied, in
+   * minor units per hour (#2401).
+   */
   hourlyRate?: number;
   source: string;
   participantKind: string;
@@ -202,6 +215,7 @@ export function toSupportTimeEntryView(
   };
   if (opts.charge) {
     view.amount = opts.charge.amount;
+    view.currency = opts.charge.currency;
     const hourlyRate = opts.charge.getRateSnapshot().hourlyRate;
     if (typeof hourlyRate === 'number') {
       view.hourlyRate = hourlyRate;

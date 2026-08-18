@@ -55,8 +55,23 @@ function formatHours(hours: number): string {
   return `${hours.toFixed(1)}h`;
 }
 
-function formatAmount(amount: number): string {
-  return amount.toFixed(2);
+/**
+ * Render a minor-units charge for display.
+ *
+ * `amount` is integer minor units (#2401), so `toFixed(2)` would print 180
+ * cents as "180.00" — a hundredfold overstatement. The scale is the currency's
+ * own minor-unit exponent rather than a hard-coded 100, so a zero-decimal
+ * currency (JPY, KRW) is not divided at all and a three-decimal one (BHD) is
+ * divided by 1000. No currency symbol is added: the queue shows a bare figure
+ * and the host app supplies the label.
+ */
+function formatAmount(amount: number, currency = 'USD'): string {
+  const digits =
+    new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency,
+    }).resolvedOptions().maximumFractionDigits ?? 2;
+  return (amount / 10 ** digits).toFixed(digits);
 }
 </script>
 
@@ -83,7 +98,7 @@ function formatAmount(amount: number): string {
             />
             {#if entry.amount !== undefined}
               <span class="time-approval-amount">
-                {formatAmount(entry.amount)}
+                {formatAmount(entry.amount, entry.currency)}
               </span>
             {/if}
           </span>

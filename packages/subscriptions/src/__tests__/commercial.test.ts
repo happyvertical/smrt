@@ -90,7 +90,7 @@ describe('commercial usage tracer', () => {
       metricKey: 'ai.tokens',
       strategy: 'included_overage',
       effectiveFrom: new Date('2026-01-01T00:00:00Z'),
-      terms: JSON.stringify({ includedQuantity: 100, overageUnitPrice: 0.02 }),
+      terms: JSON.stringify({ includedQuantity: 100, overageUnitPrice: 2 }),
     });
     expect(rule.id).toBeTruthy();
     const draftCharge = await service.price({ usageEventId: String(event.id) });
@@ -100,7 +100,7 @@ describe('commercial usage tracer', () => {
       approved: true,
     });
     expect(charge.id).toBe(draftCharge.id);
-    expect(charge.amount).toBe(0.4);
+    expect(charge.amount).toBe(40); // 20 overage units x 2 cents
     expect(charge.status).toBe('approved');
     expect(charge.approvedAt).toBeInstanceOf(Date);
     expect(charge.getPricingSnapshot()).toMatchObject({
@@ -115,10 +115,10 @@ describe('commercial usage tracer', () => {
     await expect(charge.save()).rejects.toThrow('Operation failed: save');
     const correction = await service.adjust(
       String(charge.id),
-      -0.1,
+      -10,
       'provider credit',
     );
-    expect(correction.amount).toBe(-0.1);
+    expect(correction.amount).toBe(-10);
     expect(
       (await adjustments.list({ where: { clientChargeId: charge.id } })).length,
     ).toBe(1);
@@ -149,12 +149,13 @@ describe('commercial usage tracer', () => {
       strategy: 'fixed_unit',
       effectiveFrom: new Date('2026-01-01T00:00:00Z'),
     });
-    rule.setTerms({ unitPrice: 0.5 });
+    // Pricing terms are minor units per unit of usage (#2401): 5 cents each.
+    rule.setTerms({ unitPrice: 5 });
     await rule.save();
 
     const charge = await factory.price({ usageEventId: String(event.id) });
 
-    expect(charge).toMatchObject({ amount: 5, usageEventId: event.id });
+    expect(charge).toMatchObject({ amount: 50, usageEventId: event.id });
     await event.db.close?.();
   });
 
@@ -197,7 +198,7 @@ describe('commercial usage tracer', () => {
       metricKey: 'ai.tokens',
       strategy: 'fixed_unit',
       effectiveFrom: new Date('2026-01-01T00:00:00Z'),
-      terms: JSON.stringify({ unitPrice: 0.1 }),
+      terms: JSON.stringify({ unitPrice: 1 }),
     });
 
     const [approved, draftAttempt] = await Promise.all([
@@ -236,7 +237,7 @@ describe('commercial usage tracer', () => {
       status: 'draft',
     });
     await expect(
-      service.adjust(String(charge.id), -0.25, 'premature correction'),
+      service.adjust(String(charge.id), -25, 'premature correction'),
     ).rejects.toThrow('must be approved');
   });
 
@@ -272,6 +273,9 @@ describe('commercial usage tracer', () => {
     expect((await charges.get(String(charge.id)))?.status).toBe('adjusted');
   });
 
+  // Terms are minor units per unit of usage and may be fractional (a per-token
+  // rate is routinely a fraction of a cent); the RESULT is rounded to a whole
+  // minor unit, which is what `expected` asserts (#2401).
   it.each([
     ['fixed_unit', { unitPrice: 2 }, {}, 10, 20],
     [
@@ -296,10 +300,10 @@ describe('commercial usage tracer', () => {
     ],
     [
       'included_overage',
-      { includedQuantity: 100, overageUnitPrice: 0.02 },
+      { includedQuantity: 100, overageUnitPrice: 2 },
       {},
       120,
-      0.4,
+      40,
     ],
     ['flat', { amount: 9 }, {}, 999, 9],
   ] as const)('prices the %s strategy', async (strategy, terms, dimensions, quantity, expected) => {

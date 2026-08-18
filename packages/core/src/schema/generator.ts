@@ -24,6 +24,11 @@ import {
 import { getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
 import {
+  assertIdentifierFits,
+  enforceIdentifierLimits,
+  shortenIdentifier,
+} from './index-utils.js';
+import {
   formatDefaultValue as formatDefaultValueShared,
   quoteIdentifier,
   quoteStringLiteral,
@@ -119,6 +124,12 @@ export class SchemaGenerator {
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
+    for (const trigger of triggers) {
+      trigger.name = shortenIdentifier(trigger.name);
+    }
 
     return {
       tableName,
@@ -621,6 +632,11 @@ export class SchemaGenerator {
         `Declared index on "${tableName}" needs a non-empty "name": got ${describe()}.`,
       );
     }
+    // A declared name is the developer's, not the generator's: shortening it
+    // would silently rename what they wrote, so an over-long one is refused
+    // here — at manifest generation, which `smrt dev:knowledge-check` runs —
+    // rather than truncated by PostgreSQL at deploy time (#2374).
+    assertIdentifierFits(spec.name, 'Declared index', `table "${tableName}"`);
     if (
       !Array.isArray(spec.columns) ||
       spec.columns.length === 0 ||
@@ -1378,6 +1394,9 @@ export class SchemaGenerator {
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
+
     return {
       tableName,
       columns,
@@ -1718,6 +1737,9 @@ export class SchemaGenerator {
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
+
     return {
       tableName,
       columns,
@@ -1964,6 +1986,9 @@ export class SchemaGenerator {
     // not an executable representation of the table (#2358).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
 
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
+
     const schemaDefinition: SchemaDefinition = {
       tableName,
       columns: this.convertManifestColumnsToSchemaColumns(columns),
@@ -2156,6 +2181,9 @@ export class SchemaGenerator {
     // creates them; the cached `ddl` string below is CREATE TABLE only and is
     // not an executable representation of the table (#2358).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
+
+    // Last: nothing may lengthen a name after this (#2374).
+    enforceIdentifierLimits(tableName, indexes);
 
     const schemaDefinition: SchemaDefinition = {
       tableName,

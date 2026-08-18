@@ -80,6 +80,17 @@ export class Product extends SmrtObject {
   category = ''; // Reference to category
   manufacturer = '';
   model = '';
+  /**
+   * Catalog price in **integer minor units** (cents, satoshis).
+   *
+   * Money is exact, so it is stored as minor units and never as a float —
+   * `$19.99` is `1999`. An integer literal is what maps this to an INTEGER
+   * column; writing `19.99` here is the bug, and PostgreSQL rejects it with
+   * `22P02` while SQLite's affinity silently stores it (#2361).
+   *
+   * `Material.costPerUnit` is a `Meta<number>` decimal in `_meta_data` rather
+   * than a column, so it is unaffected by this rule.
+   */
   price = 0;
   inStock = true;
   specifications: Record<string, unknown> = {};

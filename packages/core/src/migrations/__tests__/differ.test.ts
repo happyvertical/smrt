@@ -1241,6 +1241,210 @@ describe('SchemaComparer engine-specific SQL generation', () => {
   });
 });
 
+/**
+ * #2361 — rate fields (`InvoiceLineItem.taxRate`, `FactEvidence.confidence`)
+ * shipped as INTEGER columns because `= 0` compiles to integer, which truncates
+ * every rate. The models now declare `0.0`, so existing deployments need the
+ * widening migration to actually be emitted. INTEGER→REAL is already
+ * whitelisted as a compatible upgrade; these lock in that the upgrade reaches
+ * the diff and produces engine-correct SQL.
+ *
+ * Money went the other way and stays INTEGER (minor units), so the integer
+ * column below is not incidental — it stands for the money columns on the same
+ * table, which this migration must leave completely alone.
+ */
+describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () => {
+  const invoiceManifest = (): Record<string, SchemaDefinition> => ({
+    invoice_line_items: {
+      tableName: 'invoice_line_items',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        // What `taxRate: number = 0.0` now compiles to.
+        tax_rate: { type: 'REAL', defaultValue: 0 },
+        // Money stays INTEGER minor units and must not be disturbed.
+        unit_price: { type: 'INTEGER', defaultValue: 0 },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1.0.0',
+    },
+  });
+
+  /** A deployed table whose `tax_rate` column is still INTEGER. */
+  const legacyColumns = (integerType: string) => ({
+    id: { type: 'text', notnull: true },
+    tax_rate: { type: integerType, notnull: false },
+    unit_price: { type: integerType, notnull: false },
+  });
+
+  it('emits an ALTER … TYPE DOUBLE PRECISION on PostgreSQL', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'invoice_line_items' }] }),
+      getTableSchema: async () => ({
+        columns: legacyColumns('integer'),
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('tax_rate');
+    expect(typeUpgrades[0].mismatch).toEqual({
+      expected: 'REAL',
+      actual: 'integer',
+    });
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE "invoice_line_items"');
+    expect(typeUpgrades[0].sql).toContain(
+      'ALTER COLUMN "tax_rate" TYPE DOUBLE PRECISION',
+    );
+    // PostgreSQL casts integer to double precision implicitly, so a USING
+    // clause would be noise; the default is cycled so it can be re-typed.
+    expect(typeUpgrades[0].sql).not.toContain('USING');
+    expect(typeUpgrades[0].sql).toContain('DROP DEFAULT');
+    expect(typeUpgrades[0].sql).toContain('SET DEFAULT');
+
+    // The widening must not be mistaken for drift on the real integer column.
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
+  });
+
+  it('emits a native ALTER COLUMN TYPE on DuckDB', async () => {
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'invoice_line_items' }] }),
+      getTableSchema: async () => ({
+        columns: legacyColumns('BIGINT'),
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockDuckDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].name).toBe('tax_rate');
+    // DuckDB maps the abstract REAL straight through; the framework's lack of
+    // an exact-decimal type is tracked separately as #2373.
+    expect(typeUpgrades[0].sql).toBe(
+      'ALTER TABLE "invoice_line_items" ALTER COLUMN "tax_rate" TYPE REAL',
+    );
+  });
+
+  it('plans an executable SQLite rebuild that leaves the money column INTEGER', async () => {
+    // SQLite has no ALTER COLUMN TYPE, so #2370 rebuilds the table. That needs
+    // the real `CREATE TABLE` out of `sqlite_master`, so this runs against a
+    // live in-memory database rather than a mock — a synthetic schema makes the
+    // planner (correctly) refuse for want of a DDL statement to rewrite.
+    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      await db.query(
+        `CREATE TABLE "invoice_line_items" (
+          "id" TEXT PRIMARY KEY,
+          "tax_rate" INTEGER DEFAULT 0,
+          "unit_price" INTEGER DEFAULT 0
+        )`,
+      );
+      await db.query(
+        `INSERT INTO "invoice_line_items" ("id", "tax_rate", "unit_price") VALUES ('li-1', 0, 14999)`,
+      );
+
+      const diff = await new SchemaComparer(db, {
+        ignoreTypeMismatches: false,
+      }).compare(invoiceManifest());
+
+      const typeUpgrades = diff.changes.filter(
+        (c) => c.type === 'type_upgrade',
+      );
+      expect(typeUpgrades).toHaveLength(1);
+      expect(typeUpgrades[0].name).toBe('tax_rate');
+
+      // A real rebuild, not the old advisory comment.
+      const statements = typeUpgrades[0].sqlStatements ?? [];
+      expect(statements.some((s) => s.startsWith('--'))).toBe(false);
+      expect(
+        statements.some((s) =>
+          /^CREATE TABLE "_smrt_rebuild_invoice_line_items"/.test(s),
+        ),
+      ).toBe(true);
+
+      // The rebuild retypes only the rate. Money must survive as INTEGER —
+      // widening it to REAL would silently reintroduce float money.
+      const createStatement = statements.find((s) =>
+        s.startsWith('CREATE TABLE "_smrt_rebuild_invoice_line_items"'),
+      ) as string;
+      expect(createStatement).toMatch(/"tax_rate"\s+REAL/);
+      expect(createStatement).toMatch(/"unit_price"\s+INTEGER/);
+
+      for (const statement of statements) {
+        await db.query(statement);
+      }
+
+      // Rows survive, the rate is now REAL-affinity, and the money value is
+      // still an exact integer.
+      const rows = (
+        await db.query(
+          `SELECT "unit_price", typeof("unit_price") AS price_type, typeof("tax_rate") AS rate_type FROM "invoice_line_items"`,
+        )
+      ).rows as {
+        unit_price: number;
+        price_type: string;
+        rate_type: string;
+      }[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].unit_price).toBe(14999);
+      expect(rows[0].price_type).toBe('integer');
+      expect(rows[0].rate_type).toBe('real');
+
+      // And the drift is gone on a re-diff.
+      const reDiff = await new SchemaComparer(db, {
+        ignoreTypeMismatches: false,
+      }).compare(invoiceManifest());
+      expect(
+        reDiff.changes.filter((c) => c.type === 'type_upgrade'),
+      ).toHaveLength(0);
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('is a no-op once the column is already REAL', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'invoice_line_items' }] }),
+      // The live defaults have to be reported too: #2369 compares them, so a
+      // fixture that omits them describes a database that has drifted, not a
+      // converged one.
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'text', notnull: true },
+          tax_rate: {
+            type: 'double precision',
+            notnull: false,
+            defaultValue: 0,
+          },
+          unit_price: { type: 'integer', notnull: false, defaultValue: 0 },
+        },
+        indexes: [],
+      }),
+    };
+
+    const diff = await new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    }).compare(invoiceManifest());
+
+    expect(diff.changes).toEqual([]);
+    expect(diff.has_changes).toBe(false);
+  });
+});
+
 describe('hasActionableChanges', () => {
   it('should return true when there are added tables', () => {
     const diff: SchemaDiff = {

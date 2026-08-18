@@ -18,6 +18,18 @@ executes the source.
 - `parseFile` / `parseSource` — parse a single file or a source string to a
   `FileScanResult` (classes, errors, type aliases, SMRT imports).
 - `extractSmrtImports` — pull SMRT-related imports from a parsed file.
+- `lintNumericPrecision(classes, sourceText?)` — flags persisted `number` fields
+  whose declared precision contradicts their name (#2361), returning a `kind`
+  per finding. **Money is exact** and stored as integer minor units, so
+  `subtotal = 0.0` is a `money` finding; **rates are fractional**, so
+  `taxRate = 0` is a `rate` finding. `classifyNumericFieldName` does head-noun
+  matching and lets a rate word win outright, so `taxRate` is a rate even though
+  `tax` is money, while `amountCents` and `totalTokensUsed` classify as neither.
+  `weight`/`score`/`factor`/`percent` are deliberately unclassified — they are
+  commonly whole numbers. Explicit `@field({ type })`, `@meta`/`Meta<T>`,
+  transient, relationship, and static fields are exempt.
+  `sourceMayContainNumericPrecisionIssue(source)` is the cheap pre-filter
+  callers use to avoid parsing every file; `dev:knowledge-check` drives both.
 - `verifyManifestCompleteness({ packageDir })` — publish guard: re-scans `src/`
   and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483).
   Returns `ok` / `incomplete` / `missing-manifest` / `scan-error` / `skipped`.
@@ -89,9 +101,13 @@ exhausts the heap when the scanner is pointed at an application root (#2275):
 - **`ManifestBuilder` / `discoverBaseClasses` live in `@happyvertical/smrt-core`,
   not here.** This package is the lower-level AST layer; core orchestrates
   manifest generation and base-class discovery on top of it.
-- **0 vs 0.0 heuristic**: `count = 0` → integer, `price = 0.0` → decimal; the
+- **0 vs 0.0 heuristic**: `count = 0` → integer, `ratio = 0.0` → decimal; the
   raw initializer text (not the parsed value) decides, and negative defaults are
-  unwrapped from their `UnaryExpression` before the check.
+  unwrapped from their `UnaryExpression` before the check. The rule is silent
+  and SQLite's affinity masks the consequence, so money- and rate-shaped fields
+  are gated by `lintNumericPrecision` rather than left to review (#2361).
+- **`RawFieldDefinition.line` is `0`**: the OXC AST nodes reaching this package
+  carry no `loc`. Pass the source text to a consumer that needs a real line.
 - **Static property capture**: captures `uiSlots` and `adminRoutes` for agent
   manifest generation.
 - **`@smrt()` config spreads resolve only against unescaped same-file `const`s** (issue
