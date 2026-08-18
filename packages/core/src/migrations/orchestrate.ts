@@ -360,12 +360,18 @@ function isNoOpAdvisorySql(sql: string): boolean {
 
 /**
  * Surface changes the differ produced but that the migrator cannot apply
- * automatically — either `type_mismatch` entries (the differ explicitly
- * gives up on these) or `type_upgrade` entries whose generated SQL is
- * advisory-comment-only (a SQLite rebuild that would be unsafe, etc.).
- * Callers use this to distinguish "schema is in sync" from "schema is
- * drifted but we can't fix it from here", so a comment that means "already
- * handled" must not land here.
+ * automatically — `type_mismatch` entries (the differ explicitly gives up on
+ * these), `type_upgrade`/`alter_column` entries whose generated SQL is
+ * advisory-comment-only (a SQLite rebuild that would be unsafe, an in-place
+ * constraint change SQLite cannot perform), and warning-level report-only
+ * advisories (an orphan NOT NULL column that will break inserts, a required
+ * column that could not be enforced, a stale unique constraint, a relaxation
+ * the caller has not opted into). Info-level advisories (a harmless orphan
+ * column, a stale default) and comments that mean "already handled" (the
+ * no-op advisories a table rebuild leaves on covered siblings, #2370) are
+ * deliberately excluded so `hasManualDrift` keeps meaning "something needs
+ * an operator". Callers use this to distinguish "schema is in sync" from
+ * "schema is drifted but we can't fix it from here".
  */
 function collectUnactionableChanges(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
@@ -377,8 +383,13 @@ function collectUnactionableChanges(
       continue;
     }
     const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+    if (statements.length === 0) {
+      if (change.advisory?.severity === 'warning') {
+        unactionable.push(change);
+      }
+      continue;
+    }
     if (
-      statements.length > 0 &&
       statements.every((stmt) => isCommentOnlySql(stmt.trim())) &&
       !statements.every((stmt) => isNoOpAdvisorySql(stmt))
     ) {
