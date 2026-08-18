@@ -13,6 +13,13 @@ import {
   resolveDbCacheKey,
   setCachedRows,
 } from './collection-cache';
+// Leaf-module import (not './dispatch'): the dispatch barrel re-exports
+// DispatchCollection, which extends SmrtCollection — importing the barrel from
+// this module would create an evaluation-order cycle.
+import {
+  isTenantScopedClassResolved,
+  resolveDispatchTenantScope,
+} from './dispatch/tenant-resolver.js';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import type { ClassEmbeddingConfig } from './embeddings/types';
@@ -20,6 +27,7 @@ import {
   createInterceptorContext,
   GlobalInterceptors,
   type ListOptions as InterceptorListOptions,
+  resolveGetStringFilter,
 } from './interceptors';
 import type { SmrtObject } from './object';
 import { QueryBoundsError, QueryOrderByError } from './query-bounds';
@@ -36,6 +44,14 @@ import {
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * `_smrt_contexts.owner_id` value for collection-level (as opposed to
+ * per-object) memory. Tenant-scoped collections suffix the active tenant id
+ * (`__collection__:<tenantId>`) so learned memory never crosses tenants —
+ * see {@link SmrtCollection.resolveCollectionMemoryOwnerId} (#2365).
+ */
+const COLLECTION_MEMORY_OWNER_ID = '__collection__';
 
 /**
  * Validate an optional collection-level list bound (#2367).
@@ -1835,13 +1851,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       interceptorContext,
     );
 
-    let where =
+    // String-filter resolution shares one helper with `beforeGet` interceptors
+    // (#2365): an interceptor that rewrites the string into an object filter
+    // must resolve id-vs-slug exactly the way this method would.
+    let where: Record<string, unknown> =
       typeof interceptedFilter === 'string'
-        ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-            interceptedFilter,
-          )
-          ? { id: interceptedFilter }
-          : { slug: interceptedFilter, context: '' }
+        ? resolveGetStringFilter(interceptedFilter)
         : interceptedFilter;
 
     // Fix for issue #386: Add _meta_type filter for STI child collections.
@@ -3286,10 +3301,49 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Resolve the `_smrt_contexts.owner_id` key for collection-level memory
+   * (#2365).
+   *
+   * `_smrt_contexts` has no tenant column, so before this hook a tenant-scoped
+   * collection's learned memory (`remember()`/`recall()`) was filed under one
+   * shared `__collection__` key and leaked across tenants. For a tenant-scoped
+   * item class under an active tenant context the key becomes
+   * `__collection__:<tenantId>`; everything else (tenancy disabled, no active
+   * tenant, system context, non-tenant-scoped class) keeps the shared
+   * `__collection__` key. Tenant-keyed memory is strictly isolated — a tenant
+   * recall does NOT fall back to the shared key, so memory learned outside a
+   * tenant context is invisible inside one (and vice versa).
+   *
+   * Tenant resolution uses the same core-side trust anchors as the generated
+   * REST read scope (#1782): `resolveDispatchTenantScope()` for the active
+   * tenant and the triple tenant-scoped-class check covering `@smrt()` config,
+   * manifest config, and the tenancy-filled `@TenantScoped()` resolver.
+   */
+  private resolveCollectionMemoryOwnerId(): string {
+    const itemClassName = this.getResolvedItemClassName();
+    const tenantScoped =
+      ObjectRegistry.isTenantScoped(itemClassName) ||
+      !!ObjectRegistry.getConfig(itemClassName)?.tenantScoped ||
+      isTenantScopedClassResolved(itemClassName);
+    if (!tenantScoped) {
+      return COLLECTION_MEMORY_OWNER_ID;
+    }
+    const scope = resolveDispatchTenantScope();
+    if (!scope.enforced || !scope.tenantId) {
+      return COLLECTION_MEMORY_OWNER_ID;
+    }
+    return `${COLLECTION_MEMORY_OWNER_ID}:${scope.tenantId}`;
+  }
+
+  /**
    * Remember collection-level context
    *
    * Stores context applicable to all instances of this collection type.
    * Use for patterns that apply to the entire collection (e.g., default parsing strategies).
+   *
+   * Under an active tenant context on a tenant-scoped class, memory is keyed
+   * per tenant and never shared across tenants (#2365) — see
+   * {@link resolveCollectionMemoryOwnerId}.
    *
    * `expiresAt` is stored on the `_smrt_contexts` row as caller-managed metadata.
    * {@link recall} and {@link recallAll} do **not** filter on it, so an expired
@@ -3344,7 +3398,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       {
         id,
         owner_class: this._itemClass.name,
-        owner_id: '__collection__',
+        owner_id: this.resolveCollectionMemoryOwnerId(),
         scope: options.scope,
         key: options.key,
         value: JSON.stringify(options.value),
@@ -3388,6 +3442,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       throw new Error('Database not initialized. Call initialize() first.');
     }
 
+    const ownerId = this.resolveCollectionMemoryOwnerId();
+
     // Use single() with template literals for custom SQL query.
     // The query projects `value` (a JSON string) and `confidence`.
     let result: Record<string, unknown> | null;
@@ -3396,7 +3452,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         SELECT value, confidence
         FROM _smrt_contexts
         WHERE owner_class = ${this._itemClass.name}
-          AND owner_id = ${'__collection__'}
+          AND owner_id = ${ownerId}
           AND scope = ${options.scope}
           AND key = ${options.key}
           AND confidence >= ${options.minConfidence}
@@ -3408,7 +3464,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         SELECT value, confidence
         FROM _smrt_contexts
         WHERE owner_class = ${this._itemClass.name}
-          AND owner_id = ${'__collection__'}
+          AND owner_id = ${ownerId}
           AND scope = ${options.scope}
           AND key = ${options.key}
         ORDER BY confidence DESC, version DESC
@@ -3487,7 +3543,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       FROM _smrt_contexts
       WHERE owner_class = ? AND owner_id = ?
     `;
-    const params: unknown[] = [this._itemClass.name, '__collection__'];
+    const params: unknown[] = [
+      this._itemClass.name,
+      this.resolveCollectionMemoryOwnerId(),
+    ];
 
     if (options.scope) {
       if (options.includeDescendants) {
@@ -3550,7 +3609,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       `DELETE FROM _smrt_contexts
        WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?`,
       this._itemClass.name,
-      '__collection__',
+      this.resolveCollectionMemoryOwnerId(),
       options.scope,
       options.key,
     );
@@ -3584,7 +3643,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       DELETE FROM _smrt_contexts
       WHERE owner_class = ? AND owner_id = ?
     `;
-    const params: unknown[] = [this._itemClass.name, '__collection__'];
+    const params: unknown[] = [
+      this._itemClass.name,
+      this.resolveCollectionMemoryOwnerId(),
+    ];
 
     if (options.includeDescendants) {
       query += ` AND (scope = ? OR scope LIKE ?)`;
@@ -3607,6 +3669,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * Generates an embedding for the query text and finds similar objects
    * based on cosine similarity of stored embeddings.
+   *
+   * Under an active tenant context on a tenant-scoped class, candidates are
+   * restricted to the tenant's rows BEFORE top-K ranking (#2365), so results
+   * are never starved by — and similarity ranks never leak — other tenants'
+   * content.
    *
    * @param query - Text to search for
    * @param options - Search options
@@ -3857,6 +3924,46 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const storage = projectConfig?.storage || 'json';
     const vector = storage === 'native' ? this.systemDb.vector : undefined;
 
+    // Tenant pre-filter (#2365): _smrt_embeddings has no tenant column, so
+    // top-K used to rank across ALL tenants and only the final list() below
+    // dropped foreign rows — starving results and soft-leaking which tenants
+    // have similar content. Resolve the tenant read predicate through the
+    // SAME beforeList interceptor pipeline that guards collection reads (an
+    // empty where comes back either untouched — tenancy off, class not
+    // scoped, bypass/system context — or with exactly the injected tenant
+    // predicate, or beforeList throws for `mode: 'required'` without
+    // context), then restrict the candidate id set BEFORE ranking.
+    const itemClassName = this.getResolvedItemClassName();
+    const tenantPrefilterContext = createInterceptorContext(
+      itemClassName,
+      'list',
+      this.constructor.name,
+    );
+    const tenantPrefilter = await GlobalInterceptors.executeBeforeList(
+      itemClassName,
+      { where: {} },
+      tenantPrefilterContext,
+    );
+    let candidateObjectIds: string[] | undefined;
+    if (
+      tenantPrefilter.where &&
+      Object.keys(tenantPrefilter.where).length > 0
+    ) {
+      const candidateWhere = this.convertWhereKeys(tenantPrefilter.where);
+      const { sql: candidateWhereSql, values: candidateValues } =
+        buildWhere(candidateWhere);
+      const { rows: candidateRows } = await this.db.query(
+        `SELECT id FROM ${this.tableName} ${candidateWhereSql}`,
+        ...candidateValues,
+      );
+      candidateObjectIds = candidateRows.map((row: Record<string, unknown>) =>
+        String(row.id),
+      );
+      if (candidateObjectIds.length === 0) {
+        return [];
+      }
+    }
+
     // Use unified search method (delegates to native or in-memory)
     const scored = await EmbeddingStorage.searchSimilar(
       this.systemDb,
@@ -3867,6 +3974,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         model,
         limit,
         minSimilarity,
+        objectIds: candidateObjectIds,
       },
       vector,
     );

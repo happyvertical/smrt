@@ -27,7 +27,7 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 | Hook | Behavior |
 |------|----------|
 | `beforeList` | Injects `tenantId` into WHERE clause; validates existing filters match context |
-| `beforeGet` | Same — converts ID lookup to `{ id, tenantId }` |
+| `beforeGet` | Same — resolves string lookups via core's `resolveGetStringFilter()` (UUID → `{ id }`, else `{ slug, context: '' }`) and adds the tenant predicate (#2365) |
 | `beforeSave` | Auto-populates tenantId if empty + `autoPopulate: true`; validates if already set |
 | `beforeDelete` | Validates instance.tenantId matches context |
 | `beforeQuery` | Enforces raw SQL policy on tenant-scoped classes (`throw`/`warn`/`allow`) |
@@ -37,6 +37,31 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 Mismatches throw `TenantIsolationError`. Missing required context throws `TenantContextError`.
 
 **Optional-mode reads with no context pass through UNFILTERED at the interceptor.** That is intentional for trusted/admin call paths, but it means the interceptor alone does not protect a tenant-scoped model exposed as `@smrt({ api: { public } })`: an anonymous HTTP read has no context, so the interceptor would return every tenant's rows. The generated REST + SvelteKit read routes close this by injecting a `{ tenantId: null }` filter when tenancy is enabled but no context is active, so public/anonymous reads fail closed to **global (NULL-tenant) rows only** — mirroring the dispatch resolver's *enforced, no active tenant → global rows only* rule (#1782). Authenticated reads still scope to the caller's tenant via the interceptor.
+
+## Read-Path Coverage (#2365)
+
+Tenant scoping is a whole-path property — every read path is interceptor-aware,
+not only collection list/get:
+
+- **Get-by-slug**: `collection.get('<slug>')` works under a tenant context. The
+  interceptor resolves string filters with core's `resolveGetStringFilter()`
+  instead of assuming they are ids. Any custom `beforeGet` interceptor that
+  rewrites a string filter must do the same.
+- **Hydration**: `new Model({ id | slug }).initialize()`, `loadFromId()`,
+  `loadFromSlug()` and `getSavedId()` run their filters through the `beforeGet`
+  pipeline, so constructor hydration cannot read another tenant's row.
+  Required-mode classes fail closed (`TenantContextError`) when hydrated
+  outside a tenant context; `withSystemContext()` / super-admin bypass remain
+  the explicit cross-tenant paths.
+- **Vector search**: `semanticSearch()` / `findSimilarToEmbedding()` restrict
+  candidates to the tenant's rows BEFORE top-K ranking (the tenant predicate is
+  resolved through the `beforeList` pipeline), so results are never starved by
+  — and similarity ranks never leak — other tenants' content.
+- **Collection memory**: `remember()`/`recall()`/`recallAll()`/`forget()` on a
+  tenant-scoped collection key `_smrt_contexts.owner_id` per tenant
+  (`__collection__:<tenantId>`) under an active tenant context. Isolation is
+  strict: tenant-keyed memory never falls back to the shared `__collection__`
+  key, and memory learned outside a tenant context is invisible inside one.
 
 ## Registration — Two Patterns
 

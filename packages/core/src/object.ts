@@ -25,7 +25,11 @@ import {
   TenantIsolationError,
   ValidationError,
 } from './errors';
-import { createInterceptorContext, GlobalInterceptors } from './interceptors';
+import {
+  createInterceptorContext,
+  GlobalInterceptors,
+  resolveGetStringFilter,
+} from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -34,7 +38,12 @@ import {
   type ToolCall,
   type ToolCallResult,
 } from './tools/tool-executor';
-import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
+import {
+  fieldsFromClass,
+  keysToSnakeCase,
+  tableNameFromClass,
+  toSnakeCase,
+} from './utils';
 
 // DEBUG_STI raises the level to 'debug' so the env-gated STI hydration traces
 // below (logger.debug, inside `if (process.env.DEBUG_STI)` guards) actually emit;
@@ -1587,6 +1596,10 @@ export class SmrtObject extends SmrtClass {
   /**
    * Gets the ID of this object if it's already saved in the database
    *
+   * Both lookups run through the `beforeGet` interceptor pipeline (#2365), so
+   * under an active tenant context only rows visible to that tenant count as
+   * "saved".
+   *
    * @returns Promise resolving to the saved ID or null if not saved
    */
   async getSavedId() {
@@ -1598,17 +1611,66 @@ export class SmrtObject extends SmrtClass {
 
     // Try to find by id first
     if (this.id) {
-      const byId = await this.db.get(this.tableName, { id: this.id });
+      const byId = await this.db.get(
+        this.tableName,
+        await this.interceptGetFilter({ id: this.id }),
+      );
       if (byId) return byId.id;
     }
 
     // Fall back to finding by slug
     if (this.slug) {
-      const bySlug = await this.db.get(this.tableName, { slug: this.slug });
+      const bySlug = await this.db.get(
+        this.tableName,
+        await this.interceptGetFilter({ slug: this.slug }),
+      );
       if (bySlug) return bySlug.id;
     }
 
     return null;
+  }
+
+  /**
+   * Run the registered `beforeGet` interceptors over a direct hydration filter
+   * and return it in database column form (#2365).
+   *
+   * `loadFromId()`, `loadFromSlug()` and `getSavedId()` query `this.db.get`
+   * directly instead of going through `SmrtCollection.get()`, so before this
+   * hook they bypassed every read interceptor: under an active tenant context,
+   * `new Model({ slug }).initialize()` happily hydrated another tenant's row
+   * even though every collection read was filtered. Routing the filter through
+   * `GlobalInterceptors.executeBeforeGet` gives hydration the same read
+   * predicate as collection reads — the tenancy interceptor adds its tenant
+   * filter (or throws `TenantContextError` for `mode: 'required'` classes
+   * outside a tenant context), and the existing bypasses (`withSystemContext`,
+   * super-admin bypass) keep working because they short-circuit inside the
+   * interceptor itself.
+   *
+   * Interceptors speak field names (`tenantId`); `this.db.get` speaks column
+   * names, so the merged filter is converted to snake_case before use. The
+   * base filters (`id`, `slug`, `context`) are already column-shaped and pass
+   * through unchanged.
+   *
+   * @param filter - The column-shaped hydration filter to intercept
+   * @returns The intercepted filter with all keys in column form
+   */
+  private async interceptGetFilter(
+    filter: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const className = this.getResolvedClassName();
+    const interceptorContext = createInterceptorContext(className, 'get');
+    const intercepted = await GlobalInterceptors.executeBeforeGet(
+      className,
+      filter,
+      interceptorContext,
+    );
+    // An interceptor may hand back a string (the public beforeGet contract
+    // allows it); resolve it the same way SmrtCollection.get() would.
+    const resolved =
+      typeof intercepted === 'string'
+        ? resolveGetStringFilter(intercepted)
+        : intercepted;
+    return keysToSnakeCase(resolved as Record<string, unknown>);
   }
 
   /**
@@ -2332,8 +2394,10 @@ export class SmrtObject extends SmrtClass {
   /**
    * Hydrates this object from the database using its `id` property.
    *
-   * Queries the database for a row matching `{ id: this._id }` and calls
-   * `loadDataFromDb()` if found. Transient failures are retried up to 4 times
+   * Queries the database for a row matching `{ id: this._id }` — after running
+   * the filter through the `beforeGet` interceptor pipeline (#2365), so tenant
+   * scoping applies to hydration exactly as it does to collection reads — and
+   * calls `loadDataFromDb()` if found. Transient failures are retried up to 4 times
    * total — the initial try plus 3 retries — sleeping 250, 500 and 1000 ms
    * between them; deterministic failures are not. A malformed identifier
    * (PostgreSQL `22P02 invalid_text_representation` on a `uuid` column) is a
@@ -2357,19 +2421,23 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async loadFromId() {
-    try {
-      if (!this._id) {
-        throw ValidationError.requiredField('id', this.constructor.name);
-      }
+    if (!this._id) {
+      throw ValidationError.requiredField('id', this.constructor.name);
+    }
 
+    // Resolve the read filter through beforeGet interceptors before the retry
+    // wrapper (#2365): a tenancy error (missing required context, isolation
+    // violation) is a caller error that must propagate unchanged, not be
+    // wrapped into a retried DatabaseError.
+    const filter = await this.interceptGetFilter({ id: this._id });
+
+    try {
       await this.verifyStorageReady();
 
       await ErrorUtils.withRetry(
         async () => {
           try {
-            const existing = await this.db.get(this.tableName, {
-              id: this._id,
-            });
+            const existing = await this.db.get(this.tableName, filter);
             if (existing) {
               await this.loadDataFromDb(existing);
             }
@@ -2418,10 +2486,15 @@ export class SmrtObject extends SmrtClass {
   public async loadFromSlug() {
     await this.verifyStorageReady();
 
-    const existing = await this.db.get(this.tableName, {
-      slug: this._slug,
-      context: this._context || '',
-    });
+    // Route the natural-key lookup through beforeGet interceptors so slug
+    // hydration carries the same read predicate as collection reads (#2365).
+    const existing = await this.db.get(
+      this.tableName,
+      await this.interceptGetFilter({
+        slug: this._slug,
+        context: this._context || '',
+      }),
+    );
     if (existing) {
       await this.loadDataFromDb(existing);
     }

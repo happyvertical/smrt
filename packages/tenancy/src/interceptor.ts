@@ -19,6 +19,7 @@ import {
   type ListOptions,
   type QueryInterceptResult,
   type QueryOptions,
+  resolveGetStringFilter,
   setDispatchTenantResolver,
   setTenantEntryPointRunner,
   setTenantScopedClassResolver,
@@ -173,7 +174,7 @@ function serializeInstance(
  * | Hook          | Behaviour |
  * |---------------|-----------|
  * | `beforeList`  | Injects tenant filter into `WHERE`; validates explicit filters. |
- * | `beforeGet`   | Converts ID lookups to `{ id, tenantId }` filter objects. |
+ * | `beforeGet`   | Resolves string lookups (id vs slug) and adds the tenant predicate. |
  * | `beforeSave`  | Auto-populates `tenantId`; validates existing values. |
  * | `beforeDelete`| Validates the instance's `tenantId` matches context. |
  * | `beforeQuery` | Enforces `rawQueryPolicy` on raw SQL calls. |
@@ -334,10 +335,14 @@ export function createTenantInterceptor(
 
       const tenantField = config?.field || 'tenantId';
 
-      // If filter is a string (ID), convert to object filter with tenant
+      // If filter is a string, resolve it exactly the way core's `get()` would
+      // (UUID -> id lookup, anything else -> slug/context natural key) and add
+      // the tenant predicate to whichever shape it resolves to. Rewriting every
+      // string to `{ id: filter }` broke get-by-slug under a tenant context:
+      // null on SQLite, a uuid cast error on PostgreSQL (#2365).
       if (typeof filter === 'string') {
         return {
-          id: filter,
+          ...resolveGetStringFilter(filter),
           [tenantField]: tenantContext.tenantId,
         };
       }
