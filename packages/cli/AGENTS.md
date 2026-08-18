@@ -17,6 +17,8 @@ smrt db:migrate-uuid         # Convert schema-declared UUID text columns after d
 smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Roll back migrations by executing their recorded DOWN
 smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
+smrt db:prune                # Prune framework system tables to their retention windows
+smrt db:prune --dry-run      # Same predicates, counted rather than deleted
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
@@ -138,6 +140,26 @@ the exact statement `db:migrate` records for `diff.added_tables`.
 
 Reverting a non-`create_table` change is a forward operation: update the
 `@smrt` object definitions and run `db:migrate` again.
+
+## `db:prune` is the retention cron entry point (#2375)
+
+Runs `runRetentionSweep()` from `@happyvertical/smrt-core` over every
+framework-owned system table plus every task other installed packages
+registered (`_smrt_jobs`/`_smrt_job_events` from `smrt-jobs`, expired
+sessions/magic-link tokens/CLI-auth requests from `smrt-users`).
+
+- Defaults are the framework's documented retention windows; `retention` in
+  `smrt.config` overrides them persistently, and `--changes-days`,
+  `--usage-days`, `--dispatch-days` override them for one run.
+- `--skip` takes **task** names, not table names — the same names the report
+  and `--json` print, so a package-contributed task is skipped the same way a
+  built-in one is.
+- `--dry-run` counts with the identical predicates instead of deleting; the
+  report says `would prune`.
+- The exit code is non-zero when **any** task failed, so a partial sweep never
+  looks clean to cron. Individual task failures never abort the others.
+- Deployments running a jobs `TaskRunner` already get the same sweep every six
+  hours; this command is for those that do not, and for one-off operator runs.
 
 ## Architecture
 

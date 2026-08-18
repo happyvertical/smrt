@@ -116,6 +116,19 @@ export {
   type BgOptions,
   withBackgroundJobs,
 } from './object-extension.js';
+// Job retention — bounded growth for _smrt_jobs / _smrt_job_events (#2375)
+export {
+  DEFAULT_JOB_RETENTION,
+  DEFAULT_RETENTION_SWEEP_INTERVAL_MS,
+  JOB_EVENTS_RETENTION_TASK,
+  JOBS_RETENTION_TASK,
+  type JobRetentionOptions,
+  type RetentionSweeper,
+  type RetentionSweeperOptions,
+  registerJobRetentionTasks,
+  startRetentionSweeper,
+  unregisterJobRetentionTasks,
+} from './retention.js';
 // Task runner
 export {
   createTaskRunner,

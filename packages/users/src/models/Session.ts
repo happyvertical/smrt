@@ -87,7 +87,11 @@ export class Session extends SmrtObject {
 
   /**
    * Session expiration time
+   *
+   * Indexed: `deleteExpired()` — and the retention sweep that now schedules it
+   * (#2375) — scans this column on every pass.
    */
+  @field({ type: 'datetime', indexed: true })
   expiresAt: Date = new Date();
 
   /**

@@ -263,3 +263,50 @@ Four properties of that module are load-bearing; keep them if you touch it:
 All the drifted columns of one table share a single rebuild: the first change
 carries the plan and the rest become `no change needed` comments that the CLI
 classifies as no-ops.
+
+### 16. System tables get a retention policy, not just a prune function (#2375)
+
+Four framework-owned tables grow with traffic and nothing used to remove a row:
+`_smrt_changes` (one per save/delete), `_smrt_ai_usage` (one per AI call, and
+persistence is on by default), `_smrt_contexts` (whose `expires_at` nothing
+enforced) and `_smrt_dispatch` (an operator-only `dispatch:cleanup`).
+`src/system/retention.ts` is now the single place that bounds them.
+
+- **`runRetentionSweep(db, policy)` is the entry point.** It runs the four
+  built-in tasks in a fixed order, then every task other packages contributed
+  via `registerRetentionTask()` — `@happyvertical/smrt-jobs` registers
+  `_smrt_jobs`/`_smrt_job_events`, `@happyvertical/smrt-users` registers
+  session/magic-link/CLI-auth expiry. A task that throws is recorded on its own
+  result and the sweep continues; a missing table reports `unavailable`, so a
+  sweep is safe against a partially bootstrapped database.
+- **Defaults are opt-out, not opt-in** (`DEFAULT_RETENTION_POLICY`): changes 30
+  days, AI usage 90 days, dispatch 30 days completed / 90 days failed, contexts
+  strictly by their own `expires_at`; jobs 7 days terminal / 30 days failed,
+  job events 30 days; expired credentials immediately. Set a table to `false`,
+  a registered task to `false` under `tasks`, or `enabled: false` for the whole
+  sweep — through `smrt.configure({ retention })`, `smrt db:prune --skip`, or
+  the runner's `retention` config.
+- **Scheduling lives outside core.** A running `TaskRunner` sweeps every six
+  hours (`retention: false` opts out) and `smrt db:prune` is the cron entry
+  point. The first runner sweep is one interval after `start()`, never at
+  start: a crash-looping worker must not become a delete loop.
+- **Every prune counts before it deletes.** `rowCount` is not reliably
+  populated across the engines SMRT supports, so counting is both what makes
+  the reported figure exact and what lets `dryRun` preview the *same*
+  predicate rather than an approximation of it. `pruneChangeFeed`'s age bound
+  additionally excludes what its row bound already accounted for, so a dry run
+  with both bounds does not count an entry twice.
+- **Every retention predicate ships with its index** (rule 2 applies to
+  maintenance SQL too): `_smrt_contexts(expires_at)`,
+  `_smrt_ai_usage(tenant_id, created_at)` — which is also the subscriptions
+  billing meter's range scan — `_smrt_dispatch(status, processed_at)` and
+  `(status, updated_at)` come from the system DDL, so they reach existing
+  databases through the `SMRT_SCHEMA_VERSION` bump that replays it.
+  `_smrt_jobs(status, completed_at)` comes from
+  `ensureJobsSystemTableCompatibility()` instead, because `_smrt_jobs` is
+  generated from a decorated class and does not exist yet when bootstrap runs;
+  the jobs collection calls that path on every `initialize()`.
+- **Expiry enforcement is prune-side only.** `recall()`/`recallAll()` keep
+  their documented "expiry is not applied at read time" contract — changing it
+  would change read semantics for existing callers, which is a different issue
+  from bounding storage. `LearningMemory` filters expired rows itself.

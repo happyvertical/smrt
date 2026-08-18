@@ -42,6 +42,11 @@ CREATE INDEX IF NOT EXISTS idx_smrt_contexts_confidence
 
 CREATE INDEX IF NOT EXISTS idx_smrt_contexts_last_used
   ON _smrt_contexts(last_used_at);
+
+-- Retention predicate for pruneExpiredContexts() (#2375). Rows that never
+-- expire carry NULL here, so the index only has to cover the ones that do.
+CREATE INDEX IF NOT EXISTS idx_smrt_contexts_expires_at
+  ON _smrt_contexts(expires_at);
 `;
 
 /**
@@ -211,6 +216,15 @@ CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_target
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_correlation
   ON _smrt_dispatch(correlation_id);
+
+-- Retention predicates of DispatchCollection.cleanup() (#2375): completed rows
+-- are aged out on processed_at, failed rows on updated_at. The status-only
+-- index above cannot serve either range.
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_processed
+  ON _smrt_dispatch(status, processed_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_updated
+  ON _smrt_dispatch(status, updated_at);
 `;
 
 /**
@@ -285,6 +299,12 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
   ON _smrt_ai_usage(provider, model);
+
+-- Serves both the tenant-scoped retention predicate of pruneAiUsage() and the
+-- subscriptions billing meter's tenant_id + created_at range scan, neither of
+-- which the single-column indexes above can satisfy (#2375).
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant_created
+  ON _smrt_ai_usage(tenant_id, created_at);
 `;
 
 /**
@@ -543,5 +563,10 @@ export function getSystemTableDDLForEngine(
 
 /**
  * Current SMRT system schema version
+ *
+ * Bootstrap replays the DDL above whenever this version is not yet stamped in
+ * `_smrt_migrations`, so bumping it is how additive index changes reach
+ * databases that already exist. 1.10.0 adds the retention-predicate indexes
+ * from #2375.
  */
-export const SMRT_SCHEMA_VERSION = '1.9.0';
+export const SMRT_SCHEMA_VERSION = '1.10.0';

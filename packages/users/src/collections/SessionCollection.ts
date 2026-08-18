@@ -179,23 +179,42 @@ export class SessionCollection extends SmrtCollection<Session> {
 
   /**
    * Delete expired sessions (cleanup job)
-   * Returns the number of deleted sessions
+   *
+   * Scheduled by the framework retention sweep (#2375); `expires_at` carries
+   * an index for this predicate.
+   *
+   * @param options.dryRun - Count the sessions the predicate selects without
+   *   deleting them.
+   * @returns Number of sessions deleted (or, under `dryRun`, matched)
    */
-  async deleteExpired(): Promise<number> {
+  async deleteExpired(options: { dryRun?: boolean } = {}): Promise<number> {
     // #1400: a single atomic DELETE. The previous two-pass version listed
     // expired-by-time and revoked sessions separately, so a session that was
     // both got delete()'d twice — the second delete could throw and abort the
     // cleanup job mid-run, leaving expired sessions un-reaped. One statement
     // also avoids hydrating every row just to delete it.
     const now = new Date().toISOString();
-    const { rowCount } = await this.db.query(
-      `DELETE FROM ${this.tableName}
-       WHERE expires_at < ? OR status = ?`,
+    const predicate = 'expires_at < ? OR status = ?';
+
+    // Counting first also makes the reported figure exact: `rowCount` is not
+    // reliably populated across every engine SMRT supports (#2375).
+    const counted = await this.db.query(
+      `SELECT COUNT(*) AS total FROM ${this.tableName} WHERE ${predicate}`,
       now,
       SessionStatus.REVOKED,
     );
+    const total = Number(counted.rows?.[0]?.total ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return 0;
 
-    return rowCount ?? 0;
+    if (!options.dryRun) {
+      await this.db.query(
+        `DELETE FROM ${this.tableName} WHERE ${predicate}`,
+        now,
+        SessionStatus.REVOKED,
+      );
+    }
+
+    return total;
   }
 
   /**

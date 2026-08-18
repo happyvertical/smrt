@@ -47,6 +47,7 @@ import {
   runLiveSchemaParity,
   selectFindings,
 } from './db-parity.js';
+import { dbPruneCommand } from './db-prune.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { devKnowledgeCommands } from './dev-knowledge.js';
@@ -2813,6 +2814,7 @@ export default testManifest;
   'db:rollback': dbRollbackCommand,
   'db:generate': dbGenerateCommand,
   'db:migrate-uuid': dbMigrateUuidCommand,
+  'db:prune': dbPruneCommand,
 
   // Configuration commands
   'config:export': configExportCommand,

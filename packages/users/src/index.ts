@@ -139,6 +139,15 @@ export {
   UsersCliAuthRequest,
   UsersMagicLinkToken,
 } from './models/index.js';
+// Credential retention — expired sessions and tokens (#2375)
+export {
+  CLI_AUTH_RETENTION_TASK,
+  MAGIC_LINK_RETENTION_TASK,
+  registerUserRetentionTasks,
+  SESSIONS_RETENTION_TASK,
+  USER_RETENTION_TASKS,
+  unregisterUserRetentionTasks,
+} from './retention.js';
 
 // Services
 export {

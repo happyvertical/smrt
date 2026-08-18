@@ -251,6 +251,17 @@ describe('system table compatibility', () => {
     expect(taskIndexes.rows.map((row: { name: string }) => row.name)).toContain(
       'idx_smrt_jobs_task_id',
     );
+    // The retention predicate of SmrtJobCollection.cleanup() must reach legacy
+    // installs the same way (#2375): bootstrap cannot create it, because
+    // `_smrt_jobs` comes from a decorated class, not the system DDL.
+    const retentionIndexes = await db.query(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'index'
+        AND name = 'idx_smrt_jobs_status_completed_at'
+    `);
+    expect(
+      retentionIndexes.rows.map((row: { name: string }) => row.name),
+    ).toContain('idx_smrt_jobs_status_completed_at');
   });
 
   it('upgrades legacy job event tables without replaying system DDL', async () => {
@@ -306,6 +317,8 @@ describe('system table compatibility', () => {
     const existingIndexes = new Set([
       'idx_smrt_jobs_tenant_id',
       'idx_smrt_jobs_task_id',
+      // Retention predicate of SmrtJobCollection.cleanup() (#2375).
+      'idx_smrt_jobs_status_completed_at',
     ]);
     const query = vi
       .fn()

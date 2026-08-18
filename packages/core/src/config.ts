@@ -12,6 +12,7 @@ import type { LoggerConfig } from '@happyvertical/logger';
 import type { AiUsageHandler, SignalAdapter } from '@happyvertical/smrt-types';
 import type { SignalBus } from './signals/bus.js';
 import type { SanitizationConfig } from './signals/sanitizer.js';
+import type { RetentionPolicy } from './system/retention.js';
 
 /**
  * Metrics adapter configuration
@@ -112,6 +113,16 @@ export interface GlobalSignalConfig {
    * Set to false to disable sanitization
    */
   sanitization?: SanitizationConfig | false;
+
+  /**
+   * System-table retention policy (#2375).
+   *
+   * Consumed by `smrt db:prune` and by the jobs `TaskRunner`'s periodic
+   * sweep. Defaults come from `DEFAULT_RETENTION_POLICY`; set
+   * `retention: { enabled: false }` to opt a deployment out entirely, or an
+   * individual table to `false` to keep only that one unbounded.
+   */
+  retention?: RetentionPolicy;
 
   /** Custom signal configuration */
   signals?: {

@@ -317,6 +317,43 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
     );
   }
 
+  /**
+   * Delete job events recorded before a cutoff (#2375).
+   *
+   * `_smrt_job_events` is append-only — every log line, progress tick and
+   * lifecycle transition of every job — so it outgrows `_smrt_jobs` by an
+   * order of magnitude and had no prune path at all. Events are pruned on
+   * their own clock rather than by following job deletion: a long-running job
+   * accumulates events for as long as it runs.
+   *
+   * The predicate is covered by `idx_smrt_job_events_created_at`.
+   *
+   * @param options.before - Delete events created strictly before this time.
+   * @param options.dryRun - Count matching events without deleting them.
+   * @returns Number of events deleted (or, under `dryRun`, matched).
+   */
+  async cleanup(options: { before: Date; dryRun?: boolean }): Promise<number> {
+    const expression = this.createdAtComparableExpression();
+    const where = `${expression} < ?`;
+    const cutoff = options.before.toISOString();
+
+    const counted = await this.db.query(
+      `SELECT COUNT(*) AS total FROM _smrt_job_events WHERE ${where}`,
+      cutoff,
+    );
+    const total = Number(counted.rows?.[0]?.total ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return 0;
+
+    if (!options.dryRun) {
+      await this.db.query(
+        `DELETE FROM _smrt_job_events WHERE ${where}`,
+        cutoff,
+      );
+    }
+
+    return total;
+  }
+
   private createdAtComparableExpression(): string {
     if (usesSqliteDateFunctions(this.db.url)) {
       return "strftime('%Y-%m-%dT%H:%M:%fZ', created_at)";

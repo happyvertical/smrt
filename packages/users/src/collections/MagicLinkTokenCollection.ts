@@ -49,14 +49,23 @@ export class UsersMagicLinkTokenCollection extends SmrtCollection<UsersMagicLink
 
   /**
    * Delete expired tokens (cleanup job)
+   *
+   * Scheduled by the framework retention sweep (#2375); `expiresAt` carries an
+   * index for this predicate.
+   *
+   * @param options.dryRun - Count the tokens the predicate selects without
+   *   deleting them.
+   * @returns Number of tokens deleted (or, under `dryRun`, matched)
    */
-  async deleteExpired(): Promise<number> {
+  async deleteExpired(options: { dryRun?: boolean } = {}): Promise<number> {
     const now = new Date();
     const tokens = await this.list({
       where: {
         'expiresAt <': now.toISOString(),
       },
     });
+
+    if (options.dryRun) return tokens.length;
 
     let count = 0;
     for (const token of tokens) {

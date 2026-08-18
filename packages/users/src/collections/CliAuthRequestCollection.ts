@@ -36,14 +36,23 @@ export class UsersCliAuthRequestCollection extends SmrtCollection<UsersCliAuthRe
 
   /**
    * Delete expired pending requests (cleanup job).
+   *
+   * Scheduled by the framework retention sweep (#2375); `expiresAt` carries an
+   * index for this predicate.
+   *
+   * @param options.dryRun - Count the requests the predicate selects without
+   *   deleting them.
+   * @returns Number of requests deleted (or, under `dryRun`, matched)
    */
-  async deleteExpired(): Promise<number> {
+  async deleteExpired(options: { dryRun?: boolean } = {}): Promise<number> {
     const requests = await this.list({
       where: {
         status: 'pending',
         'expiresAt <': new Date().toISOString(),
       },
     });
+
+    if (options.dryRun) return requests.length;
 
     let count = 0;
     for (const request of requests) {

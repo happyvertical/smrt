@@ -49,8 +49,13 @@ export class UsersCliAuthRequest extends SmrtObject {
   @field({ type: 'text' })
   sessionId = '';
 
-  /** When the pending request stops accepting approvals. */
-  @field({ type: 'datetime' })
+  /**
+   * When the pending request stops accepting approvals.
+   *
+   * Indexed: `deleteExpired()` — and the retention sweep that now schedules
+   * it (#2375) — scans this column on every pass.
+   */
+  @field({ type: 'datetime', indexed: true })
   expiresAt = new Date();
 
   /** When approval happened — null while the request is still pending. */

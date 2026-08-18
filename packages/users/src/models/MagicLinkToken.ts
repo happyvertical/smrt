@@ -48,7 +48,13 @@ export class UsersMagicLinkToken extends SmrtObject {
   /** Whether this token has been used */
   used: boolean = false;
 
-  /** When this token expires */
+  /**
+   * When this token expires.
+   *
+   * Indexed: `deleteExpired()` — and the retention sweep that now schedules
+   * it (#2375) — scans this column on every pass.
+   */
+  @field({ type: 'datetime', indexed: true })
   expiresAt: Date = new Date(Date.now() + DEFAULT_TOKEN_EXPIRY_SECONDS * 1000);
 
   constructor(options: MagicLinkTokenOptions = {}) {
