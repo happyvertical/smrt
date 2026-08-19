@@ -946,7 +946,17 @@ export async function ensureJobsSystemTableCompatibility(
   // aged out by `(status, completed_at)`. `_smrt_jobs` comes from a decorated
   // class rather than the hand-written system DDL, so this compatibility path
   // — which the jobs collection runs on every initialize — is where the index
-  // reaches both existing and freshly migrated databases.
+  // reaches both existing and freshly migrated databases. `completed_at` is
+  // guarded the same as every other column this pass touches: a table created
+  // before the field existed (or a minimal test fixture) must not fail the
+  // whole sweep with "no such column".
+  await addColumnIfMissing(
+    db,
+    '_smrt_jobs',
+    'completed_at',
+    'TIMESTAMP',
+    typeHint,
+  );
   await addIndexIfMissing(
     db,
     'idx_smrt_jobs_status_completed_at',

@@ -496,6 +496,9 @@ describe('system table compatibility', () => {
       'task_result',
       'task_input_requests',
       'task_input_responses',
+      // Retention predicate of SmrtJobCollection.cleanup() (#2375) — the index
+      // below implies the column already exists too.
+      'completed_at',
     ]);
     const existingIndexes = new Set([
       'idx_smrt_jobs_tenant_id',
