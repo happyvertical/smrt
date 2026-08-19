@@ -276,7 +276,13 @@ describe('startRetentionSweeper (#2375)', () => {
     }
   });
 
-  it('unregisters its tasks on stop', async () => {
+  it('does not unregister its tasks on stop — the package import owns that contract', async () => {
+    // `index.ts` registers these tasks unconditionally on import, so "this
+    // process loaded @happyvertical/smrt-jobs" is what contributes them, not
+    // "a sweeper happens to be running". If `stop()` unregistered, a second,
+    // independent `runRetentionSweep()` call elsewhere in the same long-lived
+    // process — or simply restarting the runner later — would silently lose
+    // job retention the moment one sweeper stopped.
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     await SmrtJobCollection.create({ db });
 
@@ -285,11 +291,21 @@ describe('startRetentionSweeper (#2375)', () => {
 
     const result = await runRetentionSweep(db);
     expect(result.tasks.some((task) => task.task === JOBS_RETENTION_TASK)).toBe(
-      false,
+      true,
     );
+
+    // The explicit opt-out still works for callers that want a clean
+    // registry (tests, teardown).
+    unregisterJobRetentionTasks();
+    const afterExplicitUnregister = await runRetentionSweep(db);
+    expect(
+      afterExplicitUnregister.tasks.some(
+        (task) => task.task === JOBS_RETENTION_TASK,
+      ),
+    ).toBe(false);
   });
 
-  it('keeps the tasks registered while a second sweeper is still running', async () => {
+  it('stopping one sweeper never disarms another sweeper in the same process', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     await SmrtJobCollection.create({ db });
 
@@ -297,7 +313,6 @@ describe('startRetentionSweeper (#2375)', () => {
     const second = startRetentionSweeper(db);
     try {
       first.stop();
-      // Stopping one runner must not disarm the other's sweep.
       const stillArmed = await runRetentionSweep(db);
       expect(
         stillArmed.tasks.some((task) => task.task === JOBS_RETENTION_TASK),
@@ -306,10 +321,13 @@ describe('startRetentionSweeper (#2375)', () => {
       second.stop();
     }
 
-    const disarmed = await runRetentionSweep(db);
+    // Neither stop() unregisters — the tasks are still armed after both.
+    const stillArmedAfterBoth = await runRetentionSweep(db);
     expect(
-      disarmed.tasks.some((task) => task.task === JOBS_RETENTION_TASK),
-    ).toBe(false);
+      stillArmedAfterBoth.tasks.some(
+        (task) => task.task === JOBS_RETENTION_TASK,
+      ),
+    ).toBe(true);
   });
 
   it('defaults to a six-hour cadence', () => {

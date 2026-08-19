@@ -137,7 +137,7 @@ export interface RetentionSweeperOptions {
 
 /** Handle returned by {@link startRetentionSweeper}. */
 export interface RetentionSweeper {
-  /** Stop sweeping and unregister the job retention tasks. */
+  /** Stop the periodic sweep timer. Does not unregister the job tasks. */
   stop(): void;
   /** Run one sweep immediately (used by tests and by manual triggers). */
   sweepNow(): Promise<RetentionSweepResult>;
@@ -145,14 +145,6 @@ export interface RetentionSweeper {
 
 /** Default sweep cadence: four times a day is ample for day-scale windows. */
 export const DEFAULT_RETENTION_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-/**
- * Live sweepers in this process.
- *
- * Retention tasks are registered in a process-global registry, so the last
- * sweeper to stop is the one that may unregister them.
- */
-let activeSweepers = 0;
 
 /**
  * Start a periodic retention sweep on an interval.
@@ -165,21 +157,29 @@ let activeSweepers = 0;
  * The timer is `unref`'d where the runtime supports it, so a pending sweep
  * never keeps a process alive.
  *
- * The retention tasks are process-global, so the sweeper refcounts them: two
- * runners in one process both register, and the tasks are removed only when
- * the last sweeper stops. Without that, stopping one runner would silently
- * disarm the other's sweep.
+ * **`stop()` never unregisters the job tasks.** The package entry point
+ * (`index.ts`) registers them unconditionally on import, so "this process
+ * loaded `@happyvertical/smrt-jobs`" is what contributes them — not "a
+ * sweeper happens to be running". Making `stop()` unregister would silently
+ * break that contract the moment a `TaskRunner` restarts (or a second,
+ * independent caller in the same process runs `runRetentionSweep()` after
+ * the first sweeper stops): the tasks would vanish from the sweep even
+ * though the package is still loaded. `options.jobs` still lets a caller
+ * override the default windows — each call to this function re-registers
+ * with whatever config it was given, the same idempotent replace
+ * {@link registerJobRetentionTasks} already documents. Callers that want a
+ * genuinely clean registry (tests, teardown) call
+ * {@link unregisterJobRetentionTasks} themselves.
  *
  * @param db - Database holding the system tables.
  * @param options - Cadence and policy overrides.
- * @returns A handle that stops the sweeper and releases its task registration.
+ * @returns A handle that stops the periodic timer.
  */
 export function startRetentionSweeper(
   db: DatabaseInterface,
   options: RetentionSweeperOptions = {},
 ): RetentionSweeper {
   registerJobRetentionTasks(options.jobs);
-  activeSweepers += 1;
 
   const intervalMs = options.intervalMs ?? DEFAULT_RETENTION_SWEEP_INTERVAL_MS;
   let stopped = false;
@@ -207,10 +207,6 @@ export function startRetentionSweeper(
       if (stopped) return;
       stopped = true;
       clearInterval(timer);
-      activeSweepers = Math.max(0, activeSweepers - 1);
-      if (activeSweepers === 0) {
-        unregisterJobRetentionTasks();
-      }
     },
     sweepNow,
   };

@@ -146,9 +146,12 @@ the framework retention sweep in `@happyvertical/smrt-core`.
   `retention: { intervalMs, policy, jobs }` tunes it. The **first sweep is one
   interval after `start()`, never at start** — a crash-looping worker must not
   become a delete loop, and a short-lived runner must exit having deleted
-  nothing. `stop()` clears the timer and releases the task registration, which
-  is refcounted — two runners in one process both register and the tasks are
-  removed only when the last sweeper stops.
+  nothing. `stop()` only clears the timer — it does **not** unregister the job
+  tasks. The package entry point (`index.ts`) registers them unconditionally
+  on import, so "this process loaded `@happyvertical/smrt-jobs`" is the
+  contract that contributes them, not "a sweeper happens to be running";
+  `unregisterJobRetentionTasks()` is the explicit opt-out for callers that
+  want a clean registry (tests, teardown).
 - Windows (`DEFAULT_JOB_RETENTION`): completed/cancelled 7 days, failed 30
   days, events 30 days, 10 000 job rows per sweep. Events deliberately outlive
   the jobs they describe, so a job row removed at 7 days still has a readable
