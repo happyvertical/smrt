@@ -105,6 +105,24 @@ export type ForgeProjectionAuditHook = (
   api: false,
   cli: false,
   mcp: false,
+  // `claimReady()` scans two OR-branches every poll (#2364, epic #2382
+  // finding A3): `status IN ('pending','retry') AND next_attempt_at <= ?`
+  // (the common ready-to-run case) and `status = 'leased' AND
+  // lease_expires_at < ?` (reclaiming an expired lease — also the predicate
+  // of the lease-expiry-to-dead_letter sweep above it in the same method).
+  // Neither branch is a prefix of the other, so both composites are
+  // declared; PostgreSQL can combine them with a BitmapOr when planning the
+  // OR.
+  indexes: [
+    {
+      name: '_smrt_forge_deliveries_status_next_attempt_at_idx',
+      columns: ['status', 'nextAttemptAt'],
+    },
+    {
+      name: '_smrt_forge_deliveries_status_lease_expires_at_idx',
+      columns: ['status', 'leaseExpiresAt'],
+    },
+  ],
 })
 @TenantScoped({ mode: 'required' })
 export class ForgeDelivery extends SmrtObject {

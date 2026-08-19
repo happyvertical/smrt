@@ -180,6 +180,34 @@ function buildFixtureManifest(): SmartObjectManifest {
     ),
   );
 
+  // Polymorphic-association-shaped CTI (#2364, epic #2382 finding A3):
+  // `SmrtPolymorphicAssociation` merges `metaType`/`metaId`/`role`/
+  // `sortOrder` into a concrete subclass's manifest (the abstract base
+  // carries no `@smrt()` decorator of its own to declare an index on — see
+  // `AssetAssociation` in smrt-assets for the real shape this mirrors). The
+  // conflict key leads with the class's own FK, so `meta_type`/`meta_id` sit
+  // in the middle of that unique index — an owner lookup like
+  // `AssetAssociationCollection.byLeft(metaType, metaId)` ("what points at
+  // this target") filters columns 2-3 of a 4-column index and needs its own
+  // composite.
+  add(
+    objectDef(
+      'ParityAssociation',
+      {
+        ownerId: {
+          type: 'foreignKey',
+          related: 'ParityAuthor',
+          required: true,
+        },
+        metaType: { type: 'text', required: true },
+        metaId: { type: 'text', required: true },
+        role: { type: 'text', required: true, default: 'default' },
+        sortOrder: { type: 'integer', default: 0 },
+      },
+      { conflictColumns: ['owner_id', 'meta_type', 'meta_id', 'role'] },
+    ),
+  );
+
   // Self-referencing FK.
   add(
     objectDef('ParityNode', {
@@ -520,6 +548,7 @@ describe('schema path parity (#2359)', () => {
     'parity_scopeds',
     'parity_covereds',
     'parity_links',
+    'parity_associations',
     'parity_nodes',
     'parity_reports',
     'parity_content_contribution_revisions',
@@ -539,6 +568,7 @@ describe('schema path parity (#2359)', () => {
     parity_scopeds: 'ParityScoped',
     parity_covereds: 'ParityCovered',
     parity_links: 'ParityLink',
+    parity_associations: 'ParityAssociation',
     parity_nodes: 'ParityNode',
     parity_reports: 'ParityReport',
     parity_content_contribution_revisions: 'ParityContentContributionRevision',
@@ -827,6 +857,41 @@ describe('schema path parity (#2359)', () => {
         'parity_links_left_id_right_id_idx',
         'parity_links_right_id_idx',
         'parity_links_slug_context_idx',
+      ]);
+    });
+
+    it('polymorphic-association-shaped conflict key: owner lookup (meta_type, meta_id) indexed despite sitting mid-index (#2364, A3)', () => {
+      // The conflict index NAME is shortened to its first two columns
+      // (generator convention, #2359 review) but its `columns` still cover
+      // the full 4-column key — asserted separately below.
+      expect(names('parity_associations')).toEqual([
+        'parity_associations_created_at_idx',
+        'parity_associations_meta_type_meta_id_idx',
+        'parity_associations_owner_id_meta_type_idx',
+        'parity_associations_slug_context_idx',
+      ]);
+      // The leading owner_id FK is already served by the conflict index
+      // (position 0), so no redundant standalone `owner_id_idx` (mirrors the
+      // junction-shaped case above).
+      expect(names('parity_associations')).not.toContain(
+        'parity_associations_owner_id_idx',
+      );
+      expect(
+        idx('parity_associations').find(
+          (i) => i.name === 'parity_associations_meta_type_meta_id_idx',
+        )?.columns,
+      ).toEqual(['meta_type', 'meta_id']);
+      // The 4-column conflict index leads with owner_id, not meta_type — it
+      // does not serve the owner lookup as a prefix, so both indexes coexist.
+      const conflictIndex = idx('parity_associations').find(
+        (i) => i.name === 'parity_associations_owner_id_meta_type_idx',
+      );
+      expect(conflictIndex?.unique).toBe(true);
+      expect(conflictIndex?.columns).toEqual([
+        'owner_id',
+        'meta_type',
+        'meta_id',
+        'role',
       ]);
     });
 

@@ -7,6 +7,7 @@
  */
 
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -46,8 +47,12 @@ export class NostrIdentity extends SmrtObject {
   profileId?: string;
 
   /**
-   * Hex-encoded secp256k1 public key (64 characters)
+   * Hex-encoded secp256k1 public key (64 characters).
+   *
+   * Indexed: `findByPubkey()` looks identities up by this column (#2364,
+   * epic #2382 finding A3).
    */
+  @field({ indexed: true })
   pubkey: string = '';
 
   /**

@@ -62,6 +62,18 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
     http: false,
   },
   mcp: false,
+  // Composite for the claim-loop predicate every runner polls roughly once
+  // per second (`claimReady()`/`listReady()`: `status = 'pending' AND
+  // run_at <= ?`, #2364, epic #2382 finding A3). Declared here rather than
+  // left to the jobs-compat path (`ensureJobsSystemTableCompatibility()`,
+  // #2375/#2376): that path exists to reshape a table that predates the
+  // column/index it adds on databases where the manifest hasn't migrated
+  // yet, not as the default route for new indexes on a normal decorated
+  // class — this one reaches every path (manifest, registry, `db:migrate`)
+  // the standard way and rolls out on the next `smrt db:migrate`.
+  indexes: [
+    { name: '_smrt_jobs_status_run_at_idx', columns: ['status', 'runAt'] },
+  ],
 })
 // Keep the data model tenant-scoped (defense in depth): even without a generated
 // read route, the @tenantId() field alone does NOT make collection reads filter
@@ -93,16 +105,30 @@ export class SmrtJob extends SmrtObject {
   @field({ type: 'json' })
   args: Record<string, unknown> = {};
 
-  /** When to run the job */
-  @field({ type: 'datetime', required: true })
+  /**
+   * When to run the job.
+   *
+   * Indexed (single-column, plus the class-level `(status, run_at)`
+   * composite): the claim-loop predicate every runner polls roughly once per
+   * second (#2364).
+   */
+  @field({ type: 'datetime', required: true, indexed: true })
   runAt: Date = new Date();
 
   /** Priority (higher = sooner) */
   @field({ type: 'integer', required: true, default: 50 })
   priority: number = 50;
 
-  /** Current status */
-  @field({ type: 'text', required: true, default: 'pending' })
+  /**
+   * Current status.
+   *
+   * Indexed (single-column, plus the class-level `(status, run_at)`
+   * composite): the claim-loop predicate every runner polls roughly once per
+   * second (#2364). `(status, completed_at)` — the retention cleanup
+   * predicate — is a separate index from `ensureJobsSystemTableCompatibility()`
+   * (#2375).
+   */
+  @field({ type: 'text', required: true, default: 'pending', indexed: true })
   status: JobStatus = 'pending';
 
   /** Number of execution attempts */

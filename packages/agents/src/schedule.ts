@@ -50,6 +50,18 @@ export type ScheduleStatus = 'active' | 'paused' | 'disabled' | 'error';
     skipApiCheck: true,
   },
   mcp: { include: ['list', 'get'] },
+  // ScheduleRunner.poll() scans this predicate every minute (#2364, epic
+  // #2382 finding A3): `enabled = true AND status = 'active' AND
+  // next_run <= ?`, ordered by `next_run ASC`. `enabled` leads because it is
+  // the cheapest, most selective equality filter (most schedules are
+  // enabled; the composite still serves `status`-only and
+  // `(enabled, status)`-only reads as leftward prefixes).
+  indexes: [
+    {
+      name: '_smrt_agent_schedules_enabled_status_next_run_idx',
+      columns: ['enabled', 'status', 'nextRun'],
+    },
+  ],
 })
 export class AgentSchedule extends SmrtObject {
   /**

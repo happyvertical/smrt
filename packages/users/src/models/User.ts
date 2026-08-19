@@ -81,8 +81,15 @@ export class User extends SmrtObject implements UserContract {
   profileId: string = '';
 
   /**
-   * User's email address (unique, used for lookup)
+   * User's email address (unique, used for lookup).
+   *
+   * Indexed: `findByEmail()` filters on this raw column directly (#2364,
+   * epic #2382 finding A3). Distinct from `emailKey`'s unique index below —
+   * `emailKey` is a separately normalized column (`normalizeIdentityEmail()`)
+   * that arbitrates cross-connection uniqueness, and its index does not serve
+   * a read path that filters on `email` itself.
    */
+  @field({ indexed: true })
   email: string = '';
 
   /** Durable normalized key for cross-connection email uniqueness. */
