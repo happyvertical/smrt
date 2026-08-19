@@ -17,7 +17,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/change-feed.ts` | the adapter-agnostic change-observation spine — `_smrt_changes`, cursors, table versions, generated `_changes` routes, retention | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` + the generated `_events` SSE route | the push companion to the change feed — the signal bus, cross-replica fan-out, the SSE route, and its documented gaps | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
-| `src/schema/` | the five `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
+| `src/schema/` | the four `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
 
 ## SmrtObject Lifecycle
 

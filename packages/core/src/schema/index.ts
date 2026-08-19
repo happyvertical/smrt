@@ -34,7 +34,6 @@ export {
   mergeSchemaDefinitionInto,
   renderCollectedManifestTable,
 } from './manifest-schema.js';
-export { SchemaOverrideSystem } from './override-system.js';
 export type {
   AggregatedTable,
   AggregateOptions,
@@ -59,7 +58,6 @@ export type {
   SchemaDefinition,
   SchemaManifest,
   SchemaMigration,
-  SchemaOverride,
   TriggerDefinition,
 } from './types.js';
 export * from './types.js';

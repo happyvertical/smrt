@@ -10,9 +10,9 @@ Written from the 2026-08-17 database-layer gap assessment (epic #2382). Symbol
 names here are stable; the line numbers the assessment quotes are not, so trust
 this call graph and re-grep before citing a location.
 
-## Five entry points, two of which ship
+## Four entry points, two of which ship
 
-`src/schema/generator.ts` exposes five index-emitting entry points. They do not
+`src/schema/generator.ts` exposes four index-emitting entry points. They do not
 produce the same schema for the same class.
 
 | Entry point | Selected by | Status |
@@ -21,7 +21,15 @@ produce the same schema for the same class.
 | `generateCTISchemaFromManifest` | `src/scanner/manifest-generator.ts` | **production** |
 | `generateSTISchemaFromRegistry` | `src/testing/database.ts` (`getTestDatabase()`), `src/schema/utils.ts` (`generateSchema`; `ensureSchema` only as a fallback) | tests + runtime helpers |
 | `generateSchemaFromRegistry` | the same two callers | tests + runtime helpers |
-| `generateSchema` (AST) | the `smrt:schema` virtual module, which has no consumer | dead (#2380) |
+
+A fifth entry point, the build-time AST `generateSchema(objectDef)`, existed
+until #2380: it fed only the `smrt:schema` virtual module, which had no
+consumer, had rotted relative to the four paths above (an `idx_`-prefixed
+naming scheme none of the others use, and no conflict-index emission at all),
+and was deleted rather than wired up. `SchemaOverrideSystem`
+(`schema/override-system.ts`) — unwired, and its two non-generic methods
+hard-coded a schema extension for a project outside this monorepo — was
+deleted alongside it. See rule 9 and the new rule at the end of this file.
 
 Production DDL takes the manifest route:
 
@@ -313,7 +321,7 @@ scans a btree either way, so an ascending index also serves the matching
 `ORDER BY ... DESC` as an ordered scan with no Sort node. `unique` and `where`
 (partial index) are honoured.
 
-`appendDeclaredIndexes()` runs first on all five entry points, ahead of
+`appendDeclaredIndexes()` runs first on all four entry points, ahead of
 `ensureDefaultListOrderingIndex()` (rule 18) and `ensureReferenceColumnIndexes()`,
 so a declared composite leading with the tenant column (or any reference column)
 replaces the automatic standalone index rather than duplicating it.
@@ -484,10 +492,10 @@ child-first/base-first equality test.
 
 Every generated list surface — REST, MCP, the SvelteKit list route — pages with
 `ORDER BY created_at DESC, <pk> ASC` (`DEFAULT_LIST_ORDER_BY`, #2367), and
-until #2363 no schema path indexed `created_at` (the dead AST path indexed
-`updated_at`), so the framework's own default page was a sequential scan plus a
-top-N sort. `ensureDefaultListOrderingIndex()` now runs on all five paths and
-emits:
+until #2363 no schema path indexed `created_at` (the AST path, deleted in
+#2380, indexed `updated_at`), so the framework's own default page was a
+sequential scan plus a top-N sort. `ensureDefaultListOrderingIndex()` now runs
+on all four entry points and emits:
 
 - `(<tenant column>, created_at)` on a tenant-scoped table — the tenancy
   interceptor puts `tenant_id = ?` in front of every list, so the tenant column
@@ -784,3 +792,66 @@ enforced) and `_smrt_dispatch` (an operator-only `dispatch:cleanup`).
   their documented "expiry is not applied at read time" contract — changing it
   would change read semantics for existing callers, which is a different issue
   from bounding storage. `LearningMemory` filters expired rows itself.
+
+### 23. Dead generation surfaces were deleted, not wired (#2380)
+
+Rule 9 named three surfaces that read as canonical but were not: the AST
+`generateSchema(objectDef)` entry point, `SchemaOverrideSystem`, and the
+never-emitted `triggers: []`. Resolution, so a future agent does not re-open
+what was deliberately decided:
+
+- **The AST path is gone.** `SchemaGenerator.generateSchema(objectDef)` and its
+  AST-only private helpers (`generateIndexes`, `generateTriggers`,
+  `extractDependencies`, `generateVersion`, `getTableName`,
+  `extractPackageName`) were deleted from `schema/generator.ts`, along with
+  their sole caller, `generateSchemaModule()` in `vite-plugin/index.ts`, and the
+  `smrt:schema` / `@happyvertical/smrt-virt-schema` virtual module registration
+  that fed. Nothing else called it — grep the deleted method's exact name
+  before assuming a caller was missed; the path-parity fixture and every other
+  rule above already speak only of the four surviving entry points.
+- **`SchemaOverrideSystem` is gone**, file and all
+  (`schema/override-system.ts` no longer exists). It was never called from
+  anywhere in this repository outside its own now-deleted exports, and two of
+  its five public methods (`createPraecoContentOverride`,
+  `createPraecoMeetingOverride`) hard-coded a schema extension for a
+  consuming project outside this monorepo — scaffolding that never belonged in
+  the framework, not a generic feature with a missing caller. `SchemaOverride`
+  (the type) went with it; `ColumnDefinition`/`IndexDefinition`/
+  `TriggerDefinition`, which it merely referenced, did not.
+- **The DDL-strategy trigger machinery was kept, not deleted.**
+  `TriggerDefinition`, `SchemaDefinition.triggers`, and every DDL strategy's
+  `generateTriggers()` / `generateTriggerStatement()` / `supportsTriggers()`
+  (`schema/ddl/*.ts`) are real, engine-uniform, directly-tested rendering code
+  that runs on **every** table creation via `strategy.generateTriggers(schema)`
+  — unlike the AST path, this is not an orphaned call graph. It is kept for the
+  same reason rule 16 keeps the cached `schema.ddl` string: `SchemaDefinition`
+  is part of the shape third-party tooling and published manifests may already
+  depend on, and `EngineSpecificDDL`/`MultiEngineDDL` (`schema/ddl/types.ts`)
+  carry `triggers` as part of that same contract. Deleting a published field is
+  a different (and unjustified) risk from deleting a virtual module nothing
+  ever imported.
+- **What changed is what is documented, not what runs.** `schema.triggers` is
+  now explicitly documented (`schema/types.ts`) as always `[]` on every schema
+  a `@smrt()` class can produce, and why: there is no `@smrt()`/`@field()`
+  option that populates it (unlike `indexes`, #2357), `updated_at` is
+  maintained at the application layer (`SmrtObject.save()`), and
+  `migrations/differ.ts` never diffs triggers — so even a hand-populated one
+  would only apply to a newly `CREATE TABLE`d table and never retrofit an
+  existing one. Wiring live trigger emission was considered and rejected for
+  this issue: it is a migration-rollout feature (retrofitting 238+ existing
+  production tables needs the same `SMRT_SCHEMA_VERSION`-replay or differ
+  support rule 21/rule 22's system-table work required), not a cleanup, and
+  nothing in the epic depended on it the way #2359 depended on FK indexes
+  actually shipping.
+- **`_smrt_signals` and `ObjectRegistry.persistToDatabase()`/`loadFromDatabase()`**
+  — named in the original finding alongside triggers — were already handled by
+  #2376 before this issue landed: see rule 21 and `system/schema.ts`'s
+  `RETIRED_SYSTEM_TABLES`. Nothing further to do there.
+- **The two config-rebuild-site comments** (`schema/utils.ts`,
+  `testing/database.ts`) rule 8 requires were already in place, added by
+  #2357/#2360; the `testing/database.ts` "same as migrations" overclaim rule 1
+  quotes was already corrected by #2359, and doctor's `experimentalDecorators`
+  check was already fixed by #2368/#2399 (see `packages/cli/AGENTS.md`
+  Gotchas). Re-verify against current source before repeating any of these —
+  the epic's PRs landed across one evening and a stale assessment line is not
+  proof a fix is still needed.

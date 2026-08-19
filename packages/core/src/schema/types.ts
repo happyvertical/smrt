@@ -129,6 +129,23 @@ export interface SchemaDefinition {
   ddl?: string;
   columns: Record<string, ColumnDefinition>;
   indexes: IndexDefinition[];
+  /**
+   * Always `[]` on every schema a `@smrt()` class can currently produce (#2380).
+   *
+   * `DDLStrategy.generateTriggers()` (`schema/ddl/*.ts`) renders this array into
+   * real `CREATE TRIGGER` DDL and runs on every table creation, but there is no
+   * `@smrt()`/`@field()` option that populates it — unlike `indexes`, which
+   * `@smrt({ indexes: [...] })` (#2357) authors directly. The one producer that
+   * ever set it (the AST `generateSchema()` entry point, which emitted a single
+   * `updated_at`-bump trigger) fed only the `smrt:schema` virtual module, which
+   * had no consumer, and was deleted rather than wired up: `updated_at` is
+   * maintained at the application layer (`SmrtObject.save()`), the migration
+   * differ (`migrations/differ.ts`) never diffs triggers, so a hand-populated
+   * one would only ever apply to newly `CREATE TABLE`d tables and never
+   * retrofit existing ones. Populate this only via a caller who constructs a
+   * `SchemaDefinition` directly (tests, or third-party tooling) — never assume
+   * a generated schema carries one.
+   */
   triggers: TriggerDefinition[];
   foreignKeys: ForeignKeyDefinition[];
   version: string; // Hash-based version for change detection
@@ -143,17 +160,6 @@ export interface SchemaManifest {
   packageName: string;
   schemas: Record<string, SchemaDefinition>;
   dependencies: string[]; // Other packages this depends on
-}
-
-export interface SchemaOverride {
-  tableName: string;
-  addColumns?: Record<string, ColumnDefinition>;
-  removeColumns?: string[];
-  addIndexes?: IndexDefinition[];
-  removeIndexes?: string[];
-  addTriggers?: TriggerDefinition[];
-  removeTriggers?: string[];
-  packageName: string;
 }
 
 export interface SchemaMigration {

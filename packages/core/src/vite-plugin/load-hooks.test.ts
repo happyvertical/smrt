@@ -4,7 +4,7 @@
  *
  * The per-virtual-module code generators (generateClientModule,
  * generateManifestModule, generateRoutesModule, generateMCPModule,
- * generateTypesModule, generateCLIModule, generateSchemaModule, the default-UI
+ * generateTypesModule, generateCLIModule, the default-UI
  * loaders) are module-private. We reach them the way Vite does: through the
  * plugin's `resolveId` and `load` hooks. A small real project (two @smrt
  * classes) is scanned once via `configResolved` to seed a genuine manifest, and
@@ -47,9 +47,6 @@ describe('smrtPlugin resolveId', () => {
     );
     expect(resolveId.call(plugin, '@happyvertical/smrt-virt-manifest')).toBe(
       '\0smrt:manifest',
-    );
-    expect(resolveId.call(plugin, '@happyvertical/smrt-virt-schema')).toBe(
-      '\0smrt:schema',
     );
     expect(resolveId.call(plugin, '@happyvertical/smrt-virt-cli')).toBe(
       '\0smrt:cli',
@@ -188,13 +185,6 @@ export class Gizmo extends SmrtObject {
     expect(code).toContain('export const manifest =');
     expect(code).toContain('export { manifest as default }');
     expect(code).toContain('Widget');
-  });
-
-  it('generates the schema module with a schema registry', async () => {
-    const code = await load('\0smrt:schema');
-    expect(code).toContain('export const schemaManifest =');
-    expect(code).toContain('export function getSchema');
-    expect(code).toContain('export const schemas =');
   });
 
   it('generates the CLI module honoring cli include/exclude config', async () => {

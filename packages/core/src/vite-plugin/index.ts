@@ -19,10 +19,8 @@ import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import {
   DETERMINISTIC_GENERATED_AT,
-  MANIFEST_TIMESTAMP,
   type SmartObjectManifest,
 } from '../scanner/types.js';
-import type { SchemaDefinition } from '../schema/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
 import {
@@ -168,7 +166,6 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-mcp': 'smrt:mcp',
   '@happyvertical/smrt-virt-types': 'smrt:types',
   '@happyvertical/smrt-virt-manifest': 'smrt:manifest',
-  '@happyvertical/smrt-virt-schema': 'smrt:schema',
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-cli': 'smrt:cli',
   '@happyvertical/smrt-virt-web': 'smrt:web',
@@ -938,10 +935,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         case 'smrt:manifest':
           // Manifest module available in both modes
           return generateManifestModule(manifest);
-
-        case 'smrt:schema':
-          // Schema module available in both modes
-          return await generateSchemaModule(manifest);
 
         case 'smrt:ui':
           // UI module for default development interface
@@ -2339,72 +2332,5 @@ export function getCLIHandler() {
 }
 export default setupCLI;
 `;
-  }
-}
-
-/**
- * Generate virtual schema module with JSON manifests
- */
-async function generateSchemaModule(
-  manifest: SmartObjectManifest,
-): Promise<string> {
-  try {
-    const { SchemaGenerator } = await importBuildAwareModule<
-      typeof import('../schema/generator.js')
-    >({
-      source: '../schema/generator.ts',
-      dist: '../schema/generator.js',
-    });
-
-    const schemaGenerator = new SchemaGenerator();
-    const schemas: Record<string, SchemaDefinition> = {};
-
-    // Generate schemas for all SMRT objects
-    for (const [className, objectDef] of Object.entries(manifest.objects)) {
-      const schema = schemaGenerator.generateSchema(objectDef);
-      schemas[className] = schema;
-    }
-
-    // Create JSON manifest for schemas
-    const schemaManifest = {
-      version: '1.0.0',
-      timestamp: MANIFEST_TIMESTAMP,
-      packageName: manifest.packageName || 'unknown',
-      schemas: schemas,
-      dependencies: Array.from(
-        new Set(Object.values(schemas).flatMap((s) => s.dependencies || [])),
-      ),
-    };
-
-    return `// Auto-generated schema manifest from SMRT objects
-// This file is generated automatically - do not edit
-
-// Schema manifest as JSON for SQL adapters
-export const schemaManifest = ${JSON.stringify(schemaManifest, null, 2)};
-
-// Schema registry for runtime access
-export const schemas = schemaManifest.schemas;
-
-// Schema lookup function
-export function getSchema(className: string) {
-  return schemas[className];
-}
-
-// All schemas as array for dependency resolution
-export const allSchemas = Object.values(schemas);
-
-// Package information
-export const packageName = schemaManifest.packageName;
-export const dependencies = schemaManifest.dependencies;
-
-export default schemaManifest;`;
-  } catch (error) {
-    console.error('[smrt] Error generating schema module:', error);
-    return `// Error generating schema module
-export const schemaManifest = { schemas: {}, dependencies: [] };
-export const schemas = {};
-export function getSchema() { return null; }
-export const allSchemas = [];
-export default {};`;
   }
 }
