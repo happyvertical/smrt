@@ -7,6 +7,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -42,8 +43,12 @@ export class ApiKey extends SmrtObject {
   profileId?: string;
 
   /**
-   * SHA-256 hash of the API key
+   * SHA-256 hash of the API key.
+   *
+   * Indexed: `verify()` looks keys up by this hash on every authenticated
+   * request (#2364, epic #2382 finding A3).
    */
+  @field({ indexed: true })
   keyHash: string = '';
 
   /**

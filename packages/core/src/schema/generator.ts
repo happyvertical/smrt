@@ -121,6 +121,11 @@ export class SchemaGenerator {
     // the composite suppresses a standalone tenant index.
     this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
 
+    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
+    // epic #2382 finding A3) — alongside the default-ordering composite,
+    // before the reference-column pass.
+    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
@@ -518,6 +523,79 @@ export class SchemaGenerator {
     // No `description`: ManifestIndexDefinition has no such field, and this
     // helper feeds the manifest paths as well as the structured ones.
     indexes.push({ name, columns: orderingColumns });
+  }
+
+  /**
+   * The `(meta_type, meta_id)` owner-lookup columns for a polymorphic
+   * association table, or `null` when the table isn't one.
+   *
+   * `SmrtPolymorphicAssociation` contributes `metaType`/`metaId`/`role` (and
+   * `sortOrder`) to any concrete subclass's manifest — the scanner's
+   * `FRAMEWORK_ABSTRACT_BASE_NAMES` wiring merges the abstract base's fields
+   * directly into the subclass, because the base carries no `@smrt()`
+   * decorator of its own to declare an index on. Detected structurally, by
+   * the same three-column test `cascade.ts`'s `isPolymorphicAssociationClass`
+   * uses on registry field maps: requiring all three keeps an unrelated class
+   * that merely happens to carry a `metaType` column from being treated as an
+   * association table.
+   */
+  private getPolymorphicAssociationOwnerColumns(
+    columns: Record<string, unknown>,
+  ): string[] | null {
+    if (
+      !Object.hasOwn(columns, 'meta_type') ||
+      !Object.hasOwn(columns, 'meta_id') ||
+      !Object.hasOwn(columns, 'role')
+    ) {
+      return null;
+    }
+    return ['meta_type', 'meta_id'];
+  }
+
+  /**
+   * Ensure a polymorphic association table indexes its owner lookup
+   * `(meta_type, meta_id)` (#2364, epic #2382 finding A3).
+   *
+   * A concrete association's `conflictColumns` lead with its own FK (e.g.
+   * `AssetAssociation`'s `asset_id, meta_type, meta_id, role`), so
+   * `meta_type`/`meta_id` sit in the *middle* of that unique index — a
+   * lookup like `AssetAssociationCollection.byLeft(metaType, metaId)`
+   * ("what points at this target") filters columns 2-3 of a 4-column index
+   * and cannot use it as a leading prefix. `metaId` is deliberately a bare
+   * string, never a typed `@foreignKey`/`@crossPackageRef` (there is no
+   * single target table), so {@link ensureReferenceColumnIndexes} never
+   * covers it either.
+   *
+   * Call this alongside {@link ensureDefaultListOrderingIndex}, before
+   * {@link ensureReferenceColumnIndexes}.
+   *
+   * Blast radius: this applies retroactively to every
+   * `SmrtPolymorphicAssociation` subclass across every package on the next
+   * `db:migrate`, not only the ones a given change touches — roll the wave
+   * out with `smrt db:migrate --postgres-safe` (#2362), same as any other
+   * bulk index addition.
+   */
+  private ensurePolymorphicAssociationIndex(
+    indexes: Array<{
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      where?: string;
+      jsonPath?: unknown;
+    }>,
+    columns: Record<string, unknown>,
+    tableName: string,
+  ): void {
+    const ownerColumns = this.getPolymorphicAssociationOwnerColumns(columns);
+    if (!ownerColumns) return;
+    if (this.hasUnqualifiedLeadingColumns(indexes, ownerColumns)) return;
+
+    const name = `${tableName}_${ownerColumns.join('_')}_idx`;
+    if (indexes.some((index) => index.name === name)) return;
+
+    // No `description`: ManifestIndexDefinition has no such field, and this
+    // helper feeds the manifest paths as well as the structured ones.
+    indexes.push({ name, columns: ownerColumns });
   }
 
   /**
@@ -1390,6 +1468,11 @@ export class SchemaGenerator {
     // indexes, before the reference-column pass.
     this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
 
+    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
+    // epic #2382 finding A3) — alongside the default-ordering composite,
+    // before the reference-column pass.
+    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
@@ -1733,6 +1816,11 @@ export class SchemaGenerator {
     // indexes, before the reference-column pass.
     this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
 
+    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
+    // epic #2382 finding A3) — alongside the default-ordering composite,
+    // before the reference-column pass.
+    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359).
     this.ensureReferenceColumnIndexes(indexes, columns, tableName);
@@ -1979,6 +2067,11 @@ export class SchemaGenerator {
     // indexes, before the reference-column pass.
     this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
 
+    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
+    // epic #2382 finding A3) — alongside the default-ordering composite,
+    // before the reference-column pass.
+    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
+
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359). Runs last so every consumer of the
     // structured `indexes` array (migrations, test databases, aggregation)
@@ -2174,6 +2267,11 @@ export class SchemaGenerator {
     // The default list page orders by created_at (#2363) — after the declared
     // indexes, before the reference-column pass.
     this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
+
+    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
+    // epic #2382 finding A3) — alongside the default-ordering composite,
+    // before the reference-column pass.
+    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
 
     // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
     // always indexed (#2356, #2359). Runs last so every consumer of the

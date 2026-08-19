@@ -7,6 +7,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -48,8 +49,12 @@ export class MagicLinkToken extends SmrtObject {
   nostrIdentityId?: string;
 
   /**
-   * SHA-256 hash of the token (never store plaintext)
+   * SHA-256 hash of the token (never store plaintext).
+   *
+   * Indexed: `verify()` looks tokens up by this hash on every magic-link
+   * click (#2364, epic #2382 finding A3).
    */
+  @field({ indexed: true })
   tokenHash: string = '';
 
   /**

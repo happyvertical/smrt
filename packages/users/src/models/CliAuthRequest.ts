@@ -25,12 +25,22 @@ export type CliAuthRequestStatus = 'pending' | 'approved' | 'expired';
   mcp: { include: [] },
 })
 export class UsersCliAuthRequest extends SmrtObject {
-  /** Short, human-typeable code the user enters in the browser to approve the session. */
-  @field({ type: 'text' })
+  /**
+   * Short, human-typeable code the user enters in the browser to approve the session.
+   *
+   * Indexed: `findByUserCode()` looks requests up by this column (#2364,
+   * epic #2382 finding A3).
+   */
+  @field({ type: 'text', indexed: true })
   userCode = '';
 
-  /** SHA-256 hash of the long device code the CLI keeps secret. */
-  @field({ type: 'text' })
+  /**
+   * SHA-256 hash of the long device code the CLI keeps secret.
+   *
+   * Indexed: `findByDeviceCodeHash()` — the CLI's poll loop — looks requests
+   * up by this column (#2364, epic #2382 finding A3).
+   */
+  @field({ type: 'text', indexed: true })
   deviceCodeHash = '';
 
   /** Lifecycle state — `pending` → `approved` | `expired`. */
