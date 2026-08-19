@@ -10,7 +10,6 @@ import type {
   ManifestColumnDefinition,
   ManifestIndexDefinition,
   ManifestSchema,
-  SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
 import { classnameToTablename } from '../utils/naming.js';
@@ -26,7 +25,6 @@ import type { DatabaseEngine } from './ddl/types.js';
 import {
   assertIdentifierFits,
   enforceIdentifierLimits,
-  shortenIdentifier,
 } from './index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
@@ -40,7 +38,6 @@ import type {
   IndexDefinition,
   SchemaDefinition,
   SQLDataType,
-  TriggerDefinition,
 } from './types.js';
 
 /**
@@ -101,54 +98,6 @@ type SchemaGeneratorConfig = {
 };
 
 export class SchemaGenerator {
-  /**
-   * Generate schema definition from SMRT object definition
-   */
-  generateSchema(objectDef: SmartObjectDefinition): SchemaDefinition {
-    const tableName = this.getTableName(objectDef);
-    const columns = this.generateColumns(
-      objectDef.fields,
-      objectDef.decoratorConfig,
-    );
-    const indexes = this.generateIndexes(objectDef, columns);
-    const triggers = this.generateTriggers(objectDef, tableName);
-    const foreignKeys = this.extractForeignKeys(columns);
-    const dependencies = this.extractDependencies(objectDef, foreignKeys);
-    const version = this.generateVersion(objectDef);
-
-    // The default list page orders by created_at (#2363) — after the declared
-    // indexes generateIndexes() appended, before the reference-column pass so
-    // the composite suppresses a standalone tenant index.
-    this.ensureDefaultListOrderingIndex(indexes, columns, tableName);
-
-    // Polymorphic association owner lookup `(meta_type, meta_id)` (#2364,
-    // epic #2382 finding A3) — alongside the default-ordering composite,
-    // before the reference-column pass.
-    this.ensurePolymorphicAssociationIndex(indexes, columns, tableName);
-
-    // Reference columns (@foreignKey / @crossPackageRef / tenant_id) are
-    // always indexed (#2356, #2359).
-    this.ensureReferenceColumnIndexes(indexes, columns, tableName);
-
-    // Last: nothing may lengthen a name after this (#2374).
-    enforceIdentifierLimits(tableName, indexes);
-    for (const trigger of triggers) {
-      trigger.name = shortenIdentifier(trigger.name);
-    }
-
-    return {
-      tableName,
-      columns,
-      indexes,
-      triggers,
-      foreignKeys,
-      dependencies,
-      version,
-      packageName: this.extractPackageName(objectDef.filePath),
-      baseClass: objectDef.extends,
-    };
-  }
-
   /**
    * Convert field type to SQL data type
    */
@@ -284,114 +233,6 @@ export class SchemaGenerator {
         };
       }
     }
-  }
-
-  /**
-   * Generate column definitions
-   */
-  private generateColumns(
-    fields: Record<string, FieldDefinition>,
-    config?: { idType?: 'uuid' | 'text' },
-  ): Record<string, ColumnDefinition> {
-    const columns: Record<string, ColumnDefinition> = {};
-
-    // Always include base SMRT fields
-    columns.id = {
-      type: this.getIdColumnType(config),
-      primaryKey: true,
-      referenceKind: 'id',
-      notNull: true,
-      description: 'Primary identifier',
-    };
-
-    columns.created_at = {
-      type: 'TIMESTAMP',
-      notNull: true,
-      defaultValue: 'current_timestamp',
-      description: 'Creation timestamp',
-    };
-
-    columns.updated_at = {
-      type: 'TIMESTAMP',
-      notNull: true,
-      defaultValue: 'current_timestamp',
-      description: 'Last update timestamp',
-    };
-
-    // Add fields from object definition
-    for (const [fieldName, fieldDef] of Object.entries(fields)) {
-      // Skip id fields as we handle them above
-      if (
-        fieldName === 'id' ||
-        fieldName === 'created_at' ||
-        fieldName === 'updated_at'
-      ) {
-        continue;
-      }
-
-      // Skip transient fields (non-persisted)
-      // NOTE: This filtering logic must match SmrtObject.toJSON()
-      // Changes to field filtering should be applied in BOTH places
-      if (fieldDef.transient || fieldDef._meta?.transient) {
-        continue;
-      }
-
-      // Skip relationship fields that don't create columns
-      // oneToMany and manyToMany are relationship metadata, not actual database columns
-      // foreignKey DOES create a column (it stores the foreign key ID)
-      // NOTE: This must match the filtering in SmrtObject.toJSON()
-      if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany') {
-        continue;
-      }
-
-      // Skip meta fields - they're stored in _meta_data JSONB column (STI only)
-      // In CTI mode, meta fields shouldn't be used, but skip them anyway for safety
-      if (fieldDef.type === 'meta') {
-        continue;
-      }
-
-      const column: ColumnDefinition = {
-        type: this.getRelationshipColumnType(fieldDef),
-        referenceKind: this.getReferenceKind(fieldDef),
-        // If _meta.nullable is true, the field can be null regardless of required
-        // This handles field helpers like text({ required: true, nullable: true })
-        notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
-        unique: fieldDef._meta?.unique || false,
-        description: fieldDef.description,
-      };
-
-      // Handle default values
-      if (
-        fieldDef.default !== undefined &&
-        this.shouldEmitDefault(fieldDef, fieldDef.default)
-      ) {
-        column.defaultValue = fieldDef.default;
-      }
-      // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
-      // This was forcing all TEXT fields to be NOT NULL regardless of required option
-      // If DuckDB ANY type inference is an issue, it should be handled at the adapter level
-      // or with an explicit field option, not by silently changing schema semantics
-
-      // Handle foreign keys
-      if (fieldDef.type === 'foreignKey' && fieldDef.related) {
-        const [table, columnName = 'id'] = fieldDef.related.split('.');
-        column.foreignKey = {
-          table,
-          column: columnName,
-          onDelete: 'CASCADE', // Default behavior
-          onUpdate: 'CASCADE',
-        };
-      }
-
-      // Handle unique constraints
-      if (fieldName === 'slug' || fieldName === 'email') {
-        column.unique = true;
-      }
-
-      columns[fieldName] = column;
-    }
-
-    return columns;
   }
 
   /**
@@ -1074,75 +915,6 @@ export class SchemaGenerator {
   }
 
   /**
-   * Generate index definitions
-   */
-  private generateIndexes(
-    objectDef: SmartObjectDefinition,
-    columns: Record<string, ColumnDefinition>,
-  ): IndexDefinition[] {
-    const indexes: IndexDefinition[] = [];
-    const tableName = this.getTableName(objectDef);
-
-    // Create indexes for foreign keys
-    for (const [columnName, columnDef] of Object.entries(columns)) {
-      if (columnDef.foreignKey) {
-        indexes.push({
-          name: `idx_${tableName}_${columnName}`,
-          columns: [columnName],
-          description: `Index for foreign key ${columnName}`,
-        });
-      }
-    }
-
-    // Create index for updated_at (common query pattern)
-    indexes.push({
-      name: `idx_${tableName}_updated_at`,
-      columns: ['updated_at'],
-      description: 'Index for timestamp queries',
-    });
-
-    // Create unique indexes
-    for (const [columnName, columnDef] of Object.entries(columns)) {
-      if (columnDef.unique && !columnDef.primaryKey) {
-        indexes.push({
-          name: `idx_${tableName}_${columnName}_unique`,
-          columns: [columnName],
-          unique: true,
-          description: `Unique index for ${columnName}`,
-        });
-      }
-    }
-
-    // Declared indexes (#2357), before ensureReferenceColumnIndexes below.
-    this.appendDeclaredIndexes(
-      indexes,
-      objectDef.decoratorConfig?.indexes,
-      columns,
-      tableName,
-    );
-
-    return indexes;
-  }
-
-  /**
-   * Generate trigger definitions for automatic timestamp updates
-   */
-  private generateTriggers(
-    _objectDef: SmartObjectDefinition,
-    tableName: string,
-  ): TriggerDefinition[] {
-    return [
-      {
-        name: `trg_${tableName}_updated_at`,
-        when: 'BEFORE',
-        event: 'UPDATE',
-        body: `UPDATE ${quoteIdentifier(tableName)} SET "updated_at" = current_timestamp WHERE "id" = NEW."id";`,
-        description: 'Automatically update updated_at timestamp',
-      },
-    ];
-  }
-
-  /**
    * Extract foreign key definitions
    */
   private extractForeignKeys(
@@ -1166,63 +938,10 @@ export class SchemaGenerator {
   }
 
   /**
-   * Extract schema dependencies from foreign keys and inheritance
-   */
-  private extractDependencies(
-    objectDef: SmartObjectDefinition,
-    foreignKeys: ForeignKeyDefinition[],
-  ): string[] {
-    const dependencies = new Set<string>();
-
-    // Add dependencies from foreign keys
-    for (const fk of foreignKeys) {
-      dependencies.add(fk.referencesTable);
-    }
-
-    // Add dependencies from base class
-    if (
-      objectDef.extends &&
-      objectDef.extends !== 'SmrtObject' &&
-      objectDef.extends !== 'SmrtCollection'
-    ) {
-      dependencies.add(this.classNameToTableName(objectDef.extends));
-    }
-
-    return Array.from(dependencies);
-  }
-
-  /**
-   * Generate version hash for schema
-   */
-  private generateVersion(objectDef: SmartObjectDefinition): string {
-    const content = JSON.stringify({
-      className: objectDef.className,
-      fields: objectDef.fields,
-      extends: objectDef.extends,
-    });
-    return createHash('sha256').update(content).digest('hex').substring(0, 8);
-  }
-
-  /**
-   * Get table name from object definition
-   */
-  private getTableName(objectDef: SmartObjectDefinition): string {
-    return this.classNameToTableName(objectDef.className);
-  }
-
-  /**
    * Convert class name to table name (camelCase to snake_case, pluralized)
    */
   private classNameToTableName(className: string): string {
     return classnameToTablename(className);
-  }
-
-  /**
-   * Extract package name from file path
-   */
-  private extractPackageName(filePath: string): string {
-    const match = filePath.match(/packages\/([^/]+)/);
-    return match ? match[1] : 'unknown';
   }
 
   /**

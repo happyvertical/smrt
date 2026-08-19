@@ -4,15 +4,18 @@
  * uuid-schema-generator.test.ts and schema-generation.test.ts cover the
  * runtime/CTI manifest paths and UUID reconciliation. This file targets the
  * remaining branches:
- * - generateSchema(objectDef): the build-time AST path (columns, FK column +
- *   index + dependency extraction, triggers, slug/email unique, transient and
- *   relationship-field skipping, version hashing, package extraction).
  * - generateSchemaFromRegistry: custom-PK handling, explicit timestamp fields,
  *   indexed regular columns, multi-column conflictColumns truncation.
  * - generateSTISchemaFromRegistry with an injected fake registry (descendants,
  *   FK partial indexes, meta-field JSON-path indexes, indexed columns).
  * - generateSTISchemaFromManifest descendant aggregation + self-reference guard.
  * - generateSQL / formatDefaultValue across TEXT/INTEGER/BOOLEAN/TIMESTAMP/JSON.
+ *
+ * The build-time AST path (`generateSchema(objectDef)`) this file used to
+ * cover here was deleted in #2380: it fed only the `smrt:schema` virtual
+ * module, which had no consumer, and had rotted relative to the four paths
+ * that ship (no conflict index, an `idx_`-prefixed naming scheme the other
+ * paths do not use). See `agents/schema-paths.md`.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -45,119 +48,6 @@ function objectDef(
     extends: extendsName,
   } as SmartObjectDefinition;
 }
-
-describe('SchemaGenerator.generateSchema (build-time AST path)', () => {
-  it('maps field types, emits FK column/index/dependency, and slug/email unique', () => {
-    const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef('Comment', {
-        body: { type: 'text' },
-        score: { type: 'integer' },
-        rating: { type: 'decimal' },
-        active: { type: 'boolean' },
-        publishedAt: { type: 'datetime' },
-        payload: { type: 'json' },
-        authorId: { type: 'foreignKey', related: 'users.id' },
-        slug: { type: 'text' },
-        email: { type: 'text' },
-        // Relationship + transient + meta fields must be skipped.
-        replies: { type: 'oneToMany', related: 'Comment' },
-        tags: { type: 'manyToMany', related: 'Tag' },
-        computed: { type: 'text', transient: true },
-        extra: { type: 'meta' },
-      }),
-    );
-
-    // SQL type mapping.
-    expect(schema.columns.body.type).toBe('TEXT');
-    expect(schema.columns.score.type).toBe('INTEGER');
-    expect(schema.columns.rating.type).toBe('REAL');
-    expect(schema.columns.active.type).toBe('BOOLEAN');
-    expect(schema.columns.publishedAt.type).toBe('TIMESTAMP');
-    expect(schema.columns.payload.type).toBe('JSON');
-    expect(schema.columns.authorId.type).toBe('UUID');
-
-    // FK column carries a foreignKey + the table-level FK list + dependency.
-    expect(schema.columns.authorId.foreignKey).toEqual({
-      table: 'users',
-      column: 'id',
-      onDelete: 'CASCADE',
-      onUpdate: 'CASCADE',
-    });
-    expect(schema.foreignKeys).toEqual([
-      expect.objectContaining({ column: 'authorId', referencesTable: 'users' }),
-    ]);
-    expect(schema.dependencies).toContain('users');
-
-    // FK index + updated_at index + slug/email unique indexes are generated.
-    // The FK loop's own `idx_` index already leads with the column, so the
-    // shared reference-column helper adds no duplicate.
-    const indexNames = schema.indexes.map((i) => i.name);
-    expect(indexNames).toContain('idx_comments_authorId');
-    expect(
-      schema.indexes.filter((i) => i.columns[0] === 'authorId'),
-    ).toHaveLength(1);
-    expect(indexNames).toContain('idx_comments_updated_at');
-    expect(
-      schema.indexes.some((i) => i.unique && i.columns[0] === 'slug'),
-    ).toBe(true);
-    expect(
-      schema.indexes.some((i) => i.unique && i.columns[0] === 'email'),
-    ).toBe(true);
-
-    // slug/email are forced unique.
-    expect(schema.columns.slug.unique).toBe(true);
-    expect(schema.columns.email.unique).toBe(true);
-
-    // Skipped fields produce no columns.
-    expect(schema.columns.replies).toBeUndefined();
-    expect(schema.columns.tags).toBeUndefined();
-    expect(schema.columns.computed).toBeUndefined();
-    expect(schema.columns.extra).toBeUndefined();
-
-    // A trigger is emitted for updated_at.
-    expect(schema.triggers).toHaveLength(1);
-    expect(schema.triggers[0].event).toBe('UPDATE');
-
-    // Version is an 8-char hash, package extracted from the path.
-    expect(schema.version).toMatch(/^[a-f0-9]{8}$/);
-    expect(schema.packageName).toBe('test');
-  });
-
-  it('falls back to "unknown" package when the path has no packages/ segment', () => {
-    const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef(
-        'Loose',
-        { name: { type: 'text' } },
-        {},
-        undefined,
-        '/tmp/Loose.ts',
-      ),
-    );
-    expect(schema.packageName).toBe('unknown');
-  });
-
-  it('records a base-class dependency for inheriting classes', () => {
-    const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef('Meeting', { topic: { type: 'text' } }, {}, 'Event'),
-    );
-    // extends Event -> events table dependency; SmrtObject/SmrtCollection excluded.
-    expect(schema.dependencies).toContain('events');
-    expect(schema.baseClass).toBe('Event');
-  });
-
-  it('honors a field-level default value', () => {
-    const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef('Defaulted', {
-        status: { type: 'text', default: 'draft' },
-      }),
-    );
-    expect(schema.columns.status.defaultValue).toBe('draft');
-  });
-});
 
 describe('SchemaGenerator.generateSchemaFromRegistry', () => {
   const generator = new SchemaGenerator();
@@ -892,20 +782,22 @@ describe('SchemaGenerator.generateSQL / formatDefaultValue', () => {
 });
 
 describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
+  const tenantField = {
+    type: 'text' as const,
+    _meta: { __tenancy: { isTenantIdField: true } },
+  };
+
   it('indexes a tenancy-injected tenant_id column', () => {
     const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef('Note', {
-        tenantId: {
-          type: 'text',
-          _meta: { __tenancy: { isTenantIdField: true } },
-        },
-        title: { type: 'text' },
-      }),
+    const schema = generator.generateSchemaFromRegistry(
+      'Note',
+      'notes',
+      new Map<string, any>([
+        ['tenantId', tenantField],
+        ['title', { type: 'text' }],
+      ]),
     );
 
-    // Derive the tenant column rather than assuming its spelling: the
-    // build-time path keeps the field name, the registry path snake_cases it.
     const tenantColumn = Object.entries(schema.columns).find(
       ([, column]) => column.referenceKind === 'tenantId',
     )?.[0];
@@ -917,8 +809,10 @@ describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
 
   it('adds nothing when the object is not tenant-scoped', () => {
     const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef('Plain', { title: { type: 'text' } }),
+    const schema = generator.generateSchemaFromRegistry(
+      'Plain',
+      'plains',
+      new Map<string, any>([['title', { type: 'text' }]]),
     );
 
     expect(
@@ -930,14 +824,6 @@ describe('SchemaGenerator tenant_id auto-index (#2356)', () => {
       false,
     );
   });
-
-  // The build-time AST path never emits the conflictColumns composite, so a
-  // suppression test there cannot fail. Exercise the paths that do emit it:
-  // the registry CTI path and both manifest paths.
-  const tenantField = {
-    type: 'text' as const,
-    _meta: { __tenancy: { isTenantIdField: true } },
-  };
 
   it('does not duplicate when the registry conflict index already leads with tenant_id', () => {
     const generator = new SchemaGenerator();
@@ -1087,19 +973,6 @@ describe('SchemaGenerator default list-ordering index (#2363)', () => {
     type: 'text' as const,
     _meta: { __tenancy: { isTenantIdField: true } },
   };
-
-  it('indexes created_at on the build-time AST path', () => {
-    const generator = new SchemaGenerator();
-    const schema = generator.generateSchema(
-      objectDef('Note', { title: { type: 'text' } }),
-    );
-
-    const ordering = schema.indexes.find(
-      (index) => index.name === 'notes_created_at_idx',
-    );
-    expect(ordering?.columns).toEqual(['created_at']);
-    expect(Boolean(ordering?.unique)).toBe(false);
-  });
 
   it('indexes created_at on the registry CTI path', () => {
     const generator = new SchemaGenerator();
@@ -1322,28 +1195,6 @@ describe('SchemaGenerator declared indexes (#2357)', () => {
   // path the object happens to take. The runtime paths rebuild their config bag
   // by hand and dropped `indexes` entirely before this issue, so assert each.
   describe('every schema path honours the declaration', () => {
-    it('build-time AST path (generateSchema)', () => {
-      const schema = generator.generateSchema(
-        objectDef(
-          'Post',
-          {
-            tenantId: { type: 'text' },
-            publish_date: { type: 'datetime' },
-            title: { type: 'text' },
-          },
-          compositeDeclaration,
-        ),
-      );
-
-      const declared = schema.indexes.find(
-        (index) => index.name === 'posts_tenant_id_publish_date_idx',
-      );
-      // Column order is the access path: filter column first, sort column last.
-      // The AST path keys columns by field name, so `tenantId` resolves as-is.
-      expect(declared?.columns).toEqual(['tenantId', 'publish_date']);
-      expect(declared?.unique).toBeUndefined();
-    });
-
     it('runtime CTI path (generateSchemaFromRegistry)', () => {
       const schema = generator.generateSchemaFromRegistry(
         'Post',

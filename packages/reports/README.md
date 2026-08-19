@@ -4,8 +4,10 @@ Materialized aggregate reports for s-m-r-t. Define a report as a decorated class
 compile it to a portable aggregate query, and refresh its normal s-m-r-t table
 manually, on a schedule, after source changes, or when a TTL expires.
 
-Runtime refresh verifies schema but does not create report or system tables.
-Include report models in normal manifest-driven migrations before refreshing.
+Runtime refresh checks that its tables exist (existence only, not columns or
+indexes) and fails clearly if they do not; it does not create report or system
+tables. Include report models in normal manifest-driven migrations before
+refreshing.
 
 ## Installation
 
