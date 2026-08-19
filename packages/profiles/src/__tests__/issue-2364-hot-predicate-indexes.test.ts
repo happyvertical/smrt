@@ -53,12 +53,12 @@ describe('auth lookup indexes reach the production manifest schema path (#2364)'
     expect(names).toContain('magic_link_tokens_token_hash_idx');
   });
 
-  it('indexes `nostr_identities.pubkey` — `NostrIdentity.findByPubkey()`s lookup key', async () => {
+  it("indexes `nostr_identities.pubkey` — `NostrIdentity.findByPubkey()`'s lookup key", async () => {
     const names = await indexNames(baseDb, 'nostr_identities');
     expect(names).toContain('nostr_identities_pubkey_idx');
   });
 
-  it('indexes `api_keys.key_hash` — `ApiKey.verify()`s lookup key', async () => {
+  it("indexes `api_keys.key_hash` — `ApiKey.verify()`'s lookup key", async () => {
     const names = await indexNames(baseDb, 'api_keys');
     expect(names).toContain('api_keys_key_hash_idx');
   });

@@ -48,7 +48,7 @@ describe('read-path lookup indexes reach the production manifest schema path (#2
     await cleanup();
   });
 
-  it('indexes `users.email` — `findByEmail()`s raw lookup column, distinct from the `email_key` uniqueness constraint', async () => {
+  it("indexes `users.email` — `findByEmail()`'s raw lookup column, distinct from the `email_key` uniqueness constraint", async () => {
     const names = await indexNames(baseDb, 'users');
     expect(names).toContain('users_email_idx');
   });
