@@ -71,6 +71,11 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
   // yet, not as the default route for new indexes on a normal decorated
   // class — this one reaches every path (manifest, registry, `db:migrate`)
   // the standard way and rolls out on the next `smrt db:migrate`.
+  //
+  // Roll this out with `smrt db:migrate --postgres-safe` (#2362): `_smrt_jobs`
+  // is under continuous write load (every claim is an UPDATE), so a plain
+  // atomic `CREATE INDEX` would hold ACCESS EXCLUSIVE for the build and stall
+  // claiming on a busy deployment.
   indexes: [
     { name: '_smrt_jobs_status_run_at_idx', columns: ['status', 'runAt'] },
   ],

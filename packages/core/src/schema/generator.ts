@@ -568,6 +568,12 @@ export class SchemaGenerator {
    *
    * Call this alongside {@link ensureDefaultListOrderingIndex}, before
    * {@link ensureReferenceColumnIndexes}.
+   *
+   * Blast radius: this applies retroactively to every
+   * `SmrtPolymorphicAssociation` subclass across every package on the next
+   * `db:migrate`, not only the ones a given change touches — roll the wave
+   * out with `smrt db:migrate --postgres-safe` (#2362), same as any other
+   * bulk index addition.
    */
   private ensurePolymorphicAssociationIndex(
     indexes: Array<{

@@ -112,7 +112,8 @@ export type ForgeProjectionAuditHook = (
   // of the lease-expiry-to-dead_letter sweep above it in the same method).
   // Neither branch is a prefix of the other, so both composites are
   // declared; PostgreSQL can combine them with a BitmapOr when planning the
-  // OR.
+  // OR. Roll this out with `smrt db:migrate --postgres-safe` (#2362), same
+  // as `_smrt_jobs` above — deliveries are claimed continuously too.
   indexes: [
     {
       name: '_smrt_forge_deliveries_status_next_attempt_at_idx',
