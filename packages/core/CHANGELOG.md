@@ -1,5 +1,33 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - make system-table evolution verifiable and stop skipping domain tables (#2411) (core,cli)
+  - money is integer minor units (#2409) (commerce,subscriptions,projects,support)
+  - money is integer minor units, rates are decimal (#2391) (commerce,products,facts)
+
+  ### Bug Fixes
+
+  - index hot poll and auth lookup predicates (#2422) (core,jobs,agents,profiles,users)
+  - bound system-table growth with a retention sweep (#2420) (core,jobs,users,cli)
+  - cascade referencing rows on delete and honour onDelete (#2418) (core)
+  - guard generated identifiers against PostgreSQL's 63-byte limit (#2408) (core)
+  - conflict target and unique index include the tenant column (#2404) (core,tenancy)
+  - index the generated default list ordering on every schema path (#2402) (core)
+  - close tenant-isolation gaps on read paths (#2414) (core,tenancy)
+  - make the merged STI table shape registration-order independent (#2410) (core)
+  - index reference columns on every schema path, honour STI unique (#2359) (#2396) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.40.70
 
 ### Patch Changes
