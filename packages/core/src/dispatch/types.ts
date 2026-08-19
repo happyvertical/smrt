@@ -139,6 +139,11 @@ export interface DispatchCleanupOptions {
   completedOlderThanDays?: number;
   /** Delete failed dispatches older than this many days */
   failedOlderThanDays?: number;
+  /**
+   * Count the dispatches the cutoffs select without deleting them (#2375).
+   * The result reports what a real cleanup with the same options would remove.
+   */
+  dryRun?: boolean;
 }
 
 /**

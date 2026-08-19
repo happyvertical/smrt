@@ -49,22 +49,37 @@ export class UsersMagicLinkTokenCollection extends SmrtCollection<UsersMagicLink
 
   /**
    * Delete expired tokens (cleanup job)
+   *
+   * Scheduled by the framework retention sweep (#2375); `expiresAt` carries an
+   * index for this predicate.
+   *
+   * @param options.dryRun - Count the tokens the predicate selects without
+   *   deleting them.
+   * @returns Number of tokens deleted (or, under `dryRun`, matched)
    */
-  async deleteExpired(): Promise<number> {
-    const now = new Date();
-    const tokens = await this.list({
-      where: {
-        'expiresAt <': now.toISOString(),
-      },
-    });
+  async deleteExpired(options: { dryRun?: boolean } = {}): Promise<number> {
+    // One statement, for the same reason `SessionCollection.deleteExpired()`
+    // is one (#1400): this runs unattended on the retention sweep's timer, and
+    // a per-row delete that throws part-way leaves the rest of the expired
+    // tokens un-reaped. It also avoids hydrating every row just to delete it.
+    const now = new Date().toISOString();
+    const predicate = 'expires_at < ?';
 
-    let count = 0;
-    for (const token of tokens) {
-      await token.delete();
-      count++;
+    const counted = await this.db.query(
+      `SELECT COUNT(*) AS total FROM ${this.tableName} WHERE ${predicate}`,
+      now,
+    );
+    const total = Number(counted.rows?.[0]?.total ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return 0;
+
+    if (!options.dryRun) {
+      await this.db.query(
+        `DELETE FROM ${this.tableName} WHERE ${predicate}`,
+        now,
+      );
     }
 
-    return count;
+    return total;
   }
 }
 

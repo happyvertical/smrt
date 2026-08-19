@@ -162,7 +162,7 @@ describe('SmrtClass', () => {
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
       expect(tableNames).toContain('_smrt_changes');
-      // Retired in 1.10.0 — never written, no longer created (issue #2376).
+      // Retired in 1.10.1 — never written, no longer created (issue #2376).
       expect(tableNames).not.toContain('_smrt_registry');
       expect(tableNames).not.toContain('_smrt_signals');
     });
@@ -195,7 +195,7 @@ describe('SmrtClass', () => {
       expect(tableNames).toContain('_smrt_contexts');
       expect(tableNames).toContain('_smrt_migrations');
       expect(tableNames).toContain('_smrt_changes');
-      // Retired in 1.10.0 — never written, no longer created (issue #2376).
+      // Retired in 1.10.1 — never written, no longer created (issue #2376).
       expect(tableNames).not.toContain('_smrt_registry');
       expect(tableNames).not.toContain('_smrt_signals');
     });

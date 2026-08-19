@@ -29,6 +29,11 @@ import {
   getMcpTaskMarker,
   requestMcpTaskInput,
 } from './mcp-task.js';
+import {
+  type RetentionSweeper,
+  type RetentionSweeperOptions,
+  startRetentionSweeper,
+} from './retention.js';
 import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
 import { type SmrtJobEvent, SmrtJobEventCollection } from './smrt-job-event.js';
 import { SmrtWorkerCollection } from './smrt-worker.js';
@@ -74,6 +79,16 @@ export interface TaskRunnerConfig {
   leaseTtlMs?: number;
   /** How often to renew the worker liveness lease, in milliseconds */
   leaseTickMs?: number;
+  /**
+   * Periodic system-table retention sweep (#2375).
+   *
+   * A running worker is the framework's only always-on scheduler, so it is
+   * also where the retention sweep is scheduled by default. Set to `false` to
+   * opt out entirely (for example when a cron job runs `smrt db:prune`
+   * instead), or pass options to change the cadence or the policy. The first
+   * sweep runs one interval after `start()`, never at start.
+   */
+  retention?: RetentionSweeperOptions | false;
 }
 
 /**
@@ -128,6 +143,7 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   staleJobThresholdMs: 90000,
   leaseTtlMs: DEFAULT_LEASE_TTL_MS,
   leaseTickMs: DEFAULT_LEASE_TICK_MS,
+  retention: {},
 };
 
 /**
@@ -162,6 +178,8 @@ export class TaskRunner extends EventEmitter {
   private pollTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private leaseTimer: NodeJS.Timeout | null = null;
+  /** Periodic system-table retention sweep, when not opted out (#2375). */
+  private retentionSweeper: RetentionSweeper | null = null;
   private livenessWorker: Worker | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
@@ -243,6 +261,15 @@ export class TaskRunner extends EventEmitter {
     // Start heartbeat loop (per-job telemetry only; no longer gates recovery)
     this.startHeartbeat();
 
+    // Bound system-table growth while a worker is up (#2375). Opt out with
+    // `retention: false`; the first sweep is one interval away, so a runner
+    // that starts and stops (a test, a one-shot worker) deletes nothing.
+    if (this.config.retention !== false && this.db) {
+      this.retentionSweeper = startRetentionSweeper(this.db, {
+        ...this.config.retention,
+      });
+    }
+
     this.emit('runner:started');
   }
 
@@ -263,6 +290,10 @@ export class TaskRunner extends EventEmitter {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+    if (this.retentionSweeper) {
+      this.retentionSweeper.stop();
+      this.retentionSweeper = null;
     }
     // NOTE: leave lease renewal (the leaseTimer or the off-loop thread) running
     // through the drain so a still-executing handler keeps its lease fresh and

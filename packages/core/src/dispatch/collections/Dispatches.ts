@@ -49,6 +49,36 @@ function pushTenantPredicate(
 }
 
 /**
+ * Count the rows a cleanup predicate selects, then delete them (#2375).
+ *
+ * Counting first gives a usable figure on every adapter — `rowCount` is not
+ * reliably populated across the engines SMRT supports — and is what lets
+ * `dryRun` preview the very same predicate the real cleanup runs. The two
+ * statements are not transactional, so the figure is approximate under
+ * concurrent writers.
+ */
+async function deleteOrCount(
+  db: DatabaseInterface,
+  conditions: string[],
+  params: unknown[],
+  dryRun: boolean,
+): Promise<number> {
+  const where = conditions.join(' AND ');
+  const countResult = await db.query(
+    `SELECT COUNT(*) AS total FROM _smrt_dispatch WHERE ${where}`,
+    ...params,
+  );
+  const total = Number(countResult.rows?.[0]?.total ?? 0);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+
+  if (!dryRun) {
+    await db.query(`DELETE FROM _smrt_dispatch WHERE ${where}`, ...params);
+  }
+
+  return total;
+}
+
+/**
  * Storage operations for dispatches in _smrt_dispatch table
  */
 export class DispatchCollection {
@@ -458,11 +488,12 @@ export class DispatchCollection {
       const params: unknown[] = [cutoff.toISOString()];
       pushTenantPredicate(conditions, params, tenantScope, '$2');
 
-      const { rowCount } = await db.query(
-        `DELETE FROM _smrt_dispatch WHERE ${conditions.join(' AND ')}`,
-        ...params,
+      result.completedDeleted = await deleteOrCount(
+        db,
+        conditions,
+        params,
+        options.dryRun ?? false,
       );
-      result.completedDeleted = rowCount || 0;
     }
 
     if (options.failedOlderThanDays) {
@@ -473,11 +504,12 @@ export class DispatchCollection {
       const params: unknown[] = [cutoff.toISOString()];
       pushTenantPredicate(conditions, params, tenantScope, '$2');
 
-      const { rowCount } = await db.query(
-        `DELETE FROM _smrt_dispatch WHERE ${conditions.join(' AND ')}`,
-        ...params,
+      result.failedDeleted = await deleteOrCount(
+        db,
+        conditions,
+        params,
+        options.dryRun ?? false,
       );
-      result.failedDeleted = rowCount || 0;
     }
 
     return result;

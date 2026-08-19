@@ -545,13 +545,22 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
   }
 
   /**
-   * Cleanup old completed/failed jobs
+   * Cleanup old completed/failed jobs.
+   *
+   * Predicates are `(status, completed_at)` pairs, covered by
+   * `idx_smrt_jobs_status_completed_at` (created by the jobs compatibility
+   * path this collection runs on initialize — #2375).
+   *
+   * @param options.dryRun - Count the jobs the cutoffs select without deleting
+   *   them, so a retention preview reports exactly what a real run removes.
+   * @returns Number of jobs deleted (or, under `dryRun`, matched).
    */
   async cleanup(options: {
     completedBefore?: Date;
     failedBefore?: Date;
     cancelledBefore?: Date;
     limit?: number;
+    dryRun?: boolean;
   }): Promise<number> {
     const conditions: string[] = [];
     const params: unknown[] = [];
@@ -573,22 +582,35 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 
     if (conditions.length === 0) return 0;
 
-    let query = `DELETE FROM _smrt_jobs WHERE (${conditions.join(' OR ')})`;
-
-    if (options.limit) {
-      query = `
-        DELETE FROM _smrt_jobs
-        WHERE id IN (
+    const selector = options.limit
+      ? `id IN (
           SELECT id FROM _smrt_jobs
           WHERE (${conditions.join(' OR ')})
           LIMIT ?
-        )
-      `;
-      params.push(options.limit);
+        )`
+      : `(${conditions.join(' OR ')})`;
+    const selectorParams = options.limit
+      ? [...params, options.limit]
+      : [...params];
+
+    // Count first: `rowCount` is not reliably populated across the engines
+    // SMRT supports, and counting is what lets `dryRun` preview the exact
+    // predicate a real cleanup would delete (#2375).
+    const counted = await this._db.query(
+      `SELECT COUNT(*) AS total FROM _smrt_jobs WHERE ${selector}`,
+      ...selectorParams,
+    );
+    const total = Number(counted.rows?.[0]?.total ?? 0);
+    if (!Number.isFinite(total) || total <= 0) return 0;
+
+    if (!options.dryRun) {
+      await this._db.query(
+        `DELETE FROM _smrt_jobs WHERE ${selector}`,
+        ...selectorParams,
+      );
     }
 
-    const result = await this._db.query(query, ...params);
-    return result.rowCount ?? 0;
+    return total;
   }
 }
 

@@ -2,6 +2,12 @@
 
 Multi-tenant user management with RBAC, hierarchical tenants, session handling, and SvelteKit integration.
 
+## Modules
+
+| Module | Scope | Module doc |
+|---|---|---|
+| `src/retention.ts` | expired session/token/CLI-auth reaping and its wiring into the framework retention sweep | [agents/retention.md](agents/retention.md) |
+
 ## Models (14)
 
 | Model | Key Pattern |

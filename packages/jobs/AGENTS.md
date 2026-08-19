@@ -135,6 +135,36 @@ change what the agents runtime will dispatch.
   every sibling method. Adding the decorator to one method of an existing class
   is therefore a behaviour change for the rest of it.
 
+## Retention (#2375)
+
+`_smrt_jobs` and `_smrt_job_events` are append-only in practice — `cleanup()`
+existed but nothing ever called it, and job events (one row per log line and
+progress tick) had no prune path at all. `src/retention.ts` contributes both to
+the framework retention sweep in `@happyvertical/smrt-core`.
+
+- `TaskRunner` starts a sweeper by default. `retention: false` opts out;
+  `retention: { intervalMs, policy, jobs }` tunes it. The **first sweep is one
+  interval after `start()`, never at start** — a crash-looping worker must not
+  become a delete loop, and a short-lived runner must exit having deleted
+  nothing. `stop()` only clears the timer — it does **not** unregister the job
+  tasks. The package entry point (`index.ts`) registers them unconditionally
+  on import, so "this process loaded `@happyvertical/smrt-jobs`" is the
+  contract that contributes them, not "a sweeper happens to be running";
+  `unregisterJobRetentionTasks()` is the explicit opt-out for callers that
+  want a clean registry (tests, teardown).
+- Windows (`DEFAULT_JOB_RETENTION`): completed/cancelled 7 days, failed 30
+  days, events 30 days, 10 000 job rows per sweep. Events deliberately outlive
+  the jobs they describe, so a job row removed at 7 days still has a readable
+  log for another three weeks.
+- `cleanup()` counts before deleting (`rowCount` is unreliable across engines)
+  and honours `dryRun`, which is what makes `smrt db:prune --dry-run` an exact
+  preview. Its `(status, completed_at)` predicate is indexed by
+  `ensureJobsSystemTableCompatibility()`, which this collection runs on every
+  `initialize()` — bootstrap cannot do it, because `_smrt_jobs` does not exist
+  yet when bootstrap runs.
+- `cleanup({})` with no cutoff returns 0. It must never be read as "delete
+  everything".
+
 ## Gotchas
 
 - **Cron not timezone-aware**: cron fields match the server's **local** time, not UTC (set `TZ` for UTC); no missed-run catch-up (fire-once-forward)

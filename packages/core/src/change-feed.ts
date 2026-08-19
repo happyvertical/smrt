@@ -269,6 +269,13 @@ export interface ChangeFeedRetention {
   maxAgeMs?: number;
   /** Keep at most this many newest entries (by sequence). */
   maxRows?: number;
+  /**
+   * Count the entries the bounds select without deleting them (#2375).
+   *
+   * Lets the retention sweep and `smrt db:prune --dry-run` preview the exact
+   * same predicate the real prune would execute.
+   */
+  dryRun?: boolean;
 }
 
 /** Default page size for {@link getChangesSince}. */
@@ -911,13 +918,14 @@ function normalizeTimestamp(value: unknown): string {
  * larger than the slowest consumer's polling interval; consumers whose
  * cursor falls out of it are told to full-resync via `resyncRequired`.
  *
- * @returns The number of entries pruned (approximate under concurrent prunes).
+ * @returns The number of entries pruned — or, with `dryRun`, the number the
+ *   same bounds would prune (approximate under concurrent prunes).
  */
 export async function pruneChangeFeed(
   db: DatabaseInterface,
   retention: ChangeFeedRetention,
 ): Promise<{ pruned: number }> {
-  const { maxAgeMs, maxRows } = retention;
+  const { maxAgeMs, maxRows, dryRun = false } = retention;
   if (maxAgeMs == null && maxRows == null) {
     throw new Error('pruneChangeFeed requires maxAgeMs and/or maxRows');
   }
@@ -941,20 +949,32 @@ export async function pruneChangeFeed(
   }
 
   let pruned = 0;
+  let prunedThrough = 0;
 
   if (maxRows != null) {
     const pruneThrough = Math.min(horizon - Math.floor(maxRows), horizon - 1);
     if (pruneThrough > 0) {
-      pruned += await deleteCounted(db, `seq <= ${p(1)}`, [pruneThrough]);
+      prunedThrough = pruneThrough;
+      pruned += await deleteCounted(
+        db,
+        `seq <= ${p(1)}`,
+        [pruneThrough],
+        dryRun,
+      );
     }
   }
 
   if (maxAgeMs != null) {
     const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+    // `seq > prunedThrough` excludes what the row bound already accounted for.
+    // Redundant when the rows were really deleted, load-bearing under
+    // `dryRun`, where nothing was — without it overlapping entries would be
+    // counted by both bounds.
     pruned += await deleteCounted(
       db,
-      `created_at < ${p(1)} AND seq < ${p(2)}`,
-      [cutoff, horizon],
+      `created_at < ${p(1)} AND seq < ${p(2)} AND seq > ${p(3)}`,
+      [cutoff, horizon, prunedThrough],
+      dryRun,
     );
   }
 
@@ -965,6 +985,7 @@ async function deleteCounted(
   db: DatabaseInterface,
   condition: string,
   params: unknown[],
+  dryRun = false,
 ): Promise<number> {
   const countRows = getQueryRows(
     await db.query(
@@ -973,7 +994,7 @@ async function deleteCounted(
     ),
   );
   const total = toSeqNumber(countRows[0]?.total);
-  if (total > 0) {
+  if (total > 0 && !dryRun) {
     await db.query(
       `DELETE FROM ${CHANGE_FEED_TABLE} WHERE ${condition}`,
       ...params,

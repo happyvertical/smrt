@@ -42,6 +42,11 @@ CREATE INDEX IF NOT EXISTS idx_smrt_contexts_confidence
 
 CREATE INDEX IF NOT EXISTS idx_smrt_contexts_last_used
   ON _smrt_contexts(last_used_at);
+
+-- Retention predicate for pruneExpiredContexts() (#2375). Rows that never
+-- expire carry NULL here, so the index only has to cover the ones that do.
+CREATE INDEX IF NOT EXISTS idx_smrt_contexts_expires_at
+  ON _smrt_contexts(expires_at);
 `;
 
 /**
@@ -169,6 +174,15 @@ CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_target
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_correlation
   ON _smrt_dispatch(correlation_id);
+
+-- Retention predicates of DispatchCollection.cleanup() (#2375): completed rows
+-- are aged out on processed_at, failed rows on updated_at. The status-only
+-- index above cannot serve either range.
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_processed
+  ON _smrt_dispatch(status, processed_at);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_updated
+  ON _smrt_dispatch(status, updated_at);
 `;
 
 /**
@@ -243,6 +257,12 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
   ON _smrt_ai_usage(provider, model);
+
+-- Serves both the tenant-scoped retention predicate of pruneAiUsage() and the
+-- subscriptions billing meter's tenant_id + created_at range scan, neither of
+-- which the single-column indexes above can satisfy (#2375).
+CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_tenant_created
+  ON _smrt_ai_usage(tenant_id, created_at);
 `;
 
 /**
@@ -567,10 +587,17 @@ export function getSystemTableDDLForEngine(
  * `system/compatibility.ts`, because `CREATE TABLE IF NOT EXISTS` is a no-op on
  * a table that already exists.
  *
- * 1.10.0 retires the never-written `_smrt_registry` / `_smrt_signals` tables
- * (see {@link RETIRED_SYSTEM_TABLES}).
+ * 1.10.1 retires the never-written `_smrt_registry` / `_smrt_signals` tables
+ * (see {@link RETIRED_SYSTEM_TABLES}) and adds the retention-predicate indexes
+ * from #2375 (`_smrt_contexts.expires_at`, `_smrt_ai_usage(tenant_id,
+ * created_at)`, `_smrt_dispatch(status, processed_at)` and
+ * `(status, updated_at)`) in the same replay. (`1.10.0` briefly existed only
+ * on two unreleased, unmerged branches with two different, incompatible DDL
+ * sets — never published, never stamped in any real `_smrt_migrations` table
+ * — so merging them reuses no version an existing install could have already
+ * recorded; see the note on {@link SMRT_SCHEMA_DDL_CHECKSUMS}.)
  */
-export const SMRT_SCHEMA_VERSION = '1.10.0';
+export const SMRT_SCHEMA_VERSION = '1.10.1';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -596,12 +623,19 @@ export function getSystemSchemaChecksumInput(): string {
  * It is a *history*, not a single constant, so the guard cannot be silenced by
  * overwriting one value: every recorded hash must stay distinct, which means a
  * changed DDL has nowhere to be recorded except under a new version key. Adding
- * that key is the bump.
+ * that key is the bump. This is also why merging two branches that each
+ * independently bumped to the same version string (both `1.10.0`, covering two
+ * different DDL sets — #2376's table retirement and #2375's retention indexes)
+ * must land under a *new* key rather than picking a "final" checksum for the
+ * shared number: nothing published or otherwise reachable ever stamped
+ * `1.10.0`, so recording the merged DDL as `1.10.1` costs nothing and removes
+ * any doubt about a version string meaning two different things to two
+ * installs.
  *
- * Entries before 1.10.0 are not recorded — the guard starts here.
+ * Entries before 1.10.1 are not recorded — the guard starts here.
  */
 export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
   Object.freeze({
-    '1.10.0':
-      '1b6eeae73bc9ce2278e62525ce5f75c754d99b679c40a725ccf8461a96cfab4c',
+    '1.10.1':
+      'f796ee3b3f7ab8b9dc659ecaa68884ec01277408c3dd6edea540853fce369c16',
   });

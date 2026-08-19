@@ -416,11 +416,12 @@ async function indexExists(
   }
 }
 
+/** @param columns - One column, or a comma-separated list for a composite index. */
 async function addIndexIfMissing(
   db: DatabaseInterface,
   indexName: string,
   tableName: string,
-  columnName: string,
+  columns: string,
   typeHint?: string,
 ): Promise<void> {
   if (await indexExists(db, indexName, typeHint)) {
@@ -429,7 +430,7 @@ async function addIndexIfMissing(
 
   try {
     await db.query(
-      `CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName})`,
+      `CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columns})`,
     );
   } catch (error) {
     if (isDuplicateIndexRaceError(error, indexName)) {
@@ -941,6 +942,28 @@ export async function ensureJobsSystemTableCompatibility(
     typeHint,
   );
   await reconcileJobsTaskIdUniqueness(db, typeHint);
+  // Retention predicate of SmrtJobCollection.cleanup() (#2375): terminal jobs
+  // aged out by `(status, completed_at)`. `_smrt_jobs` comes from a decorated
+  // class rather than the hand-written system DDL, so this compatibility path
+  // — which the jobs collection runs on every initialize — is where the index
+  // reaches both existing and freshly migrated databases. `completed_at` is
+  // guarded the same as every other column this pass touches: a table created
+  // before the field existed (or a minimal test fixture) must not fail the
+  // whole sweep with "no such column".
+  await addColumnIfMissing(
+    db,
+    '_smrt_jobs',
+    'completed_at',
+    'TIMESTAMP',
+    typeHint,
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_jobs_status_completed_at',
+    '_smrt_jobs',
+    'status, completed_at',
+    typeHint,
+  );
 }
 
 export async function ensureJobEventsSystemTableCompatibility(
