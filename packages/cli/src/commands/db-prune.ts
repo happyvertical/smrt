@@ -52,6 +52,16 @@ const RETENTION_TASK_PACKAGES = [
 /**
  * Load every installed package that contributes retention tasks.
  *
+ * A rejected import is always treated as "not installed" — this function
+ * cannot reliably tell a genuine module-resolution miss apart from a package
+ * that resolved but threw during its own top-level evaluation (error shapes
+ * differ across bundlers and runtimes, and `importPackage` is caller-supplied
+ * for exactly that flexibility). It still logs the message on `stderr`
+ * rather than swallowing it outright, so an operator can tell "this project
+ * doesn't depend on jobs/users" apart from "smrt-jobs is installed but broke
+ * on import" without the sweep itself needing to fail over an optional
+ * dependency.
+ *
  * @returns The specifiers that loaded, in declaration order.
  */
 export async function loadRetentionTaskPackages(
@@ -62,8 +72,12 @@ export async function loadRetentionTaskPackages(
     try {
       await importPackage(specifier);
       loaded.push(specifier);
-    } catch {
-      // Not installed in this project — nothing to contribute.
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `⚠️  Could not load ${specifier} (${message}). Treating its retention tasks as not contributed — ` +
+          'if the package is installed, this may be a real import failure rather than a missing dependency.',
+      );
     }
   }
   return loaded;

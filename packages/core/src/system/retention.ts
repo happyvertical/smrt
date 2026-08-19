@@ -194,6 +194,24 @@ export interface RetentionTask {
 const RETENTION_TASKS_KEY = Symbol.for('smrt.retention-tasks');
 
 /**
+ * Names {@link builtInTasks} always uses for the four framework-owned tables.
+ *
+ * Reserved against contributed tasks: `RetentionTaskResult.task` is
+ * documented unique within a sweep, and a contributed task sharing one of
+ * these names would collide with a built-in result — silently, since nothing
+ * else in the sweep loop checks for it — and would also be unreachable
+ * through {@link RetentionPolicy.tasks}, which only ever sees the *last*
+ * task run under that name, never the built-in one (opting a built-in table
+ * out goes through its own dedicated policy field instead).
+ */
+const RESERVED_TASK_NAMES = new Set([
+  'changes',
+  'ai-usage',
+  'contexts',
+  'dispatch',
+]);
+
+/**
  * The task registry, held on `globalThis` rather than in module scope.
  *
  * Contributing packages resolve their own copy of `@happyvertical/smrt-core`
@@ -217,10 +235,19 @@ function registeredTasks(): Map<string, RetentionTask> {
  * something calls {@link runRetentionSweep}, and the policy can still turn it
  * off by name. Re-registering the same name replaces the previous task, which
  * keeps module re-evaluation (HMR, repeated test imports) idempotent.
+ *
+ * @throws If `task.name` is empty, or is one of the four built-in table
+ *   names (`changes`, `ai-usage`, `contexts`, `dispatch`) — see
+ *   {@link RESERVED_TASK_NAMES}.
  */
 export function registerRetentionTask(task: RetentionTask): void {
   if (!task.name) {
     throw new Error('registerRetentionTask requires a non-empty task name');
+  }
+  if (RESERVED_TASK_NAMES.has(task.name)) {
+    throw new Error(
+      `registerRetentionTask: "${task.name}" is a built-in task name (reserved: ${[...RESERVED_TASK_NAMES].join(', ')})`,
+    );
   }
   registeredTasks().set(task.name, task);
 }
@@ -252,6 +279,15 @@ export interface AiUsageRetention {
   maxAgeMs?: number;
   /**
    * Keep at most this many newest records (by `created_at`).
+   *
+   * A ceiling, not a floor: combined with `maxAgeMs`, the two bounds union
+   * — a row past the age cutoff is deleted regardless of `maxRows`, so
+   * `maxRows` never resurrects rows the age bound already excludes. If every
+   * row is already older than `maxAgeMs`, a finite `maxRows` keeps none of
+   * them; it does not guarantee `maxRows` survivors independent of age. (A
+   * `maxRows` that overrode age this way would defeat the reason `maxAgeMs`
+   * usually exists in the first place — a compliance/privacy deletion
+   * deadline that a row-count floor should not be able to postpone.)
    *
    * Rows sharing the cutoff timestamp all survive, so the retained count can
    * exceed `maxRows` by the size of one timestamp tie.

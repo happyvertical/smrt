@@ -8,7 +8,7 @@
  */
 
 import type { RetentionSweepResult } from '@happyvertical/smrt-core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildPrunePolicy,
   dbPruneCommand,
@@ -110,6 +110,28 @@ describe('loadRetentionTaskPackages (#2375)', () => {
     });
 
     expect(loaded).toEqual(['@happyvertical/smrt-users']);
+  });
+
+  it('warns with the real error instead of silently swallowing it', async () => {
+    // A package that resolves but throws during its own top-level
+    // evaluation looks identical to "not installed" in the return value —
+    // this is the operator-visible signal that distinguishes them.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await loadRetentionTaskPackages(async (specifier) => {
+        if (specifier.endsWith('smrt-jobs')) {
+          throw new Error('boom: broken transitive dependency');
+        }
+        return {};
+      });
+
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [warning] = warnSpy.mock.calls[0] as [string];
+      expect(warning).toContain('@happyvertical/smrt-jobs');
+      expect(warning).toContain('boom: broken transitive dependency');
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 

@@ -248,6 +248,32 @@ describe('pruneAiUsage (#2375)', () => {
     expect(await idsIn('_smrt_ai_usage')).toEqual(['d-recent']);
   });
 
+  it('maxRows is a ceiling, not a floor: it never keeps a row maxAgeMs already excludes', async () => {
+    // Both rows are already past the age cutoff, so maxAgeMs alone would
+    // delete both. A finite maxRows caps what survives; it does not
+    // guarantee `maxRows` survivors regardless of age — a row-count floor
+    // overriding an age-based deletion would defeat the reason maxAgeMs
+    // exists (often a compliance/privacy deadline).
+    await insertUsage({ id: 'a-ancient', createdAt: daysAgo(200) });
+    await insertUsage({ id: 'b-ancient', createdAt: daysAgo(150) });
+
+    const preview = await pruneAiUsage(db, {
+      maxAgeMs: 90 * DAY_MS,
+      maxRows: 1,
+      dryRun: true,
+    });
+    expect(preview.pruned).toBe(2);
+    expect(await countRows('_smrt_ai_usage')).toBe(2);
+
+    // The dry-run preview must match what a real run actually deletes.
+    const applied = await pruneAiUsage(db, {
+      maxAgeMs: 90 * DAY_MS,
+      maxRows: 1,
+    });
+    expect(applied.pruned).toBe(2);
+    expect(await countRows('_smrt_ai_usage')).toBe(0);
+  });
+
   it('rejects a call with no bounds and negative bounds', async () => {
     await expect(pruneAiUsage(db, {})).rejects.toThrow(
       /requires maxAgeMs and\/or maxRows/,
@@ -518,6 +544,18 @@ describe('runRetentionSweep (#2375)', () => {
     expect(() =>
       registerRetentionTask({ name: '', run: async () => 0 }),
     ).toThrow(/non-empty task name/);
+  });
+
+  it('rejects a task whose name collides with a built-in table', () => {
+    // RetentionTaskResult.task is documented unique within a sweep, and a
+    // contributed task named e.g. "dispatch" would collide with the
+    // built-in dispatch task's own result entry — and be unreachable
+    // through RetentionPolicy.tasks, which only ever sees the built-in.
+    for (const reserved of ['changes', 'ai-usage', 'contexts', 'dispatch']) {
+      expect(() =>
+        registerRetentionTask({ name: reserved, run: async () => 0 }),
+      ).toThrow(/built-in task name/);
+    }
   });
 });
 
