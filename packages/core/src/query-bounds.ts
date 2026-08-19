@@ -207,7 +207,11 @@ export function resolveListOffset(
  * either — rows sharing a timestamp still tie — so the primary key follows as a
  * total-order tiebreak.
  *
- * The index that makes this ordering cheap is #2363.
+ * Schema generation emits the index that makes this ordering cheap —
+ * `(tenant_id, created_at)` on a tenant-scoped table, `(created_at)` otherwise
+ * (#2363). The primary-key tiebreak is deliberately not in that index: its
+ * direction is opposite, so it is resolved by an incremental sort over the
+ * rows that share a timestamp.
  */
 export const DEFAULT_LIST_ORDER_BY: readonly string[] = [
   'created_at DESC',

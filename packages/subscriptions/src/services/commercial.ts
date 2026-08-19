@@ -144,6 +144,14 @@ export class CommercialUsageService {
     return charge;
   }
 
+  /**
+   * Append a signed correction to an approved charge.
+   *
+   * @param amount - Signed correction in **integer minor units**, same unit as
+   *   the charge (#2401). Negative is legitimate — that is a credit. A
+   *   fractional value is rejected rather than silently rounded, because it
+   *   almost always means the caller passed major units.
+   */
   async adjust(
     chargeId: string,
     amount: number,
@@ -151,6 +159,12 @@ export class CommercialUsageService {
     source = '',
     sourceId = '',
   ) {
+    if (!Number.isInteger(amount)) {
+      throw new Error(
+        `Billing adjustment amount must be an integer number of minor units ` +
+          `(cents) — got ${amount}. Money is exact: -$0.25 is -25, not -0.25.`,
+      );
+    }
     const charge = await this.charges.get(chargeId);
     if (!charge) throw new Error(`Client charge ${chargeId} was not found.`);
     if (charge.status !== 'approved' && charge.status !== 'adjusted') {
@@ -196,6 +210,19 @@ export class CommercialUsageService {
     return adjustment;
   }
 
+  /**
+   * Price one usage event, in **integer minor units** (#2401).
+   *
+   * The pricing terms stay fractional on purpose — a per-token rate is
+   * routinely a fraction of a cent, and an integer `unitPrice` would truncate
+   * it to zero — so terms are read as *minor units per unit of usage* and only
+   * the result is rounded. This is the single boundary in the package where a
+   * rate meets money, which is what lets `evaluateSpending()` compare sums
+   * against `SpendingPolicy.limitAmount` exactly.
+   *
+   * Replaces the old micro-unit rounding (`Math.round(amount * 1e6) / 1e6`),
+   * which kept six sub-cent digits in a column that is now integral.
+   */
   async calculateAmount(
     rule: PricingRule,
     quantity: number,
@@ -247,7 +274,7 @@ export class CommercialUsageService {
     }
     if (!Number.isFinite(amount) || amount < 0)
       throw new Error('Pricing produced an invalid amount.');
-    return Math.round(amount * 1e6) / 1e6;
+    return Math.round(amount);
   }
 }
 
@@ -255,6 +282,10 @@ export interface SpendingDecision {
   allowed: boolean;
   approvalRequired: boolean;
   state: 'ok' | 'observed' | 'warned' | 'blocked' | 'approval_required';
+  /**
+   * Already-spent plus estimated, in **integer minor units** — the same unit as
+   * `SpendingPolicy.limitAmount` it is compared against (#2401).
+   */
   projectedAmount: number;
   matchedPolicyId: string | null;
 }
@@ -266,6 +297,7 @@ interface SpendingEvaluationInput {
   projectId?: string;
   serviceKey?: string;
   metricKey: string;
+  /** Estimated cost of the pending call, in integer minor units (#2401). */
   estimatedAmount: number;
   currency: string;
   at?: Date;

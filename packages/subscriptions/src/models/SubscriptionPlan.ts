@@ -32,7 +32,12 @@ export class SubscriptionPlan extends SmrtObject {
   description: string = '';
   status: SubscriptionPlanStatus = 'active';
   sortOrder: number = 0;
-  priceAmount: number = 0.0;
+  /**
+   * Plan price in **integer minor units** of {@link currency} — `$19.99` is
+   * `1999`. The `= 0` initializer is load-bearing: SMRT maps an integer literal
+   * to INTEGER and a decimal literal to DECIMAL, and money is exact (#2401).
+   */
+  priceAmount: number = 0;
   currency: string = 'USD';
   billingInterval: BillingInterval = 'month';
   externalProvider: string = 'stripe';

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-support",
-  "version": "0.40.69",
+  "version": "0.40.70",
   "description": "AI-first Support Cases: channel-neutral intake, lifecycle, routing, service targets, and service time for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,6 +31,7 @@
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run optional.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

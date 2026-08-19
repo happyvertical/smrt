@@ -98,48 +98,6 @@ CREATE INDEX IF NOT EXISTS idx_smrt_schema_migrations_batch
 `;
 
 /**
- * Runtime object registry persistence
- * Stores metadata about registered SMRT objects for introspection
- */
-export const CREATE_SMRT_REGISTRY_TABLE = `
-CREATE TABLE IF NOT EXISTS _smrt_registry (
-  class_name TEXT PRIMARY KEY,
-  schema_version TEXT,
-  fields TEXT,
-  relationships TEXT,
-  config TEXT,
-  manifest TEXT,
-  last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-`;
-
-/**
- * Signal history/audit log
- * Optional persistence of signals for debugging and auditing
- */
-export const CREATE_SMRT_SIGNALS_TABLE = `
-CREATE TABLE IF NOT EXISTS _smrt_signals (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL,
-  source_class TEXT,
-  source_id TEXT,
-  target_class TEXT,
-  target_id TEXT,
-  payload TEXT,
-  timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_smrt_signals_source
-  ON _smrt_signals(source_class, source_id);
-
-CREATE INDEX IF NOT EXISTS idx_smrt_signals_type
-  ON _smrt_signals(type);
-
-CREATE INDEX IF NOT EXISTS idx_smrt_signals_timestamp
-  ON _smrt_signals(timestamp);
-`;
-
-/**
  * Embedding storage for semantic search
  * Stores embedding vectors for SMRT objects to enable vector similarity search
  */
@@ -530,13 +488,71 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_MIGRATIONS_TABLE,
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
   CREATE_SMRT_BACKFILLS_TABLE,
-  CREATE_SMRT_REGISTRY_TABLE,
-  CREATE_SMRT_SIGNALS_TABLE,
   CREATE_SMRT_EMBEDDINGS_TABLE,
   CREATE_SMRT_DISPATCH_TABLE,
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_AI_USAGE_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
+];
+
+/**
+ * Framework-owned tables that are backed by `@smrt()` models rather than by
+ * {@link ALL_SYSTEM_TABLES}, and whose write volume disqualifies them from the
+ * change feed.
+ *
+ * This is the jobs runner's own state: the claim loop and the forge projection
+ * poll every second and rewrite these rows several times per job, so feeding
+ * them into an append-only log whose pruning is not scheduled (issue #2375)
+ * would dominate it with data no client syncs.
+ *
+ * The list is deliberately short and biased toward *observing*. A table wrongly
+ * excluded is an invisible bug — exactly the one issue #2376 fixes — while a
+ * table wrongly included costs a few extra feed rows. Everything else keeping
+ * the `_smrt_` prefix (feature flags, prompt overrides, subscription plans,
+ * field policies, agent and report schedules, report state) is observed.
+ */
+export const FRAMEWORK_OPERATIONAL_TABLES: readonly string[] = [
+  '_smrt_jobs',
+  '_smrt_job_events',
+  '_smrt_workers',
+  '_smrt_forge_deliveries',
+  '_smrt_forge_projection_checkpoints',
+];
+
+/**
+ * Framework tables that are backed by `@smrt()` models *and* reshaped by
+ * `system/compatibility.ts`.
+ *
+ * They are dual-owned: `db:migrate` creates them from the jobs manifest, and
+ * the compatibility pass adds columns/indexes that predate the manifest. On a
+ * fresh install the manifest wins the race — bootstrap runs before the tables
+ * exist — so their compatibility pass is deferred and re-checked until the
+ * tables show up (issue #2376).
+ */
+export const DEFERRED_COMPATIBILITY_TABLES: readonly string[] = [
+  '_smrt_jobs',
+  '_smrt_job_events',
+];
+
+/**
+ * System tables SMRT used to create on every database and no longer does.
+ *
+ * `_smrt_signals` never had a writer and `_smrt_registry` was only written by
+ * an `ObjectRegistry.persistToDatabase()` helper that nothing ever called, so
+ * both were empty on every deployment. New databases no longer get them.
+ * Existing databases keep the empty tables until an operator drops them:
+ *
+ * ```sql
+ * DROP TABLE IF EXISTS _smrt_signals;
+ * DROP TABLE IF EXISTS _smrt_registry;
+ * ```
+ *
+ * The framework deliberately does not issue those drops itself — dropping a
+ * table is not reversible and a deployment may have repurposed the name.
+ */
+export const RETIRED_SYSTEM_TABLES: readonly string[] = [
+  '_smrt_registry',
+  '_smrt_signals',
 ];
 
 /**
@@ -562,11 +578,53 @@ export function getSystemTableDDLForEngine(
 }
 
 /**
- * Current SMRT system schema version
+ * Current SMRT system schema version.
  *
- * Bootstrap replays the DDL above whenever this version is not yet stamped in
- * `_smrt_migrations`, so bumping it is how additive index changes reach
- * databases that already exist. 1.10.0 adds the retention-predicate indexes
- * from #2375.
+ * `bootstrapSystemTables()` skips replaying system DDL once this exact version
+ * is recorded in `_smrt_migrations`, so every change to {@link ALL_SYSTEM_TABLES}
+ * must bump it — otherwise existing databases never see the change. New
+ * *columns* additionally need an `addColumnIfMissing()` entry in
+ * `system/compatibility.ts`, because `CREATE TABLE IF NOT EXISTS` is a no-op on
+ * a table that already exists.
+ *
+ * 1.10.0 retires the never-written `_smrt_registry` / `_smrt_signals` tables
+ * (see {@link RETIRED_SYSTEM_TABLES}) and adds the retention-predicate indexes
+ * from #2375 (`_smrt_contexts.expires_at`, `_smrt_ai_usage(tenant_id,
+ * created_at)`, `_smrt_dispatch(status, processed_at)` and
+ * `(status, updated_at)`) in the same replay.
  */
 export const SMRT_SCHEMA_VERSION = '1.10.0';
+
+/**
+ * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
+ *
+ * Whitespace is normalized so reformatting alone does not trip the guard while
+ * any token change does.
+ */
+export function getSystemSchemaChecksumInput(): string {
+  return ALL_SYSTEM_TABLES.join('\n').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * SHA-256 of {@link getSystemSchemaChecksumInput} for each system schema
+ * version, oldest first.
+ *
+ * The discipline that keeps fresh installs and upgraded installs identical was
+ * documented but unenforced (issue #2376): a contributor could edit the DDL and
+ * ship it without bumping the version, and no existing database would ever
+ * apply the change. `system-schema-evolution.test.ts` recomputes the current
+ * hash and requires it to equal this map's entry for
+ * {@link SMRT_SCHEMA_VERSION}.
+ *
+ * It is a *history*, not a single constant, so the guard cannot be silenced by
+ * overwriting one value: every recorded hash must stay distinct, which means a
+ * changed DDL has nowhere to be recorded except under a new version key. Adding
+ * that key is the bump.
+ *
+ * Entries before 1.10.0 are not recorded — the guard starts here.
+ */
+export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
+  Object.freeze({
+    '1.10.0':
+      'f796ee3b3f7ab8b9dc659ecaa68884ec01277408c3dd6edea540853fce369c16',
+  });

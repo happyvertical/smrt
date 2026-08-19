@@ -1,5 +1,6 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import { runCascadeDelete } from './cascade';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -13,6 +14,10 @@ import {
   classifyDialectMessage,
   type DatabaseErrorClassification,
 } from './db-errors';
+import {
+  isEmbeddedDatabase,
+  withEmbeddedWriteQueue,
+} from './embedded-write-queue';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
@@ -25,7 +30,11 @@ import {
   TenantIsolationError,
   ValidationError,
 } from './errors';
-import { createInterceptorContext, GlobalInterceptors } from './interceptors';
+import {
+  createInterceptorContext,
+  GlobalInterceptors,
+  resolveGetStringFilter,
+} from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -34,7 +43,12 @@ import {
   type ToolCall,
   type ToolCallResult,
 } from './tools/tool-executor';
-import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
+import {
+  fieldsFromClass,
+  keysToSnakeCase,
+  tableNameFromClass,
+  toSnakeCase,
+} from './utils';
 
 // DEBUG_STI raises the level to 'debug' so the env-gated STI hydration traces
 // below (logger.debug, inside `if (process.env.DEBUG_STI)` guards) actually emit;
@@ -1242,39 +1256,43 @@ export class SmrtObject extends SmrtClass {
           (prop && typeof prop === 'object' && 'type' in prop && prop.type) ||
           fieldDef?.type;
 
-        if (fieldType === 'text') {
-          // Don't convert tenant ID fields to empty string (Issue #841)
-          // Tenant fields should remain null/undefined for interceptor to auto-populate.
-          // Check both the property instance and field definition for __tenancy marker.
-          // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
-          // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
-          // `prop` may be a Field-helper instance carrying a `__tenancy`
-          // marker; read it through a narrow indexable view after the
-          // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
-          const propTenancy =
-            prop && typeof prop === 'object' && '__tenancy' in prop
-              ? (prop as { __tenancy?: { isTenantIdField?: boolean } })
-                  .__tenancy
-              : undefined;
-          const hasTenancyMarker =
-            propTenancy?.isTenantIdField ||
-            fieldDef?.__tenancy?.isTenantIdField ||
-            fieldDef?._meta?.__tenancy?.isTenantIdField;
+        // Don't convert tenant ID fields to empty string (Issue #841)
+        // Tenant fields should remain null/undefined for interceptor to auto-populate.
+        // Check both the property instance and field definition for __tenancy marker.
+        // Note: __tenancy can be at fieldDef.__tenancy (from @tenantId decorator) or
+        // fieldDef._meta.__tenancy (from @smrt({ tenantScoped: true }))
+        // `prop` may be a Field-helper instance carrying a `__tenancy`
+        // marker; read it through a narrow indexable view after the
+        // `in`-guard. `fieldDef.__tenancy` / `_meta.__tenancy` are typed.
+        //
+        // Checked before the type switch (#2360): the registry injects the
+        // tenant field of a `tenantScoped` class as `foreignKey` when no
+        // manifest carries it, and the tenant column is part of the
+        // conflict target, so it must reach the row as an explicit NULL —
+        // an omitted key would fail `ON CONFLICT` validation ("conflict
+        // columns missing from data") instead of taking the null-aware path.
+        const propTenancy =
+          prop && typeof prop === 'object' && '__tenancy' in prop
+            ? (prop as { __tenancy?: { isTenantIdField?: boolean } }).__tenancy
+            : undefined;
+        const hasTenancyMarker =
+          propTenancy?.isTenantIdField ||
+          fieldDef?.__tenancy?.isTenantIdField ||
+          fieldDef?._meta?.__tenancy?.isTenantIdField;
 
-          if (hasTenancyMarker) {
-            // Leave tenant field as null so interceptor can auto-populate
-            if (isSTI && fieldDef?.type === 'meta') {
-              metaData[key] = null;
-            } else {
-              data[key] = null;
-            }
+        if (hasTenancyMarker) {
+          // Leave tenant field as null so interceptor can auto-populate
+          if (isSTI && fieldDef?.type === 'meta') {
+            metaData[key] = null;
           } else {
-            // For regular TEXT fields, convert undefined to an empty string.
-            if (isSTI && fieldDef?.type === 'meta') {
-              metaData[key] = '';
-            } else {
-              data[key] = '';
-            }
+            data[key] = null;
+          }
+        } else if (fieldType === 'text') {
+          // For regular TEXT fields, convert undefined to an empty string.
+          if (isSTI && fieldDef?.type === 'meta') {
+            metaData[key] = '';
+          } else {
+            data[key] = '';
           }
         } else if (fieldType === 'json') {
           // For JSON fields, use the default value from manifest to prevent:
@@ -1510,6 +1528,12 @@ export class SmrtObject extends SmrtClass {
   /**
    * Gets or generates a unique ID for this object
    *
+   * The natural-key lookup runs through the `beforeGet` interceptor pipeline
+   * (#2365), so under an active tenant context this can only adopt the id of
+   * a row visible to that tenant — never another tenant's same-slug row,
+   * which would both disclose the foreign id and steer a subsequent `save()`
+   * onto the foreign row.
+   *
    * @returns Promise resolving to the object's ID
    */
   async getId() {
@@ -1517,10 +1541,13 @@ export class SmrtObject extends SmrtClass {
       await this.verifyStorageReady();
 
       // lookup by slug and context using adapter method
-      const saved = await this.db.get(this.tableName, {
-        slug: this.slug,
-        context: this.context,
-      });
+      const saved = await this.db.get(
+        this.tableName,
+        await this.interceptGetFilter({
+          slug: this.slug,
+          context: this.context,
+        }),
+      );
       if (saved) {
         this.id = saved.id;
       }
@@ -1587,6 +1614,10 @@ export class SmrtObject extends SmrtClass {
   /**
    * Gets the ID of this object if it's already saved in the database
    *
+   * Both lookups run through the `beforeGet` interceptor pipeline (#2365), so
+   * under an active tenant context only rows visible to that tenant count as
+   * "saved".
+   *
    * @returns Promise resolving to the saved ID or null if not saved
    */
   async getSavedId() {
@@ -1598,17 +1629,66 @@ export class SmrtObject extends SmrtClass {
 
     // Try to find by id first
     if (this.id) {
-      const byId = await this.db.get(this.tableName, { id: this.id });
+      const byId = await this.db.get(
+        this.tableName,
+        await this.interceptGetFilter({ id: this.id }),
+      );
       if (byId) return byId.id;
     }
 
     // Fall back to finding by slug
     if (this.slug) {
-      const bySlug = await this.db.get(this.tableName, { slug: this.slug });
+      const bySlug = await this.db.get(
+        this.tableName,
+        await this.interceptGetFilter({ slug: this.slug }),
+      );
       if (bySlug) return bySlug.id;
     }
 
     return null;
+  }
+
+  /**
+   * Run the registered `beforeGet` interceptors over a direct hydration filter
+   * and return it in database column form (#2365).
+   *
+   * `loadFromId()`, `loadFromSlug()`, `getSavedId()` and `getId()` query
+   * `this.db.get` directly instead of going through `SmrtCollection.get()`, so
+   * before this hook they bypassed every read interceptor: under an active tenant context,
+   * `new Model({ slug }).initialize()` happily hydrated another tenant's row
+   * even though every collection read was filtered. Routing the filter through
+   * `GlobalInterceptors.executeBeforeGet` gives hydration the same read
+   * predicate as collection reads — the tenancy interceptor adds its tenant
+   * filter (or throws `TenantContextError` for `mode: 'required'` classes
+   * outside a tenant context), and the existing bypasses (`withSystemContext`,
+   * super-admin bypass) keep working because they short-circuit inside the
+   * interceptor itself.
+   *
+   * Interceptors speak field names (`tenantId`); `this.db.get` speaks column
+   * names, so the merged filter is converted to snake_case before use. The
+   * base filters (`id`, `slug`, `context`) are already column-shaped and pass
+   * through unchanged.
+   *
+   * @param filter - The column-shaped hydration filter to intercept
+   * @returns The intercepted filter with all keys in column form
+   */
+  private async interceptGetFilter(
+    filter: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const className = this.getResolvedClassName();
+    const interceptorContext = createInterceptorContext(className, 'get');
+    const intercepted = await GlobalInterceptors.executeBeforeGet(
+      className,
+      filter,
+      interceptorContext,
+    );
+    // An interceptor may hand back a string (the public beforeGet contract
+    // allows it); resolve it the same way SmrtCollection.get() would.
+    const resolved =
+      typeof intercepted === 'string'
+        ? resolveGetStringFilter(intercepted)
+        : intercepted;
+    return keysToSnakeCase(resolved as Record<string, unknown>);
   }
 
   /**
@@ -1916,62 +1996,85 @@ export class SmrtObject extends SmrtClass {
       const upsertConflictColumns =
         this._persisted && data.id ? ['id'] : conflictColumns;
 
-      await ErrorUtils.withRetry(
-        async () => {
-          try {
-            if (writePlan.type === 'updateById') {
-              const { id: _id, ...updateData } = data;
-              await this.db.update(this.tableName, { id: data.id }, updateData);
-              this.setMetaType(writePlan.qualifiedMetaType);
-            } else if (this._insertOnly && !this._persisted) {
-              // Strict-insert mode (#1759): row identity is an explicit
-              // client-supplied id, so never adopt an existing row via
-              // conflict resolution — any PK/unique collision must raise.
-              await this.db.insert(this.tableName, data);
-            } else {
-              await this.db.upsert(this.tableName, upsertConflictColumns, data);
-            }
-          } catch (error) {
-            // Detect specific database error types. `@happyvertical/sql` wraps
-            // every driver error as
-            // `DatabaseError('Failed to upsert record into table', { …,
-            // originalError })`, so the constraint wording never reaches
-            // `error.message`. Classify through the whole cause chain — driver
-            // codes first (SQLSTATE / SQLite result codes), dialect wording
-            // only as the DuckDB fallback — to restore the typed-error parity
-            // the docs promise (#1378, #2366).
-            if (error instanceof Error) {
-              const classification = classifyDatabaseError(error);
-              if (classification.kind === 'unique_violation') {
-                const field = this.extractConstraintFieldFromChain(
-                  error,
-                  classification,
+      // A NULL among the conflict values routes the SDK's upsert through its
+      // null-aware path — on file-backed SQLite a write transaction on a
+      // SECOND connection. Serialize those saves against this process's other
+      // writes (see embedded-write-queue.ts): with the tenant-led conflict
+      // target (#2360) every NULL-tenant create takes that path, and
+      // concurrent creates livelocked into SQLITE_BUSY against the
+      // change-feed append on the root connection.
+      const serializeEmbeddedWrite =
+        writePlan.type !== 'updateById' &&
+        !(this._insertOnly && !this._persisted) &&
+        isEmbeddedDatabase(this.db) &&
+        upsertConflictColumns.some((column) => data[column] == null);
+
+      await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
+        ErrorUtils.withRetry(
+          async () => {
+            try {
+              if (writePlan.type === 'updateById') {
+                const { id: _id, ...updateData } = data;
+                await this.db.update(
+                  this.tableName,
+                  { id: data.id },
+                  updateData,
                 );
-                throw ValidationError.uniqueConstraint(
-                  field,
-                  this.getFieldValue(field),
+                this.setMetaType(writePlan.qualifiedMetaType);
+              } else if (this._insertOnly && !this._persisted) {
+                // Strict-insert mode (#1759): row identity is an explicit
+                // client-supplied id, so never adopt an existing row via
+                // conflict resolution — any PK/unique collision must raise.
+                await this.db.insert(this.tableName, data);
+              } else {
+                await this.db.upsert(
+                  this.tableName,
+                  upsertConflictColumns,
+                  data,
                 );
               }
-              if (classification.kind === 'not_null_violation') {
-                const field = this.extractConstraintFieldFromChain(
-                  error,
-                  classification,
-                );
-                throw ValidationError.requiredField(field, className);
+            } catch (error) {
+              // Detect specific database error types. `@happyvertical/sql` wraps
+              // every driver error as
+              // `DatabaseError('Failed to upsert record into table', { …,
+              // originalError })`, so the constraint wording never reaches
+              // `error.message`. Classify through the whole cause chain — driver
+              // codes first (SQLSTATE / SQLite result codes), dialect wording
+              // only as the DuckDB fallback — to restore the typed-error parity
+              // the docs promise (#1378, #2366).
+              if (error instanceof Error) {
+                const classification = classifyDatabaseError(error);
+                if (classification.kind === 'unique_violation') {
+                  const field = this.extractConstraintFieldFromChain(
+                    error,
+                    classification,
+                  );
+                  throw ValidationError.uniqueConstraint(
+                    field,
+                    this.getFieldValue(field),
+                  );
+                }
+                if (classification.kind === 'not_null_violation') {
+                  const field = this.extractConstraintFieldFromChain(
+                    error,
+                    classification,
+                  );
+                  throw ValidationError.requiredField(field, className);
+                }
+                const operation =
+                  writePlan.type === 'updateById'
+                    ? `UPDATE ${this.tableName} (id-targeted)`
+                    : this._insertOnly && !this._persisted
+                      ? `INSERT INTO ${this.tableName}`
+                      : `UPSERT INTO ${this.tableName}`;
+                throw DatabaseError.queryFailed(operation, error);
               }
-              const operation =
-                writePlan.type === 'updateById'
-                  ? `UPDATE ${this.tableName} (id-targeted)`
-                  : this._insertOnly && !this._persisted
-                    ? `INSERT INTO ${this.tableName}`
-                    : `UPSERT INTO ${this.tableName}`;
-              throw DatabaseError.queryFailed(operation, error);
+              throw error;
             }
-            throw error;
-          }
-        },
-        3,
-        500,
+          },
+          3,
+          500,
+        ),
       );
 
       // The row now exists, so any further save() must update it by primary
@@ -2332,8 +2435,10 @@ export class SmrtObject extends SmrtClass {
   /**
    * Hydrates this object from the database using its `id` property.
    *
-   * Queries the database for a row matching `{ id: this._id }` and calls
-   * `loadDataFromDb()` if found. Transient failures are retried up to 4 times
+   * Queries the database for a row matching `{ id: this._id }` — after running
+   * the filter through the `beforeGet` interceptor pipeline (#2365), so tenant
+   * scoping applies to hydration exactly as it does to collection reads — and
+   * calls `loadDataFromDb()` if found. Transient failures are retried up to 4 times
    * total — the initial try plus 3 retries — sleeping 250, 500 and 1000 ms
    * between them; deterministic failures are not. A malformed identifier
    * (PostgreSQL `22P02 invalid_text_representation` on a `uuid` column) is a
@@ -2357,19 +2462,23 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async loadFromId() {
-    try {
-      if (!this._id) {
-        throw ValidationError.requiredField('id', this.constructor.name);
-      }
+    if (!this._id) {
+      throw ValidationError.requiredField('id', this.constructor.name);
+    }
 
+    // Resolve the read filter through beforeGet interceptors before the retry
+    // wrapper (#2365): a tenancy error (missing required context, isolation
+    // violation) is a caller error that must propagate unchanged, not be
+    // wrapped into a retried DatabaseError.
+    const filter = await this.interceptGetFilter({ id: this._id });
+
+    try {
       await this.verifyStorageReady();
 
       await ErrorUtils.withRetry(
         async () => {
           try {
-            const existing = await this.db.get(this.tableName, {
-              id: this._id,
-            });
+            const existing = await this.db.get(this.tableName, filter);
             if (existing) {
               await this.loadDataFromDb(existing);
             }
@@ -2418,10 +2527,15 @@ export class SmrtObject extends SmrtClass {
   public async loadFromSlug() {
     await this.verifyStorageReady();
 
-    const existing = await this.db.get(this.tableName, {
-      slug: this._slug,
-      context: this._context || '',
-    });
+    // Route the natural-key lookup through beforeGet interceptors so slug
+    // hydration carries the same read predicate as collection reads (#2365).
+    const existing = await this.db.get(
+      this.tableName,
+      await this.interceptGetFilter({
+        slug: this._slug,
+        context: this._context || '',
+      }),
+    );
     if (existing) {
       await this.loadDataFromDb(existing);
     }
@@ -2702,25 +2816,64 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Deletes this object from the database.
+   * Deletes this object from the database, cascading to the rows that
+   * reference it.
    *
    * Runs the full lifecycle in order:
    * 1. `beforeDelete` interceptors (e.g. tenant validation)
    * 2. `beforeDelete` lifecycle hook (defined in `@smrt({ hooks })`)
-   * 3. Database row deletion
+   * 3. Referential cleanup and the row deletion (one transaction when there
+   *    is anything to clean up — see below)
    * 4. `afterDelete` lifecycle hook
    * 5. `afterDelete` interceptors
+   *
+   * ## Referential cleanup (#2371)
+   *
+   * SMRT emits no DB-level `FOREIGN KEY` constraints, so step 3 enforces
+   * referential integrity in the application layer instead:
+   *
+   * - `_smrt_embeddings` and `_smrt_contexts` rows owned by this object are
+   *   removed, so a deleted object can no longer win a `semanticSearch` slot
+   *   or resurrect stale `recall()` values.
+   * - Polymorphic association rows whose `(metaType, metaId)` points here are
+   *   removed.
+   * - `@foreignKey` / `@crossPackageRef` columns pointing at this class are
+   *   resolved according to their declared `onDelete` — `'CASCADE'`,
+   *   `'SET NULL'` or `'RESTRICT'`. Without a declaration, a column that is
+   *   part of the referencing class's `conflictColumns` (junction and
+   *   association rows) defaults to `CASCADE`; every other column is left
+   *   untouched, as before.
+   *
+   * Cascaded rows are removed with set-based statements: their own hooks and
+   * interceptors do **not** run and no change-feed tombstone is written for
+   * them, exactly as a DB-level `ON DELETE CASCADE` behaves. Only this object
+   * runs the lifecycle above.
+   *
+   * When anything references this class, step 3 runs inside a single
+   * transaction when the adapter supports one, so a failed cascade cannot
+   * leave the object deleted with its junction rows intact. When nothing
+   * references it, there is nothing to keep consistent and the transaction
+   * is skipped so an ordinary delete costs no extra round trip — but that
+   * skip requires no registered polymorphic association class anywhere in
+   * the process, not just no typed reference to this class (see
+   * `cascade.ts`'s module doc: a `metaType` column can point at any class at
+   * runtime, so a polymorphic association class is always plausibly
+   * relevant).
    *
    * Prefer `collection.delete(id)` from application code — it loads the
    * object first (returning `false` when not found) before calling this method.
    *
    * @returns Promise that resolves when deletion is complete
+   * @throws {DatabaseError} When a referencing column declares
+   *   `onDelete: 'RESTRICT'` and rows still point at this object
    *
    * @example
    * ```typescript
    * const product = await products.get('product-uuid');
    * if (product) await product.delete();
    * ```
+   *
+   * @see {@link foreignKey} for declaring `onDelete` on the referencing side
    */
   public async delete(): Promise<void> {
     // Execute beforeDelete interceptors (e.g., tenant validation)
@@ -2733,14 +2886,39 @@ export class SmrtObject extends SmrtClass {
     await this.runHook('beforeDelete');
 
     await this.verifyStorageReady();
-    await this.db.delete(this.tableName, { id: this.id });
+
+    const { affectedTables, affectedTableClasses } = await runCascadeDelete(
+      this.db,
+      ObjectRegistry,
+      {
+        // R5-canon: the qualified name, not the bare constructor name —
+        // two packages can register a same-named class, and a simple-name
+        // lookup in ObjectRegistry.getClass()/findClass() can silently
+        // resolve the cascade plan against the wrong package's class,
+        // leaving its @crossPackageRef references and polymorphic
+        // meta_type rows uncleaned (the orphaned-reference bug #2371
+        // exists to close, moved to the cross-package case).
+        className: this.getResolvedQualifiedName(),
+        tableName: this.tableName,
+        id: this.id,
+      },
+      (db) => db.delete(this.tableName, { id: this.id }).then(() => undefined),
+    );
 
     // The backing row is gone — a later save() should go through the
     // natural-key insert path again rather than targeting a deleted id.
     this._persisted = false;
 
-    // Bust cached collection reads for this table (issue #1498).
+    // Bust cached collection reads for this table (issue #1498) and for every
+    // table the cascade touched — a stale junction read is as wrong as a stale
+    // read of this object.
     this.invalidateCollectionReadCache();
+    for (const table of affectedTables) {
+      this.invalidateCollectionReadCache(
+        table,
+        affectedTableClasses.get(table),
+      );
+    }
 
     await this.runHook('afterDelete');
 
@@ -2758,18 +2936,33 @@ export class SmrtObject extends SmrtClass {
    * broadcast to peer replicas over the database adapter's notification
    * capability, fire-and-forget. Cache maintenance must never fail the
    * write that triggered it.
+   *
+   * @param tableName - Table to invalidate; defaults to this object's own.
+   * @param ownerQualifiedClassName - Qualified name of the class that owns
+   *   `tableName`, when it differs from this object's own class (a
+   *   cascade-affected table, #2371) — lets the broadcast decision read
+   *   *that* class's `@smrt({ cache })` config instead of only this one's.
    */
-  private invalidateCollectionReadCache(): void {
+  private invalidateCollectionReadCache(
+    tableName = this.tableName,
+    ownerQualifiedClassName?: string,
+  ): void {
     try {
       const dbKey = resolveDbCacheKey(this.db);
-      invalidateCollectionCache(dbKey, this.tableName);
+      invalidateCollectionCache(dbKey, tableName);
 
-      if (this.shouldBroadcastCacheInvalidation(dbKey)) {
-        void broadcastCacheInvalidation(this.db, this.tableName);
+      if (
+        this.shouldBroadcastCacheInvalidation(
+          dbKey,
+          tableName,
+          ownerQualifiedClassName,
+        )
+      ) {
+        void broadcastCacheInvalidation(this.db, tableName);
       }
     } catch (error) {
       logger.warn('Failed to invalidate collection read cache after write', {
-        table: this.tableName,
+        table: tableName,
         error: error instanceof Error ? error.message : error,
       });
     }
@@ -2781,17 +2974,40 @@ export class SmrtObject extends SmrtClass {
    *
    * 1. A per-call `crossProcess` cached read in this process registered
    *    interest in the table — broadcast even without model-level config.
-   * 2. This class's resolved `@smrt({ cache })` config sets `crossProcess`.
+   * 2. The owning class's resolved `@smrt({ cache })` config sets
+   *    `crossProcess`. For this object's own table that class is `this`;
+   *    for a cascade-affected table (#2371) it is whatever class the
+   *    cascade plan attributed the table to, passed in as
+   *    `ownerQualifiedClassName` — a different class's table needs *that*
+   *    class's config checked, not this one's.
    * 3. Any other STI hierarchy member sharing the table resolves to a
    *    `crossProcess` config — a child that opted out with `cache: false`
    *    still mutates the shared table its base/siblings are caching.
+   *
+   * @param ownerQualifiedClassName - Qualified class name to check rules 2
+   *   and 3 against. Defaults to this object's own resolved qualified name
+   *   when `tableName` is this object's own table; when omitted for a
+   *   foreign table (the owning class could not be resolved), rules 2/3 are
+   *   skipped and only rule 1 applies.
    */
-  private shouldBroadcastCacheInvalidation(dbKey: string): boolean {
-    if (hasCrossProcessCacheInterest(dbKey, this.tableName)) {
+  private shouldBroadcastCacheInvalidation(
+    dbKey: string,
+    tableName = this.tableName,
+    ownerQualifiedClassName?: string,
+  ): boolean {
+    if (hasCrossProcessCacheInterest(dbKey, tableName)) {
       return true;
     }
 
-    const qualifiedName = this.getResolvedQualifiedName();
+    const qualifiedName =
+      ownerQualifiedClassName ??
+      (tableName === this.tableName
+        ? this.getResolvedQualifiedName()
+        : undefined);
+    if (!qualifiedName) {
+      return false;
+    }
+
     if (
       ObjectRegistry.resolveCollectionCacheConfig(qualifiedName)?.crossProcess
     ) {

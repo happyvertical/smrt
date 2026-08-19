@@ -2,6 +2,7 @@ import { PROJECTS_MODULE_META } from '../ui.js';
 
 const noop = () => {};
 
+// Money is integer minor units (#2401): 6.5 h x 12000 (=$120.00/h) = 78000.
 const sampleTimeEntries = [
   {
     id: 'time-entry-1',
@@ -9,9 +10,9 @@ const sampleTimeEntries = [
     hours: 6.5,
     description: 'Editorial governance review and fact-linking pass',
     status: 'submitted',
-    amount: 780,
+    amount: 78000,
     workerName: 'Taylor Rowan',
-    hourlyRate: 120,
+    hourlyRate: 12000,
     mileage: 18,
   },
   {
@@ -20,9 +21,9 @@ const sampleTimeEntries = [
     hours: 4.25,
     description: 'Content workflow instrumentation and approval QA',
     status: 'approved',
-    amount: 510,
+    amount: 51000,
     workerName: 'Jordan Lee',
-    hourlyRate: 120,
+    hourlyRate: 12000,
   },
   {
     id: 'time-entry-3',
@@ -30,9 +31,9 @@ const sampleTimeEntries = [
     hours: 2,
     description: 'Follow-up revisions for contributor feedback',
     status: 'draft',
-    amount: 240,
+    amount: 24000,
     workerName: 'Casey Tran',
-    hourlyRate: 120,
+    hourlyRate: 12000,
   },
 ];
 

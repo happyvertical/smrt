@@ -31,11 +31,14 @@ import {
   PaymentStatus,
 } from '../types/index.js';
 
-/**
- * Sub-cent rounding tolerance for native-amount reconciliation between the
- * winning PaymentOption and the referenced Payment row.
+/*
+ * There is deliberately no `PAYMENT_INTENT_EPSILON` here any more (#2401).
+ *
+ * `PaymentOption.nativeAmount` and `Payment.nativeAmount` / `Payment.amount`
+ * are all integer minor units, so reconciling the winning option against the
+ * payment that arrived is an exact equality. A tolerance would let a payment
+ * that is a cent short satisfy an option it does not actually cover.
  */
-const PAYMENT_INTENT_EPSILON = 0.01;
 
 /**
  * Legal status transitions for a PaymentIntent, keyed by the prior persisted
@@ -179,12 +182,12 @@ export class PaymentIntent extends SmrtObject {
   paymentOptions: PaymentOption[] = [];
 
   /**
-   * USD price locked at quote time. Stored at decimal precision.
+   * USD price locked at quote time, in **integer minor units** (US cents).
    * Independent of any specific option's native-currency amount;
    * `usdPriceLocked` is the canonical "what this costs in USD"
-   * number used downstream for reporting, tax, and drift accounting.
+   * number used downstream for reporting, tax, and drift accounting (#2401).
    */
-  usdPriceLocked: number = 0.0;
+  usdPriceLocked: number = 0;
 
   /**
    * Length of the price-lock window in milliseconds. Defaults to 15
@@ -593,7 +596,7 @@ export class PaymentIntent extends SmrtObject {
         : payment.amount;
     if (
       typeof paymentNative !== 'number' ||
-      Math.abs(paymentNative - option.nativeAmount) > PAYMENT_INTENT_EPSILON
+      paymentNative !== option.nativeAmount
     ) {
       throw new Error(
         `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' amount ${paymentNative} ` +
@@ -883,6 +886,11 @@ export class PaymentIntent extends SmrtObject {
    * Drops entries that don't carry the required `backendId` /
    * `currency` / `payTo` / `nativeAmount` quartet so downstream
    * routing code can rely on the invariant.
+   *
+   * `nativeAmount` must be a whole number of minor units (#2401): the
+   * reconciliation in {@link reconcilePaymentWithOption} compares it to
+   * `Payment.nativeAmount` with `!==`, so a fractional major-unit option could
+   * never match the payment that arrives and would silently strand the intent.
    */
   private static normalizePaymentOptions(value: unknown): PaymentOption[] {
     if (value == null) return [];
@@ -904,7 +912,12 @@ export class PaymentIntent extends SmrtObject {
       const payTo = typeof o.payTo === 'string' ? o.payTo : '';
       const nativeAmount =
         typeof o.nativeAmount === 'number' ? o.nativeAmount : Number.NaN;
-      if (!backendId || !currency || !payTo || !Number.isFinite(nativeAmount)) {
+      if (
+        !backendId ||
+        !currency ||
+        !payTo ||
+        !Number.isInteger(nativeAmount)
+      ) {
         continue;
       }
       const option: PaymentOption = {

@@ -18,6 +18,19 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+// App-side referential integrity applied by `SmrtObject.delete()` (#2371)
+export {
+  buildCascadePlan,
+  type CascadePlan,
+  type CascadePolymorphicReference,
+  type CascadeReference,
+  type CascadeRegistryView,
+  type CascadeResult,
+  cascadeReferencesTo,
+  normalizeOnDelete,
+  type OnDeleteAction,
+  runCascadeDelete,
+} from './cascade';
 // Adapter-agnostic change feed — _smrt_changes log, cursor reads, retention,
 // manual bump escape hatch (issue #1758)
 export {
@@ -189,6 +202,8 @@ export {
   generateSchemaDiff,
   getSQLFromDiff,
   hasActionableChanges,
+  isAdvisoryOnlyChange,
+  isManualOrAdvisoryChange,
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';
@@ -241,6 +256,7 @@ export {
 } from './schema/live-parity';
 export {
   getSystemTableShapes,
+  SYSTEM_TABLE_NAMES,
   type SystemTableShape,
 } from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)

@@ -61,6 +61,25 @@ All collections provide: `discover({ repository, filters })`, `findByRepository(
 
 ## Gotchas
 
+- **Money is integer minor units** (cents) — `$19.99` is `1999`.
+  `ServiceChargeSnapshot.amount` and `ServiceCompensationSnapshot.amount`
+  initialize `= 0`, never `= 0.0`: the integer literal is what maps them to
+  INTEGER columns (#2401). The two convert as a pair — the delivery margin is
+  `charge - compensation`, an exact integer subtraction with no tolerance —
+  and both are fed verbatim by `CommercialSnapshot.amount`, so a resolver that
+  returns major units corrupts the snapshot silently on SQLite and fails with
+  `22P02` on PostgreSQL. `pnpm --filter @happyvertical/smrt-projects
+  test:postgres` is the lane that holds the line.
+- **UI formats by dividing, never by `toFixed`**: `formatCurrency()` and
+  `ServiceEvidenceList`'s `money()` scale back to major units using the
+  currency's own minor-unit exponent, so zero-decimal currencies (JPY, KRW) are
+  not divided.
+- **Migrating an existing database**: `preflightProjectsMoneyMinorUnits(db)`
+  reports which columns still hold major units and which rows would be rounded
+  or overflow `int4`; `migrateProjectsMoneyToMinorUnits(db)` converts them
+  (idempotent via `_smrt_backfills`). On SQLite the values are rescaled but the
+  declared type needs the table-rebuild path (#2370). The `int4` ceiling is
+  ~2.1e9 minor units (~$21.4M) per column; BIGINT is parked in #2373.
 - **SDK dependency**: requires `@happyvertical/repos` and `@happyvertical/projects` from SDK
 - **tokenConfigKey not tokenValue**: never store actual tokens in the database
 - **synthesisCount tracks incorporateFeedback calls**: incremented on each apply

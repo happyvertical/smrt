@@ -22,7 +22,29 @@ export {
 } from './ddl/materialize-manifest.js';
 // Index-rendering helpers live in a separate file to avoid pulling the
 // heavyweight registry/collection module graph into the DDL strategies.
-export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
+export {
+  assertIdentifierFits,
+  identifierByteLength,
+  isJsonPathIndex,
+  isStiSubtypeUniqueIndex,
+  MAX_IDENTIFIER_BYTES,
+  renderIndexTarget,
+  shortenIdentifier,
+} from './index-utils.js';
+// Structured manifest → executable DDL helpers (#2358). Re-exported here for
+// `@happyvertical/smrt-vitest`, which already imports this subpath.
+export {
+  type CollectedManifestTable,
+  collectManifestTables,
+  type ManifestColumnLike,
+  type ManifestIndexLike,
+  type ManifestSchemaLike,
+  manifestColumnsToDefinitions,
+  manifestIndexesToDefinitions,
+  manifestSchemaToDefinition,
+  mergeSchemaDefinitionInto,
+  renderCollectedManifestTable,
+} from './manifest-schema.js';
 
 /**
  * Generates a complete database schema SQL statement for a class
@@ -116,10 +138,14 @@ export async function generateSchema(
   // Every key the generator reads from `@smrt()` config must be listed here:
   // this bag is rebuilt by hand rather than passed through, so an unlisted
   // option is silently unreachable at runtime while still appearing in the
-  // manifest. `indexes` (#2357) was exactly that.
+  // manifest. `indexes` (#2357) was exactly that. `conflictColumns` is the
+  // RESOLVED conflict target, not the raw decorator option: for a
+  // tenant-scoped class with no explicit `conflictColumns` the registry
+  // derives `[tenant_id, ...natural key]` (#2360), and `save()` upserts on
+  // exactly that, so the unique index generated here must match it.
   const runtimeSchemaConfig = registeredClass?.config
     ? {
-        conflictColumns: registeredClass.config.conflictColumns,
+        conflictColumns: ObjectRegistry.getConflictColumns(className),
         idType: registeredClass.config.idType,
         indexes: registeredClass.config.indexes,
         registry: ObjectRegistry,

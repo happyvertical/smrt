@@ -20,6 +20,20 @@ export {
   normalizeSqlType,
   parseIndexDefColumns,
 } from './live-parity.js';
+// Structured manifest → SchemaDefinition helpers (#2358): the supported way
+// to turn raw manifest JSON into executable, engine-specific DDL.
+export {
+  type CollectedManifestTable,
+  collectManifestTables,
+  type ManifestColumnLike,
+  type ManifestIndexLike,
+  type ManifestSchemaLike,
+  manifestColumnsToDefinitions,
+  manifestIndexesToDefinitions,
+  manifestSchemaToDefinition,
+  mergeSchemaDefinitionInto,
+  renderCollectedManifestTable,
+} from './manifest-schema.js';
 export { SchemaOverrideSystem } from './override-system.js';
 export type {
   AggregatedTable,
@@ -31,6 +45,7 @@ export { createSchemaManager, SchemaManager } from './schema-manager.js';
 export {
   getSystemTableShapes,
   parseTableShapes,
+  SYSTEM_TABLE_NAMES,
   type SystemTableColumnShape,
   type SystemTableIndexShape,
   type SystemTableShape,

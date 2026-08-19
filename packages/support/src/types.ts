@@ -289,7 +289,11 @@ export interface TimeApprovalPolicy {
   mode: 'automatic' | 'operator' | 'client';
   /** Entries longer than this require review even under `automatic`. */
   thresholdMinutes?: number;
-  /** Entries pricing above this amount require review even under `automatic`. */
+  /**
+   * Entries pricing above this amount require review even under `automatic`.
+   * Integer minor units, matching `SupportCharge.amount` it is compared
+   * against — `$19.99` is `1999` (#2401).
+   */
   thresholdAmount?: number;
 }
 

@@ -443,6 +443,135 @@ async function addIndexIfMissing(
   }
 }
 
+/**
+ * Read a PostgreSQL `text[]` result as a JS array.
+ *
+ * `attname` is `name`-typed, and drivers that have no parser registered for
+ * the resulting array OID hand back the raw literal (`{a,b}`) instead. Reading
+ * that as "no columns" would silently make every index look like it covers
+ * nothing — and, for #2376's reconciliation, would recreate an index that
+ * already exists. The query casts to `text` and this parses either shape.
+ */
+function parsePostgresTextArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String);
+  }
+  if (typeof value !== 'string') {
+    return [];
+  }
+  const literal = value.trim();
+  if (!literal.startsWith('{') || !literal.endsWith('}')) {
+    return [];
+  }
+  const body = literal.slice(1, -1).trim();
+  if (body.length === 0) {
+    return [];
+  }
+  return body
+    .split(',')
+    .map((entry) => entry.trim().replace(/^"|"$/g, ''))
+    .filter((entry) => entry.length > 0);
+}
+
+/** One live index as reported by the engine's catalog. */
+interface LiveIndex {
+  name: string;
+  unique: boolean;
+  columns: string[];
+  /** True when the index carries a WHERE predicate (partial index). */
+  partial: boolean;
+}
+
+/**
+ * Read the live indexes of a table, including the implicit ones a UNIQUE
+ * column constraint creates (`sqlite_autoindex_*`, PostgreSQL's `*_key`).
+ *
+ * PostgreSQL and SQLite only. Returns `null` on DuckDB and the JSON adapter,
+ * whose catalogs report constraint-backed uniqueness somewhere other than the
+ * index list (`duckdb_constraints()` rather than `duckdb_indexes()`) — reading
+ * one without the other would report "no unique index" for a column that has
+ * one. Callers must treat `null` as "unknown" and keep their pre-existing
+ * behaviour rather than guess: leaving a redundant index in place is a cost,
+ * dropping the only one that enforces an upsert conflict target is a bug.
+ */
+async function listTableIndexes(
+  db: DatabaseInterface,
+  tableName: string,
+  typeHint?: string,
+): Promise<LiveIndex[] | null> {
+  const engine = getDatabaseEngine(db, typeHint);
+
+  try {
+    if (engine === 'postgres') {
+      const result = await db.query(
+        `SELECT
+           i.relname AS name,
+           ix.indisunique AS is_unique,
+           (ix.indpred IS NOT NULL) AS is_partial,
+           ARRAY(
+             SELECT a.attname::text
+             FROM unnest(ix.indkey) WITH ORDINALITY AS k(attnum, ord)
+             JOIN pg_attribute a
+               ON a.attrelid = t.oid AND a.attnum = k.attnum
+             ORDER BY k.ord
+           ) AS columns
+         FROM pg_class t
+         JOIN pg_index ix ON ix.indrelid = t.oid
+         JOIN pg_class i ON i.oid = ix.indexrelid
+         JOIN pg_namespace n ON n.oid = t.relnamespace
+         WHERE n.nspname = current_schema() AND t.relname = $1`,
+        tableName,
+      );
+      return getQueryRows(result).map((row) => ({
+        name: String(row.name),
+        unique: row.is_unique === true || row.is_unique === 't',
+        partial: row.is_partial === true || row.is_partial === 't',
+        columns: parsePostgresTextArray(row.columns),
+      }));
+    }
+
+    if (engine !== 'sqlite') {
+      return null;
+    }
+
+    const listed = getQueryRows(
+      await db.query(`PRAGMA index_list(${tableName})`),
+    );
+    const indexes: LiveIndex[] = [];
+    for (const row of listed) {
+      const name = String(row.name);
+      const info = getQueryRows(await db.query(`PRAGMA index_info(${name})`));
+      indexes.push({
+        name,
+        unique: row.unique === 1 || row.unique === true || row.unique === '1',
+        partial:
+          row.partial === 1 || row.partial === true || row.partial === '1',
+        columns: info.map((column) => String(column.name)),
+      });
+    }
+    return indexes;
+  } catch {
+    return null;
+  }
+}
+
+/** Drop an index, tolerating engines/permissions that refuse the statement. */
+async function dropIndexIfExists(
+  db: DatabaseInterface,
+  indexName: string,
+  typeHint?: string,
+): Promise<void> {
+  if (!(await indexExists(db, indexName, typeHint))) {
+    return;
+  }
+
+  try {
+    await db.query(`DROP INDEX IF EXISTS ${indexName}`);
+  } catch {
+    // Best-effort: a redundant index is a cost, not a correctness problem.
+  }
+}
+
 async function addUniqueIndexIfMissing(
   db: DatabaseInterface,
   indexName: string,
@@ -554,6 +683,28 @@ async function migrateDispatchSubscriptionsIdentity(
     return;
   }
 
+  // Copy only the columns the legacy table actually has. The rebuild used to
+  // name all nine unconditionally, so a database predating any one of them
+  // failed the whole bootstrap with a bare `no such column` (issue #2376).
+  // Columns absent from the source take the new table's default.
+  const legacyColumns = new Set(
+    getQueryRows(
+      await db.query('PRAGMA table_info(_smrt_dispatch_subscriptions)'),
+    ).map((row) => String(row.name)),
+  );
+  const copiedColumns = [
+    'id',
+    'signal_type',
+    'subscriber',
+    'handler',
+    'delivery',
+    'enabled',
+    'tenant_id',
+    'created_at',
+    'updated_at',
+  ].filter((column) => legacyColumns.has(column));
+  const copiedColumnList = copiedColumns.join(', ');
+
   // Rebuild the table without the inline UNIQUE(signal_type, subscriber).
   // System table is small; this runs once per legacy database.
   await db.query('PRAGMA foreign_keys=OFF');
@@ -573,8 +724,8 @@ async function migrateDispatchSubscriptionsIdentity(
     `);
     await db.query(`
       INSERT INTO _smrt_dispatch_subscriptions_new
-        (id, signal_type, subscriber, handler, delivery, enabled, tenant_id, created_at, updated_at)
-      SELECT id, signal_type, subscriber, handler, delivery, enabled, tenant_id, created_at, updated_at
+        (${copiedColumnList})
+      SELECT ${copiedColumnList}
         FROM _smrt_dispatch_subscriptions
     `);
     await db.query('DROP TABLE _smrt_dispatch_subscriptions');
@@ -688,6 +839,71 @@ export async function ensureDispatchSubscriptionsSystemTableCompatibility(
   await migrateDispatchSubscriptionsIdentity(db, typeHint);
 }
 
+/** Compat-owned unique index over `_smrt_jobs(task_id)`. */
+const JOBS_TASK_ID_COMPAT_INDEX = 'idx_smrt_jobs_task_id';
+
+/**
+ * Reconcile the two owners of `_smrt_jobs(task_id)` uniqueness (issue #2376).
+ *
+ * `SmrtJob.taskId` is declared `unique: true`, so a table created from the
+ * jobs manifest already carries a constraint-backed unique index. Legacy
+ * databases got the column from `addColumnIfMissing()` instead, and
+ * `ALTER TABLE ADD COLUMN ... UNIQUE` is rejected by SQLite and DuckDB — so
+ * those databases need this compat index and only this compat index.
+ *
+ * Creating it unconditionally left every manifest-created table with two
+ * unique indexes on one column. Create it only when nothing else already
+ * enforces the uniqueness, and drop it when something does.
+ *
+ * Known limitation: this reconciliation is PostgreSQL/SQLite-only. DuckDB and
+ * the JSON adapter give {@link listTableIndexes} no usable answer, so those
+ * installs keep the redundant index — deliberately, because the alternative is
+ * guessing and possibly leaving the upsert conflict target unenforced.
+ */
+async function reconcileJobsTaskIdUniqueness(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  const indexes = await listTableIndexes(db, '_smrt_jobs', typeHint);
+
+  if (indexes === null) {
+    // Engine catalog not readable here — keep the historical behaviour rather
+    // than risk leaving the upsert conflict target unenforced.
+    await addUniqueIndexIfMissing(
+      db,
+      JOBS_TASK_ID_COMPAT_INDEX,
+      '_smrt_jobs',
+      'task_id',
+      typeHint,
+    );
+    return;
+  }
+
+  // A partial unique index does not enforce uniqueness over the whole table,
+  // so it can never stand in for the compat index.
+  const otherUniqueOnTaskId = indexes.some(
+    (index) =>
+      index.unique &&
+      !index.partial &&
+      index.name !== JOBS_TASK_ID_COMPAT_INDEX &&
+      index.columns.length === 1 &&
+      index.columns[0] === 'task_id',
+  );
+
+  if (otherUniqueOnTaskId) {
+    await dropIndexIfExists(db, JOBS_TASK_ID_COMPAT_INDEX, typeHint);
+    return;
+  }
+
+  await addUniqueIndexIfMissing(
+    db,
+    JOBS_TASK_ID_COMPAT_INDEX,
+    '_smrt_jobs',
+    'task_id',
+    typeHint,
+  );
+}
+
 export async function ensureJobsSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,
@@ -725,13 +941,7 @@ export async function ensureJobsSystemTableCompatibility(
     'TEXT',
     typeHint,
   );
-  await addUniqueIndexIfMissing(
-    db,
-    'idx_smrt_jobs_task_id',
-    '_smrt_jobs',
-    'task_id',
-    typeHint,
-  );
+  await reconcileJobsTaskIdUniqueness(db, typeHint);
   // Retention predicate of SmrtJobCollection.cleanup() (#2375): terminal jobs
   // aged out by `(status, completed_at)`. `_smrt_jobs` comes from a decorated
   // class rather than the hand-written system DDL, so this compatibility path
@@ -791,12 +1001,76 @@ export async function ensureJobEventsSystemTableCompatibility(
   );
 }
 
-export async function ensureLegacySystemTableCompatibility(
+/**
+ * Compatibility pass for the tables `db:migrate` creates from the jobs
+ * manifest rather than `bootstrapSystemTables()` (issue #2376).
+ *
+ * These are dual-owned, and on a *fresh* install the manifest wins the race:
+ * bootstrap runs first, finds no `_smrt_jobs`, returns early, stamps the
+ * system schema version — and every later boot takes the version fast path, so
+ * the columns and indexes this pass owns never appeared on that database at
+ * all. Splitting the pass out lets the caller re-check it after the tables
+ * show up, independently of the system schema version.
+ *
+ * @returns `settled: true` once every deferred table exists and has been
+ * upgraded — the point at which a caller may stop re-checking. `false` means
+ * the tables are not there yet, not that anything failed.
+ */
+export async function ensureDeferredSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<{ settled: boolean }> {
+  // Sequential, never `Promise.all`: a caller can hand us one shared
+  // single-statement connection (the OIDC provisioning coordinator does), and
+  // two probes in flight at once overlap on it.
+  const jobsExists = await tableExists(db, '_smrt_jobs', typeHint);
+  const jobEventsExists = await tableExists(db, '_smrt_job_events', typeHint);
+
+  if (jobsExists) {
+    await ensureJobsSystemTableCompatibility(db, typeHint);
+  }
+  if (jobEventsExists) {
+    await ensureJobEventsSystemTableCompatibility(db, typeHint);
+  }
+
+  return { settled: jobsExists && jobEventsExists };
+}
+
+/**
+ * The compatibility pass that must precede replaying system DDL.
+ *
+ * Only the tables `bootstrapSystemTables()` itself creates belong here: an
+ * older install can be missing a column that the DDL's `CREATE INDEX` clauses
+ * reference, so those tables have to be reshaped first, inside the same
+ * transaction as the replay.
+ *
+ * The deferred tables are deliberately NOT part of this pass. They are owned by
+ * the jobs manifest, not by the system DDL, so nothing in the replay depends on
+ * them — and reshaping a table the framework does not own must not be able to
+ * abort the bootstrap transaction and roll back system-table creation with it
+ * (issue #2376). {@link ensureDeferredSystemTableCompatibility} runs outside
+ * the lock instead.
+ */
+export async function ensureBootstrapSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,
 ): Promise<void> {
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
-  await ensureJobsSystemTableCompatibility(db, typeHint);
-  await ensureJobEventsSystemTableCompatibility(db, typeHint);
+}
+
+/**
+ * Run every compatibility pass — the bootstrap tables and the deferred,
+ * manifest-created ones.
+ *
+ * This is the convenience entry point for callers that own the whole database
+ * lifecycle in one step (test-database setup). Framework bootstrap deliberately
+ * does not use it: see {@link ensureBootstrapSystemTableCompatibility}.
+ */
+export async function ensureLegacySystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  await ensureBootstrapSystemTableCompatibility(db, typeHint);
+  await ensureDeferredSystemTableCompatibility(db, typeHint);
 }

@@ -22,6 +22,13 @@ import './__smrt-register__.js';
 
 import { ensureSupportPermissionsRegistered } from './permissions.js';
 
+// Major-units → integer minor-units migration (#2401)
+export {
+  migrateSupportMoneyToMinorUnits,
+  preflightSupportMoneyMinorUnits,
+  SUPPORT_MONEY_COLUMNS,
+  SUPPORT_MONEY_MINOR_UNITS_BACKFILL,
+} from './migrations/moneyMinorUnits.js';
 export * from './models/index.js';
 export {
   APPROVE_TIME_ENTRY_PERMISSION,

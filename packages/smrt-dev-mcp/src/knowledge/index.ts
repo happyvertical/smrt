@@ -23,7 +23,13 @@ import {
   readAgentModuleDocs,
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
-import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
+import {
+  lintNumericPrecision,
+  ManifestAdapter,
+  OxcScanner,
+  parseSource,
+  sourceMayContainNumericPrecisionIssue,
+} from '@happyvertical/smrt-scanner';
 import type {
   DomainKnowledgeField,
   DomainKnowledgeFieldConstraints,
@@ -884,6 +890,9 @@ export async function checkKnowledgeFreshnessFromIndex(
   }
 
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
+  issues.push(
+    ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
+  );
 
   const effectiveIssues = issues.map((issue) =>
     issue.code.startsWith('stale-')
@@ -2918,6 +2927,89 @@ function findStalePatternIssues(
     }
   }
   return issues;
+}
+
+/**
+ * Flag fields whose declared numeric precision contradicts their name (#2361):
+ * money declared decimal, or a rate declared integer.
+ *
+ * Both kinds fail closed on `@happyvertical/smrt-*`. The framework has zero
+ * violations of either rule: the rates were already correct (#2361), and the
+ * twenty-one money fields across commerce, projects, subscriptions, support and
+ * the conformance fixture converted to integer minor units in #2401, along with
+ * the data migration that rescales existing columns. The gate now holds both
+ * lines at zero rather than watching money drift back.
+ *
+ * Consumer packages always warn: the framework cannot know a downstream
+ * project's money convention, and a hard failure would make
+ * `dev:knowledge-check` unpassable there.
+ *
+ * Source, not manifest, is the oracle: the manifest records the resulting
+ * column type but not whether the author chose it, so only the source can tell
+ * `@field({ type: 'decimal' })` (a decision) from `= 0.0` (a default nobody
+ * made).
+ */
+function findNumericPrecisionIssues(
+  index: SmrtKnowledgeIndex,
+  authoredPackages: KnowledgePackage[],
+  changedFiles?: string[],
+): KnowledgeIssue[] {
+  const changedAbsolutePaths = changedFiles
+    ? new Set(changedFiles.map((file) => resolve(index.rootDir, file)))
+    : undefined;
+  const issues: KnowledgeIssue[] = [];
+
+  for (const pkg of authoredPackages) {
+    if (pkg.kind === 'sdk') continue;
+    const srcDir = join(pkg.directory, 'src');
+    if (!existsSync(srcDir)) continue;
+    const isFramework = pkg.kind === 'smrt';
+
+    for (const filePath of walkFiles(srcDir)) {
+      if (!isLintableModelSource(filePath)) continue;
+      if (changedAbsolutePaths && !changedAbsolutePaths.has(filePath)) continue;
+      let sourceText: string;
+      try {
+        sourceText = readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      // Parsing every file in the workspace would dominate this check; the
+      // pre-filter is conservative, so it only ever skips files that could not
+      // have produced a finding.
+      if (!sourceMayContainNumericPrecisionIssue(sourceText)) continue;
+
+      const parsed = parseSource(sourceText, filePath);
+      for (const finding of lintNumericPrecision(parsed.classes, sourceText)) {
+        const location = finding.line > 0 ? `:${finding.line}` : '';
+        // See this function's doc comment: the framework is at zero for both
+        // rules, so both fail closed there; consumers always warn.
+        const severity: KnowledgeIssueSeverity = isFramework
+          ? 'error'
+          : 'warning';
+        issues.push({
+          severity,
+          code: `numeric-precision-${finding.kind}`,
+          message: `${finding.message} ${finding.remedy}`,
+          file: `${relative(index.rootDir, filePath)}${location}`,
+          packageName: pkg.name,
+        });
+      }
+    }
+  }
+
+  return issues;
+}
+
+/** Only authored, non-generated TypeScript model sources are linted. */
+function isLintableModelSource(filePath: string): boolean {
+  if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return false;
+  if (filePath.endsWith('.d.ts')) return false;
+  if (/\.(test|spec)\.tsx?$/.test(filePath)) return false;
+  const parts = filePath.split(sep);
+  // `template/` holds consumer scaffolding this repo's rules do not govern
+  // (biome skips it too), and `__tests__/` is fixtures.
+  return !parts.includes('__tests__') && !parts.includes('template');
 }
 
 function shouldScanStalePatternFile(

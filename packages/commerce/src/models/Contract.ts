@@ -10,6 +10,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertIntegerMinorUnits } from '../money.js';
 import {
   type ContractOptions,
   ContractStatus,
@@ -74,7 +75,7 @@ const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
  * const order = await contracts.create({
  *   _meta_type: 'Order',
  *   customerId: customer.id,
- *   totalAmount: 1500.00,
+ *   totalAmount: 150000, // $1,500.00 in cents
  *   status: ContractStatus.DRAFT
  * });
  *
@@ -82,7 +83,7 @@ const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
  * const po = await contracts.create({
  *   _meta_type: 'PurchaseOrder',
  *   vendorId: vendor.id,
- *   totalAmount: 5000.00,
+ *   totalAmount: 500000, // $5,000.00 in cents
  *   reference: 'PO-2024-001'
  * });
  * ```
@@ -125,19 +126,24 @@ export class Contract extends SmrtObject {
   vendorId: string = '';
 
   /**
-   * Subtotal before tax
+   * Subtotal before tax, in **integer minor units** (cents, satoshis).
+   *
+   * The `= 0` initializer is load-bearing: SMRT maps an integer literal to
+   * INTEGER and a decimal literal to DECIMAL. Money is exact, so it is stored
+   * as minor units and never as a float — `$19.99` is `1999`, not `19.99`
+   * (#2401).
    */
-  subtotal: number = 0.0;
+  subtotal: number = 0;
 
   /**
-   * Tax amount
+   * Tax amount, in integer minor units (#2401).
    */
-  taxAmount: number = 0.0;
+  taxAmount: number = 0;
 
   /**
-   * Total amount including tax
+   * Total amount including tax, in integer minor units (#2401).
    */
-  totalAmount: number = 0.0;
+  totalAmount: number = 0;
 
   /**
    * Currency code (ISO 4217)
@@ -272,12 +278,22 @@ export class Contract extends SmrtObject {
   }
 
   /**
-   * Validate the status transition before persisting, then save. Inherited by
-   * every STI subtype (Estimate/Order/Lease/.../LicenseSale), so a forged
-   * `status` on any of them is caught here. LicenseSale layers its own
-   * rights-immutability guard on top via `super.save()`. See S5 audit #1390.
+   * Validate the amounts and the status transition before persisting, then
+   * save. Inherited by every STI subtype (Estimate/Order/Lease/.../LicenseSale),
+   * so a forged `status` on any of them is caught here. LicenseSale layers its
+   * own rights-immutability guard on top via `super.save()`. See S5 audit
+   * #1390.
+   *
+   * `subtotal` / `taxAmount` / `totalAmount` are mass-assignable on the
+   * generated create/update routes, so the minor-units check runs on every
+   * write surface (#2401).
    */
   override async save(): Promise<this> {
+    assertIntegerMinorUnits('Contract', this.reference || this.id || '<new>', [
+      ['subtotal', this.subtotal],
+      ['taxAmount', this.taxAmount],
+      ['totalAmount', this.totalAmount],
+    ]);
     const prior = await this.resolvePriorStatus();
     this.assertContractStatusTransition(prior);
     const result = (await super.save()) as this;

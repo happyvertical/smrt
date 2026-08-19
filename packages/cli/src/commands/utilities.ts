@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  ensureDeferredSystemTableCompatibility,
   generateDDLForEngine,
   isQualifiedName,
   migratePostgresSystemTimestamps,
@@ -37,6 +38,7 @@ import {
   getSyntheticMigrationNameForAction,
   type MigrationAction,
   partitionSchemaChanges,
+  printSchemaAdvisories,
   type SchemaChangeLike,
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
@@ -156,6 +158,46 @@ function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
   }
 }
 
+/**
+ * Run the framework's deferred system-table compatibility pass after
+ * `db:migrate` has created the tables it reshapes (issue #2376).
+ *
+ * `_smrt_jobs` and `_smrt_job_events` are dual-owned — created here from the
+ * jobs manifest, then given their compatibility columns and indexes by
+ * `@happyvertical/smrt-core`. On a fresh install the framework bootstrap runs
+ * before those tables exist, so without this call the pass would first become
+ * reachable at the next process start.
+ *
+ * Best-effort: the pass is idempotent and re-runs on the next boot, so a
+ * failure here must not fail an otherwise-successful migration.
+ */
+async function settleDeferredCompatibilityAfterMigrate(
+  db: DatabaseInterface,
+  dbType: string,
+  { verbose }: { verbose: boolean },
+): Promise<void> {
+  try {
+    const { settled } = await ensureDeferredSystemTableCompatibility(
+      db,
+      dbType,
+    );
+    if (verbose) {
+      console.log(
+        settled
+          ? 'Deferred system-table compatibility settled (_smrt_jobs, _smrt_job_events)\n'
+          : 'Deferred system-table compatibility pending (jobs tables not present)\n',
+      );
+    }
+  } catch (error) {
+    console.warn(
+      `⚠️  Deferred system-table compatibility did not complete: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    console.warn('   It will be retried the next time the framework starts.\n');
+  }
+}
+
 function formatStiConflictIdentity(
   conflict: StiDiscriminatorRepairConflict,
 ): string {
@@ -215,6 +257,8 @@ interface DbMigrateOptions {
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
+  'drop-columns'?: boolean;
+  'relax-columns'?: boolean;
   verbose?: boolean;
 }
 
@@ -413,9 +457,9 @@ export function assessDecoratorSupport(input: {
   const hasOxcDecorator =
     viteConfigContent !== null &&
     OXC_DECORATOR_BLOCK_RE.test(viteConfigContent);
-  const hasTsconfigDecorators =
-    tsconfigContent !== null &&
-    tsconfigContent.includes('experimentalDecorators');
+  const hasTsconfigDecorators = tsconfigContent?.includes(
+    'experimentalDecorators',
+  );
   const isVite8Plus = viteMajor !== null && viteMajor >= 8;
 
   if (hasOxcDecorator) {
@@ -1333,6 +1377,18 @@ export default testManifest;
           'Drop orphan indexes (in DB but not in manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default.',
         default: false,
       },
+      'drop-columns': {
+        type: 'boolean',
+        description:
+          'DESTRUCTIVE: drop orphan columns (in DB but not in manifest). Off by default; orphans are always reported.',
+        default: false,
+      },
+      'relax-columns': {
+        type: 'boolean',
+        description:
+          'Apply constraint relaxations the manifest implies: DROP NOT NULL / DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns (PostgreSQL/DuckDB). Off by default; relaxations are always reported.',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1589,6 +1645,8 @@ export default testManifest;
         // --drop-indexes for safety.
         const comparer = new SchemaComparer(db, {
           includeDroppedIndexes: Boolean(options['drop-indexes']),
+          includeDroppedColumns: Boolean(options['drop-columns']),
+          relaxColumns: Boolean(options['relax-columns']),
           postgresTimestampMigration,
         });
         const diff = await comparer.compare(manifestSchemas);
@@ -1628,6 +1686,7 @@ export default testManifest;
         );
         migrations.push(...partitionedChanges.migrations);
         manualInterventions.push(...partitionedChanges.manualInterventions);
+        const advisories = partitionedChanges.advisories;
 
         assertForceMigrationTargetsExist(forceSelection.forceMigrations, [
           ...diff.added_tables.map(
@@ -1652,7 +1711,9 @@ export default testManifest;
             const detail =
               change.type === 'type_upgrade'
                 ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
-                : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
+                : change.type === 'alter_column'
+                  ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (${change.alteration ?? 'alter_column'}; ${change.sql?.replace(/^--\s*/, '') ?? 'cannot auto-apply on this database engine'})`
+                  : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
 
             console.log(`   ${detail}`);
           }
@@ -1662,6 +1723,15 @@ export default testManifest;
           );
         }
 
+        // 9b. Report-only advisories (#2369): orphan columns / stale unique
+        // constraints / relaxations not opted into. Printed every run so a
+        // NOT NULL orphan that breaks inserts is never silent; they do not
+        // fail the command by themselves.
+        printSchemaAdvisories(advisories, {
+          orphanTables: diff.orphan_tables ?? [],
+          verbose: Boolean(options.verbose),
+        });
+
         // 10. Handle no migrations needed
         const tablesCreated = diff.added_tables.length > 0;
         const schemaUpToDate =
@@ -1670,13 +1740,19 @@ export default testManifest;
           !tablesCreated &&
           systemTimestampPreview.length === 0;
 
+        // Report-only findings (#2369) were printed above; keep the summary
+        // line honest when some of them are warnings.
+        const upToDateMessage = advisories.some(
+          (a) => a.advisory.severity === 'warning',
+        )
+          ? '✅ No migrations needed - see the live schema findings above\n'
+          : '✅ Database schema is up to date - no migrations needed\n';
+
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
         if (isDryRun) {
           if (schemaUpToDate && !repairData) {
-            console.log(
-              '✅ Database schema is up to date - no migrations needed\n',
-            );
+            console.log(upToDateMessage);
             return;
           }
 
@@ -1711,12 +1787,39 @@ export default testManifest;
               (m) => m.type === 'drop_index',
             );
 
+            const columnAlterations = migrations.filter(
+              (m) => m.type === 'alter_column',
+            );
+            const columnDrops = migrations.filter(
+              (m) => m.type === 'drop_column',
+            );
+
             if (columnMigrations.length > 0) {
               console.log(`  📊 Columns to add: ${columnMigrations.length}`);
               for (const m of columnMigrations) {
                 console.log(
                   `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
                 );
+              }
+              console.log();
+            }
+
+            if (columnAlterations.length > 0) {
+              console.log(`  🔧 Columns to alter: ${columnAlterations.length}`);
+              for (const m of columnAlterations) {
+                console.log(
+                  `     ${m.tableName}.${m.columnName ?? m.column?.name} (${m.alteration ?? 'alter'}: ${m.mismatch?.actual ?? '?'} → ${m.mismatch?.expected ?? '?'})`,
+                );
+              }
+              console.log();
+            }
+
+            if (columnDrops.length > 0) {
+              console.log(
+                `  🗑️  Columns to drop (DESTRUCTIVE, --drop-columns): ${columnDrops.length}`,
+              );
+              for (const m of columnDrops) {
+                console.log(`     ${m.tableName}.${m.columnName}`);
               }
               console.log();
             }
@@ -1814,6 +1917,18 @@ export default testManifest;
             if (migration.type === 'add_column' && migration.column) {
               migrationSql = migration.sql || '';
               actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+            } else if (
+              migration.type === 'alter_column' &&
+              (migration.columnName || migration.column)
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Altered column ${migration.tableName}.${migration.columnName ?? migration.column?.name} (${migration.alteration ?? 'alter'})`;
+            } else if (
+              migration.type === 'drop_column' &&
+              migration.columnName
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
             } else if (migration.type === 'type_upgrade' && migration.column) {
               migrationSql = migration.sql || '';
               actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
@@ -1835,11 +1950,15 @@ export default testManifest;
               description:
                 migration.type === 'add_column'
                   ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : migration.type === 'type_upgrade'
-                    ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                    : migration.type === 'drop_index'
-                      ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                      : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                  : migration.type === 'alter_column'
+                    ? `Alter column ${migration.columnName ?? migration.column?.name} on ${migration.tableName} (${migration.alteration ?? 'alter'}: ${migration.mismatch?.actual ?? '?'} → ${migration.mismatch?.expected ?? '?'})`
+                    : migration.type === 'drop_column'
+                      ? `Drop column ${migration.columnName} from ${migration.tableName}`
+                      : migration.type === 'type_upgrade'
+                        ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                        : migration.type === 'drop_index'
+                          ? `Drop index ${migration.indexName} on ${migration.tableName}`
+                          : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on
@@ -1968,9 +2087,7 @@ export default testManifest;
         }
 
         if (schemaUpToDate && !repairData) {
-          console.log(
-            '✅ Database schema is up to date - no migrations needed\n',
-          );
+          console.log(upToDateMessage);
         }
 
         // 13.5 Handle safe data repair requested via --repair-data
@@ -2178,6 +2295,15 @@ export default testManifest;
         }
 
         if (!isDryRun) {
+          // `_smrt_jobs` / `_smrt_job_events` are dual-owned: created here from
+          // the manifest, then reshaped by the framework compatibility pass.
+          // On a fresh install the framework's bootstrap ran before these
+          // tables existed, so run the deferred pass now rather than leaving it
+          // to the next process start (issue #2376).
+          await settleDeferredCompatibilityAfterMigrate(db, dbType, {
+            verbose: Boolean(options.verbose),
+          });
+
           assertSchemaContract(
             await evaluateSchemaContract({
               discovered,
