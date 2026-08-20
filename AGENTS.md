@@ -115,6 +115,10 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 - Runtime only checks that a table exists — no column, type, or index check —
   and never creates application tables; use explicit migrations/tooling, and
   `smrt doctor --db` / `db:status --parity` to compare a live database.
+- Fresh PostgreSQL/DuckDB `INTEGER` columns materialize as BIGINT. Existing
+  int4 deployments require the explicit, maintenance-window-only
+  `smrt db:migrate-int8` flow; parity reports it as an advisory because the
+  normal differ intentionally treats int4 and int8 as equivalent (#2424).
 - Vite 8 decorators require the repository's documented Oxc legacy decorator
   configuration; do not restore obsolete Vite 7 workarounds.
 - Svelte subpath packages must run `svelte-check`, not only `tsc`.

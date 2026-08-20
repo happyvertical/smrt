@@ -2,6 +2,7 @@ import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +14,7 @@ vi.mock('../../discovery/index.js', () => ({
   autoDiscoverAndLoad: autoDiscoverAndLoadMock,
 }));
 
+import { dbMigrateInt8Command } from '../db-migrate-int8.js';
 import { dbMigrateUuidCommand } from '../db-migrate-uuid.js';
 
 /**
@@ -109,6 +111,26 @@ describe('db:migrate-uuid handler (real SQLite, non-Postgres branches)', () => {
     await dbMigrateUuidCommand.handler([], {});
 
     expect(output()).toContain('no native uuid column type');
+  });
+
+  it('reports integer-width widening as a SQLite no-op without recording a marker', async () => {
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      things: {
+        tableName: 'things',
+        columns: { attempts: { type: 'INTEGER' } },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    } as never);
+
+    await dbMigrateInt8Command.handler([], { 'dry-run': true });
+
+    expect(output()).toContain('not applicable');
+    expect(output()).toContain('No widening is needed on this engine');
+    expect(errorOutput()).toBe('');
   });
 
   it('backfills an R3 rename and drops the old column on SQLite', async () => {

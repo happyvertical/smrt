@@ -14,6 +14,7 @@ smrt db:migrate              # Apply migrations
 smrt db:migrate --postgres-safe # PostgreSQL concurrent-index mode (see below)
 smrt db:migrate --force-migration <exact-id> [--force-migration <exact-id>...] # Force exact generated migrations in one atomic batch
 smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
+smrt db:migrate-int8         # Explicitly widen pre-#2373 int4 columns after preflight
 smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Roll back migrations by executing their recorded DOWN
 smrt db:rollback --mark-only # Record-only flip; schema deliberately untouched
@@ -95,6 +96,10 @@ not from the schema definition.
   (`indexIntrospection: 'unavailable'`) rather than inventing missing indexes.
 - The check is read-only and lives in a new core module; it does not share code
   with `migrations/differ.ts`.
+- PostgreSQL/DuckDB `int4` columns created before #2373 are advisory warnings,
+  not type drift: the differ intentionally treats int4/int8 as equivalent.
+  Run `smrt db:migrate-int8 --dry-run`, schedule the reported table rewrites,
+  then run `smrt db:migrate-int8`; SQLite is already 64-bit and is a no-op.
 
 ## `db:migrate` on SQLite: type changes rebuild the table
 

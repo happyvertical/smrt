@@ -88,6 +88,60 @@ function find(
 }
 
 describe('checkLiveSchemaParity (application tables)', () => {
+  it('advises on legacy PostgreSQL int4 without turning it into type drift', async () => {
+    const database = {
+      url: 'postgres://localhost/test',
+      query: async (sql: string, ...params: unknown[]) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'widgets' }] };
+        }
+        if (sql.includes('information_schema.columns') && params.length > 0) {
+          return {
+            rows: [{ column_name: 'attempts', data_type: 'integer' }],
+          };
+        }
+        if (sql.startsWith('SELECT COUNT(*) AS row_count')) {
+          return { rows: [{ row_count: '4' }] };
+        }
+        return { rows: [] };
+      },
+      getTableSchema: async () => ({
+        columns: {
+          attempts: {
+            type: 'integer',
+            notNull: false,
+            primaryKey: false,
+          },
+        },
+      }),
+    } as unknown as DatabaseProvider;
+
+    const report = await checkLiveSchemaParity({
+      db: database,
+      schemas: {
+        widgets: {
+          tableName: 'widgets',
+          columns: { attempts: { type: 'INTEGER' } },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      includeSystemTables: false,
+    });
+
+    const finding = find(report.findings, 'legacy_integer_width', 'attempts');
+    expect(finding).toMatchObject({
+      severity: 'warning',
+      table: 'widgets',
+      details: { actual: 'integer', expected: 'BIGINT', rowCount: 4 },
+    });
+    expect(finding?.recommendation).toContain('db:migrate-int8');
+    expect(report.ok).toBe(true);
+  });
+
   it('reports the #2356 unindexed-tenant class and the FK-index class', async () => {
     const database = await openDatabase();
     // A schema that a manifest-oracle diff calls "in sync": every declared

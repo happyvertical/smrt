@@ -24,6 +24,10 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  collectIntegerWidthTargets,
+  preflightIntegerWidthWidening,
+} from '../migrations/integer-width.js';
 import { RETIRED_SYSTEM_TABLES } from '../system/schema.js';
 import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
@@ -47,7 +51,9 @@ export type LiveParityFindingKind =
   | 'conflict_target_unindexed'
   | 'conflict_target_not_unique'
   | 'unique_constraint_missing'
-  | 'invalid_index';
+  | 'invalid_index'
+  /** Pre-#2373 PostgreSQL/DuckDB int4 column needing opt-in widening. */
+  | 'legacy_integer_width';
 
 /** One difference between the live database and the expected shape. */
 export interface LiveParityFinding {
@@ -223,6 +229,40 @@ export async function checkLiveSchemaParity(
     if (indexCatalog) {
       const liveIndexes = await indexCatalog.forTable(table.name);
       findings.push(...compareIndexes(table, liveColumns, liveIndexes));
+    }
+  }
+
+  // #2373 intentionally leaves int4/int8 equivalent to the ordinary differ
+  // (and to structural parity) so fresh BIGINT DDL does not auto-rewrite a
+  // production table. Surface the remaining 32-bit columns as advisory-only
+  // findings here, with row counts for a maintenance-window estimate.
+  const widthPreflight = await preflightIntegerWidthWidening(
+    db,
+    collectIntegerWidthTargets(schemas, { includeSystemTables }),
+    { engineHint },
+  );
+  if (widthPreflight.supported) {
+    for (const table of widthPreflight.tables) {
+      for (const column of table.columns) {
+        if (column.state !== 'pending') continue;
+        findings.push({
+          kind: 'legacy_integer_width',
+          severity: 'warning',
+          table: table.table,
+          target: column.column,
+          origin: table.table.startsWith('_smrt_') ? 'system' : 'application',
+          message:
+            `Column \`${table.table}.${column.column}\` is legacy \`${column.declaredType}\` ` +
+            `instead of BIGINT (${table.rowCount ?? 0} row(s) in the table).`,
+          recommendation:
+            'Schedule a maintenance window, run `smrt db:migrate-int8 --dry-run`, then run `smrt db:migrate-int8` after reviewing the table-rewrite plan.',
+          details: {
+            actual: column.declaredType,
+            expected: 'BIGINT',
+            rowCount: table.rowCount,
+          },
+        });
+      }
     }
   }
 

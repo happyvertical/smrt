@@ -43,6 +43,7 @@ import {
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
 } from './db-migrate-actions.js';
+import { dbMigrateInt8Command } from './db-migrate-int8.js';
 import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
 import {
   formatParityReport,
@@ -2940,6 +2941,7 @@ export default testManifest;
   'db:rollback': dbRollbackCommand,
   'db:generate': dbGenerateCommand,
   'db:migrate-uuid': dbMigrateUuidCommand,
+  'db:migrate-int8': dbMigrateInt8Command,
   'db:prune': dbPruneCommand,
 
   // Configuration commands
