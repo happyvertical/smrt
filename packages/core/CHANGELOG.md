@@ -6,6 +6,28 @@
 
 - ### Breaking Changes
 
+  - remove dead AST schema path and unwired SchemaOverrideSystem (#2423) (core)
+
+  ### Features
+
+  - add explicit int8 widening (#2426) (migrations)
+
+  ### Bug Fixes
+
+  - store integer fields as bigint (#2425) (core)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
   - make system-table evolution verifiable and stop skipping domain tables (#2411) (core,cli)
   - money is integer minor units (#2409) (commerce,subscriptions,projects,support)
   - money is integer minor units, rates are decimal (#2391) (commerce,products,facts)

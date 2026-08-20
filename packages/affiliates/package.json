@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-affiliates",
-  "version": "0.41.0",
+  "version": "0.42.0",
   "description": "DEPRECATED compatibility shim over @happyvertical/smrt-sales — re-exports the legacy Partner/Commission/Payout names. See MIGRATION.md.",
   "type": "module",
   "main": "./dist/index.js",
