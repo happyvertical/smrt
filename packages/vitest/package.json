@@ -40,7 +40,7 @@
     "build": "tsc",
     "clean": "rm -rf dist",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/issue-2069-postgres-manifest.optional.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/__tests__/issue-2069-postgres-manifest.optional.test.ts src/__tests__/issue-2427-postgres-change-feed.optional.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
