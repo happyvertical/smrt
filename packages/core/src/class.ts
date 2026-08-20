@@ -16,20 +16,13 @@ import type {
   SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from '@happyvertical/smrt-types';
-import {
-  type DatabaseInterface,
-  getDatabase,
-  type TransactionHandle,
-} from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import {
   AiUsageCollector,
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
 import { estimateAiUsageCost } from './adapters/cost-rates.js';
-import {
-  ensurePostgresChangeFeedAppendFunction,
-  registerChangeFeedWriter,
-} from './change-feed.js';
+import { registerChangeFeedWriter } from './change-feed.js';
 import type {
   AIConfig,
   AiUsageConfig,
@@ -43,46 +36,19 @@ import { createFilesystemAdapter } from './filesystem-loader.js';
 import { applyPostgresRuntimeTimeouts } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
+import { ensureSystemTables as ensureFrameworkSystemTables } from './system/bootstrap.js';
 import {
-  assertPostgresSystemTimestampsCurrent,
-  ensureBootstrapSystemTableCompatibility,
   ensureDeferredSystemTableCompatibility,
   tableExists,
 } from './system/compatibility.js';
-import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './system/schema.js';
+import { SMRT_SCHEMA_VERSION } from './system/schema.js';
 import { toSafeInteger } from './utils/safe-integer.js';
-
-const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
-  "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
 
 /**
  * `_smrt_migrations.version` suffix marking that the deferred (manifest-created)
  * system tables have been through their compatibility pass (issue #2376).
  */
 const DEFERRED_COMPATIBILITY_VERSION_SUFFIX = '+deferred-compat';
-
-/**
- * Timeout budget for the PostgreSQL system-table bootstrap transaction.
- *
- * The runtime pool's session `lock_timeout`/`statement_timeout` (#2377) are
- * sized for request work. This transaction is not request work: it holds the
- * advisory lock across up to 29 sequential DDL round-trips — ~18.85 s on the
- * high-latency link `bootstrapSystemTables` documents — and a second replica
- * cold-starting against the same fresh database *waits* on that lock. Both GUCs
- * bound that wait, because `pg_advisory_xact_lock` is an ordinary statement in
- * the lock manager, so at the runtime defaults the second replica would abort
- * with "canceling statement due to lock timeout" where it previously waited and
- * succeeded.
- *
- * Five minutes is an order of magnitude above the documented worst case and
- * still bounded — this is a raise, not a disable. `SET LOCAL` scopes it to this
- * transaction, the same lever migrations use for the same reason (#2362).
- */
-const SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS = 300_000;
-const SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL = [
-  `SET LOCAL lock_timeout = '${SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS}ms'`,
-  `SET LOCAL statement_timeout = '${SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_MS}ms'`,
-];
 
 const logger = createLogger({ level: 'info' });
 
@@ -92,13 +58,6 @@ type DatabaseWithConfig = DatabaseInterface & {
     url?: string;
   };
   type?: string;
-};
-
-type TransactionCapableDatabase = DatabaseInterface & {
-  transaction?: <T>(
-    this: DatabaseInterface,
-    callback: (tx: DatabaseInterface) => Promise<T>,
-  ) => Promise<T>;
 };
 
 interface ResolvedAiUsageConfig {
@@ -899,9 +858,7 @@ export class SmrtClass {
     }
 
     try {
-      await this.withSystemTableBootstrapLock((db) =>
-        this.bootstrapSystemTables(db),
-      );
+      await ensureFrameworkSystemTables(this._db, this._dbEngineHint);
       await this.settleDeferredSystemTableCompatibility(this._db);
       await this.ensureNativeVectorStorage();
 
@@ -919,139 +876,6 @@ export class SmrtClass {
         { cause: error },
       );
     }
-  }
-
-  private async withSystemTableBootstrapLock<T>(
-    callback: (db: DatabaseInterface) => Promise<T>,
-  ): Promise<T> {
-    if (!this._db) {
-      throw new Error('Database is not initialized');
-    }
-
-    const beginTransaction = this._db.beginTransaction;
-    const transaction = (this._db as TransactionCapableDatabase).transaction;
-    const shouldUsePostgresLock =
-      detectEngine(getDatabaseUrl(this._db), this._dbEngineHint) === 'postgres';
-
-    if (!shouldUsePostgresLock) {
-      return callback(this._db);
-    }
-
-    if (typeof beginTransaction === 'function') {
-      const tx = await beginTransaction.call(this._db);
-      if (!tx) {
-        throw new Error('Database transaction could not be started');
-      }
-
-      try {
-        // Raise the budget before taking the lock — the wait itself is what the
-        // runtime session timeouts would otherwise cancel (#2377).
-        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
-          await tx.query(sql);
-        }
-        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-        const result = await callback(tx);
-        await tx.commit();
-        return result;
-      } catch (error) {
-        await this.rollbackSystemTableBootstrap(tx);
-        throw error;
-      }
-    }
-
-    if (typeof transaction === 'function') {
-      const runInTransaction = transaction.bind(this._db) as <R>(
-        callback: (tx: DatabaseInterface) => Promise<R>,
-      ) => Promise<R>;
-
-      return runInTransaction(async (tx) => {
-        for (const sql of SYSTEM_TABLE_BOOTSTRAP_TIMEOUT_SQL) {
-          await tx.query(sql);
-        }
-        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-        return callback(tx);
-      });
-    }
-
-    throw new Error(
-      'Postgres system table bootstrap requires a transaction-capable database adapter',
-    );
-  }
-
-  private async rollbackSystemTableBootstrap(
-    tx: TransactionHandle,
-  ): Promise<void> {
-    try {
-      if (typeof tx.isActive !== 'function' || tx.isActive()) {
-        await tx.rollback();
-      }
-    } catch (rollbackError) {
-      logger.warn(
-        `[smrt] Failed to rollback system table bootstrap transaction: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
-      );
-    }
-  }
-
-  private async bootstrapSystemTables(db: DatabaseInterface): Promise<void> {
-    // Fast path: check if system tables already exist by querying _smrt_migrations.
-    // This avoids 29 sequential DDL round-trips on high-latency connections
-    // (e.g. remote Postgres over Tailscale where each round-trip is ~650ms).
-    // For Postgres, this runs after acquiring the advisory lock so concurrent
-    // initializers can observe a completed bootstrap and skip replaying DDL.
-    const version = SMRT_SCHEMA_VERSION;
-    if (await this.isSystemSchemaVersionApplied(db, version)) {
-      return;
-    }
-
-    // Older installs can have a subset of system columns already created.
-    // Upgrade those tables before replaying idempotent DDL so index creation
-    // does not fail on missing legacy columns. Only the tables this DDL creates
-    // are reshaped here — the manifest-owned deferred tables are settled after
-    // the lock releases, so a failure against a table the framework does not
-    // own cannot roll back system-table creation (issue #2376).
-    await ensureBootstrapSystemTableCompatibility(db, this._dbEngineHint);
-
-    // Create all system tables
-    // Split multi-statement SQL into individual statements to avoid race conditions
-    // Each entry contains CREATE TABLE + CREATE INDEX statements.
-    const engine = detectEngine(getDatabaseUrl(db), this._dbEngineHint);
-    const allStatements: string[] = [];
-    for (const multiStatementSQL of getSystemTableDDL(engine)) {
-      // Split on semicolon, filter out empty statements
-      const statements = multiStatementSQL
-        .split(';')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      allStatements.push(...statements);
-    }
-
-    // Use db.query() for system tables — they use CREATE TABLE/INDEX IF NOT EXISTS
-    // which databases handle natively in a single round-trip. The syncSchema()
-    // approach does per-column existence checks (multiple round-trips per table)
-    // which is unnecessary for framework-owned system tables and extremely slow
-    // on high-latency connections (e.g. remote postgres over Tailscale).
-    for (const statement of allStatements) {
-      await db.query(statement);
-    }
-
-    await ensurePostgresChangeFeedAppendFunction(db, {
-      typeHint: this._dbEngineHint,
-    });
-
-    // Never stamp the current version while a partial legacy installation
-    // still has timezone-naive framework timestamps. The explicit migration
-    // requires operator confirmation of historical UTC provenance.
-    await assertPostgresSystemTimestampsCurrent(db, this._dbEngineHint);
-
-    // Record current schema version
-    // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)
-    const id = crypto.randomUUID();
-    const description = 'Initial SMRT system tables';
-    await db.execute`
-      INSERT INTO _smrt_migrations (id, version, description)
-      VALUES (${id}, ${version}, ${description})
-      ON CONFLICT(version) DO NOTHING
-    `;
   }
 
   /**

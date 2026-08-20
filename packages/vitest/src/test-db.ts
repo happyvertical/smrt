@@ -42,7 +42,7 @@ import { join } from 'node:path';
 // `createIsolatedTestDbFromManifest({ includeObjects: [...] })` were still
 // misclassified as table-bearing and lost their FK/junction columns.
 import {
-  ensureChangeFeedTable,
+  ensureSystemTables,
   isSmrtCollectionExtendsName,
 } from '@happyvertical/smrt-core';
 import {
@@ -511,11 +511,11 @@ export async function createIsolatedTestDb(
 
   // Transaction handles are passed to SMRT objects as already-initialized
   // databases, so they intentionally skip the normal SmrtClass bootstrap.
-  // PostgreSQL's change-feed writer depends on a framework-owned function;
-  // provision the canonical feed schema on the base connection before opening
-  // the test transaction so the first model write cannot abort that transaction.
+  // A missing-table probe aborts a PostgreSQL transaction even when the caller
+  // catches the error. Provision every framework-owned system table on the base
+  // connection before opening the isolated transaction.
   if (config.type === 'postgres') {
-    await ensureChangeFeedTable(baseDb);
+    await ensureSystemTables(baseDb, config.type);
   }
 
   // Begin transaction for isolation

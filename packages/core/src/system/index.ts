@@ -6,6 +6,7 @@
  */
 
 // Only export types - schema SQL strings are internal implementation details
+export { ensureSystemTables } from './bootstrap.js';
 export * from './compatibility.js';
 export * from './retention.js';
 export * from './types.js';

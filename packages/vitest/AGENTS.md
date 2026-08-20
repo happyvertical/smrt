@@ -63,6 +63,11 @@ same `retry` policy inline in their own `vitest.config.ts`.
 
 ## Test Database Utilities
 
+PostgreSQL isolated factories provision all canonical framework-owned system
+tables on the base connection before opening the per-test transaction. A
+missing-table probe aborts the transaction even when optional-table logic
+catches the original error.
+
 | Function | Use Case |
 |----------|----------|
 | `createIsolatedTestDbFromManifest()` | Multi-table tests — auto-creates schema from manifest with FK ordering and STI dedup |

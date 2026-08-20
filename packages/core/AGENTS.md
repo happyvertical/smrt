@@ -207,6 +207,11 @@ local development and watch mode.
 
 ## Schema paths (#2382)
 
+`ensureSystemTables(db, typeHint?)` is the public, idempotent provisioning
+boundary for framework-owned `_smrt_*` tables. Call it on a base PostgreSQL
+connection before opening a caller-owned transaction; its advisory-locked
+bootstrap prevents missing-table probes from poisoning that transaction.
+
 Production DDL comes from the **manifest** paths
 (`generateSTISchemaFromManifest`/`generateCTISchemaFromManifest`, selected in
 `src/scanner/manifest-generator.ts` → registered `schema` → `db:migrate`). The
