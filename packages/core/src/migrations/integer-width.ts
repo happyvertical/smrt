@@ -267,8 +267,7 @@ export async function widenIntegerColumnsToBigInt(
 
   const statements: string[] = [];
   const widenedColumns: Array<{ table: string; column: string }> = [];
-  const tracker = new BackfillTracker({ db });
-  await tracker.initialize();
+  await new BackfillTracker({ db }).initialize();
 
   const applyWidening = async (writeDb: DatabaseInterface) => {
     for (const table of preflight.tables) {

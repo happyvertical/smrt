@@ -134,6 +134,45 @@ describe('MigrationTracker BIGINT hydration', () => {
     });
     expect(await tracker.getNextBatch()).toBe(10);
   });
+
+  it('uses system-table defaults for nullable legacy counters and flags', async () => {
+    const tracker = new MigrationTracker({
+      db: {
+        url: 'postgres://localhost/test',
+        query: async (sql: string) => {
+          if (sql.includes('SELECT * FROM _smrt_schema_migrations')) {
+            return {
+              rows: [
+                {
+                  id: 'migration-nullable',
+                  name: '0003_nullable',
+                  version: '1.0.0',
+                  checksum: 'checksum',
+                  applied_checksum: null,
+                  applied_at: '2026-01-01T00:00:00.000Z',
+                  execution_time_ms: null,
+                  package_name: null,
+                  source_file: null,
+                  status: 'completed',
+                  error_message: null,
+                  attempts: null,
+                  is_reversible: null,
+                  rolled_back_at: null,
+                  applied_by: null,
+                  batch: null,
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        },
+      } as any,
+    });
+
+    await expect(tracker.getAppliedMigrations()).resolves.toMatchObject([
+      { attempts: 0, is_reversible: true },
+    ]);
+  });
 });
 
 describe('MigrationTracker on real SQLite', () => {

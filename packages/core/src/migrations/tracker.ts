@@ -74,9 +74,9 @@ function hydrateMigrationRow(row: MigrationRow): SchemaMigrationRecord {
       row.execution_time_ms === null || row.execution_time_ms === undefined
         ? null
         : toSafeInteger(row.execution_time_ms, 'Migration execution time'),
-    attempts: toSafeInteger(row.attempts, 'Migration attempts'),
+    attempts: toSafeInteger(row.attempts ?? 0, 'Migration attempts'),
     is_reversible: toSafeBooleanInteger(
-      row.is_reversible,
+      row.is_reversible ?? 1,
       'Migration reversibility flag',
     ),
     rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,

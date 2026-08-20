@@ -39,10 +39,10 @@ import {
   fieldsFromClass,
   formatDataJs,
   toCamelCase,
+  toSafeInteger,
   toSnakeCase,
 } from './utils';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
-import { toSafeInteger } from './utils/safe-integer';
 
 const logger = createLogger({ level: 'info' });
 
