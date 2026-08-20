@@ -574,7 +574,7 @@ export function getSystemTableDDLForEngine(
   engine: DatabaseEngine,
 ): string {
   const integerDdl =
-    engine === 'postgres' || engine === 'duckdb'
+    engine === 'postgres' || engine === 'duckdb' || engine === 'json'
       ? ddl.replace(/\bINTEGER\b/g, 'BIGINT')
       : ddl;
   return engine === 'postgres'

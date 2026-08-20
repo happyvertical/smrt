@@ -11,13 +11,26 @@ import {
   migratePostgresSystemTimestamps,
   planPostgresSystemTimestampMigrations,
 } from '../system/compatibility';
-import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from '../system/schema';
+import {
+  getSystemTableDDL,
+  getSystemTableDDLForEngine,
+  SMRT_SCHEMA_VERSION,
+} from '../system/schema';
 
 class LegacySystemTableProbe extends SmrtObject {
   value: string = '';
 }
 
 describe('system table compatibility', () => {
+  it('materializes JSON-adapter system integers as DuckDB BIGINT', () => {
+    expect(
+      getSystemTableDDLForEngine(
+        'CREATE TABLE _smrt_json_width (counter INTEGER)',
+        'json',
+      ),
+    ).toBe('CREATE TABLE _smrt_json_width (counter BIGINT)');
+  });
+
   it('upgrades legacy dispatch tables before replaying system DDL', async () => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
