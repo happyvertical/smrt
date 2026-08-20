@@ -83,6 +83,12 @@ string is a CREATE TABLE preview and is merged in only for a table whose
 contributors expose no `columns` (hand-authored manifests). Do not add a
 private DDL/index renderer here; extend the core strategy instead.
 
+On PostgreSQL, the isolated factories provision the canonical change-feed
+table and `_smrt_append_change` helper on the base connection before opening
+the test transaction. Transaction handles are treated as already initialized
+by SMRT objects, so moving this provisioning into the transaction would leave
+the first interceptor-driven write without its required function (#2427).
+
 For local file-backed SQLite, identical schemas are prepared once per Vitest
 process and cloned from an immutable schema-only template for later databases.
 The cache key is the full generated DDL, concurrent first callers share one

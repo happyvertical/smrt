@@ -41,7 +41,10 @@ import { join } from 'node:path';
 // that only knew `SmrtCollection`, so junction Collections filtered through
 // `createIsolatedTestDbFromManifest({ includeObjects: [...] })` were still
 // misclassified as table-bearing and lost their FK/junction columns.
-import { isSmrtCollectionExtendsName } from '@happyvertical/smrt-core';
+import {
+  ensureChangeFeedTable,
+  isSmrtCollectionExtendsName,
+} from '@happyvertical/smrt-core';
 import {
   type CollectedManifestTable,
   collectManifestTables,
@@ -504,6 +507,15 @@ export async function createIsolatedTestDb(
   // Sync schema if provided (must be done before transaction for DDL)
   if (schema && config.type !== 'sqlite') {
     await syncSchema({ db: baseDb, schema });
+  }
+
+  // Transaction handles are passed to SMRT objects as already-initialized
+  // databases, so they intentionally skip the normal SmrtClass bootstrap.
+  // PostgreSQL's change-feed writer depends on a framework-owned function;
+  // provision the canonical feed schema on the base connection before opening
+  // the test transaction so the first model write cannot abort that transaction.
+  if (config.type === 'postgres') {
+    await ensureChangeFeedTable(baseDb);
   }
 
   // Begin transaction for isolation
