@@ -11,13 +11,26 @@ import {
   migratePostgresSystemTimestamps,
   planPostgresSystemTimestampMigrations,
 } from '../system/compatibility';
-import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from '../system/schema';
+import {
+  getSystemTableDDL,
+  getSystemTableDDLForEngine,
+  SMRT_SCHEMA_VERSION,
+} from '../system/schema';
 
 class LegacySystemTableProbe extends SmrtObject {
   value: string = '';
 }
 
 describe('system table compatibility', () => {
+  it('materializes JSON-adapter system integers as DuckDB BIGINT', () => {
+    expect(
+      getSystemTableDDLForEngine(
+        'CREATE TABLE _smrt_json_width (counter INTEGER)',
+        'json',
+      ),
+    ).toBe('CREATE TABLE _smrt_json_width (counter BIGINT)');
+  });
+
   it('upgrades legacy dispatch tables before replaying system DDL', async () => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
@@ -900,13 +913,17 @@ describe('system table compatibility', () => {
     ).rejects.toThrow('permission denied for schema public');
   });
 
-  it('materializes PostgreSQL system Date columns as TIMESTAMPTZ', () => {
+  it('materializes system timestamps and integers for each database dialect', () => {
     const postgresDDL = getSystemTableDDL('postgres').join('\n');
+    const duckdbDDL = getSystemTableDDL('duckdb').join('\n');
     const sqliteDDL = getSystemTableDDL('sqlite').join('\n');
 
     expect(postgresDDL).toContain('created_at TIMESTAMPTZ');
     expect(postgresDDL).not.toMatch(/\bTIMESTAMP\b/);
     expect(sqliteDDL).toContain('created_at TIMESTAMP');
+    expect(postgresDDL).toContain('prompt_tokens BIGINT');
+    expect(duckdbDDL).toContain('prompt_tokens BIGINT');
+    expect(sqliteDDL).toContain('prompt_tokens INTEGER');
   });
 
   it('migrates legacy PostgreSQL system timestamps atomically under the bootstrap lock', async () => {

@@ -36,7 +36,7 @@ you are editing. This file keeps what holds in every module.
 
 ## Currency
 
-**All monetary fields are integer cents** with `*Cents` suffixes; rates are decimal (`0`–`1`). Rounding happens once per calculation step via `roundCents()` (half-away-from-zero) and every Commission stores its `calculationTrace` so amounts are reproducible. Convert at display/commerce boundaries with `centsToAmount()`/`amountToCents()`.
+**All monetary fields are integer cents** with `*Cents` suffixes; that scale is a Sales contract, not an implicit framework currency rule. Fresh PostgreSQL/DuckDB INTEGER columns are BIGINT, while JavaScript hydration rejects values outside the safe-integer range. Rates are decimal (`0`–`1`). Rounding happens once per calculation step via `roundCents()` (half-away-from-zero) and every Commission stores its `calculationTrace` so amounts are reproducible. Convert at display/commerce boundaries with `centsToAmount()`/`amountToCents()`.
 
 ## Tenancy
 

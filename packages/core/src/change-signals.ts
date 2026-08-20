@@ -69,6 +69,7 @@ import {
   PROCESS_ID,
   resolveDbCacheKey,
 } from './collection-cache.js';
+import { toSafeInteger } from './utils/safe-integer.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -431,12 +432,18 @@ function toSignal(record: Record<string, unknown>): ChangeSignal | undefined {
   ) {
     return undefined;
   }
+  let normalizedSeq: number;
+  try {
+    normalizedSeq = toSafeInteger(seq ?? 0, 'Change-signal sequence');
+  } catch {
+    return undefined;
+  }
   return {
     table,
     operation,
     rowId: typeof rowId === 'string' ? rowId : null,
     tenantId: typeof tenantId === 'string' ? tenantId : null,
-    seq: typeof seq === 'number' ? seq : Number(seq ?? 0) || 0,
+    seq: normalizedSeq,
   };
 }
 

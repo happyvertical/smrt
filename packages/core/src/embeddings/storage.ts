@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface, VectorCapabilities } from '@happyvertical/sql';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from '../utils/chunk';
+import { toSafeInteger } from '../utils/safe-integer.js';
 import { CosineSimilarity } from './similarity';
 import type { StoredEmbedding } from './types';
 
@@ -434,7 +435,7 @@ export class EmbeddingStorage {
       content_hash: row.content_hash as string,
       embedding: JSON.parse(row.embedding as string) as number[],
       model: row.model as string,
-      dimensions: row.dimensions as number,
+      dimensions: toSafeInteger(row.dimensions, 'Embedding dimensions'),
       provider: row.provider as string | undefined,
       created_at: new Date(row.created_at as string),
       updated_at: new Date(row.updated_at as string),

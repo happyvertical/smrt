@@ -50,6 +50,7 @@ import {
   tableExists,
 } from './system/compatibility.js';
 import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './system/schema.js';
+import { toSafeInteger } from './utils/safe-integer.js';
 
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
@@ -220,23 +221,17 @@ function hydratePersistedAiUsageTokens(row: {
   total_tokens?: unknown;
 }): AiTokenUsage | undefined {
   const promptTokens =
-    typeof row.prompt_tokens === 'number'
-      ? row.prompt_tokens
-      : row.prompt_tokens === null || row.prompt_tokens === undefined
-        ? undefined
-        : Number(row.prompt_tokens);
+    row.prompt_tokens === null || row.prompt_tokens === undefined
+      ? undefined
+      : toSafeInteger(row.prompt_tokens, 'AI usage prompt tokens');
   const completionTokens =
-    typeof row.completion_tokens === 'number'
-      ? row.completion_tokens
-      : row.completion_tokens === null || row.completion_tokens === undefined
-        ? undefined
-        : Number(row.completion_tokens);
+    row.completion_tokens === null || row.completion_tokens === undefined
+      ? undefined
+      : toSafeInteger(row.completion_tokens, 'AI usage completion tokens');
   const totalTokens =
-    typeof row.total_tokens === 'number'
-      ? row.total_tokens
-      : row.total_tokens === null || row.total_tokens === undefined
-        ? undefined
-        : Number(row.total_tokens);
+    row.total_tokens === null || row.total_tokens === undefined
+      ? undefined
+      : toSafeInteger(row.total_tokens, 'AI usage total tokens');
 
   if (
     promptTokens === undefined &&
@@ -1360,7 +1355,7 @@ export class SmrtClass {
         row.estimated_cost === null || row.estimated_cost === undefined
           ? undefined
           : Number(row.estimated_cost),
-      duration: Number(row.duration ?? 0),
+      duration: toSafeInteger(row.duration ?? 0, 'AI usage duration'),
       className:
         row.class_name === null || row.class_name === undefined
           ? undefined
@@ -1427,11 +1422,23 @@ export class SmrtClass {
     for (const row of rows) {
       const bucket = String(row.bucket);
       summary[bucket] = {
-        callCount: Number(row.call_count ?? 0),
-        promptTokens: Number(row.prompt_tokens ?? 0),
-        completionTokens: Number(row.completion_tokens ?? 0),
-        totalTokens: Number(row.total_tokens ?? 0),
-        totalDuration: Number(row.total_duration ?? 0),
+        callCount: toSafeInteger(row.call_count ?? 0, 'AI usage call count'),
+        promptTokens: toSafeInteger(
+          row.prompt_tokens ?? 0,
+          'AI usage prompt-token total',
+        ),
+        completionTokens: toSafeInteger(
+          row.completion_tokens ?? 0,
+          'AI usage completion-token total',
+        ),
+        totalTokens: toSafeInteger(
+          row.total_tokens ?? 0,
+          'AI usage token total',
+        ),
+        totalDuration: toSafeInteger(
+          row.total_duration ?? 0,
+          'AI usage duration total',
+        ),
         estimatedCost: Number(row.estimated_cost ?? 0),
         lastUsed: row.last_used ? new Date(String(row.last_used)).getTime() : 0,
       };

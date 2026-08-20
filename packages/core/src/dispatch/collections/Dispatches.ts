@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { toSafeInteger } from '../../utils/safe-integer.js';
 import { Dispatch, type DispatchData } from '../models/Dispatch.js';
 import type { DispatchTenantScope } from '../tenant-resolver.js';
 import type {
@@ -68,8 +69,11 @@ async function deleteOrCount(
     `SELECT COUNT(*) AS total FROM _smrt_dispatch WHERE ${where}`,
     ...params,
   );
-  const total = Number(countResult.rows?.[0]?.total ?? 0);
-  if (!Number.isFinite(total) || total <= 0) return 0;
+  const total = toSafeInteger(
+    countResult.rows?.[0]?.total ?? 0,
+    'Dispatch cleanup count',
+  );
+  if (total <= 0) return 0;
 
   if (!dryRun) {
     await db.query(`DELETE FROM _smrt_dispatch WHERE ${where}`, ...params);
@@ -449,7 +453,10 @@ export class DispatchCollection {
     const result = await db.single`
       SELECT COUNT(*) as count FROM _smrt_dispatch WHERE status = ${status}
     `;
-    return (result as { count: number })?.count || 0;
+    return toSafeInteger(
+      (result as { count?: unknown } | null)?.count ?? 0,
+      'Dispatch count',
+    );
   }
 
   /**

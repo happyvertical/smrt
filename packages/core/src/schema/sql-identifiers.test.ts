@@ -145,6 +145,8 @@ describe('formatDefaultValue (shared)', () => {
   it('formats numeric, boolean and JSON defaults by type', () => {
     expect(formatDefaultValue(42, 'INTEGER')).toBe('42');
     expect(formatDefaultValue(3.14, 'REAL')).toBe('3.14');
+    expect(formatDefaultValue(0, 'NUMERIC')).toBe('0');
+    expect(formatDefaultValue(1.25, 'DECIMAL')).toBe('1.25');
     expect(formatDefaultValue(true, 'BOOLEAN')).toBe('TRUE');
     expect(formatDefaultValue(false, 'BOOLEAN')).toBe('FALSE');
     expect(formatDefaultValue('', 'JSON')).toBe("'null'");

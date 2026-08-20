@@ -45,6 +45,7 @@ import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { pruneChangeFeed } from '../change-feed.js';
 import { detectEngine } from '../schema/ddl/index.js';
+import { toSafeInteger } from '../utils/safe-integer.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -776,8 +777,8 @@ async function deleteFrom(
     `SELECT COUNT(*) AS total FROM ${table} ${where}`,
     params,
   );
-  const total = Number(countRow?.total ?? 0);
-  if (!Number.isFinite(total) || total <= 0) return 0;
+  const total = toSafeInteger(countRow?.total ?? 0, 'Retention count');
+  if (total <= 0) return 0;
 
   if (!dryRun) {
     await db.query(

@@ -28,6 +28,7 @@ import {
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
   getSystemTableDDLForEngine,
 } from '../system/schema.js';
+import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
 import type {
   ApplyMigrationsOptions,
@@ -48,16 +49,47 @@ interface MigrationRow {
   checksum: string;
   applied_checksum?: string | null;
   applied_at: string;
-  execution_time_ms?: number | null;
+  execution_time_ms?: unknown | null;
   package_name?: string | null;
   source_file?: string | null;
   status: string;
   error_message?: string | null;
-  attempts: number;
-  is_reversible: number | boolean;
+  attempts: unknown;
+  is_reversible: unknown;
   rolled_back_at?: string | null;
   applied_by?: string | null;
-  batch: number;
+  batch: unknown | null;
+}
+
+/** Hydrate integer-backed system-table values at the database boundary. */
+function hydrateMigrationRow(row: MigrationRow): SchemaMigrationRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    version: row.version,
+    checksum: row.checksum,
+    applied_checksum: row.applied_checksum ?? null,
+    applied_at: new Date(row.applied_at),
+    execution_time_ms:
+      row.execution_time_ms === null || row.execution_time_ms === undefined
+        ? null
+        : toSafeInteger(row.execution_time_ms, 'Migration execution time'),
+    attempts: toSafeInteger(row.attempts, 'Migration attempts'),
+    is_reversible: toSafeBooleanInteger(
+      row.is_reversible,
+      'Migration reversibility flag',
+    ),
+    rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
+    package_name: row.package_name ?? null,
+    source_file: row.source_file ?? null,
+    status: row.status as MigrationStatus,
+    error_message: row.error_message ?? null,
+    applied_by: row.applied_by ?? null,
+    batch:
+      row.batch === null || row.batch === undefined
+        ? null
+        : toSafeInteger(row.batch, 'Migration batch'),
+  };
 }
 
 /**
@@ -334,12 +366,7 @@ export class MigrationTracker {
       `SELECT * FROM _smrt_schema_migrations WHERE status = 'completed' ORDER BY applied_at ASC`,
     );
 
-    return (result.rows as MigrationRow[]).map((row) => ({
-      ...row,
-      applied_at: new Date(row.applied_at),
-      rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
-      is_reversible: Boolean(row.is_reversible),
-    })) as SchemaMigrationRecord[];
+    return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
   }
 
   /**
@@ -381,12 +408,7 @@ export class MigrationTracker {
     if (result.rows.length === 0) return null;
 
     const row = result.rows[0] as MigrationRow;
-    return {
-      ...row,
-      applied_at: new Date(row.applied_at),
-      rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
-      is_reversible: Boolean(row.is_reversible),
-    } as SchemaMigrationRecord;
+    return hydrateMigrationRow(row);
   }
 
   /**
@@ -399,8 +421,9 @@ export class MigrationTracker {
       `SELECT MAX(batch) as max_batch FROM _smrt_schema_migrations`,
     );
 
-    const row = result.rows[0] as { max_batch: number | null } | undefined;
-    return (row?.max_batch ?? 0) + 1;
+    const row = result.rows[0] as { max_batch?: unknown } | undefined;
+    const maxBatch = toSafeInteger(row?.max_batch ?? 0, 'Migration batch');
+    return toSafeInteger(maxBatch + 1, 'Next migration batch');
   }
 
   /**
@@ -559,7 +582,10 @@ export class MigrationTracker {
 
     // Determine if we're updating an existing record or inserting new
     const id = existing?.id || randomUUID();
-    const attempts = (existing?.attempts || 0) + 1;
+    const attempts = toSafeInteger(
+      (existing?.attempts ?? 0) + 1,
+      'Migration attempts',
+    );
 
     if (existing) {
       // Update existing record to 'running'
@@ -1225,12 +1251,7 @@ export class MigrationTracker {
 
     const result = await this.db.query(sql, ...params);
 
-    return (result.rows as MigrationRow[]).map((row) => ({
-      ...row,
-      applied_at: new Date(row.applied_at),
-      rolled_back_at: row.rolled_back_at ? new Date(row.rolled_back_at) : null,
-      is_reversible: Boolean(row.is_reversible),
-    })) as SchemaMigrationRecord[];
+    return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
   }
 
   /**

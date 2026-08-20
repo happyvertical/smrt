@@ -25,6 +25,8 @@ export class DuckDBStrategy extends BaseDDLStrategy {
    */
   mapType(type: SQLDataType): string {
     switch (type) {
+      case 'INTEGER':
+        return 'BIGINT';
       case 'TIMESTAMP':
         return 'TIMESTAMP'; // DuckDB supports TIMESTAMP natively
       case 'JSON':

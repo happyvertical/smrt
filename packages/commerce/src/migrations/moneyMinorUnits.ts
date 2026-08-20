@@ -18,7 +18,8 @@
  *
  * const db = await getDatabase({ type: 'postgres', url: process.env.DATABASE_URL! });
  *
- * // 1. Read-only. Prints the rows that would be rounded or overflow int4.
+ * // 1. Read-only. Prints rows that would be rounded or exceed JavaScript's
+ * //    safe-integer range when hydrated.
  * console.log((await preflightCommerceMoneyMinorUnits(db)).summary);
  *
  * // 2. Convert. Idempotent — a second run is a no-op.
@@ -35,10 +36,10 @@
  *   the table-rebuild path (#2370). The result reports those columns in
  *   `declaredTypeChangePending`.
  *
- * Range note: INTEGER is `int4` on PostgreSQL, so each column tops out near
- * 2.1e9 minor units — about $21.4M. The preflight lists any row that would
- * overflow. Widening to BIGINT is the decision parked in #2373 and is a plain
- * widening whenever it lands.
+ * Fresh PostgreSQL and DuckDB INTEGER columns materialize as BIGINT. The
+ * preflight lists values that would exceed JavaScript's safe-integer range
+ * after rescaling, because SMRT rejects rather than rounds those on hydration.
+ * Existing PostgreSQL `int4` columns require the explicit widening in #2424.
  *
  * ## Two things this migration deliberately does NOT convert
  *
@@ -168,8 +169,8 @@ export function preflightCommerceMoneyMinorUnits(
  * @param db - Root database handle.
  * @param options - `scale` (default 100 — cents), `engineHint`, and `force` to
  *   convert despite rows the preflight flagged as lossy.
- * @throws `MinorUnitsPreflightError` when a row would be rounded or would
- *   overflow `int4` and `force` was not set. Print
+ * @throws `MinorUnitsPreflightError` when a row would be rounded or exceed the
+ *   JavaScript safe-integer range and `force` was not set. Print
  *   {@link preflightCommerceMoneyMinorUnits}'s summary, fix the data, retry.
  */
 export function migrateCommerceMoneyToMinorUnits(

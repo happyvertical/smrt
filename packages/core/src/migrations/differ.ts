@@ -1875,12 +1875,12 @@ export class SchemaComparer {
           manifestNormalized === 'INTEGER' &&
           dbNormalized === 'TEXT'
         ) {
-          typeClause += ` USING trim(${quotedCol}::text)::integer`;
+          typeClause += ` USING trim(${quotedCol}::text)::bigint`;
         } else if (
           manifestNormalized === 'INTEGER' &&
           dbNormalized === 'REAL'
         ) {
-          typeClause += ` USING ${quotedCol}::integer`;
+          typeClause += ` USING ${quotedCol}::bigint`;
         } else if (
           manifestNormalized === 'TIMESTAMP' &&
           (dbNormalized === 'TEXT' || dbNormalized === 'JSON')

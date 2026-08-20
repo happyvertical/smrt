@@ -6,6 +6,7 @@
  */
 
 import { makeId } from '@happyvertical/utils';
+import { toSafeBooleanInteger } from '../../utils/safe-integer.js';
 
 /**
  * Raw subscription data as stored in the database
@@ -16,7 +17,7 @@ export interface DispatchSubscriptionData {
   subscriber: string;
   handler: string;
   delivery: string;
-  enabled: number;
+  enabled: number | string | bigint;
   tenant_id: string | null;
   created_at: string;
   updated_at: string;
@@ -66,7 +67,13 @@ export class DispatchSubscription {
     this.subscriber = data.subscriber || '';
     this.handler = data.handler || 'handleDispatch';
     this.delivery = (data.delivery as 'compete' | 'fanout') || 'compete';
-    this.enabled = data.enabled !== undefined ? Boolean(data.enabled) : true;
+    this.enabled =
+      data.enabled !== undefined
+        ? toSafeBooleanInteger(
+            data.enabled,
+            'Dispatch subscription enabled flag',
+          )
+        : true;
     this.tenantId = data.tenant_id ?? null;
     this.createdAt = data.created_at ? new Date(data.created_at) : new Date();
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();

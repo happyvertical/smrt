@@ -24,6 +24,10 @@ export class PostgresStrategy extends BaseDDLStrategy {
    */
   mapType(type: SQLDataType): string {
     switch (type) {
+      case 'INTEGER':
+        return 'BIGINT';
+      case 'BLOB':
+        return 'BYTEA';
       case 'JSON':
         return 'JSONB'; // PostgreSQL JSONB is more efficient
       case 'TIMESTAMP':

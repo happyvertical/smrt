@@ -7,6 +7,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { makeId } from '@happyvertical/utils';
+import { toSafeInteger } from '../../utils/safe-integer.js';
 import type { DispatchMetadata, DispatchStatus } from '../types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -49,7 +50,7 @@ export interface DispatchData {
   source_id: string | null;
   payload: string | null;
   status: DispatchStatus;
-  attempts: number;
+  attempts: number | string | bigint;
   last_error: string | null;
   processed_at: string | null;
   processed_by: string | null;
@@ -128,7 +129,7 @@ export class Dispatch {
     this.source = data.source || '';
     this.sourceId = data.source_id || '';
     this.status = (data.status as DispatchStatus) || 'pending';
-    this.attempts = data.attempts || 0;
+    this.attempts = toSafeInteger(data.attempts ?? 0, 'Dispatch attempts');
     this.lastError = data.last_error || '';
     this.processedBy = data.processed_by || '';
     this.targetSubscriber = data.target_subscriber || null;
@@ -200,7 +201,7 @@ export class Dispatch {
    */
   markProcessing(): void {
     this.status = 'processing';
-    this.attempts += 1;
+    this.attempts = toSafeInteger(this.attempts + 1, 'Dispatch attempts');
     this.updatedAt = new Date();
   }
 

@@ -60,9 +60,11 @@ the Vite plugin consumes deterministic `dist/` artifacts.
 ## Core model invariants
 
 - Numeric defaults carry schema meaning: `0` maps to integer and `0.0` to decimal.
-  Money is exact and stored as integer minor units (cents, satoshis), so money
-  fields write `= 0`; rates and confidence scores are inherently fractional and
-  write `= 0.0`. `dev:knowledge-check` reports both directions (#2361).
+  Money is exact and stored as integer minor units at an application-defined
+  scale, so money fields write `= 0`; rates and confidence scores are inherently
+  fractional and write `= 0.0`. PostgreSQL and DuckDB materialize INTEGER as
+  64-bit BIGINT, but hydrated values must remain within JavaScript's safe-integer
+  range. `dev:knowledge-check` reports both directions (#2361, #2373).
 - Never override `toJSON()`; extend serialization through `transformJSON()`.
 - Same-package foreign keys use `@foreignKey(Target)`; cross-package references
   use `@crossPackageRef('@happyvertical/smrt-package:Class')`.

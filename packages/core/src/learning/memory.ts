@@ -20,6 +20,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { toSafeInteger } from '../utils/safe-integer.js';
 
 /**
  * A relevance-scored memory returned by {@link LearningMemory.recall}.
@@ -352,10 +353,20 @@ export class LearningMemory {
     if (existing) {
       const currentConfidence = Number(existing.confidence ?? 1);
       const nextConfidence = this.nextConfidence(currentConfidence, success);
-      const successCount =
-        Number(existing.success_count ?? 0) + (success ? 1 : 0);
-      const failureCount =
-        Number(existing.failure_count ?? 0) + (success ? 0 : 1);
+      const successCount = toSafeInteger(
+        toSafeInteger(
+          existing.success_count ?? 0,
+          'Learning memory success count',
+        ) + (success ? 1 : 0),
+        'Learning memory success count',
+      );
+      const failureCount = toSafeInteger(
+        toSafeInteger(
+          existing.failure_count ?? 0,
+          'Learning memory failure count',
+        ) + (success ? 0 : 1),
+        'Learning memory failure count',
+      );
 
       const data: Record<string, unknown> = {
         confidence: nextConfidence,
@@ -542,8 +553,14 @@ export class LearningMemory {
         key: String(row.key),
         value: parseValue(row.value),
         confidence: effective,
-        successCount: Number(row.success_count ?? 0),
-        failureCount: Number(row.failure_count ?? 0),
+        successCount: toSafeInteger(
+          row.success_count ?? 0,
+          'Learning memory success count',
+        ),
+        failureCount: toSafeInteger(
+          row.failure_count ?? 0,
+          'Learning memory failure count',
+        ),
         lastUsedAt,
         source: 'context',
       });

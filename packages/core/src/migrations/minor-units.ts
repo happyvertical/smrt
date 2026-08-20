@@ -2,20 +2,22 @@
  * Money-column rescale: floating-point major units → integer minor units (#2401).
  *
  * SMRT's rule is that money is exact and is stored as **integer minor units**
- * (cents, satoshis) — `$19.99` is `1999`. Packages that predate the rule
+ * at an application-defined scale — `$19.99` is `1999` at a cents scale.
+ * Packages that predate the rule
  * declared their money fields `= 0.0`, which compiles to a floating-point
  * column holding *major* units. Flipping the declaration to `= 0` changes the
  * column type, and REAL→INTEGER is deliberately **not** one of the differ's
- * whitelisted upgrades: an automatic `ALTER … TYPE integer` would truncate
- * `19.99` to `19`, silently destroying 99 cents on every row.
+ * whitelisted upgrades: an automatic `ALTER … TYPE BIGINT` would truncate
+ * `19.99` to `19`, silently destroying minor units on every row.
  *
  * So the conversion is an explicit, opt-in migration with two halves:
  *
  *  1. {@link preflightMinorUnitsRescale} — read-only. Reports, per column,
  *     whether it still needs converting, and lists the rows that would lose
  *     information: values whose scaled form is not a whole number (a half-cent
- *     that has to be rounded away) and values that overflow PostgreSQL's `int4`
- *     once multiplied by the scale. Run it against a production snapshot and
+ *     that has to be rounded away) and values that exceed JavaScript's safe
+ *     integer range once multiplied by the scale. Run it against a production
+ *     snapshot and
  *     read the summary before converting anything.
  *  2. {@link rescaleMoneyColumnsToMinorUnits} — the conversion itself, guarded
  *     by a {@link BackfillTracker} marker so re-running it can never multiply a
@@ -25,8 +27,8 @@
  *
  * | Engine | Column type | Values |
  * | --- | --- | --- |
- * | PostgreSQL | `ALTER COLUMN … TYPE integer USING round(col * scale)` | converted by the cast |
- * | DuckDB | `ALTER COLUMN … TYPE INTEGER USING round(col * scale)` | converted by the cast |
+ * | PostgreSQL | `ALTER COLUMN … TYPE BIGINT USING round(col * scale)` | converted by the cast |
+ * | DuckDB | `ALTER COLUMN … TYPE BIGINT USING round(col * scale)` | converted by the cast |
  * | SQLite | **not changed here** — SQLite cannot alter a column's declared type in place | rescaled with an `UPDATE`, values become exact integers |
  *
  * SQLite's declared type only sets an affinity, so a rescaled column already
@@ -43,9 +45,9 @@ import type { DatabaseInterface } from './types.js';
 
 const logger = createLogger({ level: 'info' });
 
-/** PostgreSQL `int4` bounds — the ceiling this conversion has to respect. */
-const INT4_MIN = -2147483648;
-const INT4_MAX = 2147483647;
+/** Hydrated integers must remain exactly representable in JavaScript. */
+const MIN_SAFE_INTEGER = -Number.MAX_SAFE_INTEGER;
+const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
 
 /**
  * How far a scaled value may sit from a whole number and still count as
@@ -114,7 +116,7 @@ export interface MinorUnitsColumnReport {
   inspectedRows: number;
   /** Values whose scaled form is not a whole number — rounding loses money. */
   nonIntegral: MinorUnitsProblemRow[];
-  /** Values whose scaled form falls outside PostgreSQL `int4`. */
+  /** Values whose scaled form exceeds JavaScript's safe integer range. */
   overflow: MinorUnitsProblemRow[];
 }
 
@@ -131,7 +133,7 @@ export interface MinorUnitsPreflightResult {
   missingColumns: number;
   /** Total rows that would be rounded. */
   nonIntegralRows: number;
-  /** Total rows that would overflow `int4`. */
+  /** Total rows that would exceed JavaScript's safe integer range. */
   overflowRows: number;
   /** No row would lose information. */
   ok: boolean;
@@ -200,7 +202,7 @@ export class MinorUnitsPreflightError extends Error {
     super(
       `Money minor-units rescale refused: ${preflight.nonIntegralRows} row(s) ` +
         `would be rounded and ${preflight.overflowRows} row(s) would overflow ` +
-        'int4. Fix the data or pass `force: true` to accept the rounding.\n' +
+        "JavaScript's safe integer range. Fix the data or pass `force: true` to accept the rounding.\n" +
         preflight.summary,
     );
     this.name = 'MinorUnitsPreflightError';
@@ -349,7 +351,7 @@ async function inspectColumn(
         nonIntegral.push({ id, value, scaled });
       }
     }
-    if (rounded > INT4_MAX || rounded < INT4_MIN) {
+    if (rounded > MAX_SAFE_INTEGER || rounded < MIN_SAFE_INTEGER) {
       if (overflow.length < maxProblemRows) {
         overflow.push({ id, value, scaled });
       }
@@ -364,7 +366,7 @@ function renderSummary(result: Omit<MinorUnitsPreflightResult, 'summary'>) {
     `Money minor-units preflight (engine=${result.engine}, scale=${result.scale})`,
     `  columns: ${result.pendingColumns} pending, ${result.convertedColumns} already integer, ${result.missingColumns} missing`,
     `  rows that would be rounded: ${result.nonIntegralRows}`,
-    `  rows that would overflow int4: ${result.overflowRows}`,
+    `  rows that would exceed JavaScript's safe integer range: ${result.overflowRows}`,
   ];
   for (const column of result.columns) {
     const label = `${column.table}.${column.column}`;
@@ -433,7 +435,7 @@ export function buildMinorUnitsStatements(
     // framework default for every money field.
     return [
       `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedColumn} DROP DEFAULT`,
-      `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedColumn} TYPE INTEGER ` +
+      `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedColumn} TYPE BIGINT ` +
         `USING ${scaled}`,
       `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedColumn} SET DEFAULT 0`,
     ];

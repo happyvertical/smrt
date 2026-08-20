@@ -42,6 +42,7 @@ import {
   toSnakeCase,
 } from './utils';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
+import { toSafeInteger } from './utils/safe-integer';
 
 const logger = createLogger({ level: 'info' });
 
@@ -3110,7 +3111,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ...whereValues,
     );
 
-    return Number.parseInt(result.rows[0].count, 10);
+    return toSafeInteger(result.rows[0].count, 'Collection count');
   }
 
   /**

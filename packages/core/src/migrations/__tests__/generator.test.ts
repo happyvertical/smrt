@@ -727,10 +727,10 @@ describe('MigrationGenerator', () => {
             table: 'ad_campaigns',
             name: 'target_clicks',
             mismatch: { expected: 'INTEGER', actual: 'REAL' },
-            sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+            sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE BIGINT USING "target_clicks"::bigint',
             sqlStatements: [
               'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
-              'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+              'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE BIGINT USING "target_clicks"::bigint',
             ],
           },
         ],
@@ -750,7 +750,7 @@ describe('MigrationGenerator', () => {
       expect(migration.up).toHaveLength(2);
       expect(migration.up[0]).toContain('DO $$ BEGIN IF EXISTS');
       expect(migration.up[1]).toContain('ALTER TABLE');
-      expect(migration.up[1]).toContain('TYPE INTEGER');
+      expect(migration.up[1]).toContain('TYPE BIGINT');
     });
 
     it('should skip comment-only SQL for no-op type upgrades', () => {
