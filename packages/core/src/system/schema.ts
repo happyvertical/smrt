@@ -559,7 +559,8 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
  * Materialize the portable system-table schema for a target engine.
  *
  * PostgreSQL must use TIMESTAMPTZ because every system Date is an instant.
- * Other engines keep the established portable TIMESTAMP declarations.
+ * PostgreSQL and DuckDB also materialize integer storage as BIGINT, matching
+ * application-table DDL; SQLite keeps its variable-width INTEGER.
  */
 export function getSystemTableDDL(engine: DatabaseEngine): string[] {
   return ALL_SYSTEM_TABLES.map((ddl) =>
@@ -572,9 +573,13 @@ export function getSystemTableDDLForEngine(
   ddl: string,
   engine: DatabaseEngine,
 ): string {
+  const integerDdl =
+    engine === 'postgres' || engine === 'duckdb'
+      ? ddl.replace(/\bINTEGER\b/g, 'BIGINT')
+      : ddl;
   return engine === 'postgres'
-    ? ddl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ')
-    : ddl;
+    ? integerDdl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ')
+    : integerDdl;
 }
 
 /**

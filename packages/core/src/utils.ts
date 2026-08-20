@@ -7,6 +7,7 @@ import {
   pluralize,
   toSnakeCase,
 } from './utils/naming.js';
+import { toSafeBooleanInteger, toSafeInteger } from './utils/safe-integer.js';
 
 // formatDataJs' debug traces are gated by DEBUG_STI, so the level must allow
 // debug when it's set (a fixed 'info' would filter them out and break the flag).
@@ -14,7 +15,13 @@ const logger = createLogger({
   level: process.env.DEBUG_STI ? 'debug' : 'info',
 });
 
-export { classnameToTablename, pluralize, toSnakeCase };
+export {
+  classnameToTablename,
+  pluralize,
+  toSafeBooleanInteger,
+  toSafeInteger,
+  toSnakeCase,
+};
 
 /**
  * Converts a snake_case string to camelCase
@@ -383,10 +390,14 @@ export function formatDataJs<
           normalizedData[outputKey] = value;
         }
       } else if (fieldType === 'integer') {
-        // Convert string numbers to integers for INTEGER fields
-        // SQLite may return "2.0" as a string in some cases
-        const parsed = Number.parseInt(value, 10);
-        normalizedData[outputKey] = Number.isNaN(parsed) ? value : parsed;
+        // PostgreSQL returns int8 as strings. SQLite may spell an integer as
+        // "2.0"; reject values JavaScript cannot represent exactly rather than
+        // rounding them while hydrating a model.
+        const parsed = Number(value);
+        normalizedData[outputKey] =
+          Number.isFinite(parsed) && Number.isInteger(parsed)
+            ? toSafeInteger(value, `Integer field ${outputKey}`)
+            : value;
       } else if (fieldType === 'real' || fieldType === 'decimal') {
         // Convert string numbers to floats for REAL/DECIMAL fields
         const parsed = Number.parseFloat(value);
@@ -398,12 +409,22 @@ export function formatDataJs<
       if (fieldType === 'boolean') {
         // Convert SQLite integers (0/1) to booleans for boolean fields
         normalizedData[outputKey] = value === 1;
+      } else if (fieldType === 'integer' && Number.isInteger(value)) {
+        normalizedData[outputKey] = toSafeInteger(
+          value,
+          `Integer field ${outputKey}`,
+        );
       } else {
         // Pass through numeric values as-is
         // Note: In JavaScript, 2.0 === 2 so no conversion needed
         // Non-integers in INTEGER fields (e.g., 2.9) are kept to surface data issues
         normalizedData[outputKey] = value;
       }
+    } else if (typeof value === 'bigint' && fieldType === 'integer') {
+      normalizedData[outputKey] = toSafeInteger(
+        value,
+        `Integer field ${outputKey}`,
+      );
     } else {
       normalizedData[outputKey] = value;
     }

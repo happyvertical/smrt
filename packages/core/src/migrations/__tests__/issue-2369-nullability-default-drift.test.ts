@@ -359,7 +359,7 @@ for (const { name, type, engine } of engines) {
         expect(statements).toEqual([
           `ALTER TABLE "items" ADD COLUMN "status" TEXT DEFAULT 'draft'`,
           `ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL`,
-          `ALTER TABLE "items" ADD COLUMN "hits" INTEGER DEFAULT 0`,
+          `ALTER TABLE "items" ADD COLUMN "hits" BIGINT DEFAULT 0`,
           `ALTER TABLE "items" ALTER COLUMN "hits" SET NOT NULL`,
         ]);
       } else {

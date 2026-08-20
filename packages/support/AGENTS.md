@@ -252,7 +252,7 @@ that reverted to DECIMAL passes every SQLite suite.
 - **Money is integer minor units** (cents) — `$19.99` is `1999`.
   `SupportPlan.availabilityFeeAmount`, `SupportCharge.amount` and
   `SupportCompensation.amount` initialize `= 0`, never `= 0.0`: the integer
-  literal is what maps them to INTEGER columns (#2401).
+  literal is what maps them to INTEGER columns (BIGINT on fresh PostgreSQL/DuckDB databases; #2401, #2373).
 - **Rates stay DECIMAL but their unit changed.**
   `SupportPlan.overageHourlyRate` / `onCallHourlyRate` and
   `SupportCompensationPlan.hourlyRate` are **minor units per hour**, so
@@ -265,14 +265,15 @@ that reverted to DECIMAL passes every SQLite suite.
   `SupportCharge.amount`.
 - **Migrating an existing database**: `preflightSupportMoneyMinorUnits(db)`
   reports which columns still hold major units and which rows would be rounded
-  or overflow `int4`; `migrateSupportMoneyToMinorUnits(db)` converts them
+  or exceed JavaScript's safe-integer range; `migrateSupportMoneyToMinorUnits(db)` converts them
   (idempotent via `_smrt_backfills`). The **rate columns are not in that list**
   — their type does not change, but their stored values must still be
   multiplied by the same scale in the same deploy step. Frozen `rateSnapshot`
   JSON on settled charges is history and is left alone. On SQLite the values
-  are rescaled but the declared type needs the table-rebuild path (#2370); the
-  `int4` ceiling is ~2.1e9 minor units (~$21.4M) per column, with BIGINT parked
-  in #2373.
+  are rescaled but the declared type needs the table-rebuild path (#2370).
+  Fresh PostgreSQL/DuckDB INTEGER columns are BIGINT and hydration rejects
+  values outside JavaScript's safe-integer range; existing PostgreSQL `int4`
+  columns require #2424.
 
 ## Gotchas
 

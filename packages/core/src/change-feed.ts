@@ -113,6 +113,7 @@ import {
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   RETIRED_SYSTEM_TABLES,
 } from './system/schema.js';
+import { toSafeInteger } from './utils/safe-integer.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -873,9 +874,9 @@ export async function getTableVersion(
 }
 
 function toSeqNumber(value: unknown): number {
-  // Postgres adapters may surface BIGINT aggregates as strings.
-  const parsed = typeof value === 'number' ? value : Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
+  // PostgreSQL surfaces BIGINT aggregates as strings and DuckDB can return
+  // BigInt. Change-feed cursors must never advance on a rounded value.
+  return toSafeInteger(value ?? 0, 'Change-feed sequence');
 }
 
 function rowToEntry(row: Record<string, unknown>): ChangeFeedEntry {

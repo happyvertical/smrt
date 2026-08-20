@@ -266,8 +266,6 @@ export function formatDefaultValue(
     case 'FLOAT':
     case 'DOUBLE':
     case 'DOUBLE PRECISION':
-    case 'DECIMAL':
-    case 'NUMERIC':
       return String(Number(value) || 0);
     case 'BOOLEAN':
     case 'BOOL':

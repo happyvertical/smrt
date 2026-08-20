@@ -95,10 +95,10 @@ describe('money minor-units rescale (#2401)', () => {
       expect(preflight.summary).toContain('non-integral id=p2');
     });
 
-    it('lists rows whose scaled value overflows int4', async () => {
-      // $21.5M in cents is 2_150_000_000, past the int4 ceiling. Widening to
-      // BIGINT is the decision parked in #2373.
-      await seed([['p1', 21_500_000, 0]]);
+    it('lists rows whose scaled value exceeds JavaScript safe-integer range', async () => {
+      // PostgreSQL and DuckDB store this as BIGINT, but SMRT exposes integers
+      // as JavaScript numbers. Do not create data that hydration would round.
+      await seed([['p1', Number.MAX_SAFE_INTEGER / 100 + 1, 0]]);
 
       const preflight = await preflightMinorUnitsRescale(db, TARGETS);
 
@@ -188,7 +188,7 @@ describe('money minor-units rescale (#2401)', () => {
         buildMinorUnitsStatements('postgres', 'payments', 'amount', 100),
       ).toEqual([
         'ALTER TABLE "payments" ALTER COLUMN "amount" DROP DEFAULT',
-        'ALTER TABLE "payments" ALTER COLUMN "amount" TYPE INTEGER USING round(("amount")::numeric * 100)',
+        'ALTER TABLE "payments" ALTER COLUMN "amount" TYPE BIGINT USING round(("amount")::numeric * 100)',
         'ALTER TABLE "payments" ALTER COLUMN "amount" SET DEFAULT 0',
       ]);
     });
@@ -198,7 +198,7 @@ describe('money minor-units rescale (#2401)', () => {
         buildMinorUnitsStatements('duckdb', 'payments', 'amount', 100),
       ).toEqual([
         'ALTER TABLE "payments" ALTER COLUMN "amount" DROP DEFAULT',
-        'ALTER TABLE "payments" ALTER COLUMN "amount" TYPE INTEGER USING round("amount" * 100)',
+        'ALTER TABLE "payments" ALTER COLUMN "amount" TYPE BIGINT USING round("amount" * 100)',
         'ALTER TABLE "payments" ALTER COLUMN "amount" SET DEFAULT 0',
       ]);
     });

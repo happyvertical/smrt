@@ -40,6 +40,102 @@ describe('MigrationTracker engine detection', () => {
   });
 });
 
+describe('MigrationTracker BIGINT hydration', () => {
+  it('hydrates PostgreSQL string values before calculating batches or exposing records', async () => {
+    const row = {
+      id: 'migration-1',
+      name: '0001_example',
+      version: '1.0.0',
+      checksum: 'checksum',
+      applied_checksum: 'checksum',
+      applied_at: '2026-01-01T00:00:00.000Z',
+      execution_time_ms: '12',
+      package_name: null,
+      source_file: null,
+      status: 'completed',
+      error_message: null,
+      attempts: '2',
+      is_reversible: '0',
+      rolled_back_at: null,
+      applied_by: null,
+      batch: '7',
+    };
+    const tracker = new MigrationTracker({
+      db: {
+        url: 'postgres://localhost/test',
+        query: async (sql: string) => {
+          if (sql.includes('SELECT MAX(batch)')) {
+            return { rows: [{ max_batch: '7' }] };
+          }
+          if (sql.includes('SELECT * FROM _smrt_schema_migrations')) {
+            return { rows: [row] };
+          }
+          return { rows: [] };
+        },
+      } as any,
+    });
+
+    const [record] = await tracker.getAppliedMigrations();
+
+    expect(record).toMatchObject({
+      execution_time_ms: 12,
+      attempts: 2,
+      is_reversible: false,
+      batch: 7,
+    });
+    expect(await tracker.getNextBatch()).toBe(8);
+  });
+
+  it('hydrates DuckDB bigint values', async () => {
+    const tracker = new MigrationTracker({
+      db: {
+        url: 'duckdb://memory',
+        query: async (sql: string) => {
+          if (sql.includes('SELECT MAX(batch)')) {
+            return { rows: [{ max_batch: 9n }] };
+          }
+          if (sql.includes('SELECT * FROM _smrt_schema_migrations')) {
+            return {
+              rows: [
+                {
+                  id: 'migration-2',
+                  name: '0002_example',
+                  version: '1.0.0',
+                  checksum: 'checksum',
+                  applied_checksum: null,
+                  applied_at: '2026-01-01T00:00:00.000Z',
+                  execution_time_ms: 3n,
+                  package_name: null,
+                  source_file: null,
+                  status: 'completed',
+                  error_message: null,
+                  attempts: 1n,
+                  is_reversible: 1n,
+                  rolled_back_at: null,
+                  applied_by: null,
+                  batch: 9n,
+                },
+              ],
+            };
+          }
+          return { rows: [] };
+        },
+      } as any,
+      engineHint: 'duckdb',
+    });
+
+    const [record] = await tracker.getAppliedMigrations();
+
+    expect(record).toMatchObject({
+      execution_time_ms: 3,
+      attempts: 1,
+      is_reversible: true,
+      batch: 9,
+    });
+    expect(await tracker.getNextBatch()).toBe(10);
+  });
+});
+
 describe('MigrationTracker on real SQLite', () => {
   let db: DatabaseProvider;
   let tracker: MigrationTracker;

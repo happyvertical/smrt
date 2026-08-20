@@ -76,4 +76,15 @@ describe('Dispatch JSON-field parsing', () => {
     expect(dispatch.payload).toEqual({});
     expect(dispatch.metadata).toEqual({});
   });
+
+  it.each([
+    ['PostgreSQL', '0'],
+    ['DuckDB', 0n],
+  ])('hydrates %s attempt values before incrementing', (_driver, attempts) => {
+    const dispatch = Dispatch.fromRow(rowWith({ attempts }));
+
+    dispatch.markProcessing();
+
+    expect(dispatch.attempts).toBe(1);
+  });
 });

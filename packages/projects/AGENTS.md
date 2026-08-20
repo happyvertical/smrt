@@ -64,7 +64,7 @@ All collections provide: `discover({ repository, filters })`, `findByRepository(
 - **Money is integer minor units** (cents) — `$19.99` is `1999`.
   `ServiceChargeSnapshot.amount` and `ServiceCompensationSnapshot.amount`
   initialize `= 0`, never `= 0.0`: the integer literal is what maps them to
-  INTEGER columns (#2401). The two convert as a pair — the delivery margin is
+  INTEGER columns (BIGINT on fresh PostgreSQL/DuckDB databases; #2401, #2373). The two convert as a pair — the delivery margin is
   `charge - compensation`, an exact integer subtraction with no tolerance —
   and both are fed verbatim by `CommercialSnapshot.amount`, so a resolver that
   returns major units corrupts the snapshot silently on SQLite and fails with
@@ -76,10 +76,11 @@ All collections provide: `discover({ repository, filters })`, `findByRepository(
   not divided.
 - **Migrating an existing database**: `preflightProjectsMoneyMinorUnits(db)`
   reports which columns still hold major units and which rows would be rounded
-  or overflow `int4`; `migrateProjectsMoneyToMinorUnits(db)` converts them
+  or exceed JavaScript's safe-integer range; `migrateProjectsMoneyToMinorUnits(db)` converts them
   (idempotent via `_smrt_backfills`). On SQLite the values are rescaled but the
-  declared type needs the table-rebuild path (#2370). The `int4` ceiling is
-  ~2.1e9 minor units (~$21.4M) per column; BIGINT is parked in #2373.
+  declared type needs the table-rebuild path (#2370). Fresh PostgreSQL/DuckDB
+  INTEGER columns are BIGINT and hydration rejects values outside JavaScript's
+  safe-integer range; existing PostgreSQL `int4` columns require #2424.
 - **SDK dependency**: requires `@happyvertical/repos` and `@happyvertical/projects` from SDK
 - **tokenConfigKey not tokenValue**: never store actual tokens in the database
 - **synthesisCount tracks incorporateFeedback calls**: incremented on each apply

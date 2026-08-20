@@ -32,6 +32,18 @@ describe('R11 UUID type mapping (per-dialect)', () => {
   });
 });
 
+describe('integer and binary type mapping (per-dialect) (#2373)', () => {
+  it('maps abstract INTEGER to BIGINT on PostgreSQL and DuckDB', () => {
+    expect(getDDLStrategy('postgres').mapType('INTEGER')).toBe('BIGINT');
+    expect(getDDLStrategy('duckdb').mapType('INTEGER')).toBe('BIGINT');
+  });
+
+  it('keeps SQLite INTEGER and maps PostgreSQL BLOB to BYTEA', () => {
+    expect(getDDLStrategy('sqlite').mapType('INTEGER')).toBe('INTEGER');
+    expect(getDDLStrategy('postgres').mapType('BLOB')).toBe('BYTEA');
+  });
+});
+
 describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids', () => {
   let db: DatabaseProvider;
   let comparer: SchemaComparer;

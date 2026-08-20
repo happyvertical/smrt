@@ -167,6 +167,35 @@ describe('EmbeddingStorage', () => {
       });
       expect(result?.embedding).toEqual([0.1, 0.2, 0.3]);
     });
+
+    it.each([
+      ['PostgreSQL', '3'],
+      ['DuckDB', 3n],
+    ])('hydrates %s dimensions values', async (_driver, dimensions) => {
+      const driverDb = {
+        query: async () => ({
+          rows: [
+            {
+              id: 'embedding-1',
+              object_class: 'Article',
+              object_id: 'article-123',
+              field_name: 'content',
+              content_hash: 'hash',
+              embedding: '[0.1,0.2,0.3]',
+              model: 'test-model',
+              dimensions,
+              provider: null,
+              created_at: '2026-01-01T00:00:00.000Z',
+              updated_at: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        }),
+      } as unknown as DatabaseInterface;
+
+      await expect(
+        EmbeddingStorage.getForObject(driverDb, 'Article', 'article-123'),
+      ).resolves.toMatchObject([{ dimensions: 3 }]);
+    });
   });
 
   describe('getForObject', () => {

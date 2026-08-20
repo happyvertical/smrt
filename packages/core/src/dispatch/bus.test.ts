@@ -398,6 +398,26 @@ describe('DispatchSubscription Model', () => {
     expect(sub.matches('campaign.completed')).toBe(false);
   });
 
+  it.each([
+    ['PostgreSQL', '0'],
+    ['DuckDB', 0n],
+  ])('hydrates %s disabled integer flags', (_driver, enabled) => {
+    const sub = DispatchSubscription.fromRow({
+      id: 'subscription-1',
+      signal_type: 'campaign.*',
+      subscriber: 'fiscus',
+      handler: 'handleDispatch',
+      delivery: 'compete',
+      enabled,
+      tenant_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    expect(sub.enabled).toBe(false);
+    expect(sub.matches('campaign.completed')).toBe(false);
+  });
+
   it('should identify wildcards', () => {
     const exact = new DispatchSubscription({
       signal_type: 'test.event',

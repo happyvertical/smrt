@@ -268,9 +268,9 @@ export class Payment extends SmrtObject {
    * rails it's the satoshi/wei figure the chain recorded, independent of any
    * USD valuation.
    *
-   * Range note (#2401): INTEGER is `int4` on PostgreSQL, so this column tops
-   * out near 2.1e9 minor units — about 21 BTC in satoshis. Widening to BIGINT
-   * is the decision parked in #2373; INTEGER→BIGINT is a plain widening later.
+   * Fresh PostgreSQL and DuckDB INTEGER columns materialize as BIGINT. SMRT
+   * rejects values outside JavaScript's safe-integer range during hydration;
+   * existing PostgreSQL `int4` columns require the explicit widening in #2424.
    */
   nativeAmount: number = 0;
 

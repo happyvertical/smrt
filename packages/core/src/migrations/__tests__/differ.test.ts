@@ -1072,9 +1072,9 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
     expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
-    expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
+    expect(typeUpgrades[0].sql).toContain('TYPE BIGINT');
     expect(typeUpgrades[0].sql).toContain(
-      'USING trim("sort_order"::text)::integer',
+      'USING trim("sort_order"::text)::bigint',
     );
     expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
     expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
@@ -1084,7 +1084,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
       `trim("sort_order"::text) !~ '^[+-]?[0-9]+$'`,
     );
     expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
-      'USING trim("sort_order"::text)::integer',
+      'USING trim("sort_order"::text)::bigint',
     );
   });
 
@@ -1126,8 +1126,8 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
     expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
-    expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
-    expect(typeUpgrades[0].sql).toContain('USING "target_clicks"::integer');
+    expect(typeUpgrades[0].sql).toContain('TYPE BIGINT');
+    expect(typeUpgrades[0].sql).toContain('USING "target_clicks"::bigint');
     expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
     expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
       'DO $$ BEGIN IF EXISTS',
@@ -1136,7 +1136,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
       '"target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")',
     );
     expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
-      'USING "target_clicks"::integer',
+      'USING "target_clicks"::bigint',
     );
   });
 
@@ -1331,8 +1331,8 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
     expect(typeUpgrades[0].name).toBe('tax_rate');
-    // DuckDB maps the abstract REAL straight through; the framework's lack of
-    // an exact-decimal type is tracked separately as #2373.
+    // DuckDB maps the abstract REAL straight through; exact-decimal semantics
+    // remain intentionally outside the INTEGER/BIGINT contract.
     expect(typeUpgrades[0].sql).toBe(
       'ALTER TABLE "invoice_line_items" ALTER COLUMN "tax_rate" TYPE REAL',
     );
@@ -1656,10 +1656,10 @@ describe('getSQLFromDiff', () => {
           table: 'ad_campaigns',
           name: 'target_clicks',
           mismatch: { expected: 'INTEGER', actual: 'REAL' },
-          sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE BIGINT USING "target_clicks"::bigint',
           sqlStatements: [
             'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
-            'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+            'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE BIGINT USING "target_clicks"::bigint',
           ],
         },
       ],

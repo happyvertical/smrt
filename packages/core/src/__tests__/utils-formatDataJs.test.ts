@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { formatDataJs } from '../utils.js';
+import { formatDataJs, toSafeInteger } from '../utils.js';
 
 describe('formatDataJs', () => {
   describe('INTEGER type coercion', () => {
@@ -61,6 +61,47 @@ describe('formatDataJs', () => {
       const result = formatDataJs(data, fields);
 
       expect(result.version).toBe('abc');
+    });
+
+    it('normalizes safe string and bigint integers from database adapters', () => {
+      const fields = {
+        postgresValue: { type: 'INTEGER' },
+        duckdbValue: { type: 'INTEGER' },
+      };
+
+      const result = formatDataJs(
+        {
+          // node-postgres returns int8 values as strings.
+          postgres_value: '9007199254740991',
+          // DuckDB may return its BIGINT values as bigint.
+          duckdb_value: BigInt(Number.MAX_SAFE_INTEGER),
+        },
+        fields,
+      );
+
+      expect(result.postgresValue).toBe(Number.MAX_SAFE_INTEGER);
+      expect(result.duckdbValue).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('rejects INTEGER values outside JavaScript safe-integer range', () => {
+      const fields = { value: { type: 'INTEGER' } };
+
+      for (const value of [
+        '9007199254740992',
+        BigInt(Number.MAX_SAFE_INTEGER) + BigInt(1),
+        Number.MAX_SAFE_INTEGER + 1,
+      ]) {
+        expect(() => formatDataJs({ value }, fields)).toThrow(
+          /JavaScript safe integer/,
+        );
+      }
+    });
+  });
+
+  describe('toSafeInteger', () => {
+    it('rejects non-integers and non-numeric database values', () => {
+      expect(() => toSafeInteger('2.5')).toThrow(/safe integer/);
+      expect(() => toSafeInteger('not-a-number')).toThrow(/safe integer/);
     });
   });
 

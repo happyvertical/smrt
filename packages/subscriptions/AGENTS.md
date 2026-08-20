@@ -23,7 +23,7 @@ that reverted to DECIMAL passes every SQLite suite.
   `SubscriptionPlan.priceAmount`, `ClientCharge.amount`,
   `BillingAdjustment.amount` and `SpendingPolicy.limitAmount` all initialize
   `= 0`, never `= 0.0`: the integer literal is what maps them to INTEGER
-  columns (#2401). `ClientCharge.quantity` and `TenantUsageMetric.quantity` are
+  columns (BIGINT on fresh PostgreSQL/DuckDB databases; #2401, #2373). `ClientCharge.quantity` and `TenantUsageMetric.quantity` are
   the opposite case — metered quantities are genuinely fractional and stay
   DECIMAL.
 - **`PricingRule.terms` are minor units *per unit of usage*, and stay
@@ -39,13 +39,14 @@ that reverted to DECIMAL passes every SQLite suite.
   minor-unit exponent, so zero-decimal currencies (JPY, KRW) are not divided.
 - **Migrating an existing database**: `preflightSubscriptionsMoneyMinorUnits(db)`
   reports which columns still hold major units and which rows would be rounded
-  or overflow `int4`; `migrateSubscriptionsMoneyToMinorUnits(db)` converts them
+  or exceed JavaScript's safe-integer range; `migrateSubscriptionsMoneyToMinorUnits(db)` converts them
   (idempotent via `_smrt_backfills`). On SQLite the values are rescaled but the
   declared type needs the table-rebuild path (#2370). Existing
   `PricingRule.terms` are **not** migrated automatically — only the operator
   knows which keys in a given rule are prices rather than quantities or ratios.
-- **`int4` ceiling**: about 2.1e9 minor units (~$21.4M) per column. Widening to
-  BIGINT is parked in #2373.
+- **Range and existing deployments**: fresh PostgreSQL/DuckDB INTEGER columns
+  are BIGINT, and hydration rejects values outside JavaScript's safe-integer
+  range. Existing PostgreSQL `int4` columns require the explicit widening in #2424.
 
 ## Notes
 
