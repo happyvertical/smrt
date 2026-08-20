@@ -91,11 +91,13 @@ postgresDescribe('PostgreSQL isolated system-table bootstrap (#2429)', () => {
       await expect(
         result.db.query('SELECT 1 AS transaction_ok'),
       ).resolves.toBeDefined();
-
-      await result.db.rollback();
-      await result.baseDb.query(`DROP TABLE IF EXISTS "${tableName}"`);
     } finally {
-      await result.cleanup();
+      try {
+        if (result.db.isActive()) await result.db.rollback();
+        await result.baseDb.query(`DROP TABLE IF EXISTS "${tableName}"`);
+      } finally {
+        await result.cleanup();
+      }
     }
   });
 
