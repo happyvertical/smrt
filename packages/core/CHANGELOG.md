@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.42.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - provision change feed before isolated transactions (#2428) (vitest)
+  - @happyvertical/smrt-config@0.42.1
+  - @happyvertical/smrt-types@0.42.1
+  - @happyvertical/smrt-scanner@0.42.1
+
 ## 1.0.0
 
 ### Minor Changes

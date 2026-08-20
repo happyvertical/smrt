@@ -25,16 +25,16 @@
     "svelte-check": "^4.7.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.4",
-    "@happyvertical/smrt-cli": "^0.42.0"
+    "@happyvertical/smrt-cli": "^0.42.1"
   },
   "dependencies": {
-    "@happyvertical/smrt-config": "^0.42.0",
-    "@happyvertical/smrt-core": "^0.42.0",
-    "@happyvertical/smrt-profiles": "^0.42.0",
-    "@happyvertical/smrt-svelte": "^0.42.0",
-    "@happyvertical/smrt-tenancy": "^0.42.0",
-    "@happyvertical/smrt-ui": "^0.42.0",
-    "@happyvertical/smrt-users": "^0.42.0",
+    "@happyvertical/smrt-config": "^0.42.1",
+    "@happyvertical/smrt-core": "^0.42.1",
+    "@happyvertical/smrt-profiles": "^0.42.1",
+    "@happyvertical/smrt-svelte": "^0.42.1",
+    "@happyvertical/smrt-tenancy": "^0.42.1",
+    "@happyvertical/smrt-ui": "^0.42.1",
+    "@happyvertical/smrt-users": "^0.42.1",
     "@modelcontextprotocol/server": "^2.0.0"
   }
 }
