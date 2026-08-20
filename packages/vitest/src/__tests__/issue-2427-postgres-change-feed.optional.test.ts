@@ -66,9 +66,9 @@ postgresDescribe('PostgreSQL isolated change-feed bootstrap (#2427)', () => {
         ? feedResult
         : ((feedResult as { rows?: Array<Record<string, unknown>> }).rows ??
           []);
-      expect(feedRows).toEqual([
-        expect.objectContaining({ seq: '1', table_name: tableName }),
-      ]);
+      expect(feedRows).toHaveLength(1);
+      expect(Number(feedRows[0]?.seq)).toBe(1);
+      expect(feedRows[0]?.table_name).toBe(tableName);
 
       // A missing helper raises 42883 and aborts the surrounding transaction.
       // This probe proves the write succeeded without leaving it in 25P02.
