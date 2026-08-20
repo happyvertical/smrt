@@ -2,6 +2,7 @@ import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import {
   buildIntegerWidthStatements,
+  buildIntegerWidthTableStatements,
   collectIntegerWidthTargets,
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
@@ -14,7 +15,8 @@ function driverDb(input: {
   applied?: boolean;
 }) {
   const queries: string[] = [];
-  const db = {
+  let db: DatabaseInterface;
+  db = {
     url:
       input.engine === 'postgres'
         ? 'postgres://localhost/test'
@@ -40,6 +42,9 @@ function driverDb(input: {
       }
       return { rows: [] };
     },
+    transaction: async <T>(
+      callback: (transactionDb: DatabaseInterface) => Promise<T>,
+    ) => callback(db),
   } as unknown as DatabaseInterface;
   return { db, queries };
 }
@@ -129,6 +134,17 @@ describe('integer-width widening (#2424)', () => {
     );
   });
 
+  it('groups PostgreSQL columns into one table rewrite', () => {
+    expect(
+      buildIntegerWidthTableStatements('postgres', 'invoices', [
+        'amount',
+        'attempts',
+      ]),
+    ).toEqual([
+      'ALTER TABLE "invoices" ALTER COLUMN "amount" TYPE BIGINT, ALTER COLUMN "attempts" TYPE BIGINT',
+    ]);
+  });
+
   it('executes the full widening and marker path on real DuckDB', async () => {
     const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
     try {
@@ -179,16 +195,17 @@ describe('integer-width widening (#2424)', () => {
     expect(queries).toContain(
       'ALTER TABLE "invoices" ALTER COLUMN "amount" TYPE BIGINT',
     );
+    expect(queries).toContain(`SET LOCAL lock_timeout = '30000ms'`);
+    expect(queries).toContain(`SET LOCAL statement_timeout = '60000ms'`);
     expect(
       queries.some((sql) => sql.includes('INSERT INTO _smrt_backfills')),
     ).toBe(true);
   });
 
-  it('does not repeat a widening when its BackfillTracker marker exists', async () => {
+  it('does not repeat a widening when all columns are already BIGINT', async () => {
     const { db, queries } = driverDb({
       engine: 'postgres',
-      types: { invoices: { amount: 'int4' } },
-      counts: { invoices: 2 },
+      types: { invoices: { amount: 'bigint' } },
       applied: true,
     });
 
@@ -201,6 +218,29 @@ describe('integer-width widening (#2424)', () => {
     expect(result.ran).toBe(false);
     expect(result.widenedColumns).toEqual([]);
     expect(queries.some((sql) => sql.startsWith('ALTER TABLE'))).toBe(false);
+  });
+
+  it('does not let an earlier marker skip newly discovered pending targets', async () => {
+    const { db, queries } = driverDb({
+      engine: 'postgres',
+      types: { invoices: { amount: 'int4' } },
+      counts: { invoices: 2 },
+      applied: true,
+    });
+
+    await expect(
+      widenIntegerColumnsToBigInt(
+        db,
+        [{ table: 'invoices', columns: ['amount'] }],
+        { engineHint: 'postgres', backfillName: 'test:integer-width:v1' },
+      ),
+    ).resolves.toMatchObject({
+      ran: true,
+      widenedColumns: [{ table: 'invoices', column: 'amount' }],
+    });
+    expect(queries).toContain(
+      'ALTER TABLE "invoices" ALTER COLUMN "amount" TYPE BIGINT',
+    );
   });
 
   it('refuses to record a marker when ordinary type drift needs repair first', async () => {

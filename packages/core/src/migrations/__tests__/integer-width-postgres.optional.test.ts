@@ -44,10 +44,14 @@ postgresDescribe('int4 → bigint widening on real PostgreSQL (#2424)', () => {
   });
 
   it('preflights and widens once, then persists its idempotency marker', async () => {
-    await db.query(`CREATE TABLE "${table}" (amount INTEGER)`);
-    await db.query(`INSERT INTO "${table}" (amount) VALUES (1), (2)`);
+    await db.query(
+      `CREATE TABLE "${table}" (amount INTEGER, attempts INTEGER)`,
+    );
+    await db.query(
+      `INSERT INTO "${table}" (amount, attempts) VALUES (1, 0), (2, 1)`,
+    );
 
-    const targets = [{ table, columns: ['amount'] }];
+    const targets = [{ table, columns: ['amount', 'attempts'] }];
     const preflight = await preflightIntegerWidthWidening(db, targets, {
       engineHint: 'postgres',
     });
@@ -55,13 +59,18 @@ postgresDescribe('int4 → bigint widening on real PostgreSQL (#2424)', () => {
       expect.objectContaining({
         table,
         rowCount: 2,
-        columns: [
+        columns: expect.arrayContaining([
           expect.objectContaining({
             column: 'amount',
             declaredType: 'integer',
             state: 'pending',
           }),
-        ],
+          expect.objectContaining({
+            column: 'attempts',
+            declaredType: 'integer',
+            state: 'pending',
+          }),
+        ]),
       }),
     );
 
@@ -71,17 +80,32 @@ postgresDescribe('int4 → bigint widening on real PostgreSQL (#2424)', () => {
     });
     expect(first).toMatchObject({
       ran: true,
-      widenedColumns: [{ table, column: 'amount' }],
+      widenedColumns: [
+        { table, column: 'amount' },
+        { table, column: 'attempts' },
+      ],
     });
-    const column = await db.query(
-      `SELECT data_type
+    expect(first.statements).toEqual([
+      `ALTER TABLE "${table}" ALTER COLUMN "amount" TYPE BIGINT, ALTER COLUMN "attempts" TYPE BIGINT`,
+    ]);
+    const columns = await db.query(
+      `SELECT column_name, data_type
          FROM information_schema.columns
         WHERE table_schema = current_schema()
           AND table_name = ?
-          AND column_name = 'amount'`,
+          AND column_name IN ('amount', 'attempts')
+        ORDER BY column_name`,
       table,
     );
-    expect(String(column.rows[0]?.data_type).toLowerCase()).toBe('bigint');
+    expect(
+      columns.rows.map((column) => [
+        String(column.column_name),
+        String(column.data_type).toLowerCase(),
+      ]),
+    ).toEqual([
+      ['amount', 'bigint'],
+      ['attempts', 'bigint'],
+    ]);
     expect(await new BackfillTracker({ db }).isApplied(backfillName)).toBe(
       true,
     );

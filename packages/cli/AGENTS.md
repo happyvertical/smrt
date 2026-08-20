@@ -100,6 +100,8 @@ not from the schema definition.
   not type drift: the differ intentionally treats int4/int8 as equivalent.
   Run `smrt db:migrate-int8 --dry-run`, schedule the reported table rewrites,
   then run `smrt db:migrate-int8`; SQLite is already 64-bit and is a no-op.
+  PostgreSQL uses the same bounded `migrations.postgres.lockTimeout` and
+  `statementTimeout` settings as ordinary schema migration.
 
 ## `db:migrate` on SQLite: type changes rebuild the table
 

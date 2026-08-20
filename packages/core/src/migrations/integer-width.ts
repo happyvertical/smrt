@@ -8,11 +8,15 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { parsePostgresTimeoutMs } from '../postgres-timeouts.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { getSystemTableShapes } from '../schema/system-table-shapes.js';
 import type { SchemaDefinition } from '../schema/types.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 import { BackfillTracker } from './backfill-tracker.js';
+
+const DEFAULT_POSTGRES_LOCK_TIMEOUT_MS = 30_000;
+const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 60_000;
 
 /** A table and its SMRT-owned integer columns. */
 export interface IntegerWidthTarget {
@@ -68,15 +72,19 @@ export interface IntegerWidthOptions {
 
 /** Options that make the widening pass safely repeatable. */
 export interface IntegerWidthWidenOptions extends IntegerWidthOptions {
-  /** Stable `_smrt_backfills` marker, unique to this migration owner. */
+  /** Stable `_smrt_backfills` audit marker, unique to this migration owner. */
   backfillName: string;
   /** Package recorded alongside the marker. */
   packageName?: string;
+  /** PostgreSQL lock timeout in milliseconds (defaults to 30 seconds). */
+  lockTimeout?: number;
+  /** PostgreSQL statement timeout in milliseconds (defaults to 60 seconds). */
+  statementTimeout?: number;
 }
 
 /** Result of {@link widenIntegerColumnsToBigInt}. */
 export interface IntegerWidthWidenResult {
-  /** False when the marker was already recorded or the engine is unsupported. */
+  /** False when no legacy columns remain or the engine is unsupported. */
   ran: boolean;
   preflight: IntegerWidthPreflightResult;
   widenedColumns: Array<{ table: string; column: string }>;
@@ -123,12 +131,36 @@ export function buildIntegerWidthStatements(
   table: string,
   column: string,
 ): string[] {
+  return buildIntegerWidthTableStatements(engine, table, [column]);
+}
+
+/**
+ * Build lossless widening statements for every pending column in one table.
+ *
+ * PostgreSQL performs a table rewrite for an integer-width change, so all of
+ * one table's pending columns must share one ALTER TABLE and one lock window.
+ * DuckDB keeps its one-column form because its ALTER COLUMN grammar is not
+ * equivalently composable across supported adapter versions.
+ */
+export function buildIntegerWidthTableStatements(
+  engine: string,
+  table: string,
+  columns: string[],
+): string[] {
   const quotedTable = quoteIdentifier(table);
-  const quotedColumn = quoteIdentifier(column);
+  const quotedColumns = columns.map(quoteIdentifier);
+  if (quotedColumns.length === 0) return [];
   if (engine !== 'postgres' && engine !== 'duckdb') return [];
-  return [
-    `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedColumn} TYPE BIGINT`,
-  ];
+  if (engine === 'postgres') {
+    return [
+      `ALTER TABLE ${quotedTable} ${quotedColumns
+        .map((column) => `ALTER COLUMN ${column} TYPE BIGINT`)
+        .join(', ')}`,
+    ];
+  }
+  return quotedColumns.map(
+    (column) => `ALTER TABLE ${quotedTable} ALTER COLUMN ${column} TYPE BIGINT`,
+  );
 }
 
 /**
@@ -226,33 +258,80 @@ export async function widenIntegerColumnsToBigInt(
     );
   }
 
-  const tracker = new BackfillTracker({ db });
-  if (await tracker.isApplied(options.backfillName)) {
+  // Current declared widths are the idempotency guard. A fixed marker cannot
+  // safely be the guard because a later successful discovery may reveal a
+  // package/table absent from the earlier target set.
+  if (preflight.pendingColumns === 0) {
     return { ran: false, preflight, widenedColumns: [], statements: [] };
   }
 
   const statements: string[] = [];
   const widenedColumns: Array<{ table: string; column: string }> = [];
-  for (const table of preflight.tables) {
-    for (const column of table.columns) {
-      if (column.state !== 'pending') continue;
-      for (const sql of buildIntegerWidthStatements(
+  const tracker = new BackfillTracker({ db });
+  await tracker.initialize();
+
+  const applyWidening = async (writeDb: DatabaseInterface) => {
+    for (const table of preflight.tables) {
+      const pendingColumns = table.columns
+        .filter((column) => column.state === 'pending')
+        .map((column) => column.column);
+      if (pendingColumns.length === 0) continue;
+      for (const sql of buildIntegerWidthTableStatements(
         preflight.engine,
         table.table,
-        column.column,
+        pendingColumns,
       )) {
-        await db.query(sql);
+        await writeDb.query(sql);
         statements.push(sql);
       }
-      widenedColumns.push({ table: table.table, column: column.column });
+      widenedColumns.push(
+        ...pendingColumns.map((column) => ({ table: table.table, column })),
+      );
     }
-  }
 
-  await tracker.recordApplied(options.backfillName, {
-    description:
-      'Widened legacy int4 SMRT columns to BIGINT after #2373 changed fresh-schema defaults.',
-    packageName: options.packageName,
-  });
+    await new BackfillTracker({ db: writeDb }).recordApplied(
+      options.backfillName,
+      {
+        description:
+          'Widened legacy int4 SMRT columns to BIGINT after #2373 changed fresh-schema defaults.',
+        packageName: options.packageName,
+      },
+    );
+  };
+
+  if (preflight.engine === 'postgres') {
+    if (!db.transaction) {
+      throw new Error(
+        'Integer-width widening on PostgreSQL requires transaction support.',
+      );
+    }
+    const lockTimeout = parsePostgresTimeoutMs(
+      options.lockTimeout,
+      DEFAULT_POSTGRES_LOCK_TIMEOUT_MS,
+    );
+    const statementTimeout = parsePostgresTimeoutMs(
+      options.statementTimeout,
+      DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS,
+    );
+    await db.transaction(async (tx) => {
+      const txDb = {
+        ...tx,
+        transaction: async <T>(
+          callback: (transactionDb: DatabaseInterface) => Promise<T>,
+        ) => callback(tx as DatabaseInterface),
+      } as DatabaseInterface;
+      BackfillTracker.inheritInitialization(txDb, db);
+      await txDb.query(
+        `SET LOCAL lock_timeout = '${formatPostgresTimeout(lockTimeout)}'`,
+      );
+      await txDb.query(
+        `SET LOCAL statement_timeout = '${formatPostgresTimeout(statementTimeout)}'`,
+      );
+      await applyWidening(txDb);
+    });
+  } else {
+    await applyWidening(db);
+  }
 
   return { ran: true, preflight, widenedColumns, statements };
 }
@@ -284,6 +363,10 @@ function quoteIdentifier(name: string): string {
     );
   }
   return `"${name}"`;
+}
+
+function formatPostgresTimeout(milliseconds: number): string {
+  return `${milliseconds}ms`;
 }
 
 function isLegacyInt4Type(type: string): boolean {

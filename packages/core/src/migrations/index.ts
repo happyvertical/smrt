@@ -50,6 +50,7 @@ export {
 // Explicit int4 → int8 deployment widening (#2424)
 export {
   buildIntegerWidthStatements,
+  buildIntegerWidthTableStatements,
   collectIntegerWidthTargets,
   type IntegerWidthColumnReport,
   type IntegerWidthColumnState,

@@ -9,8 +9,9 @@
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import {
-  buildIntegerWidthStatements,
+  buildIntegerWidthTableStatements,
   collectIntegerWidthTargets,
+  parsePostgresTimeoutMs,
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
 } from '@happyvertical/smrt-core/migrations';
@@ -28,6 +29,8 @@ interface DbMigrateInt8Options {
 }
 
 const BACKFILL_NAME = '@happyvertical/smrt-core:integer-width:v1';
+const DEFAULT_POSTGRES_LOCK_TIMEOUT_MS = 30_000;
+const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 60_000;
 
 export const dbMigrateInt8Command: CLICommand = {
   name: 'db:migrate-int8',
@@ -63,8 +66,8 @@ export const dbMigrateInt8Command: CLICommand = {
       }
 
       // This is the same registry source ordinary schema migration uses. Do
-      // not guess from names: an incomplete manifest would record the global
-      // marker while leaving an owned legacy table behind.
+      // not guess targets from names; a later complete discovery safely
+      // widens any live int4 columns still pending.
       await autoDiscoverAndLoad();
       const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
       if (Object.keys(schemas).length === 0) {
@@ -119,14 +122,12 @@ export const dbMigrateInt8Command: CLICommand = {
       }
 
       const statements = preflight.tables.flatMap((table) =>
-        table.columns.flatMap((column) =>
-          column.state === 'pending'
-            ? buildIntegerWidthStatements(
-                preflight.engine,
-                table.table,
-                column.column,
-              )
-            : [],
+        buildIntegerWidthTableStatements(
+          preflight.engine,
+          table.table,
+          table.columns
+            .filter((column) => column.state === 'pending')
+            .map((column) => column.column),
         ),
       );
       console.log(
@@ -139,15 +140,24 @@ export const dbMigrateInt8Command: CLICommand = {
         return;
       }
 
+      const postgresMigrationConfig = config.migrations?.postgres;
       const result = await widenIntegerColumnsToBigInt(db, targets, {
         engineHint: dbType,
         backfillName: BACKFILL_NAME,
         packageName: '@happyvertical/smrt-core',
+        lockTimeout: parsePostgresTimeoutMs(
+          postgresMigrationConfig?.lockTimeout,
+          DEFAULT_POSTGRES_LOCK_TIMEOUT_MS,
+        ),
+        statementTimeout: parsePostgresTimeoutMs(
+          postgresMigrationConfig?.statementTimeout,
+          DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS,
+        ),
       });
       console.log(
         result.ran
           ? `\n✓ Widened ${result.widenedColumns.length} column(s) to BIGINT.\n`
-          : '\nNo widening was applied; this migration marker is already recorded.\n',
+          : '\nNo widening was applied; no legacy int4 columns remain.\n',
       );
     } catch (error) {
       console.error(
