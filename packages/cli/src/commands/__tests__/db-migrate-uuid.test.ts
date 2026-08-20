@@ -2,6 +2,7 @@ import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dbMigrateInt8Command } from '../db-migrate-int8.js';
 import {
   buildDeclaredUuidColumnSet,
   dbMigrateUuidCommand,
@@ -180,6 +181,15 @@ describe('db:migrate-uuid command', () => {
         'id',
       ]);
     });
+  });
+});
+
+describe('db:migrate-int8 command', () => {
+  it('is registered with a dry-run maintenance-window option', () => {
+    expect(utilityCommands['db:migrate-int8']).toBe(dbMigrateInt8Command);
+    expect(dbMigrateInt8Command.name).toBe('db:migrate-int8');
+    expect(dbMigrateInt8Command.aliases).toContain('migrate-int8');
+    expect(dbMigrateInt8Command.options?.['dry-run']).toBeDefined();
   });
 });
 

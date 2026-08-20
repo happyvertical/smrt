@@ -17,7 +17,7 @@ export interface DispatchSubscriptionData {
   subscriber: string;
   handler: string;
   delivery: string;
-  enabled: number | string | bigint;
+  enabled: number | string | bigint | null;
   tenant_id: string | null;
   created_at: string;
   updated_at: string;
@@ -68,7 +68,7 @@ export class DispatchSubscription {
     this.handler = data.handler || 'handleDispatch';
     this.delivery = (data.delivery as 'compete' | 'fanout') || 'compete';
     this.enabled =
-      data.enabled !== undefined
+      data.enabled != null
         ? toSafeBooleanInteger(
             data.enabled,
             'Dispatch subscription enabled flag',

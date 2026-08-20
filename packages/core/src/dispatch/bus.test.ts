@@ -418,6 +418,22 @@ describe('DispatchSubscription Model', () => {
     expect(sub.matches('campaign.completed')).toBe(false);
   });
 
+  it('uses the system-table default for a nullable enabled flag', () => {
+    const sub = DispatchSubscription.fromRow({
+      id: 'subscription-null-enabled',
+      signal_type: 'campaign.*',
+      subscriber: 'fiscus',
+      handler: 'handleDispatch',
+      delivery: 'compete',
+      enabled: null,
+      tenant_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    expect(sub.enabled).toBe(true);
+  });
+
   it('should identify wildcards', () => {
     const exact = new DispatchSubscription({
       signal_type: 'test.event',

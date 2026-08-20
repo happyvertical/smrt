@@ -47,6 +47,22 @@ export {
   generateMigrationTimestamp,
   MigrationGenerator,
 } from './generator.js';
+// Explicit int4 → int8 deployment widening (#2424)
+export {
+  buildIntegerWidthStatements,
+  buildIntegerWidthTableStatements,
+  collectIntegerWidthTargets,
+  type IntegerWidthColumnReport,
+  type IntegerWidthColumnState,
+  type IntegerWidthOptions,
+  type IntegerWidthPreflightResult,
+  type IntegerWidthTableReport,
+  type IntegerWidthTarget,
+  type IntegerWidthWidenOptions,
+  type IntegerWidthWidenResult,
+  preflightIntegerWidthWidening,
+  widenIntegerColumnsToBigInt,
+} from './integer-width.js';
 // Money major-units → integer minor-units rescale (#2401)
 export {
   buildMinorUnitsStatements,
