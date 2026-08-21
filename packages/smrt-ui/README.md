@@ -376,6 +376,45 @@ adapter, and authentication, tenancy, confirmation-token verification, and
 durable actions remain server-side. URL state and saved views also remain
 application-owned persistence adapters.
 
+### DataTable and CollectionToolbar integration
+
+Registration is opt-in. Pass `dataSurface` with an explicit descriptor and a
+registry; existing `DataTable` and `CollectionToolbar` consumers do not
+register or change behavior. A DataTable descriptor must only name effective,
+visible columns. Tables exposing selection, expansion, or declared row/bulk
+actions also require an explicit stable `rowKey`—the index fallback is never
+addressable across pages or refreshes.
+
+```svelte
+<script lang="ts">
+  import { DataTable, createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
+
+  const registry = createDataSurfaceRegistry();
+  const dataSurface = {
+    registry,
+    descriptor: {
+      // descriptor omitted: give this mounted instance a stable identity,
+      // policy-visible columns, controls, query limits, and action descriptors
+    },
+  };
+</script>
+
+<DataTable {dataSurface} data={rows} {columns} rowKey="id" />
+```
+
+Declared controller controls include search, filters, multi-sort, page/page
+size, column layout, selection, expansion, reset, focus/reveal/highlight, and
+optional refresh/retry callbacks. The component maps controller controls to the
+same `DataTableController.dispatch()` path used by buttons and checkboxes. A
+controlled table supplies `applyControlledState(candidate, command)`; the
+registry acknowledges only after that callback settles the candidate state.
+
+`CollectionToolbar` accepts the same opt-in registration and an optional
+`controller`. Its `set-search` control shares that table controller; `set-view`
+remains toolbar-local. Descriptors may advertise row/bulk action contracts, but
+smrt-ui does not execute durable actions—the later authenticated action adapter
+owns preview, confirmation, authorization, and persistence.
+
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the

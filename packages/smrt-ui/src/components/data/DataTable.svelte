@@ -11,7 +11,7 @@
  * - Material 3 styling with theme token support
  */
 
-import { type Snippet, tick } from 'svelte';
+import { onMount, type Snippet, tick } from 'svelte';
 import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
@@ -29,6 +29,8 @@ import {
   type DataTableViewStateInput,
   dataTableRowIdKey,
 } from './DataTableController.js';
+import type { DataSurfaceJsonValue } from './data-surface.js';
+import { dataTableCommandFromDataSurfaceCommand } from './data-table-surface.js';
 import { resolveDataTableRows } from './DataTableIdentity.js';
 import {
   type DataTableResolvedColumn,
@@ -105,6 +107,7 @@ let {
   initialState,
   onStateChange,
   modes,
+  dataSurface,
 }: ExtendedProps<T> = $props();
 
 const dataTableId = $props.id();
@@ -154,6 +157,7 @@ let localControllerInitialized = false;
 let hasHorizontalOverflow = $state(false);
 let canScrollLeft = $state(false);
 let canScrollRight = $state(false);
+let surfaceHighlighted = $state(false);
 
 function activeController(): DataTableController {
   return controller ?? localController;
@@ -311,6 +315,134 @@ const sourceRows = $derived.by(() =>
 function dispatch(command: DataTableCommand) {
   activeController().dispatch(command);
 }
+
+function assertSurfaceDescriptorMatchesTable() {
+  if (!dataSurface) return;
+  const tableController = activeController();
+  const columnState = new Map(
+    tableController
+      .getState()
+      .columnVisibility.map((entry) => [entry.columnId, entry.visible]),
+  );
+  for (const descriptorColumn of dataSurface.descriptor.columns) {
+    const column = columns.find(
+      (candidate) => candidate.id === descriptorColumn.id,
+    );
+    if (
+      !column ||
+      column.hidden ||
+      visibleColumnIds?.has(column.id) === false ||
+      columnState.get(column.id) === false
+    ) {
+      throw new Error(
+        `DataSurface descriptor exposes a non-visible DataTable column: ${descriptorColumn.id}`,
+      );
+    }
+  }
+  const durableControls = new Set([
+    'set-selected-rows',
+    'toggle-row-selection',
+    'set-expanded-rows',
+    'toggle-row-expansion',
+  ]);
+  if (
+    !rowKey &&
+    (dataSurface.descriptor.actions.length > 0 ||
+      dataSurface.descriptor.controls.some((control) =>
+        durableControls.has(control.id),
+      ))
+  ) {
+    throw new Error(
+      'DataTable requires an explicit rowKey for mounted selection, expansion, or actions',
+    );
+  }
+  if (
+    typeof rowKey === 'string' &&
+    dataSurface.descriptor.rowKey !== String(rowKey)
+  ) {
+    throw new Error(
+      'DataSurface descriptor rowKey must match the DataTable rowKey',
+    );
+  }
+}
+
+onMount(() => {
+  if (!dataSurface) return;
+  assertSurfaceDescriptorMatchesTable();
+  const surfaceController = activeController();
+  let revision = 0;
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  const unsubscribe = surfaceController.subscribe((transition) => {
+    if (transition.changed) revision += 1;
+  });
+  const unregister = dataSurface.registry.register({
+    descriptor: dataSurface.descriptor,
+    getSnapshot: () => {
+      const snapshot = surfaceController.snapshot();
+      return {
+        revision,
+        state: { table: snapshot as unknown as DataSurfaceJsonValue },
+        selection:
+          snapshot.state.selectedRowIds.length > 0
+            ? {
+                scope: 'explicit-ids' as const,
+                rowIds: snapshot.state.selectedRowIds,
+              }
+            : null,
+      };
+    },
+    execute: async (command) => {
+      const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
+      if (tableCommand) {
+        const transition = surfaceController.dispatch(tableCommand);
+        if (surfaceController.isControlled() && transition.changed) {
+          const settled = await dataSurface.applyControlledState?.(
+            transition.next.state,
+            tableCommand,
+          );
+          if (settled) surfaceController.replaceState(settled);
+          if (
+            JSON.stringify(surfaceController.getState()) !==
+            JSON.stringify(transition.next.state)
+          ) {
+            return { ok: false };
+          }
+        }
+        return;
+      }
+      switch (command.controlId) {
+        case 'focus':
+          tableContainer?.focus();
+          return;
+        case 'reveal':
+          tableContainer?.scrollIntoView({ block: 'nearest' });
+          return;
+        case 'highlight':
+          surfaceHighlighted = true;
+          if (highlightTimer) clearTimeout(highlightTimer);
+          highlightTimer = setTimeout(() => {
+            surfaceHighlighted = false;
+          }, 1_000);
+          return;
+        case 'refresh':
+          if (!dataSurface.onRefresh) return { ok: false };
+          await dataSurface.onRefresh();
+          return;
+        case 'retry':
+          if (!dataSurface.onRetry) return { ok: false };
+          await dataSurface.onRetry();
+          return;
+        default:
+          return { ok: false };
+      }
+    },
+  });
+  return () => {
+    if (highlightTimer) clearTimeout(highlightTimer);
+    unsubscribe();
+    unregister();
+  };
+});
 
 function handleSort(column: DataTableColumn<T>, event: MouseEvent) {
   if (!sortable || !column.sortable) return;
@@ -1061,6 +1193,7 @@ $effect(() => {
   class:data-table-container--sticky={stickyHeader || virtualizedBody}
   class:data-table-container--overflowing={hasHorizontalOverflow}
   class:data-table-container--virtualized={virtualizationWindow.enabled}
+  class:data-table-container--highlighted={surfaceHighlighted}
   style:height={virtualContainerHeight === undefined ? undefined : `${virtualContainerHeight}px`}
   tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : undefined}
   role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
@@ -1532,6 +1665,11 @@ $effect(() => {
   .data-table-container--overflowing:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #3b82f6);
     outline-offset: 2px;
+  }
+
+  .data-table-container--highlighted {
+    outline: 2px solid var(--smrt-color-primary, #2563eb);
+    outline-offset: 3px;
   }
 
   .data-table__overflow-cue {
