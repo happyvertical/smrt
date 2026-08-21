@@ -380,10 +380,12 @@ application-owned persistence adapters.
 
 Registration is opt-in. Pass `dataSurface` with an explicit descriptor and a
 registry; existing `DataTable` and `CollectionToolbar` consumers do not
-register or change behavior. A DataTable descriptor must only name effective,
-visible columns. Tables exposing selection, expansion, or declared row/bulk
-actions also require an explicit stable `rowKey`—the index fallback is never
-addressable across pages or refreshes.
+register or change behavior. Registration follows reactive `dataSurface` and
+controller prop replacement, so registry commands never retain a prior mounted
+instance. A DataTable descriptor must only name effective, visible columns,
+except for its stable `rowKey`, which may remain non-rendered. Mounted tables
+always require that `rowKey` to be an explicit string field; the index fallback
+and functional key callbacks are never addressable across pages or refreshes.
 
 ```svelte
 <script lang="ts">

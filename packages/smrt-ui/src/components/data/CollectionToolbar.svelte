@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onMount, type Snippet } from 'svelte';
+import type { Snippet } from 'svelte';
 import Input from '../forms/Input.svelte';
 import SegmentedControl from '../forms/SegmentedControl.svelte';
 import type {
@@ -50,7 +50,7 @@ let {
 let controllerState = $state<DataTableViewState | undefined>(undefined);
 let toolbarElement = $state<HTMLDivElement>();
 let surfaceHighlighted = $state(false);
-let surfaceRevision = 0;
+let registeredSurfaceRevision: { value: number } | undefined;
 
 $effect(() => {
   if (!controller) {
@@ -61,7 +61,7 @@ $effect(() => {
   return controller.subscribe((transition) => {
     if (!transition.changed) return;
     controllerState = transition.next.state;
-    surfaceRevision += 1;
+    if (registeredSurfaceRevision) registeredSurfaceRevision.value += 1;
   });
 });
 
@@ -76,7 +76,7 @@ function changeView(next: string | number) {
   const candidate = String(next);
   if (!views.includes(candidate as typeof view)) return;
   view = candidate as typeof view;
-  surfaceRevision += 1;
+  if (registeredSurfaceRevision) registeredSurfaceRevision.value += 1;
   onviewchange?.(view);
 }
 
@@ -87,7 +87,7 @@ function changeSearch(next: string) {
   } else {
     if (search === next) return;
     search = next;
-    surfaceRevision += 1;
+    if (registeredSurfaceRevision) registeredSurfaceRevision.value += 1;
   }
   onsearchchange?.(next);
 }
@@ -100,15 +100,18 @@ function payloadObject(
     : undefined;
 }
 
-onMount(() => {
-  if (!dataSurface) return;
+$effect(() => {
   const surface = dataSurface;
+  const surfaceController = controller;
+  if (!surface) return;
+  const revision = { value: 0 };
+  registeredSurfaceRevision = revision;
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
   const unregister = surface.registry.register({
     descriptor: surface.descriptor,
     getSnapshot: () => ({
-      revision: surfaceRevision,
-      state: { search: controllerState?.search ?? search, view },
+      revision: revision.value,
+      state: { search: surfaceController?.getState().search ?? search, view },
       selection: null,
     }),
     execute: async (command) => {
@@ -117,19 +120,19 @@ onMount(() => {
         command.controlId === 'set-search' &&
         typeof payload?.search === 'string'
       ) {
-        if (controller) {
-          const transition = controller.dispatch({
+        if (surfaceController) {
+          const transition = surfaceController.dispatch({
             type: 'setSearch',
             search: payload.search,
           });
-          if (controller.isControlled() && transition.changed) {
+          if (surfaceController.isControlled() && transition.changed) {
             const settled = await surface.applyControlledState?.(
               transition.next.state,
               { type: 'setSearch', search: payload.search },
             );
-            if (settled) controller.replaceState(settled);
+            if (settled) surfaceController.replaceState(settled);
             if (
-              JSON.stringify(controller.getState()) !==
+              JSON.stringify(surfaceController.getState()) !==
               JSON.stringify(transition.next.state)
             ) {
               return { ok: false };
@@ -180,6 +183,9 @@ onMount(() => {
   });
   return () => {
     if (highlightTimer) clearTimeout(highlightTimer);
+    if (registeredSurfaceRevision === revision) {
+      registeredSurfaceRevision = undefined;
+    }
     unregister();
   };
 });

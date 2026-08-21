@@ -11,7 +11,7 @@
  * - Material 3 styling with theme token support
  */
 
-import { onMount, type Snippet, tick } from 'svelte';
+import { type Snippet, tick } from 'svelte';
 import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
@@ -43,6 +43,7 @@ import {
 } from './DataTableVirtualization.js';
 import type {
   DataTableColumn,
+  DataTableDataSurfaceOptions,
   DataTableProps,
   DataTableStructuralRow,
   SortState,
@@ -316,15 +317,22 @@ function dispatch(command: DataTableCommand) {
   activeController().dispatch(command);
 }
 
-function assertSurfaceDescriptorMatchesTable() {
-  if (!dataSurface) return;
+function assertSurfaceDescriptorMatchesTable(
+  surface: DataTableDataSurfaceOptions,
+) {
+  if (typeof rowKey !== 'string') {
+    throw new Error(
+      'DataTable requires a string rowKey for mounted data surfaces',
+    );
+  }
   const tableController = activeController();
   const columnState = new Map(
     tableController
       .getState()
       .columnVisibility.map((entry) => [entry.columnId, entry.visible]),
   );
-  for (const descriptorColumn of dataSurface.descriptor.columns) {
+  for (const descriptorColumn of surface.descriptor.columns) {
+    if (descriptorColumn.id === surface.descriptor.rowKey) continue;
     const column = columns.find(
       (candidate) => candidate.id === descriptorColumn.id,
     );
@@ -339,44 +347,25 @@ function assertSurfaceDescriptorMatchesTable() {
       );
     }
   }
-  const durableControls = new Set([
-    'set-selected-rows',
-    'toggle-row-selection',
-    'set-expanded-rows',
-    'toggle-row-expansion',
-  ]);
-  if (
-    !rowKey &&
-    (dataSurface.descriptor.actions.length > 0 ||
-      dataSurface.descriptor.controls.some((control) =>
-        durableControls.has(control.id),
-      ))
-  ) {
-    throw new Error(
-      'DataTable requires an explicit rowKey for mounted selection, expansion, or actions',
-    );
-  }
-  if (
-    typeof rowKey === 'string' &&
-    dataSurface.descriptor.rowKey !== String(rowKey)
-  ) {
+  if (surface.descriptor.rowKey !== rowKey) {
     throw new Error(
       'DataSurface descriptor rowKey must match the DataTable rowKey',
     );
   }
 }
 
-onMount(() => {
-  if (!dataSurface) return;
-  assertSurfaceDescriptorMatchesTable();
+$effect(() => {
+  const surface = dataSurface;
+  if (!surface) return;
+  assertSurfaceDescriptorMatchesTable(surface);
   const surfaceController = activeController();
   let revision = 0;
   let highlightTimer: ReturnType<typeof setTimeout> | undefined;
   const unsubscribe = surfaceController.subscribe((transition) => {
     if (transition.changed) revision += 1;
   });
-  const unregister = dataSurface.registry.register({
-    descriptor: dataSurface.descriptor,
+  const unregister = surface.registry.register({
+    descriptor: surface.descriptor,
     getSnapshot: () => {
       const snapshot = surfaceController.snapshot();
       return {
@@ -396,7 +385,7 @@ onMount(() => {
       if (tableCommand) {
         const transition = surfaceController.dispatch(tableCommand);
         if (surfaceController.isControlled() && transition.changed) {
-          const settled = await dataSurface.applyControlledState?.(
+          const settled = await surface.applyControlledState?.(
             transition.next.state,
             tableCommand,
           );
@@ -425,12 +414,12 @@ onMount(() => {
           }, 1_000);
           return;
         case 'refresh':
-          if (!dataSurface.onRefresh) return { ok: false };
-          await dataSurface.onRefresh();
+          if (!surface.onRefresh) return { ok: false };
+          await surface.onRefresh();
           return;
         case 'retry':
-          if (!dataSurface.onRetry) return { ok: false };
-          await dataSurface.onRetry();
+          if (!surface.onRetry) return { ok: false };
+          await surface.onRetry();
           return;
         default:
           return { ok: false };

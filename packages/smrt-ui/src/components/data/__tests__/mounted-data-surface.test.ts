@@ -138,6 +138,105 @@ describe('mounted data surfaces', () => {
     });
   });
 
+  it('reactively registers delayed and replacement DataTable surface props', async () => {
+    const registry = createDataSurfaceRegistry();
+    const firstIdentity: DataSurfaceIdentity = {
+      surfaceId: 'first-people-table',
+      kind: 'table',
+    };
+    const nextIdentity: DataSurfaceIdentity = {
+      surfaceId: 'next-people-table',
+      kind: 'table',
+    };
+    const firstController = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    const nextController = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    const { rerender } = render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        controller: firstController,
+      },
+    });
+
+    expect(registry.inspect(firstIdentity)).toBeUndefined();
+    await rerender({
+      data: rows,
+      columns,
+      rowKey: 'name',
+      controller: firstController,
+      dataSurface: {
+        registry,
+        descriptor: descriptor(firstIdentity, ['set-search']),
+      },
+    });
+    await vi.waitFor(() =>
+      expect(registry.inspect(firstIdentity)).toBeDefined(),
+    );
+
+    await rerender({
+      data: rows,
+      columns,
+      rowKey: 'name',
+      controller: nextController,
+      dataSurface: {
+        registry,
+        descriptor: descriptor(nextIdentity, ['set-search']),
+      },
+    });
+    await vi.waitFor(() => {
+      expect(registry.inspect(firstIdentity)).toBeUndefined();
+      expect(registry.inspect(nextIdentity)).toBeDefined();
+    });
+
+    await registry.execute({
+      version: 1,
+      commandId: 'next-search',
+      identity: nextIdentity,
+      expectedRevision: 0,
+      controlId: 'set-search',
+      payload: { search: 'Grace' },
+    });
+    expect(firstController.getState().search).toBe('');
+    expect(nextController.getState().search).toBe('Grace');
+  });
+
+  it('allows a stable row key that is not a rendered column', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'hidden-id-table',
+      kind: 'table',
+    };
+    render(DataTable, {
+      props: {
+        data: [{ id: 'ada', name: 'Ada' }],
+        columns: [{ id: 'name', label: 'Name', accessor: 'name' }],
+        rowKey: 'id',
+        dataSurface: {
+          registry,
+          descriptor: {
+            ...descriptor(identity, []),
+            rowKey: 'id',
+            columns: [
+              { id: 'id', label: 'ID', capabilities: ['read'] },
+              { id: 'name', label: 'Name', capabilities: ['read'] },
+            ],
+            query: {
+              modes: ['rows'],
+              projectableColumnIds: ['id', 'name'],
+            },
+          },
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+  });
+
   it('registers a CollectionToolbar without a hidden automation path and shares its controller search', async () => {
     const registry = createDataSurfaceRegistry();
     const identity: DataSurfaceIdentity = {
@@ -179,5 +278,57 @@ describe('mounted data surfaces', () => {
       ok: true,
       snapshot: { state: { search: 'Ada', view: 'grid' } },
     });
+  });
+
+  it('reactively registers delayed and replacement CollectionToolbar surface props', async () => {
+    const registry = createDataSurfaceRegistry();
+    const firstIdentity: DataSurfaceIdentity = {
+      surfaceId: 'first-people-toolbar',
+      kind: 'custom',
+    };
+    const nextIdentity: DataSurfaceIdentity = {
+      surfaceId: 'next-people-toolbar',
+      kind: 'custom',
+    };
+    const firstController = createDataTableController();
+    const nextController = createDataTableController();
+    const { rerender } = render(CollectionToolbar, {
+      props: { controller: firstController },
+    });
+
+    expect(registry.inspect(firstIdentity)).toBeUndefined();
+    await rerender({
+      controller: firstController,
+      dataSurface: {
+        registry,
+        descriptor: descriptor(firstIdentity, ['set-search']),
+      },
+    });
+    await vi.waitFor(() =>
+      expect(registry.inspect(firstIdentity)).toBeDefined(),
+    );
+
+    await rerender({
+      controller: nextController,
+      dataSurface: {
+        registry,
+        descriptor: descriptor(nextIdentity, ['set-search']),
+      },
+    });
+    await vi.waitFor(() => {
+      expect(registry.inspect(firstIdentity)).toBeUndefined();
+      expect(registry.inspect(nextIdentity)).toBeDefined();
+    });
+
+    await registry.execute({
+      version: 1,
+      commandId: 'next-toolbar-search',
+      identity: nextIdentity,
+      expectedRevision: 0,
+      controlId: 'set-search',
+      payload: { search: 'Grace' },
+    });
+    expect(firstController.getState().search).toBe('');
+    expect(nextController.getState().search).toBe('Grace');
   });
 });
