@@ -452,6 +452,17 @@ function boundarySafe(value: unknown, label: string): DataSurfaceJsonValue {
   return clone;
 }
 
+function boundarySafeObject(
+  value: unknown,
+  label: string,
+): DataSurfaceJsonObject {
+  const clone = boundarySafe(value, label);
+  if (Array.isArray(clone) || clone === null || typeof clone !== 'object') {
+    throw new TypeError(`${label} must be a JSON object`);
+  }
+  return clone;
+}
+
 function normalizeIdentity(value: unknown): DataSurfaceIdentity {
   const object = plainObject(value, 'DataSurface identity');
   exactKeys(object, ['surfaceId', 'kind', 'subject'], 'DataSurface identity');
@@ -821,7 +832,7 @@ export function normalizeDataSurfaceSnapshot(
       object.descriptor as DataSurfaceDescriptor,
     ),
     revision: revisionNumber(object.revision),
-    state: jsonObject(object.state, 'DataSurface snapshot state'),
+    state: boundarySafeObject(object.state, 'DataSurface snapshot state'),
     selection:
       object.selection === null || object.selection === undefined
         ? null

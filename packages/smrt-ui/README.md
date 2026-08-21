@@ -300,8 +300,9 @@ registry.register({
 `inspect()` and command results are deterministic `{ version, descriptor,
 revision, state, selection }` envelopes; neither includes a timestamp, rows,
 functions, authority fields, tenant/principal data, SQL, or a transport handle.
-An optional registration `redact()` hook can remove sensitive view state before
-it leaves the mounted host, but cannot alter the identity or revision.
+The registry rejects those boundary keys from both default and redacted snapshot
+state. An optional registration `redact()` hook can remove sensitive view state
+before it leaves the mounted host, but cannot alter the identity or revision.
 
 The registry validates bounded projection/count/facet query envelopes (including
 the UTF-8 byte length of their normalized JSON form) and preview/apply action

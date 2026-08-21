@@ -140,6 +140,24 @@ describe('data surface registry', () => {
     expect(registry.inspect(identity)?.state).toEqual({ search: 'Ada' });
   });
 
+  it('rejects authority and SQL keys from default and redacted snapshots', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      registry.register({
+        descriptor: descriptor(),
+        getSnapshot: () => ({ revision: 0, state: { tenantId: 'other' } }),
+      }),
+    ).toThrow('authority or SQL');
+
+    expect(() =>
+      registry.register({
+        descriptor: descriptor(),
+        getSnapshot: () => ({ revision: 0, state: {} }),
+        redact: (snapshot) => ({ ...snapshot, state: { sql: 'select 1' } }),
+      }),
+    ).toThrow('authority or SQL');
+  });
+
   it('rejects unsupported and stale commands before invoking the surface', async () => {
     const { registry, execute } = registerFixture();
 
