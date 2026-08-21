@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceRegistry,
+  DATA_SURFACE_MAX_REQUEST_BYTES,
   type DataSurfaceDescriptor,
   type DataSurfaceIdentity,
   type DataSurfaceVisibleCommand,
+  normalizeDataSurfaceActionRequest,
   normalizeDataSurfaceQueryRequest,
   normalizeDataSurfaceVisibleCommand,
 } from '../data-surface.js';
@@ -405,5 +407,69 @@ describe('data surface registry', () => {
         command({ payload: { tenantId: 'other-tenant' } }),
       ),
     ).toThrow('authority or SQL');
+  });
+
+  it('rejects parsed prototype keys at every browser-contract boundary', () => {
+    const prototypePayload = JSON.parse('{"__proto__":{"tenantId":"other"}}');
+    expect(() =>
+      normalizeDataSurfaceVisibleCommand(
+        command({ payload: prototypePayload }),
+      ),
+    ).toThrow('prototype key');
+    expect(() =>
+      normalizeDataSurfaceActionRequest({
+        version: 1,
+        requestId: 'prototype-action',
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+        payload: prototypePayload,
+      }),
+    ).toThrow('prototype key');
+
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      registry.register({
+        descriptor: descriptor(),
+        getSnapshot: () => ({
+          revision: 0,
+          state: JSON.parse('{"__proto__":{"tenantId":"other"}}'),
+        }),
+      }),
+    ).toThrow('prototype key');
+  });
+
+  it('bounds command and action envelopes before dispatch', () => {
+    const oversized = 'x'.repeat(DATA_SURFACE_MAX_REQUEST_BYTES);
+    expect(() =>
+      normalizeDataSurfaceVisibleCommand(
+        command({ payload: { value: oversized } }),
+      ),
+    ).toThrow('UTF-8 bytes');
+    expect(() =>
+      normalizeDataSurfaceActionRequest({
+        version: 1,
+        requestId: 'oversized-action',
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+        payload: { value: oversized },
+      }),
+    ).toThrow('UTF-8 bytes');
+    expect(() =>
+      normalizeDataSurfaceActionRequest({
+        version: 1,
+        requestId: 'many-row-ids',
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: {
+          scope: 'explicit-ids',
+          rowIds: Array.from({ length: 1_001 }, () => 'duplicate'),
+        },
+      }),
+    ).toThrow('more than 1000 row ids');
   });
 });

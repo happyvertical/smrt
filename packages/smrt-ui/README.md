@@ -264,6 +264,11 @@ JSON-safe data, requires an `expectedRevision`, records monotonic event
 sequences, serializes commands per mounted identity, and returns a cached
 acknowledgement when the same `commandId` is replayed.
 
+Visible-command and preview/apply-action envelopes are capped at 100,000 UTF-8
+bytes (`DATA_SURFACE_MAX_REQUEST_BYTES`). JSON values reject prototype keys and
+have fixed nesting and container-size bounds, so every browser-facing request
+remains safe to normalize before host policy evaluates it.
+
 ```ts
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 

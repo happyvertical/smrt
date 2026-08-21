@@ -80,7 +80,7 @@ export interface DataSurfaceActionDescriptor {
   requiresConfirmation?: boolean;
 }
 
-/** All limits are declared so adapters cannot make an unbounded request. */
+/** Per-surface limits; generic envelopes use DATA_SURFACE_MAX_REQUEST_BYTES. */
 export interface DataSurfaceLimits {
   maxQueryRows: number;
   maxQueryBytes: number;
@@ -273,9 +273,19 @@ export interface DataSurfaceRegistry {
   subscribe(listener: (event: DataSurfaceRegistryEvent) => void): () => void;
 }
 
+/** Generic browser-transport ceiling for normalized command/action envelopes. */
+export const DATA_SURFACE_MAX_REQUEST_BYTES = 100_000;
+
 const MAX_QUERY_LIMIT = 1_000;
 const MAX_REQUEST_ID_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 2_048;
+const MAX_JSON_DEPTH = 16;
+const MAX_JSON_CONTAINER_ITEMS = 1_000;
+const PROTOTYPE_POLLUTION_KEYS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
 const DATA_SURFACE_KINDS = new Set<DataSurfaceKind>([
   'table',
   'list',
@@ -371,7 +381,13 @@ function revisionNumber(value: unknown): number {
 function canonicalJson(
   value: unknown,
   ancestors = new Set<object>(),
+  depth = 0,
 ): DataSurfaceJsonValue {
+  if (depth > MAX_JSON_DEPTH) {
+    throw new TypeError(
+      `DataSurface values cannot exceed ${MAX_JSON_DEPTH} nested levels`,
+    );
+  }
   if (
     value === null ||
     typeof value === 'string' ||
@@ -388,11 +404,18 @@ function canonicalJson(
     return value === 0 ? 0 : value;
   }
   if (Array.isArray(value)) {
+    if (value.length > MAX_JSON_CONTAINER_ITEMS) {
+      throw new TypeError(
+        `DataSurface arrays cannot contain more than ${MAX_JSON_CONTAINER_ITEMS} items`,
+      );
+    }
     if (ancestors.has(value)) {
       throw new TypeError('DataSurface values cannot be circular');
     }
     ancestors.add(value);
-    const clone = value.map((entry) => canonicalJson(entry, ancestors));
+    const clone = value.map((entry) =>
+      canonicalJson(entry, ancestors, depth + 1),
+    );
     ancestors.delete(value);
     return clone;
   }
@@ -403,8 +426,19 @@ function canonicalJson(
     }
     ancestors.add(object);
     const clone: DataSurfaceJsonObject = {};
-    for (const key of Object.keys(object).sort()) {
-      clone[key] = canonicalJson(object[key], ancestors);
+    const keys = Object.keys(object);
+    if (keys.length > MAX_JSON_CONTAINER_ITEMS) {
+      throw new TypeError(
+        `DataSurface objects cannot contain more than ${MAX_JSON_CONTAINER_ITEMS} keys`,
+      );
+    }
+    for (const key of keys.sort()) {
+      if (PROTOTYPE_POLLUTION_KEYS.has(key)) {
+        throw new TypeError(
+          `DataSurface values cannot contain prototype key: ${key}`,
+        );
+      }
+      clone[key] = canonicalJson(object[key], ancestors, depth + 1);
     }
     ancestors.delete(object);
     return clone;
@@ -427,6 +461,15 @@ function jsonSignature(value: unknown): string {
 /** The UTF-8 size of the normalized, canonical query envelope. */
 function canonicalQueryByteLength(request: DataSurfaceQueryRequest): number {
   return new TextEncoder().encode(jsonSignature(request)).byteLength;
+}
+
+function assertRequestByteLimit(value: unknown, label: string): void {
+  const byteLength = new TextEncoder().encode(jsonSignature(value)).byteLength;
+  if (byteLength > DATA_SURFACE_MAX_REQUEST_BYTES) {
+    throw new TypeError(
+      `${label} cannot exceed ${DATA_SURFACE_MAX_REQUEST_BYTES} UTF-8 bytes`,
+    );
+  }
 }
 
 function boundarySafe(value: unknown, label: string): DataSurfaceJsonValue {
@@ -505,6 +548,11 @@ function normalizeStringArray(
   options: { sort?: boolean } = {},
 ): string[] {
   if (!Array.isArray(value)) throw new TypeError(`${label} must be an array`);
+  if (value.length > MAX_JSON_CONTAINER_ITEMS) {
+    throw new TypeError(
+      `${label} cannot contain more than ${MAX_JSON_CONTAINER_ITEMS} items`,
+    );
+  }
   const values = value.map((entry) => stringValue(entry, label));
   if (new Set(values).size !== values.length) {
     throw new TypeError(`${label} cannot contain duplicates`);
@@ -557,6 +605,11 @@ function normalizeSelection(value: unknown): DataSurfaceSelectionReference {
     if (!Array.isArray(object.rowIds)) {
       throw new TypeError(
         'DataSurface explicit selection rowIds must be an array',
+      );
+    }
+    if (object.rowIds.length > MAX_JSON_CONTAINER_ITEMS) {
+      throw new TypeError(
+        `DataSurface explicit selection cannot contain more than ${MAX_JSON_CONTAINER_ITEMS} row ids`,
       );
     }
     const rowIds = new Map<string, DataSurfaceRowId>();
@@ -863,7 +916,7 @@ export function normalizeDataSurfaceVisibleCommand(
   if (commandId.length > MAX_REQUEST_ID_LENGTH) {
     throw new TypeError('DataSurface command id is too long');
   }
-  return {
+  const normalized: DataSurfaceVisibleCommand = {
     version: 1,
     commandId,
     identity: normalizeIdentity(object.identity),
@@ -875,6 +928,8 @@ export function normalizeDataSurfaceVisibleCommand(
           payload: boundarySafe(object.payload, 'DataSurface command payload'),
         }),
   };
+  assertRequestByteLimit(normalized, 'DataSurface visible command');
+  return normalized;
 }
 
 export function normalizeDataSurfaceQueryRequest(
@@ -1012,7 +1067,7 @@ export function normalizeDataSurfaceActionRequest(
     object.confirmationToken,
     'DataSurface confirmation token',
   );
-  return {
+  const normalized: DataSurfaceActionRequest = {
     version: 1,
     requestId,
     identity: normalizeIdentity(object.identity),
@@ -1026,6 +1081,8 @@ export function normalizeDataSurfaceActionRequest(
         }),
     ...(confirmationToken ? { confirmationToken } : {}),
   };
+  assertRequestByteLimit(normalized, 'DataSurface action request');
+  return normalized;
 }
 
 interface Entry {
