@@ -417,6 +417,10 @@ remains toolbar-local. Descriptors may advertise row/bulk action contracts, but
 smrt-ui does not execute durable actions—the later authenticated action adapter
 owns preview, confirmation, authorization, and persistence.
 
+Toolbar snapshots also advance their revision when the host updates exposed
+uncontrolled `search` or `view` props, so a command based on an earlier view is
+rejected as stale instead of overwriting host state.
+
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the

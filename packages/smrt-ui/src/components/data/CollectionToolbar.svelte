@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Snippet } from 'svelte';
+import { onDestroy, type Snippet, untrack } from 'svelte';
 import Input from '../forms/Input.svelte';
 import SegmentedControl from '../forms/SegmentedControl.svelte';
 import type {
@@ -50,7 +50,13 @@ let {
 let controllerState = $state<DataTableViewState | undefined>(undefined);
 let toolbarElement = $state<HTMLDivElement>();
 let surfaceHighlighted = $state(false);
-let registeredSurfaceRevision: { value: number } | undefined;
+let surfaceRegistration:
+  | {
+      surface: CollectionToolbarDataSurfaceOptions;
+      controller: DataTableController | undefined;
+      cleanup: () => void;
+    }
+  | undefined;
 
 $effect(() => {
   if (!controller) {
@@ -61,7 +67,6 @@ $effect(() => {
   return controller.subscribe((transition) => {
     if (!transition.changed) return;
     controllerState = transition.next.state;
-    if (registeredSurfaceRevision) registeredSurfaceRevision.value += 1;
   });
 });
 
@@ -76,7 +81,6 @@ function changeView(next: string | number) {
   const candidate = String(next);
   if (!views.includes(candidate as typeof view)) return;
   view = candidate as typeof view;
-  if (registeredSurfaceRevision) registeredSurfaceRevision.value += 1;
   onviewchange?.(view);
 }
 
@@ -87,7 +91,6 @@ function changeSearch(next: string) {
   } else {
     if (search === next) return;
     search = next;
-    if (registeredSurfaceRevision) registeredSurfaceRevision.value += 1;
   }
   onsearchchange?.(next);
 }
@@ -103,92 +106,116 @@ function payloadObject(
 $effect(() => {
   const surface = dataSurface;
   const surfaceController = controller;
+  if (
+    surfaceRegistration?.surface === surface &&
+    surfaceRegistration?.controller === surfaceController
+  ) {
+    return;
+  }
+  surfaceRegistration?.cleanup();
+  surfaceRegistration = undefined;
   if (!surface) return;
-  const revision = { value: 0 };
-  registeredSurfaceRevision = revision;
-  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
-  const unregister = surface.registry.register({
-    descriptor: surface.descriptor,
-    getSnapshot: () => ({
-      revision: revision.value,
-      state: { search: surfaceController?.getState().search ?? search, view },
-      selection: null,
-    }),
-    execute: async (command) => {
-      const payload = payloadObject(command.payload);
+  const cleanup = untrack(() => {
+    let revision = 0;
+    let previousStateSignature: string | undefined;
+    const readState = () => {
+      const state = {
+        search: surfaceController?.getState().search ?? search,
+        view,
+      };
+      const signature = JSON.stringify(state);
       if (
-        command.controlId === 'set-search' &&
-        typeof payload?.search === 'string'
+        previousStateSignature !== undefined &&
+        previousStateSignature !== signature
       ) {
-        if (surfaceController) {
-          const transition = surfaceController.dispatch({
-            type: 'setSearch',
-            search: payload.search,
-          });
-          if (surfaceController.isControlled() && transition.changed) {
-            const settled = await surface.applyControlledState?.(
-              transition.next.state,
-              { type: 'setSearch', search: payload.search },
-            );
-            if (settled) surfaceController.replaceState(settled);
-            if (
-              JSON.stringify(surfaceController.getState()) !==
-              JSON.stringify(transition.next.state)
-            ) {
-              return { ok: false };
+        revision += 1;
+      }
+      previousStateSignature = signature;
+      return state;
+    };
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    const unregister = surface.registry.register({
+      descriptor: surface.descriptor,
+      getSnapshot: () => {
+        const state = readState();
+        return { revision, state, selection: null };
+      },
+      execute: async (command) => {
+        const payload = payloadObject(command.payload);
+        if (
+          command.controlId === 'set-search' &&
+          typeof payload?.search === 'string'
+        ) {
+          if (surfaceController) {
+            const transition = surfaceController.dispatch({
+              type: 'setSearch',
+              search: payload.search,
+            });
+            if (surfaceController.isControlled() && transition.changed) {
+              const settled = await surface.applyControlledState?.(
+                transition.next.state,
+                { type: 'setSearch', search: payload.search },
+              );
+              if (settled) surfaceController.replaceState(settled);
+              if (
+                JSON.stringify(surfaceController.getState()) !==
+                JSON.stringify(transition.next.state)
+              ) {
+                return { ok: false };
+              }
             }
+            onsearchchange?.(payload.search);
+            return;
           }
-          onsearchchange?.(payload.search);
+          changeSearch(payload.search);
           return;
         }
-        changeSearch(payload.search);
-        return;
-      }
-      if (
-        command.controlId === 'set-view' &&
-        typeof payload?.view === 'string'
-      ) {
-        const prior = view;
-        changeView(payload.view);
-        return view === prior && payload.view !== prior
-          ? { ok: false }
-          : undefined;
-      }
-      switch (command.controlId) {
-        case 'focus':
-          toolbarElement?.focus();
-          return;
-        case 'reveal':
-          toolbarElement?.scrollIntoView({ block: 'nearest' });
-          return;
-        case 'highlight':
-          surfaceHighlighted = true;
-          if (highlightTimer) clearTimeout(highlightTimer);
-          highlightTimer = setTimeout(() => {
-            surfaceHighlighted = false;
-          }, 1_000);
-          return;
-        case 'refresh':
-          if (!surface.onRefresh) return { ok: false };
-          await surface.onRefresh();
-          return;
-        case 'retry':
-          if (!surface.onRetry) return { ok: false };
-          await surface.onRetry();
-          return;
-        default:
-          return { ok: false };
-      }
-    },
+        if (
+          command.controlId === 'set-view' &&
+          typeof payload?.view === 'string'
+        ) {
+          const prior = view;
+          changeView(payload.view);
+          return view === prior && payload.view !== prior
+            ? { ok: false }
+            : undefined;
+        }
+        switch (command.controlId) {
+          case 'focus':
+            toolbarElement?.focus();
+            return;
+          case 'reveal':
+            toolbarElement?.scrollIntoView({ block: 'nearest' });
+            return;
+          case 'highlight':
+            surfaceHighlighted = true;
+            if (highlightTimer) clearTimeout(highlightTimer);
+            highlightTimer = setTimeout(() => {
+              surfaceHighlighted = false;
+            }, 1_000);
+            return;
+          case 'refresh':
+            if (!surface.onRefresh) return { ok: false };
+            await surface.onRefresh();
+            return;
+          case 'retry':
+            if (!surface.onRetry) return { ok: false };
+            await surface.onRetry();
+            return;
+          default:
+            return { ok: false };
+        }
+      },
+    });
+    return () => {
+      if (highlightTimer) clearTimeout(highlightTimer);
+      unregister();
+    };
   });
-  return () => {
-    if (highlightTimer) clearTimeout(highlightTimer);
-    if (registeredSurfaceRevision === revision) {
-      registeredSurfaceRevision = undefined;
-    }
-    unregister();
-  };
+  surfaceRegistration = { surface, controller: surfaceController, cleanup };
 });
+
+onDestroy(() => surfaceRegistration?.cleanup());
 </script>
 
 <div

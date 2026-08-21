@@ -11,7 +11,7 @@
  * - Material 3 styling with theme token support
  */
 
-import { type Snippet, tick } from 'svelte';
+import { type Snippet, tick, untrack } from 'svelte';
 import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
@@ -359,12 +359,13 @@ $effect(() => {
   if (!surface) return;
   assertSurfaceDescriptorMatchesTable(surface);
   const surfaceController = activeController();
-  let revision = 0;
-  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
-  const unsubscribe = surfaceController.subscribe((transition) => {
-    if (transition.changed) revision += 1;
-  });
-  const unregister = surface.registry.register({
+  return untrack(() => {
+    let revision = 0;
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = surfaceController.subscribe((transition) => {
+      if (transition.changed) revision += 1;
+    });
+    const unregister = surface.registry.register({
     descriptor: surface.descriptor,
     getSnapshot: () => {
       const snapshot = surfaceController.snapshot();
@@ -425,12 +426,13 @@ $effect(() => {
           return { ok: false };
       }
     },
+    });
+    return () => {
+      if (highlightTimer) clearTimeout(highlightTimer);
+      unsubscribe();
+      unregister();
+    };
   });
-  return () => {
-    if (highlightTimer) clearTimeout(highlightTimer);
-    unsubscribe();
-    unregister();
-  };
 });
 
 function handleSort(column: DataTableColumn<T>, event: MouseEvent) {

@@ -331,4 +331,47 @@ describe('mounted data surfaces', () => {
     expect(firstController.getState().search).toBe('');
     expect(nextController.getState().search).toBe('Grace');
   });
+
+  it('revisions externally changed uncontrolled toolbar state', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'externally-controlled-toolbar',
+      kind: 'custom',
+    };
+    const dataSurface = {
+      registry,
+      descriptor: descriptor(identity, ['set-search', 'set-view']),
+    };
+    const { rerender } = render(CollectionToolbar, {
+      props: {
+        search: 'Ada',
+        view: 'list',
+        dataSurface,
+      },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await rerender({
+      search: 'Grace',
+      view: 'grid',
+      dataSurface,
+    });
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)).toMatchObject({
+        revision: 1,
+        state: { search: 'Grace', view: 'grid' },
+      }),
+    );
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'stale-toolbar-command',
+        identity,
+        expectedRevision: 0,
+        controlId: 'set-view',
+        payload: { view: 'list' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
+  });
 });
