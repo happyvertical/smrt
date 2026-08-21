@@ -4,6 +4,7 @@ import {
   type DataSurfaceDescriptor,
   type DataSurfaceIdentity,
   type DataSurfaceVisibleCommand,
+  normalizeDataSurfaceQueryRequest,
   normalizeDataSurfaceVisibleCommand,
 } from '../data-surface.js';
 
@@ -174,6 +175,38 @@ describe('data surface registry', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it('serializes concurrent commands so only one can execute at a revision', async () => {
+    let revision = 3;
+    let releaseFirst!: () => void;
+    const firstExecution = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const execute = vi.fn(async () => {
+      await firstExecution;
+      revision += 1;
+    });
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision, state: {} }),
+      execute,
+    });
+
+    const first = registry.execute(command({ commandId: 'first' }));
+    const second = registry.execute(command({ commandId: 'second' }));
+
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    releaseFirst();
+
+    await expect(first).resolves.toMatchObject({ ok: true, revision: 4 });
+    await expect(second).resolves.toMatchObject({
+      ok: false,
+      reason: 'stale_revision',
+      revision: 4,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a changed snapshot when its renderer did not advance revision', async () => {
     const { registry } = registerFixture({ advance: false });
 
@@ -259,6 +292,33 @@ describe('data surface registry', () => {
         selection: { scope: 'explicit-ids', rowIds: ['a'] },
       }),
     ).toEqual({ ok: false, reason: 'confirmation_required' });
+  });
+
+  it('enforces the descriptor query-byte limit using the normalized UTF-8 envelope', () => {
+    const request = {
+      version: 1 as const,
+      requestId: 'unicode-cursor',
+      identity,
+      kind: 'rows' as const,
+      limit: 1,
+      cursor: 'é',
+    };
+    const maxQueryBytes = new TextEncoder().encode(
+      JSON.stringify(normalizeDataSurfaceQueryRequest(request)),
+    ).byteLength;
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor({
+        limits: { maxQueryRows: 50, maxQueryBytes, maxSelectionSize: 3 },
+      }),
+      getSnapshot: () => ({ revision: 0, state: {} }),
+    });
+
+    expect(registry.validateQuery(request)).toEqual({ ok: true });
+    expect(registry.validateQuery({ ...request, cursor: 'éé' })).toEqual({
+      ok: false,
+      reason: 'limit_exceeded',
+    });
   });
 
   it('rejects SQL and authority values at the browser-contract boundary', () => {

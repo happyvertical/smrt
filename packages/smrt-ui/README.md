@@ -261,8 +261,8 @@ interaction registry. A mounted table, list, or report supplies serializable
 discovery metadata, a revisioned view snapshot, and a small handler for its
 declared visible controls. The registry rejects duplicate identities, validates
 JSON-safe data, requires an `expectedRevision`, records monotonic event
-sequences, and returns a cached acknowledgement when the same `commandId` is
-replayed.
+sequences, serializes commands per mounted identity, and returns a cached
+acknowledgement when the same `commandId` is replayed.
 
 ```ts
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
@@ -303,12 +303,13 @@ functions, authority fields, tenant/principal data, SQL, or a transport handle.
 An optional registration `redact()` hook can remove sensitive view state before
 it leaves the mounted host, but cannot alter the identity or revision.
 
-The registry validates bounded projection/count/facet query envelopes and
-preview/apply action envelopes, but it does not execute either. Canonical query
-semantics belong to the query protocol, browser command acknowledgement belongs
-to a transport adapter, and authentication, tenancy, confirmation-token
-verification, and durable actions remain server-side. URL state and saved views
-also remain application-owned persistence adapters.
+The registry validates bounded projection/count/facet query envelopes (including
+the UTF-8 byte length of their normalized JSON form) and preview/apply action
+envelopes, but it does not execute either. Canonical query semantics belong to
+the query protocol, browser command acknowledgement belongs to a transport
+adapter, and authentication, tenancy, confirmation-token verification, and
+durable actions remain server-side. URL state and saved views also remain
+application-owned persistence adapters.
 
 ## Themes
 

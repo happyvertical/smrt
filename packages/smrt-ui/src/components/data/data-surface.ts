@@ -424,6 +424,11 @@ function jsonSignature(value: unknown): string {
   return JSON.stringify(canonicalJson(value));
 }
 
+/** The UTF-8 size of the normalized, canonical query envelope. */
+function canonicalQueryByteLength(request: DataSurfaceQueryRequest): number {
+  return new TextEncoder().encode(jsonSignature(request)).byteLength;
+}
+
 function boundarySafe(value: unknown, label: string): DataSurfaceJsonValue {
   const clone = canonicalJson(value);
   const inspect = (entry: DataSurfaceJsonValue) => {
@@ -1018,6 +1023,7 @@ interface Entry {
   registration: DataSurfaceRegistration;
   lastRevision: number;
   replay: Map<string, { signature: string; result: DataSurfaceCommandResult }>;
+  commandQueue: Promise<void>;
 }
 
 interface ReadSnapshot {
@@ -1156,6 +1162,23 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
     identity: DataSurfaceIdentity,
   ): Entry | undefined => entries.get(identityKey(identity));
 
+  const serializeCommand = async <T>(
+    entry: Entry,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    const previous = entry.commandQueue;
+    let releaseQueue!: () => void;
+    entry.commandQueue = new Promise<void>((resolve) => {
+      releaseQueue = resolve;
+    });
+    await previous;
+    try {
+      return await run();
+    } finally {
+      releaseQueue();
+    }
+  };
+
   return {
     register(registration) {
       const descriptor = normalizeDataSurfaceDescriptor(
@@ -1173,6 +1196,7 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
         registration,
         lastRevision: -1,
         replay: new Map(),
+        commandQueue: Promise.resolve(),
       };
       entries.set(key, entry);
       try {
@@ -1221,105 +1245,107 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
         };
       }
 
-      const signature = jsonSignature(normalized);
-      const replay = entry.replay.get(normalized.commandId);
-      if (replay) {
-        if (replay.signature === signature) return cloneResult(replay.result);
-        const snapshot = readSnapshot(entry).exposed;
-        const result: DataSurfaceCommandResult = {
-          ok: false,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(entry.descriptor.identity),
-          revision: snapshot.revision,
-          snapshot,
-          reason: 'idempotency_conflict',
-        };
-        emit('command', entry, snapshot.revision, normalized, result);
-        return cloneResult(result);
-      }
+      return serializeCommand(entry, async () => {
+        const signature = jsonSignature(normalized);
+        const replay = entry.replay.get(normalized.commandId);
+        if (replay) {
+          if (replay.signature === signature) return cloneResult(replay.result);
+          const snapshot = readSnapshot(entry).exposed;
+          const result: DataSurfaceCommandResult = {
+            ok: false,
+            commandId: normalized.commandId,
+            identity: cloneIdentity(entry.descriptor.identity),
+            revision: snapshot.revision,
+            snapshot,
+            reason: 'idempotency_conflict',
+          };
+          emit('command', entry, snapshot.revision, normalized, result);
+          return cloneResult(result);
+        }
 
-      const before = readSnapshot(entry);
-      if (before.raw.revision !== normalized.expectedRevision) {
-        return cacheResult(entry, normalized, {
-          ok: false,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(entry.descriptor.identity),
-          revision: before.exposed.revision,
-          snapshot: before.exposed,
-          reason: 'stale_revision',
-        });
-      }
-      if (
-        !entry.descriptor.controls.some(
-          (control) => control.id === normalized.controlId,
-        )
-      ) {
-        return cacheResult(entry, normalized, {
-          ok: false,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(entry.descriptor.identity),
-          revision: before.exposed.revision,
-          snapshot: before.exposed,
-          reason: 'unsupported',
-        });
-      }
-      if (!entry.registration.execute) {
-        return cacheResult(entry, normalized, {
-          ok: false,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(entry.descriptor.identity),
-          revision: before.exposed.revision,
-          snapshot: before.exposed,
-          reason: 'unsupported',
-        });
-      }
-
-      try {
-        const execution = await entry.registration.execute(
-          normalizeDataSurfaceVisibleCommand(normalized),
-        );
-        const after = readSnapshot(entry);
-        if (execution && execution.ok === false) {
+        const before = readSnapshot(entry);
+        if (before.raw.revision !== normalized.expectedRevision) {
           return cacheResult(entry, normalized, {
             ok: false,
             commandId: normalized.commandId,
             identity: cloneIdentity(entry.descriptor.identity),
-            revision: after.exposed.revision,
-            snapshot: after.exposed,
-            reason: 'denied',
+            revision: before.exposed.revision,
+            snapshot: before.exposed,
+            reason: 'stale_revision',
           });
         }
         if (
-          sameSnapshotContent(before.raw, after.raw) === false &&
-          after.raw.revision <= before.raw.revision
+          !entry.descriptor.controls.some(
+            (control) => control.id === normalized.controlId,
+          )
         ) {
           return cacheResult(entry, normalized, {
             ok: false,
             commandId: normalized.commandId,
             identity: cloneIdentity(entry.descriptor.identity),
-            revision: after.exposed.revision,
-            snapshot: after.exposed,
-            reason: 'non_monotonic_revision',
+            revision: before.exposed.revision,
+            snapshot: before.exposed,
+            reason: 'unsupported',
           });
         }
-        return cacheResult(entry, normalized, {
-          ok: true,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(entry.descriptor.identity),
-          revision: after.exposed.revision,
-          snapshot: after.exposed,
-        });
-      } catch {
-        const current = readSnapshot(entry).exposed;
-        return cacheResult(entry, normalized, {
-          ok: false,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(entry.descriptor.identity),
-          revision: current.revision,
-          snapshot: current,
-          reason: 'execution_failed',
-        });
-      }
+        if (!entry.registration.execute) {
+          return cacheResult(entry, normalized, {
+            ok: false,
+            commandId: normalized.commandId,
+            identity: cloneIdentity(entry.descriptor.identity),
+            revision: before.exposed.revision,
+            snapshot: before.exposed,
+            reason: 'unsupported',
+          });
+        }
+
+        try {
+          const execution = await entry.registration.execute(
+            normalizeDataSurfaceVisibleCommand(normalized),
+          );
+          const after = readSnapshot(entry);
+          if (execution && execution.ok === false) {
+            return cacheResult(entry, normalized, {
+              ok: false,
+              commandId: normalized.commandId,
+              identity: cloneIdentity(entry.descriptor.identity),
+              revision: after.exposed.revision,
+              snapshot: after.exposed,
+              reason: 'denied',
+            });
+          }
+          if (
+            sameSnapshotContent(before.raw, after.raw) === false &&
+            after.raw.revision <= before.raw.revision
+          ) {
+            return cacheResult(entry, normalized, {
+              ok: false,
+              commandId: normalized.commandId,
+              identity: cloneIdentity(entry.descriptor.identity),
+              revision: after.exposed.revision,
+              snapshot: after.exposed,
+              reason: 'non_monotonic_revision',
+            });
+          }
+          return cacheResult(entry, normalized, {
+            ok: true,
+            commandId: normalized.commandId,
+            identity: cloneIdentity(entry.descriptor.identity),
+            revision: after.exposed.revision,
+            snapshot: after.exposed,
+          });
+        } catch {
+          const current = readSnapshot(entry).exposed;
+          return cacheResult(entry, normalized, {
+            ok: false,
+            commandId: normalized.commandId,
+            identity: cloneIdentity(entry.descriptor.identity),
+            revision: current.revision,
+            snapshot: current,
+            reason: 'execution_failed',
+          });
+        }
+      });
     },
 
     validateQuery(request) {
@@ -1329,6 +1355,12 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
         if (!entry) return { ok: false, reason: 'not_found' };
         if (!entry.descriptor.query.modes.includes(normalized.kind)) {
           return { ok: false, reason: 'unsupported' };
+        }
+        if (
+          canonicalQueryByteLength(normalized) >
+          entry.descriptor.limits.maxQueryBytes
+        ) {
+          return { ok: false, reason: 'limit_exceeded' };
         }
         if (
           'limit' in normalized &&
