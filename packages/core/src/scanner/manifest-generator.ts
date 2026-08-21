@@ -343,8 +343,7 @@ export class ManifestGenerator {
       return;
     }
 
-    const { tenantConfig, tenantOptions } =
-      this.normalizeTenantScopedConfig(tenantScoped);
+    const { tenantConfig } = this.normalizeTenantScopedConfig(tenantScoped);
     const fieldName = tenantConfig.field;
     const existingField = objectDef.fields[fieldName];
     const tenancyMeta = {
@@ -376,10 +375,9 @@ export class ManifestGenerator {
 
     objectDef.fields[fieldName] = {
       type: 'text',
-      // Preserve legacy migration behavior: boolean `tenantScoped: true`
-      // enables required-mode runtime scoping, but does not add a NOT NULL
-      // column to existing tables unless mode is explicitly set.
-      required: tenantOptions.mode === 'required',
+      // Use the normalized tenant mode so the boolean shorthand has the same
+      // requiredness in manifests as it does during runtime registration.
+      required: tenantConfig.mode === 'required',
       _meta: {
         generated: true,
         source: 'tenantScoped_decorator',
@@ -493,7 +491,6 @@ export class ManifestGenerator {
   }
 
   private normalizeTenantScopedConfig(tenantScoped: unknown): {
-    tenantOptions: TenantScopedOptions;
     tenantConfig: {
       mode: string;
       field: string;
@@ -508,7 +505,6 @@ export class ManifestGenerator {
         : (tenantScoped as TenantScopedOptions);
 
     return {
-      tenantOptions,
       tenantConfig: {
         mode: tenantOptions.mode ?? 'required',
         field: tenantOptions.field ?? 'tenantId',

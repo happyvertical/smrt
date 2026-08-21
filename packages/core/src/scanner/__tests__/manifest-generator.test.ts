@@ -445,6 +445,7 @@ describe('ManifestGenerator', () => {
       expect(secret.fields.tenantId).toEqual(
         expect.objectContaining({
           type: 'text',
+          required: true,
           _meta: expect.objectContaining({
             sqlType: 'UUID',
             __tenancy: expect.objectContaining({
@@ -456,8 +457,72 @@ describe('ManifestGenerator', () => {
         }),
       );
       expect(secret.schema?.columns.tenant_id).toEqual(
-        expect.objectContaining({ type: 'UUID', referenceKind: 'tenantId' }),
+        expect.objectContaining({
+          type: 'UUID',
+          referenceKind: 'tenantId',
+          notNull: true,
+        }),
       );
+    });
+
+    it.each([
+      [{ mode: 'required' }, true, true],
+      [{ mode: 'optional' }, false, false],
+    ] as const)('uses the normalized %o tenant mode for field and schema nullability', (tenantScoped, required, notNull) => {
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/scoped-object.ts',
+          objects: [
+            {
+              name: 'scopedObject',
+              className: 'ScopedObject',
+              collection: 'scoped_objects',
+              filePath: '/path/to/scoped-object.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tenantScoped },
+              exportName: 'ScopedObject',
+              collectionExportName: 'ScopedObjectCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const scopedObject = manifest.objects.scopedObject;
+      expect(scopedObject.fields.tenantId?.required).toBe(required);
+      expect(scopedObject.schema?.columns.tenant_id.notNull).toBe(notNull);
+    });
+
+    it('does not inject a tenant field when tenant scoping is disabled', () => {
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/unscoped-object.ts',
+          objects: [
+            {
+              name: 'unscopedObject',
+              className: 'UnscopedObject',
+              collection: 'unscoped_objects',
+              filePath: '/path/to/unscoped-object.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tenantScoped: false },
+              exportName: 'UnscopedObject',
+              collectionExportName: 'UnscopedObjectCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      expect(manifest.objects.unscopedObject.fields.tenantId).toBeUndefined();
+      expect(
+        manifest.objects.unscopedObject.schema?.columns.tenant_id,
+      ).toBeUndefined();
     });
 
     it('preserves explicit tenantId fields while adding tenancy metadata', () => {
