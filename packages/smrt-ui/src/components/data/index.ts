@@ -12,4 +12,5 @@ export * from './DataTableController.js';
 export * from './DataTableIdentity.js';
 export * from './DataTablePerformance.js';
 export * from './DataTableVirtualization.js';
+export * from './data-surface.js';
 export * from './types.js';

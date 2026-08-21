@@ -254,6 +254,61 @@ and a controlled scroll position can still reveal the summary. Selection and
 expansion continue to be controller state keyed by `rowKey`, never by a
 rendered window index. With manual pagination, `totalRows` and the current page
 set that full row count and each rendered row's global index.
+## Mounted data-surface registry
+
+`createDataSurfaceRegistry()` is the transport-neutral sibling of the form
+interaction registry. A mounted table, list, or report supplies serializable
+discovery metadata, a revisioned view snapshot, and a small handler for its
+declared visible controls. The registry rejects duplicate identities, validates
+JSON-safe data, requires an `expectedRevision`, records monotonic event
+sequences, and returns a cached acknowledgement when the same `commandId` is
+replayed.
+
+```ts
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
+
+const registry = createDataSurfaceRegistry();
+let revision = 0;
+let search = '';
+
+registry.register({
+  descriptor: {
+    version: 1,
+    identity: { surfaceId: 'content-library', kind: 'table' },
+    schemaVersion: 1,
+    label: 'Content library',
+    rowKey: 'id',
+    columns: [
+      { id: 'id', label: 'ID', capabilities: ['read', 'project'] },
+      { id: 'title', label: 'Title', capabilities: ['read', 'search'] },
+    ],
+    query: { modes: ['rows', 'count'], projectableColumnIds: ['id', 'title'] },
+    controls: [{ id: 'set-search', label: 'Search' }],
+    actions: [],
+    limits: { maxQueryRows: 100, maxQueryBytes: 100_000, maxSelectionSize: 100 },
+  },
+  getSnapshot: () => ({ revision, state: { search } }),
+  execute: (command) => {
+    if (command.controlId === 'set-search') {
+      search = String((command.payload as { search?: string }).search ?? '');
+      revision += 1;
+    }
+  },
+});
+```
+
+`inspect()` and command results are deterministic `{ version, descriptor,
+revision, state, selection }` envelopes; neither includes a timestamp, rows,
+functions, authority fields, tenant/principal data, SQL, or a transport handle.
+An optional registration `redact()` hook can remove sensitive view state before
+it leaves the mounted host, but cannot alter the identity or revision.
+
+The registry validates bounded projection/count/facet query envelopes and
+preview/apply action envelopes, but it does not execute either. Canonical query
+semantics belong to the query protocol, browser command acknowledgement belongs
+to a transport adapter, and authentication, tenancy, confirmation-token
+verification, and durable actions remain server-side. URL state and saved views
+also remain application-owned persistence adapters.
 
 ## Themes
 
