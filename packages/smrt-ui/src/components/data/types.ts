@@ -3,6 +3,13 @@
  */
 
 import type { Snippet } from 'svelte';
+import type {
+  DataTableCommand,
+  DataTableController,
+  DataTableFilter,
+  DataTableModes,
+  DataTableViewState,
+} from './DataTableController.js';
 
 /**
  * Column definition for DataTable
@@ -32,6 +39,12 @@ export interface DataTableColumn<T> {
   hidden?: boolean;
   /** Custom sort function */
   sortFn?: (a: T, b: T, direction: SortDirection) => number;
+  /** Opt out of the controller's built-in local text search. */
+  searchable?: boolean;
+  /** Opt out of declarative local filters for this column. */
+  filterable?: boolean;
+  /** Optional local-only evaluator for a serializable declarative filter. */
+  filterFn?: (row: T, value: unknown, filter: DataTableFilter) => boolean;
   /** Column class name */
   className?: string;
 }
@@ -101,6 +114,22 @@ export interface DataTableProps<T> {
   footer?: Snippet<[{ rows: T[] }]>;
   /** Controlled visible column ids. Column.hidden is still respected. */
   visibleColumnIds?: Set<string>;
+  /**
+   * Headless controller used by rendered interactions and programmatic commands.
+   * When supplied, it takes precedence over `state` and the legacy bindables.
+   */
+  controller?: DataTableController;
+  /** Explicit controlled serializable state when no external controller is supplied. */
+  state?: DataTableViewState;
+  /** Initial serializable state for uncontrolled controller-backed tables. */
+  initialState?: Partial<DataTableViewState>;
+  /** Called after a controller command proposes or applies a new state. */
+  onStateChange?: (
+    state: DataTableViewState,
+    command: DataTableCommand,
+  ) => void;
+  /** Explicit ownership for local or caller-supplied filtering, sorting, and paging. */
+  modes?: Partial<DataTableModes>;
   /** Loading state */
   loading?: boolean;
   /** Empty state content */

@@ -16,12 +16,17 @@ import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
 import Pagination from '../ui/Pagination.svelte';
-import type {
-  DataTableColumn,
-  DataTableProps,
-  SortDirection,
-  SortState,
-} from './types.js';
+import {
+  createDataTableController,
+  type DataTableCommand,
+  type DataTableController,
+  type DataTableFilter,
+  type DataTableModes,
+  type DataTableRowId,
+  type DataTableSnapshot,
+  type DataTableViewState,
+} from './DataTableController.js';
+import type { DataTableColumn, DataTableProps, SortState } from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
 
 const { t } = useI18n();
@@ -68,85 +73,208 @@ let {
   caption,
   dense = false,
   cell,
+  controller,
+  state: controlledState,
+  initialState,
+  onStateChange,
+  modes,
 }: ExtendedProps<T> = $props();
 
-// Get row key value
-function getRowKey(row: T, index: number): string | number {
-  if (!rowKey) return index;
-  if (typeof rowKey === 'function') return rowKey(row);
-  return row[rowKey] as string | number;
+function legacyModes(): DataTableModes {
+  return {
+    filtering: modes?.filtering ?? 'local',
+    sorting: modes?.sorting ?? (manualSorting ? 'manual' : 'local'),
+    pagination: modes?.pagination ?? (manualPagination ? 'manual' : 'local'),
+  };
 }
 
-function getDisplayRowKey(row: T, index: number): string | number {
+function legacyViewState(): Partial<DataTableViewState> {
+  return {
+    sorting:
+      sort.columnId && sort.direction
+        ? [{ columnId: sort.columnId, direction: sort.direction }]
+        : [],
+    page,
+    pageSize: pageSize ?? null,
+    columnOrder: columns.map((column) => column.id),
+    columnVisibility: columns.map((column) => ({
+      columnId: column.id,
+      visible: !visibleColumnIds || visibleColumnIds.has(column.id),
+    })),
+    selectedRowIds: [...selected],
+    expandedRowIds: [...expanded],
+  };
+}
+
+const localController = createDataTableController({
+  onStateChange: (next, command) => onStateChange?.(next, command),
+});
+
+let controllerSnapshot = $state<DataTableSnapshot>(localController.snapshot());
+let publishedLegacySignature: string | undefined;
+let localControllerInitialized = false;
+
+function activeController(): DataTableController {
+  return controller ?? localController;
+}
+
+function legacySignature(): string {
+  const legacy = legacyViewState();
+  return JSON.stringify({
+    sorting: legacy.sorting,
+    page: legacy.page,
+    pageSize: legacy.pageSize,
+    columnVisibility: legacy.columnVisibility,
+    selectedRowIds: [...(legacy.selectedRowIds ?? [])].sort(),
+    expandedRowIds: [...(legacy.expandedRowIds ?? [])].sort(),
+  });
+}
+
+function legacySort(next: DataTableViewState): SortState {
+  const rule = next.sorting[0];
+  return rule
+    ? { columnId: rule.columnId, direction: rule.direction }
+    : { columnId: null, direction: null };
+}
+
+function publishLegacyState(
+  next: DataTableViewState,
+  command: DataTableCommand,
+  previous: DataTableViewState,
+) {
+  const nextSort = legacySort(next);
+  const previousSort = legacySort(previous);
+  sort = nextSort;
+  page = next.page;
+  selected = new Set(next.selectedRowIds);
+  expanded = new Set(next.expandedRowIds);
+  publishedLegacySignature = legacySignature();
+
+  if (
+    nextSort.columnId !== previousSort.columnId ||
+    nextSort.direction !== previousSort.direction
+  ) {
+    onSortChange?.(nextSort);
+  }
+  if (
+    JSON.stringify(next.selectedRowIds) !==
+    JSON.stringify(previous.selectedRowIds)
+  ) {
+    onSelectionChange?.(new Set(next.selectedRowIds));
+  }
+  if (
+    JSON.stringify(next.expandedRowIds) !==
+    JSON.stringify(previous.expandedRowIds)
+  ) {
+    onExpandedChange?.(new Set(next.expandedRowIds));
+  }
+  if (next.page !== previous.page) onPageChange?.(next.page);
+  void command;
+}
+
+$effect(() => {
+  if (controller) return;
+
+  localController.setControlled(controlledState !== undefined);
+  localController.setModes(legacyModes());
+  localController.setColumnIds(columns.map((column) => column.id));
+
+  if (!localControllerInitialized) {
+    localControllerInitialized = true;
+    localController.replaceState({
+      ...localController.getState(),
+      ...(controlledState ?? { ...legacyViewState(), ...initialState }),
+    });
+    return;
+  }
+
+  if (controlledState !== undefined) {
+    localController.replaceState(controlledState);
+    return;
+  }
+
+  const signature = legacySignature();
+  if (signature === publishedLegacySignature) {
+    publishedLegacySignature = undefined;
+    return;
+  }
+  localController.replaceState({
+    ...localController.getState(),
+    ...legacyViewState(),
+  });
+});
+
+$effect(() => {
+  const current = activeController();
+  current.setColumnIds(columns.map((column) => column.id));
+  controllerSnapshot = current.snapshot();
+  return current.subscribe((transition) => {
+    controllerSnapshot = transition.next;
+    if (
+      current === localController &&
+      controlledState === undefined &&
+      transition.command
+    ) {
+      publishLegacyState(
+        transition.next.state,
+        transition.command,
+        transition.previous.state,
+      );
+    }
+  });
+});
+
+const tableState = $derived(controllerSnapshot.state);
+const tableModes = $derived(controllerSnapshot.modes);
+
+function getRowKey(row: T, index: number): DataTableRowId {
+  if (!rowKey) return index;
+  if (typeof rowKey === 'function') return rowKey(row);
+  return row[rowKey] as DataTableRowId;
+}
+
+function getDisplayRowKey(row: T, index: number): DataTableRowId {
   return getRowKey(row, displayIndexOffset + index);
 }
 
-// Handle sort click
-function handleSort(column: DataTableColumn<T>) {
+function dispatch(command: DataTableCommand) {
+  activeController().dispatch(command);
+}
+
+function handleSort(column: DataTableColumn<T>, event: MouseEvent) {
   if (!sortable || !column.sortable) return;
-
-  const newSort: SortState = {
+  dispatch({
+    type: 'toggleSorting',
     columnId: column.id,
-    direction:
-      sort.columnId === column.id
-        ? sort.direction === 'asc'
-          ? 'desc'
-          : sort.direction === 'desc'
-            ? null
-            : 'asc'
-        : 'asc',
-  };
-
-  if (newSort.direction === null) {
-    newSort.columnId = null;
-  }
-
-  sort = newSort;
-  onSortChange?.(newSort);
+    multi: event.shiftKey,
+  });
 }
 
-// Handle row selection
-function handleRowSelect(key: string | number, event: Event) {
+function handleRowSelect(key: DataTableRowId, event: Event) {
   event.stopPropagation();
-  const newSelected = new Set(selected);
-
-  if (newSelected.has(key)) {
-    newSelected.delete(key);
-  } else {
-    newSelected.add(key);
-  }
-
-  selected = newSelected;
-  onSelectionChange?.(newSelected);
+  dispatch({ type: 'toggleRowSelection', rowId: key });
 }
 
-// Handle select all
 function handleSelectAll() {
+  const selectedIds = new Set(tableState.selectedRowIds);
+  const visibleIds = displayData.map((row, index) =>
+    getDisplayRowKey(row, index),
+  );
   if (allSelected) {
-    const visibleKeys = new Set(
-      displayData.map((row, i) => getDisplayRowKey(row, i)),
-    );
-    selected = new Set([...selected].filter((key) => !visibleKeys.has(key)));
+    for (const key of visibleIds) selectedIds.delete(key);
   } else {
-    selected = new Set([
-      ...selected,
-      ...displayData.map((row, i) => getDisplayRowKey(row, i)),
-    ]);
+    for (const key of visibleIds) selectedIds.add(key);
   }
-  onSelectionChange?.(selected);
+  dispatch({ type: 'setSelectedRows', rowIds: [...selectedIds] });
 }
 
-function handleExpanded(key: string | number, event: Event) {
+function handleExpanded(key: DataTableRowId, event: Event) {
   event.stopPropagation();
-  const next = new Set(expanded);
-  next.has(key) ? next.delete(key) : next.add(key);
-  expanded = next;
-  onExpandedChange?.(next);
+  dispatch({ type: 'toggleRowExpansion', rowId: key });
 }
 
 function handlePageChange(next: number) {
-  page = Math.min(Math.max(1, next), totalPages);
-  onPageChange?.(page);
+  dispatch({ type: 'setPage', page: next });
 }
 
 // Handle row click
@@ -164,55 +292,175 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   };
 }
 
-// Get visible columns
-const visibleColumns = $derived(
-  columns.filter(
-    (col) => !col.hidden && (!visibleColumnIds || visibleColumnIds.has(col.id)),
-  ),
-);
+const visibleColumns = $derived.by(() => {
+  const configuredOrder = new Map(
+    tableState.columnOrder.map((id, index) => [id, index]),
+  );
+  const visibility = new Map(
+    tableState.columnVisibility.map((entry) => [entry.columnId, entry.visible]),
+  );
+  return columns
+    .filter((column) => !column.hidden && visibility.get(column.id) !== false)
+    .slice()
+    .sort((left, right) => {
+      const leftOrder = configuredOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder =
+        configuredOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    });
+});
 
-const filteredData = $derived(filterFn ? data.filter(filterFn) : data);
+function sameFilterValue(value: unknown, expected: unknown): boolean {
+  return Object.is(value, expected);
+}
 
-// Sort data
-const sortedData = $derived.by(() => {
-  if (manualSorting || !sort.columnId || !sort.direction) return filteredData;
+function textValue(value: unknown): string {
+  return String(value ?? '').toLowerCase();
+}
 
-  const column = columns.find((c) => c.id === sort.columnId);
-  if (!column) return filteredData;
+function compareFilterValues(left: unknown, right: unknown): number {
+  const leftValue = left instanceof Date ? left.getTime() : left;
+  const rightValue = right instanceof Date ? right.getTime() : right;
+  if (typeof leftValue === 'number' && typeof rightValue === 'number')
+    return leftValue - rightValue;
+  const a = String(leftValue ?? '');
+  const b = String(rightValue ?? '');
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
-  const accessor = column.accessor ?? column.id;
-  const direction = sort.direction;
+function matchesFilter(
+  row: T,
+  column: DataTableColumn<T>,
+  filter: DataTableFilter,
+): boolean {
+  if (column.filterable === false) return false;
+  const value = getCellValue(row, column);
+  if (column.filterFn) return column.filterFn(row, value, filter);
+  const expected = filter.value;
+  const valueText = textValue(value);
+  const expectedText = textValue(expected);
+  switch (filter.operator) {
+    case 'equals':
+      return sameFilterValue(value, expected);
+    case 'notEquals':
+      return !sameFilterValue(value, expected);
+    case 'contains':
+      return valueText.includes(expectedText);
+    case 'notContains':
+      return !valueText.includes(expectedText);
+    case 'startsWith':
+      return valueText.startsWith(expectedText);
+    case 'endsWith':
+      return valueText.endsWith(expectedText);
+    case 'in':
+      return (
+        Array.isArray(expected) &&
+        expected.some((entry) => sameFilterValue(value, entry))
+      );
+    case 'notIn':
+      return (
+        Array.isArray(expected) &&
+        !expected.some((entry) => sameFilterValue(value, entry))
+      );
+    case 'gt':
+      return compareFilterValues(value, expected) > 0;
+    case 'gte':
+      return compareFilterValues(value, expected) >= 0;
+    case 'lt':
+      return compareFilterValues(value, expected) < 0;
+    case 'lte':
+      return compareFilterValues(value, expected) <= 0;
+    case 'isNull':
+      return value == null;
+    case 'isNotNull':
+      return value != null;
+  }
+}
 
-  return [...filteredData].sort((a, b) => {
-    if (column.sortFn) {
-      return column.sortFn(a, b, direction);
+const filteredData = $derived.by(() => {
+  if (tableModes.filtering === 'manual') return data;
+  const search = tableState.search.toLowerCase();
+  return data.filter((row, index) => {
+    if (filterFn && !filterFn(row, index)) return false;
+    if (
+      search &&
+      !columns.some(
+        (column) =>
+          column.searchable !== false &&
+          textValue(getCellValue(row, column)).includes(search),
+      )
+    ) {
+      return false;
     }
-    return defaultSort(a, b, String(accessor), direction);
+    return tableState.filters.every((filter) => {
+      const column = columns.find(
+        (candidate) => candidate.id === filter.columnId,
+      );
+      return Boolean(column && matchesFilter(row, column, filter));
+    });
   });
 });
 
-const totalRowCount = $derived(totalRows ?? sortedData.length);
+const sortedData = $derived.by(() => {
+  if (tableModes.sorting === 'manual' || tableState.sorting.length === 0)
+    return filteredData;
+  return filteredData
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      for (const rule of tableState.sorting) {
+        const column = columns.find(
+          (candidate) => candidate.id === rule.columnId,
+        );
+        if (!column) continue;
+        const result = column.sortFn
+          ? column.sortFn(left.row, right.row, rule.direction)
+          : defaultSort(
+              left.row,
+              right.row,
+              String(column.accessor ?? column.id),
+              rule.direction,
+            );
+        if (result !== 0) return result;
+      }
+      return left.index - right.index;
+    })
+    .map(({ row }) => row);
+});
+
+const totalRowCount = $derived(
+  tableModes.pagination === 'manual' ? totalRows : sortedData.length,
+);
 const totalPages = $derived(
-  pageSize ? Math.max(1, Math.ceil(totalRowCount / pageSize)) : 1,
+  tableState.pageSize
+    ? totalRowCount === undefined
+      ? null
+      : Math.max(1, Math.ceil(totalRowCount / tableState.pageSize))
+    : 1,
 );
 const displayData = $derived.by(() => {
-  if (!pageSize || manualPagination) return sortedData;
-  const start = (page - 1) * pageSize;
-  return sortedData.slice(start, start + pageSize);
+  if (!tableState.pageSize || tableModes.pagination === 'manual')
+    return sortedData;
+  const start = (tableState.page - 1) * tableState.pageSize;
+  return sortedData.slice(start, start + tableState.pageSize);
 });
-const displayIndexOffset = $derived(pageSize ? (page - 1) * pageSize : 0);
+const displayIndexOffset = $derived(
+  tableState.pageSize ? (tableState.page - 1) * tableState.pageSize : 0,
+);
 
 $effect(() => {
-  if (page > totalPages) handlePageChange(totalPages);
+  activeController().clampPage(totalRowCount);
 });
 
-// Selection state
+const selectedIds = $derived(new Set(tableState.selectedRowIds));
+const expandedIds = $derived(new Set(tableState.expandedRowIds));
+const currentSort = $derived(legacySort(tableState));
+
 const allSelected = $derived(
   displayData.length > 0 &&
-    displayData.every((row, i) => selected.has(getDisplayRowKey(row, i))),
+    displayData.every((row, i) => selectedIds.has(getDisplayRowKey(row, i))),
 );
 const someSelected = $derived(
-  displayData.some((row, i) => selected.has(getDisplayRowKey(row, i))) &&
+  displayData.some((row, i) => selectedIds.has(getDisplayRowKey(row, i))) &&
     !allSelected,
 );
 
@@ -220,13 +468,11 @@ const columnCount = $derived(
   visibleColumns.length + (selectable ? 1 : 0) + (expandedContent ? 1 : 0),
 );
 
-// Get cell value
 function getCellValue(row: T, column: DataTableColumn<T>): unknown {
   const accessor = column.accessor ?? column.id;
   return getNestedValue(row, String(accessor));
 }
 
-// Size classes
 const sizeClasses = {
   sm: 'data-table--sm',
   md: 'data-table--md',
@@ -267,14 +513,14 @@ const sizeClasses = {
           <th
             class="data-table__cell data-table__cell--header"
             class:data-table__cell--sortable={sortable && column.sortable}
-            class:data-table__cell--sorted={sort.columnId === column.id}
+            class:data-table__cell--sorted={currentSort.columnId === column.id}
             style:width={column.width}
             style:min-width={column.minWidth}
             style:max-width={column.maxWidth}
             style:text-align={column.align}
             scope="col"
-            aria-sort={sort.columnId === column.id
-              ? sort.direction === 'asc'
+            aria-sort={currentSort.columnId === column.id
+              ? currentSort.direction === 'asc'
                 ? 'ascending'
                 : 'descending'
               : undefined}
@@ -285,12 +531,12 @@ const sizeClasses = {
               <button
                 type="button"
                 class="data-table__sort-button"
-                onclick={() => handleSort(column)}
+                onclick={(event) => handleSort(column, event)}
               >
                 <span>{column.label}</span>
                 <span class="data-table__sort-icon" aria-hidden="true">
-                  {#if sort.columnId === column.id}
-                    {sort.direction === 'asc' ? '↑' : '↓'}
+                  {#if currentSort.columnId === column.id}
+                    {currentSort.direction === 'asc' ? '↑' : '↓'}
                   {:else}
                     ↕
                   {/if}
@@ -335,8 +581,8 @@ const sizeClasses = {
       {:else}
         {#each displayData as row, index (getDisplayRowKey(row, index))}
           {@const key = getDisplayRowKey(row, index)}
-          {@const isSelected = selected.has(key)}
-          {@const isExpanded = expanded.has(key)}
+          {@const isSelected = selectedIds.has(key)}
+          {@const isExpanded = expandedIds.has(key)}
           {@const rowCanExpand = canExpand?.(row, index) ?? true}
           <tr
             class="data-table__row {rowClass?.(row, index) ?? ''}"
@@ -397,7 +643,7 @@ const sizeClasses = {
     {/if}
   </table>
 </div>
-{#if pageSize && totalPages > 1}<Pagination currentPage={page} {totalPages} onPageChange={handlePageChange} aria-label="Table pages" />{/if}
+{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label="Table pages" />{/if}
 
 <style>
   .data-table-container {

@@ -102,6 +102,99 @@ apply, clear, or undo. Agent mutations are denied for secret/read-only controls
 and require explicit confirmation before apply, clear, or undo. Staging is
 separate so the UI can show a proposal before it changes user state.
 
+## DataTable controller
+
+`DataTable` can share one headless `DataTableController` between rendered
+controls and a programmatic adapter. Search, declarative filters, ordered
+multi-column sorting, pagination, columns, selection, and expansion all become
+plain-data commands; a header click and `controller.dispatch()` take the same
+transition path.
+
+```svelte
+<script lang="ts">
+  import {
+    createDataTableController,
+    DataTable,
+    type DataTableColumn,
+  } from '@happyvertical/smrt-ui/data';
+
+  const controller = createDataTableController({
+    columnIds: ['name', 'status'],
+    initialState: {
+      pageSize: 25,
+      sorting: [{ columnId: 'name', direction: 'asc' }],
+    },
+  });
+
+  controller.dispatch({
+    type: 'setFilters',
+    filters: [{ columnId: 'status', operator: 'equals', value: 'active' }],
+  });
+</script>
+
+<DataTable {controller} data={rows} {columns} rowKey="id" sortable selectable />
+```
+
+`controller.snapshot()` returns a canonical JSON-safe `{ version, modes,
+state }` envelope. It contains no rows, callbacks, snippets, storage handles,
+tenant/principal data, query objects, or authority. URL and saved-view adapters
+remain application-owned: persist the snapshot (normally excluding selection
+and expansion IDs), validate it with `hydrateDataTableSnapshot`, and feed the
+state into a new controller or `replaceState`. `smrt-ui` does not read or write
+the URL, browser storage, or a database.
+
+### Controlled and migration use
+
+Pass `state` plus `onStateChange` for controlled state. A controlled controller
+emits a candidate and waits for the host to call `replaceState`; an
+uncontrolled controller owns the state initialized by `initialState`.
+
+The existing Svelte bindables remain supported during migration:
+
+| Existing prop | Controller state |
+| --- | --- |
+| `bind:sort` | first entry of ordered `sorting` (single-sort compatibility) |
+| `bind:page`, `pageSize` | `page`, `pageSize` |
+| `bind:selected`, `bind:expanded` | canonical `selectedRowIds`, `expandedRowIds` arrays |
+| `visibleColumnIds` | `columnVisibility` intersected with static `column.hidden` |
+| `manualSorting`, `manualPagination` | sorting/pagination entries in `modes` |
+| `filterFn` | local-only legacy predicate; never serialized |
+
+An explicit `controller` takes precedence over `state` and legacy bindables.
+Without one, the component creates an internal controller and maps the legacy
+props. Multi-column sorting and persisted layouts use the controller state;
+the legacy `SortState` remains intentionally single-column.
+
+Use a stable `rowKey` when selected or expanded state can survive a sort,
+filter, refresh, or page change. The historical index fallback remains only
+for local presentational compatibility; it is not portable across remote data
+or persisted/agent-controlled views. Select-all means the currently rendered
+page. Query-wide "all matching" selection belongs to the data-surface layer.
+
+### Transformation ownership and page rules
+
+`modes` makes each stage explicit. A `manual` stage renders caller-supplied
+results and bypasses that local stage, so rows are never double-filtered,
+double-sorted, or double-paged.
+
+| Filtering | Sorting | Pagination | Renderer behavior |
+| --- | --- | --- | --- |
+| `local` | `local` | `local` | filter → ordered multi-sort → slice |
+| `manual` | `local` | `local` | sort and slice supplied rows |
+| `local` | `manual` | `local` | filter and slice supplied rows |
+| `local` | `local` | `manual` | filter and sort supplied page; never slice it |
+| `manual` | `manual` | `manual` | render supplied rows unchanged |
+
+Every combination follows the same rule per column in the table: each local
+stage runs once and each manual stage runs zero times. For manual pagination,
+`totalRows` supplies the total; when it is unknown the component does not guess
+the last page or render misleading pagination controls.
+
+Changing search, filters, sorting, or page size resets the page to 1 only when
+the value changes. Data or total changes clamp an out-of-range page but do not
+otherwise reset it; empty known totals normalize to page 1. Column layout,
+selection, and expansion never change the page.
+
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the
