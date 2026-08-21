@@ -355,9 +355,16 @@ describe('REST conditional GET + cache-control policy (#1757)', () => {
     });
 
     it('tenant-scoped models NEVER emit shared-cache headers, even public + sMaxage (#1757 review)', async () => {
-      const created = await create('tenantscoped', { name: 'tenant-a-row' });
-      expect(created.status).toBe(201);
-      const id = ((await created.json()) as any).id;
+      // The REST transport treats tenantId as server-owned, so seed through the
+      // scoped collection with an explicit tenant. This suite deliberately
+      // leaves tenancy disabled while it exercises cache headers.
+      const collection = await CondGetTenantScopedCollection.create({ db });
+      const item = await collection.create({
+        name: 'tenant-a-row',
+        tenantId: 'tenant-a',
+      });
+      await item.save();
+      const id = item.id;
 
       for (const path of ['tenantscoped', `tenantscoped/${id}`]) {
         const res = await handler(new Request(`http://local/api/v1/${path}`));
