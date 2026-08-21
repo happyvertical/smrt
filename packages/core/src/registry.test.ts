@@ -7,11 +7,13 @@ import {
   TestOrder,
 } from './__tests__/fixtures/registry-test-classes.js';
 import { SmrtCollection } from './collection';
-import { ConfigurationError } from './errors';
+import { ConfigurationError, ValidationError } from './errors';
+import { GlobalInterceptors } from './interceptors';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import type { FieldDefinition } from './scanner/types.js';
 import { snapshotObjectRegistryState } from './test-utils.js';
+import { getTestDatabase } from './testing/database.js';
 import { tableNameFromClass } from './utils';
 
 // Helper class to create field definitions for manual registration
@@ -1687,6 +1689,85 @@ describe('ObjectRegistry', () => {
 
       const rules = ObjectRegistry.getValidationRules('NoRulesClass');
       expect(rules).toBeUndefined();
+    });
+
+    it('treats an explicit empty manifest rule list as authoritative', () => {
+      ObjectRegistry.registerFromManifest('AutoPopulatedTenantValidation', {
+        className: 'AutoPopulatedTenantValidation',
+        fields: {
+          tenantId: {
+            type: 'foreignKey',
+            required: true,
+            _meta: {
+              __tenancy: {
+                isTenantIdField: true,
+                autoPopulate: true,
+              },
+            },
+          },
+        },
+        methods: {},
+        validationRules: [],
+      });
+
+      expect(
+        ObjectRegistry.getValidationRules('AutoPopulatedTenantValidation'),
+      ).toEqual([]);
+      expect(
+        ObjectRegistry.getValidators('AutoPopulatedTenantValidation'),
+      ).toBeUndefined();
+    });
+
+    it('allows a beforeSave hook to populate a manifest-required tenant field', async () => {
+      @smrt({ tenantScoped: true })
+      class AutoPopulatedTenantSave extends SmrtObject {
+        title = '';
+      }
+
+      class AutoPopulatedTenantSaveCollection extends SmrtCollection<AutoPopulatedTenantSave> {
+        static readonly _itemClass = AutoPopulatedTenantSave;
+      }
+
+      const registered = ObjectRegistry.getClass('AutoPopulatedTenantSave');
+      if (!registered) {
+        throw new Error('Expected tenant-scoped class registration');
+      }
+      // Generated manifests intentionally leave this list empty: tenantId is
+      // required in storage but populated by beforeSave.
+      registered.validationRules = [];
+      // A stale fallback validator must not run once the manifest supplied an
+      // explicit rule list, even one with no rules.
+      registered.validators = [
+        async () =>
+          ValidationError.requiredField('tenantId', 'AutoPopulatedTenantSave'),
+      ];
+
+      GlobalInterceptors.register({
+        name: 'tenant-auto-populate',
+        beforeSave(instance) {
+          (
+            instance as AutoPopulatedTenantSave & { tenantId?: string }
+          ).tenantId = 'tenant-save';
+        },
+      });
+
+      const db = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['AutoPopulatedTenantSave'],
+      });
+      try {
+        const collection = await AutoPopulatedTenantSaveCollection.create({
+          db,
+        });
+        const doc = await collection.create({ title: 'saved' });
+        await doc.save();
+
+        expect(doc.tenantId).toBe('tenant-save');
+      } finally {
+        GlobalInterceptors.clear();
+        await db.close();
+      }
     });
 
     it('should validate required fields with validateWithRules()', async () => {

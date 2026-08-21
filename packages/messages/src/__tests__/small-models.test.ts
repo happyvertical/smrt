@@ -19,6 +19,7 @@ import { EmailFolder } from '../models/EmailFolder';
 import { Whitelist } from '../models/Whitelist';
 
 let db: DatabaseInterface;
+const TEST_TENANT_ID = 'test-messaging-tenant';
 
 beforeEach(async () => {
   db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
@@ -71,6 +72,7 @@ describe('Whitelist.matches()', () => {
     const entry = new Whitelist({
       pattern: 'allow@example.com',
       type: 'email',
+      tenantId: TEST_TENANT_ID,
       db,
     });
     entry.category = 'newsletter';
@@ -92,6 +94,7 @@ describe('Whitelist.matches()', () => {
     const scoped = new Whitelist({
       pattern: 'support@vendor.com',
       type: 'email',
+      tenantId: TEST_TENANT_ID,
       db,
     });
     scoped.category = 'billing';
@@ -150,6 +153,7 @@ describe('Blacklist.matches()', () => {
     const entry = new Blacklist({
       pattern: 'evil.com',
       type: 'domain',
+      tenantId: TEST_TENANT_ID,
       db,
     });
     entry.reason = 'known spammer';

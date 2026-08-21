@@ -502,6 +502,7 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     expect(tenantScopedThing?.fields.tenantId).toEqual(
       expect.objectContaining({
         type: 'text',
+        required: true,
         _meta: expect.objectContaining({
           sqlType: 'UUID',
           __tenancy: expect.objectContaining({
@@ -512,7 +513,11 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       }),
     );
     expect(tenantScopedThing?.schema?.columns.tenant_id).toEqual(
-      expect.objectContaining({ type: 'UUID', referenceKind: 'tenantId' }),
+      expect.objectContaining({
+        type: 'UUID',
+        referenceKind: 'tenantId',
+        notNull: true,
+      }),
     );
   });
 

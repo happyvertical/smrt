@@ -1167,7 +1167,7 @@ export function register(
   let validators: ValidatorFunction[] | undefined;
 
   // Only compile validators if no pre-computed rules exist
-  if (!validationRules || validationRules.length === 0) {
+  if (validationRules === undefined) {
     validators = compileValidators(name, fields);
   } else {
     verboseLog(
@@ -1877,7 +1877,7 @@ export function registerFromManifest(
 
   // Only compile validators if no pre-computed rules exist
   // (backward compatibility for older manifests)
-  if (!validationRules || validationRules.length === 0) {
+  if (validationRules === undefined) {
     validators = compileValidators(name, fields);
     verboseLog(
       `[registry] No pre-computed rules for ${name}, compiled ${validators.length} validators`,

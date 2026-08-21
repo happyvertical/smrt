@@ -343,8 +343,7 @@ export class ManifestGenerator {
       return;
     }
 
-    const { tenantConfig, tenantOptions } =
-      this.normalizeTenantScopedConfig(tenantScoped);
+    const { tenantConfig } = this.normalizeTenantScopedConfig(tenantScoped);
     const fieldName = tenantConfig.field;
     const existingField = objectDef.fields[fieldName];
     const tenancyMeta = {
@@ -376,10 +375,9 @@ export class ManifestGenerator {
 
     objectDef.fields[fieldName] = {
       type: 'text',
-      // Preserve legacy migration behavior: boolean `tenantScoped: true`
-      // enables required-mode runtime scoping, but does not add a NOT NULL
-      // column to existing tables unless mode is explicitly set.
-      required: tenantOptions.mode === 'required',
+      // Use the normalized tenant mode so the boolean shorthand has the same
+      // requiredness in manifests as it does during runtime registration.
+      required: tenantConfig.mode === 'required',
       _meta: {
         generated: true,
         source: 'tenantScoped_decorator',
@@ -493,7 +491,6 @@ export class ManifestGenerator {
   }
 
   private normalizeTenantScopedConfig(tenantScoped: unknown): {
-    tenantOptions: TenantScopedOptions;
     tenantConfig: {
       mode: string;
       field: string;
@@ -508,7 +505,6 @@ export class ManifestGenerator {
         : (tenantScoped as TenantScopedOptions);
 
     return {
-      tenantOptions,
       tenantConfig: {
         mode: tenantOptions.mode ?? 'required',
         field: tenantOptions.field ?? 'tenantId',
@@ -533,6 +529,7 @@ export class ManifestGenerator {
   generateValidationRules(manifest: SmartObjectManifest): void {
     for (const [name, obj] of Object.entries(manifest.objects)) {
       const rules: ValidationRule[] = [];
+      let skippedAutoPopulatedTenantRequiredRule = false;
 
       for (const [fieldName, field] of Object.entries(obj.fields)) {
         // Skip transient fields (they're not persisted, so no validation needed)
@@ -543,12 +540,26 @@ export class ManifestGenerator {
         const options = field._meta || {};
 
         // Required field rule
-        if (options.required || field.required) {
+        const isAutoPopulatedTenantField =
+          options.__tenancy?.isTenantIdField === true &&
+          options.__tenancy.autoPopulate !== false;
+        if (
+          (options.required || field.required) &&
+          !isAutoPopulatedTenantField
+        ) {
           rules.push({
             field: fieldName,
             rule: 'required',
             fieldType: field.type,
           });
+        } else if (
+          isAutoPopulatedTenantField &&
+          (options.required || field.required)
+        ) {
+          // Tenant IDs can be required in the manifest and database while still
+          // being absent at this pre-interceptor validation stage. Tenancy's
+          // beforeSave hook stamps them from the active context before writing.
+          skippedAutoPopulatedTenantRequiredRule = true;
         }
 
         // Numeric range rules (for integer, decimal fields)
@@ -619,8 +630,10 @@ export class ManifestGenerator {
         }
       }
 
-      // Only add validationRules if there are any rules
-      if (rules.length > 0) {
+      // An explicit empty list is meaningful when the sole required field is
+      // auto-populated by tenancy: it prevents runtime registration from
+      // recompiling a pre-interceptor required validator for that field.
+      if (rules.length > 0 || skippedAutoPopulatedTenantRequiredRule) {
         obj.validationRules = rules;
       }
     }
