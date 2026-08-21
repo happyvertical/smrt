@@ -6,7 +6,11 @@ import type {
   DataTableController,
   DataTableViewState,
 } from './DataTableController.js';
-import type { DataSurfaceJsonValue } from './data-surface.js';
+import {
+  type DataSurfaceJsonValue,
+  type DataSurfaceRegistry,
+  normalizeDataSurfaceDescriptor,
+} from './data-surface.js';
 import type { CollectionToolbarDataSurfaceOptions } from './types.js';
 
 export interface Props {
@@ -53,6 +57,8 @@ let surfaceHighlighted = $state(false);
 let surfaceRegistration:
   | {
       surface: CollectionToolbarDataSurfaceOptions;
+      registry: DataSurfaceRegistry;
+      descriptorSignature: string;
       controller: DataTableController | undefined;
       cleanup: () => void;
     }
@@ -106,15 +112,31 @@ function payloadObject(
 $effect(() => {
   const surface = dataSurface;
   const surfaceController = controller;
+  if (!surface) {
+    surfaceRegistration?.cleanup();
+    surfaceRegistration = undefined;
+    return;
+  }
+  const descriptorSignature = JSON.stringify(
+    normalizeDataSurfaceDescriptor(surface.descriptor),
+  );
   if (
-    surfaceRegistration?.surface === surface &&
+    surfaceRegistration?.registry === surface.registry &&
+    surfaceRegistration?.descriptorSignature === descriptorSignature &&
     surfaceRegistration?.controller === surfaceController
   ) {
+    surfaceRegistration.surface = surface;
     return;
   }
   surfaceRegistration?.cleanup();
   surfaceRegistration = undefined;
-  if (!surface) return;
+  const registration = {
+    surface,
+    registry: surface.registry,
+    descriptorSignature,
+    controller: surfaceController,
+    cleanup: () => {},
+  };
   const cleanup = untrack(() => {
     let revision = 0;
     let previousStateSignature: string | undefined;
@@ -152,7 +174,7 @@ $effect(() => {
               search: payload.search,
             });
             if (surfaceController.isControlled() && transition.changed) {
-              const settled = await surface.applyControlledState?.(
+              const settled = await registration.surface.applyControlledState?.(
                 transition.next.state,
                 { type: 'setSearch', search: payload.search },
               );
@@ -195,12 +217,12 @@ $effect(() => {
             }, 1_000);
             return;
           case 'refresh':
-            if (!surface.onRefresh) return { ok: false };
-            await surface.onRefresh();
+            if (!registration.surface.onRefresh) return { ok: false };
+            await registration.surface.onRefresh();
             return;
           case 'retry':
-            if (!surface.onRetry) return { ok: false };
-            await surface.onRetry();
+            if (!registration.surface.onRetry) return { ok: false };
+            await registration.surface.onRetry();
             return;
           default:
             return { ok: false };
@@ -212,7 +234,8 @@ $effect(() => {
       unregister();
     };
   });
-  surfaceRegistration = { surface, controller: surfaceController, cleanup };
+  registration.cleanup = cleanup;
+  surfaceRegistration = registration;
 });
 
 onDestroy(() => surfaceRegistration?.cleanup());

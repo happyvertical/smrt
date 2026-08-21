@@ -374,4 +374,49 @@ describe('mounted data surfaces', () => {
       }),
     ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
   });
+
+  it('preserves toolbar revisions for equivalent surface bindings', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'equivalent-toolbar-binding',
+      kind: 'custom',
+    };
+    const surface = () => ({
+      registry,
+      descriptor: descriptor(identity, ['set-view']),
+    });
+    const { rerender } = render(CollectionToolbar, {
+      props: { dataSurface: surface() },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'change-toolbar-view',
+        identity,
+        expectedRevision: 0,
+        controlId: 'set-view',
+        payload: { view: 'grid' },
+      }),
+    ).resolves.toMatchObject({ ok: true, revision: 1 });
+
+    await rerender({ dataSurface: surface() });
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)).toMatchObject({
+        revision: 1,
+        state: { search: '', view: 'grid' },
+      }),
+    );
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'stale-equivalent-toolbar-command',
+        identity,
+        expectedRevision: 0,
+        controlId: 'set-view',
+        payload: { view: 'list' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
+  });
 });
