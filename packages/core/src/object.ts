@@ -2187,7 +2187,7 @@ export class SmrtObject extends SmrtClass {
     // This is the fastest path - rules are serializable and don't require closures
     const validationRules = ObjectRegistry.getValidationRules(className);
 
-    if (validationRules && validationRules.length > 0) {
+    if (validationRules !== undefined) {
       const errors = await ObjectRegistry.validateWithRules(
         this,
         validationRules,

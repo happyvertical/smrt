@@ -86,6 +86,8 @@ export interface FieldMeta {
   /** Tenancy metadata injected for tenant-scoped models. */
   __tenancy?: {
     isTenantIdField?: boolean;
+    /** Populated by the tenancy beforeSave interceptor when enabled. */
+    autoPopulate?: boolean;
     [key: string]: unknown;
   };
   /** Report-aggregate metadata injected by the report normalizer. */

@@ -529,6 +529,7 @@ export class ManifestGenerator {
   generateValidationRules(manifest: SmartObjectManifest): void {
     for (const [name, obj] of Object.entries(manifest.objects)) {
       const rules: ValidationRule[] = [];
+      let skippedAutoPopulatedTenantRequiredRule = false;
 
       for (const [fieldName, field] of Object.entries(obj.fields)) {
         // Skip transient fields (they're not persisted, so no validation needed)
@@ -539,12 +540,26 @@ export class ManifestGenerator {
         const options = field._meta || {};
 
         // Required field rule
-        if (options.required || field.required) {
+        const isAutoPopulatedTenantField =
+          options.__tenancy?.isTenantIdField === true &&
+          options.__tenancy.autoPopulate !== false;
+        if (
+          (options.required || field.required) &&
+          !isAutoPopulatedTenantField
+        ) {
           rules.push({
             field: fieldName,
             rule: 'required',
             fieldType: field.type,
           });
+        } else if (
+          isAutoPopulatedTenantField &&
+          (options.required || field.required)
+        ) {
+          // Tenant IDs can be required in the manifest and database while still
+          // being absent at this pre-interceptor validation stage. Tenancy's
+          // beforeSave hook stamps them from the active context before writing.
+          skippedAutoPopulatedTenantRequiredRule = true;
         }
 
         // Numeric range rules (for integer, decimal fields)
@@ -615,8 +630,10 @@ export class ManifestGenerator {
         }
       }
 
-      // Only add validationRules if there are any rules
-      if (rules.length > 0) {
+      // An explicit empty list is meaningful when the sole required field is
+      // auto-populated by tenancy: it prevents runtime registration from
+      // recompiling a pre-interceptor required validator for that field.
+      if (rules.length > 0 || skippedAutoPopulatedTenantRequiredRule) {
         obj.validationRules = rules;
       }
     }

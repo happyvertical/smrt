@@ -463,6 +463,48 @@ describe('ManifestGenerator', () => {
           notNull: true,
         }),
       );
+      expect(secret.validationRules).toEqual([]);
+    });
+
+    it.each([
+      [true, false],
+      [{ mode: 'required' }, false],
+      [{ mode: 'required', autoPopulate: false }, true],
+      [{ mode: 'optional' }, false],
+    ] as const)('keeps required validation aligned with tenant auto-population for %o', (tenantScoped, includesTenantRequiredRule) => {
+      const generator = new ManifestGenerator();
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/tenant-validation.ts',
+          objects: [
+            {
+              name: 'tenantValidation',
+              className: 'TenantValidation',
+              collection: 'tenant_validations',
+              filePath: '/path/to/tenant-validation.ts',
+              fields: { title: { type: 'text', required: true } },
+              methods: {},
+              decoratorConfig: { tenantScoped },
+              exportName: 'TenantValidation',
+              collectionExportName: 'TenantValidationCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const rules = manifest.objects.tenantValidation.validationRules ?? [];
+      expect(
+        rules.some(
+          (rule) => rule.field === 'tenantId' && rule.rule === 'required',
+        ),
+      ).toBe(includesTenantRequiredRule);
+      expect(
+        rules.some(
+          (rule) => rule.field === 'title' && rule.rule === 'required',
+        ),
+      ).toBe(true);
     });
 
     it.each([
