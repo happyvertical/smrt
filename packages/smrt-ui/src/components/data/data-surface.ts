@@ -1257,6 +1257,14 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
       }
 
       return serializeCommand(entry, async () => {
+        if (entries.get(entry.key) !== entry) {
+          return {
+            ok: false,
+            commandId: normalized.commandId,
+            identity: cloneIdentity(normalized.identity),
+            reason: 'not_found' as const,
+          };
+        }
         const signature = jsonSignature(normalized);
         const replay = entry.replay.get(normalized.commandId);
         if (replay) {
@@ -1346,13 +1354,19 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
             snapshot: after.exposed,
           });
         } catch {
-          const current = readSnapshot(entry).exposed;
+          let current: DataSurfaceSnapshot | undefined;
+          try {
+            current = readSnapshot(entry).exposed;
+          } catch {
+            // A teardown can make snapshot retrieval fail after the handler.
+          }
           return cacheResult(entry, normalized, {
             ok: false,
             commandId: normalized.commandId,
             identity: cloneIdentity(entry.descriptor.identity),
-            revision: current.revision,
-            snapshot: current,
+            ...(current
+              ? { revision: current.revision, snapshot: current }
+              : {}),
             reason: 'execution_failed',
           });
         }

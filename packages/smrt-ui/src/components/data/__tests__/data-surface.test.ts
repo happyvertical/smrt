@@ -225,6 +225,61 @@ describe('data surface registry', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it('does not run a queued command after its surface unregisters', async () => {
+    let revision = 3;
+    let releaseFirst!: () => void;
+    const firstExecution = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const execute = vi.fn(async () => {
+      await firstExecution;
+      revision += 1;
+    });
+    const registry = createDataSurfaceRegistry();
+    const unregister = registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision, state: {} }),
+      execute,
+    });
+
+    const first = registry.execute(command({ commandId: 'first' }));
+    const queued = registry.execute(command({ commandId: 'queued' }));
+
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1));
+    unregister();
+    releaseFirst();
+
+    await expect(first).resolves.toMatchObject({ ok: true, revision: 4 });
+    await expect(queued).resolves.toMatchObject({
+      ok: false,
+      commandId: 'queued',
+      reason: 'not_found',
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns execution_failed when handler teardown also breaks snapshots', async () => {
+    let tornDown = false;
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => {
+        if (tornDown) throw new Error('renderer is gone');
+        return { revision: 3, state: {} };
+      },
+      execute: () => {
+        tornDown = true;
+        throw new Error('handler failed');
+      },
+    });
+
+    await expect(registry.execute(command())).resolves.toMatchObject({
+      ok: false,
+      commandId: 'search-1',
+      reason: 'execution_failed',
+    });
+  });
+
   it('rejects a changed snapshot when its renderer did not advance revision', async () => {
     const { registry } = registerFixture({ advance: false });
 
