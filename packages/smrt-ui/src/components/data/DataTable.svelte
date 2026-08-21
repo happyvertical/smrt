@@ -333,7 +333,7 @@ function matchesFilter(
   column: DataTableColumn<T>,
   filter: DataTableFilter,
 ): boolean {
-  if (column.filterable === false) return false;
+  if (column.filterable === false) return true;
   const value = getCellValue(row, column);
   if (column.filterFn) return column.filterFn(row, value, filter);
   const expected = filter.value;
@@ -448,6 +448,8 @@ const displayIndexOffset = $derived(
 );
 
 $effect(() => {
+  void tableState.page;
+  void tableState.pageSize;
   activeController().clampPage(totalRowCount);
 });
 

@@ -114,6 +114,38 @@ describe('DataTable', () => {
     expect(screen.getByRole('cell', { name: 'Grace' })).toBeInTheDocument();
   });
 
+  it('ignores local filters targeting a non-filterable column', () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: {
+        filters: [{ columnId: 'age', operator: 'gte', value: 40 }],
+      },
+    });
+    render(DataTable, {
+      props: {
+        data,
+        columns: [columns[0], { ...columns[1], filterable: false }],
+        controller,
+      },
+    });
+
+    expect(screen.getByRole('cell', { name: 'Ada' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Linus' })).toBeInTheDocument();
+  });
+
+  it('clamps a controller page changed after mount against the current total', async () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: { page: 1, pageSize: 1 },
+    });
+    render(DataTable, { props: { data, columns, controller } });
+
+    controller.replaceState({ ...controller.getState(), page: 4 });
+
+    await vi.waitFor(() => expect(controller.getState().page).toBe(2));
+    expect(screen.getByRole('cell', { name: 'Linus' })).toBeInTheDocument();
+  });
+
   it.each([
     [
       'local/local/local',

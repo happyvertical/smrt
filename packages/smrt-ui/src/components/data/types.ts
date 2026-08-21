@@ -39,9 +39,9 @@ export interface DataTableColumn<T> {
   hidden?: boolean;
   /** Custom sort function */
   sortFn?: (a: T, b: T, direction: SortDirection) => number;
-  /** Opt out of the controller's built-in local text search. */
+  /** Local text search is enabled by default; set `false` to opt out. */
   searchable?: boolean;
-  /** Opt out of declarative local filters for this column. */
+  /** Declarative local filters are enabled by default; set `false` to opt out. */
   filterable?: boolean;
   /** Optional local-only evaluator for a serializable declarative filter. */
   filterFn?: (row: T, value: unknown, filter: DataTableFilter) => boolean;
