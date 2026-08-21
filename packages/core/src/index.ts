@@ -96,6 +96,28 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Canonical bounded query protocol — adapters supply their own authorization
+// and execution, while this runtime normalizes the shared envelope (#2444).
+export {
+  canonicalizeDataQuery,
+  createDataQueryFingerprint,
+  DataQueryValidationError,
+  DEFAULT_DATA_QUERY_PAGE_LIMIT,
+  DEFAULT_DATA_QUERY_RESULT_BYTES,
+  MAX_DATA_QUERY_CURSOR_LENGTH,
+  MAX_DATA_QUERY_FACETS,
+  MAX_DATA_QUERY_FILTER_DEPTH,
+  MAX_DATA_QUERY_FILTERS,
+  MAX_DATA_QUERY_IN_VALUES,
+  MAX_DATA_QUERY_OFFSET,
+  MAX_DATA_QUERY_PAGE_LIMIT,
+  MAX_DATA_QUERY_REQUEST_BYTES,
+  MAX_DATA_QUERY_RESULT_BYTES,
+  MAX_DATA_QUERY_WARNINGS,
+  normalizeDataQueryRequest,
+  normalizeDataQueryResult,
+  normalizeDataQuerySchema,
+} from './data-query';
 // Database utilities
 export {
   type DatabaseConfig,

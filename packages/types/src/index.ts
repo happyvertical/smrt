@@ -20,6 +20,30 @@ export type {
 // Cross-package identity & tenancy data contracts (zero-runtime structural
 // interfaces; runtime classes live in smrt-users / smrt-profiles)
 export type {
+  DataQueryCondition,
+  DataQueryConsistency,
+  DataQueryConsistencyMode,
+  DataQueryCursorPage,
+  DataQueryFacetRequest,
+  DataQueryFacetResult,
+  DataQueryFacetValue,
+  DataQueryFieldDescriptor,
+  DataQueryFieldId,
+  DataQueryFilter,
+  DataQueryFilterOperator,
+  DataQueryFreshness,
+  DataQueryOffsetPage,
+  DataQueryPage,
+  DataQueryRequest,
+  DataQueryResult,
+  DataQueryRow,
+  DataQueryScalar,
+  DataQuerySchema,
+  DataQuerySort,
+  DataQuerySortDirection,
+  DataQueryTotal,
+} from './data-query.js';
+export type {
   Membership,
   Role,
   SmrtEntityFields,
