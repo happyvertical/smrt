@@ -1015,7 +1015,7 @@ $effect(() => {
     z-index: 2;
   }
 
-  .data-table-container--virtualized .data-table__head {
+  .data-table-container--sticky.data-table-container--virtualized .data-table__head {
     position: sticky;
     top: var(--data-table-caption-height, 0px);
     z-index: 1;
