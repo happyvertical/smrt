@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.42.4
+
+### Patch Changes
+
+- ### Features
+
+  - stabilize DataTable row identity and selection (#2470) (smrt-ui)
+  - add DataTable view controller (#2467) (smrt-ui)
+
+  ### Other Changes
+
+  - chore: sync managed kernel generation 24 (#2465) (policy)
+  - @happyvertical/smrt-config@0.42.4
+  - @happyvertical/smrt-types@0.42.4
+  - @happyvertical/smrt-scanner@0.42.4
+
 ## 0.42.3
 
 ### Patch Changes
