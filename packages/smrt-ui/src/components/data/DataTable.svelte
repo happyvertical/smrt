@@ -26,6 +26,7 @@ import {
   type DataTableRowId,
   type DataTableSnapshot,
   type DataTableViewState,
+  type DataTableViewStateInput,
 } from './DataTableController.js';
 import { resolveDataTableRows } from './DataTableIdentity.js';
 import type { DataTableColumn, DataTableProps, SortState } from './types.js';
@@ -109,6 +110,11 @@ function legacyViewState(): Partial<DataTableViewState> {
   };
 }
 
+function mergedLegacyState(): Omit<DataTableViewState, 'selection'> {
+  const { selection: _selection, ...current } = localController.getState();
+  return { ...current, ...legacyViewState() };
+}
+
 const localController = createDataTableController({
   modes: legacyModes(),
   onStateChange: (next, command) => onStateChange?.(next, command),
@@ -185,10 +191,11 @@ $effect(() => {
 
   if (!localControllerInitialized) {
     localControllerInitialized = true;
-    localController.replaceState({
-      ...localController.getState(),
-      ...(controlledState ?? { ...legacyViewState(), ...initialState }),
-    });
+    const nextState: DataTableViewStateInput = controlledState ?? {
+      ...mergedLegacyState(),
+      ...initialState,
+    };
+    localController.replaceState(nextState);
     return;
   }
 
@@ -202,10 +209,7 @@ $effect(() => {
     publishedLegacySignature = undefined;
     return;
   }
-  localController.replaceState({
-    ...localController.getState(),
-    ...legacyViewState(),
-  });
+  localController.replaceState(mergedLegacyState());
 });
 
 $effect(() => {

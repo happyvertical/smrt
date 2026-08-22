@@ -243,6 +243,32 @@ describe('DataTable', () => {
     );
   });
 
+  it('honors legacy selected bindings during controller reconciliation', async () => {
+    const props = {
+      data,
+      columns,
+      rowKey: 'id' as const,
+      selectable: true,
+      selected: new Set<string | number>(['ada']),
+    };
+    const { rerender } = render(DataTable, { props });
+
+    const expectSelected = (name: string) => {
+      expect(screen.getByRole('cell', { name }).closest('tr')).toHaveClass(
+        'data-table__row--selected',
+      );
+    };
+
+    await vi.waitFor(() => expectSelected('Ada'));
+    await rerender({ ...props, selected: new Set(['linus']) });
+    await vi.waitFor(() => {
+      expectSelected('Linus');
+      expect(
+        screen.getByRole('cell', { name: 'Ada' }).closest('tr'),
+      ).not.toHaveClass('data-table__row--selected');
+    });
+  });
+
   it('keeps stable selection and expansion through sort, filter, and data refresh', async () => {
     const controller = createDataTableController({
       columnIds: columns.map((column) => column.id),
