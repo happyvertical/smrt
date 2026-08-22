@@ -242,12 +242,15 @@ renderer comparison does not depend on array-arrival identity.
 `virtualization` is opt-in and requires `rowKey`. It virtualizes only a
 fixed-height data body; table headers (including grouped headers) and the
 `footer` summary remain normal semantic table sections and do not count toward
-the window. Supplying `expandedContent` makes data-row height variable, so the
-component deliberately falls back to the full semantic body. Use controlled
-`scrollTop`/`onScrollTopChange` for scroll restoration, and pair
-`focusedRowId` with `onFocusedRowIdChange` to keep a stable focused row visible
-after a data refresh. Selection and expansion continue to be controller state
-keyed by `rowKey`, never by a rendered window index.
+the window. The virtual scroll region keeps captions and headers sticky, is
+keyboard-scrollable, and reports the full row count plus each rendered row's
+logical row index. Supplying `expandedContent` makes data-row height variable,
+so the component deliberately falls back to the full semantic body and does
+not emit virtual scroll callbacks. Use controlled `scrollTop`/
+`onScrollTopChange` for scroll restoration, and pair `focusedRowId` with
+`onFocusedRowIdChange` to restore DOM focus to a stable row after a data
+refresh. Selection and expansion continue to be controller state keyed by
+`rowKey`, never by a rendered window index.
 
 ## Themes
 

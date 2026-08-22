@@ -9,7 +9,10 @@ import type { DataTableRowId } from './DataTableController.js';
 export interface DataTableVirtualizationOptions {
   /** The measured, fixed height of each data row in CSS pixels. */
   rowHeight: number;
-  /** The visible height of the scrolling data viewport in CSS pixels. */
+  /**
+   * The visible height of the scrolling data viewport in CSS pixels. The
+   * component adds measured caption and header height around this body region.
+   */
   viewportHeight: number;
   /** Extra rows rendered before and after the visible range. Defaults to 3. */
   overscan?: number;

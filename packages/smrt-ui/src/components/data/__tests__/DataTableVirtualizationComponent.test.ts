@@ -25,7 +25,7 @@ function getScrollContainer(container: HTMLElement): HTMLDivElement {
 }
 
 describe('DataTable virtualization seam', () => {
-  it('renders only a fixed-height body window while retaining semantic headers', async () => {
+  it('renders only a fixed-height body window with accessible row context', async () => {
     const { container } = render(DataTable, {
       props: { data: rows, columns, rowKey: 'id', virtualization },
     });
@@ -34,7 +34,14 @@ describe('DataTable virtualization seam', () => {
     expect(
       screen.getByRole('columnheader', { name: 'Name' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-rowcount', '101');
+    expect(getScrollContainer(container)).toHaveAttribute('role', 'region');
+    expect(getScrollContainer(container)).toHaveAttribute('tabindex', '0');
     expect(screen.getByText('Record 00000')).toBeInTheDocument();
+    expect(screen.getByText('Record 00000').closest('tr')).toHaveAttribute(
+      'aria-rowindex',
+      '2',
+    );
     expect(screen.queryByText('Record 00020')).not.toBeInTheDocument();
     expect(
       container.querySelectorAll('.data-table__virtual-spacer'),
@@ -47,6 +54,10 @@ describe('DataTable virtualization seam', () => {
       expect(screen.queryByText('Record 00000')).not.toBeInTheDocument();
       expect(screen.getByText('Record 00010')).toBeInTheDocument();
     });
+    expect(screen.getByText('Record 00010').closest('tr')).toHaveAttribute(
+      'aria-rowindex',
+      '12',
+    );
     expect(
       container.querySelectorAll('.data-table__virtual-spacer'),
     ).toHaveLength(2);
@@ -105,17 +116,40 @@ describe('DataTable virtualization seam', () => {
 
     const focusedRow = await screen.findByText('Record 00040');
     expect(scrollContainer.scrollTop).toBeGreaterThan(0);
-    (focusedRow.closest('tr') as HTMLTableRowElement).focus();
+    expect(document.activeElement).toBe(focusedRow.closest('tr'));
     expect(onFocusedRowIdChange).toHaveBeenCalledWith('row-40');
   });
 
-  it('falls back for expansion while keeping footer summaries outside the virtual body', () => {
+  it('scrolls the virtual body from the keyboard-accessible region', async () => {
+    const onScrollTopChange = vi.fn();
+    const { container } = render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'id',
+        virtualization: { ...virtualization, onScrollTopChange },
+      },
+    });
+    const scrollContainer = getScrollContainer(container);
+
+    scrollContainer.focus();
+    await fireEvent.keyDown(scrollContainer, { key: 'PageDown' });
+
+    expect(scrollContainer.scrollTop).toBe(80);
+    expect(onScrollTopChange).toHaveBeenCalledWith(80);
+    await vi.waitFor(() =>
+      expect(screen.getByText('Record 00004')).toBeInTheDocument(),
+    );
+  });
+
+  it('falls back for expansion without virtual scroll behavior', async () => {
     const expandedContent = createRawSnippet(() => ({
       render: () => '<p>Variable detail</p>',
     }));
     const footer = createRawSnippet(() => ({
       render: () => '<strong>Summary total</strong>',
     }));
+    const onScrollTopChange = vi.fn();
     const { container } = render(DataTable, {
       props: {
         data: rows,
@@ -123,13 +157,18 @@ describe('DataTable virtualization seam', () => {
         rowKey: 'id',
         expandedContent,
         footer,
-        virtualization,
+        virtualization: { ...virtualization, onScrollTopChange },
       },
     });
 
     expect(screen.getByText('Record 00099')).toBeInTheDocument();
     expect(screen.getByText('Summary total')).toBeInTheDocument();
     expect(container.querySelector('.data-table__virtual-spacer')).toBeNull();
+    const scrollContainer = getScrollContainer(container);
+    expect(scrollContainer).not.toHaveAttribute('tabindex');
+    scrollContainer.scrollTop = 200;
+    await fireEvent.scroll(scrollContainer);
+    expect(onScrollTopChange).not.toHaveBeenCalled();
   });
 
   it('is axe-clean with virtual spacer rows', async () => {
