@@ -40,6 +40,12 @@ describe('smrt-web bounded data-query transport', () => {
       ...result,
       warnings: ['cache-hit', 'revalidated'],
     });
+    await expect(
+      executeSmrtWebDataQuery(
+        { query: async () => ({ ...result, requestId: 'other-request' }) },
+        request,
+      ),
+    ).rejects.toThrow(/request id does not match/i);
   });
 
   it('fails closed for malformed browser envelopes', () => {
@@ -110,5 +116,15 @@ describe('smrt-web bounded data-query transport', () => {
         page: { kind: 'offset', offset: 0, limit: 1_000, hasMore: false },
       }),
     ).toThrow(/maximum byte limit/i);
+    expect(
+      normalizeSmrtWebDataQueryResult({
+        ...result,
+        rows: Array.from({ length: 1_000 }, (_, index) => ({
+          id: `row-${index}`,
+          name: 'x'.repeat(9_800),
+        })),
+        page: { kind: 'offset', offset: 0, limit: 1_000, hasMore: false },
+      }).rows,
+    ).toHaveLength(1_000);
   });
 });

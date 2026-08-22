@@ -303,7 +303,7 @@ describe('bounded data-query protocol', () => {
         ),
         schema,
       ),
-    ).toThrow(/JSON scalar/i);
+    ).toThrow(/forbidden key|JSON scalar/i);
     expect(normalizeDataQuerySchema(schema)).toEqual(
       normalizeDataQuerySchema({
         ...schema,
@@ -364,6 +364,139 @@ describe('bounded data-query protocol', () => {
         schema,
       ),
     ).toThrow(/maximum byte limit/i);
+    expect(() =>
+      normalizeDataQueryRequest(
+        rowsRequest({
+          filter: {
+            kind: 'condition',
+            field: 'name',
+            operator: 'in',
+            value: Array.from({ length: 100 }, () => 'x'.repeat(4_096)),
+          },
+        }),
+        schema,
+      ),
+    ).toThrow(/maximum byte limit/i);
+    expect(() =>
+      normalizeDataQueryRequest(
+        rowsRequest({
+          sort: Array.from({ length: 51 }, () => ({
+            field: 'name',
+            direction: 'asc',
+          })),
+        }),
+        schema,
+      ),
+    ).toThrow(/cannot exceed 50 terms/i);
+  });
+
+  it('rejects invalid instants, unusable identities, and ambiguous pagination', () => {
+    expect(() =>
+      normalizeDataQueryRequest(
+        rowsRequest({
+          consistency: { mode: 'snapshot', asOf: '2026-02-30T00:00:00Z' },
+        }),
+        schema,
+      ),
+    ).toThrow(/RFC 3339/i);
+    expect(() =>
+      normalizeDataQueryRequest(
+        rowsRequest({
+          consistency: { mode: 'snapshot', asOf: '2026-08-22T01:00:00' },
+        }),
+        schema,
+      ),
+    ).toThrow(/RFC 3339/i);
+    expect(() =>
+      normalizeDataQuerySchema({
+        ...schema,
+        identityField: 'active',
+        fields: [
+          ...schema.fields,
+          { id: 'active', type: 'boolean', projectable: true },
+        ],
+      }),
+    ).toThrow(/identity field must use/i);
+    expect(() =>
+      normalizeDataQueryRequest(
+        rowsRequest({
+          page: { kind: 'offset', offset: 1_000_001, limit: 25 },
+        }),
+        schema,
+      ),
+    ).toThrow(/offset cannot exceed/i);
+
+    const request = rowsRequest({
+      page: { kind: 'cursor', limit: 25 },
+    });
+    const result = {
+      version: 1,
+      requestId: request.requestId,
+      queryFingerprint: createDataQueryFingerprint(request, schema),
+      identityField: 'id',
+      rows: [{ id: 'person-1', name: 'Ada' }],
+      page: {
+        kind: 'cursor',
+        limit: 25,
+        offset: 0,
+        nextCursor: 'cursor-2',
+        hasMore: true,
+      },
+      total: { kind: 'exact', value: 1 },
+      freshness: { state: 'fresh' },
+      warnings: [],
+      truncated: false,
+    };
+    expect(() => normalizeDataQueryResult(result, request, schema)).toThrow(
+      /cannot return an offset/i,
+    );
+  });
+
+  it('bounds and rejects cyclic JSON result fields before cloning them', () => {
+    const jsonSchema: DataQuerySchema = {
+      ...schema,
+      fields: [
+        ...schema.fields,
+        { id: 'metadata', type: 'json', projectable: true },
+      ],
+    };
+    const request = rowsRequest({ projection: ['metadata'] });
+    const baseResult = {
+      version: 1,
+      requestId: request.requestId,
+      queryFingerprint: createDataQueryFingerprint(request, jsonSchema),
+      identityField: 'id',
+      rows: [{ id: 'person-1', metadata: [] }],
+      page: { kind: 'offset', limit: 25, offset: 0, hasMore: false },
+      total: { kind: 'exact', value: 1 },
+      freshness: { state: 'fresh' },
+      warnings: [],
+      truncated: false,
+    };
+    expect(() =>
+      normalizeDataQueryResult(
+        {
+          ...baseResult,
+          rows: [
+            {
+              id: 'person-1',
+              metadata: Array.from({ length: 1_001 }, () => 1),
+            },
+          ],
+        },
+        request,
+        jsonSchema,
+      ),
+    ).toThrow(/container-item limit/i);
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic);
+    expect(() =>
+      normalizeDataQueryResult(
+        { ...baseResult, rows: [{ id: 'person-1', metadata: cyclic }] },
+        request,
+        jsonSchema,
+      ),
+    ).toThrow(/cannot contain a cycle/i);
   });
 
   it('validates facet values against the requested field type', () => {

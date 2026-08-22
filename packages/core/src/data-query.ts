@@ -44,6 +44,9 @@ export const MAX_DATA_QUERY_IN_VALUES = 100;
 export const MAX_DATA_QUERY_FACETS = 20;
 export const MAX_DATA_QUERY_WARNINGS = 100;
 export const MAX_DATA_QUERY_CURSOR_LENGTH = 2_048;
+export const MAX_DATA_QUERY_JSON_DEPTH = 16;
+export const MAX_DATA_QUERY_JSON_CONTAINER_ITEMS = 1_000;
+export const MAX_DATA_QUERY_JSON_STRING_LENGTH = 65_536;
 
 const FILTER_OPERATORS = new Set<DataQueryFilterOperator>([
   'eq',
@@ -75,6 +78,15 @@ export class DataQueryValidationError extends ValidationError {
 }
 
 type JsonObject = Record<string, unknown>;
+
+interface JsonBudget {
+  remaining: number;
+  failureCode: string;
+}
+
+const encoder = new TextEncoder();
+const RFC_3339_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 function fail(
   message: string,
@@ -144,6 +156,19 @@ function positiveInteger(value: unknown, label: string): number {
 
 function normalizedInstant(value: unknown, label: string): string {
   const input = stringValue(value, label, 128);
+  const match = RFC_3339_INSTANT.exec(input);
+  if (!match) return fail(`${label} must be an RFC 3339 instant`);
+  const [year, month, day] = match.slice(1, 4).map(Number);
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(0, 0, 0, 0);
+  if (
+    calendar.getUTCFullYear() !== year ||
+    calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day
+  ) {
+    return fail(`${label} must be an RFC 3339 instant`);
+  }
   const milliseconds = Date.parse(input);
   if (!Number.isFinite(milliseconds)) {
     return fail(`${label} must be an RFC 3339 instant`);
@@ -165,39 +190,182 @@ function dataQueryScalar(value: unknown, label: string): DataQueryScalar {
   return fail(`${label} must be a JSON scalar`);
 }
 
-function canonicalJson(value: unknown, label = 'Data query JSON'): unknown {
-  if (
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean'
-  ) {
+function consumeJsonSegment(
+  budget: JsonBudget | undefined,
+  text: string,
+  label: string,
+): void {
+  if (!budget) return;
+  if (text.length > budget.remaining) {
+    fail(`${label} exceeds the maximum byte limit`, budget.failureCode);
+  }
+  const bytes = encoder.encode(text).byteLength;
+  if (bytes > budget.remaining) {
+    fail(`${label} exceeds the maximum byte limit`, budget.failureCode);
+  }
+  budget.remaining -= bytes;
+}
+
+function canonicalJson(
+  value: unknown,
+  label = 'Data query JSON',
+  budget?: JsonBudget,
+  depth = 0,
+  ancestors = new Set<object>(),
+): unknown {
+  if (depth > MAX_DATA_QUERY_JSON_DEPTH) {
+    return fail(`${label} exceeds the JSON depth limit`);
+  }
+  if (value === null || typeof value === 'boolean') {
+    consumeJsonSegment(budget, JSON.stringify(value), label);
+    return value;
+  }
+  if (typeof value === 'string') {
+    if (value.length > MAX_DATA_QUERY_JSON_STRING_LENGTH) {
+      return fail(`${label} exceeds the JSON string limit`);
+    }
+    consumeJsonSegment(budget, JSON.stringify(value), label);
     return value;
   }
   if (typeof value === 'number') {
     if (!Number.isFinite(value))
       return fail(`${label} cannot contain a non-finite number`);
-    return value === 0 ? 0 : value;
+    const normalized = value === 0 ? 0 : value;
+    consumeJsonSegment(budget, JSON.stringify(normalized), label);
+    return normalized;
   }
   if (Array.isArray(value)) {
-    return value.map((entry, index) =>
-      canonicalJson(entry, `${label}[${index}]`),
-    );
+    if (value.length > MAX_DATA_QUERY_JSON_CONTAINER_ITEMS) {
+      return fail(`${label} exceeds the JSON container-item limit`);
+    }
+    if (ancestors.has(value)) return fail(`${label} cannot contain a cycle`);
+    ancestors.add(value);
+    try {
+      const result: unknown[] = [];
+      consumeJsonSegment(budget, '[', label);
+      for (const [index, entry] of value.entries()) {
+        if (index > 0) consumeJsonSegment(budget, ',', label);
+        result.push(
+          canonicalJson(
+            entry,
+            `${label}[${index}]`,
+            budget,
+            depth + 1,
+            ancestors,
+          ),
+        );
+      }
+      consumeJsonSegment(budget, ']', label);
+      return result;
+    } finally {
+      ancestors.delete(value);
+    }
   }
   const object = plainObject(value, label);
-  const result: JsonObject = Object.create(null) as JsonObject;
-  for (const key of Object.keys(object).sort()) {
-    Object.defineProperty(result, key, {
-      value: canonicalJson(object[key], `${label}.${key}`),
-      enumerable: true,
-      configurable: true,
-      writable: true,
-    });
+  const keys = Object.keys(object).sort(compareCanonicalStrings);
+  if (keys.length > MAX_DATA_QUERY_JSON_CONTAINER_ITEMS) {
+    return fail(`${label} exceeds the JSON container-item limit`);
   }
-  return result;
+  if (ancestors.has(object)) return fail(`${label} cannot contain a cycle`);
+  ancestors.add(object);
+  try {
+    const result: JsonObject = Object.create(null) as JsonObject;
+    consumeJsonSegment(budget, '{', label);
+    for (const [index, key] of keys.entries()) {
+      if (key.length > MAX_DATA_QUERY_JSON_STRING_LENGTH) {
+        return fail(`${label}.${key} exceeds the JSON string limit`);
+      }
+      if (index > 0) consumeJsonSegment(budget, ',', label);
+      consumeJsonSegment(budget, JSON.stringify(key), `${label}.${key}`);
+      consumeJsonSegment(budget, ':', label);
+      Object.defineProperty(result, key, {
+        value: canonicalJson(
+          object[key],
+          `${label}.${key}`,
+          budget,
+          depth + 1,
+          ancestors,
+        ),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    }
+    consumeJsonSegment(budget, '}', label);
+    return result;
+  } finally {
+    ancestors.delete(object);
+  }
 }
 
 function signature(value: unknown): string {
   return JSON.stringify(canonicalJson(value));
+}
+
+/** Reject an over-limit raw request before canonicalization can collapse it. */
+function assertBoundedRawRequest(value: unknown): void {
+  const budget: JsonBudget = {
+    remaining: MAX_DATA_QUERY_REQUEST_BYTES,
+    failureCode: 'DATA_QUERY_REQUEST_TOO_LARGE',
+  };
+  const ancestors = new Set<object>();
+
+  const measure = (candidate: unknown, label: string, depth = 0): void => {
+    if (depth > MAX_DATA_QUERY_JSON_DEPTH) {
+      fail(`${label} exceeds the JSON depth limit`);
+    }
+    if (candidate === null || typeof candidate === 'boolean') {
+      consumeJsonSegment(budget, JSON.stringify(candidate), label);
+      return;
+    }
+    if (typeof candidate === 'string') {
+      consumeJsonSegment(budget, JSON.stringify(candidate), label);
+      return;
+    }
+    if (typeof candidate === 'number') {
+      if (!Number.isFinite(candidate)) {
+        fail(`${label} cannot contain a non-finite number`);
+      }
+      consumeJsonSegment(
+        budget,
+        JSON.stringify(candidate === 0 ? 0 : candidate),
+        label,
+      );
+      return;
+    }
+    if (Array.isArray(candidate)) {
+      if (ancestors.has(candidate)) fail(`${label} cannot contain a cycle`);
+      ancestors.add(candidate);
+      try {
+        consumeJsonSegment(budget, '[', label);
+        for (const [index, entry] of candidate.entries()) {
+          if (index > 0) consumeJsonSegment(budget, ',', label);
+          measure(entry, `${label}[${index}]`, depth + 1);
+        }
+        consumeJsonSegment(budget, ']', label);
+      } finally {
+        ancestors.delete(candidate);
+      }
+      return;
+    }
+    const object = plainObject(candidate, label);
+    if (ancestors.has(object)) fail(`${label} cannot contain a cycle`);
+    ancestors.add(object);
+    try {
+      consumeJsonSegment(budget, '{', label);
+      for (const [index, key] of Object.keys(object).entries()) {
+        if (index > 0) consumeJsonSegment(budget, ',', label);
+        consumeJsonSegment(budget, JSON.stringify(key), `${label}.${key}`);
+        consumeJsonSegment(budget, ':', label);
+        measure(object[key], `${label}.${key}`, depth + 1);
+      }
+      consumeJsonSegment(budget, '}', label);
+    } finally {
+      ancestors.delete(object);
+    }
+  };
+
+  measure(value, 'Data query request');
 }
 
 /** Locale-independent ordering for canonical envelopes and fingerprints. */
@@ -295,6 +463,11 @@ export function normalizeDataQuerySchema(value: unknown): DataQuerySchema {
   if (!identity) return fail('Data query identity field must be declared');
   if (identity.projectable === false) {
     return fail('Data query identity field must be projectable');
+  }
+  if (!['string', 'number', 'datetime'].includes(identity.type)) {
+    return fail(
+      'Data query identity field must use a string, number, or datetime type',
+    );
   }
   const maxPageLimit =
     object.maxPageLimit === undefined
@@ -555,6 +728,9 @@ function normalizeSort(
   if (value === undefined)
     return appendIdentity ? [{ field: identityField, direction: 'asc' }] : [];
   if (!Array.isArray(value)) return fail(`${label} must be an array`);
+  if (value.length > MAX_DATA_QUERY_FILTERS) {
+    return fail(`${label} cannot exceed ${MAX_DATA_QUERY_FILTERS} terms`);
+  }
   const sort = value.map((entry) => {
     const object = plainObject(entry, label);
     exactKeys(object, ['field', 'direction'], label);
@@ -571,8 +747,6 @@ function normalizeSort(
     }
     return { field, direction } as DataQuerySort;
   });
-  if (sort.length > MAX_DATA_QUERY_FILTERS)
-    return fail(`${label} cannot exceed ${MAX_DATA_QUERY_FILTERS} terms`);
   if (new Set(sort.map((term) => term.field)).size !== sort.length) {
     return fail(`${label} field ids must be unique`);
   }
@@ -594,12 +768,13 @@ function normalizePage(value: unknown, schema: DataQuerySchema): DataQueryPage {
   const kind = stringValue(object.kind, 'Data query page kind');
   if (kind === 'offset') {
     exactKeys(object, ['kind', 'offset', 'limit'], 'Data query offset page');
+    const offset = nonNegativeInteger(object.offset, 'Data query offset');
+    if (offset > MAX_DATA_QUERY_OFFSET) {
+      return fail(`Data query offset cannot exceed ${MAX_DATA_QUERY_OFFSET}`);
+    }
     return {
       kind,
-      offset: Math.min(
-        nonNegativeInteger(object.offset, 'Data query offset'),
-        MAX_DATA_QUERY_OFFSET,
-      ),
+      offset,
       limit: Math.min(
         positiveInteger(object.limit, 'Data query page limit'),
         schema.maxPageLimit ?? MAX_DATA_QUERY_PAGE_LIMIT,
@@ -726,6 +901,7 @@ export function normalizeDataQueryRequest(
   const schema = normalizeDataQuerySchema(inputSchema);
   const fields = new Map(schema.fields.map((field) => [field.id, field]));
   const object = plainObject(value, 'Data query request');
+  assertBoundedRawRequest(value);
   exactKeys(
     object,
     [
@@ -757,6 +933,14 @@ export function normalizeDataQueryRequest(
       return fail('Rows queries cannot request facets');
     if (object.projection !== undefined && !Array.isArray(object.projection)) {
       return fail('Data query projection must be an array');
+    }
+    if (
+      Array.isArray(object.projection) &&
+      object.projection.length > MAX_DATA_QUERY_FILTERS
+    ) {
+      return fail(
+        `Data query projection cannot exceed ${MAX_DATA_QUERY_FILTERS} fields`,
+      );
     }
     const requestedProjection = (object.projection ?? []).map((field) =>
       stringValue(field, 'Data query projection field'),
@@ -837,9 +1021,12 @@ function normalizeResultFieldValue(
   value: unknown,
   descriptor: DataQueryFieldDescriptor,
   label: string,
+  budget: JsonBudget,
 ): unknown {
-  if (descriptor.type === 'json') return canonicalJson(value, label);
-  return scalarForField(value, descriptor, label);
+  if (descriptor.type === 'json') return canonicalJson(value, label, budget);
+  const normalized = scalarForField(value, descriptor, label);
+  consumeJsonSegment(budget, JSON.stringify(normalized), label);
+  return normalized;
 }
 
 function normalizeRow(
@@ -847,11 +1034,13 @@ function normalizeRow(
   projection: readonly string[],
   identityField: string,
   fields: Map<string, DataQueryFieldDescriptor>,
+  budget: JsonBudget,
 ): DataQueryRow {
   const object = plainObject(value, 'Data query row');
   const allowed = new Set(projection);
   const normalized: JsonObject = Object.create(null) as JsonObject;
-  for (const key of Object.keys(object)) {
+  consumeJsonSegment(budget, '{', 'Data query row');
+  for (const [index, key] of Object.keys(object).entries()) {
     if (!allowed.has(key)) {
       fail(
         `Data query row returned a non-projected field: ${key}`,
@@ -865,12 +1054,17 @@ function normalizeRow(
         'DATA_QUERY_RESULT_NOT_ALLOWED',
       );
     }
+    if (index > 0) consumeJsonSegment(budget, ',', 'Data query row');
+    consumeJsonSegment(budget, JSON.stringify(key), `Data query row ${key}`);
+    consumeJsonSegment(budget, ':', `Data query row ${key}`);
     normalized[key] = normalizeResultFieldValue(
       object[key],
       descriptor,
       `Data query row ${key}`,
+      budget,
     );
   }
+  consumeJsonSegment(budget, '}', 'Data query row');
   const identity = normalized[identityField];
   if (
     (typeof identity !== 'string' && typeof identity !== 'number') ||
@@ -931,6 +1125,7 @@ function normalizeFacetsResult(
   value: unknown,
   requested: readonly DataQueryFacetRequest[],
   fields: Map<string, DataQueryFieldDescriptor>,
+  budget: JsonBudget,
 ): DataQueryFacetResult[] {
   if (!Array.isArray(value))
     return fail('Data query result facets must be an array');
@@ -938,7 +1133,9 @@ function normalizeFacetsResult(
     return fail('Data query result returned too many facets');
   }
   const limits = new Map(requested.map((facet) => [facet.field, facet.limit]));
-  const results = value.map((entry) => {
+  consumeJsonSegment(budget, '[', 'Data query result facets');
+  const results = value.map((entry, index) => {
+    if (index > 0) consumeJsonSegment(budget, ',', 'Data query result facets');
     const object = plainObject(entry, 'Data query facet result');
     exactKeys(
       object,
@@ -957,20 +1154,42 @@ function normalizeFacetsResult(
     const descriptor = fields.get(field);
     if (!descriptor)
       return fail(`Data query facet field is not declared: ${field}`);
-    const values = object.values.map((candidate) => {
+    consumeJsonSegment(budget, '{"field":', `Data query facet ${field}`);
+    consumeJsonSegment(
+      budget,
+      JSON.stringify(field),
+      `Data query facet ${field}`,
+    );
+    consumeJsonSegment(budget, ',"values":[', `Data query facet ${field}`);
+    const values = object.values.map((candidate, valueIndex) => {
+      if (valueIndex > 0)
+        consumeJsonSegment(budget, ',', `Data query facet ${field}`);
       const facet = plainObject(candidate, 'Data query facet value');
       exactKeys(facet, ['value', 'count'], 'Data query facet value');
+      const normalizedValue = scalarForField(
+        facet.value,
+        descriptor,
+        `Data query facet ${field} value`,
+      );
+      const count = nonNegativeInteger(facet.count, 'Data query facet count');
+      consumeJsonSegment(
+        budget,
+        `{"value":${JSON.stringify(normalizedValue)},"count":${JSON.stringify(count)}}`,
+        `Data query facet ${field} value`,
+      );
       return {
-        value: scalarForField(
-          facet.value,
-          descriptor,
-          `Data query facet ${field} value`,
-        ),
-        count: nonNegativeInteger(facet.count, 'Data query facet count'),
+        value: normalizedValue,
+        count,
       };
     });
+    consumeJsonSegment(
+      budget,
+      `],"truncated":${object.truncated}}`,
+      `Data query facet ${field}`,
+    );
     return { field, values, truncated: object.truncated };
   });
+  consumeJsonSegment(budget, ']', 'Data query result facets');
   if (new Set(results.map((facet) => facet.field)).size !== results.length) {
     return fail('Data query result facet fields must be unique');
   }
@@ -1057,9 +1276,16 @@ export function normalizeDataQueryResult(
   if (page && object.rows.length > page.limit) {
     return fail('Data query result rows exceed its requested page limit');
   }
-  const rows = object.rows.map((row) =>
-    normalizeRow(row, projection, schema.identityField, fields),
-  );
+  const budget: JsonBudget = {
+    remaining: schema.maxResultBytes ?? DEFAULT_DATA_QUERY_RESULT_BYTES,
+    failureCode: 'DATA_QUERY_RESULT_TOO_LARGE',
+  };
+  consumeJsonSegment(budget, '[', 'Data query result rows');
+  const rows = object.rows.map((row, index) => {
+    if (index > 0) consumeJsonSegment(budget, ',', 'Data query result rows');
+    return normalizeRow(row, projection, schema.identityField, fields, budget);
+  });
+  consumeJsonSegment(budget, ']', 'Data query result rows');
   let normalizedPage: DataQueryResult['page'];
   if (page) {
     const pageObject = plainObject(object.page, 'Data query result page');
@@ -1093,6 +1319,9 @@ export function normalizeDataQueryResult(
         hasMore: pageObject.hasMore,
       };
     } else {
+      if (pageObject.offset !== undefined) {
+        return fail('Cursor data query results cannot return an offset');
+      }
       const nextCursor =
         pageObject.nextCursor === undefined
           ? undefined
@@ -1120,7 +1349,10 @@ export function normalizeDataQueryResult(
     !Array.isArray(object.warnings) ||
     object.warnings.length > MAX_DATA_QUERY_WARNINGS ||
     object.warnings.some(
-      (warning) => typeof warning !== 'string' || warning.length > 512,
+      (warning) =>
+        typeof warning !== 'string' ||
+        warning.length === 0 ||
+        warning.length > 512,
     )
   ) {
     return fail('Data query result warnings must be at most 100 short strings');
@@ -1129,7 +1361,12 @@ export function normalizeDataQueryResult(
     return fail('Data query result truncated must be boolean');
   const facets =
     request.mode === 'facets'
-      ? normalizeFacetsResult(object.facets, request.facets ?? [], fields)
+      ? normalizeFacetsResult(
+          object.facets,
+          request.facets ?? [],
+          fields,
+          budget,
+        )
       : object.facets === undefined
         ? undefined
         : fail(`${request.mode} data query results cannot return facets`);

@@ -103,8 +103,10 @@ Use `createDataQueryFingerprint()` for cache and result correlation. It omits
 the request id and page position, canonicalizes equivalent filter/projection/
 facet forms, and adds the identity sort tie-break. Keep data-query values
 scalar, requests/pages/facets positive and bounded, results within the schema
-byte cap with declared field types preserved, and return only normalized
-`DataQueryResult` envelopes to REST, MCP,
+byte cap with declared field types preserved. Datetimes must be valid RFC 3339
+instants, identity fields must be string/number/datetime-compatible, and JSON
+result fields are depth/container/string/byte bounded before cloning. Return
+only normalized `DataQueryResult` envelopes to REST, MCP,
 WebMCP, and browser consumers. Adapter-specific report/content context wraps
 the base envelope; it does not add unsafe fields or SQL-like controls to it.
 

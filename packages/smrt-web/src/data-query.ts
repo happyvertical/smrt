@@ -96,7 +96,6 @@ export const MAX_SMRT_WEB_DATA_QUERY_PAGE_LIMIT = 1_000;
 export const MAX_SMRT_WEB_DATA_QUERY_OFFSET = 1_000_000;
 export const MAX_SMRT_WEB_DATA_QUERY_CONTAINER_ITEMS = 1_000;
 export const MAX_SMRT_WEB_DATA_QUERY_STRING_LENGTH = 65_536;
-const RESPONSE_METADATA_RESERVE_BYTES = 100_000;
 
 interface JsonBudget {
   remaining: number;
@@ -223,6 +222,9 @@ function jsonValue(
   >;
   consumeBytes(budget, '{', label);
   for (const [index, key] of Object.keys(object).sort().entries()) {
+    if (key.length > MAX_SMRT_WEB_DATA_QUERY_STRING_LENGTH) {
+      throw new TypeError(`${label}.${key} exceeds the string limit`);
+    }
     if (index > 0) consumeBytes(budget, ',', label);
     consumeBytes(budget, JSON.stringify(key), `${label}.${key}`);
     consumeBytes(budget, ':', label);
@@ -340,8 +342,7 @@ export function normalizeSmrtWebDataQueryResult(
     throw new TypeError('Data query rows exceed the maximum');
   }
   const budget: JsonBudget = {
-    remaining:
-      MAX_SMRT_WEB_DATA_QUERY_RESULT_BYTES - RESPONSE_METADATA_RESERVE_BYTES,
+    remaining: MAX_SMRT_WEB_DATA_QUERY_RESULT_BYTES,
   };
   const rows = result.rows.map((row, index) => {
     const normalized = jsonValue(row, `Data query row ${index}`, budget);
@@ -473,7 +474,13 @@ export async function executeSmrtWebDataQuery(
   request: SmrtWebDataQueryRequest,
   options?: { signal?: AbortSignal },
 ): Promise<SmrtWebDataQueryResult> {
-  return normalizeSmrtWebDataQueryResult(
+  const result = normalizeSmrtWebDataQueryResult(
     await transport.query(request, options),
   );
+  if (result.requestId !== request.requestId) {
+    throw new TypeError(
+      'Data query result request id does not match its request',
+    );
+  }
+  return result;
 }

@@ -64,8 +64,9 @@ module you are editing. This file keeps what holds in every module.
 - **Data-query mirror** — `data-query.ts` mirrors the portable
   `smrt-types` request/result shape structurally because this package cannot
   depend on another SMRT package. Server adapters own authorization and full
-  query/result policy; browser code calls `executeSmrtWebDataQuery()` to reject
-  malformed or over-limit returned envelopes before they reach a UI surface.
+query/result policy; browser code calls `executeSmrtWebDataQuery()` to reject
+malformed or over-limit returned envelopes — including a response for a
+different request id — before they reach a UI surface.
 - Rows are plain DTOs with a required `id`; optimistic inserts use
   `newLocalId()` — the generated REST layer strips client ids on create
   (#1540), so the post-persist refetch reconciles server-assigned ids.
