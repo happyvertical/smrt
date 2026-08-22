@@ -7,6 +7,21 @@
 
 export type DataTableRowId = string | number;
 
+/** A caller-owned binding for an all-matching server-side selection. */
+export interface DataTableQueryRevision {
+  queryFingerprint: string;
+  queryRevision: string;
+}
+
+/**
+ * Selection is deliberately a tagged union. `allMatching` never serializes
+ * loaded IDs: the receiving action must verify its query binding before use.
+ */
+export type DataTableSelection =
+  | { scope: 'page'; rowIds: DataTableRowId[] }
+  | { scope: 'explicit'; rowIds: DataTableRowId[] }
+  | ({ scope: 'allMatching'; expectedCount: number } & DataTableQueryRevision);
+
 export type DataTableJsonPrimitive = string | number | boolean | null;
 export type DataTableJsonValue =
   | DataTableJsonPrimitive
@@ -68,13 +83,26 @@ export interface DataTableViewState {
   pageSize: number | null;
   columnOrder: string[];
   columnVisibility: DataTableColumnVisibility[];
+  selection: DataTableSelection;
+  /**
+   * Legacy shorthand for row-ID selections. It is always derived from
+   * `selection`, and is empty for `allMatching` selections.
+   */
   selectedRowIds: DataTableRowId[];
   expandedRowIds: DataTableRowId[];
 }
 
+/**
+ * Accepts a version-1 controlled state while the controller always emits the
+ * normalized version-2 `DataTableViewState` with an explicit selection.
+ */
+export type DataTableViewStateInput = Omit<DataTableViewState, 'selection'> & {
+  selection?: DataTableSelection;
+};
+
 /** The stable envelope intended for URL and saved-view adapters. */
 export interface DataTableSnapshot {
-  version: 1;
+  version: 2;
   modes: DataTableModes;
   state: DataTableViewState;
 }
@@ -89,6 +117,12 @@ export type DataTableCommand =
   | { type: 'setPageSize'; pageSize: number | null }
   | { type: 'setColumnOrder'; columnIds: string[] }
   | { type: 'setColumnVisibility'; columns: DataTableColumnVisibility[] }
+  | { type: 'setSelection'; selection: DataTableSelection }
+  | { type: 'setPageSelection'; rowIds: DataTableRowId[] }
+  | ({
+      type: 'selectAllMatching';
+      expectedCount: number;
+    } & DataTableQueryRevision)
   | { type: 'setSelectedRows'; rowIds: DataTableRowId[] }
   | { type: 'toggleRowSelection'; rowId: DataTableRowId }
   | { type: 'setExpandedRows'; rowIds: DataTableRowId[] }
@@ -106,7 +140,7 @@ export interface DataTableControllerOptions {
   /** Used by uncontrolled controllers. */
   initialState?: Partial<DataTableViewState>;
   /** Makes transitions proposals until `replaceState` supplies the next value. */
-  state?: DataTableViewState;
+  state?: DataTableViewStateInput;
   modes?: Partial<DataTableModes>;
   /** Optional known columns let the controller ignore stale saved-view fields. */
   columnIds?: readonly string[];
@@ -132,6 +166,7 @@ const DEFAULT_STATE: DataTableViewState = {
   pageSize: null,
   columnOrder: [],
   columnVisibility: [],
+  selection: { scope: 'explicit', rowIds: [] },
   selectedRowIds: [],
   expandedRowIds: [],
 };
@@ -160,18 +195,25 @@ function assertColumnId(value: unknown, label = 'column id'): string {
   return value;
 }
 
-function assertRowId(value: unknown): DataTableRowId {
-  if (typeof value === 'string') return value;
+export function assertDataTableRowId(value: unknown): DataTableRowId {
+  if (typeof value === 'string' && value.length > 0) return value;
   if (typeof value === 'number' && Number.isFinite(value))
     return value === 0 ? 0 : value;
-  throw new TypeError('DataTable row ids must be finite strings or numbers');
+  throw new TypeError(
+    'DataTable row ids must be non-empty strings or finite numbers',
+  );
 }
 
 function assertPage(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError('DataTable page must be a finite number');
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value <= 0
+  ) {
+    throw new TypeError('DataTable page must be a positive integer');
   }
-  return Math.max(1, Math.floor(value));
+  return value;
 }
 
 function assertPageSize(value: unknown): number | null {
@@ -241,24 +283,151 @@ function jsonSignature(value: unknown): string {
   return JSON.stringify(canonicalJson(value));
 }
 
-function compareRowIds(left: DataTableRowId, right: DataTableRowId): number {
+export function compareDataTableRowIds(
+  left: DataTableRowId,
+  right: DataTableRowId,
+): number {
   if (typeof left !== typeof right) return typeof left === 'number' ? -1 : 1;
   if (typeof left === 'number' && typeof right === 'number')
     return left - right;
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function rowIdKey(value: DataTableRowId): string {
+export function dataTableRowIdKey(value: DataTableRowId): string {
   return `${typeof value}:${String(value)}`;
 }
 
 function normalizeRowIds(values: readonly DataTableRowId[]): DataTableRowId[] {
   const ids = new Map<string, DataTableRowId>();
   for (const value of values) {
-    const id = assertRowId(value);
-    ids.set(rowIdKey(id), id);
+    const id = assertDataTableRowId(value);
+    ids.set(dataTableRowIdKey(id), id);
   }
-  return [...ids.values()].sort(compareRowIds);
+  return [...ids.values()].sort(compareDataTableRowIds);
+}
+
+function assertQueryRevisionValue(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`DataTable ${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function normalizeQueryRevision(value: unknown): DataTableQueryRevision {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('DataTable query binding must be a plain object');
+  }
+  const input = value as Record<string, unknown>;
+  return {
+    queryFingerprint: assertQueryRevisionValue(
+      input.queryFingerprint,
+      'query fingerprint',
+    ),
+    queryRevision: assertQueryRevisionValue(
+      input.queryRevision,
+      'query revision',
+    ),
+  };
+}
+
+function normalizeSelection(
+  value: unknown,
+  legacyRowIds: readonly DataTableRowId[],
+): DataTableSelection {
+  if (value === undefined) {
+    return { scope: 'explicit', rowIds: normalizeRowIds(legacyRowIds) };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError('DataTable selection must be a plain object');
+  }
+  const input = value as Record<string, unknown>;
+  if (input.scope === 'page' || input.scope === 'explicit') {
+    if (!Array.isArray(input.rowIds)) {
+      throw new TypeError(`DataTable ${input.scope} selection requires rowIds`);
+    }
+    return { scope: input.scope, rowIds: normalizeRowIds(input.rowIds) };
+  }
+  if (input.scope === 'allMatching') {
+    if (Object.hasOwn(input, 'rowIds')) {
+      throw new TypeError(
+        'DataTable allMatching selection must not contain rowIds',
+      );
+    }
+    if (
+      typeof input.expectedCount !== 'number' ||
+      !Number.isFinite(input.expectedCount) ||
+      !Number.isInteger(input.expectedCount) ||
+      input.expectedCount < 0
+    ) {
+      throw new TypeError(
+        'DataTable allMatching expectedCount must be a non-negative integer',
+      );
+    }
+    return {
+      scope: 'allMatching',
+      ...normalizeQueryRevision(input),
+      expectedCount: input.expectedCount,
+    };
+  }
+  throw new TypeError(
+    'DataTable selection scope must be page, explicit, or allMatching',
+  );
+}
+
+function selectedRowIdsFor(selection: DataTableSelection): DataTableRowId[] {
+  return selection.scope === 'allMatching' ? [] : selection.rowIds;
+}
+
+function withSelection(
+  state: DataTableViewState,
+  selection: DataTableSelection,
+): DataTableViewState {
+  const normalized = normalizeSelection(selection, []);
+  return {
+    ...state,
+    selection: normalized,
+    selectedRowIds: selectedRowIdsFor(normalized),
+  };
+}
+
+function clearSelectionForPageChange(
+  state: DataTableViewState,
+): DataTableViewState {
+  return state.selection.scope === 'page'
+    ? withSelection(state, { scope: 'page', rowIds: [] })
+    : state;
+}
+
+function clearSelectionForQueryChange(
+  state: DataTableViewState,
+): DataTableViewState {
+  if (state.selection.scope === 'page') {
+    return withSelection(state, { scope: 'page', rowIds: [] });
+  }
+  if (state.selection.scope === 'allMatching') {
+    return withSelection(state, { scope: 'explicit', rowIds: [] });
+  }
+  return state;
+}
+
+/**
+ * Refuse an all-matching selection when the action's query has changed since
+ * selection. Domain actions must call this before a destructive operation.
+ */
+export function assertDataTableSelectionCurrent(
+  selection: DataTableSelection,
+  currentQuery: DataTableQueryRevision,
+): void {
+  if (selection.scope !== 'allMatching') return;
+  const current = normalizeQueryRevision(currentQuery);
+  if (
+    selection.queryFingerprint !== current.queryFingerprint ||
+    selection.queryRevision !== current.queryRevision
+  ) {
+    throw new TypeError(
+      'DataTable allMatching selection is stale for the current query revision',
+    );
+  }
 }
 
 function normalizeUniqueColumnIds(values: readonly string[]): string[] {
@@ -284,9 +453,10 @@ function normalizeFilters(
         `DataTable filter ${filter.operator} requires a value`,
       );
     }
-    const value = Object.hasOwn(filter, 'value')
-      ? canonicalJson(filter.value)
-      : undefined;
+    const value =
+      needsValue && Object.hasOwn(filter, 'value')
+        ? canonicalJson(filter.value)
+        : undefined;
     return value === undefined
       ? { columnId, operator: filter.operator }
       : { columnId, operator: filter.operator, value };
@@ -355,6 +525,10 @@ function normalizeState(
   columnIds?: readonly string[],
 ): DataTableViewState {
   const input = state ?? {};
+  const selection = normalizeSelection(
+    input.selection,
+    input.selectedRowIds ?? DEFAULT_STATE.selectedRowIds,
+  );
   const knownColumns = columnIds ? normalizeUniqueColumnIds(columnIds) : null;
   const allowed = knownColumns ? new Set(knownColumns) : null;
   const keepKnown = (columnId: string) => !allowed || allowed.has(columnId);
@@ -398,9 +572,8 @@ function normalizeState(
         visible,
       })),
     ),
-    selectedRowIds: normalizeRowIds(
-      input.selectedRowIds ?? DEFAULT_STATE.selectedRowIds,
-    ),
+    selection,
+    selectedRowIds: selectedRowIdsFor(selection),
     expandedRowIds: normalizeRowIds(
       input.expandedRowIds ?? DEFAULT_STATE.expandedRowIds,
     ),
@@ -442,22 +615,23 @@ export function transitionDataTableState(
     case 'setSearch': {
       if (typeof command.search !== 'string')
         throw new TypeError('DataTable search must be a string');
-      next = resetPage(
-        { ...current, search: command.search },
-        command.search !== current.search,
-      );
+      const changed = command.search !== current.search;
+      next = resetPage({ ...current, search: command.search }, changed);
+      if (changed) next = clearSelectionForQueryChange(next);
       break;
     }
     case 'setFilters': {
       const filters = normalizeFilters(command.filters);
       const changed = jsonSignature(filters) !== jsonSignature(current.filters);
       next = resetPage({ ...current, filters }, changed);
+      if (changed) next = clearSelectionForQueryChange(next);
       break;
     }
     case 'setSorting': {
       const sorting = normalizeSorting(command.sorting);
       const changed = jsonSignature(sorting) !== jsonSignature(current.sorting);
       next = resetPage({ ...current, sorting }, changed);
+      if (changed) next = clearSelectionForQueryChange(next);
       break;
     }
     case 'toggleSorting': {
@@ -482,18 +656,22 @@ export function transitionDataTableState(
         : toggled
           ? [toggled]
           : [];
-      next = resetPage(
-        { ...current, sorting },
-        jsonSignature(sorting) !== jsonSignature(current.sorting),
-      );
+      const changed = jsonSignature(sorting) !== jsonSignature(current.sorting);
+      next = resetPage({ ...current, sorting }, changed);
+      if (changed) next = clearSelectionForQueryChange(next);
       break;
     }
-    case 'setPage':
-      next = { ...current, page: assertPage(command.page) };
+    case 'setPage': {
+      const page = assertPage(command.page);
+      next = { ...current, page };
+      if (page !== current.page) next = clearSelectionForPageChange(next);
       break;
+    }
     case 'setPageSize': {
       const pageSize = assertPageSize(command.pageSize);
-      next = resetPage({ ...current, pageSize }, pageSize !== current.pageSize);
+      const changed = pageSize !== current.pageSize;
+      next = resetPage({ ...current, pageSize }, changed);
+      if (changed) next = clearSelectionForPageChange(next);
       break;
     }
     case 'setColumnOrder':
@@ -508,31 +686,58 @@ export function transitionDataTableState(
         columnVisibility: normalizeVisibility(command.columns),
       };
       break;
+    case 'setSelection':
+      next = withSelection(current, command.selection);
+      break;
+    case 'setPageSelection':
+      next = withSelection(current, {
+        scope: 'page',
+        rowIds: command.rowIds,
+      });
+      break;
+    case 'selectAllMatching':
+      next = withSelection(current, {
+        scope: 'allMatching',
+        ...normalizeQueryRevision(command),
+        expectedCount: command.expectedCount,
+      });
+      break;
     case 'setSelectedRows':
-      next = { ...current, selectedRowIds: normalizeRowIds(command.rowIds) };
+      next = withSelection(current, {
+        scope: 'explicit',
+        rowIds: command.rowIds,
+      });
       break;
     case 'toggleRowSelection': {
-      const rowId = assertRowId(command.rowId);
+      if (current.selection.scope === 'allMatching') {
+        throw new TypeError(
+          'DataTable cannot toggle an individual row while allMatching is active',
+        );
+      }
+      const rowId = assertDataTableRowId(command.rowId);
       const ids = new Map(
-        current.selectedRowIds.map((id) => [rowIdKey(id), id]),
+        current.selection.rowIds.map((id) => [dataTableRowIdKey(id), id]),
       );
-      ids.has(rowIdKey(rowId))
-        ? ids.delete(rowIdKey(rowId))
-        : ids.set(rowIdKey(rowId), rowId);
-      next = { ...current, selectedRowIds: normalizeRowIds([...ids.values()]) };
+      ids.has(dataTableRowIdKey(rowId))
+        ? ids.delete(dataTableRowIdKey(rowId))
+        : ids.set(dataTableRowIdKey(rowId), rowId);
+      next = withSelection(current, {
+        scope: current.selection.scope,
+        rowIds: [...ids.values()],
+      });
       break;
     }
     case 'setExpandedRows':
       next = { ...current, expandedRowIds: normalizeRowIds(command.rowIds) };
       break;
     case 'toggleRowExpansion': {
-      const rowId = assertRowId(command.rowId);
+      const rowId = assertDataTableRowId(command.rowId);
       const ids = new Map(
-        current.expandedRowIds.map((id) => [rowIdKey(id), id]),
+        current.expandedRowIds.map((id) => [dataTableRowIdKey(id), id]),
       );
-      ids.has(rowIdKey(rowId))
-        ? ids.delete(rowIdKey(rowId))
-        : ids.set(rowIdKey(rowId), rowId);
+      ids.has(dataTableRowIdKey(rowId))
+        ? ids.delete(dataTableRowIdKey(rowId))
+        : ids.set(dataTableRowIdKey(rowId), rowId);
       next = { ...current, expandedRowIds: normalizeRowIds([...ids.values()]) };
       break;
     }
@@ -558,10 +763,10 @@ export function hydrateDataTableSnapshot(value: unknown): DataTableSnapshot {
     throw new TypeError('DataTable snapshot must be a plain object');
   }
   const input = value as Record<string, unknown>;
-  if (input.version !== 1)
+  if (input.version !== 1 && input.version !== 2)
     throw new TypeError('Unsupported DataTable snapshot version');
   return {
-    version: 1,
+    version: 2,
     modes: normalizeModes(input.modes as Partial<DataTableModes>),
     state: normalizeState(input.state as Partial<DataTableViewState>),
   };
@@ -599,7 +804,7 @@ export class DataTableController {
   }
 
   snapshot(): DataTableSnapshot {
-    return { version: 1, modes: this.getModes(), state: this.getState() };
+    return { version: 2, modes: this.getModes(), state: this.getState() };
   }
 
   subscribe(listener: DataTableStateListener): () => void {
@@ -615,7 +820,7 @@ export class DataTableController {
       this.columnIds,
     );
     const next = {
-      version: 1 as const,
+      version: 2 as const,
       modes: this.getModes(),
       state: candidate,
     };
@@ -644,11 +849,11 @@ export class DataTableController {
   }
 
   /** Supplies state from a controlled host or an external persistence adapter. */
-  replaceState(state: DataTableViewState): DataTableTransition {
+  replaceState(state: DataTableViewStateInput): DataTableTransition {
     const previous = this.snapshot();
     const nextState = normalizeState(state, this.columnIds);
     const next = {
-      version: 1 as const,
+      version: 2 as const,
       modes: this.getModes(),
       state: nextState,
     };
@@ -705,10 +910,12 @@ export class DataTableController {
         changed: false,
       };
     }
-    if (!Number.isFinite(totalRows) || totalRows < 0) {
-      throw new TypeError(
-        'DataTable totalRows must be a non-negative finite number',
-      );
+    if (
+      !Number.isFinite(totalRows) ||
+      !Number.isInteger(totalRows) ||
+      totalRows < 0
+    ) {
+      throw new TypeError('DataTable totalRows must be a non-negative integer');
     }
     const pageCount = this.state.pageSize
       ? Math.max(1, Math.ceil(totalRows / this.state.pageSize))

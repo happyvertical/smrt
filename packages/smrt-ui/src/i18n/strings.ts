@@ -14,6 +14,7 @@ import { defineMessages } from './registry.js';
 
 export const M = defineMessages({
   'ui.data_table.select_all': 'Select all rows',
+  'ui.data_table.select_current_page': 'Select all rows on this page',
   'ui.data_table.select_row': 'Select row',
   'ui.data_table.loading': 'Loading...',
   'ui.data_table.empty': 'No data available',

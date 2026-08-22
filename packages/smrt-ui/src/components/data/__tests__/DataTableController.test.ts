@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  assertDataTableSelectionCurrent,
   createDataTableController,
   type DataTableViewState,
   hydrateDataTableSnapshot,
@@ -17,6 +18,7 @@ const state: DataTableViewState = {
     { columnId: 'age', visible: true },
     { columnId: 'name', visible: true },
   ],
+  selection: { scope: 'explicit', rowIds: [] },
   selectedRowIds: [],
   expandedRowIds: [],
 };
@@ -62,6 +64,29 @@ describe('DataTableController', () => {
     );
   });
 
+  it('omits ignored null-check filter values from canonical snapshots', () => {
+    const withoutValue = createDataTableController({
+      initialState: {
+        ...state,
+        filters: [{ columnId: 'name', operator: 'isNull' }],
+      },
+    });
+    const withIgnoredValue = createDataTableController({
+      initialState: {
+        ...state,
+        filters: [
+          {
+            columnId: 'name',
+            operator: 'isNull',
+            value: undefined,
+          },
+        ],
+      },
+    });
+
+    expect(withIgnoredValue.snapshot()).toEqual(withoutValue.snapshot());
+  });
+
   it('resets page only when a query-shape value changes and clamps reliable totals', () => {
     const controller = createDataTableController({ initialState: state });
 
@@ -81,6 +106,7 @@ describe('DataTableController', () => {
     expect(controller.snapshot().state.page).toBe(2);
     controller.clampPage(0);
     expect(controller.snapshot().state.page).toBe(1);
+    expect(() => controller.clampPage(1.5)).toThrow(/totalRows/);
   });
 
   it('keeps multi-sort priority while cycling a column through asc, desc, and clear', () => {
@@ -164,9 +190,81 @@ describe('DataTableController', () => {
         JSON.parse(JSON.stringify(controller.snapshot())),
       ),
     ).toEqual(controller.snapshot());
-    expect(() => hydrateDataTableSnapshot({ version: 2 })).toThrow(/version/);
+    const { selection: _selection, ...legacyState } = state;
+    expect(
+      hydrateDataTableSnapshot({
+        version: 1,
+        modes: controller.getModes(),
+        state: legacyState,
+      }),
+    ).toMatchObject({
+      version: 2,
+      state: { selection: { scope: 'explicit', rowIds: [] } },
+    });
+    expect(() => hydrateDataTableSnapshot({ version: 3 })).toThrow(/version/);
     expect(() =>
       transitionDataTableState(state, { type: 'setPageSize', pageSize: 0 }),
     ).toThrow(/pageSize/);
+    for (const page of [0, -1, 1.5]) {
+      expect(() =>
+        transitionDataTableState(state, { type: 'setPage', page }),
+      ).toThrow(/page/);
+    }
+  });
+
+  it('models current-page and explicit row selections separately', () => {
+    const controller = createDataTableController({ initialState: state });
+
+    controller.dispatch({
+      type: 'setPageSelection',
+      rowIds: ['row-2', 'row-1'],
+    });
+    expect(controller.getState().selection).toEqual({
+      scope: 'page',
+      rowIds: ['row-1', 'row-2'],
+    });
+
+    controller.dispatch({ type: 'setPage', page: 4 });
+    expect(controller.getState().selection).toEqual({
+      scope: 'page',
+      rowIds: [],
+    });
+
+    controller.dispatch({ type: 'setSelectedRows', rowIds: ['row-2'] });
+    controller.dispatch({ type: 'setPage', page: 5 });
+    expect(controller.getState().selection).toEqual({
+      scope: 'explicit',
+      rowIds: ['row-2'],
+    });
+  });
+
+  it('binds all-matching selection to an exact query revision and invalidates it on query changes', () => {
+    const controller = createDataTableController({ initialState: state });
+    controller.dispatch({
+      type: 'selectAllMatching',
+      queryFingerprint: 'dq1_example',
+      queryRevision: 'revision-7',
+      expectedCount: 42,
+    });
+
+    expect(controller.getState().selection).toEqual({
+      scope: 'allMatching',
+      queryFingerprint: 'dq1_example',
+      queryRevision: 'revision-7',
+      expectedCount: 42,
+    });
+    expect(controller.getState().selectedRowIds).toEqual([]);
+    expect(() =>
+      assertDataTableSelectionCurrent(controller.getState().selection, {
+        queryFingerprint: 'dq1_example',
+        queryRevision: 'revision-8',
+      }),
+    ).toThrow(/stale/);
+
+    controller.dispatch({ type: 'setSearch', search: 'Ada' });
+    expect(controller.getState().selection).toEqual({
+      scope: 'explicit',
+      rowIds: [],
+    });
   });
 });
