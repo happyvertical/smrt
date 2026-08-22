@@ -64,6 +64,29 @@ describe('DataTableController', () => {
     );
   });
 
+  it('omits ignored null-check filter values from canonical snapshots', () => {
+    const withoutValue = createDataTableController({
+      initialState: {
+        ...state,
+        filters: [{ columnId: 'name', operator: 'isNull' }],
+      },
+    });
+    const withIgnoredValue = createDataTableController({
+      initialState: {
+        ...state,
+        filters: [
+          {
+            columnId: 'name',
+            operator: 'isNull',
+            value: undefined,
+          },
+        ],
+      },
+    });
+
+    expect(withIgnoredValue.snapshot()).toEqual(withoutValue.snapshot());
+  });
+
   it('resets page only when a query-shape value changes and clamps reliable totals', () => {
     const controller = createDataTableController({ initialState: state });
 

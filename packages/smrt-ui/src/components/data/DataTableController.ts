@@ -453,9 +453,10 @@ function normalizeFilters(
         `DataTable filter ${filter.operator} requires a value`,
       );
     }
-    const value = Object.hasOwn(filter, 'value')
-      ? canonicalJson(filter.value)
-      : undefined;
+    const value =
+      needsValue && Object.hasOwn(filter, 'value')
+        ? canonicalJson(filter.value)
+        : undefined;
     return value === undefined
       ? { columnId, operator: filter.operator }
       : { columnId, operator: filter.operator, value };
