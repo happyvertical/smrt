@@ -17,6 +17,7 @@ import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
 import Pagination from '../ui/Pagination.svelte';
 import {
+  compareDataTableRowIds,
   createDataTableController,
   type DataTableCommand,
   type DataTableController,
@@ -26,6 +27,7 @@ import {
   type DataTableSnapshot,
   type DataTableViewState,
 } from './DataTableController.js';
+import { resolveDataTableRows } from './DataTableIdentity.js';
 import type { DataTableColumn, DataTableProps, SortState } from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
 
@@ -42,6 +44,7 @@ let {
   data = [],
   columns = [],
   rowKey,
+  agentAddressable = false,
   selectable = false,
   selected = $bindable(new Set<string | number>()),
   onSelectionChange,
@@ -107,6 +110,7 @@ function legacyViewState(): Partial<DataTableViewState> {
 }
 
 const localController = createDataTableController({
+  modes: legacyModes(),
   onStateChange: (next, command) => onStateChange?.(next, command),
 });
 
@@ -226,16 +230,19 @@ $effect(() => {
 
 const tableState = $derived(controllerSnapshot.state);
 const tableModes = $derived(controllerSnapshot.modes);
-
-function getRowKey(row: T, index: number): DataTableRowId {
-  if (!rowKey) return index;
-  if (typeof rowKey === 'function') return rowKey(row);
-  return row[rowKey] as DataTableRowId;
-}
-
-function getDisplayRowKey(row: T, index: number): DataTableRowId {
-  return getRowKey(row, displayIndexOffset + index);
-}
+const requiresStableRowIdentity = $derived(
+  selectable ||
+    Boolean(expandedContent) ||
+    agentAddressable ||
+    tableModes.filtering === 'manual' ||
+    tableModes.sorting === 'manual' ||
+    tableModes.pagination === 'manual',
+);
+const sourceRows = $derived.by(() =>
+  resolveDataTableRows(data, rowKey, {
+    requireStableIdentity: requiresStableRowIdentity,
+  }),
+);
 
 function dispatch(command: DataTableCommand) {
   activeController().dispatch(command);
@@ -256,10 +263,22 @@ function handleRowSelect(key: DataTableRowId, event: Event) {
 }
 
 function handleSelectAll() {
+  if (tableState.selection.scope === 'allMatching') {
+    dispatch({
+      type: 'setSelection',
+      selection: { scope: 'explicit', rowIds: [] },
+    });
+    return;
+  }
   const selectedIds = new Set(tableState.selectedRowIds);
-  const visibleIds = displayData.map((row, index) =>
-    getDisplayRowKey(row, index),
-  );
+  const visibleIds = displayRows.map(({ rowId }) => rowId);
+  if (tableState.selection.scope === 'page') {
+    dispatch({
+      type: 'setPageSelection',
+      rowIds: allSelected ? [] : visibleIds,
+    });
+    return;
+  }
   if (allSelected) {
     for (const key of visibleIds) selectedIds.delete(key);
   } else {
@@ -377,11 +396,11 @@ function matchesFilter(
   }
 }
 
-const filteredData = $derived.by(() => {
-  if (tableModes.filtering === 'manual') return data;
+const filteredRows = $derived.by(() => {
+  if (tableModes.filtering === 'manual') return sourceRows;
   const search = tableState.search.toLowerCase();
-  return data.filter((row, index) => {
-    if (filterFn && !filterFn(row, index)) return false;
+  return sourceRows.filter(({ row, sourceIndex }) => {
+    if (filterFn && !filterFn(row, sourceIndex)) return false;
     if (
       search &&
       !columns.some(
@@ -401,34 +420,33 @@ const filteredData = $derived.by(() => {
   });
 });
 
-const sortedData = $derived.by(() => {
+const sortedRows = $derived.by(() => {
   if (tableModes.sorting === 'manual' || tableState.sorting.length === 0)
-    return filteredData;
-  return filteredData
-    .map((row, index) => ({ row, index }))
-    .sort((left, right) => {
-      for (const rule of tableState.sorting) {
-        const column = columns.find(
-          (candidate) => candidate.id === rule.columnId,
-        );
-        if (!column) continue;
-        const result = column.sortFn
-          ? column.sortFn(left.row, right.row, rule.direction)
-          : defaultSort(
-              left.row,
-              right.row,
-              String(column.accessor ?? column.id),
-              rule.direction,
-            );
-        if (result !== 0) return result;
-      }
-      return left.index - right.index;
-    })
-    .map(({ row }) => row);
+    return filteredRows;
+  return filteredRows.slice().sort((left, right) => {
+    for (const rule of tableState.sorting) {
+      const column = columns.find(
+        (candidate) => candidate.id === rule.columnId,
+      );
+      if (!column) continue;
+      const result = column.sortFn
+        ? column.sortFn(left.row, right.row, rule.direction)
+        : defaultSort(
+            left.row,
+            right.row,
+            String(column.accessor ?? column.id),
+            rule.direction,
+          );
+      if (result !== 0) return result;
+    }
+    return rowKey
+      ? compareDataTableRowIds(left.rowId, right.rowId)
+      : left.sourceIndex - right.sourceIndex;
+  });
 });
 
 const totalRowCount = $derived(
-  tableModes.pagination === 'manual' ? totalRows : sortedData.length,
+  tableModes.pagination === 'manual' ? totalRows : sortedRows.length,
 );
 const totalPages = $derived(
   tableState.pageSize
@@ -437,15 +455,27 @@ const totalPages = $derived(
       : Math.max(1, Math.ceil(totalRowCount / tableState.pageSize))
     : 1,
 );
-const displayData = $derived.by(() => {
+const displayRows = $derived.by(() => {
   if (!tableState.pageSize || tableModes.pagination === 'manual')
-    return sortedData;
+    return sortedRows;
   const start = (tableState.page - 1) * tableState.pageSize;
-  return sortedData.slice(start, start + tableState.pageSize);
+  return sortedRows.slice(start, start + tableState.pageSize);
 });
-const displayIndexOffset = $derived(
-  tableState.pageSize ? (tableState.page - 1) * tableState.pageSize : 0,
-);
+
+$effect(() => {
+  const total = totalRows;
+  if (total === undefined) return;
+  if (tableModes.pagination !== 'manual') {
+    throw new TypeError(
+      'DataTable totalRows is only valid when pagination mode is manual',
+    );
+  }
+  if (!Number.isFinite(total) || !Number.isInteger(total) || total < 0) {
+    throw new TypeError(
+      'DataTable totalRows must be a non-negative integer when supplied',
+    );
+  }
+});
 
 $effect(() => {
   void tableState.page;
@@ -458,11 +488,13 @@ const expandedIds = $derived(new Set(tableState.expandedRowIds));
 const currentSort = $derived(legacySort(tableState));
 
 const allSelected = $derived(
-  displayData.length > 0 &&
-    displayData.every((row, i) => selectedIds.has(getDisplayRowKey(row, i))),
+  tableState.selection.scope === 'allMatching' ||
+    (displayRows.length > 0 &&
+      displayRows.every(({ rowId }) => selectedIds.has(rowId))),
 );
 const someSelected = $derived(
-  displayData.some((row, i) => selectedIds.has(getDisplayRowKey(row, i))) &&
+  tableState.selection.scope !== 'allMatching' &&
+    displayRows.some(({ rowId }) => selectedIds.has(rowId)) &&
     !allSelected,
 );
 
@@ -505,7 +537,7 @@ const sizeClasses = {
               checked={allSelected}
               use:setIndeterminate={someSelected}
               onchange={handleSelectAll}
-              aria-label={t(M['ui.data_table.select_all'])}
+              aria-label={t(M['ui.data_table.select_current_page'])}
               class="data-table__checkbox"
             />
           </th>
@@ -565,7 +597,7 @@ const sizeClasses = {
             </div>
           </td>
         </tr>
-      {:else if displayData.length === 0}
+      {:else if displayRows.length === 0}
         <tr class="data-table__row data-table__row--empty">
           <td
             class="data-table__cell data-table__cell--empty"
@@ -581,9 +613,10 @@ const sizeClasses = {
           </td>
         </tr>
       {:else}
-        {#each displayData as row, index (getDisplayRowKey(row, index))}
-          {@const key = getDisplayRowKey(row, index)}
-          {@const isSelected = selectedIds.has(key)}
+        {#each displayRows as entry, index (entry.rowId)}
+          {@const row = entry.row}
+          {@const key = entry.rowId}
+          {@const isSelected = tableState.selection.scope === 'allMatching' || selectedIds.has(key)}
           {@const isExpanded = expandedIds.has(key)}
           {@const rowCanExpand = canExpand?.(row, index) ?? true}
           <tr
@@ -609,6 +642,7 @@ const sizeClasses = {
                 <input
                   type="checkbox"
                   checked={isSelected}
+                  disabled={tableState.selection.scope === 'allMatching'}
                   onchange={(e) => handleRowSelect(key, e)}
                   aria-label={t(M['ui.data_table.select_row'])}
                   class="data-table__checkbox"
@@ -641,7 +675,7 @@ const sizeClasses = {
       {/if}
     </tbody>
     {#if footer}
-      <tfoot><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayData })}</td></tr></tfoot>
+      <tfoot><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
     {/if}
   </table>
 </div>

@@ -135,13 +135,15 @@ transition path.
 <DataTable {controller} data={rows} {columns} rowKey="id" sortable selectable />
 ```
 
-`controller.snapshot()` returns a canonical JSON-safe `{ version, modes,
-state }` envelope. It contains no rows, callbacks, snippets, storage handles,
-tenant/principal data, query objects, or authority. URL and saved-view adapters
-remain application-owned: persist the snapshot (normally excluding selection
-and expansion IDs), validate it with `hydrateDataTableSnapshot`, and feed the
-state into a new controller or `replaceState`. `smrt-ui` does not read or write
-the URL, browser storage, or a database.
+`controller.snapshot()` returns the canonical JSON-safe version-2 `{ version,
+modes, state }` envelope. `hydrateDataTableSnapshot()` accepts version 1 and
+migrates it to version 2. The envelope contains no rows, callbacks, snippets,
+storage handles, tenant/principal data, query objects, or authority. URL and
+saved-view adapters remain application-owned: persist the snapshot (normally
+excluding selection and expansion IDs), validate it with
+`hydrateDataTableSnapshot`, and feed the state into a new controller or
+`replaceState`. `smrt-ui` does not read or write the URL, browser storage, or a
+database.
 
 ### Controlled and migration use
 
@@ -155,7 +157,7 @@ The existing Svelte bindables remain supported during migration:
 | --- | --- |
 | `bind:sort` | first entry of ordered `sorting` (single-sort compatibility) |
 | `bind:page`, `pageSize` | `page`, `pageSize` |
-| `bind:selected`, `bind:expanded` | canonical `selectedRowIds`, `expandedRowIds` arrays |
+| `bind:selected`, `bind:expanded` | legacy explicit `selectedRowIds`, canonical `selection` and `expandedRowIds` |
 | `visibleColumnIds` | `columnVisibility` intersected with static `column.hidden` |
 | `manualSorting`, `manualPagination` | sorting/pagination entries in `modes` |
 | `filterFn` | local-only legacy predicate; never serialized |
@@ -165,11 +167,35 @@ Without one, the component creates an internal controller and maps the legacy
 props. Multi-column sorting and persisted layouts use the controller state;
 the legacy `SortState` remains intentionally single-column.
 
-Use a stable `rowKey` when selected or expanded state can survive a sort,
-filter, refresh, or page change. The historical index fallback remains only
-for local presentational compatibility; it is not portable across remote data
-or persisted/agent-controlled views. Select-all means the currently rendered
-page. Query-wide "all matching" selection belongs to the data-surface layer.
+### Row identity and selection
+
+`rowKey` is required for selectable, expandable, manual/server, and
+`agentAddressable` tables. Its values must be unique non-empty strings or finite
+numbers. This fails closed before a renderer can reuse the wrong row after a
+sort, refresh, or server-page change. The historical source-index fallback
+exists only for local presentational tables with no durable row state.
+
+The controller stores a `selection` union alongside the deprecated
+`selectedRowIds` shorthand:
+
+| Scope | Stored value | Lifecycle |
+| --- | --- | --- |
+| `page` | IDs from the current rendered page | Cleared when page, page size, search, filters, or sorting changes. |
+| `explicit` | Explicit stable IDs across pages | Persists across page and query navigation until changed by the caller. |
+| `allMatching` | `queryFingerprint`, `queryRevision`, and `expectedCount` only | Never stores loaded IDs; query-shape changes clear it. |
+
+The built-in header checkbox explicitly means **Select all rows on this page**.
+For query-wide selection, dispatch `selectAllMatching` with the caller-owned
+query fingerprint, revision, and expected count. A destructive domain action
+must call `assertDataTableSelectionCurrent(selection, currentQuery)` immediately
+before applying it; a mismatched fingerprint or revision throws rather than
+acting on stale results.
+
+`index` passed to row callbacks, cells, expansion snippets, and `rowClass` is
+the zero-based display index on the currently rendered page. The source index
+is the zero-based position in the supplied `data` array and is used only by the
+non-durable fallback. It must never be saved, sent to an agent, or used as a
+remote identity.
 
 ### Transformation ownership and page rules
 
@@ -188,7 +214,9 @@ double-sorted, or double-paged.
 Every combination follows the same rule per column in the table: each local
 stage runs once and each manual stage runs zero times. For manual pagination,
 `totalRows` supplies the total; when it is unknown the component does not guess
-the last page or render misleading pagination controls.
+the last page or render misleading pagination controls. A supplied `totalRows`
+must be a non-negative integer and is rejected unless pagination mode is
+`manual`.
 
 Changing search, filters, sorting, or page size resets the page to 1 only when
 the value changes. Data or total changes clamp an out-of-range page but do not

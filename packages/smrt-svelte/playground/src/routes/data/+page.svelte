@@ -193,7 +193,6 @@ function handleRowClick(row: User) {
     <DataTable
       data={[...users, ...users, ...users]}
       {columns}
-      rowKey={(row, i) => `${row.id}-${i}`}
       stickyHeader
     />
   </div>

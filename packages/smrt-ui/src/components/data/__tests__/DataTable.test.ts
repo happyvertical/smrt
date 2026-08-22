@@ -18,6 +18,7 @@ import {
 } from '../DataTableController.js';
 
 interface Person {
+  id: string;
   name: string;
   age: number;
 }
@@ -27,8 +28,8 @@ const columns = [
   { id: 'age', label: 'Age', accessor: 'age' },
 ];
 const data: Person[] = [
-  { name: 'Ada', age: 36 },
-  { name: 'Linus', age: 54 },
+  { id: 'ada', name: 'Ada', age: 36 },
+  { id: 'linus', name: 'Linus', age: 54 },
 ];
 
 describe('DataTable', () => {
@@ -100,7 +101,7 @@ describe('DataTable', () => {
   it('filters and paginates client-side rows', async () => {
     render(DataTable, {
       props: {
-        data: [...data, { name: 'Grace', age: 85 }],
+        data: [...data, { id: 'grace', name: 'Grace', age: 85 }],
         columns,
         filterFn: (person: Person) => person.age > 40,
         pageSize: 1,
@@ -202,9 +203,10 @@ describe('DataTable', () => {
     });
     render(DataTable, {
       props: {
-        data: [...data, { name: 'Grace', age: 85 }],
+        data: [...data, { id: 'grace', name: 'Grace', age: 85 }],
         columns,
         controller,
+        rowKey: 'id',
       },
     });
 
@@ -215,48 +217,55 @@ describe('DataTable', () => {
     expect(names).toEqual(expected);
   });
 
-  it('keeps fallback selection keys unique across pages', async () => {
+  it('keeps stable selection IDs across pages and labels the page scope', async () => {
     const onSelectionChange = vi.fn();
     render(DataTable, {
       props: {
         data,
         columns,
         pageSize: 1,
+        rowKey: 'id',
         selectable: true,
         onSelectionChange,
       },
     });
 
     await userEvent.click(
-      screen.getByRole('checkbox', { name: 'Select all rows' }),
+      screen.getByRole('checkbox', { name: 'Select all rows on this page' }),
     );
     await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
     await userEvent.click(
-      screen.getByRole('checkbox', { name: 'Select all rows' }),
+      screen.getByRole('checkbox', { name: 'Select all rows on this page' }),
     );
 
-    expect(onSelectionChange).toHaveBeenLastCalledWith(new Set([0, 1]));
+    expect(onSelectionChange).toHaveBeenLastCalledWith(
+      new Set(['ada', 'linus']),
+    );
   });
 
-  it('does not carry fallback expansion keys onto the next page', async () => {
-    render(DataTable, {
-      props: {
-        data,
-        columns,
-        pageSize: 1,
-        expandedContent: createRawSnippet(() => ({
-          render: () => '<p>Row detail</p>',
-        })),
-      },
-    });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Expand row' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
-
-    expect(screen.queryByText('Row detail')).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Expand row' }),
-    ).toBeInTheDocument();
+  it('fails closed when durable selection, expansion, manual, or agent modes lack a rowKey', () => {
+    expect(() =>
+      render(DataTable, { props: { data, columns, selectable: true } }),
+    ).toThrow(/rowKey is required/);
+    expect(() =>
+      render(DataTable, {
+        props: {
+          data,
+          columns,
+          expandedContent: createRawSnippet(() => ({ render: () => '' })),
+        },
+      }),
+    ).toThrow(/rowKey is required/);
+    expect(() =>
+      render(DataTable, {
+        props: { data, columns, agentAddressable: true },
+      }),
+    ).toThrow(/rowKey is required/);
+    expect(() =>
+      render(DataTable, {
+        props: { data, columns, modes: { pagination: 'manual' } },
+      }),
+    ).toThrow(/rowKey is required/);
   });
 
   it('reveals expandable row content', async () => {
@@ -264,6 +273,7 @@ describe('DataTable', () => {
       props: {
         data,
         columns,
+        rowKey: 'id',
         expandedContent: createRawSnippet(() => ({
           render: () => '<p>Row detail</p>',
         })),
@@ -273,6 +283,46 @@ describe('DataTable', () => {
       screen.getAllByRole('button', { name: 'Expand row' })[0],
     );
     expect(screen.getByText('Row detail')).toBeInTheDocument();
+  });
+
+  it('rejects duplicate stable row keys and local totals that imply server paging', () => {
+    expect(() =>
+      render(DataTable, {
+        props: {
+          data: [data[0], { ...data[1], id: 'ada' }],
+          columns,
+          rowKey: 'id',
+        },
+      }),
+    ).toThrow(/unique row ids/);
+    expect(() =>
+      render(DataTable, {
+        props: { data, columns, rowKey: 'id', totalRows: 10 },
+      }),
+    ).toThrow(/only valid when pagination mode is manual/);
+  });
+
+  it('uses stable row IDs as the final local sort tie-breaker', () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: { sorting: [{ columnId: 'age', direction: 'asc' }] },
+    });
+    render(DataTable, {
+      props: {
+        data: [
+          { id: 'z', name: 'Zed', age: 36 },
+          { id: 'a', name: 'Ada', age: 36 },
+        ],
+        columns,
+        rowKey: 'id',
+        controller,
+      },
+    });
+    const names = screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[0].textContent);
+    expect(names).toEqual(['Ada', 'Zed']);
   });
 
   it('is axe-clean', async () => {

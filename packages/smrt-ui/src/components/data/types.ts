@@ -9,7 +9,9 @@ import type {
   DataTableFilter,
   DataTableModes,
   DataTableViewState,
+  DataTableViewStateInput,
 } from './DataTableController.js';
+import type { DataTableRowKey } from './DataTableIdentity.js';
 
 /**
  * Column definition for DataTable
@@ -71,7 +73,12 @@ export interface DataTableProps<T> {
   /** Column definitions */
   columns: DataTableColumn<T>[];
   /** Unique key accessor for rows */
-  rowKey?: keyof T | ((row: T) => string | number);
+  rowKey?: DataTableRowKey<T>;
+  /**
+   * Declares that a DataSurface or agent will address rows. Such tables must
+   * provide `rowKey`, even if they do not render selection controls.
+   */
+  agentAddressable?: boolean;
   /** Enable row selection */
   selectable?: boolean;
   /** Selected row keys */
@@ -120,7 +127,7 @@ export interface DataTableProps<T> {
    */
   controller?: DataTableController;
   /** Explicit controlled serializable state when no external controller is supplied. */
-  state?: DataTableViewState;
+  state?: DataTableViewStateInput;
   /** Initial serializable state for uncontrolled controller-backed tables. */
   initialState?: Partial<DataTableViewState>;
   /** Called after a controller command proposes or applies a new state. */
