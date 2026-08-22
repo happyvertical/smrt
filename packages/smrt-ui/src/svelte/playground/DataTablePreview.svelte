@@ -1,9 +1,8 @@
 <script lang="ts">
+import { onMount } from 'svelte';
 import DataTable from '../../components/data/DataTable.svelte';
-import type {
-  DataTableColumn,
-  SortState,
-} from '../../components/data/types.js';
+import { createDataTableController } from '../../components/data/DataTableController.js';
+import type { DataTableColumn } from '../../components/data/types.js';
 import Toggle from '../../components/forms/Toggle.svelte';
 import Badge from '../../components/ui/Badge.svelte';
 import Button from '../../components/ui/Button.svelte';
@@ -68,13 +67,31 @@ const columns: DataTableColumn<WorkspaceUser>[] = [
   { id: 'lastSeen', label: 'Last seen', sortable: true, align: 'right' },
 ];
 
-let selected = $state<Set<string | number>>(new Set());
-let sort = $state<SortState>({ columnId: null, direction: null });
 let loading = $state(false);
 let dense = $state(false);
+const tableController = createDataTableController({
+  columnIds: columns.map((column) => column.id),
+  initialState: { pageSize: 3 },
+});
+let tableState = $state(tableController.getState());
+
+onMount(() =>
+  tableController.subscribe((transition) => {
+    tableState = transition.next.state;
+  }),
+);
 
 function clearSelection() {
-  selected = new Set();
+  tableController.dispatch({ type: 'setSelectedRows', rowIds: [] });
+}
+
+function toggleActiveFilter() {
+  tableController.dispatch({
+    type: 'setFilters',
+    filters: tableState.filters.length
+      ? []
+      : [{ columnId: 'status', operator: 'equals', value: 'Active' }],
+  });
 }
 </script>
 
@@ -88,13 +105,13 @@ function clearSelection() {
       </p>
     </div>
     <div class="summary" aria-live="polite">
-      <Badge variant={selected.size > 0 ? 'primary' : 'default'}>
-        {selected.size} selected
+      <Badge variant={tableState.selectedRowIds.length > 0 ? 'primary' : 'default'}>
+        {tableState.selectedRowIds.length} selected
       </Badge>
       <Button
         variant="ghost"
         size="sm"
-        disabled={selected.size === 0}
+        disabled={tableState.selectedRowIds.length === 0}
         onclick={clearSelection}
       >
         Clear
@@ -105,8 +122,13 @@ function clearSelection() {
   <div class="table-controls" aria-label="Table display controls">
     <Toggle label="Dense rows" size="sm" bind:checked={dense} />
     <Toggle label="Loading state" size="sm" bind:checked={loading} />
+    <Button variant="ghost" size="sm" onclick={toggleActiveFilter}>
+      {tableState.filters.length ? 'Clear active filter' : 'Show active'}
+    </Button>
     <span>
-      Sort: {sort.columnId ? `${sort.columnId} ${sort.direction}` : 'none'}
+      Sort: {tableState.sorting.length
+        ? tableState.sorting.map((rule) => `${rule.columnId} ${rule.direction}`).join(', ')
+        : 'none'}
     </span>
   </div>
 
@@ -122,8 +144,7 @@ function clearSelection() {
       stickyHeader
       {loading}
       {dense}
-      bind:selected
-      bind:sort
+      controller={tableController}
       caption="Workspace users"
     />
   </div>
