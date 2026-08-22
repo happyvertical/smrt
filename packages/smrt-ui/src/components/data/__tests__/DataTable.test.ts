@@ -32,6 +32,19 @@ const data: Person[] = [
   { id: 'linus', name: 'Linus', age: 54 },
 ];
 
+function setHorizontalOverflow(
+  container: HTMLDivElement,
+  clientWidth: number,
+  scrollWidth: number,
+) {
+  Object.defineProperties(container, {
+    clientWidth: { configurable: true, value: clientWidth },
+    scrollWidth: { configurable: true, value: scrollWidth },
+    scrollLeft: { configurable: true, value: 0, writable: true },
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
 describe('DataTable', () => {
   it('renders caption, headers, cells, and a row per datum', () => {
     render(DataTable, { props: { data, columns, caption: 'People' } });
@@ -424,6 +437,65 @@ describe('DataTable', () => {
       .slice(1)
       .map((row) => within(row).getAllByRole('cell')[0].textContent);
     expect(names).toEqual(['Ada', 'Zed']);
+  });
+
+  it('makes only an overflowing narrow table a named, focusable scroll region', async () => {
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People' },
+    });
+    const tableContainer = container.querySelector(
+      '.data-table-container',
+    ) as HTMLDivElement;
+
+    expect(tableContainer).not.toHaveAttribute('role');
+    expect(tableContainer).not.toHaveAttribute('tabindex');
+
+    setHorizontalOverflow(tableContainer, 320, 960);
+
+    await vi.waitFor(() => {
+      expect(
+        screen.getByRole('region', {
+          name: 'People table, scroll horizontally to view more columns',
+        }),
+      ).toBe(tableContainer);
+      expect(tableContainer).toHaveAttribute('tabindex', '0');
+      expect(screen.getByText('More columns →')).toBeVisible();
+      expect(tableContainer).not.toContainElement(
+        screen.getByText('More columns →'),
+      );
+    });
+    await expectNoA11yViolations(container);
+
+    setHorizontalOverflow(tableContainer, 320, 320);
+    await vi.waitFor(() => {
+      expect(tableContainer).not.toHaveAttribute('role');
+      expect(tableContainer).not.toHaveAttribute('tabindex');
+      expect(screen.queryByText('More columns →')).not.toBeInTheDocument();
+    });
+  });
+
+  it('scrolls an overflowing narrow table with the keyboard', async () => {
+    const user = userEvent.setup();
+    const { container } = render(DataTable, {
+      props: { data, columns, caption: 'People' },
+    });
+    const tableContainer = container.querySelector(
+      '.data-table-container',
+    ) as HTMLDivElement;
+    setHorizontalOverflow(tableContainer, 320, 960);
+
+    await vi.waitFor(() =>
+      expect(tableContainer).toHaveAttribute('role', 'region'),
+    );
+    tableContainer.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(tableContainer.scrollLeft).toBe(256);
+    expect(screen.getByText('← More columns')).toBeVisible();
+
+    await user.keyboard('{End}');
+    expect(tableContainer.scrollLeft).toBe(640);
+    await user.keyboard('{Home}');
+    expect(tableContainer.scrollLeft).toBe(0);
   });
 
   it('is axe-clean', async () => {

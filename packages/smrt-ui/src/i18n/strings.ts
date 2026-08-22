@@ -18,4 +18,9 @@ export const M = defineMessages({
   'ui.data_table.select_row': 'Select row',
   'ui.data_table.loading': 'Loading...',
   'ui.data_table.empty': 'No data available',
+  'ui.data_table.overflow_region':
+    '{caption} table, scroll horizontally to view more columns',
+  'ui.data_table.default_overflow_region':
+    'Data table, scroll horizontally to view more columns',
+  'ui.data_table.more_columns': 'More columns',
 });

@@ -123,6 +123,10 @@ const localController = createDataTableController({
 let controllerSnapshot = $state<DataTableSnapshot>(localController.snapshot());
 let publishedLegacySignature: string | undefined;
 let localControllerInitialized = false;
+let tableContainer = $state<HTMLDivElement>();
+let hasHorizontalOverflow = $state(false);
+let canScrollLeft = $state(false);
+let canScrollRight = $state(false);
 
 function activeController(): DataTableController {
   return controller ?? localController;
@@ -303,6 +307,61 @@ function handlePageChange(next: number) {
 // Handle row click
 function handleRowClick(row: T, index: number) {
   onRowClick?.(row, index);
+}
+
+function updateOverflowState() {
+  const container = tableContainer;
+  if (!container) return;
+
+  const maxScrollLeft = Math.max(
+    0,
+    container.scrollWidth - container.clientWidth,
+  );
+  hasHorizontalOverflow = maxScrollLeft > 1;
+  canScrollLeft = hasHorizontalOverflow && container.scrollLeft > 1;
+  canScrollRight =
+    hasHorizontalOverflow && container.scrollLeft < maxScrollLeft - 1;
+}
+
+function handleOverflowKeydown(event: KeyboardEvent) {
+  const container = tableContainer;
+  if (!container || !hasHorizontalOverflow || event.target !== container) {
+    return;
+  }
+
+  const maxScrollLeft = Math.max(
+    0,
+    container.scrollWidth - container.clientWidth,
+  );
+  const scrollStep = Math.max(Math.floor(container.clientWidth * 0.8), 40);
+  let nextScrollLeft: number | undefined;
+
+  switch (event.key) {
+    case 'ArrowLeft':
+      nextScrollLeft = container.scrollLeft - scrollStep;
+      break;
+    case 'ArrowRight':
+      nextScrollLeft = container.scrollLeft + scrollStep;
+      break;
+    case 'Home':
+      nextScrollLeft = 0;
+      break;
+    case 'End':
+      nextScrollLeft = maxScrollLeft;
+      break;
+  }
+
+  if (nextScrollLeft === undefined) return;
+
+  const clampedScrollLeft = Math.max(
+    0,
+    Math.min(maxScrollLeft, nextScrollLeft),
+  );
+  if (clampedScrollLeft === container.scrollLeft) return;
+
+  event.preventDefault();
+  container.scrollLeft = clampedScrollLeft;
+  updateOverflowState();
 }
 
 // Action to set indeterminate state (can't be set via HTML attribute)
@@ -505,6 +564,11 @@ const someSelected = $derived(
 const columnCount = $derived(
   visibleColumns.length + (selectable ? 1 : 0) + (expandedContent ? 1 : 0),
 );
+const overflowRegionLabel = $derived(
+  caption
+    ? t(M['ui.data_table.overflow_region'], { caption })
+    : t(M['ui.data_table.default_overflow_region']),
+);
 
 function getCellValue(row: T, column: DataTableColumn<T>): unknown {
   const accessor = column.accessor ?? column.id;
@@ -516,10 +580,43 @@ const sizeClasses = {
   md: 'data-table--md',
   lg: 'data-table--lg',
 };
+
+$effect(() => {
+  const container = tableContainer;
+  void columnCount;
+  void displayRows.length;
+  if (!container) return;
+
+  const resizeObserver =
+    typeof ResizeObserver === 'undefined'
+      ? undefined
+      : new ResizeObserver(updateOverflowState);
+  resizeObserver?.observe(container);
+  const table = container.querySelector('table');
+  if (table) resizeObserver?.observe(table);
+  window.addEventListener('resize', updateOverflowState);
+  updateOverflowState();
+
+  return () => {
+    resizeObserver?.disconnect();
+    window.removeEventListener('resize', updateOverflowState);
+  };
+});
 </script>
 
 {#if toolbar}<div class="data-table-toolbar">{@render toolbar()}</div>{/if}
-<div class="data-table-container" class:data-table-container--sticky={stickyHeader}>
+<!-- svelte-ignore a11y_no_noninteractive_tabindex: the region is only focusable while it overflows. -->
+<div
+  bind:this={tableContainer}
+  class="data-table-container"
+  class:data-table-container--sticky={stickyHeader}
+  class:data-table-container--overflowing={hasHorizontalOverflow}
+  role={hasHorizontalOverflow ? 'region' : undefined}
+  tabindex={hasHorizontalOverflow ? 0 : undefined}
+  aria-label={hasHorizontalOverflow ? overflowRegionLabel : undefined}
+  onkeydown={handleOverflowKeydown}
+  onscroll={updateOverflowState}
+>
   <table
     class="data-table {sizeClasses[size]}"
     class:data-table--striped={striped}
@@ -683,12 +780,36 @@ const sizeClasses = {
     {/if}
   </table>
 </div>
+{#if hasHorizontalOverflow}
+  <div class="data-table__overflow-cue" aria-hidden="true">
+    {#if canScrollLeft}<span>← {t(M['ui.data_table.more_columns'])}</span>{/if}
+    {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
+  </div>
+{/if}
 {#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label="Table pages" />{/if}
 
 <style>
   .data-table-container {
+    position: relative;
     width: 100%;
     overflow-x: auto;
+  }
+
+  .data-table-container--overflowing:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline-offset: 2px;
+  }
+
+  .data-table__overflow-cue {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
+    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    font-size: var(--smrt-typography-label-small-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    pointer-events: none;
   }
 
   .data-table-toolbar { margin-bottom: var(--smrt-spacing-2); }
