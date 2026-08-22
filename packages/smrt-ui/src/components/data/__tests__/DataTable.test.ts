@@ -460,8 +460,18 @@ describe('DataTable', () => {
       ).toBe(tableContainer);
       expect(tableContainer).toHaveAttribute('tabindex', '0');
       expect(screen.getByText('More columns →')).toBeVisible();
+      expect(tableContainer).not.toContainElement(
+        screen.getByText('More columns →'),
+      );
     });
     await expectNoA11yViolations(container);
+
+    setHorizontalOverflow(tableContainer, 320, 320);
+    await vi.waitFor(() => {
+      expect(tableContainer).not.toHaveAttribute('role');
+      expect(tableContainer).not.toHaveAttribute('tabindex');
+      expect(screen.queryByText('More columns →')).not.toBeInTheDocument();
+    });
   });
 
   it('scrolls an overflowing narrow table with the keyboard', async () => {

@@ -566,8 +566,8 @@ const columnCount = $derived(
 );
 const overflowRegionLabel = $derived(
   caption
-    ? `${caption} table, scroll horizontally to view more columns`
-    : 'Data table, scroll horizontally to view more columns',
+    ? t(M['ui.data_table.overflow_region'], { caption })
+    : t(M['ui.data_table.default_overflow_region']),
 );
 
 function getCellValue(row: T, column: DataTableColumn<T>): unknown {
@@ -779,13 +779,13 @@ $effect(() => {
       <tfoot><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
     {/if}
   </table>
-  {#if hasHorizontalOverflow}
-    <div class="data-table__overflow-cue" aria-hidden="true">
-      {#if canScrollLeft}<span>← More columns</span>{/if}
-      {#if canScrollRight}<span>More columns →</span>{/if}
-    </div>
-  {/if}
 </div>
+{#if hasHorizontalOverflow}
+  <div class="data-table__overflow-cue" aria-hidden="true">
+    {#if canScrollLeft}<span>← {t(M['ui.data_table.more_columns'])}</span>{/if}
+    {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
+  </div>
+{/if}
 {#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label="Table pages" />{/if}
 
 <style>
@@ -801,11 +801,8 @@ $effect(() => {
   }
 
   .data-table__overflow-cue {
-    position: sticky;
-    left: 0;
     display: flex;
     justify-content: space-between;
-    min-width: 100%;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface-container-low, #f9fafb);
