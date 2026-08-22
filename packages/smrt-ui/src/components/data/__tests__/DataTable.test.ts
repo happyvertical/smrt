@@ -243,6 +243,81 @@ describe('DataTable', () => {
     );
   });
 
+  it('keeps stable selection and expansion through sort, filter, and data refresh', async () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    const expandedContent = createRawSnippet(() => ({
+      render: () => '<p>Row detail</p>',
+    }));
+    const props = {
+      data,
+      columns,
+      rowKey: 'id' as const,
+      selectable: true,
+      expandedContent,
+      controller,
+    };
+    const { rerender } = render(DataTable, { props });
+
+    const expectAdaSelectionAndExpansion = () => {
+      const adaRow = screen.getByRole('cell', { name: 'Ada' }).closest('tr');
+      expect(adaRow).toHaveClass('data-table__row--selected');
+      expect(adaRow?.nextElementSibling).toHaveTextContent('Row detail');
+    };
+    const visibleNames = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .filter((row) => !row.classList.contains('data-table__row--expanded'))
+        .map(
+          (row) =>
+            within(row)
+              .getAllByRole('cell')
+              .find((cell) => ['Ada', 'Linus'].includes(cell.textContent ?? ''))
+              ?.textContent,
+        )
+        .filter((name): name is string => name !== undefined);
+
+    await userEvent.click(
+      screen.getAllByRole('checkbox', { name: 'Select row' })[0],
+    );
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Expand row' })[0],
+    );
+    expectAdaSelectionAndExpansion();
+
+    controller.dispatch({
+      type: 'setSorting',
+      sorting: [{ columnId: 'age', direction: 'desc' }],
+    });
+    await vi.waitFor(() => {
+      expect(visibleNames()).toEqual(['Linus', 'Ada']);
+      expectAdaSelectionAndExpansion();
+    });
+
+    controller.dispatch({ type: 'setSearch', search: 'Ada' });
+    await vi.waitFor(() => {
+      expect(
+        screen.queryByRole('cell', { name: 'Linus' }),
+      ).not.toBeInTheDocument();
+      expectAdaSelectionAndExpansion();
+    });
+
+    controller.dispatch({ type: 'setSearch', search: '' });
+    await rerender({
+      ...props,
+      data: [
+        { id: 'linus', name: 'Linus', age: 10 },
+        { id: 'ada', name: 'Ada', age: 90 },
+      ],
+    });
+    await vi.waitFor(() => {
+      expect(visibleNames()).toEqual(['Ada', 'Linus']);
+      expectAdaSelectionAndExpansion();
+    });
+  });
+
   it('fails closed when durable selection, expansion, manual, or agent modes lack a rowKey', () => {
     expect(() =>
       render(DataTable, { props: { data, columns, selectable: true } }),
