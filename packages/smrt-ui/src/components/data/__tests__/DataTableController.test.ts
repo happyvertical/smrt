@@ -83,6 +83,7 @@ describe('DataTableController', () => {
     expect(controller.snapshot().state.page).toBe(2);
     controller.clampPage(0);
     expect(controller.snapshot().state.page).toBe(1);
+    expect(() => controller.clampPage(1.5)).toThrow(/totalRows/);
   });
 
   it('keeps multi-sort priority while cycling a column through asc, desc, and clear', () => {
@@ -181,6 +182,11 @@ describe('DataTableController', () => {
     expect(() =>
       transitionDataTableState(state, { type: 'setPageSize', pageSize: 0 }),
     ).toThrow(/pageSize/);
+    for (const page of [0, -1, 1.5]) {
+      expect(() =>
+        transitionDataTableState(state, { type: 'setPage', page }),
+      ).toThrow(/page/);
+    }
   });
 
   it('models current-page and explicit row selections separately', () => {

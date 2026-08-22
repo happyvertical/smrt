@@ -205,10 +205,15 @@ export function assertDataTableRowId(value: unknown): DataTableRowId {
 }
 
 function assertPage(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError('DataTable page must be a finite number');
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    !Number.isInteger(value) ||
+    value <= 0
+  ) {
+    throw new TypeError('DataTable page must be a positive integer');
   }
-  return Math.max(1, Math.floor(value));
+  return value;
 }
 
 function assertPageSize(value: unknown): number | null {
@@ -904,10 +909,12 @@ export class DataTableController {
         changed: false,
       };
     }
-    if (!Number.isFinite(totalRows) || totalRows < 0) {
-      throw new TypeError(
-        'DataTable totalRows must be a non-negative finite number',
-      );
+    if (
+      !Number.isFinite(totalRows) ||
+      !Number.isInteger(totalRows) ||
+      totalRows < 0
+    ) {
+      throw new TypeError('DataTable totalRows must be a non-negative integer');
     }
     const pageCount = this.state.pageSize
       ? Math.max(1, Math.ceil(totalRows / this.state.pageSize))
