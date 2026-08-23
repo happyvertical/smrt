@@ -689,7 +689,11 @@ function structuralRows(
       id: row.id,
       kind: row.kind,
       label: row.label,
-      ...(row.values !== undefined ? { values: { ...row.values } } : {}),
+      ...(row.values !== undefined
+        ? {
+            values: jsonSafeValue(row.values) as Record<string, unknown>,
+          }
+        : {}),
       ...(row.labelColumnId !== undefined
         ? { labelColumnId: row.labelColumnId }
         : {}),
@@ -763,7 +767,10 @@ function publicFieldMap(
   );
 }
 
-function jsonSafeValue(value: unknown): unknown {
+function jsonSafeValue(
+  value: unknown,
+  ancestors = new WeakSet<object>(),
+): unknown {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'bigint') {
     const numeric = Number(value);
@@ -774,11 +781,24 @@ function jsonSafeValue(value: unknown): unknown {
     }
     return numeric;
   }
-  if (Array.isArray(value)) return value.map(jsonSafeValue);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, jsonSafeValue(entry)]),
-    );
+    if (ancestors.has(value)) {
+      throw new TypeError('Values must not contain circular references');
+    }
+    ancestors.add(value);
+    try {
+      if (Array.isArray(value)) {
+        return value.map((entry) => jsonSafeValue(entry, ancestors));
+      }
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          jsonSafeValue(entry, ancestors),
+        ]),
+      );
+    } finally {
+      ancestors.delete(value);
+    }
   }
   return value;
 }

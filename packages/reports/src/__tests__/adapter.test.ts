@@ -451,6 +451,47 @@ describe('report adapter', () => {
     ]);
   });
 
+  it('makes structural row values safe for JSON transport', async () => {
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport, {
+      dataTable: {
+        structuralRows: [
+          {
+            id: 'all-customers',
+            kind: 'summary',
+            label: 'All customers',
+            values: {
+              customer_id: new Date('2026-08-23T00:00:00.000Z'),
+              revenue: 42n,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(descriptor.dataTable.structuralRows[0]?.values).toEqual({
+      customer_id: '2026-08-23T00:00:00.000Z',
+      revenue: 42,
+    });
+    expect(() => JSON.stringify(descriptor)).not.toThrow();
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'circular',
+              kind: 'summary',
+              label: 'Circular',
+              values: { revenue: circular },
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/circular references/);
+  });
+
   it('rejects malformed grouped headers and duplicate structural rows', async () => {
     await expect(
       buildReportAdapterDescriptor(AdapterReport, {
