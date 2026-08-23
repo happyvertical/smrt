@@ -651,11 +651,9 @@ $effect(() => {
   setVirtualScrollTop(nextScrollTop, virtualization.scrollTop !== undefined);
   const focusContainer = tableContainer;
   void tick().then(() => {
-    const focusedRow = [
-      ...focusContainer.querySelectorAll<HTMLTableRowElement>(
-        'tr[data-row-id]',
-      ),
-    ].find((row) => row.dataset.rowId === dataTableRowIdKey(focusRowId));
+    const focusedRow = Array.from(
+      focusContainer.querySelectorAll<HTMLTableRowElement>('tr[data-row-id]'),
+    ).find((row) => row.dataset.rowId === dataTableRowIdKey(focusRowId));
     focusedRow?.focus({ preventScroll: true });
   });
 });
