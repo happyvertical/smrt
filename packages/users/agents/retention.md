@@ -44,3 +44,9 @@ reap them.
 - **`expiresAt` is `@field({ indexed: true })`** on `Session`,
   `UsersMagicLinkToken` and `UsersCliAuthRequest`: the prune predicate scans
   that column on every pass.
+- **CLI bearer handoff is single-use.** An approved request becomes `consumed`
+  and clears its `sessionId` when one poller wins the exchange. The CLI
+  retention task deletes pending requests past their TTL, requests already
+  marked `expired` by lazy expiry, and consumed history; it retains approved
+  requests until exchange so a near-expiry approval cannot orphan its bearer
+  session.

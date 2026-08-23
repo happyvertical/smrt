@@ -19,7 +19,11 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isUniqueViolationError,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import { UsersCliAuthApproveLimitCollection } from '../collections/CliAuthApproveLimitCollection.js';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
 import type {
   CliAuthRequestStatus,
@@ -147,10 +151,8 @@ export class TerminalAuthService {
   private readonly verificationPath: string;
   private readonly maxApproveAttempts: number;
   private readonly approveAttemptWindowMs: number;
-  private readonly failedApprovesByUser = new Map<
-    string,
-    { count: number; firstAttemptAt: number }
-  >();
+  private readonly approveQueuesByUser = new Map<string, Promise<void>>();
+  private approveLimitCollection!: UsersCliAuthApproveLimitCollection;
   private requestCollection!: UsersCliAuthRequestCollection;
   private sessionService!: SessionService;
 
@@ -178,6 +180,8 @@ export class TerminalAuthService {
   }
 
   async initialize(): Promise<void> {
+    this.approveLimitCollection =
+      await UsersCliAuthApproveLimitCollection.create(this.options);
     this.requestCollection = await UsersCliAuthRequestCollection.create(
       this.options,
     );
@@ -203,18 +207,15 @@ export class TerminalAuthService {
   }
 
   /**
-   * Generate a user code that is not currently in use by another *active*
-   * (pending or approved-but-unclaimed) request. Collisions are vanishingly
-   * rare (1 in 2^32 per attempt) but happen at scale; retrying keeps the
-   * affected CLI from being locked out.
+   * Generate a user code that is not present in durable request history.
+   * Collisions are vanishingly rare (1 in 2^32 per attempt) but happen at
+   * scale; retrying keeps the affected CLI from being locked out.
    */
   private async makeUniqueUserCode(maxAttempts = 5): Promise<string> {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const candidate = this.makeUserCode();
       const existing = await this.requestCollection.findByUserCode(candidate);
-      if (!existing || existing.status === 'expired') {
-        return candidate;
-      }
+      if (!existing) return candidate;
     }
     throw new TerminalAuthError(
       'Unable to generate a unique terminal user code; try again.',
@@ -228,26 +229,36 @@ export class TerminalAuthService {
    */
   async createRequest(origin: string): Promise<CliAuthStartResult> {
     const trimmedOrigin = origin.replace(/\/+$/u, '');
-    const deviceCode = base64url(randomBytes(32));
-    const userCode = await this.makeUniqueUserCode();
-    const expiresAt = new Date(Date.now() + this.requestTtlSeconds * 1000);
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const deviceCode = base64url(randomBytes(32));
+      const userCode = await this.makeUniqueUserCode();
+      const expiresAt = new Date(Date.now() + this.requestTtlSeconds * 1000);
 
-    const request = await this.requestCollection.create({
-      deviceCodeHash: hashDeviceCode(deviceCode),
-      expiresAt,
-      status: 'pending',
-      userCode,
-    });
-    await request.save();
+      try {
+        await this.requestCollection.create({
+          deviceCodeHash: hashDeviceCode(deviceCode),
+          expiresAt,
+          status: 'pending',
+          userCode,
+        });
+      } catch (error) {
+        if (isUniqueViolationError(error) && attempt < 4) continue;
+        throw error;
+      }
 
-    return {
-      deviceCode,
-      expiresAt: expiresAt.toISOString(),
-      interval: this.pollIntervalSeconds,
-      issuer: trimmedOrigin,
-      userCode,
-      verificationUrl: `${trimmedOrigin}${this.verificationPath}?code=${encodeURIComponent(userCode)}`,
-    };
+      return {
+        deviceCode,
+        expiresAt: expiresAt.toISOString(),
+        interval: this.pollIntervalSeconds,
+        issuer: trimmedOrigin,
+        userCode,
+        verificationUrl: `${trimmedOrigin}${this.verificationPath}?code=${encodeURIComponent(userCode)}`,
+      };
+    }
+
+    throw new TerminalAuthError(
+      'Unable to create a unique terminal login request; try again.',
+    );
   }
 
   /**
@@ -281,86 +292,110 @@ export class TerminalAuthService {
         'An authenticated tenant session is required.',
       );
     }
+    const userId = input.user.id;
+    const tenantId = input.tenantId;
 
-    this.assertApproveRateLimit(input.user.id);
+    return await this.withSerializedApprove(userId, async () => {
+      const reservation = await this.approveLimitCollection.reserveAttempt({
+        maxAttempts: this.maxApproveAttempts,
+        userId,
+        windowMs: this.approveAttemptWindowMs,
+      });
+      if (!reservation.allowed) {
+        throw new TerminalAuthRateLimitError(
+          'Too many failed terminal-login attempts. Try again later.',
+          reservation.retryAfterSeconds,
+        );
+      }
+      let retainReservation = false;
 
-    const request = await this.getRequestForUserCode(input.userCode);
-    if (!request) {
-      this.recordFailedApprove(input.user.id);
-      throw new TerminalAuthError('Terminal login request not found.');
-    }
-    if (request.status === 'approved') {
-      // Idempotent success — don't penalize a re-approval.
-      return request;
-    }
-    if (request.status !== 'pending' || isExpired(request)) {
-      request.status = 'expired';
-      await request.save();
-      this.recordFailedApprove(input.user.id);
-      throw new TerminalAuthError('Terminal login request has expired.');
-    }
+      try {
+        const request = await this.getRequestForUserCode(input.userCode);
+        if (!request) {
+          retainReservation = true;
+          throw new TerminalAuthError('Terminal login request not found.');
+        }
+        if (request.status === 'approved' || request.status === 'consumed') {
+          // Idempotent success — don't penalize a re-approval or a double-click
+          // after the CLI already exchanged the approved token.
+          return request;
+        }
+        if (request.status !== 'pending' || isExpired(request)) {
+          request.status = 'expired';
+          await request.save();
+          retainReservation = true;
+          throw new TerminalAuthError('Terminal login request has expired.');
+        }
 
-    const sessionId = await this.sessionService.createSession(
-      input.user.id,
-      input.tenantId,
-      {
-        data: {
-          approvedBy: input.user.email ?? input.user.id,
-          kind: 'terminal',
-        },
-        ipAddress: input.ipAddress,
-        ttl: this.sessionTtlSeconds,
-        userAgent: input.userAgent,
-      },
-    );
-
-    request.approvedAt = new Date();
-    request.sessionId = sessionId;
-    request.status = 'approved';
-    request.tenantId = input.tenantId;
-    request.userId = input.user.id;
-    await request.save();
-    this.failedApprovesByUser.delete(input.user.id);
-    return request;
+        const approved = await this.requestCollection.approvePendingRequest({
+          approvedBy: input.user.email ?? userId,
+          ipAddress: input.ipAddress,
+          sessionTtlSeconds: this.sessionTtlSeconds,
+          tenantId,
+          userAgent: input.userAgent,
+          userCode: input.userCode,
+          userId,
+        });
+        if (!approved) {
+          const concurrent = await this.getRequestForUserCode(input.userCode);
+          if (
+            concurrent?.status === 'approved' ||
+            concurrent?.status === 'consumed'
+          ) {
+            return concurrent;
+          }
+          retainReservation = true;
+          throw new TerminalAuthError('Terminal login request has expired.');
+        }
+        request.approvedAt = approved.approvedAt;
+        request.sessionId = approved.sessionId;
+        request.status = 'approved';
+        request.tenantId = approved.tenantId;
+        request.userId = approved.userId;
+        return request;
+      } finally {
+        if (!retainReservation) {
+          try {
+            await this.approveLimitCollection.releaseAttempt(
+              userId,
+              reservation.windowStartedAt,
+            );
+          } catch {
+            // The reservation is fail-closed and expires with its window. A
+            // cleanup outage must not turn a committed approval/session into
+            // an apparent browser failure while the CLI can already exchange
+            // the credential. Retaining it is the safe fallback.
+          }
+        }
+      }
+    });
   }
 
   /**
-   * Throw {@link TerminalAuthRateLimitError} if the user has exceeded the
-   * configured failed-approve budget inside the current sliding window.
+   * Serialize approval attempts per user so parallel requests cannot all pass
+   * the failed-attempt check before any one of them records its failure.
    */
-  private assertApproveRateLimit(userId: string): void {
-    const tracking = this.failedApprovesByUser.get(userId);
-    if (!tracking) return;
+  private async withSerializedApprove<T>(
+    userId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.approveQueuesByUser.get(userId) ?? Promise.resolve();
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => gate);
+    this.approveQueuesByUser.set(userId, tail);
 
-    const elapsedMs = Date.now() - tracking.firstAttemptAt;
-    if (elapsedMs >= this.approveAttemptWindowMs) {
-      this.failedApprovesByUser.delete(userId);
-      return;
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+      if (this.approveQueuesByUser.get(userId) === tail) {
+        this.approveQueuesByUser.delete(userId);
+      }
     }
-
-    if (tracking.count >= this.maxApproveAttempts) {
-      const retryAfterSeconds = Math.max(
-        1,
-        Math.ceil((this.approveAttemptWindowMs - elapsedMs) / 1000),
-      );
-      throw new TerminalAuthRateLimitError(
-        'Too many failed terminal-login attempts. Try again later.',
-        retryAfterSeconds,
-      );
-    }
-  }
-
-  /** Increment the failed-approve counter for `userId`, starting the window if needed. */
-  private recordFailedApprove(userId: string): void {
-    const tracking = this.failedApprovesByUser.get(userId);
-    if (!tracking) {
-      this.failedApprovesByUser.set(userId, {
-        count: 1,
-        firstAttemptAt: Date.now(),
-      });
-      return;
-    }
-    tracking.count += 1;
   }
 
   /**
@@ -370,9 +405,9 @@ export class TerminalAuthService {
    * was never approved within its TTL.
    */
   async exchangeDeviceCode(deviceCode: string): Promise<CliAuthTokenResult> {
-    const request = await this.requestCollection.findByDeviceCodeHash(
-      hashDeviceCode(deviceCode),
-    );
+    const deviceCodeHash = hashDeviceCode(deviceCode);
+    const request =
+      await this.requestCollection.findByDeviceCodeHash(deviceCodeHash);
     if (!request) {
       return { status: 'expired' };
     }
@@ -382,8 +417,11 @@ export class TerminalAuthService {
     // after approval but after `expiresAt`. Check this before TTL expiry so
     // freshly minted sessions don't get orphaned.
     if (request.status === 'approved' && request.sessionId) {
+      const accessToken =
+        await this.requestCollection.consumeApprovedSession(deviceCodeHash);
+      if (!accessToken) return { status: 'expired' };
       return {
-        accessToken: request.sessionId,
+        accessToken,
         expiresIn: this.sessionTtlSeconds,
         status: 'approved',
         tokenType: 'Bearer',
@@ -427,7 +465,7 @@ export class TerminalAuthService {
   }
 
   /**
-   * Delete expired pending requests (cleanup job).
+   * Delete expired pending or already-consumed requests (cleanup job).
    */
   async cleanupExpiredRequests(): Promise<number> {
     return this.requestCollection.deleteExpired();

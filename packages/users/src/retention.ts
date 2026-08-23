@@ -79,7 +79,8 @@ export function registerUserRetentionTasks(): void {
 
   registerRetentionTask({
     name: CLI_AUTH_RETENTION_TASK,
-    description: 'Delete expired pending CLI auth requests',
+    description:
+      'Delete expired pending, lazily-expired, and consumed CLI auth requests',
     run: async (db, context) => {
       const requests = await UsersCliAuthRequestCollection.create({ db });
       return requests.deleteExpired({ dryRun: context.dryRun });

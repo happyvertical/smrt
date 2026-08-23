@@ -34,6 +34,23 @@ async function indexNames(
   return result.map((row) => String(row.name));
 }
 
+async function uniqueIndexColumns(
+  db: DatabaseInterface,
+  tableName: string,
+): Promise<string[][]> {
+  const indexes = await rows(db, `PRAGMA index_list('${tableName}')`);
+  const uniqueIndexes = indexes.filter((row) => Number(row.unique) === 1);
+  return await Promise.all(
+    uniqueIndexes.map(async (index) => {
+      const columns = await rows(
+        db,
+        `PRAGMA index_info('${String(index.name)}')`,
+      );
+      return columns.map((column) => String(column.name));
+    }),
+  );
+}
+
 describe('read-path lookup indexes reach the production manifest schema path (#2364)', () => {
   let baseDb: DatabaseInterface;
   let cleanup: () => Promise<void>;
@@ -54,10 +71,13 @@ describe('read-path lookup indexes reach the production manifest schema path (#2
   });
 
   it('indexes the CLI device-code grant lookups on `users_cli_auth_requests`', async () => {
-    const names = await indexNames(baseDb, 'users_cli_auth_requests');
-    // `findByUserCode()` — the browser-side approval lookup.
-    expect(names).toContain('users_cli_auth_requests_user_code_idx');
-    // `findByDeviceCodeHash()` — the CLI's polling key.
-    expect(names).toContain('users_cli_auth_requests_device_code_hash_idx');
+    const uniqueColumns = await uniqueIndexColumns(
+      baseDb,
+      'users_cli_auth_requests',
+    );
+    // These unique indexes both accelerate the hot lookups and arbitrate
+    // concurrent request issuance.
+    expect(uniqueColumns).toContainEqual(['user_code']);
+    expect(uniqueColumns).toContainEqual(['device_code_hash']);
   });
 });
