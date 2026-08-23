@@ -315,6 +315,7 @@ const SELECTION_SCOPES = new Set<DataSurfaceSelectionScope>([
   'all-matching',
 ]);
 const FORBIDDEN_BOUNDARY_KEYS = new Set([
+  'tenant',
   'tenantid',
   'principalid',
   'principal',

@@ -178,6 +178,17 @@ describe('data surface registry', () => {
         getSnapshot: () => ({ revision: 0, state: { tenantId: 'other' } }),
       }),
     ).toThrow('authority or SQL');
+    expect(() =>
+      registry.register({
+        descriptor: descriptor({
+          identity: { ...identity, surfaceId: 'tenant-context' },
+        }),
+        getSnapshot: () => ({
+          revision: 0,
+          state: { tenant: { id: 'other' } },
+        }),
+      }),
+    ).toThrow('authority or SQL');
 
     expect(() =>
       registry.register({
