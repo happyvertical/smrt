@@ -15,6 +15,7 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/test-support/` + `__tests__/` | the golden-test harness and pattern for Svelte component tests | [agents/testing.md](agents/testing.md) |
 | `src/components/settings/` (`./settings`) | `SettingsCatalog`, `paginateSettingsCatalog`, and the summary-vs-detail scalability contract | [agents/settings.md](agents/settings.md) |
 | `src/components/workspace/` (`./workspace` + `./web`) | the AdminShell family and its principles, the legacy ToolsDock surface, the `./web` activity-feed and `updateAvailable` adapters, and server-side dock gates | [agents/workspace.md](agents/workspace.md) |
+| `src/web/remote-query.svelte.ts` | Svelte 5 binding for query-shaped remote pages: rows, page, totals, loading/refreshing/stale/error, retry, last-updated, and query-scoped live subscriptions (#2445) | — |
 
 ## The UI split — primitive-adoption contract (#1589)
 
