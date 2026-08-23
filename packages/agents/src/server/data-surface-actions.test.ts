@@ -360,6 +360,25 @@ describe('data-surface action adapter', () => {
     });
   });
 
+  it('allows a required-confirmation retry with the same key after previewing', async () => {
+    const applyRow = vi.fn();
+    const setup = harness({ apply: applyRow });
+    const idempotencyKey = 'retry-after-preview';
+
+    await expect(
+      setup.adapter.apply(request('apply', { idempotencyKey }), setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'confirmation_required' });
+
+    const token = await previewToken(setup);
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: token, idempotencyKey }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: true, details: { accepted: 2 } });
+    expect(applyRow).toHaveBeenCalledTimes(2);
+  });
+
   it('replays a completed idempotent apply after its confirmation token expires', async () => {
     let now = 10;
     const applyRow = vi.fn();

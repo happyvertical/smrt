@@ -921,6 +921,13 @@ export function createDataSurfaceActionAdapter(
           await state.releaseIdempotency(idempotencyScope, ownerToken);
           throw error;
         }
+        // A confirmation-required request without a token is a recoverable
+        // precondition failure. Do not consume its idempotency key: the caller
+        // may preview and retry with the same key.
+        if (!applied.ok && applied.reason === 'confirmation_required') {
+          await state.releaseIdempotency(idempotencyScope, ownerToken);
+          return applied;
+        }
         // Once execution returns, never release on a persistence failure: a
         // durable reservation is safer than allowing duplicate side effects.
         if (
