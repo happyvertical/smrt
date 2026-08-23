@@ -18,8 +18,8 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/change-signals.ts` + the generated `_events` SSE route | the push companion to the change feed — the signal bus, cross-replica fan-out, the SSE route, and its documented gaps | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
 | `src/schema/` | the four `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
-| `src/data-query.ts` | canonical bounded data-query normalizer: allowlisted fields, deterministic fingerprints, output validation, and transport-neutral envelope (#2444) | — |
-| `src/collection.ts` | latest-related bounded parent/child reads and their adapter, alias, and primary-key invariants (#1903) | [agents/latest-related.md](agents/latest-related.md) |
+| `src/data-query.ts` | canonical bounded data-query normalizer and transport-neutral envelope (#2444) | [agents/data-query.md](agents/data-query.md) |
+| `src/collection.ts` | bounded collection reads, projections, latest-related hydration, facets, counts, and read plans | [agents/collection-reads.md](agents/collection-reads.md) |
 
 ## SmrtObject Lifecycle
 
@@ -38,7 +38,8 @@ subsystem you are editing. This file keeps what holds across all of them.
 `_smrt_contexts` plus optional injected semantic search. `capture()` reinforces
 successes and decays failures while updating outcome counters; `recall()`
 applies confidence, expiry, time-decay, and hierarchical-scope filters and
-refreshes `last_used_at`. Keep semantic search behind the
+refreshes `last_used_at`. Detailed persistence and search semantics are in
+[agents/memory.md](agents/memory.md). Keep semantic search behind the
 `SmrtCollection.semanticSearch`-compatible injection boundary.
 
 ## SmrtCollection Query
@@ -50,43 +51,13 @@ await collection.list({
 });
 ```
 
-Projection primitive (#1902): pass `select: ['id', 'title', 'tenantId']` to
-`list()` when an admin/list workflow needs compact rows. `select` uses SMRT
-field names, maps them to DB columns internally, and returns plain objects keyed
-by the same SMRT field names without hydrating `SmrtObject` instances. It
-composes with `where`, `orderBy`, `limit`, and `offset`; `beforeList`
-interceptors still run. It is for column-backed fields only and cannot combine
-with `include`/relationship eager loading.
-
-Latest-related primitive (#1903): `SmrtCollection.listWithLatestRelated()` is
-documented in [agents/latest-related.md](agents/latest-related.md), including
-its primary-key, dialect, alias, and cleanup invariants.
+Projection, latest-related, facets, counts, and bounded read plans are
+documented in [agents/collection-reads.md](agents/collection-reads.md).
 
 `list()` and `query()` hydrate model instances serially in result order because
 an `initialize()` hook may query through the same transaction-bound PostgreSQL
 client. Keep this serialization invariant; use `select` when callers need plain
 rows without model hydration.
-
-Database-backed facets and scoped counts are available through
-`collection.facets({ fields, where })` and
-`collection.counts({ where })`. Facets return `{ field, values }` entries whose
-values contain `{ value, count }`, run the same `beforeList`/tenant interceptors
-as list reads, and execute one bounded `GROUP BY` query per requested field.
-Each call accepts at most 20 fields. A requested value limit is clamped to the
-hard maximum of 1,000 and to `maxListLimit` when configured. If omitted, the
-limit defaults to `defaultListLimit` or 50, then the same ceilings apply; facet
-queries are therefore never unbounded even when list bounds are unset. They
-never hydrate model instances. `counts()` returns `{ total, filtered }` using
-two `COUNT(*)` queries; both counts retain the active read scope. Facet fields
-must be column-backed and obey the same sensitive/read-permission restrictions
-as `select`. Array/string-list fields are grouped by their stored value — SMRT
-does not split or unnest them — so consumers needing per-member options should
-use a scalar join table or consumer-specific query.
-
-Facet tests cover SQLite and DuckDB locally. Scalar PostgreSQL coverage is in
-the optional `test:postgres` lane and runs only when `SMRT_TEST_POSTGRES_URL` is
-configured; the local suite does not claim PostgreSQL parity for array/JSON
-encoding.
 
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
 Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`
@@ -105,43 +76,18 @@ operator against a database to keep the two in step.
 
 STI child collections auto-filter by `_meta_type`. Query bounds — `LIMIT 1` on `get()`, the `limit`/`offset` parser, the `orderBy` whitelist and sensitive/permission refusals, and the deterministic generated-list ordering (#2367) — are in [agents/query-bounds.md](agents/query-bounds.md).
 
-## Bounded Collection Read Plans
-
-Use `executeCollectionReadPlan()` when one operation needs several independent
-collections. It bounds top-level `collection.list()` concurrency while keeping
-all reads on the normal registry/collection path. Callers must choose an
-explicit positive `maxConcurrency` and pass their normal shared
-`collectionOptions` when database or tenant context matters.
-
-The executor deliberately does not compose SQL, cache the plan, or change pool
-defaults. On failure it stops starting queued entries, drains operations already
-in flight, and rethrows the first error.
-
 ## Canonical Bounded Data Queries (#2444)
 
-`normalizeDataQueryRequest()` and `normalizeDataQueryResult()` are the trust
-boundary for the transport-neutral table/report/content query envelope. An
-authenticated adapter supplies a trusted `DataQuerySchema`; the caller only
-gets its declared projectable/sortable/filterable/facetable fields. The helpers
-never execute a query or decide tenant/principal access.
-
-Use `createDataQueryFingerprint()` for cache and result correlation. It omits
-the request id and page position, canonicalizes equivalent filter/projection/
-facet forms, and adds the identity sort tie-break. Keep data-query values
-scalar, requests/pages/facets positive and bounded, results within the schema
-byte cap with declared field types preserved. Datetimes must be valid RFC 3339
-instants, identity fields must be string/number/datetime-compatible, and JSON
-result fields are depth/container/string/byte bounded before cloning. Return
-only normalized `DataQueryResult` envelopes to REST, MCP,
-WebMCP, and browser consumers. Adapter-specific report/content context wraps
-the base envelope; it does not add unsafe fields or SQL-like controls to it.
+The normalizers and fingerprint are the trust boundary for the
+transport-neutral query envelope; full bounds, schema, and output rules live in
+[agents/data-query.md](agents/data-query.md). Adapters own tenant/principal
+access and query execution.
 
 ## Object Memory & Semantic Search
 
-Two persistence primitives every `SmrtObject`/`SmrtCollection` inherits — load-bearing for learning agents, usable by any object. Full guide: `docs/content/core.md` → "Context Memory System".
-
-- **Context memory** (`remember`/`recall`/`recallAll`/`forget`/`forgetScope`, table `_smrt_contexts`): stores any JSON value keyed by `(owner_class, owner_id, scope, key, version)` with a `confidence` score (0–1) and a stored `expiresAt` (metadata — `recall()` does **not** filter expired rows; expiry is caller-managed). `recall()` returns the highest-confidence match with an optional `minConfidence` floor and **opt-in** hierarchical scope fallback (`includeAncestors: true` → `'a/b/c' → 'a/b' → 'a' → 'global'`; default off); `recallAll()` returns a `Map`. Typical use: cache a learned strategy (e.g. a working selector per host) and reuse it across sessions. `success_count`/`failure_count` columns exist for outcome-weighting: `SmrtObject.remember()` leaves them untouched, `SmrtCollection.remember()` resets them to zero, and neither recall path updates them. `LearningMemory` is the layer that maintains them (and that does filter expired rows).
-- **Semantic search** (on `SmrtCollection`, table `_smrt_embeddings`): `semanticSearch(query)`, `findSimilar(object)`, `findSimilarToEmbedding(vector)` — cosine ranking over embeddings of the fields declared in `@smrt({ embeddings })`. Native pgvector/HNSW when configured, in-memory `CosineSimilarity` fallback otherwise; default local model `Xenova/bge-base-en-v1.5` (768-dim) or AI `text-embedding-3-small`. Hits hydrate via `list({ 'id in': … })`, so `@TenantScoped` isolation applies to results.
+Context memory and semantic search are persistence primitives inherited by
+`SmrtObject`/`SmrtCollection`; their storage, scope, expiry, and tenant
+invariants are in [agents/memory.md](agents/memory.md).
 
 ## @smrt() Decorator Options
 
