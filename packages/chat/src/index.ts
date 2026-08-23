@@ -92,6 +92,9 @@ export {
   type RunChatConversationStreamOptions,
   runChatConversationStream,
 } from './chat-stream.js';
+// Principal-bound data discovery/inspection/query tools are offered through
+// the same `extraTools` seam as invoke-agent; authority remains in agents.
+export * from './data-surface-tools.js';
 // Models
 export {
   AgentSession,
