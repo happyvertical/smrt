@@ -142,13 +142,27 @@ export function createSmrtWebQuery<TData extends object>(
     for (const listener of listeners) listener(state);
   };
   const cached = (key: string): CacheEntry | undefined => cache.get(key);
+  const cacheSuccess = (
+    key: string,
+    result: SmrtWebDataQueryResult,
+    sequence: number,
+    updatedAt = Date.now(),
+  ): void => {
+    if (disposed) return;
+    const latest = latestSuccessfulFlight.get(key);
+    if (latest === undefined || sequence > latest) {
+      latestSuccessfulFlight.set(key, sequence);
+      cache.set(key, { result, updatedAt });
+    }
+  };
   const apply = (
     result: SmrtWebDataQueryResult,
     candidate: SmrtWebDataQueryRequest,
     updatedAt = Date.now(),
+    successSequence?: number,
   ): void => {
-    const entry = { result, updatedAt };
-    cache.set(keyFor(candidate), entry);
+    if (successSequence !== undefined)
+      cacheSuccess(keyFor(candidate), result, successSequence, updatedAt);
     publish({
       rows: result.rows as TData[],
       page: pageOf(result),
@@ -292,11 +306,7 @@ export function createSmrtWebQuery<TData extends object>(
     const running = runTransport(candidate, runOptions).then((result) => {
       // A failed or aborted successor must not suppress an older valid result,
       // but a successful successor must win over any later predecessor.
-      const latest = latestSuccessfulFlight.get(key);
-      if (latest === undefined || flight > latest) {
-        latestSuccessfulFlight.set(key, flight);
-        cache.set(key, { result, updatedAt: Date.now() });
-      }
+      cacheSuccess(key, result, flight);
       return result;
     });
     inFlight.set(key, running);
@@ -363,7 +373,7 @@ export function createSmrtWebQuery<TData extends object>(
               request &&
               keyFor(request) === keyFor(candidate)
             )
-              apply(result, candidate);
+              apply(result, candidate, Date.now(), ++flightSequence);
           })().catch((error) => {
             if (
               !isAbort(error) &&
@@ -441,6 +451,7 @@ export function createSmrtWebQuery<TData extends object>(
       request = undefined;
       listeners.clear();
       cache.clear();
+      latestSuccessfulFlight.clear();
       inFlight.clear();
     },
   };

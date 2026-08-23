@@ -275,6 +275,77 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('keeps a live result newer than an older forced flight', async () => {
+    let resolveOld!: (result: unknown) => void;
+    let onLive: ((value: unknown) => void) | undefined;
+    let queryCalls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        queryCalls += 1;
+        if (queryCalls === 1) return envelope(received, 'initial');
+        return await new Promise((resolve) => {
+          resolveOld = resolve;
+        });
+      },
+      subscribe: (_received, callback) => {
+        onLive = callback;
+        return { unsubscribe: () => undefined };
+      },
+    });
+    await query.execute(request);
+    query.subscribeLive();
+    const oldFlight = query.execute(request, {
+      mode: 'background',
+      force: true,
+    });
+    await vi.waitFor(() => expect(queryCalls).toBe(2));
+    onLive?.(envelope(request, 'live'));
+    await vi.waitFor(() => expect(query.state.rows[0]?.name).toBe('live'));
+    resolveOld(envelope(request, 'old'));
+    await oldFlight;
+
+    await query.execute(request);
+    expect(queryCalls).toBe(2);
+    expect(query.state.rows[0]?.name).toBe('live');
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('does not let a pending flight repopulate cache after dispose', async () => {
+    let resolvePending!: (result: unknown) => void;
+    let queryCalls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        queryCalls += 1;
+        if (queryCalls === 1) return envelope(received, 'initial');
+        if (queryCalls === 2) {
+          return await new Promise((resolve) => {
+            resolvePending = resolve;
+          });
+        }
+        return envelope(received, 'after-dispose');
+      },
+    });
+    await query.execute(request);
+    const pending = query.refresh();
+    await vi.waitFor(() => expect(queryCalls).toBe(2));
+    query.dispose();
+    resolvePending(envelope(request, 'disposed-flight'));
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(query.state.rows[0]?.name).toBe('initial');
+
+    await query.execute(request, { mode: 'background' });
+    expect(queryCalls).toBe(3);
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('prefetches into the keyed cache without changing visible state, then refreshes coherently', async () => {
     let value = 'prefetched';
     const collection = createSmrtCollection(definition, {
