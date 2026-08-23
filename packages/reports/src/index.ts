@@ -1,3 +1,21 @@
+export type {
+  ReportAdapterDescriptor,
+  ReportAdapterOptions,
+  ReportColumnCapability,
+  ReportColumnDescriptor,
+  ReportColumnKind,
+  ReportColumnSensitivity,
+  ReportDataTableColumn,
+  ReportDataTableDescriptor,
+  ReportQueryOptions,
+  ReportRefreshActionDescriptor,
+  ReportRefreshDescriptor,
+} from './adapter.js';
+export {
+  buildReportAdapterDescriptor,
+  queryReportMaterializedRows,
+  reportMaterializedRowKey,
+} from './adapter.js';
 export {
   bucketExpr,
   buildAggregate,

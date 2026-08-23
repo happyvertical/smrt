@@ -13,6 +13,35 @@ Materialized aggregate report models for SMRT.
 | refresh | Rebuild and incremental refresh engine with run tracking, watermarks, locks, and tenant scoping |
 | state | Internal `_smrt_report_*` system models for runs, watermarks, locks, schedules, and refresh tasks |
 | scheduler | Cron schedule runner, durable refresh job enqueueing, and `onChange` interceptor registration |
+| adapter | Transport-neutral report descriptor, canonical materialized-row reads, and stable `id` row identity |
+
+## Adapter contract
+
+- `buildReportAdapterDescriptor()` returns deterministic, serializable metadata
+  for a report surface: a stable resource id, typed persisted report columns,
+  the canonical `DataQuerySchema`, and UI-neutral DataTable hints. It must not
+  import `smrt-ui` or expose a report-domain class to the consumer.
+- `queryReportMaterializedRows()` owns only the bounded read slice for rows that
+  are already materialized. It supports projection, offset/limit paging, and
+  deterministic `id` ordering. Filters, `WHERE`/`HAVING` translation, facets,
+  and dimension/measure ordering are reserved for later adapter slices.
+- `id` is the only row identity. It must be a non-empty persisted string and is
+  never replaced by a display index or page position.
+- The descriptor is an exposure boundary. Sensitive/secret fields, fields with
+  `readPermission`, and transient, system, or non-column fields fail closed and
+  do not become public columns when no principal is available.
+- `tenantScoped`/`tenantField` reflect actual registered tenant metadata. A
+  `tenantScope` option only contributes to the stable resource id; it is not
+  authorization. The default query path resolves the registered collection via
+  `ObjectRegistry`, so normal collection tenancy interceptors apply. An injected
+  collection is application-owned and must preserve the same boundary.
+- `refresh` is a declaration, not execution. It describes configured mode,
+  triggers, positive-TTL stale-read behavior, and a permissioned/audited action
+  with preview/apply phases. The adapter does not authorize, audit, mutate, or
+  track refresh runs; issue #2460 owns that lifecycle. Generic collection reads
+  remain read-only with unknown freshness. Only a registered
+  `SmrtReportCollection` may synchronously refresh stale reads, when its TTL is
+  positive and the report is not manual.
 
 ## Conventions
 
