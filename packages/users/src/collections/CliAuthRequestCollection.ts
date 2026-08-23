@@ -73,13 +73,14 @@ export class UsersCliAuthRequestCollection extends SmrtCollection<UsersCliAuthRe
         const approved = await tx.query(
           `UPDATE ${this.tableName}
            SET approved_at = ?, session_id = ?, status = 'approved',
-               tenant_id = ?, user_id = ?, updated_at = CURRENT_TIMESTAMP
+               tenant_id = ?, user_id = ?, updated_at = ?
            WHERE user_code = ? AND status = 'pending' AND expires_at > ?
            RETURNING id`,
           now,
           createdSessionId,
           input.tenantId,
           input.userId,
+          now,
           input.userCode.trim().toUpperCase(),
           now,
         );
@@ -134,9 +135,10 @@ export class UsersCliAuthRequestCollection extends SmrtCollection<UsersCliAuthRe
 
       const consumed = await tx.query(
         `UPDATE ${this.tableName}
-         SET status = 'consumed', session_id = NULL, updated_at = CURRENT_TIMESTAMP
+         SET status = 'consumed', session_id = NULL, updated_at = ?
          WHERE id = ? AND status = 'approved' AND session_id = ?
          RETURNING id`,
+        new Date().toISOString(),
         id,
         sessionId,
       );

@@ -8,7 +8,11 @@ import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestColl
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
-import { TerminalAuthService } from '../services/TerminalAuthService.js';
+import {
+  TerminalAuthError,
+  TerminalAuthRateLimitError,
+  TerminalAuthService,
+} from '../services/TerminalAuthService.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
 
@@ -22,7 +26,13 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
 
   it('uses UUID references and permits exactly one concurrent token exchange', async () => {
     isolated = await createIsolatedTestDbFromManifest({
-      includeObjects: ['User', 'Tenant', 'Session', 'UsersCliAuthRequest'],
+      includeObjects: [
+        'User',
+        'Tenant',
+        'Session',
+        'UsersCliAuthApproveLimit',
+        'UsersCliAuthRequest',
+      ],
     });
     if (isolated.config.type !== 'postgres') {
       throw new Error('Expected a PostgreSQL test database.');
@@ -78,5 +88,43 @@ describePostgres('TerminalAuthService on PostgreSQL', () => {
     expect(stored?.tenantId).toBe(tenantId);
     expect(stored?.status).toBe('consumed');
     expect(stored?.sessionId).toBeNull();
+
+    const limitedA = await TerminalAuthService.create({
+      ...options,
+      maxApproveAttempts: 3,
+      approveAttemptWindowSeconds: 60,
+    });
+    const limitedB = await TerminalAuthService.create({
+      ...options,
+      maxApproveAttempts: 3,
+      approveAttemptWindowSeconds: 60,
+    });
+    const attacker = await users.create({
+      email: 'terminal-postgres-attacker@example.com',
+    });
+    await attacker.save();
+    const attackerId = attacker.id;
+    if (!attackerId) throw new Error('Expected persisted attacker user.');
+
+    const attackResults = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) =>
+        (index % 2 === 0 ? limitedA : limitedB).approveRequest({
+          userCode: 'BOGUS-PARALLEL-CODE',
+          user: { id: attackerId, email: attacker.email },
+          tenantId,
+        }),
+      ),
+    );
+    const attackErrors = attackResults.map((result) =>
+      result.status === 'rejected' ? result.reason : null,
+    );
+    expect(
+      attackErrors.filter((error) => error instanceof TerminalAuthError),
+    ).toHaveLength(10);
+    expect(
+      attackErrors.filter(
+        (error) => error instanceof TerminalAuthRateLimitError,
+      ),
+    ).toHaveLength(7);
   });
 });

@@ -10,6 +10,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { UsersCliAuthApproveLimitCollection } from '../collections/CliAuthApproveLimitCollection.js';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
@@ -232,6 +233,31 @@ describe('TerminalAuthService', () => {
     expect(second.sessionId).toBe(first.sessionId);
   });
 
+  it('keeps approval idempotent after the CLI already consumed the token', async () => {
+    const user = await users.create({ email: 'consumed-approval@example.com' });
+    await user.save();
+    const userId = user.id;
+    if (!userId) throw new Error('Expected persisted terminal user.');
+    const started = await service.createRequest('https://example.com');
+    await service.approveRequest({
+      userCode: started.userCode,
+      user: { id: userId, email: user.email },
+      tenantId: 'tenant-1',
+    });
+    expect((await service.exchangeDeviceCode(started.deviceCode)).status).toBe(
+      'approved',
+    );
+
+    const repeated = await service.approveRequest({
+      userCode: started.userCode,
+      user: { id: userId, email: user.email },
+      tenantId: 'tenant-1',
+    });
+
+    expect(repeated.status).toBe('consumed');
+    expect(repeated.sessionId).toBeNull();
+  });
+
   it('allows exactly one concurrent approval session to be minted', async () => {
     const user = await users.create({ email: 'approval-race@example.com' });
     await user.save();
@@ -415,7 +441,7 @@ describe('TerminalAuthService', () => {
     }
   });
 
-  it('resets the failed-approve counter after a successful approval', async () => {
+  it('does not let a successful approval reset the failed-approve budget', async () => {
     const limited = await TerminalAuthService.create({
       db: { type: 'sqlite', url: dbPath },
       requestTtlSeconds: 60,
@@ -436,7 +462,7 @@ describe('TerminalAuthService', () => {
       ).rejects.toBeInstanceOf(TerminalAuthError);
     }
 
-    // Successful approve resets the counter.
+    // A successful approve must not reset failures in the current window.
     const started = await limited.createRequest('https://example.com');
     await limited.approveRequest({
       userCode: started.userCode,
@@ -444,21 +470,123 @@ describe('TerminalAuthService', () => {
       tenantId: 'tenant-1',
     });
 
-    // 3 more failures should now all be plain TerminalAuthError, not
-    // TerminalAuthRateLimitError — the counter was reset.
-    for (let i = 0; i < 3; i++) {
-      try {
-        await limited.approveRequest({
-          userCode: 'BOGUS-CODE',
+    await expect(
+      limited.approveRequest({
+        userCode: 'BOGUS-CODE',
+        user: { id: user.id!, email: user.email },
+        tenantId: 'tenant-1',
+      }),
+    ).rejects.toBeInstanceOf(TerminalAuthError);
+
+    // Replaying the known valid code cannot bypass the exhausted budget.
+    await expect(
+      limited.approveRequest({
+        userCode: started.userCode,
+        user: { id: user.id!, email: user.email },
+        tenantId: 'tenant-1',
+      }),
+    ).rejects.toBeInstanceOf(TerminalAuthRateLimitError);
+  });
+
+  it('enforces the failed-approve budget across parallel attempts', async () => {
+    const limited = await TerminalAuthService.create({
+      db: { type: 'sqlite', url: dbPath },
+      requestTtlSeconds: 60,
+      maxApproveAttempts: 3,
+      approveAttemptWindowSeconds: 60,
+    });
+    const secondLimited = await TerminalAuthService.create({
+      db: { type: 'sqlite', url: dbPath },
+      requestTtlSeconds: 60,
+      maxApproveAttempts: 3,
+      approveAttemptWindowSeconds: 60,
+    });
+    const user = await users.create({ email: 'parallel@example.com' });
+    await user.save();
+
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, index) =>
+        (index % 2 === 0 ? limited : secondLimited).approveRequest({
+          userCode: 'BOGUS-PARALLEL-CODE',
           user: { id: user.id!, email: user.email },
           tenantId: 'tenant-1',
-        });
-        throw new Error('expected approveRequest to throw');
-      } catch (error) {
-        expect(error).toBeInstanceOf(TerminalAuthError);
-        expect(error).not.toBeInstanceOf(TerminalAuthRateLimitError);
-      }
+        }),
+      ),
+    );
+    const failures = attempts.map((attempt) =>
+      attempt.status === 'rejected' ? attempt.reason : null,
+    );
+
+    expect(
+      failures.filter((error) => error instanceof TerminalAuthError),
+    ).toHaveLength(10);
+    expect(
+      failures.filter((error) => error instanceof TerminalAuthRateLimitError),
+    ).toHaveLength(7);
+  });
+
+  it('does not let an old-window release erase a new-window failure', async () => {
+    const limits = await UsersCliAuthApproveLimitCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const user = await users.create({ email: 'rollover@example.com' });
+    await user.save();
+    if (!user.id) throw new Error('Expected persisted rollover user.');
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-08-23T07:00:00.000Z'));
+      const oldWindow = await limits.reserveAttempt({
+        maxAttempts: 1,
+        userId: user.id,
+        windowMs: 1_000,
+      });
+      expect(oldWindow.allowed).toBe(true);
+      if (!oldWindow.allowed) throw new Error('Expected first reservation.');
+
+      vi.advanceTimersByTime(1_001);
+      const newWindow = await limits.reserveAttempt({
+        maxAttempts: 1,
+        userId: user.id,
+        windowMs: 1_000,
+      });
+      expect(newWindow.allowed).toBe(true);
+
+      await limits.releaseAttempt(user.id, oldWindow.windowStartedAt);
+      const blocked = await limits.reserveAttempt({
+        maxAttempts: 1,
+        userId: user.id,
+        windowMs: 1_000,
+      });
+      expect(blocked.allowed).toBe(false);
+    } finally {
+      vi.useRealTimers();
     }
+  });
+
+  it('preserves a committed approval when limiter cleanup fails', async () => {
+    const user = await users.create({ email: 'cleanup-failure@example.com' });
+    await user.save();
+    if (!user.id) throw new Error('Expected persisted cleanup-failure user.');
+    const started = await service.createRequest('https://example.com');
+    const internals = service as unknown as {
+      approveLimitCollection: UsersCliAuthApproveLimitCollection;
+    };
+    vi.spyOn(
+      internals.approveLimitCollection,
+      'releaseAttempt',
+    ).mockRejectedValue(new Error('simulated limiter cleanup outage'));
+
+    const approved = await service.approveRequest({
+      userCode: started.userCode,
+      user: { id: user.id, email: user.email },
+      tenantId: 'tenant-1',
+    });
+
+    expect(approved.status).toBe('approved');
+    expect(await service.exchangeDeviceCode(started.deviceCode)).toMatchObject({
+      status: 'approved',
+    });
   });
 
   it('lets the rate-limit window expire and accepts attempts again', async () => {
