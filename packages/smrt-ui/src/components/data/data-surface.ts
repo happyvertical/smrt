@@ -1188,7 +1188,12 @@ export function normalizeDataSurfaceDescriptor(
             },
           );
     if (columnIds?.some((columnId) => !knownColumns.has(columnId))) {
-      throw new TypeError('Unknown DataSurface action column id');
+      const unknownColumnId = columnIds.find(
+        (columnId) => !knownColumns.has(columnId),
+      );
+      throw new TypeError(
+        `Unknown DataSurface action column id: ${unknownColumnId}`,
+      );
     }
     return {
       id: stringValue(action.id, 'DataSurface action id'),

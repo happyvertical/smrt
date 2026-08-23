@@ -8,6 +8,7 @@ import {
   type DataSurfaceQueryResult,
   type DataSurfaceVisibleCommand,
   normalizeDataSurfaceActionRequest,
+  normalizeDataSurfaceDescriptor,
   normalizeDataSurfaceQueryRequest,
   normalizeDataSurfaceVisibleCommand,
 } from '../data-surface.js';
@@ -108,6 +109,23 @@ function registerFixture(
 }
 
 describe('data surface registry', () => {
+  it('identifies unknown action columns in descriptor validation errors', () => {
+    expect(() =>
+      normalizeDataSurfaceDescriptor(
+        descriptor({
+          actions: [
+            {
+              id: 'archive',
+              label: 'Archive',
+              selectionScopes: ['explicit-ids'],
+              columnIds: ['missing'],
+            },
+          ],
+        }),
+      ),
+    ).toThrow('Unknown DataSurface action column id: missing');
+  });
+
   it('aligns bounded query result shapes with each query kind', () => {
     const results = [
       {
