@@ -11,6 +11,11 @@ interface Row {
   name: string;
 }
 
+interface IdentityRow {
+  id: string | number;
+  name: string;
+}
+
 const rows: Row[] = Array.from({ length: 100 }, (_, index) => ({
   id: `row-${index}`,
   name: `Record ${index.toString().padStart(5, '0')}`,
@@ -120,6 +125,26 @@ describe('DataTable virtualization seam', () => {
     expect(onFocusedRowIdChange).toHaveBeenCalledWith('row-40');
   });
 
+  it('restores focus without aliasing numeric and string row identities', async () => {
+    const identityRows: IdentityRow[] = [
+      { id: 1, name: 'Numeric row' },
+      { id: '1', name: 'String row' },
+    ];
+    const { container } = render(DataTable, {
+      props: {
+        data: identityRows,
+        columns,
+        rowKey: 'id',
+        virtualization: { ...virtualization, focusedRowId: '1' },
+      },
+    });
+
+    const stringRow = await screen.findByText('String row');
+    expect(stringRow.closest('tr')).toHaveAttribute('data-row-id', 'string:1');
+    expect(document.activeElement).toBe(stringRow.closest('tr'));
+    expect(container.querySelector('tr[data-row-id="number:1"]')).toBeTruthy();
+  });
+
   it('scrolls the virtual body from the keyboard-accessible region', async () => {
     const onScrollTopChange = vi.fn();
     const { container } = render(DataTable, {
@@ -140,6 +165,65 @@ describe('DataTable virtualization seam', () => {
     await vi.waitFor(() =>
       expect(screen.getByText('Record 00004')).toBeInTheDocument(),
     );
+  });
+
+  it('stripes virtual rows by their logical display index', async () => {
+    const { container } = render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'id',
+        striped: true,
+        virtualization,
+      },
+    });
+    const scrollContainer = getScrollContainer(container);
+
+    scrollContainer.scrollTop = 40;
+    await fireEvent.scroll(scrollContainer);
+
+    await vi.waitFor(() =>
+      expect(screen.getByText('Record 00001')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Record 00001').closest('tr')).toHaveClass(
+      'data-table__row--striped',
+    );
+    expect(screen.getByText('Record 00002').closest('tr')).not.toHaveClass(
+      'data-table__row--striped',
+    );
+  });
+
+  it('keeps the summary footer reachable at the end of the virtual scroll range', async () => {
+    const footer = createRawSnippet(() => ({
+      render: () => '<strong>Summary total</strong>',
+    }));
+    const offsetHeight = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockImplementation(function () {
+        return this.tagName === 'TFOOT' ? 24 : 0;
+      });
+    const onScrollTopChange = vi.fn();
+
+    try {
+      const { container } = render(DataTable, {
+        props: {
+          data: rows,
+          columns,
+          rowKey: 'id',
+          footer,
+          virtualization: { ...virtualization, onScrollTopChange },
+        },
+      });
+      const scrollContainer = getScrollContainer(container);
+
+      await fireEvent.keyDown(scrollContainer, { key: 'End' });
+
+      expect(scrollContainer.scrollTop).toBe(1_924);
+      expect(onScrollTopChange).toHaveBeenCalledWith(1_924);
+      expect(screen.getByText('Summary total')).toBeInTheDocument();
+    } finally {
+      offsetHeight.mockRestore();
+    }
   });
 
   it('falls back for expansion without virtual scroll behavior', async () => {

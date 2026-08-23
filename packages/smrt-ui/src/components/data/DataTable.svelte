@@ -27,9 +27,11 @@ import {
   type DataTableSnapshot,
   type DataTableViewState,
   type DataTableViewStateInput,
+  dataTableRowIdKey,
 } from './DataTableController.js';
 import { resolveDataTableRows } from './DataTableIdentity.js';
 import {
+  maximumDataTableVirtualScrollTop,
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
 } from './DataTableVirtualization.js';
@@ -534,9 +536,11 @@ let tableContainer: HTMLDivElement | undefined = $state();
 let tableCaption: HTMLTableCaptionElement | undefined = $state();
 let tableHead: HTMLTableSectionElement | undefined = $state();
 let tableBody: HTMLTableSectionElement | undefined = $state();
+let tableFooter: HTMLTableSectionElement | undefined = $state();
 let virtualScrollTop = $state(0);
 let virtualStructuralHeight = $state(0);
 let virtualCaptionHeight = $state(0);
+let virtualFooterHeight = $state(0);
 
 const virtualizedBody = $derived(Boolean(virtualization) && !expandedContent);
 
@@ -566,8 +570,11 @@ function clampVirtualScrollTop(nextScrollTop: number): number {
   if (!virtualization) return 0;
   const maximum = Math.max(
     0,
-    displayRows.length * virtualization.rowHeight -
-      virtualization.viewportHeight,
+    maximumDataTableVirtualScrollTop(
+      displayRows.length,
+      virtualization,
+      virtualFooterHeight,
+    ),
   );
   return Math.min(Math.max(0, nextScrollTop), maximum);
 }
@@ -648,7 +655,7 @@ $effect(() => {
       ...focusContainer.querySelectorAll<HTMLTableRowElement>(
         'tr[data-row-id]',
       ),
-    ].find((row) => row.dataset.rowId === String(focusRowId));
+    ].find((row) => row.dataset.rowId === dataTableRowIdKey(focusRowId));
     focusedRow?.focus({ preventScroll: true });
   });
 });
@@ -657,15 +664,18 @@ $effect(() => {
   if (!virtualizedBody || !tableBody) {
     virtualStructuralHeight = 0;
     virtualCaptionHeight = 0;
+    virtualFooterHeight = 0;
     return;
   }
 
   const body = tableBody;
   const captionElement = tableCaption;
   const head = tableHead;
+  const footerElement = tableFooter;
   const measureStructure = () => {
     virtualStructuralHeight = body.offsetTop;
     virtualCaptionHeight = captionElement?.offsetHeight ?? 0;
+    virtualFooterHeight = footerElement?.offsetHeight ?? 0;
   };
   measureStructure();
   if (typeof ResizeObserver === 'undefined') return;
@@ -673,6 +683,7 @@ $effect(() => {
   const observer = new ResizeObserver(measureStructure);
   if (captionElement) observer.observe(captionElement);
   if (head) observer.observe(head);
+  if (footerElement) observer.observe(footerElement);
   return () => observer.disconnect();
 });
 
@@ -785,6 +796,7 @@ $effect(() => {
   <table
     class="data-table {sizeClasses[size]}"
     class:data-table--striped={striped}
+    class:data-table--virtualized={virtualizationWindow.enabled}
     class:data-table--hoverable={hoverable}
     class:data-table--dense={dense}
     class:data-table--loading={loading}
@@ -898,7 +910,10 @@ $effect(() => {
           <tr
             class="data-table__row {rowClass?.(row, displayIndex) ?? ''}"
             class:data-table__row--selected={isSelected}
-            data-row-id={key}
+            class:data-table__row--striped={
+              virtualizationWindow.enabled && striped && displayIndex % 2 === 1
+            }
+            data-row-id={dataTableRowIdKey(key)}
             aria-rowindex={virtualizationWindow.enabled ? displayIndex + 2 : undefined}
             onclick={() => handleRowClick(row, displayIndex)}
             role={onRowClick ? 'button' : undefined}
@@ -959,7 +974,7 @@ $effect(() => {
       {/if}
     </tbody>
     {#if footer}
-      <tfoot><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
+      <tfoot bind:this={tableFooter}><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
     {/if}
   </table>
 </div>
@@ -1117,7 +1132,8 @@ $effect(() => {
     background: var(--smrt-color-primary-container, #dbeafe) !important;
   }
 
-  .data-table--striped .data-table__row:nth-child(even) {
+  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even),
+  .data-table__row--striped {
     background: var(--smrt-color-surface-container-lowest, #fafafa);
   }
 

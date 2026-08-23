@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  maximumDataTableVirtualScrollTop,
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
 } from '../DataTableVirtualization.js';
@@ -73,6 +74,13 @@ describe('DataTable virtualization window', () => {
     expect(withStructuralRows.totalBodyHeight).toBe(2_000);
     expect(withStructuralRows.headerRowCount).toBe(2);
     expect(withStructuralRows.summaryRowCount).toBe(3);
+  });
+
+  it('extends the virtual scroll range by a measured summary footer', () => {
+    expect(maximumDataTableVirtualScrollTop(100, options, 24)).toBe(1_924);
+    expect(() => maximumDataTableVirtualScrollTop(1, options, -1)).toThrow(
+      /footerHeight/,
+    );
   });
 
   it('derives scroll restoration from a row position, not a display key', () => {

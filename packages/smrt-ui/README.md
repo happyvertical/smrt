@@ -249,8 +249,10 @@ so the component deliberately falls back to the full semantic body and does
 not emit virtual scroll callbacks. Use controlled `scrollTop`/
 `onScrollTopChange` for scroll restoration, and pair `focusedRowId` with
 `onFocusedRowIdChange` to restore DOM focus to a stable row after a data
-refresh. Selection and expansion continue to be controller state keyed by
-`rowKey`, never by a rendered window index.
+refresh. A measured footer extends the virtual scroll range, so keyboard End
+and a controlled scroll position can still reveal the summary. Selection and
+expansion continue to be controller state keyed by `rowKey`, never by a
+rendered window index.
 
 ## Themes
 

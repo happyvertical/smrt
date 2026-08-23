@@ -18,7 +18,10 @@ export interface DataTableVirtualizationOptions {
   overscan?: number;
   /** Controlled scroll position, used to restore a table after remounting. */
   scrollTop?: number;
-  /** Receives the current scroll position from the virtualized table body. */
+  /**
+   * Receives the current virtual scroll position. When a footer is present,
+   * its measured height extends the range so it remains reachable.
+   */
   onScrollTopChange?: (scrollTop: number) => void;
   /**
    * A stable row id that must remain visible. Use this with
@@ -84,6 +87,29 @@ function clampScrollTop(
   return Math.min(
     Math.max(0, scrollTop),
     Math.max(0, totalBodyHeight - viewportHeight),
+  );
+}
+
+/**
+ * Returns the maximum scroll position for a virtual body and an optional
+ * measured summary footer. Header and caption height are outside this range.
+ */
+export function maximumDataTableVirtualScrollTop(
+  rowCount: number,
+  options: Pick<DataTableVirtualizationOptions, 'rowHeight' | 'viewportHeight'>,
+  footerHeight = 0,
+): number {
+  assertNonNegativeInteger(rowCount, 'rowCount');
+  assertPositiveFinite(options.rowHeight, 'rowHeight');
+  assertPositiveFinite(options.viewportHeight, 'viewportHeight');
+  if (!Number.isFinite(footerHeight) || footerHeight < 0) {
+    throw new TypeError(
+      'DataTable virtualization footerHeight must be a non-negative finite number',
+    );
+  }
+  return Math.max(
+    0,
+    rowCount * options.rowHeight - options.viewportHeight + footerHeight,
   );
 }
 
