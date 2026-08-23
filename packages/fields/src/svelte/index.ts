@@ -97,7 +97,10 @@ export {
   setFieldPolicyContext,
   tryGetFieldPolicyContext,
 } from './context.svelte.js';
-export type { PolicyDataTableColumn } from './data-table.js';
+export type {
+  PolicyDataTableColumn,
+  PolicyDataTableOptions,
+} from './data-table.js';
 export { policyToVisibleColumnIds } from './data-table.js';
 export type {
   FieldPolicyEditorAdapter,

@@ -42,12 +42,49 @@ export type DataSurfaceColumnCapability =
   | 'sort'
   | 'project';
 
+/** Presentation tier emitted by policy-aware domain adapters. */
+export type DataSurfaceColumnVisibility = 'basic' | 'advanced' | 'hidden';
+
+/** A domain-neutral column role. Adapters use roles to protect structural columns. */
+export type DataSurfaceColumnRole =
+  | 'data'
+  | 'status'
+  | 'computed'
+  | 'row-key'
+  | 'selection'
+  | 'action';
+
+/** Operator allowlists are intentionally strings: #2444 owns query semantics. */
+export interface DataSurfaceColumnOperators {
+  search?: string[];
+  filter?: string[];
+  sort?: string[];
+}
+
 export interface DataSurfaceColumnDescriptor {
   id: string;
   label: string;
   description?: string;
   sensitivity?: DataSurfaceSensitivity;
   capabilities: DataSurfaceColumnCapability[];
+  /** Domain field identity; never accepted as a request path. */
+  fieldName?: string;
+  /** Effective policy visibility, when a domain adapter supplies one. */
+  visibility?: DataSurfaceColumnVisibility;
+  /** Stable policy order; domain column ids remain unchanged. */
+  order?: number;
+  /** Structural columns are preserved even when field policy narrows data columns. */
+  role?: DataSurfaceColumnRole;
+  /** Responsive adapters consume this without importing DataTable types. */
+  responsivePriority?: number;
+  /** Per-operation operator allowlists, narrowed by policy adapters. */
+  operators?: DataSurfaceColumnOperators;
+  /** Explicit aliases for adapters that mirror the canonical query schema. */
+  searchOperators?: string[];
+  filterOperators?: string[];
+  sortOperators?: string[];
+  /** Explicit readability is useful when read capability is policy-gated. */
+  readable?: boolean;
 }
 
 /** #2444 owns the canonical query language; this declares only its bounds. */
@@ -57,6 +94,10 @@ export interface DataSurfaceQueryCapabilities {
   modes: DataSurfaceQueryMode[];
   /** Explicit allowlist; field paths are not accepted in requests. */
   projectableColumnIds: string[];
+  /** Explicit allowlists for non-projection query operations. */
+  searchableColumnIds?: string[];
+  filterableColumnIds?: string[];
+  sortableColumnIds?: string[];
 }
 
 export interface DataSurfaceVisibleControl {
@@ -78,6 +119,8 @@ export interface DataSurfaceActionDescriptor {
   sensitivity?: DataSurfaceSensitivity;
   selectionScopes: DataSurfaceSelectionScope[];
   requiresConfirmation?: boolean;
+  /** Optional column dependencies used by field-policy adapters. */
+  columnIds?: string[];
 }
 
 /** Per-surface limits; generic envelopes use DATA_SURFACE_MAX_REQUEST_BYTES. */
@@ -332,6 +375,19 @@ const SELECTION_SCOPES = new Set<DataSurfaceSelectionScope>([
   'explicit-ids',
   'all-matching',
 ]);
+const COLUMN_VISIBILITIES = new Set<DataSurfaceColumnVisibility>([
+  'basic',
+  'advanced',
+  'hidden',
+]);
+const COLUMN_ROLES = new Set<DataSurfaceColumnRole>([
+  'data',
+  'status',
+  'computed',
+  'row-key',
+  'selection',
+  'action',
+]);
 const FORBIDDEN_BOUNDARY_KEYS = new Set([
   'tenant',
   'tenantid',
@@ -402,6 +458,17 @@ function identifierValue(value: unknown, label: string): string {
 function optionalString(value: unknown, label: string): string | undefined {
   if (value === undefined) return undefined;
   return stringValue(value, label);
+}
+
+function optionalFiniteNumber(
+  value: unknown,
+  label: string,
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`${label} must be a finite number`);
+  }
+  return value;
 }
 
 function positiveInteger(value: unknown, label: string): number {
@@ -753,6 +820,122 @@ function normalizeSensitivity(
   return sensitivity;
 }
 
+function normalizeColumnOperators(
+  value: unknown,
+  label: string,
+): DataSurfaceColumnOperators | undefined {
+  if (value === undefined) return undefined;
+  const operators = plainObject(value, label);
+  exactKeys(operators, ['search', 'filter', 'sort'], label);
+  const search =
+    operators.search === undefined
+      ? undefined
+      : normalizeStringArray(operators.search, `${label} search operators`, {
+          sort: true,
+        });
+  const filter =
+    operators.filter === undefined
+      ? undefined
+      : normalizeStringArray(operators.filter, `${label} filter operators`, {
+          sort: true,
+        });
+  const sort =
+    operators.sort === undefined
+      ? undefined
+      : normalizeStringArray(operators.sort, `${label} sort operators`, {
+          sort: true,
+        });
+  if (!search && !filter && !sort) return {};
+  return {
+    ...(search ? { search } : {}),
+    ...(filter ? { filter } : {}),
+    ...(sort ? { sort } : {}),
+  };
+}
+
+function normalizeColumnDescriptorMetadata(
+  column: Record<string, unknown>,
+): Pick<
+  DataSurfaceColumnDescriptor,
+  | 'fieldName'
+  | 'visibility'
+  | 'order'
+  | 'role'
+  | 'responsivePriority'
+  | 'operators'
+  | 'searchOperators'
+  | 'filterOperators'
+  | 'sortOperators'
+  | 'readable'
+> {
+  const fieldName = optionalString(
+    column.fieldName,
+    'DataSurface column field name',
+  );
+  const rawVisibility = optionalString(
+    column.visibility,
+    'DataSurface column visibility',
+  );
+  if (
+    rawVisibility &&
+    !COLUMN_VISIBILITIES.has(rawVisibility as DataSurfaceColumnVisibility)
+  ) {
+    throw new TypeError(
+      `Unsupported DataSurface column visibility: ${rawVisibility}`,
+    );
+  }
+  const rawRole = optionalString(column.role, 'DataSurface column role');
+  if (rawRole && !COLUMN_ROLES.has(rawRole as DataSurfaceColumnRole)) {
+    throw new TypeError(`Unsupported DataSurface column role: ${rawRole}`);
+  }
+  if (column.readable !== undefined && typeof column.readable !== 'boolean') {
+    throw new TypeError('DataSurface column readable must be boolean');
+  }
+  const normalizeAliasOperators = (
+    key: 'searchOperators' | 'filterOperators' | 'sortOperators',
+  ): string[] | undefined =>
+    column[key] === undefined
+      ? undefined
+      : normalizeStringArray(column[key], `DataSurface column ${key}`, {
+          sort: true,
+        });
+  const searchOperators = normalizeAliasOperators('searchOperators');
+  const filterOperators = normalizeAliasOperators('filterOperators');
+  const sortOperators = normalizeAliasOperators('sortOperators');
+  return {
+    ...(fieldName ? { fieldName } : {}),
+    ...(rawVisibility
+      ? { visibility: rawVisibility as DataSurfaceColumnVisibility }
+      : {}),
+    ...(column.order === undefined
+      ? {}
+      : {
+          order: optionalFiniteNumber(column.order, 'DataSurface column order'),
+        }),
+    ...(rawRole ? { role: rawRole as DataSurfaceColumnRole } : {}),
+    ...(column.responsivePriority === undefined
+      ? {}
+      : {
+          responsivePriority: optionalFiniteNumber(
+            column.responsivePriority,
+            'DataSurface column responsive priority',
+          ),
+        }),
+    ...(column.operators === undefined
+      ? {}
+      : {
+          operators: normalizeColumnOperators(
+            column.operators,
+            'DataSurface column operators',
+          ),
+        }),
+    ...(searchOperators ? { searchOperators } : {}),
+    ...(filterOperators ? { filterOperators } : {}),
+    ...(sortOperators ? { sortOperators } : {}),
+    ...(column.readable === undefined ? {} : { readable: column.readable }),
+  };
+}
+
 function normalizeSelection(value: unknown): DataSurfaceSelectionReference {
   const object = plainObject(value, 'DataSurface selection');
   const scope = stringValue(
@@ -852,7 +1035,23 @@ export function normalizeDataSurfaceDescriptor(
     const column = plainObject(value, 'DataSurface column');
     exactKeys(
       column,
-      ['id', 'label', 'description', 'sensitivity', 'capabilities'],
+      [
+        'id',
+        'label',
+        'description',
+        'sensitivity',
+        'capabilities',
+        'fieldName',
+        'visibility',
+        'order',
+        'role',
+        'responsivePriority',
+        'operators',
+        'searchOperators',
+        'filterOperators',
+        'sortOperators',
+        'readable',
+      ],
       'DataSurface column',
     );
     const sensitivity = normalizeSensitivity(
@@ -863,6 +1062,7 @@ export function normalizeDataSurfaceDescriptor(
       column.description,
       'DataSurface column description',
     );
+    const metadata = normalizeColumnDescriptorMetadata(column);
     return {
       id: identifierValue(column.id, 'DataSurface column id'),
       label: stringValue(column.label, 'DataSurface column label'),
@@ -872,6 +1072,7 @@ export function normalizeDataSurfaceDescriptor(
         column.capabilities,
         'DataSurface column capabilities',
       ),
+      ...metadata,
     };
   });
   if (new Set(columns.map((column) => column.id)).size !== columns.length) {
@@ -881,7 +1082,13 @@ export function normalizeDataSurfaceDescriptor(
   const query = plainObject(object.query, 'DataSurface query capabilities');
   exactKeys(
     query,
-    ['modes', 'projectableColumnIds'],
+    [
+      'modes',
+      'projectableColumnIds',
+      'searchableColumnIds',
+      'filterableColumnIds',
+      'sortableColumnIds',
+    ],
     'DataSurface query capabilities',
   );
   const modes = normalizeStringArray(query.modes, 'DataSurface query modes', {
@@ -905,6 +1112,31 @@ export function normalizeDataSurfaceDescriptor(
       );
     }
   }
+  const queryColumnAllowlist = (
+    value: unknown,
+    label: string,
+  ): string[] | undefined => {
+    if (value === undefined) return undefined;
+    const ids = normalizeStringArray(value, label, { sort: true });
+    for (const columnId of ids) {
+      if (!knownColumns.has(columnId)) {
+        throw new TypeError(`Unknown ${label}: ${columnId}`);
+      }
+    }
+    return ids;
+  };
+  const searchableColumnIds = queryColumnAllowlist(
+    query.searchableColumnIds,
+    'searchable DataSurface column',
+  );
+  const filterableColumnIds = queryColumnAllowlist(
+    query.filterableColumnIds,
+    'filterable DataSurface column',
+  );
+  const sortableColumnIds = queryColumnAllowlist(
+    query.sortableColumnIds,
+    'sortable DataSurface column',
+  );
 
   if (!Array.isArray(object.controls)) {
     throw new TypeError('DataSurface controls must be an array');
@@ -940,6 +1172,7 @@ export function normalizeDataSurfaceDescriptor(
         'sensitivity',
         'selectionScopes',
         'requiresConfirmation',
+        'columnIds',
       ],
       'DataSurface action',
     );
@@ -971,6 +1204,24 @@ export function normalizeDataSurfaceDescriptor(
       action.description,
       'DataSurface action description',
     );
+    const columnIds =
+      action.columnIds === undefined
+        ? undefined
+        : normalizeStringArray(
+            action.columnIds,
+            'DataSurface action column ids',
+            {
+              sort: true,
+            },
+          );
+    if (columnIds?.some((columnId) => !knownColumns.has(columnId))) {
+      const unknownColumnId = columnIds.find(
+        (columnId) => !knownColumns.has(columnId),
+      );
+      throw new TypeError(
+        `Unknown DataSurface action column id: ${unknownColumnId}`,
+      );
+    }
     return {
       id: identifierValue(action.id, 'DataSurface action id'),
       label: stringValue(action.label, 'DataSurface action label'),
@@ -980,6 +1231,7 @@ export function normalizeDataSurfaceDescriptor(
       ...(action.requiresConfirmation === undefined
         ? {}
         : { requiresConfirmation: action.requiresConfirmation }),
+      ...(columnIds ? { columnIds } : {}),
     };
   });
   if (new Set(actions.map((action) => action.id)).size !== actions.length) {
@@ -1021,7 +1273,13 @@ export function normalizeDataSurfaceDescriptor(
     ...(description ? { description } : {}),
     rowKey,
     columns,
-    query: { modes, projectableColumnIds },
+    query: {
+      modes,
+      projectableColumnIds,
+      ...(searchableColumnIds ? { searchableColumnIds } : {}),
+      ...(filterableColumnIds ? { filterableColumnIds } : {}),
+      ...(sortableColumnIds ? { sortableColumnIds } : {}),
+    },
     controls,
     actions,
     limits: {

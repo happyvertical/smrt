@@ -6,6 +6,21 @@ export interface PolicyDataTableColumn {
   /** DataTable still enforces this independently; excluding it here is useful
    * to callers that inspect the returned set before rendering. */
   hidden?: boolean;
+  sensitivity?: 'sensitive' | 'secret';
+  readable?: boolean;
+}
+
+export interface PolicyDataTableOptions {
+  /** Explicit host authorization for otherwise restricted columns. */
+  authorizedColumnIds?: readonly string[];
+}
+
+function isRestrictedColumn(column: PolicyDataTableColumn): boolean {
+  return (
+    column.readable === false ||
+    column.sensitivity === 'sensitive' ||
+    column.sensitivity === 'secret'
+  );
 }
 
 /**
@@ -19,10 +34,17 @@ export function policyToVisibleColumnIds(
   policy: ResolvedObjectFieldPolicy,
   columns: readonly PolicyDataTableColumn[],
   fieldNameByColumnId: Readonly<Record<string, string>> = {},
+  options: PolicyDataTableOptions = {},
 ): Set<string> {
   const visible = new Set<string>();
   for (const column of columns) {
     if (column.hidden) continue;
+    if (
+      isRestrictedColumn(column) &&
+      !options.authorizedColumnIds?.includes(column.id)
+    ) {
+      continue;
+    }
     const fieldName = fieldNameByColumnId[column.id] ?? column.id;
     const field = policy.fields[fieldName];
     if (field?.visibility !== 'hidden') visible.add(column.id);

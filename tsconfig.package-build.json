@@ -4,6 +4,9 @@
     "baseUrl": ".",
     "types": ["node", "svelte"],
     "paths": {
+      "@happyvertical/smrt-ui/data": [
+        "packages/smrt-ui/src/components/data/index.ts"
+      ],
       "@happyvertical/smrt-mobile-contract": [
         "packages/smrt-mobile-contract/src/index.ts"
       ],

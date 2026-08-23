@@ -194,8 +194,23 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   select-like widgets. Reference fields intentionally default to identifier
   inputs unless an app supplies a chooser.
 - `policyToVisibleColumnIds(policy, columns)` feeds smrt-ui `DataTable`'s
-  `visibleColumnIds`; it filters policy-hidden mapped fields, preserves unmapped
-  computed/action columns, and cannot reveal a static `column.hidden` column.
+  `visibleColumnIds`; it filters policy-hidden mapped fields and restricted
+  (`sensitive`/`secret` or `readable: false`) columns, preserves unrestricted
+  unmapped computed/action columns, and cannot reveal a static `column.hidden`
+  column. Pass `authorizedColumnIds` only when the host explicitly authorizes a
+  restricted column; `readable: true` alone does not override sensitivity.
+- `policyToDataSurfaceDescriptor(policy, descriptor)` is the corresponding
+  mounted DataSurface adapter. It carries effective labels, help text, order,
+  visibility, readable/capability state, and operator/query allowlists into
+  discovery metadata while retaining unrestricted computed, row-key, selection,
+  and action columns. Static or resolved-policy-hidden structural columns are
+  omitted from discovery (the row key remains only as a non-readable identity
+  column), and actions that explicitly depend on hidden columns are removed.
+  Sensitive/secret and `readable: false` columns also fail closed when omitted
+  from the resolved policy; a host must pass `authorizedColumnIds` explicitly
+  to expose a restricted descriptor column, and authorization sets the
+  effective `readable` metadata to `true` so capabilities and query allowlists
+  cannot contradict it.
 - **Two-tier context contract.** `PolicyField` alone reads the context with
   `tryGetFieldPolicyContext()`, because outside a Provider it still has the
   caller's children to render verbatim (incremental adoption). The
