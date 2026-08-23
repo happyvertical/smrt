@@ -1094,6 +1094,8 @@ interface Entry {
   descriptor: DataSurfaceDescriptor;
   registration: DataSurfaceRegistration;
   lastRevision: number;
+  lastSnapshotContentSignature?: string;
+  lastExposedSnapshotContentSignature?: string;
   commandBlockedAtRevision?: number;
   replay: Map<string, { signature: string; result: DataSurfaceCommandResult }>;
   commandQueue: Promise<void>;
@@ -1145,10 +1147,11 @@ function sameSnapshotContent(
   left: DataSurfaceSnapshot,
   right: DataSurfaceSnapshot,
 ): boolean {
-  return (
-    jsonSignature(left.state) === jsonSignature(right.state) &&
-    jsonSignature(left.selection) === jsonSignature(right.selection)
-  );
+  return snapshotContentSignature(left) === snapshotContentSignature(right);
+}
+
+function snapshotContentSignature(snapshot: DataSurfaceSnapshot): string {
+  return jsonSignature([snapshot.state, snapshot.selection]);
 }
 
 /** Create an isolated registry; applications choose how it is exposed. */
@@ -1165,7 +1168,6 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
     if (raw.revision < entry.lastRevision) {
       throw new RangeError('DataSurface revision must be monotonic');
     }
-    entry.lastRevision = raw.revision;
 
     const exposed = entry.registration.redact
       ? normalizeDataSurfaceSnapshot(
@@ -1180,6 +1182,19 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
         'DataSurface redaction cannot change identity or revision',
       );
     }
+    const contentSignature = snapshotContentSignature(raw);
+    const exposedContentSignature = snapshotContentSignature(exposed);
+    if (
+      entry.lastSnapshotContentSignature !== undefined &&
+      raw.revision === entry.lastRevision &&
+      (entry.lastSnapshotContentSignature !== contentSignature ||
+        entry.lastExposedSnapshotContentSignature !== exposedContentSignature)
+    ) {
+      entry.commandBlockedAtRevision = raw.revision;
+    }
+    entry.lastRevision = raw.revision;
+    entry.lastSnapshotContentSignature = contentSignature;
+    entry.lastExposedSnapshotContentSignature = exposedContentSignature;
     return { raw, exposed };
   };
 

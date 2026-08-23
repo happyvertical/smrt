@@ -433,6 +433,60 @@ describe('data surface registry', () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('quarantines host-driven snapshot changes until revision advances', async () => {
+    let revision = 3;
+    const state = { search: 'Ada' };
+    const execute = vi.fn(() => {
+      state.search = 'Lin';
+      revision += 1;
+    });
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision, state }),
+      execute,
+    });
+
+    state.search = 'Grace';
+    expect(registry.inspect(identity)?.state).toEqual({ search: 'Grace' });
+    await expect(registry.execute(command())).resolves.toMatchObject({
+      ok: false,
+      reason: 'non_monotonic_revision',
+    });
+    expect(execute).not.toHaveBeenCalled();
+
+    revision = 4;
+    await expect(
+      registry.execute(
+        command({ commandId: 'after-host-refresh', expectedRevision: 4 }),
+      ),
+    ).resolves.toMatchObject({ ok: true, revision: 5 });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('quarantines redacted snapshot changes until revision advances', async () => {
+    let audience = 'owner';
+    const execute = vi.fn();
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision: 3, state: { search: 'Ada' } }),
+      execute,
+      redact: (snapshot) => ({
+        ...snapshot,
+        state: { search: audience },
+      }),
+    });
+
+    audience = 'viewer';
+    expect(registry.inspect(identity)?.state).toEqual({ search: 'viewer' });
+    await expect(registry.execute(command())).resolves.toMatchObject({
+      ok: false,
+      reason: 'non_monotonic_revision',
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('emits monotonic sequence events and removes unregistered surfaces', async () => {
     const { registry, unregister } = registerFixture();
     const events: Array<{ type: string; sequence: number; revision: number }> =
