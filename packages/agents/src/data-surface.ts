@@ -7,10 +7,14 @@
  * tenant, projection, ordering, and result-boundary enforcement around them.
  */
 
+import { createHash } from 'node:crypto';
 import type { AITool } from '@happyvertical/ai';
 import {
   createDataQueryFingerprint,
   DataQueryValidationError,
+  DEFAULT_DATA_QUERY_RESULT_BYTES,
+  MAX_DATA_QUERY_FILTERS,
+  MAX_DATA_QUERY_REQUEST_BYTES,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
@@ -231,6 +235,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isDataQueryRows(value: unknown[]): value is DataQueryRow[] {
+  return value.every(isRecord);
+}
+
+function dataQueryRowsOrThrow(value: unknown[]): DataQueryRow[] {
+  if (!isDataQueryRows(value)) throw new DataSurfaceQueryError();
+  return value;
+}
+
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
@@ -414,6 +427,186 @@ function projectionForResult(request: DataQueryRequest): string[] {
   return request.projection ?? [];
 }
 
+function externalValidationRequest(
+  request: DataQueryRequest,
+  schema: DataQuerySchema,
+): DataQueryRequest {
+  if (
+    request.mode !== 'rows' ||
+    !request.projection ||
+    request.projection.length <= MAX_DATA_QUERY_FILTERS
+  ) {
+    return request;
+  }
+  return {
+    ...request,
+    projection: request.projection.filter(
+      (field) => field !== schema.identityField,
+    ),
+  };
+}
+
+function canonicalRequestValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalRequestValue);
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalRequestValue(value[key])]),
+    );
+  }
+  return value;
+}
+
+function dataSurfaceFingerprint(request: DataQueryRequest): string {
+  const { requestId: _requestId, page: _page, ...semanticQuery } = request;
+  return `dq1_${createHash('sha256')
+    .update(JSON.stringify(canonicalRequestValue(semanticQuery)))
+    .digest('base64url')}`;
+}
+
+function shorthandResultCandidate(
+  request: DataQueryRequest,
+  schema: DataQuerySchema,
+  rawRecord: Record<string, unknown> | undefined,
+  rows: readonly unknown[],
+): Record<string, unknown> {
+  return {
+    version: 1,
+    requestId: request.requestId,
+    queryFingerprint: createDataQueryFingerprint(request, schema),
+    identityField: schema.identityField,
+    rows,
+    ...(request.page
+      ? {
+          page:
+            request.page.kind === 'offset'
+              ? {
+                  kind: 'offset',
+                  offset: request.page.offset,
+                  limit: request.page.limit,
+                  hasMore:
+                    typeof rawRecord?.hasMore === 'boolean'
+                      ? rawRecord.hasMore
+                      : Boolean(rawRecord?.nextCursor),
+                }
+              : {
+                  kind: 'cursor',
+                  limit: request.page.limit,
+                  hasMore: Boolean(rawRecord?.nextCursor),
+                  ...(rawRecord?.nextCursor
+                    ? { nextCursor: rawRecord.nextCursor }
+                    : {}),
+                },
+        }
+      : {}),
+    total: rawRecord?.total ?? { kind: 'unavailable' },
+    ...(rawRecord?.facets ? { facets: rawRecord.facets } : {}),
+    freshness: rawRecord?.freshness ?? { state: 'unknown' },
+    warnings: Array.isArray(rawRecord?.warnings) ? rawRecord.warnings : [],
+    truncated: rawRecord?.truncated === true,
+  };
+}
+
+function normalizeWideRows(
+  rawRecord: Record<string, unknown> | undefined,
+  rawRows: unknown[],
+  request: DataQueryRequest,
+  resultRequest: DataQueryRequest,
+  schema: DataQuerySchema,
+  internal: { request: DataQueryRequest; schema: DataQuerySchema },
+): DataQueryResult {
+  const hasVersionedResult =
+    rawRecord !== undefined && Object.hasOwn(rawRecord, 'version');
+  if (
+    hasVersionedResult &&
+    (rawRecord.version !== 1 ||
+      rawRecord.requestId !== internal.request.requestId ||
+      rawRecord.identityField !== internal.schema.identityField ||
+      rawRecord.queryFingerprint !== dataSurfaceFingerprint(internal.request))
+  ) {
+    throw new DataSurfaceQueryError();
+  }
+  const requestedFields = resultRequest.projection ?? [schema.identityField];
+  const sortOnlyFields = new Set(
+    (request.sort ?? [])
+      .map((term) => term.field)
+      .filter((field) => !requestedFields.includes(field)),
+  );
+  const chunkSize = MAX_DATA_QUERY_FILTERS - 1;
+  const chunks: DataQueryResult[] = [];
+  for (let offset = 0; offset < requestedFields.length; offset += chunkSize) {
+    const fields = requestedFields.slice(offset, offset + chunkSize);
+    const allowedFields = new Set([
+      schema.identityField,
+      ...requestedFields,
+      ...sortOnlyFields,
+    ]);
+    const chunkFields = new Set([schema.identityField, ...fields]);
+    const chunkRows = rawRows.map((row) => {
+      if (!isRecord(row)) return row;
+      if (Object.keys(row).some((field) => !allowedFields.has(field))) {
+        return row;
+      }
+      return Object.fromEntries(
+        Object.entries(row).filter(([field]) => chunkFields.has(field)),
+      );
+    });
+    const chunkRequest = { ...resultRequest, projection: fields };
+    // Correlation fields on a versioned result are checked above before this
+    // per-chunk validation envelope is constructed.  The chunk fingerprint
+    // is necessarily different from the full internal projection's
+    // fingerprint because core's normalizer has a 50-field projection cap.
+    const candidate = hasVersionedResult
+      ? {
+          ...rawRecord,
+          requestId: chunkRequest.requestId,
+          queryFingerprint: createDataQueryFingerprint(chunkRequest, schema),
+          identityField: schema.identityField,
+          rows: chunkRows,
+        }
+      : shorthandResultCandidate(chunkRequest, schema, rawRecord, chunkRows);
+    chunks.push(normalizeDataQueryResult(candidate, chunkRequest, schema));
+  }
+  if (chunks.length === 0) {
+    throw new DataSurfaceQueryError();
+  }
+  const rows = chunks[0].rows.map((_, index) =>
+    Object.assign({}, ...chunks.map((chunk) => chunk.rows[index])),
+  );
+  const result = {
+    ...chunks[0],
+    requestId: request.requestId,
+    queryFingerprint: dataSurfaceFingerprint(request),
+    identityField: schema.identityField,
+    rows,
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(result)).byteLength;
+  if (bytes > (schema.maxResultBytes ?? DEFAULT_DATA_QUERY_RESULT_BYTES)) {
+    throw new DataSurfaceQueryError();
+  }
+  return result;
+}
+
+function addSortOnlyValues(
+  rows: DataQueryRow[],
+  rawRows: DataQueryRow[],
+  request: DataQueryRequest,
+  schema: DataQuerySchema,
+): DataQueryRow[] {
+  const projection = new Set(request.projection ?? [schema.identityField]);
+  return rows.map((row, index) => {
+    const rawRow = rawRows[index];
+    const result = { ...row };
+    for (const term of request.sort ?? []) {
+      if (!projection.has(term.field) && Object.hasOwn(rawRow, term.field)) {
+        result[term.field] = rawRow[term.field];
+      }
+    }
+    return result;
+  });
+}
+
 function buildInternalQuery(
   request: DataQueryRequest,
   schema: DataQuerySchema,
@@ -434,13 +627,17 @@ function buildInternalQuery(
       ...(request.projection ?? [schema.identityField]),
       ...sortFields,
     ]),
-  ];
+  ].sort();
+  const internalRequest = { ...request, projection };
+  const requestBytes = new TextEncoder().encode(
+    JSON.stringify(internalRequest),
+  ).byteLength;
+  if (requestBytes > MAX_DATA_QUERY_REQUEST_BYTES) {
+    throw new DataSurfaceQueryError();
+  }
   return {
     schema: internalSchema,
-    request: normalizeDataQueryRequest(
-      { ...request, projection },
-      internalSchema,
-    ),
+    request: internalRequest,
   };
 }
 
@@ -641,61 +838,52 @@ export function createDataSurfaceTools(
         ) {
           throw new DataSurfaceQueryError();
         }
-        const candidate =
-          rawRecord && Object.hasOwn(rawRecord, 'version')
-            ? raw
-            : {
-                version: 1,
-                requestId: internal.request.requestId,
-                queryFingerprint: createDataQueryFingerprint(
-                  internal.request,
-                  internal.schema,
-                ),
-                identityField: internal.schema.identityField,
-                rows: rawRows,
-                ...(request.page
-                  ? {
-                      page:
-                        request.page.kind === 'offset'
-                          ? {
-                              kind: 'offset',
-                              offset: request.page.offset,
-                              limit: request.page.limit,
-                              hasMore:
-                                typeof rawRecord?.hasMore === 'boolean'
-                                  ? rawRecord.hasMore
-                                  : Boolean(rawRecord?.nextCursor),
-                            }
-                          : {
-                              kind: 'cursor',
-                              limit: request.page.limit,
-                              hasMore: Boolean(rawRecord?.nextCursor),
-                              ...(rawRecord?.nextCursor
-                                ? { nextCursor: rawRecord.nextCursor }
-                                : {}),
-                            },
-                    }
-                  : {}),
-                total: rawRecord?.total ?? { kind: 'unavailable' },
-                ...(rawRecord?.facets ? { facets: rawRecord.facets } : {}),
-                freshness: rawRecord?.freshness ?? { state: 'unknown' },
-                warnings: Array.isArray(rawRecord?.warnings)
-                  ? rawRecord.warnings
-                  : [],
-                truncated: rawRecord?.truncated === true,
-              };
-        const validated = normalizeDataQueryResult(
-          candidate,
-          internal.request,
-          internal.schema,
-        );
+        const resultRequest = externalValidationRequest(request, entry.schema);
+        const hasVersionedResult =
+          rawRecord && Object.hasOwn(rawRecord, 'version');
+        const canValidateInternal =
+          (internal.request.projection?.length ?? 0) <= MAX_DATA_QUERY_FILTERS;
+        const validated = canValidateInternal
+          ? normalizeDataQueryResult(
+              hasVersionedResult
+                ? raw
+                : shorthandResultCandidate(
+                    internal.request,
+                    internal.schema,
+                    rawRecord,
+                    rawRows,
+                  ),
+              internal.request,
+              internal.schema,
+            )
+          : normalizeWideRows(
+              rawRecord,
+              rawRows,
+              request,
+              resultRequest,
+              entry.schema,
+              internal,
+            );
+        const rawOrderRows =
+          request.mode === 'rows' && !canValidateInternal
+            ? dataQueryRowsOrThrow(rawRows)
+            : validated.rows;
+        const orderRows =
+          request.mode === 'rows' && !canValidateInternal
+            ? addSortOnlyValues(
+                validated.rows,
+                rawOrderRows,
+                request,
+                entry.schema,
+              )
+            : rawOrderRows;
         if (request.mode === 'rows') {
-          requireSortValues(validated.rows, internal.request);
+          requireSortValues(orderRows, internal.request);
         }
         const orderedRows =
           request.mode === 'rows' && request.page === undefined
-            ? sortRows(validated.rows, internal.request, internal.schema)
-            : validated.rows;
+            ? sortRows(orderRows, internal.request, internal.schema)
+            : orderRows;
         if (
           request.mode === 'rows' &&
           request.page !== undefined &&
@@ -705,16 +893,23 @@ export function createDataSurfaceTools(
         }
         const resultCandidate = {
           ...validated,
-          requestId: request.requestId,
-          queryFingerprint: createDataQueryFingerprint(request, entry.schema),
+          requestId: resultRequest.requestId,
+          queryFingerprint: canValidateInternal
+            ? createDataQueryFingerprint(resultRequest, entry.schema)
+            : dataSurfaceFingerprint(request),
           identityField: entry.schema.identityField,
           rows: stripInternalProjection(orderedRows, request),
         };
-        const result: DataQueryResult = normalizeDataQueryResult(
-          resultCandidate,
-          request,
-          entry.schema,
-        );
+        const result: DataQueryResult = canValidateInternal
+          ? normalizeDataQueryResult(
+              resultCandidate,
+              resultRequest,
+              entry.schema,
+            )
+          : {
+              ...resultCandidate,
+              queryFingerprint: dataSurfaceFingerprint(request),
+            };
         await audit(
           {
             action: 'query',

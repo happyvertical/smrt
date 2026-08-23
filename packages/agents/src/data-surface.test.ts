@@ -54,6 +54,20 @@ const querySchema: DataQuerySchema = {
   ),
 };
 
+function wideSchema(): DataSurfaceSchema {
+  return {
+    ...schema,
+    fields: [
+      ...schema.fields,
+      ...Array.from({ length: 50 }, (_, index) => ({
+        id: `field-${index}`,
+        type: 'string' as const,
+        projectable: true,
+      })),
+    ],
+  };
+}
+
 const versionedRequest = {
   version: 1 as const,
   requestId: 'versioned-result',
@@ -628,6 +642,77 @@ describe('principal-bound data surface tools', () => {
         { id: 'r10', rank: 10 },
       ],
     });
+  });
+
+  it('accepts fifty requested fields plus the identity field internally', async () => {
+    const fields = [
+      'rank',
+      ...Array.from({ length: 49 }, (_, index) => `field-${index}`),
+    ];
+    let executorProjection: string[] | undefined;
+    const tools = toolSet({
+      surfaces: [
+        { id: 'records', collection: 'records', schema: wideSchema() },
+      ],
+      execute: async (_surface, request) => {
+        executorProjection = request.projection;
+        return [{ id: 'r1', rank: 1 }];
+      },
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'wide-projection',
+          mode: 'rows',
+          projection: fields,
+          sort: [{ field: 'rank', direction: 'asc' }],
+        },
+      },
+      db: undefined,
+    });
+    expect(executorProjection).toHaveLength(51);
+    expect(executorProjection).toEqual(
+      expect.arrayContaining(['id', 'rank', 'field-0']),
+    );
+    expect(rowFieldNames(result)).toEqual([['id', 'rank']]);
+  });
+
+  it('allows sort-key expansion beyond fifty requested projection fields', async () => {
+    const fields = Array.from({ length: 50 }, (_, index) => `field-${index}`);
+    let executorProjection: string[] | undefined;
+    const tools = toolSet({
+      surfaces: [
+        { id: 'records', collection: 'records', schema: wideSchema() },
+      ],
+      execute: async (_surface, request) => {
+        executorProjection = request.projection;
+        return [{ id: 'r1', rank: 1 }];
+      },
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'wide-sort-expansion',
+          mode: 'rows',
+          projection: fields,
+          sort: [{ field: 'rank', direction: 'asc' }],
+        },
+      },
+      db: undefined,
+    });
+    expect(executorProjection).toHaveLength(52);
+    expect(executorProjection).toEqual(
+      expect.arrayContaining(['id', 'rank', 'field-0']),
+    );
+    expect(rowFieldNames(result)).toEqual([['id']]);
   });
 
   it('does not let a caller select an unauthorized surface by changing args', async () => {
