@@ -8,7 +8,10 @@
  * server-bound session context, never authority supplied by the command.
  */
 
-import { normalizeDataSurfaceVisibleCommand } from '@happyvertical/smrt-ui/data';
+import {
+  normalizeDataSurfaceSnapshot,
+  normalizeDataSurfaceVisibleCommand,
+} from '@happyvertical/smrt-ui/data';
 
 // Keep the wire contract self-contained in this package's declarations. The
 // runtime normalizer still comes from smrt-ui, but importing its source-backed
@@ -282,29 +285,10 @@ function identitySignature(identity: DataSurfaceIdentity): string {
 }
 
 function snapshotOf(value: unknown): DataSurfaceSnapshot | undefined {
-  if (!isRecord(value) || value.version !== 1 || !isRecord(value.descriptor))
-    return undefined;
-  const descriptor = value.descriptor;
-  if (
-    descriptor.version !== 1 ||
-    identityOf(descriptor.identity) === undefined ||
-    !isFiniteInteger(descriptor.schemaVersion) ||
-    descriptor.schemaVersion < 0 ||
-    !isString(descriptor.label) ||
-    !isString(descriptor.rowKey) ||
-    !Array.isArray(descriptor.columns) ||
-    !isRecord(descriptor.query) ||
-    !Array.isArray(descriptor.controls) ||
-    !Array.isArray(descriptor.actions) ||
-    !isRecord(descriptor.limits) ||
-    !isFiniteInteger(value.revision) ||
-    value.revision < 0 ||
-    !isRecord(value.state) ||
-    !('selection' in value)
-  )
-    return undefined;
   try {
-    return JSON.parse(JSON.stringify(value)) as DataSurfaceSnapshot;
+    return normalizeDataSurfaceSnapshot(
+      value as Parameters<typeof normalizeDataSurfaceSnapshot>[0],
+    ) as DataSurfaceSnapshot;
   } catch {
     return undefined;
   }

@@ -193,6 +193,50 @@ describe('server data-surface bridge', () => {
     );
     link.receive(ack(request, { expiresAt: request.expiresAt + 1 }));
     link.receive(ack(request, { snapshot: {} }));
+    link.receive(
+      ack(request, {
+        snapshot: {
+          ...snapshot,
+          descriptor: {
+            ...snapshot.descriptor,
+            columns: [{ id: 'id', label: 'ID', capabilities: ['invalid'] }],
+          },
+        },
+      }),
+    );
+    link.receive(
+      ack(request, {
+        snapshot: {
+          ...snapshot,
+          descriptor: {
+            ...snapshot.descriptor,
+            limits: { ...snapshot.descriptor.limits, maxQueryRows: 0 },
+          },
+        },
+      }),
+    );
+    link.receive(
+      ack(request, {
+        snapshot: {
+          ...snapshot,
+          descriptor: {
+            ...snapshot.descriptor,
+            query: { modes: ['rows'], projectableColumnIds: ['unknown'] },
+          },
+        },
+      }),
+    );
+    link.receive(
+      ack(request, {
+        snapshot: { ...snapshot, selection: { scope: 'explicit-ids' } },
+      }),
+    );
+    link.receive(
+      ack(request, {
+        snapshot: { ...snapshot, state: { auth: 'secret' } },
+      }),
+    );
+    link.receive(ack(request, { snapshot: { ...snapshot, extra: true } }));
     link.receive(ack(request), { sessionId: 'session-1', source: 'attacker' });
     link.receive(ack(request), { sessionId: 'attacker', source: 'browser-1' });
     expect(link.sent).toHaveLength(1);
