@@ -262,7 +262,8 @@ discovery metadata, a revisioned view snapshot, and a small handler for its
 declared visible controls. The registry rejects duplicate identities, validates
 JSON-safe data, requires an `expectedRevision`, records monotonic event
 sequences, serializes commands per mounted identity, and returns a cached
-acknowledgement when the same `commandId` is replayed.
+acknowledgement when the same `commandId` is replayed. The replay cache retains
+only the 100 most recently used command IDs per mounted surface.
 
 Visible-command and preview/apply-action envelopes are capped at 100,000 UTF-8
 bytes (`DATA_SURFACE_MAX_REQUEST_BYTES`). JSON values reject prototype keys and

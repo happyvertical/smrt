@@ -276,6 +276,9 @@ export interface DataSurfaceRegistry {
 /** Generic browser-transport ceiling for normalized command/action envelopes. */
 export const DATA_SURFACE_MAX_REQUEST_BYTES = 100_000;
 
+/** Per-surface LRU capacity for command acknowledgement replay. */
+export const DATA_SURFACE_MAX_REPLAY_ENTRIES = 100;
+
 const MAX_QUERY_LIMIT = 1_000;
 const MAX_REQUEST_ID_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 2_048;
@@ -532,10 +535,11 @@ function normalizeIdentity(value: unknown): DataSurfaceIdentity {
 }
 
 function identityKey(identity: DataSurfaceIdentity): string {
-  const subject = identity.subject
-    ? `${identity.subject.type}\u0000${identity.subject.id}`
-    : '';
-  return `${identity.kind}\u0000${identity.surfaceId}\u0000${subject}`;
+  return JSON.stringify([
+    identity.kind,
+    identity.surfaceId,
+    identity.subject ? [identity.subject.type, identity.subject.id] : null,
+  ]);
 }
 
 function cloneIdentity(identity: DataSurfaceIdentity): DataSurfaceIdentity {
@@ -1090,6 +1094,7 @@ interface Entry {
   descriptor: DataSurfaceDescriptor;
   registration: DataSurfaceRegistration;
   lastRevision: number;
+  commandBlockedAtRevision?: number;
   replay: Map<string, { signature: string; result: DataSurfaceCommandResult }>;
   commandQueue: Promise<void>;
 }
@@ -1216,6 +1221,11 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
       signature: jsonSignature(command),
       result: cloneResult(result),
     });
+    while (entry.replay.size > DATA_SURFACE_MAX_REPLAY_ENTRIES) {
+      const oldestCommandId = entry.replay.keys().next().value;
+      if (oldestCommandId === undefined) break;
+      entry.replay.delete(oldestCommandId);
+    }
     emit(
       'command',
       entry,
@@ -1325,7 +1335,11 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
         const signature = jsonSignature(normalized);
         const replay = entry.replay.get(normalized.commandId);
         if (replay) {
-          if (replay.signature === signature) return cloneResult(replay.result);
+          if (replay.signature === signature) {
+            entry.replay.delete(normalized.commandId);
+            entry.replay.set(normalized.commandId, replay);
+            return cloneResult(replay.result);
+          }
           const snapshot = readSnapshot(entry).exposed;
           const result: DataSurfaceCommandResult = {
             ok: false,
@@ -1340,6 +1354,20 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
         }
 
         const before = readSnapshot(entry);
+        if (
+          entry.commandBlockedAtRevision !== undefined &&
+          before.raw.revision <= entry.commandBlockedAtRevision
+        ) {
+          return cacheResult(entry, normalized, {
+            ok: false,
+            commandId: normalized.commandId,
+            identity: cloneIdentity(entry.descriptor.identity),
+            revision: before.exposed.revision,
+            snapshot: before.exposed,
+            reason: 'non_monotonic_revision',
+          });
+        }
+        entry.commandBlockedAtRevision = undefined;
         if (before.raw.revision !== normalized.expectedRevision) {
           return cacheResult(entry, normalized, {
             ok: false,
@@ -1380,6 +1408,20 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
             normalizeDataSurfaceVisibleCommand(normalized),
           );
           const after = readSnapshot(entry);
+          if (
+            sameSnapshotContent(before.raw, after.raw) === false &&
+            after.raw.revision <= before.raw.revision
+          ) {
+            entry.commandBlockedAtRevision = after.raw.revision;
+            return cacheResult(entry, normalized, {
+              ok: false,
+              commandId: normalized.commandId,
+              identity: cloneIdentity(entry.descriptor.identity),
+              revision: after.exposed.revision,
+              snapshot: after.exposed,
+              reason: 'non_monotonic_revision',
+            });
+          }
           if (execution && execution.ok === false) {
             return cacheResult(entry, normalized, {
               ok: false,
@@ -1388,19 +1430,6 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
               revision: after.exposed.revision,
               snapshot: after.exposed,
               reason: 'denied',
-            });
-          }
-          if (
-            sameSnapshotContent(before.raw, after.raw) === false &&
-            after.raw.revision <= before.raw.revision
-          ) {
-            return cacheResult(entry, normalized, {
-              ok: false,
-              commandId: normalized.commandId,
-              identity: cloneIdentity(entry.descriptor.identity),
-              revision: after.exposed.revision,
-              snapshot: after.exposed,
-              reason: 'non_monotonic_revision',
             });
           }
           return cacheResult(entry, normalized, {

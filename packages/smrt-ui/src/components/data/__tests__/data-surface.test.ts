@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceRegistry,
+  DATA_SURFACE_MAX_REPLAY_ENTRIES,
   DATA_SURFACE_MAX_REQUEST_BYTES,
   type DataSurfaceDescriptor,
   type DataSurfaceIdentity,
@@ -137,6 +138,33 @@ describe('data surface registry', () => {
     ).toThrow('already registered');
   });
 
+  it('keeps identities with delimiter-like components distinct', () => {
+    const firstIdentity: DataSurfaceIdentity = {
+      kind: 'table',
+      surfaceId: 'x',
+      subject: { type: 'y', id: 'z\u0000w' },
+    };
+    const secondIdentity: DataSurfaceIdentity = {
+      kind: 'table',
+      surfaceId: 'x\u0000y',
+      subject: { type: 'z', id: 'w' },
+    };
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor({ identity: firstIdentity }),
+      getSnapshot: () => ({ revision: 0, state: {} }),
+    });
+    registry.register({
+      descriptor: descriptor({ identity: secondIdentity }),
+      getSnapshot: () => ({ revision: 0, state: {} }),
+    });
+
+    expect(registry.list()).toHaveLength(2);
+    registry.unregister(secondIdentity);
+    expect(registry.inspect(firstIdentity)?.revision).toBe(0);
+    expect(registry.inspect(secondIdentity)).toBeUndefined();
+  });
+
   it('applies the host-owned redaction boundary before inspect results escape', () => {
     const { registry } = registerFixture({ redact: true });
     expect(registry.inspect(identity)?.state).toEqual({ search: 'Ada' });
@@ -193,6 +221,63 @@ describe('data surface registry', () => {
       reason: 'idempotency_conflict',
     });
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds the LRU replay cache for long-lived mounted surfaces', async () => {
+    let revision = 0;
+    const execute = vi.fn(() => {
+      revision += 1;
+    });
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision, state: {} }),
+      execute,
+    });
+
+    for (let index = 0; index < DATA_SURFACE_MAX_REPLAY_ENTRIES; index += 1) {
+      await expect(
+        registry.execute(
+          command({
+            commandId: `command-${index}`,
+            expectedRevision: index,
+          }),
+        ),
+      ).resolves.toMatchObject({ ok: true, revision: index + 1 });
+    }
+
+    await expect(
+      registry.execute(
+        command({ commandId: 'command-0', expectedRevision: 0 }),
+      ),
+    ).resolves.toMatchObject({ ok: true, revision: 1 });
+    await expect(
+      registry.execute(
+        command({
+          commandId: `command-${DATA_SURFACE_MAX_REPLAY_ENTRIES}`,
+          expectedRevision: DATA_SURFACE_MAX_REPLAY_ENTRIES,
+        }),
+      ),
+    ).resolves.toMatchObject({
+      ok: true,
+      revision: DATA_SURFACE_MAX_REPLAY_ENTRIES + 1,
+    });
+
+    await expect(
+      registry.execute(
+        command({ commandId: 'command-1', expectedRevision: 1 }),
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'stale_revision',
+      revision: DATA_SURFACE_MAX_REPLAY_ENTRIES + 1,
+    });
+    await expect(
+      registry.execute(
+        command({ commandId: 'command-0', expectedRevision: 0 }),
+      ),
+    ).resolves.toMatchObject({ ok: true, revision: 1 });
+    expect(execute).toHaveBeenCalledTimes(DATA_SURFACE_MAX_REPLAY_ENTRIES + 1);
   });
 
   it('serializes concurrent commands so only one can execute at a revision', async () => {
@@ -282,13 +367,44 @@ describe('data surface registry', () => {
     });
   });
 
-  it('rejects a changed snapshot when its renderer did not advance revision', async () => {
-    const { registry } = registerFixture({ advance: false });
+  it('quarantines a changed snapshot until its renderer advances revision', async () => {
+    let revision = 3;
+    let state = { search: 'Ada' };
+    let advance = false;
+    const execute = vi.fn(() => {
+      state = { search: 'Grace' };
+      if (advance) revision += 1;
+    });
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision, state }),
+      execute,
+    });
 
     await expect(registry.execute(command())).resolves.toMatchObject({
       ok: false,
       reason: 'non_monotonic_revision',
     });
+    await expect(
+      registry.execute(command({ commandId: 'blocked-at-revision-3' })),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'non_monotonic_revision',
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    revision = 4;
+    advance = true;
+    await expect(
+      registry.execute(
+        command({
+          commandId: 'after-refresh',
+          expectedRevision: 4,
+        }),
+      ),
+    ).resolves.toMatchObject({ ok: true, revision: 5 });
+    expect(execute).toHaveBeenCalledTimes(2);
   });
 
   it('emits monotonic sequence events and removes unregistered surfaces', async () => {
