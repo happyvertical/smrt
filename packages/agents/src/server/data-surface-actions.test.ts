@@ -426,6 +426,32 @@ describe('data-surface action adapter', () => {
     expect(applyRow).toHaveBeenCalledTimes(2);
   });
 
+  it('deduplicates authoritative resolved rows before confirmation and execution', async () => {
+    const applyRow = vi.fn();
+    const setup = harness({
+      apply: applyRow,
+      rowIds: () => ['one', 'two', 'two'],
+    });
+    const preview = await setup.adapter.preview(
+      request('preview'),
+      setup.context,
+    );
+
+    expect(preview).toMatchObject({
+      ok: true,
+      details: { count: 2, accepted: 2 },
+    });
+    if (!preview.confirmationToken) throw new Error('preview token missing');
+
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: preview.confirmationToken }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: true, details: { accepted: 2 } });
+    expect(applyRow).toHaveBeenCalledTimes(2);
+  });
+
   it('does not bind confirmation identity to a subject display label', async () => {
     const previewIdentity: DataSurfaceIdentity = {
       ...identity,

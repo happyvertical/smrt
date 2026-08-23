@@ -593,10 +593,14 @@ export function createDataSurfaceActionAdapter(
       descriptor: surface.descriptor,
       action,
     };
-    const selection = await options.resolveSelection(
+    const resolvedSelection = await options.resolveSelection(
       base,
       canonicalSelection(request.selection),
     );
+    const selection = {
+      ...resolvedSelection,
+      rowIds: canonicalRowIds(resolvedSelection.rowIds),
+    };
     const invocation = { ...base, selection };
     if (!(await action.authorize(invocation))) {
       return result(request, false, 'denied');
