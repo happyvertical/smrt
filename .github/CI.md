@@ -60,23 +60,26 @@ never prevent the tests from running.
   the aggregation asymmetry previously recorded here: `test-packages-result`
   and `required-ci` are the same shape of job and are now on the same lane.
   Backing a required status argues for starting promptly, not for queueing.
-- Every job in `test-suite.yml` that is still on the fleet, and every
-  self-hosted job in `publish-dry-run.yml`, selects its runner through the
+- Every job in `test-suite.yml` that is still on the fleet, every self-hosted
+  job in `publish-dry-run.yml`, and every job in the release `publish.yml`
+  selects its runner through the
   emergency lane selector
   `${{ vars.CI_HOSTED_FALLBACK_ENABLED == 'true' && 'ubuntu-latest' || '<label>' }}`.
   Flipping that repository variable moves the merge-blocking validation path
   onto GitHub-hosted runners without a workflow merge — which would itself
   need the down fleet. Both files must carry it because `Required CI`
   aggregates jobs from both; a lever that moved only the test suite would
-  leave the aggregator blocked on queued dry-run jobs. It is a manual
-  lever, not a dispatcher; automated hosted fallback is tracked separately.
+  leave the aggregator blocked on queued dry-run jobs. Release jobs use the
+  same lever so a broker outage cannot strand an already-reviewed package
+  release. It is a manual lever, not a dispatcher; automated hosted fallback
+  is tracked separately.
   The three pinned jobs above carry no lever, and must not be given one: they
   are already hosted, so a fallback has nothing to move them to, and an
   expression with one reachable branch invites a reader to believe the other
-  is live. The release publish path, standalone build, and postgres jobs stay
-  on the self-hosted label and queue instead. actionlint does not validate
-  labels inside expressions, so the allowlist in `.github/actionlint.yaml` is
-  unaffected. The variable selects the runner and the matrix `max-parallel`
+  is live. The standalone build and postgres jobs stay on the self-hosted
+  label and queue instead. actionlint does not validate labels inside
+  expressions, so the allowlist in `.github/actionlint.yaml` is unaffected.
+  The variable selects the runner and the matrix `max-parallel`
   cap (see Pull requests and merge groups), and nothing else — in particular
   it confers no additional trust: on `pull_request_target`
   events both main-scoped cache write paths stay closed — the Turbo shim
@@ -443,8 +446,12 @@ temporarily fall back to Changesets through manual dispatch.
 The hosted Turbo cache lane has two independent clearable levers:
 `CI_HOSTED_TURBO_CACHE_ENABLED` stops scheduled and push seeding (entries then
 expire within seven days), and `CI_HOSTED_FALLBACK_ENABLED` returns
-`test-suite.yml` to the self-hosted label and to the two-worker matrix cap. The
-per-call `turbo-cache-shim: 'off'` input disables the shim for a single caller.
+`test-suite.yml`, `publish-dry-run.yml`, and the credential-bearing release
+`publish.yml` jobs (npm, GitHub App, Pages, and OIDC) to the self-hosted label;
+it also returns test matrices to the two-worker cap. Clear the fallback after
+the broker lane recovers so release publication and documentation deployment
+do not remain hosted unintentionally. The per-call `turbo-cache-shim: 'off'`
+input disables the shim for a single caller.
 
 The fallback lever has been rehearsed. With `CI_HOSTED_FALLBACK_ENABLED` set
 to `true`, PR validation re-resolved every job from the self-hosted label to
@@ -470,9 +477,10 @@ in `affected` mode, not a `merge_group` run in `full` mode, so the six
 `test-core` and `test-packages` shards were unmeasured on hosted when it was
 written; #2349's trial has since measured them, and the throttle finding is
 below. And the lever is repository-wide: flipping it moves every open pull
-request, not only the one being tested. Re-measure with a full merge-group
-transit before treating hosted as an equivalent lane rather than an emergency
-one.
+request and every subsequent package or documentation release, not only the
+run being recovered. Re-measure with a full merge-group transit and verify a
+bounded release before treating hosted as an equivalent lane rather than an
+emergency one.
 
 ### Phase 0 hosted pinning (#2236)
 
