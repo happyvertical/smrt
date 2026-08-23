@@ -17,7 +17,6 @@
 import {
   createDefinitionFetchers,
   createSmrtCollection,
-  getEngineCollection,
   newLocalId,
   type SmrtCrudFetchers,
   type SmrtWebClient,
@@ -28,7 +27,10 @@ import {
   unwrapListResult,
   type WebToolDescriptor,
 } from './index.js';
-import { persistedMutationResults } from './internal.js';
+import {
+  mutationTargetHydrators,
+  persistedMutationResults,
+} from './internal.js';
 
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
 interface WebMcpToolRegistration {
@@ -315,14 +317,11 @@ async function hydrateMutationTarget(
     await fetchers.get(id),
     `get(${definition.name})`,
   ) as Record<string, unknown>;
-  await collection.preload();
-  const engine = getEngineCollection(collection) as {
-    utils?: { writeUpsert?: (value: Record<string, unknown>) => void };
-  };
-  if (typeof engine.utils?.writeUpsert !== 'function') {
+  const hydrate = mutationTargetHydrators.get(collection as object);
+  if (!hydrate) {
     throw new Error(
       `${definition.name} cannot hydrate mutation target '${id}'`,
     );
   }
-  engine.utils.writeUpsert(row);
+  await hydrate(row);
 }

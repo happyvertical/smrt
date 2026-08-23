@@ -10,3 +10,13 @@ export const persistedMutationResults = new WeakMap<
   object,
   Map<string, unknown>
 >();
+
+/**
+ * Engine-owned hydration boundary. The implementation registers this callback
+ * where the typed query-collection API is available; WebMCP only asks the
+ * boundary to hydrate a row and never reaches into engine internals.
+ */
+export const mutationTargetHydrators = new WeakMap<
+  object,
+  (row: Record<string, unknown>) => Promise<void>
+>();

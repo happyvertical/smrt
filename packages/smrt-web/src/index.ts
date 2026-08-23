@@ -45,7 +45,10 @@ import type {
   SmrtWebMutationEnvelope,
 } from './capability.js';
 import { runWrapMutation } from './capability.js';
-import { persistedMutationResults } from './internal.js';
+import {
+  mutationTargetHydrators,
+  persistedMutationResults,
+} from './internal.js';
 
 // Re-export the capability seam (#1755) and the shared durable-store foundation
 // through this single entry — the package ships one export subpath, so both are
@@ -582,14 +585,12 @@ export function createDefinitionFetchers(
       // A generated method with one `options` parameter receives that object
       // directly on the server. Keep receiver/path arguments outside the
       // transport body and unwrap the WebMCP schema's `{ options: ... }` bag.
+      const optionsBag = customRoute.optionsBag === true;
+      const optionsValue = optionsBag ? args.options : undefined;
       const transportArgs =
-        customRoute.optionsBag === true &&
-        args.options !== null &&
-        typeof args.options === 'object'
-          ? (args.options as Record<string, unknown>)
-          : customRoute.optionsBag === true
-            ? {}
-            : args;
+        optionsBag && optionsValue !== null && typeof optionsValue === 'object'
+          ? (optionsValue as Record<string, unknown>)
+          : args;
       const pathArgs = new Set(
         customRoute.path
           .filter((segment) => /^\[[^\]]+\]$/.test(segment))
@@ -621,35 +622,41 @@ export function createDefinitionFetchers(
         [...pathArgs].map((name) => inputNameFor(name)),
       );
       const aliasedInputs = new Set(Object.keys(parameterAliases));
-      const body = Object.fromEntries(
-        Object.entries(transportArgs).filter(
-          ([key]) =>
-            key !== 'id' &&
-            !pathArgs.has(key) &&
-            !consumedInputs.has(key) &&
-            !aliasedInputs.has(key),
-        ),
-      );
-      for (const [inputName, originalName] of Object.entries(
-        parameterAliases,
-      )) {
-        if (
-          !consumedInputs.has(inputName) &&
-          transportArgs[inputName] !== undefined &&
-          originalName !== 'id'
-        ) {
-          body[originalName] = transportArgs[inputName];
+      const body: unknown = optionsBag
+        ? optionsValue
+        : Object.fromEntries(
+            Object.entries(transportArgs).filter(
+              ([key]) =>
+                key !== 'id' &&
+                !pathArgs.has(key) &&
+                !consumedInputs.has(key) &&
+                !aliasedInputs.has(key),
+            ),
+          );
+      if (!optionsBag) {
+        for (const [inputName, originalName] of Object.entries(
+          parameterAliases,
+        )) {
+          if (
+            !consumedInputs.has(inputName) &&
+            transportArgs[inputName] !== undefined &&
+            originalName !== 'id'
+          ) {
+            (body as Record<string, unknown>)[originalName] =
+              transportArgs[inputName];
+          }
         }
       }
       const idAlias = Object.entries(parameterAliases).find(
         ([, originalName]) => originalName === 'id',
       )?.[0];
       if (
+        !optionsBag &&
         idAlias &&
         !consumedInputs.has(idAlias) &&
         transportArgs[idAlias] !== undefined
       ) {
-        body.id = transportArgs[idAlias];
+        (body as Record<string, unknown>).id = transportArgs[idAlias];
       }
       const segments = [
         collectionUrl,
@@ -670,7 +677,11 @@ export function createDefinitionFetchers(
         init.body = JSON.stringify(body);
       } else {
         const queryParams = new URLSearchParams();
-        for (const [key, value] of Object.entries(body)) {
+        const queryBody =
+          body !== null && typeof body === 'object' && !Array.isArray(body)
+            ? (body as Record<string, unknown>)
+            : {};
+        for (const [key, value] of Object.entries(queryBody)) {
           if (value === undefined || value === null) continue;
           queryParams.set(
             key,
@@ -1479,6 +1490,10 @@ export function createSmrtCollection<TData extends object>(
   };
 
   persistedMutationResults.set(handle as object, mutationResults);
+  mutationTargetHydrators.set(handle as object, async (row) => {
+    await collection.preload();
+    collection.utils.writeUpsert(row as Partial<Row>);
+  });
 
   engineCollections.set(handle, collection);
 
