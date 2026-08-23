@@ -53,8 +53,10 @@ calling the registry. The registry remains the authority for command
 authorization and execution. Command IDs are idempotent while their bounded
 replay entries are retained; concurrent same-signature requests coalesce, a
 conflicting signature is rejected, and replay-capacity exhaustion is reported
-explicitly. TTL, disconnect, invalid-request, and transport failures produce
-protocol outcomes without exposing registry state.
+explicitly. Malformed requests and unauthenticated peers are ignored before an
+acknowledgement; valid requests that expire or encounter disconnect and
+transport failures produce bounded protocol outcomes without exposing registry
+state.
 
 ## Usage
 

@@ -5,9 +5,11 @@
  * includes component modules and is not safe to load from a plain Node server.
  */
 
-import { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from '@happyvertical/smrt-ui/data-surface';
+import {
+  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
+  DATA_SURFACE_MAX_REQUEST_BYTES,
+} from '@happyvertical/smrt-ui/data-surface';
 
-const MAX_REQUEST_BYTES = 100_000;
 const MAX_QUERY_LIMIT = 1_000;
 const MAX_JSON_DEPTH = 16;
 const MAX_JSON_CONTAINER_ITEMS = 1_000;
@@ -249,7 +251,7 @@ function canonicalJson(
 function assertRequestByteLimit(value: unknown): void {
   canonicalJson(value, new Set<object>(), 0, {
     used: 0,
-    limit: MAX_REQUEST_BYTES,
+    limit: DATA_SURFACE_MAX_REQUEST_BYTES,
   });
 }
 

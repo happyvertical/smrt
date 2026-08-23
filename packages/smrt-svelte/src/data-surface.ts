@@ -207,15 +207,10 @@ function isRequest(value: unknown): value is DataSurfaceCommandRequest {
   );
 }
 
-function identityKey(identity: DataSurfaceIdentity): string {
-  return JSON.stringify(identity);
-}
-
 function commandSignature(request: DataSurfaceCommandRequest): string {
   return JSON.stringify({
     sessionId: request.sessionId,
     source: request.source,
-    expiresAt: request.expiresAt,
     identity: request.identity,
     expectedRevision: request.expectedRevision,
     controlId: request.controlId,
@@ -229,9 +224,11 @@ function cloneMessage<T>(message: T): T {
 
 /**
  * Attach a mounted registry to an authenticated browser transport.
- * Invalid, expired, cross-session, and cross-source messages are acknowledged
- * without exposing a registry snapshot. Replays return the original ack and do
- * not invoke the mounted surface a second time.
+ * Malformed requests and messages from unauthenticated peers are ignored before
+ * acknowledgement. Valid requests from the bound peer that are expired,
+ * cross-session, or cross-source are acknowledged without exposing a registry
+ * snapshot. Replays return the original ack and do not invoke the mounted
+ * surface a second time.
  */
 export function createDataSurfaceBrowserBridge(
   options: DataSurfaceBrowserBridgeOptions,
@@ -263,7 +260,13 @@ export function createDataSurfaceBrowserBridge(
   const reservations = new Set<string>();
   const inflight = new Map<
     string,
-    { signature: string; promise: Promise<void> }
+    {
+      signature: string;
+      promise: Promise<void>;
+      expiry: Promise<void>;
+      expired: boolean;
+      expiryTimer: ReturnType<typeof setTimeout>;
+    }
   >();
   let disposed = false;
   let lastSequence = 0;
@@ -285,6 +288,14 @@ export function createDataSurfaceBrowserBridge(
       expiresAt: request.expiresAt,
     });
   };
+
+  const replayAck = (
+    request: DataSurfaceCommandRequest,
+    ack: DataSurfaceCommandAck,
+  ): DataSurfaceCommandAck => ({
+    ...cloneMessage(ack),
+    expiresAt: request.expiresAt,
+  });
 
   const sendAck = async (ack: DataSurfaceCommandAck) => {
     if (disposed) return;
@@ -334,12 +345,20 @@ export function createDataSurfaceBrowserBridge(
       return;
     const request = value;
     pruneReplay();
+    const current = now();
+    if (
+      request.expiresAt <= current ||
+      request.expiresAt - current > maxTtlMs
+    ) {
+      await sendAck(rejected(request, 'expired'));
+      return;
+    }
     const existing = replay.get(request.commandId);
     const signature = commandSignature(request);
     if (existing) {
       await sendAck(
         existing.signature === signature
-          ? existing.ack
+          ? replayAck(request, existing.ack)
           : rejected(request, 'idempotency_conflict'),
       );
       return;
@@ -350,11 +369,11 @@ export function createDataSurfaceBrowserBridge(
         await sendAck(rejected(request, 'idempotency_conflict'));
         return;
       }
-      await active.promise;
+      await Promise.race([active.promise, active.expiry]);
       const completed = replay.get(request.commandId);
       if (completed?.signature === signature) {
-        await sendAck(completed.ack);
-      } else if (request.expiresAt <= now()) {
+        await sendAck(replayAck(request, completed.ack));
+      } else if (active.expired || request.expiresAt <= now()) {
         await sendAck(rejected(request, 'expired'));
       }
       return;
@@ -365,16 +384,24 @@ export function createDataSurfaceBrowserBridge(
       ack = rejected(request, 'session_mismatch');
     } else if (request.source !== options.peerSource) {
       ack = rejected(request, 'source_mismatch');
-    } else if (
-      request.expiresAt <= now() ||
-      request.expiresAt - now() > maxTtlMs
-    ) {
-      ack = rejected(request, 'expired');
     } else if (replay.size + reservations.size >= maxReplayEntries) {
       ack = rejected(request, 'replay_capacity_exceeded');
     } else {
       reservations.add(request.commandId);
-      const promise = (async () => {
+      let resolveExpiry!: () => void;
+      const expiry = new Promise<void>((resolve) => {
+        resolveExpiry = resolve;
+      });
+      const active = {
+        signature,
+        promise: Promise.resolve(),
+        expiry,
+        expired: false,
+        expiryAckSent: false,
+        expiryTimer: undefined as unknown as ReturnType<typeof setTimeout>,
+      };
+      let promise!: Promise<void>;
+      promise = (async () => {
         try {
           let resultAck: DataSurfaceCommandAck;
           try {
@@ -406,18 +433,53 @@ export function createDataSurfaceBrowserBridge(
           } catch {
             resultAck = rejected(request, 'invalid_request');
           }
-          if (request.expiresAt <= now()) {
-            resultAck = rejected(request, 'expired');
+          if (active.expired || request.expiresAt <= now()) {
+            active.expired = true;
+            reservations.delete(request.commandId);
+            if (inflight.get(request.commandId)?.promise === promise) {
+              inflight.delete(request.commandId);
+            }
+            clearTimeout(active.expiryTimer);
+            resolveExpiry();
+            if (!active.expiryAckSent) {
+              active.expiryAckSent = true;
+              await sendAck(rejected(request, 'expired'));
+            }
+            return;
           }
           remember(request, resultAck);
+          reservations.delete(request.commandId);
+          if (inflight.get(request.commandId)?.promise === promise) {
+            inflight.delete(request.commandId);
+          }
+          clearTimeout(active.expiryTimer);
+          resolveExpiry();
           await sendAck(resultAck);
         } finally {
           reservations.delete(request.commandId);
+          if (inflight.get(request.commandId)?.promise === promise) {
+            inflight.delete(request.commandId);
+          }
+          clearTimeout(active.expiryTimer);
+          resolveExpiry();
         }
       })();
-      inflight.set(request.commandId, { signature, promise });
+      active.promise = promise;
+      active.expiryTimer = setTimeout(
+        () => {
+          if (inflight.get(request.commandId)?.promise !== promise) return;
+          active.expired = true;
+          reservations.delete(request.commandId);
+          inflight.delete(request.commandId);
+          resolveExpiry();
+          active.expiryAckSent = true;
+          void sendAck(rejected(request, 'expired'));
+        },
+        Math.max(0, request.expiresAt - current),
+      );
+      inflight.set(request.commandId, active);
       try {
-        await promise;
+        await Promise.race([promise, expiry]);
       } finally {
         if (inflight.get(request.commandId)?.promise === promise) {
           inflight.delete(request.commandId);

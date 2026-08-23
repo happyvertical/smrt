@@ -112,9 +112,10 @@ describe('data-surface browser bridge', () => {
       ok: true,
     });
 
-    await link.receive(request({ expiresAt: 2_000 }));
+    await link.receive(request({ expiresAt: 5_000 }));
     await drain();
     expect(execute).toHaveBeenCalledTimes(1);
+    expect(link.messages.at(-1)).toMatchObject({ expiresAt: 5_000 });
   });
 
   it('does not execute stale, expired, or cross-session/source commands', async () => {
@@ -342,6 +343,80 @@ describe('data-surface browser bridge', () => {
       commandId: 'after-error',
       ok: true,
     });
+  });
+
+  it('releases replay capacity when execution never settles before expiry', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000);
+      const registry = createDataSurfaceRegistry();
+      let finishHung!: () => void;
+      const execute = vi
+        .fn<() => Promise<void> | void>()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finishHung = resolve;
+            }),
+        )
+        .mockImplementationOnce(() => undefined);
+      registry.register({
+        descriptor,
+        getSnapshot: () => ({ revision: 1, state: {} }),
+        execute,
+      });
+      registry.register({
+        descriptor: {
+          ...descriptor,
+          identity: { surfaceId: 'invoices', kind: 'table' },
+        },
+        getSnapshot: () => ({ revision: 1, state: {} }),
+        execute,
+      });
+      const link = transport();
+      createDataSurfaceBrowserBridge({
+        registry,
+        transport: link,
+        sessionId: 'session-1',
+        source: 'browser-1',
+        peerSource: 'server-1',
+        maxReplayEntries: 1,
+      });
+
+      const first = link.receive(
+        request({ commandId: 'hung', expiresAt: 1_100 }),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await first;
+      expect(link.messages.at(-1)).toMatchObject({
+        commandId: 'hung',
+        reason: 'expired',
+      });
+      finishHung();
+      await vi.runOnlyPendingTimersAsync();
+      expect(
+        link.messages.filter(
+          (message) =>
+            message.type === 'data-surface.ack' && message.commandId === 'hung',
+        ),
+      ).toHaveLength(1);
+
+      await link.receive(
+        request({
+          commandId: 'after-hung',
+          expiresAt: 5_000,
+          identity: { surfaceId: 'invoices', kind: 'table' },
+        }),
+      );
+      await vi.runOnlyPendingTimersAsync();
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(link.messages.at(-1)).toMatchObject({
+        commandId: 'after-hung',
+        ok: true,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('forwards only monotonic registry events', async () => {
