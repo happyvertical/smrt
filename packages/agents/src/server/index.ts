@@ -40,6 +40,28 @@ export {
 } from './api-routes.js';
 export { loadSlotConfigs } from './config-loader.js';
 export {
+  createDataSurfaceActionAdapter,
+  type DataSurfaceActionAdapter,
+  type DataSurfaceActionAdapterOptions,
+  type DataSurfaceActionContext as DataSurfaceServerActionContext,
+  type DataSurfaceActionEligibility,
+  type DataSurfaceActionExecution,
+  type DataSurfaceActionPayloadValidation,
+  type DataSurfaceActionRowOutcome,
+  type DataSurfaceActionStateStore,
+  type DataSurfaceBackgroundActionJob,
+  type DataSurfaceBackgroundQueue,
+  type DataSurfaceConfirmationPolicy,
+  type DataSurfaceIdempotencyRecord,
+  type DataSurfaceIdempotencyReservation,
+  type DataSurfacePreviewTokenRecord,
+  type DataSurfaceServerActionDefinition,
+  type DataSurfaceServerActionRequest,
+  InMemoryDataSurfaceActionStateStore,
+  type ResolvedDataSurfaceActions,
+  type ResolvedDataSurfaceSelection,
+} from './data-surface-actions.js';
+export {
   extractAgentManifest,
   extractAgentPackagesFromConfig,
   loadManifestsFromConfig,
