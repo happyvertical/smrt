@@ -9,8 +9,9 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
+import { SessionCollection } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { UsersCliAuthRequest } from '../models/CliAuthRequest.js';
 import {
@@ -25,6 +26,7 @@ describe('TerminalAuthService', () => {
   let service: TerminalAuthService;
   let users: UserCollection;
   let requests: UsersCliAuthRequestCollection;
+  let sessions: SessionCollection;
 
   beforeEach(async () => {
     dbPath = join(
@@ -42,9 +44,11 @@ describe('TerminalAuthService', () => {
     });
     users = await UserCollection.create(options);
     requests = await UsersCliAuthRequestCollection.create(options);
+    sessions = await SessionCollection.create(options);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
@@ -76,6 +80,31 @@ describe('TerminalAuthService', () => {
     expect(stored?.deviceCodeHash.length).toBe(64);
   });
 
+  it('retries when a concurrent issuer wins the durable user-code constraint', async () => {
+    const existing = await requests.create({
+      deviceCodeHash: 'a'.repeat(64),
+      expiresAt: new Date(Date.now() + 60_000),
+      status: 'pending',
+      userCode: 'WG-DEADBEEF',
+    });
+    await existing.save();
+    const internals = service as unknown as {
+      makeUserCode: () => string;
+      requestCollection: UsersCliAuthRequestCollection;
+    };
+    vi.spyOn(internals, 'makeUserCode')
+      .mockReturnValueOnce('WG-DEADBEEF')
+      .mockReturnValueOnce('WG-FEEDBEEF');
+    vi.spyOn(internals.requestCollection, 'findByUserCode').mockResolvedValue(
+      null,
+    );
+
+    const started = await service.createRequest('https://example.com');
+
+    expect(started.userCode).toBe('WG-FEEDBEEF');
+    expect(await requests.findByUserCode('WG-FEEDBEEF')).not.toBeNull();
+  });
+
   it('approves a pending request and mints a session bound to the user', async () => {
     const user = await users.create({ email: 'cli@example.com' });
     await user.save();
@@ -94,18 +123,94 @@ describe('TerminalAuthService', () => {
     expect(approved.userId).toBe(user.id);
     expect(approved.tenantId).toBe('tenant-1');
     expect(approved.sessionId).toBeTruthy();
+    const sessionId = approved.sessionId;
+    if (!sessionId) throw new Error('Expected terminal approval session.');
 
     const token = await service.exchangeDeviceCode(started.deviceCode);
     expect(token.status).toBe('approved');
     if (token.status === 'approved') {
       expect(token.tokenType).toBe('Bearer');
-      expect(token.accessToken).toBe(approved.sessionId);
+      expect(token.accessToken).toBe(sessionId);
       expect(token.expiresIn).toBe(3600);
     }
 
-    const context = await service.loadBearerSession(approved.sessionId);
+    const consumed = await requests.findByUserCode(started.userCode);
+    expect(consumed?.status).toBe('consumed');
+    expect(consumed?.sessionId).toBeNull();
+    expect(await service.exchangeDeviceCode(started.deviceCode)).toEqual({
+      status: 'expired',
+    });
+
+    const context = await service.loadBearerSession(sessionId);
     expect(context?.user.id).toBe(user.id);
     expect(context?.tenantId).toBe('tenant-1');
+  });
+
+  it('allows exactly one concurrent exchange of an approved device code', async () => {
+    const user = await users.create({ email: 'concurrent-cli@example.com' });
+    await user.save();
+    const userId = user.id;
+    if (!userId) throw new Error('Expected persisted terminal user.');
+    const started = await service.createRequest('https://example.com');
+    await service.approveRequest({
+      userCode: started.userCode,
+      user: { id: userId, email: user.email },
+      tenantId: 'tenant-1',
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        service.exchangeDeviceCode(started.deviceCode),
+      ),
+    );
+    expect(
+      results.filter((result) => result.status === 'approved'),
+    ).toHaveLength(1);
+    expect(
+      results.filter((result) => result.status === 'expired'),
+    ).toHaveLength(7);
+    const stored = await requests.findByUserCode(started.userCode);
+    expect(stored?.status).toBe('consumed');
+    expect(stored?.sessionId).toBeNull();
+  });
+
+  it('reports approval success when token exchange wins the post-commit race', async () => {
+    const user = await users.create({
+      email: 'approval-exchange-race@example.com',
+    });
+    await user.save();
+    const userId = user.id;
+    if (!userId) throw new Error('Expected persisted terminal user.');
+    const started = await service.createRequest('https://example.com');
+    const originalTransaction = requests.db.transaction?.bind(requests.db);
+    if (!originalTransaction) {
+      throw new Error('Expected transactional test database.');
+    }
+    let interceptApprovalCommit = true;
+    let exchanged:
+      | Awaited<ReturnType<typeof service.exchangeDeviceCode>>
+      | undefined;
+    requests.db.transaction = async (callback) => {
+      const result = await originalTransaction(callback);
+      if (interceptApprovalCommit) {
+        interceptApprovalCommit = false;
+        exchanged = await service.exchangeDeviceCode(started.deviceCode);
+      }
+      return result;
+    };
+
+    const approved = await service.approveRequest({
+      userCode: started.userCode,
+      user: { id: userId, email: user.email },
+      tenantId: 'tenant-1',
+    });
+
+    expect(approved.status).toBe('approved');
+    expect(approved.sessionId).toBeTruthy();
+    expect(exchanged?.status).toBe('approved');
+    expect((await requests.findByUserCode(started.userCode))?.status).toBe(
+      'consumed',
+    );
   });
 
   it('keeps approval idempotent — re-approving a request is a no-op', async () => {
@@ -125,6 +230,58 @@ describe('TerminalAuthService', () => {
     });
 
     expect(second.sessionId).toBe(first.sessionId);
+  });
+
+  it('allows exactly one concurrent approval session to be minted', async () => {
+    const user = await users.create({ email: 'approval-race@example.com' });
+    await user.save();
+    const userId = user.id;
+    if (!userId) throw new Error('Expected persisted terminal user.');
+    const started = await service.createRequest('https://example.com');
+
+    const approvals = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        service.approveRequest({
+          userCode: started.userCode,
+          user: { id: userId, email: user.email },
+          tenantId: 'tenant-1',
+        }),
+      ),
+    );
+
+    expect(new Set(approvals.map((approval) => approval.sessionId))).toEqual(
+      new Set([approvals[0]?.sessionId]),
+    );
+    expect(await sessions.findByUser(userId)).toHaveLength(1);
+  });
+
+  it('rolls a minted session back when approval persistence fails', async () => {
+    const user = await users.create({ email: 'approval-rollback@example.com' });
+    await user.save();
+    const userId = user.id;
+    if (!userId) throw new Error('Expected persisted terminal user.');
+    const started = await service.createRequest('https://example.com');
+    await requests.db.query(
+      `CREATE TRIGGER reject_terminal_approval
+       BEFORE UPDATE ON users_cli_auth_requests
+       WHEN NEW.status = 'approved'
+       BEGIN
+         SELECT RAISE(ABORT, 'forced approval persistence failure');
+       END`,
+    );
+
+    await expect(
+      service.approveRequest({
+        userCode: started.userCode,
+        user: { id: userId, email: user.email },
+        tenantId: 'tenant-1',
+      }),
+    ).rejects.toThrow();
+
+    expect(await sessions.findByUser(userId)).toHaveLength(0);
+    expect((await requests.findByUserCode(started.userCode))?.status).toBe(
+      'pending',
+    );
   });
 
   it('rejects approval without an authenticated user/tenant', async () => {
@@ -156,6 +313,8 @@ describe('TerminalAuthService', () => {
 
     const lookup = await service.getRequestForUserCode(started.userCode);
     expect(lookup?.status).toBe('expired');
+    expect(await requests.deleteExpired()).toBe(1);
+    expect(await requests.findByUserCode(started.userCode)).toBeNull();
 
     const tokenResult = await service.exchangeDeviceCode(started.deviceCode);
     expect(tokenResult.status).toBe('expired');
@@ -189,13 +348,15 @@ describe('TerminalAuthService', () => {
       tenantId: 'tenant-1',
     });
 
-    const before = await service.loadBearerSession(approved.sessionId);
-    expect(before?.sessionId).toBe(approved.sessionId);
+    const sessionId = approved.sessionId;
+    if (!sessionId) throw new Error('Expected terminal approval session.');
+    const before = await service.loadBearerSession(sessionId);
+    expect(before?.sessionId).toBe(sessionId);
 
-    const destroyed = await service.destroyBearerSession(approved.sessionId);
+    const destroyed = await service.destroyBearerSession(sessionId);
     expect(destroyed).toBe(true);
 
-    const after = await service.loadBearerSession(approved.sessionId);
+    const after = await service.loadBearerSession(sessionId);
     expect(after).toBeNull();
   });
 

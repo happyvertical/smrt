@@ -11,12 +11,16 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
  * CLI auth request lifecycle states.
  */
-export type CliAuthRequestStatus = 'pending' | 'approved' | 'expired';
+export type CliAuthRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'consumed'
+  | 'expired';
 
 @smrt({
   tableName: 'users_cli_auth_requests',
@@ -31,7 +35,7 @@ export class UsersCliAuthRequest extends SmrtObject {
    * Indexed: `findByUserCode()` looks requests up by this column (#2364,
    * epic #2382 finding A3).
    */
-  @field({ type: 'text', indexed: true })
+  @field({ type: 'text', required: true, unique: true })
   userCode = '';
 
   /**
@@ -40,24 +44,24 @@ export class UsersCliAuthRequest extends SmrtObject {
    * Indexed: `findByDeviceCodeHash()` — the CLI's poll loop — looks requests
    * up by this column (#2364, epic #2382 finding A3).
    */
-  @field({ type: 'text', indexed: true })
+  @field({ type: 'text', required: true, unique: true })
   deviceCodeHash = '';
 
-  /** Lifecycle state — `pending` → `approved` | `expired`. */
+  /** Lifecycle state — `pending` → `approved` → `consumed`, or `expired`. */
   @field({ type: 'text' })
   status: CliAuthRequestStatus = 'pending';
 
   /** User id of the human who approved the request (set on approval). */
-  @field({ type: 'text' })
-  userId = '';
+  @foreignKey('User', { nullable: true })
+  userId: string | null = null;
 
   /** Tenant id captured from the approving session (set on approval). */
-  @field({ type: 'text' })
-  tenantId = '';
+  @foreignKey('Tenant', { nullable: true })
+  tenantId: string | null = null;
 
-  /** Session id minted on approval — handed to the CLI as its bearer token. */
-  @field({ type: 'text' })
-  sessionId = '';
+  /** Session id minted on approval; cleared by the winning single-use exchange. */
+  @foreignKey('Session', { nullable: true })
+  sessionId: string | null = null;
 
   /**
    * When the pending request stops accepting approvals.

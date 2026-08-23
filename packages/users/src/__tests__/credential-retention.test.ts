@@ -128,6 +128,32 @@ describe('deleteExpired dry runs (#2375)', () => {
     expect(await requests.deleteExpired()).toBe(1);
     expect(await countRows('users_cli_auth_requests')).toBe(0);
   });
+
+  it('reaps consumed CLI auth requests after their approval window', async () => {
+    const request = await requests.create({
+      userCode: 'USED-CODE',
+      deviceCodeHash: 'hash-consumed',
+      status: 'consumed',
+      expiresAt: new Date(Date.now() - MINUTE_MS),
+    });
+    await request.save();
+
+    expect(await requests.deleteExpired()).toBe(1);
+    expect(await countRows('users_cli_auth_requests')).toBe(0);
+  });
+
+  it('reaps requests already marked expired by lazy expiry', async () => {
+    const request = await requests.create({
+      userCode: 'GONE-CODE',
+      deviceCodeHash: 'hash-expired',
+      status: 'expired',
+      expiresAt: new Date(Date.now() - MINUTE_MS),
+    });
+    await request.save();
+
+    expect(await requests.deleteExpired()).toBe(1);
+    expect(await countRows('users_cli_auth_requests')).toBe(0);
+  });
 });
 
 describe('user retention tasks (#2375)', () => {
