@@ -125,6 +125,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export async function getTableVersion() { return 1; }',
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
+      'export function normalizeCustomActionFailure() { return undefined; }',
       'export function normalizeTypedHttpError(error) {',
       "  if (!error || typeof error !== 'object' || !Number.isInteger(error.status) || error.status < 400 || error.status > 499) return undefined;",
       "  const code = typeof error.code === 'string' ? error.code : error.status === 403 ? 'permission_denied' : 'request_rejected';",
@@ -285,6 +286,40 @@ describe('generated SvelteKit helper runtime', () => {
     );
   }
 
+  async function importGeneratedItemActionPost() {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    const manifest = createManifest(projectRoot, objectFilePath, ['inspect']);
+    manifest.objects.Widget.methods = {
+      inspect: {
+        isPublic: true,
+        name: 'inspect',
+        parameters: [{ name: 'options', type: 'any' }],
+        returnType: 'Promise<unknown>',
+      },
+    };
+    manifest.objects.Widget.decoratorConfig = {
+      api: {
+        include: ['inspect'],
+        routes: {
+          inspect: { method: 'POST', path: 'inspect' },
+        },
+      },
+    };
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
+
+    return await bundleGeneratedRoute(
+      'src/routes/api/widgets/[id]/inspect/+server.ts',
+      'generated-item-action-post-route.mjs',
+    );
+  }
+
   async function importGeneratedCollectionList(
     fields: SmartObjectManifest['objects'][string]['fields'] = {},
   ) {
@@ -430,6 +465,39 @@ describe('generated SvelteKit helper runtime', () => {
     await expect(failed.json()).resolves.toEqual({
       error: 'Internal server error',
     });
+  });
+
+  it.each([
+    ['absent', undefined, undefined],
+    ['null', 'null', null],
+    ['empty object', '{}', {}],
+    ['populated object', JSON.stringify({ symbol: 'HV' }), { symbol: 'HV' }],
+  ])('preserves %s custom POST options in generated routes', async (_label, rawBody, expectedOptions) => {
+    const route = await importGeneratedItemActionPost();
+    const routeCollection = globalThis as Record<string, unknown>;
+    let receivedOptions: unknown = 'not-called';
+    routeCollection.__smrtGeneratedRouteCollection = {
+      get: async () => ({
+        inspect: async (options: unknown) => {
+          receivedOptions = options;
+          return { received: options };
+        },
+      }),
+    };
+
+    const response = await route.POST({
+      locals: { user: { id: 'user-1' } },
+      params: { id: 'widget-1' },
+      request: new Request('http://localhost/api/widgets/widget-1/inspect', {
+        ...(rawBody === undefined
+          ? {}
+          : { body: rawBody, headers: { 'content-type': 'application/json' } }),
+        method: 'POST',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(receivedOptions).toEqual(expectedOptions);
   });
 
   it('executes emitted DELETE routes with safe typed 4xx errors and opaque 5xx errors', async () => {

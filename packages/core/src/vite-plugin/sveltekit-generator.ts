@@ -1165,7 +1165,8 @@ function buildActionOptionsLoad(
   if (hasPathParams) {
     lines.push(
       `  const pathParams = ${pathParamsObjectLiteral};`,
-      '  const body: unknown = await request.json();',
+      '  const rawBody = await request.text();',
+      "  const body: unknown = rawBody.trim() === '' ? undefined : JSON.parse(rawBody);",
       '  const options = {',
       '    ...readJsonRecord(body),',
       '    ...pathParams,',
@@ -1175,7 +1176,10 @@ function buildActionOptionsLoad(
     return lines.join('\n');
   }
 
-  lines.push('  const body: unknown = await request.json();');
+  lines.push(
+    '  const rawBody = await request.text();',
+    "  const body: unknown = rawBody.trim() === '' ? undefined : JSON.parse(rawBody);",
+  );
   if (isSingleOptionsParameter) {
     lines.push('  const options = body as ActionArgs[0];', '');
   } else {

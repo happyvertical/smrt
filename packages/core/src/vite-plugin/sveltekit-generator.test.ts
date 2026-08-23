@@ -1183,7 +1183,10 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('type ActionArgs = Parameters<');
       expect(content).toContain("from '@happyvertical/smrt-tenancy'");
       expect(content).toContain('establishTenantContext(locals);');
-      expect(content).toContain('const body: unknown = await request.json();');
+      expect(content).toContain('const rawBody = await request.text();');
+      expect(content).toContain(
+        "const body: unknown = rawBody.trim() === '' ? undefined : JSON.parse(rawBody);",
+      );
       expect(content).toContain(
         'const options = readJsonRecord(body) as ActionOptions;',
       );
