@@ -478,6 +478,7 @@ function shorthandResultCandidate(
   rawRecord: Record<string, unknown> | undefined,
   rows: readonly unknown[],
 ): Record<string, unknown> {
+  const rawPage = isRecord(rawRecord?.page) ? rawRecord.page : undefined;
   return {
     version: 1,
     requestId: request.requestId,
@@ -493,16 +494,30 @@ function shorthandResultCandidate(
                   offset: request.page.offset,
                   limit: request.page.limit,
                   hasMore:
-                    typeof rawRecord?.hasMore === 'boolean'
-                      ? rawRecord.hasMore
-                      : Boolean(rawRecord?.nextCursor),
+                    typeof rawPage?.hasMore === 'boolean'
+                      ? rawPage.hasMore
+                      : typeof rawRecord?.hasMore === 'boolean'
+                        ? rawRecord.hasMore
+                        : Boolean(rawRecord?.nextCursor),
                 }
               : {
                   kind: 'cursor',
                   limit: request.page.limit,
-                  hasMore: Boolean(rawRecord?.nextCursor),
-                  ...(rawRecord?.nextCursor
-                    ? { nextCursor: rawRecord.nextCursor }
+                  hasMore:
+                    typeof rawPage?.hasMore === 'boolean'
+                      ? rawPage.hasMore
+                      : Boolean(rawRecord?.nextCursor),
+                  ...((
+                    typeof rawPage?.nextCursor === 'string'
+                      ? rawPage.nextCursor
+                      : rawRecord?.nextCursor
+                  )
+                    ? {
+                        nextCursor:
+                          typeof rawPage?.nextCursor === 'string'
+                            ? rawPage.nextCursor
+                            : rawRecord?.nextCursor,
+                      }
                     : {}),
                 },
         }
@@ -560,7 +575,9 @@ function normalizeWideRows(
         Object.entries(row).filter(([field]) => chunkFields.has(field)),
       );
     });
-    const chunkRequest = { ...resultRequest, projection: fields };
+    // Chunk validation checks field values and page bounds; ordering is
+    // validated separately against the complete internal request below.
+    const chunkRequest = { ...resultRequest, projection: fields, sort: [] };
     // Correlation fields on a versioned result are checked above before this
     // per-chunk validation envelope is constructed.  The chunk fingerprint
     // is necessarily different from the full internal projection's
@@ -600,41 +617,57 @@ function addSortOnlyValues(
   rows: DataQueryRow[],
   rawRows: DataQueryRow[],
   request: DataQueryRequest,
-  schema: DataQuerySchema,
+  internalSchema: DataQuerySchema,
   rawRecord: Record<string, unknown> | undefined,
 ): DataQueryRow[] {
-  const projection = new Set(request.projection ?? [schema.identityField]);
+  const projection = new Set(
+    request.projection ?? [internalSchema.identityField],
+  );
   const sortOnly = (request.sort ?? [])
     .map((term) => term.field)
     .filter((field) => !projection.has(field));
   if (sortOnly.length === 0) return rows;
-  const validationProjection = [
-    ...new Set([schema.identityField, ...sortOnly]),
-  ].sort();
-  const validationRequest = { ...request, projection: validationProjection };
-  const validationRows = rawRows.map((row) =>
-    Object.fromEntries(
-      Object.entries(row).filter(([field]) =>
-        validationProjection.includes(field),
+  const chunkSize = MAX_DATA_QUERY_FILTERS - 1;
+  const validatedChunks: DataQueryResult[] = [];
+  for (let offset = 0; offset < sortOnly.length; offset += chunkSize) {
+    const fields = sortOnly.slice(offset, offset + chunkSize);
+    const validationProjection = [
+      ...new Set([internalSchema.identityField, ...fields]),
+    ].sort();
+    const validationRequest = {
+      ...request,
+      projection: validationProjection,
+      sort: [],
+    };
+    const validationRows = rawRows.map((row) =>
+      Object.fromEntries(
+        Object.entries(row).filter(([field]) =>
+          validationProjection.includes(field),
+        ),
       ),
-    ),
-  );
-  const validated = normalizeDataQueryResult(
-    shorthandResultCandidate(
-      validationRequest,
-      schema,
-      rawRecord,
-      validationRows,
-    ),
-    validationRequest,
-    schema,
-  );
+    );
+    validatedChunks.push(
+      normalizeDataQueryResult(
+        shorthandResultCandidate(
+          validationRequest,
+          internalSchema,
+          rawRecord,
+          validationRows,
+        ),
+        validationRequest,
+        internalSchema,
+      ),
+    );
+  }
   return rows.map((row, index) => {
-    const validatedRow = validated.rows[index];
     const result = { ...row };
     for (const field of sortOnly) {
-      if (Object.hasOwn(validatedRow, field)) {
-        result[field] = validatedRow[field];
+      for (const chunk of validatedChunks) {
+        const validatedRow = chunk.rows[index];
+        if (Object.hasOwn(validatedRow, field)) {
+          result[field] = validatedRow[field];
+          break;
+        }
       }
     }
     return result;
@@ -926,7 +959,7 @@ export function createDataSurfaceTools(
                 validated.rows,
                 rawOrderRows,
                 request,
-                entry.schema,
+                internal.schema,
                 rawRecord,
               )
             : rawOrderRows;

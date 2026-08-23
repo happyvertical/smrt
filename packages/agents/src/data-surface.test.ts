@@ -72,6 +72,21 @@ function wideSchema(): DataSurfaceSchema {
   };
 }
 
+function sortOnlySchema(count: number): DataSurfaceSchema {
+  return {
+    ...wideSchema(),
+    fields: [
+      ...wideSchema().fields,
+      ...Array.from({ length: count }, (_, index) => ({
+        id: `sort-only-${index}`,
+        type: 'number' as const,
+        projectable: false,
+        sortable: true,
+      })),
+    ],
+  };
+}
+
 const versionedRequest = {
   version: 1 as const,
   requestId: 'versioned-result',
@@ -917,6 +932,84 @@ describe('principal-bound data surface tools', () => {
       db: undefined,
     });
     expect(executorRequest?.projection).toHaveLength(52);
+    expect(rowFieldNames(result)).toEqual([['id']]);
+  });
+
+  it('allows a sortable but non-projectable internal key', async () => {
+    const fields = Array.from({ length: 50 }, (_, index) => `field-${index}`);
+    const tools = toolSet({
+      surfaces: [
+        {
+          id: 'records',
+          collection: 'records',
+          schema: sortOnlySchema(1),
+        },
+      ],
+      execute: async () => [{ id: 'r1', 'sort-only-0': 1 }],
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'non-projectable-sort',
+          mode: 'rows',
+          projection: fields,
+          sort: [{ field: 'sort-only-0', direction: 'asc' }],
+        },
+      },
+      db: undefined,
+    });
+    expect(rowFieldNames(result)).toEqual([['id']]);
+  });
+
+  it('validates fifty sort-only fields in bounded internal chunks', async () => {
+    const sortFields = Array.from(
+      { length: 50 },
+      (_, index) => `sort-only-${index}`,
+    );
+    let executorProjection: string[] | undefined;
+    const tools = toolSet({
+      surfaces: [
+        {
+          id: 'records',
+          collection: 'records',
+          schema: sortOnlySchema(sortFields.length),
+        },
+      ],
+      execute: async (_surface, request) => {
+        executorProjection = request.projection;
+        return [
+          {
+            id: 'r1',
+            ...Object.fromEntries(
+              sortFields.map((field, index) => [field, index]),
+            ),
+          },
+        ];
+      },
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'fifty-sort-only',
+          mode: 'rows',
+          projection: ['id'],
+          sort: sortFields.map((field) => ({
+            field,
+            direction: 'asc' as const,
+          })),
+        },
+      },
+      db: undefined,
+    });
+    expect(executorProjection).toHaveLength(51);
     expect(rowFieldNames(result)).toEqual([['id']]);
   });
 
