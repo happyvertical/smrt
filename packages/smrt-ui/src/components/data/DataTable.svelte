@@ -375,15 +375,23 @@ function dataSurfaceSelection(
 
 function preservesDeclaredVisibleColumns(
   surface: DataTableDataSurfaceOptions,
-  command: DataTableCommand,
+  visibility: DataTableViewState['columnVisibility'],
 ): boolean {
-  if (command.type !== 'setColumnVisibility') return true;
   const requested = new Map(
-    command.columns.map((column) => [column.columnId, column.visible]),
+    visibility.map((column) => [column.columnId, column.visible]),
   );
   return surface.descriptor.columns
     .filter((column) => column.id !== surface.descriptor.rowKey)
     .every((column) => requested.get(column.id) === true);
+}
+
+function preservesDeclaredVisibleColumnsForCommand(
+  surface: DataTableDataSurfaceOptions,
+  command: DataTableCommand,
+): boolean {
+  return command.type !== 'setColumnVisibility'
+    ? true
+    : preservesDeclaredVisibleColumns(surface, command.columns);
 }
 
 $effect(() => {
@@ -394,7 +402,23 @@ $effect(() => {
   return untrack(() => {
     let revision = 0;
     let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    let restoringInvalidVisibility = false;
     const unsubscribe = surfaceController.subscribe((transition) => {
+      if (
+        !restoringInvalidVisibility &&
+        !preservesDeclaredVisibleColumns(
+          surface,
+          transition.next.state.columnVisibility,
+        )
+      ) {
+        restoringInvalidVisibility = true;
+        try {
+          surfaceController.replaceState(transition.previous.state);
+        } finally {
+          restoringInvalidVisibility = false;
+        }
+        return;
+      }
       if (transition.changed) revision += 1;
     });
     const unregister = surface.registry.register({
@@ -410,7 +434,9 @@ $effect(() => {
       execute: async (command) => {
         const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
         if (tableCommand) {
-          if (!preservesDeclaredVisibleColumns(surface, tableCommand)) {
+          if (
+            !preservesDeclaredVisibleColumnsForCommand(surface, tableCommand)
+          ) {
             return { ok: false };
           }
           const transition = surfaceController.dispatch(tableCommand);

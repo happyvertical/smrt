@@ -197,6 +197,44 @@ describe('mounted data surfaces', () => {
     ]);
   });
 
+  it('restores declared columns after an external controller visibility transition', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'external-visible-columns-table',
+      kind: 'table',
+    };
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        controller,
+        dataSurface: {
+          registry,
+          descriptor: descriptor(identity, []),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+
+    controller.dispatch({
+      type: 'setColumnVisibility',
+      columns: [
+        { columnId: 'name', visible: true },
+        { columnId: 'age', visible: false },
+      ],
+    });
+
+    expect(controller.getState().columnVisibility).toEqual([
+      { columnId: 'age', visible: true },
+      { columnId: 'name', visible: true },
+    ]);
+    expect(registry.inspect(identity)?.descriptor.columns).toHaveLength(2);
+  });
+
   it('turns malformed table command payloads into bounded denials', async () => {
     const registry = createDataSurfaceRegistry();
     const identity: DataSurfaceIdentity = {
