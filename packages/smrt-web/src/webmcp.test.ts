@@ -279,6 +279,46 @@ describe('registerWebMcpTools', () => {
     expect(calls[0]).toContain('status=active');
   });
 
+  it('uses generated custom route method and path metadata', async () => {
+    const registry = installModelContext();
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchFn = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ action: 'publish', result: { id: 'p1' } }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      toolDescriptors: [
+        {
+          action: 'publish',
+          name: 'product_publish',
+          description: 'Publish a Product',
+          inputSchema: { type: 'object' },
+          readOnly: false,
+          route: {
+            method: 'PATCH',
+            scope: 'item',
+            path: ['publish-now'],
+          },
+        },
+      ],
+    };
+    registerWebMcpTools([definition], { basePath: '/api/v1', fetchFn });
+    const publishTool = registry.tools.find(
+      (t) => t.name === 'product_publish',
+    );
+    await publishTool?.execute({ id: 'p1', reason: 'agent' });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe('/api/v1/products/p1/publish-now');
+    expect(calls[0]?.init?.method).toBe('PATCH');
+    expect(calls[0]?.init?.body).toBe(JSON.stringify({ reason: 'agent' }));
+  });
+
   it('resolves a get tool by slug when no id is provided', async () => {
     const registry = installModelContext();
     const fetchers = mockFetchers();

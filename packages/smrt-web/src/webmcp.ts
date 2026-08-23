@@ -25,6 +25,7 @@ import {
   type SmrtWebTransaction,
   unwrapItemResult,
   unwrapListResult,
+  type WebToolDescriptor,
 } from './index.js';
 
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
@@ -140,6 +141,7 @@ export function registerWebMcpTools(
               collection,
               definition,
               descriptor.action,
+              descriptor.route,
               args ?? {},
             ),
         },
@@ -199,6 +201,7 @@ async function dispatch(
   collection: SmrtWebCollection<Record<string, unknown>>,
   definition: SmrtWebCollectionDefinition,
   action: string,
+  route: WebToolDescriptor['route'],
   args: Record<string, unknown>,
 ): Promise<string> {
   switch (action) {
@@ -267,7 +270,7 @@ async function dispatch(
       if (!fetchers.custom) {
         throw new Error(`${definition.name} has no custom action fetcher`);
       }
-      return JSON.stringify(await fetchers.custom(action, args));
+      return JSON.stringify(await collection.action(action, args, route));
   }
 }
 

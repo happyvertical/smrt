@@ -329,7 +329,13 @@ describe('buildWebToolDescriptors', () => {
               include: ['list', 'apply'],
               // A config-only collection override cannot change this instance
               // method's receiver.
-              routes: { apply: { scope: 'collection' } },
+              routes: {
+                apply: {
+                  scope: 'collection',
+                  method: 'PATCH',
+                  path: 'publish-now',
+                },
+              },
             },
           } as SmartObjectDefinition['decoratorConfig'],
         }),
@@ -346,6 +352,43 @@ describe('buildWebToolDescriptors', () => {
         expectedVersion: { type: 'number' },
       },
       required: ['id', 'idempotencyKey'],
+    });
+    expect(descriptor?.route).toEqual({
+      method: 'PATCH',
+      scope: 'item',
+      path: ['publish-now'],
+    });
+  });
+
+  it('emits kebab-case custom route segments when configured', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          methods: {
+            publishNow: {
+              name: 'publishNow',
+              isPublic: true,
+              isStatic: false,
+              async: true,
+              returnType: 'Promise<void>',
+              parameters: [],
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['list', 'publishNow'] },
+          } as SmartObjectDefinition['decoratorConfig'],
+        }),
+      ),
+    )[0];
+    const descriptor = buildWebToolDescriptors(entry, {
+      kebabRoutes: true,
+    }).find((tool) => tool.action === 'publishNow');
+    expect(descriptor?.route).toEqual({
+      method: 'POST',
+      scope: 'item',
+      path: ['publish-now'],
     });
   });
 

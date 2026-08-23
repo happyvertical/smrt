@@ -242,6 +242,15 @@ export interface WebToolDescriptor {
   inputSchema: Record<string, unknown>;
   /** True for non-mutating reads → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
+  /** Generated custom-route transport metadata. */
+  route?: SmrtWebToolRouteDescriptor;
+}
+
+export interface SmrtWebToolRouteDescriptor {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  scope: 'item' | 'collection';
+  /** Route segments below the collection endpoint; dynamic segments use `[x]`. */
+  path: string[];
 }
 
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
@@ -301,7 +310,11 @@ export interface SmrtCrudFetchers {
   update?(id: string, data: Record<string, unknown>): Promise<unknown>;
   delete?(id: string): Promise<unknown>;
   /** Invoke a generated custom action route. */
-  custom?(action: string, args: Record<string, unknown>): Promise<unknown>;
+  custom?(
+    action: string,
+    args: Record<string, unknown>,
+    route?: SmrtWebToolRouteDescriptor,
+  ): Promise<unknown>;
 }
 
 /**
@@ -553,23 +566,68 @@ export function createDefinitionFetchers(
       }
       return true;
     },
-    custom: async (action, args) => {
-      // Generated custom routes use the action name as their default path
-      // segment. Item actions carry the identifier in the path; collection
-      // actions receive the arguments as the JSON body. Explicit route
-      // overrides remain available through a caller-supplied fetcher.
-      const { id, ...body } = args;
-      const path =
-        typeof id === 'string' && id.length > 0
-          ? `${collectionUrl}/${encodeURIComponent(id)}/${action}`
-          : `${collectionUrl}/${action}`;
-      return parse(
-        await fetchFn(path, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        }),
+    custom: async (action, args, route) => {
+      const customRoute = route ?? {
+        method: 'POST' as const,
+        scope:
+          typeof args.id === 'string'
+            ? ('item' as const)
+            : ('collection' as const),
+        path: [action],
+      };
+      const pathArgs = new Set(
+        customRoute.path
+          .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+          .map((segment) => segment.slice(1, -1)),
       );
+      const id = customRoute.scope === 'item' ? args.id : undefined;
+      if (customRoute.scope === 'item' && typeof id !== 'string') {
+        throw new Error(
+          `${definition.name} custom action '${action}' requires an id`,
+        );
+      }
+      for (const name of pathArgs) {
+        if (args[name] === undefined || args[name] === null) {
+          throw new Error(
+            `${definition.name} custom action '${action}' requires '${name}'`,
+          );
+        }
+      }
+      const body = Object.fromEntries(
+        Object.entries(args).filter(
+          ([key]) => key !== 'id' && !pathArgs.has(key),
+        ),
+      );
+      const segments = [
+        collectionUrl,
+        ...(customRoute.scope === 'item'
+          ? [encodeURIComponent(String(id))]
+          : []),
+        ...customRoute.path.map((segment) =>
+          /^\[[^\]]+\]$/.test(segment)
+            ? encodeURIComponent(String(args[segment.slice(1, -1)] ?? ''))
+            : segment,
+        ),
+      ];
+      const requestPath = `${segments.join('/')}`;
+      const init: RequestInit = { method: customRoute.method, headers };
+      if (customRoute.method !== 'GET') {
+        init.body = JSON.stringify(body);
+      } else {
+        const queryParams = new URLSearchParams();
+        for (const [key, value] of Object.entries(body)) {
+          if (value === undefined || value === null) continue;
+          queryParams.set(
+            key,
+            typeof value === 'object' ? JSON.stringify(value) : String(value),
+          );
+        }
+        const query = queryParams.toString()
+          ? `?${queryParams.toString()}`
+          : '';
+        return parse(await fetchFn(`${requestPath}${query}`, { ...init }));
+      }
+      return parse(await fetchFn(requestPath, init));
     },
   };
 }
@@ -714,6 +772,12 @@ export interface SmrtWebCollection<TData extends object> {
   update(key: string, changes: Partial<SmrtWebRow<TData>>): SmrtWebTransaction;
   /** Optimistically delete a row and persist it through the REST surface. */
   delete(key: string): SmrtWebTransaction;
+  /** Execute a custom action and invalidate this collection's related caches. */
+  action(
+    action: string,
+    args: Record<string, unknown>,
+    route?: SmrtWebToolRouteDescriptor,
+  ): Promise<unknown>;
 }
 
 /** Extract a row's server revision timestamp for sync/apply conflict guards. */
@@ -1331,6 +1395,17 @@ export function createSmrtCollection<TData extends object>(
         delete: (key: string) => unknown;
       };
       return engine.delete(key) as SmrtWebTransaction;
+    },
+    async action(action, args, route) {
+      if (!fetchers.custom) {
+        throw new Error(`${definition.name} has no custom action fetcher`);
+      }
+      const result =
+        route === undefined
+          ? await fetchers.custom(action, args)
+          : await fetchers.custom(action, args, route);
+      invalidateRelated();
+      return result;
     },
   };
 

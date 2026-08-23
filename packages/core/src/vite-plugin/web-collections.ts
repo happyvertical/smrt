@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import { resolveCustomActionMetadata } from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
+  isCrudAction,
   type ToolDescriptor,
   type ToolFieldMeta,
 } from '../generators/tool-schema.js';
@@ -36,7 +37,10 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { resolveApiActionSet } from './sveltekit-generator.js';
+import {
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+} from './sveltekit-generator.js';
 
 /**
  * Field types that are relationship pseudo-columns rather than persisted
@@ -726,6 +730,7 @@ export function buildWebRelationships(
  */
 export function buildWebToolDescriptors(
   entry: WebCollectionEntry,
+  options: { kebabRoutes?: boolean } = {},
 ): ToolDescriptor[] {
   const webFields = buildWebFieldDefinitions(entry.obj);
   const fields: ToolFieldMeta[] = Object.entries(webFields).map(
@@ -743,7 +748,7 @@ export function buildWebToolDescriptors(
         : {}),
     }),
   );
-  return buildToolDescriptors({
+  const descriptors = buildToolDescriptors({
     className: entry.obj.className,
     fields,
     actions: entry.actions,
@@ -758,6 +763,24 @@ export function buildWebToolDescriptors(
       ]),
     ),
     idType: entry.obj.decoratorConfig.idType,
+  });
+
+  return descriptors.map((descriptor) => {
+    if (isCrudAction(descriptor.action)) return descriptor;
+    const route = resolveApiActionRouteConfig(
+      descriptor.action,
+      entry.obj.methods?.[descriptor.action] ?? {},
+      entry.obj.decoratorConfig?.api,
+      { kebabRoutes: options.kebabRoutes },
+    );
+    return {
+      ...descriptor,
+      route: {
+        method: route.method,
+        scope: route.scope,
+        path: route.pathSegments,
+      },
+    };
   });
 }
 
