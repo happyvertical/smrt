@@ -980,7 +980,7 @@ $effect(() => {
       {/if}
     </tbody>
     {#if footer}
-      <tfoot bind:this={tableFooter}><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
+      <tfoot bind:this={tableFooter}><tr aria-rowindex={virtualizationWindow.enabled ? virtualRowCount + 2 : undefined}><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
     {/if}
   </table>
 </div>

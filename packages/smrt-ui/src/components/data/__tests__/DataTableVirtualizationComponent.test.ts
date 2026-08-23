@@ -69,6 +69,9 @@ describe('DataTable virtualization seam', () => {
   });
 
   it('keeps manual pages and selected stable IDs independent of the rendered window', async () => {
+    const footer = createRawSnippet(() => ({
+      render: () => '<strong>Remote summary</strong>',
+    }));
     const controller = createDataTableController({
       columnIds: ['name'],
       modes: { filtering: 'manual', sorting: 'manual', pagination: 'manual' },
@@ -82,12 +85,17 @@ describe('DataTable virtualization seam', () => {
         selectable: true,
         controller,
         totalRows: 10_000,
+        footer,
         virtualization,
       },
     });
     const scrollContainer = getScrollContainer(container);
 
-    expect(screen.getByRole('table')).toHaveAttribute('aria-rowcount', '10001');
+    expect(screen.getByRole('table')).toHaveAttribute('aria-rowcount', '10002');
+    expect(screen.getByText('Remote summary').closest('tr')).toHaveAttribute(
+      'aria-rowindex',
+      '10002',
+    );
     await userEvent.click(
       screen.getAllByRole('checkbox', { name: 'Select row' })[0],
     );
