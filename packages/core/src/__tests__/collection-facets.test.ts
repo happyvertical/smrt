@@ -181,7 +181,9 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
       ],
     });
     // JSON/string-list fields are not unnested. Each stored JSON value is one
-    // facet, which keeps behavior consistent across SQLite, DuckDB, and PG.
+    // facet. This encoding assertion is intentionally scoped to SQLite; the
+    // portable scalar adapter cases below cover SQLite and DuckDB, while the
+    // optional PostgreSQL test covers scalar grouping only.
     expect(result[1]).toEqual({
       field: 'skills',
       values: [

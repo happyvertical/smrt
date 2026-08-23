@@ -78,6 +78,11 @@ as `select`. Array/string-list fields are grouped by their stored value — SMRT
 does not split or unnest them — so consumers needing per-member options should
 use a scalar join table or consumer-specific query.
 
+Facet tests cover SQLite and DuckDB locally. Scalar PostgreSQL coverage is in
+the optional `test:postgres` lane and runs only when `SMRT_TEST_POSTGRES_URL` is
+configured; the local suite does not claim PostgreSQL parity for array/JSON
+encoding.
+
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
 Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`
 renders `IS NULL` and `{ 'deletedAt !=': null }` renders `IS NOT NULL`.

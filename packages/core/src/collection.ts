@@ -307,7 +307,11 @@ export type SmrtSelectedRow<
 export interface SmrtFacetRequest<T extends SmrtObject> {
   /** A column-backed SMRT field name (for example, `status`). */
   field: SmrtSelectField<T>;
-  /** Maximum number of values to return. Omit to return every value. */
+  /**
+   * Maximum number of values to return. Omit to use the collection's
+   * `defaultListLimit` or 50, subject to `maxListLimit` and the hard maximum
+   * facet limit.
+   */
   limit?: number;
 }
 
@@ -3170,8 +3174,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * column-backed fields.
    *
    * Each requested field is executed as a bounded `GROUP BY` query. Keeping
-   * one query per field works on every supported adapter (SQLite, DuckDB and
-   * PostgreSQL) while avoiding a full collection read or model hydration.
+   * one query per field uses standard SQL while avoiding a full collection
+   * read or model hydration. Scalar facet behavior is covered on SQLite and
+   * DuckDB; optional PostgreSQL scalar coverage runs in the `test:postgres`
+   * lane when `SMRT_TEST_POSTGRES_URL` is configured.
    * The same `beforeList` interceptors as `list()` and `count()` run first,
    * so tenancy and other read scopes are applied to every facet query.
    *
@@ -3180,7 +3186,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * need a facet per array member should maintain a scalar join table or use
    * a consumer-specific query. JSON fields are grouped by their stored JSON
    * value and decoded in the returned `value` when the field metadata allows
-   * it.
+   * it. Array/JSON encoding behavior is adapter-specific and is covered by
+   * the SQLite/DuckDB tests only; the optional PostgreSQL test covers scalar
+   * grouping.
    *
    * @param options.fields One or more fields, optionally with per-field limits
    * @param options.where Filter conditions using the same syntax as `list()`
