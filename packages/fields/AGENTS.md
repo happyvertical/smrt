@@ -203,6 +203,9 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   columns. Static host restrictions are only narrowed; hidden fields are
   omitted from the descriptor (the row key remains as a non-readable identity
   column), and actions that explicitly depend on hidden columns are removed.
+  Sensitive/secret and `readable: false` columns also fail closed when omitted
+  from the resolved policy; a host must pass `authorizedColumnIds` explicitly
+  to expose a sensitive descriptor column.
 - **Two-tier context contract.** `PolicyField` alone reads the context with
   `tryGetFieldPolicyContext()`, because outside a Provider it still has the
   caller's children to render verbatim (incremental adoption). The

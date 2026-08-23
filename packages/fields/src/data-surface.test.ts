@@ -37,6 +37,33 @@ const descriptor: DataSurfaceDescriptor = {
       capabilities: ['read', 'search', 'filter', 'sort', 'project'],
     },
     {
+      id: 'restricted',
+      label: 'Restricted',
+      fieldName: 'restricted',
+      sensitivity: 'sensitive',
+      capabilities: ['read', 'search', 'filter', 'sort', 'project'],
+    },
+    {
+      id: 'unreadable',
+      label: 'Unreadable',
+      fieldName: 'unreadable',
+      readable: false,
+      capabilities: ['read', 'search', 'filter', 'sort', 'project'],
+    },
+    {
+      id: 'native-hidden',
+      label: 'Native hidden',
+      fieldName: 'nativeHidden',
+      visibility: 'hidden',
+      capabilities: ['read', 'search', 'filter', 'sort', 'project'],
+    },
+    {
+      id: 'secondary',
+      label: 'Secondary',
+      fieldName: 'secondary',
+      capabilities: ['read', 'project'],
+    },
+    {
       id: 'computed',
       label: 'Computed',
       role: 'computed',
@@ -57,10 +84,35 @@ const descriptor: DataSurfaceDescriptor = {
   ],
   query: {
     modes: ['rows', 'count', 'facets'],
-    projectableColumnIds: ['id', 'title', 'secret'],
-    searchableColumnIds: ['title', 'secret'],
-    filterableColumnIds: ['title', 'secret'],
-    sortableColumnIds: ['title', 'secret'],
+    projectableColumnIds: [
+      'id',
+      'title',
+      'secret',
+      'restricted',
+      'unreadable',
+      'native-hidden',
+    ],
+    searchableColumnIds: [
+      'title',
+      'secret',
+      'restricted',
+      'unreadable',
+      'native-hidden',
+    ],
+    filterableColumnIds: [
+      'title',
+      'secret',
+      'restricted',
+      'unreadable',
+      'native-hidden',
+    ],
+    sortableColumnIds: [
+      'title',
+      'secret',
+      'restricted',
+      'unreadable',
+      'native-hidden',
+    ],
   },
   controls: [],
   actions: [
@@ -90,7 +142,7 @@ const policy: ResolvedObjectFieldPolicy = {
       visibility: 'basic',
       help: 'The public title',
       label: 'Display title',
-      order: 1,
+      order: 2,
       group: null,
       locked: false,
       required: false,
@@ -107,6 +159,18 @@ const policy: ResolvedObjectFieldPolicy = {
       locked: false,
       required: false,
     },
+    secondary: {
+      fieldName: 'secondary',
+      hasDefault: false,
+      defaultValue: undefined,
+      visibility: 'advanced',
+      help: null,
+      label: 'Secondary field',
+      order: 1,
+      group: null,
+      locked: false,
+      required: false,
+    },
   },
 };
 
@@ -115,6 +179,7 @@ describe('field policy DataSurface adapter (#2449)', () => {
     const result = policyToDataSurfaceDescriptor(policy, descriptor);
     expect(result.columns.map((column) => column.id)).toEqual([
       'id',
+      'secondary',
       'title',
       'computed',
       'selection',
@@ -126,7 +191,7 @@ describe('field policy DataSurface adapter (#2449)', () => {
       label: 'Display title',
       description: 'The public title',
       visibility: 'basic',
-      order: 1,
+      order: 2,
       operators: {
         search: ['contains'],
         filter: ['equals', 'contains'],
@@ -145,6 +210,7 @@ describe('field policy DataSurface adapter (#2449)', () => {
     const result = applyFieldPolicyToDataSurface(policy, descriptor);
     expect(result.columns.map((column) => column.id)).toEqual([
       'id',
+      'secondary',
       'title',
       'computed',
       'selection',
@@ -152,6 +218,48 @@ describe('field policy DataSurface adapter (#2449)', () => {
     ]);
     expect(result.actions.map((action) => action.id)).toEqual(['export']);
     expect(result.query.projectableColumnIds).not.toContain('secret');
+    expect(result.columns.map((column) => column.id)).not.toContain(
+      'restricted',
+    );
+    expect(result.columns.map((column) => column.id)).not.toContain(
+      'unreadable',
+    );
+    expect(result.columns.map((column) => column.id)).not.toContain(
+      'native-hidden',
+    );
+  });
+
+  it('keeps restricted fields fail-closed unless the host explicitly authorizes them', () => {
+    const restrictedDescriptor = {
+      ...descriptor,
+      columns: descriptor.columns.map((column) =>
+        column.id === 'restricted'
+          ? { ...column, visibility: undefined }
+          : column,
+      ),
+    };
+    const denied = policyToDataSurfaceDescriptor(policy, restrictedDescriptor);
+    expect(denied.columns.map((column) => column.id)).not.toContain(
+      'restricted',
+    );
+    expect(denied.query.projectableColumnIds).not.toContain('restricted');
+
+    const authorized = policyToDataSurfaceDescriptor(
+      policy,
+      restrictedDescriptor,
+      {
+        authorizedColumnIds: ['restricted'],
+      },
+    );
+    expect(authorized.columns.map((column) => column.id)).toContain(
+      'restricted',
+    );
+    expect(
+      authorized.columns.find((column) => column.id === 'restricted'),
+    ).toMatchObject({
+      readable: true,
+      capabilities: ['read', 'search', 'filter', 'sort', 'project'],
+    });
   });
 
   it('cannot broaden static hidden/readability constraints', () => {
@@ -162,5 +270,26 @@ describe('field policy DataSurface adapter (#2449)', () => {
     expect(result.query.searchableColumnIds).toEqual([]);
     expect(result.query.filterableColumnIds).toEqual([]);
     expect(result.query.sortableColumnIds).toEqual([]);
+  });
+
+  it('retains a hidden row key only as a capability-free identity column', () => {
+    const hiddenRowKey = {
+      ...descriptor,
+      columns: descriptor.columns.map((column) =>
+        column.id === 'id'
+          ? { ...column, visibility: 'hidden' as const }
+          : column,
+      ),
+    };
+
+    const result = policyToDataSurfaceDescriptor(policy, hiddenRowKey);
+    expect(result.columns[0]).toMatchObject({
+      id: 'id',
+      visibility: 'hidden',
+      readable: false,
+      capabilities: [],
+      operators: {},
+    });
+    expect(result.query.projectableColumnIds).not.toContain('id');
   });
 });

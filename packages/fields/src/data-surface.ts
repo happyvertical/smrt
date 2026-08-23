@@ -19,6 +19,8 @@ export interface FieldPolicyDataSurfaceOptions {
   staticHiddenColumnIds?: readonly string[];
   /** Structural roles are always retained when policy filters data columns. */
   roleByColumnId?: Readonly<Record<string, DataSurfaceColumnRole>>;
+  /** Explicit host authorization for otherwise restricted column ids. */
+  authorizedColumnIds?: readonly string[];
 }
 
 const POLICY_NARROWED_CAPABILITIES = new Set<DataSurfaceColumnCapability>([
@@ -43,6 +45,20 @@ function roleForColumn(
   options: FieldPolicyDataSurfaceOptions,
 ): DataSurfaceColumnRole | undefined {
   return column.role ?? options.roleByColumnId?.[column.id];
+}
+
+function isSensitiveColumn(column: DataSurfaceColumnDescriptor): boolean {
+  return column.sensitivity === 'sensitive' || column.sensitivity === 'secret';
+}
+
+function isAuthorizedColumn(
+  column: DataSurfaceColumnDescriptor,
+  options: FieldPolicyDataSurfaceOptions,
+): boolean {
+  return (
+    column.readable === true ||
+    options.authorizedColumnIds?.includes(column.id) === true
+  );
 }
 
 function isStructuralColumn(
@@ -86,19 +102,36 @@ function policyColumn(
   policy: ResolvedFieldPolicy | undefined,
   hiddenByStaticPolicy: boolean,
   structural: boolean,
+  restricted: boolean,
 ): DataSurfaceColumnDescriptor {
   // Computed, selection, action, and row-key columns have no manifest field
   // and are intentionally copied through unchanged. This is what keeps a
   // policy-aware descriptor usable by the same mounted table.
   if (structural) {
+    if (restricted) {
+      return {
+        ...column,
+        visibility: 'hidden',
+        readable: false,
+        capabilities: [],
+        operators: {},
+        searchOperators: [],
+        filterOperators: [],
+        sortOperators: [],
+      };
+    }
     return { ...column };
   }
 
   if (!policy) {
-    const unreadable = hiddenByStaticPolicy || column.readable === false;
+    const unreadable = hiddenByStaticPolicy || restricted;
     return {
       ...column,
-      ...(hiddenByStaticPolicy ? { visibility: 'hidden' as const } : {}),
+      ...(unreadable ? { visibility: 'hidden' as const } : {}),
+      ...(column.readable === undefined &&
+      (column.sensitivity === 'sensitive' || column.sensitivity === 'secret')
+        ? { readable: true }
+        : {}),
       ...(unreadable
         ? {
             readable: false,
@@ -113,7 +146,7 @@ function policyColumn(
   }
 
   const hidden = hiddenByStaticPolicy || policy.visibility === 'hidden';
-  const unreadable = hidden || column.readable === false;
+  const unreadable = hidden || restricted;
   const label = policy.label ?? column.label;
   const description = policy.help ?? column.description;
   return {
@@ -122,7 +155,7 @@ function policyColumn(
     ...(description ? { description } : {}),
     ...(policy.order === null ? {} : { order: policy.order }),
     visibility: policy.visibility,
-    readable: !hidden && column.readable !== false,
+    readable: !unreadable,
     capabilities: narrowCapabilities(column.capabilities, unreadable),
     ...(narrowOperators(column.operators, unreadable)
       ? { operators: narrowOperators(column.operators, unreadable) }
@@ -136,7 +169,7 @@ function policyColumn(
     ...(column.sortOperators
       ? { sortOperators: unreadable ? [] : [...column.sortOperators] }
       : {}),
-    ...(hiddenByStaticPolicy ? { visibility: 'hidden' as const } : {}),
+    ...(unreadable ? { visibility: 'hidden' as const } : {}),
   };
 }
 
@@ -167,13 +200,22 @@ export function policyToDataSurfaceDescriptor(
   const mapped = descriptor.columns.map((column, index) => {
     const field = policy.fields[policyFieldName(column, options)];
     const structural = isStructuralColumn(column, options);
+    const restricted =
+      (column.readable === false || isSensitiveColumn(column)) &&
+      !isAuthorizedColumn(column, options);
+    const rowKeyHidden =
+      column.id === rowKey &&
+      (staticHidden.has(column.id) ||
+        column.visibility === 'hidden' ||
+        field?.visibility === 'hidden');
     const effective = policyColumn(
       column,
       field,
-      staticHidden.has(column.id),
+      staticHidden.has(column.id) || column.visibility === 'hidden',
       structural,
+      restricted,
     );
-    return { column, effective, field, structural, index };
+    return { column, effective, field, structural, index, rowKeyHidden };
   });
 
   // A hidden data field must not be describable or restorable. The row key is
@@ -184,7 +226,9 @@ export function policyToDataSurfaceDescriptor(
     .filter(({ column, effective, structural }) => {
       const hidden =
         !structural &&
-        (staticHidden.has(column.id) || effective.visibility === 'hidden');
+        (staticHidden.has(column.id) ||
+          column.visibility === 'hidden' ||
+          effective.visibility === 'hidden');
       if (hidden) hiddenColumnIds.add(column.id);
       return !hidden || column.id === rowKey;
     })
@@ -195,8 +239,8 @@ export function policyToDataSurfaceDescriptor(
       const rightOrder = right.effective.order ?? Number.POSITIVE_INFINITY;
       return leftOrder - rightOrder || left.index - right.index;
     })
-    .map(({ effective, column }) =>
-      column.id === rowKey && hiddenColumnIds.has(column.id)
+    .map(({ effective, column, rowKeyHidden }) =>
+      column.id === rowKey && (hiddenColumnIds.has(column.id) || rowKeyHidden)
         ? {
             ...effective,
             visibility: 'hidden' as const,
