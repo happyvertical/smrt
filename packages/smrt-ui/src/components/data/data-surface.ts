@@ -1440,18 +1440,36 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
             snapshot: after.exposed,
           });
         } catch {
-          let current: DataSurfaceSnapshot | undefined;
+          let current: ReadSnapshot | undefined;
           try {
-            current = readSnapshot(entry).exposed;
+            current = readSnapshot(entry);
           } catch {
             // A teardown can make snapshot retrieval fail after the handler.
+          }
+          if (
+            current &&
+            sameSnapshotContent(before.raw, current.raw) === false &&
+            current.raw.revision <= before.raw.revision
+          ) {
+            entry.commandBlockedAtRevision = current.raw.revision;
+            return cacheResult(entry, normalized, {
+              ok: false,
+              commandId: normalized.commandId,
+              identity: cloneIdentity(entry.descriptor.identity),
+              revision: current.exposed.revision,
+              snapshot: current.exposed,
+              reason: 'non_monotonic_revision',
+            });
           }
           return cacheResult(entry, normalized, {
             ok: false,
             commandId: normalized.commandId,
             identity: cloneIdentity(entry.descriptor.identity),
             ...(current
-              ? { revision: current.revision, snapshot: current }
+              ? {
+                  revision: current.exposed.revision,
+                  snapshot: current.exposed,
+                }
               : {}),
             reason: 'execution_failed',
           });

@@ -367,6 +367,32 @@ describe('data surface registry', () => {
     });
   });
 
+  it('quarantines a changed snapshot when its handler throws before revision advances', async () => {
+    let state = { search: 'Ada' };
+    const execute = vi.fn(() => {
+      state = { search: 'Grace' };
+      throw new Error('handler failed');
+    });
+    const registry = createDataSurfaceRegistry();
+    registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision: 3, state }),
+      execute,
+    });
+
+    await expect(registry.execute(command())).resolves.toMatchObject({
+      ok: false,
+      reason: 'non_monotonic_revision',
+    });
+    await expect(
+      registry.execute(command({ commandId: 'blocked-after-failure' })),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'non_monotonic_revision',
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
   it('quarantines a changed snapshot until its renderer advances revision', async () => {
     let revision = 3;
     let state = { search: 'Ada' };
