@@ -70,6 +70,7 @@ registerUserRetentionTasks();
 // Collections
 export {
   AccessRequestCollection,
+  type CliAuthApproveReservation,
   CliAuthRequestCollection,
   type CreateChildTenantOptions,
   type CreateSessionOptions,
@@ -105,6 +106,7 @@ export {
   TenantPermissionOverrideCollection,
   type TenantPermissionOverrideResult,
   UserCollection,
+  UsersCliAuthApproveLimitCollection,
   UsersCliAuthRequestCollection,
   UsersMagicLinkTokenCollection,
 } from './collections/index.js';
@@ -144,6 +146,7 @@ export {
   type TenantIntegrationStatus,
   TenantPermissionOverride,
   User,
+  UsersCliAuthApproveLimit,
   UsersCliAuthRequest,
   UsersMagicLinkToken,
 } from './models/index.js';
