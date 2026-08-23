@@ -252,6 +252,44 @@ export function createTenantInterceptor(
       const tenantField = config?.field || 'tenantId';
       const where = listOptions.where || {};
 
+      // Preserve DNF predicates (outer OR, inner AND) by applying the tenant
+      // predicate to every branch. Flattening this shape into an object would
+      // make one branch escape tenant scope, so validate direct tenant filters
+      // branch-by-branch before adding the current tenant where absent.
+      if (Array.isArray(where)) {
+        const scopedWhere = where.map((andGroup) => {
+          const directValues = andGroup.flatMap((condition) => {
+            if (!Object.hasOwn(condition, tenantField)) return [];
+            const value = condition[tenantField];
+            return Array.isArray(value) ? value : [value];
+          });
+          const offendingIndex = directValues.findIndex(
+            (value) => value !== tenantContext.tenantId,
+          );
+          if (offendingIndex !== -1) {
+            const offending = directValues[offendingIndex];
+            opts.onIsolationViolation?.(
+              className,
+              tenantContext.tenantId,
+              String(offending),
+              context,
+            );
+            throw new TenantIsolationError(
+              `Tenant isolation violation in ${className} query: ` +
+                `context tenant is '${tenantContext.tenantId}' but query filters by '${String(offending)}'`,
+              {
+                tenantId: tenantContext.tenantId,
+                attemptedTenantId: String(offending),
+              },
+            );
+          }
+          return directValues.length > 0
+            ? andGroup
+            : [...andGroup, { [tenantField]: tenantContext.tenantId }];
+        });
+        return { ...listOptions, where: scopedWhere };
+      }
+
       // Check if tenant filter is already present
       if (tenantField in where) {
         // Validate it matches context. The filter may be a scalar

@@ -65,7 +65,8 @@ export interface InterceptorContext {
  * Options for list operations
  */
 export interface ListOptions {
-  where?: Record<string, unknown>;
+  /** AND-only object or DNF (outer OR, inner AND) collection predicate. */
+  where?: Record<string, unknown> | Record<string, unknown>[][];
   orderBy?: string | string[];
   limit?: number;
   offset?: number;

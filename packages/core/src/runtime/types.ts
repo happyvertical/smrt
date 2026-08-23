@@ -52,7 +52,7 @@ export interface SmrtResponse {
 
 export interface CollectionInterface {
   list(options?: {
-    where?: Record<string, unknown>;
+    where?: Record<string, unknown> | Record<string, unknown>[][];
     orderBy?: string | string[];
     limit?: number;
     offset?: number;
@@ -67,5 +67,7 @@ export interface CollectionInterface {
 
   delete(id: string): Promise<boolean>;
 
-  count(options?: { where?: Record<string, unknown> }): Promise<number>;
+  count(options?: {
+    where?: Record<string, unknown> | Record<string, unknown>[][];
+  }): Promise<number>;
 }

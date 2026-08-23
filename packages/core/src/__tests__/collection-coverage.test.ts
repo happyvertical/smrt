@@ -94,6 +94,25 @@ describe('SmrtCollection.count', () => {
     await widgets.create({ name: 'c', category: 'drop' });
     expect(await widgets.count({ where: { category: 'keep' } })).toBe(2);
   });
+
+  it('counts rows matching a bounded DNF where clause', async () => {
+    await widgets.create({ name: 'a', category: 'keep' });
+    await widgets.create({ name: 'b', category: 'also-keep' });
+    await widgets.create({ name: 'c', category: 'drop' });
+
+    const where = [[{ category: 'keep' }], [{ category: 'also-keep' }]];
+    expect(await widgets.count({ where })).toBe(2);
+    expect(await widgets.list({ where })).toHaveLength(2);
+  });
+
+  it('rejects empty DNF branches instead of treating them as unfiltered reads', async () => {
+    await expect(widgets.list({ where: [] })).rejects.toThrow(
+      /Invalid DNF where clause/,
+    );
+    await expect(widgets.count({ where: [[]] })).rejects.toThrow(
+      /Invalid DNF where clause/,
+    );
+  });
 });
 
 describe('SmrtCollection.getDiff', () => {
