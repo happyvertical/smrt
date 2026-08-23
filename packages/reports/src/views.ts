@@ -16,10 +16,11 @@ import type {
   DataQueryResult,
   DataQuerySort,
 } from '@happyvertical/smrt-types';
-import type {
-  ReportAdapterDescriptor,
-  ReportColumnCapability,
-  ReportDataQueryResult,
+import {
+  type ReportAdapterDescriptor,
+  type ReportColumnCapability,
+  type ReportDataQueryResult,
+  splitReportFilterScopes,
 } from './adapter.js';
 
 const INHERITED_REPORT_SCOPE = [
@@ -38,6 +39,8 @@ const DISPLAY_DENSITIES = new Set<ReportSavedViewDisplay['density']>([
   'compact',
   'comfortable',
 ]);
+const RFC_3339_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 const DEFAULT_EXPORT_LIMITS: ReportExportLimits = {
   maxRows: 100_000,
@@ -333,11 +336,24 @@ function boundedInteger(
 
 function normalizeIso(value: unknown, label: string): string {
   const text = requiredString(value, label, 64);
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime()) || parsed.toISOString() !== text) {
+  const match = RFC_3339_INSTANT.exec(text);
+  if (!match) return fail(`${label} must be an RFC 3339 instant`);
+  const [year, month, day] = match.slice(1, 4).map(Number);
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(0, 0, 0, 0);
+  if (
+    calendar.getUTCFullYear() !== year ||
+    calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day
+  ) {
     return fail(`${label} must be an RFC 3339 instant`);
   }
-  return text;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    return fail(`${label} must be an RFC 3339 instant`);
+  }
+  return parsed.toISOString();
 }
 
 function normalizeSnapshotBinding(value: unknown): ReportExportSnapshotBinding {
@@ -593,6 +609,7 @@ export function normalizeReportSavedView(
   if (query.mode !== 'rows') {
     return fail('Saved report views must use a rows query');
   }
+  splitReportFilterScopes(descriptor, query.filter);
   const columns = normalizeColumns(descriptor, input.columns);
   const grouping = normalizeGrouping(descriptor, input.grouping);
   const display = normalizeDisplay(input.display);
@@ -665,22 +682,27 @@ export function createReportExportSnapshot(
   }
   const lifecycleAsOf = result.reportLifecycle?.snapshot.asOf;
   const freshnessAsOf = result.freshness.asOf;
+  const normalizedLifecycleAsOf = lifecycleAsOf
+    ? normalizeIso(lifecycleAsOf, 'Report export lifecycle snapshot asOf')
+    : undefined;
+  const normalizedFreshnessAsOf = freshnessAsOf
+    ? normalizeIso(freshnessAsOf, 'Report export freshness asOf')
+    : undefined;
   if (
-    lifecycleAsOf !== undefined &&
-    freshnessAsOf !== undefined &&
-    lifecycleAsOf !== freshnessAsOf
+    normalizedLifecycleAsOf !== undefined &&
+    normalizedFreshnessAsOf !== undefined &&
+    normalizedLifecycleAsOf !== normalizedFreshnessAsOf
   ) {
     return fail(
       'Report export lifecycle freshness does not match its snapshot',
     );
   }
-  const asOf = lifecycleAsOf ?? freshnessAsOf;
-  if (!asOf) {
+  const normalizedAsOf = normalizedLifecycleAsOf ?? normalizedFreshnessAsOf;
+  if (!normalizedAsOf) {
     return fail(
       'Report export snapshots require an as-of materialization instant',
     );
   }
-  const normalizedAsOf = normalizeIso(asOf, 'Report export snapshot asOf');
   const refreshedAt = result.reportLifecycle?.snapshot.refreshedAt;
   return {
     version: 1,
@@ -763,24 +785,31 @@ export function verifyReportExportSnapshot(
   ) {
     return fail('Report export snapshot projection or sort has changed');
   }
-  normalizeIso(snapshot.snapshot.asOf, 'Report export snapshot asOf');
+  const asOf = normalizeIso(
+    snapshot.snapshot.asOf,
+    'Report export snapshot asOf',
+  );
   if (
     snapshot.freshness.state !== 'fresh' &&
     snapshot.freshness.state !== 'stale'
   ) {
     return fail('Report export snapshot freshness state is invalid');
   }
-  if (snapshot.freshness.asOf !== snapshot.snapshot.asOf) {
+  const freshnessAsOf = normalizeIso(
+    snapshot.freshness.asOf,
+    'Report export snapshot freshness asOf',
+  );
+  if (freshnessAsOf !== asOf) {
     return fail(
       'Report export snapshot freshness does not match its as-of instant',
     );
   }
-  if (snapshot.snapshot.refreshedAt) {
-    normalizeIso(
-      snapshot.snapshot.refreshedAt,
-      'Report export snapshot refreshedAt',
-    );
-  }
+  const refreshedAt = snapshot.snapshot.refreshedAt
+    ? normalizeIso(
+        snapshot.snapshot.refreshedAt,
+        'Report export snapshot refreshedAt',
+      )
+    : undefined;
   if (snapshot.snapshot.stale !== (snapshot.freshness.state === 'stale')) {
     return fail('Report export snapshot stale state is invalid');
   }
@@ -800,6 +829,12 @@ export function verifyReportExportSnapshot(
     request: normalized,
     projection: [...expectedProjection],
     sort: [...expectedSort],
+    freshness: { ...snapshot.freshness, asOf: freshnessAsOf },
+    snapshot: {
+      ...snapshot.snapshot,
+      asOf,
+      ...(refreshedAt === undefined ? {} : { refreshedAt }),
+    },
     inherits: [...INHERITED_REPORT_SCOPE],
   };
 }
@@ -826,7 +861,8 @@ function normalizeExportLimits(value: unknown): ReportExportLimits {
     MAX_EXPORT_LIMITS.deadlineMs,
   );
   const foregroundRowLimit = boundedInteger(
-    input.foregroundRowLimit ?? DEFAULT_EXPORT_LIMITS.foregroundRowLimit,
+    input.foregroundRowLimit ??
+      Math.min(DEFAULT_EXPORT_LIMITS.foregroundRowLimit, maxRows),
     'Report export limits.foregroundRowLimit',
     1,
     Math.min(maxRows, MAX_EXPORT_LIMITS.foregroundRowLimit),
@@ -1094,12 +1130,16 @@ export function validateReportExportArtifact(
   if (new Date(expiresAt).getTime() <= now.getTime()) {
     return fail('Report export artifact has expired');
   }
-  const progress = artifact.progress;
+  const progress = plainObject(
+    artifact.progress,
+    'Report export artifact progress',
+  );
+  const state = progress.state;
   if (
-    progress.state !== 'queued' &&
-    progress.state !== 'running' &&
-    progress.state !== 'completed' &&
-    progress.state !== 'failed'
+    state !== 'queued' &&
+    state !== 'running' &&
+    state !== 'completed' &&
+    state !== 'failed'
   ) {
     return fail('Report export artifact progress state is invalid');
   }
@@ -1107,7 +1147,7 @@ export function validateReportExportArtifact(
     progress.rowCount,
     'Report export artifact rowCount',
     0,
-    request.limits.maxRows,
+    request.rowCount,
   );
   const byteCount = boundedInteger(
     progress.byteCount,
@@ -1115,13 +1155,24 @@ export function validateReportExportArtifact(
     0,
     request.limits.maxBytes,
   );
-  if (typeof progress.truncated !== 'boolean') {
+  const truncated = progress.truncated;
+  if (typeof truncated !== 'boolean') {
     return fail('Report export artifact truncated must be a boolean');
+  }
+  if (state === 'completed' && rowCount !== request.rowCount) {
+    return fail(
+      'Completed report export artifacts must contain the requested row count',
+    );
+  }
+  if (state === 'completed' && truncated !== request.truncated) {
+    return fail(
+      'Completed report export artifacts must match the requested truncation state',
+    );
   }
   return {
     ...artifact,
     request,
     expiresAt,
-    progress: { ...progress, rowCount, byteCount },
+    progress: { state, rowCount, byteCount, truncated },
   };
 }

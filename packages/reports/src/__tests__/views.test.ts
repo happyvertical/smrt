@@ -12,6 +12,7 @@ import {
   restoreReportSavedView,
   validateReportExportArtifact,
   validateReportExportExecution,
+  verifyReportExportSnapshot,
 } from '../views.js';
 
 const AS_OF = '2026-08-23T22:00:00.000Z';
@@ -226,6 +227,31 @@ describe('report saved views and exports', () => {
     expect(() => migrateReportSavedView({ ...legacy, version: 2 })).toThrow(
       /version is unsupported/,
     );
+    expect(() =>
+      normalizeReportSavedView(report, {
+        ...legacy,
+        query: {
+          ...query(),
+          filter: {
+            kind: 'any',
+            filters: [
+              {
+                kind: 'condition',
+                field: 'customer_id',
+                operator: 'eq',
+                value: 'customer-a',
+              },
+              {
+                kind: 'condition',
+                field: 'revenue',
+                operator: 'gte',
+                value: 100,
+              },
+            ],
+          },
+        },
+      }),
+    ).toThrow(/WHERE and HAVING filters cannot be mixed/);
   });
 
   it('freezes the exact normalized query and materialization metadata for export', () => {
@@ -274,6 +300,43 @@ describe('report saved views and exports', () => {
         { id: 'snapshot-1' },
       ),
     ).toThrow(/truncated/);
+    const offsetAsOf = '2026-08-23T22:00:00.000+00:00';
+    const offsetResult = sourceResult(report);
+    const offsetSnapshot = createReportExportSnapshot(
+      report,
+      query(),
+      {
+        ...offsetResult,
+        freshness: { state: 'stale', asOf: offsetAsOf },
+        reportLifecycle: {
+          ...offsetResult.reportLifecycle,
+          snapshot: {
+            ...offsetResult.reportLifecycle.snapshot,
+            asOf: AS_OF,
+          },
+        },
+      },
+      { id: 'snapshot-offset' },
+    );
+    expect(offsetSnapshot.snapshot.asOf).toBe(AS_OF);
+    const revalidatedOffsetSnapshot = verifyReportExportSnapshot(report, {
+      ...offsetSnapshot,
+      freshness: { state: 'stale', asOf: offsetAsOf },
+      snapshot: {
+        ...offsetSnapshot.snapshot,
+        asOf: offsetAsOf,
+        refreshedAt: '2026-08-23T21:59:00.000+00:00',
+      },
+    });
+    expect(revalidatedOffsetSnapshot).toMatchObject({
+      freshness: { asOf: AS_OF },
+      snapshot: { asOf: AS_OF, refreshedAt: REFRESHED_AT },
+    });
+    expect(
+      createReportExportRequest(report, revalidatedOffsetSnapshot, {
+        format: 'csv',
+      }).read.asOf,
+    ).toBe(AS_OF);
   });
 
   it('uses one audited, confirmation-aware operation and queues large exports', async () => {
@@ -316,6 +379,14 @@ describe('report saved views and exports', () => {
     expect(() =>
       createReportExportPageRequest(report, completeRequest, 1_500),
     ).toThrow(/outside the bounded export/);
+    expect(
+      createReportExportRequest(report, snapshot, {
+        format: 'csv',
+        limits: { maxRows: 100 },
+      }),
+    ).toMatchObject({
+      limits: { maxRows: 100, foregroundRowLimit: 100 },
+    });
     const authorize = vi.fn();
     const audit = vi.fn();
     const assertSnapshot = vi.fn();
@@ -451,5 +522,45 @@ describe('report saved views and exports', () => {
         artifact,
       ),
     ).toThrow(/definition has changed/);
+    expect(() =>
+      validateReportExportArtifact(
+        report,
+        {
+          ...artifact,
+          progress: null,
+        } as unknown as typeof artifact,
+        new Date('2026-08-23T22:30:00.000Z'),
+      ),
+    ).toThrow(/progress must be a plain object/);
+    expect(() =>
+      validateReportExportArtifact(
+        report,
+        {
+          ...artifact,
+          progress: { ...artifact.progress, rowCount: 3 },
+        },
+        new Date('2026-08-23T22:30:00.000Z'),
+      ),
+    ).toThrow(/rowCount cannot exceed 2/);
+    expect(() =>
+      validateReportExportArtifact(
+        report,
+        {
+          ...artifact,
+          progress: { ...artifact.progress, rowCount: 1 },
+        },
+        new Date('2026-08-23T22:30:00.000Z'),
+      ),
+    ).toThrow(/must contain the requested row count/);
+    expect(() =>
+      validateReportExportArtifact(
+        report,
+        {
+          ...artifact,
+          progress: { ...artifact.progress, truncated: true },
+        },
+        new Date('2026-08-23T22:30:00.000Z'),
+      ),
+    ).toThrow(/must match the requested truncation state/);
   });
 });
