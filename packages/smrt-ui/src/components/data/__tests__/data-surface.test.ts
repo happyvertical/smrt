@@ -189,6 +189,41 @@ describe('data surface registry', () => {
         }),
       }),
     ).toThrow('authority or SQL');
+    expect(() =>
+      registry.register({
+        descriptor: descriptor({
+          identity: { ...identity, surfaceId: 'authorization-header' },
+        }),
+        getSnapshot: () => ({
+          revision: 0,
+          state: { authorizationHeader: 'Bearer credential' },
+        }),
+      }),
+    ).toThrow('authority or SQL');
+    expect(() =>
+      registry.register({
+        descriptor: descriptor({
+          identity: { ...identity, surfaceId: 'authorization-token' },
+        }),
+        getSnapshot: () => ({
+          revision: 0,
+          state: { authToken: 'Bearer credential' },
+        }),
+      }),
+    ).toThrow('authority or SQL');
+    for (const [surfaceId, state] of [
+      ['bare-token', { token: 'credential' }],
+      ['bare-bearer', { bearer: 'credential' }],
+    ]) {
+      expect(() =>
+        registry.register({
+          descriptor: descriptor({
+            identity: { ...identity, surfaceId },
+          }),
+          getSnapshot: () => ({ revision: 0, state }),
+        }),
+      ).toThrow('authority or SQL');
+    }
 
     expect(() =>
       registry.register({
