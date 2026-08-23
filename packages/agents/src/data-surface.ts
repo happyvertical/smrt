@@ -621,7 +621,7 @@ export function createDataSurfaceTools(
       try {
         const internal = buildInternalQuery(request, entry.schema);
         const raw = await bounded(
-          executor(entry.surface, request, {
+          executor(entry.surface, internal.request, {
             run,
             principal,
             db: run.context.database ?? db,

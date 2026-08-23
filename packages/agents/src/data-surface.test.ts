@@ -110,6 +110,18 @@ function rowIds(value: unknown): string[] {
   });
 }
 
+function rowFieldNames(value: unknown): string[][] {
+  if (!value || typeof value !== 'object' || !('rows' in value)) {
+    throw new Error('Expected query result');
+  }
+  const rows = value.rows;
+  if (!Array.isArray(rows)) throw new Error('Expected row list');
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object') throw new Error('Expected row');
+    return Object.keys(row).sort();
+  });
+}
+
 function resultHasMore(value: unknown): boolean {
   if (!value || typeof value !== 'object' || !('page' in value)) {
     throw new Error('Expected paginated result');
@@ -366,6 +378,7 @@ describe('principal-bound data surface tools', () => {
       execute: async (_surface, request) => {
         page += 1;
         expect(request.page?.kind).toBe('cursor');
+        expect(request.projection).toEqual(['id', 'rank']);
         return page === 1
           ? {
               rows: [
@@ -404,6 +417,8 @@ describe('principal-bound data surface tools', () => {
     });
     expect(rowIds(first)).toEqual(['b', 'a']);
     expect(rowIds(second)).toEqual(['d', 'c']);
+    expect(rowFieldNames(first)).toEqual([['id'], ['id']]);
+    expect(rowFieldNames(second)).toEqual([['id'], ['id']]);
   });
 
   it('rejects a cursor page that is not in its requested canonical order', async () => {
