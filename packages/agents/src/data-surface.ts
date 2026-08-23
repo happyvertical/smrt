@@ -10,12 +10,14 @@
 import type { AITool } from '@happyvertical/ai';
 import {
   createDataQueryFingerprint,
+  DataQueryValidationError,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   normalizeDataQuerySchema,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
 import type {
+  DataQueryFieldDescriptor,
   DataQueryRequest,
   DataQueryResult,
   DataQueryRow,
@@ -35,6 +37,22 @@ export const DATA_QUERY_FUNCTION_NAME = 'data-query';
 export const DEFAULT_DATA_SURFACE_DEADLINE_MS = 5_000;
 export const MAX_DATA_SURFACE_DEADLINE_MS = 30_000;
 
+export type DataSurfaceFieldMetadata = Readonly<
+  Record<string, string | number | boolean | null>
+>;
+
+/** A data field plus server-owned visibility policy annotations. */
+export interface DataSurfaceField extends DataQueryFieldDescriptor {
+  sensitive?: boolean;
+  readPermission?: string;
+  metadata?: DataSurfaceFieldMetadata;
+}
+
+/** Server-owned schema; policy annotations never cross the core query boundary. */
+export interface DataSurfaceSchema extends Omit<DataQuerySchema, 'fields'> {
+  fields: DataSurfaceField[];
+}
+
 /** A server-owned data source. Never construct this from model/tool input. */
 export interface DataSurfaceDefinition {
   /** Stable opaque id presented to the model. */
@@ -45,7 +63,7 @@ export interface DataSurfaceDefinition {
   className?: string;
   label?: string;
   description?: string;
-  schema: DataQuerySchema;
+  schema: DataSurfaceSchema;
   /** Optional surface-specific executor. */
   execute?: DataSurfaceExecutor;
 }
@@ -116,7 +134,22 @@ export interface DataSurfaceToolsOptions {
   audit?: DataSurfaceAuditSink;
   /** Deadline for an adapter call. Defaults to five seconds. */
   deadlineMs?: number;
+  /** Receives detailed server-side failures; never surfaced to the model. */
+  onFailure?: DataSurfaceFailureSink;
 }
+
+export interface DataSurfaceFailureEntry {
+  action: 'query';
+  surfaceId: string;
+  requestId?: string;
+  userId: string;
+  tenantId: string | null;
+  error: unknown;
+}
+
+export type DataSurfaceFailureSink = (
+  entry: DataSurfaceFailureEntry,
+) => void | Promise<void>;
 
 export class DataSurfaceDeniedError extends Error {
   readonly status = 403;
@@ -148,6 +181,52 @@ export class DataSurfaceResultOrderError extends Error {
   }
 }
 
+/** Stable public failure for executor and result-boundary errors. */
+export class DataSurfaceQueryError extends Error {
+  readonly status = 502;
+  readonly code = 'DATA_SURFACE_QUERY_FAILED';
+
+  constructor() {
+    super('Data surface query failed.');
+    this.name = 'DataSurfaceQueryError';
+  }
+}
+
+/** Stable public failure for requests that name hidden schema capabilities. */
+export class DataSurfaceRequestError extends Error {
+  readonly status = 400;
+  readonly code = 'DATA_SURFACE_REQUEST_INVALID';
+
+  constructor() {
+    super('Data surface query request is invalid.');
+    this.name = 'DataSurfaceRequestError';
+  }
+}
+
+const HIDDEN_SCHEMA_REQUEST_CODES = new Set([
+  'DATA_QUERY_FIELD_NOT_ALLOWED',
+  'DATA_QUERY_PROJECTION_NOT_ALLOWED',
+  'DATA_QUERY_SORT_NOT_ALLOWED',
+  'DATA_QUERY_FACET_NOT_ALLOWED',
+]);
+
+function normalizeSurfaceRequest(
+  value: unknown,
+  schema: DataQuerySchema,
+): DataQueryRequest {
+  try {
+    return normalizeDataQueryRequest(value, schema);
+  } catch (error) {
+    if (
+      error instanceof DataQueryValidationError &&
+      HIDDEN_SCHEMA_REQUEST_CODES.has(error.code)
+    ) {
+      throw new DataSurfaceRequestError();
+    }
+    throw error;
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -164,20 +243,27 @@ function principalFromRun(run: PrincipalRun): DataSurfacePrincipal {
   return { userId, tenantId: run.context.tenantId };
 }
 
+function coreSchema(schema: DataSurfaceSchema): DataQuerySchema {
+  return {
+    ...schema,
+    fields: schema.fields.map(
+      ({
+        sensitive: _sensitive,
+        readPermission: _readPermission,
+        metadata: _metadata,
+        ...field
+      }) => field,
+    ),
+  };
+}
+
 function visibleSchema(
-  schema: DataQuerySchema,
+  schema: DataSurfaceSchema,
   run: PrincipalRun,
 ): DataQuerySchema {
   const fields = schema.fields.filter((field) => {
-    const extended = field as typeof field & {
-      sensitive?: boolean;
-      readPermission?: string;
-      _meta?: { sensitive?: boolean; readPermission?: string };
-    };
-    if (extended.sensitive === true || extended._meta?.sensitive === true)
-      return false;
-    const readPermission =
-      extended.readPermission ?? extended._meta?.readPermission;
+    if (field.sensitive === true) return false;
+    const readPermission = field.readPermission;
     if (readPermission && !run.permissions.includes(readPermission)) {
       return false;
     }
@@ -186,7 +272,7 @@ function visibleSchema(
   if (!fields.some((field) => field.id === schema.identityField)) {
     throw new DataSurfaceDeniedError();
   }
-  return normalizeDataQuerySchema({ ...schema, fields });
+  return normalizeDataQuerySchema(coreSchema({ ...schema, fields }));
 }
 
 function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
@@ -242,7 +328,11 @@ async function availableSurfaces(
     }
   }
   return result.sort((left, right) =>
-    left.surface.id.localeCompare(right.surface.id),
+    left.surface.id === right.surface.id
+      ? 0
+      : left.surface.id < right.surface.id
+        ? -1
+        : 1,
   );
 }
 
@@ -281,7 +371,9 @@ function compareDataValues(
     }
   }
   if (type === 'boolean') return Number(Boolean(left)) - Number(Boolean(right));
-  return String(left).localeCompare(String(right));
+  const leftString = String(left);
+  const rightString = String(right);
+  return leftString === rightString ? 0 : leftString < rightString ? -1 : 1;
 }
 
 function compareRows(
@@ -318,6 +410,88 @@ function isCanonicalOrder(
     }
   }
   return true;
+}
+
+function projectionForResult(request: DataQueryRequest): string[] {
+  return request.projection ?? [];
+}
+
+function buildInternalQuery(
+  request: DataQueryRequest,
+  schema: DataQuerySchema,
+): { request: DataQueryRequest; schema: DataQuerySchema } {
+  const sort = request.sort ?? [];
+  if (request.mode !== 'rows' || sort.length === 0) {
+    return { request, schema };
+  }
+  const sortFields = new Set(sort.map((term) => term.field));
+  const internalSchema = {
+    ...schema,
+    fields: schema.fields.map((field) =>
+      sortFields.has(field.id) ? { ...field, projectable: true } : field,
+    ),
+  };
+  const projection = [
+    ...new Set([
+      ...(request.projection ?? [schema.identityField]),
+      ...sortFields,
+    ]),
+  ];
+  return {
+    schema: internalSchema,
+    request: normalizeDataQueryRequest(
+      { ...request, projection },
+      internalSchema,
+    ),
+  };
+}
+
+function requireSortValues(
+  rows: DataQueryRow[],
+  request: DataQueryRequest,
+): void {
+  for (const row of rows) {
+    for (const term of request.sort ?? []) {
+      if (!Object.hasOwn(row, term.field)) {
+        throw new DataSurfaceResultOrderError();
+      }
+    }
+  }
+}
+
+function stripInternalProjection(
+  rows: DataQueryRow[],
+  request: DataQueryRequest,
+): DataQueryRow[] {
+  const projection = projectionForResult(request).filter(Boolean);
+  return rows.map((row) =>
+    Object.fromEntries(
+      projection
+        .filter((field) => Object.hasOwn(row, field))
+        .map((field) => [field, row[field]]),
+    ),
+  );
+}
+
+async function reportFailure(
+  options: DataSurfaceToolsOptions,
+  run: PrincipalRun,
+  surfaceId: string,
+  requestId: string,
+  error: unknown,
+): Promise<void> {
+  try {
+    const principal = principalFromRun(run);
+    await options.onFailure?.({
+      action: 'query',
+      surfaceId,
+      requestId,
+      ...principal,
+      error,
+    });
+  } catch {
+    // Failure telemetry must never alter the stable public error contract.
+  }
 }
 
 async function bounded<T>(
@@ -436,7 +610,7 @@ export function createDataSurfaceTools(
         args.surfaceId,
       );
       if (!entry) throw new DataSurfaceDeniedError();
-      const request = normalizeDataQueryRequest(
+      const request = normalizeSurfaceRequest(
         requestFromArgs(args),
         entry.schema,
       );
@@ -444,102 +618,135 @@ export function createDataSurfaceTools(
       const signal = new AbortController();
       const executor = entry.surface.execute ?? options.execute;
       if (!executor) throw new DataSurfaceDeniedError();
-      const raw = await bounded(
-        executor(entry.surface, request, {
-          run,
-          principal,
-          db: run.context.database ?? db,
-          signal: signal.signal,
-        }),
-        deadlineMs,
-        signal,
-      );
-      const rawRecord = record(raw);
-      const rows = Array.isArray(raw)
-        ? raw
-        : Array.isArray(rawRecord.rows)
-          ? (rawRecord.rows as DataQueryRow[])
-          : [];
-      const normalizedRows =
-        request.mode === 'rows'
-          ? request.page
-            ? rows
-            : sortRows(rows, request, entry.schema)
-          : [];
-      const validated = normalizeDataQueryResult(
-        raw && !Array.isArray(raw) && 'version' in rawRecord
+      try {
+        const internal = buildInternalQuery(request, entry.schema);
+        const raw = await bounded(
+          executor(entry.surface, request, {
+            run,
+            principal,
+            db: run.context.database ?? db,
+            signal: signal.signal,
+          }),
+          deadlineMs,
+          signal,
+        );
+        const rawRecord = record(raw);
+        const rows = Array.isArray(raw)
           ? raw
-          : {
-              version: 1,
-              requestId: request.requestId,
-              queryFingerprint: createDataQueryFingerprint(
-                request,
-                entry.schema,
-              ),
-              identityField: entry.schema.identityField,
-              rows: normalizedRows,
-              ...(request.page
-                ? {
-                    page:
-                      request.page.kind === 'offset'
-                        ? {
-                            kind: 'offset',
-                            offset: request.page.offset,
-                            limit: request.page.limit,
-                            hasMore:
-                              typeof rawRecord.hasMore === 'boolean'
-                                ? rawRecord.hasMore
-                                : Boolean(rawRecord.nextCursor),
-                          }
-                        : {
-                            kind: 'cursor',
-                            limit: request.page.limit,
-                            hasMore: Boolean(rawRecord.nextCursor),
-                            ...(rawRecord.nextCursor
-                              ? { nextCursor: rawRecord.nextCursor }
-                              : {}),
-                          },
-                  }
-                : {}),
-              total: rawRecord.total ?? { kind: 'unavailable' },
-              ...(rawRecord.facets ? { facets: rawRecord.facets } : {}),
-              freshness: rawRecord.freshness ?? { state: 'unknown' },
-              warnings: Array.isArray(rawRecord.warnings)
-                ? rawRecord.warnings
-                : [],
-              truncated: rawRecord.truncated === true,
-            },
-        request,
-        entry.schema,
-      );
-      // Adapters are free to use different storage engines, but the model
-      // must see one deterministic order. The identity is the stable final
-      // tie-breaker even when the adapter supplied a sort.
-      const result: DataQueryResult = {
-        ...validated,
-        rows:
+          : Array.isArray(rawRecord.rows)
+            ? (rawRecord.rows as DataQueryRow[])
+            : [];
+        if (request.mode === 'rows') {
+          requireSortValues(rows, internal.request);
+        }
+        const normalizedRows =
           request.mode === 'rows' && request.page === undefined
-            ? sortRows(validated.rows, request, entry.schema)
-            : validated.rows,
-      };
-      if (
-        request.mode === 'rows' &&
-        request.page !== undefined &&
-        !isCanonicalOrder(result.rows, request, entry.schema)
-      ) {
-        throw new DataSurfaceResultOrderError();
+            ? sortRows(rows, internal.request, internal.schema)
+            : rows;
+        const candidate =
+          raw && !Array.isArray(raw) && 'version' in rawRecord
+            ? {
+                ...rawRecord,
+                requestId: internal.request.requestId,
+                queryFingerprint: createDataQueryFingerprint(
+                  internal.request,
+                  internal.schema,
+                ),
+                identityField: internal.schema.identityField,
+                rows: normalizedRows,
+              }
+            : {
+                version: 1,
+                requestId: internal.request.requestId,
+                queryFingerprint: createDataQueryFingerprint(
+                  internal.request,
+                  internal.schema,
+                ),
+                identityField: internal.schema.identityField,
+                rows: normalizedRows,
+                ...(request.page
+                  ? {
+                      page:
+                        request.page.kind === 'offset'
+                          ? {
+                              kind: 'offset',
+                              offset: request.page.offset,
+                              limit: request.page.limit,
+                              hasMore:
+                                typeof rawRecord.hasMore === 'boolean'
+                                  ? rawRecord.hasMore
+                                  : Boolean(rawRecord.nextCursor),
+                            }
+                          : {
+                              kind: 'cursor',
+                              limit: request.page.limit,
+                              hasMore: Boolean(rawRecord.nextCursor),
+                              ...(rawRecord.nextCursor
+                                ? { nextCursor: rawRecord.nextCursor }
+                                : {}),
+                            },
+                    }
+                  : {}),
+                total: rawRecord.total ?? { kind: 'unavailable' },
+                ...(rawRecord.facets ? { facets: rawRecord.facets } : {}),
+                freshness: rawRecord.freshness ?? { state: 'unknown' },
+                warnings: Array.isArray(rawRecord.warnings)
+                  ? rawRecord.warnings
+                  : [],
+                truncated: rawRecord.truncated === true,
+              };
+        const validated = normalizeDataQueryResult(
+          candidate,
+          internal.request,
+          internal.schema,
+        );
+        if (
+          request.mode === 'rows' &&
+          request.page !== undefined &&
+          !isCanonicalOrder(validated.rows, internal.request, internal.schema)
+        ) {
+          throw new DataSurfaceResultOrderError();
+        }
+        const resultCandidate = {
+          ...validated,
+          requestId: request.requestId,
+          queryFingerprint: createDataQueryFingerprint(request, entry.schema),
+          identityField: entry.schema.identityField,
+          rows: stripInternalProjection(validated.rows, request),
+        };
+        const result: DataQueryResult = normalizeDataQueryResult(
+          resultCandidate,
+          request,
+          entry.schema,
+        );
+        await audit(
+          {
+            action: 'query',
+            surfaceId: entry.surface.id,
+            requestId: result.requestId,
+            rowCount: result.rows.length,
+            truncated: result.truncated,
+          },
+          run,
+        );
+        return result;
+      } catch (error) {
+        await reportFailure(
+          options,
+          run,
+          entry.surface.id,
+          request.requestId,
+          error,
+        );
+        if (
+          error instanceof DataSurfaceDeadlineError ||
+          error instanceof DataSurfaceResultOrderError ||
+          error instanceof DataSurfaceQueryError
+        ) {
+          throw error;
+        }
+        throw new DataSurfaceQueryError();
       }
-      await audit(
-        {
-          action: 'query',
-          surfaceId: entry.surface.id,
-          requestId: result.requestId,
-          rowCount: result.rows.length,
-          truncated: result.truncated,
-        },
-        run,
-      );
-      return result;
     },
   );
 

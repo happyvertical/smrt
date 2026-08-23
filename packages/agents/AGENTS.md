@@ -152,10 +152,16 @@ caller supplies a server-owned surface catalog and executor; the tools copy
 catalog permission and omit denied surfaces/fields. Query requests and results
 are normalized with the core bounded data-query protocol, including projection,
 cursor/page, row/byte, fingerprint, freshness, total, and truncation rules.
-Sensitive/read-permission fields are removed from descriptors, rows are ordered
-with identity as the stable tie-breaker, execution has a bounded deadline, and
-optional per-action audit entries carry the authenticated/delegated principal.
-Tool arguments never contain principal or tenant authority.
+Sensitive/read-permission fields are removed from descriptors, and
+`DataSurfaceField` policy metadata is stripped before the core schema validator.
+Executor-provided paginated rows retain their order and are validated with a
+stable identity tie-breaker (including type-aware numeric/date comparisons),
+while internal sort keys are stripped when they were not requested in the
+projection. Execution has a bounded deadline; public executor/result failures
+use stable generic errors while optional `onFailure` telemetry receives the
+authenticated/delegated principal and detailed server-side error. Hidden field
+request failures also use a stable public error. Tool arguments never contain
+principal or tenant authority.
 
 ## Agent Orchestration (issue #1892) — invoke-agent + principal delegation
 

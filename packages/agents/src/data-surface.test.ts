@@ -1,16 +1,19 @@
-import type { DataQuerySchema } from '@happyvertical/smrt-types';
+import type { SessionPermissionRuntimeContext } from '@happyvertical/smrt-users';
 import { describe, expect, it, vi } from 'vitest';
+import type { DataSurfaceSchema } from './data-surface.js';
 import {
   createDataSurfaceTools,
   DATA_DISCOVER_TOOL_SLUG,
   DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_TOOL_SLUG,
   DataSurfaceDeniedError,
+  DataSurfaceQueryError,
+  DataSurfaceRequestError,
   DataSurfaceResultOrderError,
 } from './data-surface.js';
 import type { PrincipalRun } from './execute-as-principal.js';
 
-const schema: DataQuerySchema = {
+const schema: DataSurfaceSchema = {
   version: 1,
   identityField: 'id',
   fields: [
@@ -22,13 +25,13 @@ const schema: DataQuerySchema = {
       id: 'secret',
       type: 'string',
       projectable: true,
-      ...({ sensitive: true } as unknown as {}),
+      sensitive: true,
     },
     {
       id: 'restricted',
       type: 'string',
       projectable: true,
-      ...({ readPermission: 'records.secret' } as unknown as {}),
+      readPermission: 'records.secret',
     },
   ],
   defaultPageLimit: 2,
@@ -50,7 +53,14 @@ function fakeRun(
       database: undefined,
       permissions,
       permissionSet: new Set(permissions),
-    } as PrincipalRun['context'],
+      membership: null,
+      postgresRls: false,
+      session: null,
+      sessionId: null,
+      superAdminBypass: false,
+      systemContext: false,
+      user: null,
+    } satisfies SessionPermissionRuntimeContext,
     permissions,
     allowedTools,
     isToolAllowed: (tool) => allowedTools.includes(tool),
@@ -68,6 +78,47 @@ function fakeRun(
       };
     },
   };
+}
+
+function fieldIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error('Expected surface list');
+  const first = value[0];
+  if (!first || typeof first !== 'object' || !('fields' in first)) {
+    throw new Error('Expected surface descriptor');
+  }
+  const fields = first.fields;
+  if (!Array.isArray(fields)) throw new Error('Expected field list');
+  return fields.map((field) => {
+    if (!field || typeof field !== 'object' || typeof field.id !== 'string') {
+      throw new Error('Expected field descriptor');
+    }
+    return field.id;
+  });
+}
+
+function rowIds(value: unknown): string[] {
+  if (!value || typeof value !== 'object' || !('rows' in value)) {
+    throw new Error('Expected query result');
+  }
+  const rows = value.rows;
+  if (!Array.isArray(rows)) throw new Error('Expected row list');
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object' || typeof row.id !== 'string') {
+      throw new Error('Expected row identity');
+    }
+    return row.id;
+  });
+}
+
+function resultHasMore(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('page' in value)) {
+    throw new Error('Expected paginated result');
+  }
+  const page = value.page;
+  if (!page || typeof page !== 'object' || typeof page.hasMore !== 'boolean') {
+    throw new Error('Expected page metadata');
+  }
+  return page.hasMore;
 }
 
 function toolSet(options: Parameters<typeof createDataSurfaceTools>[0]) {
@@ -113,16 +164,41 @@ describe('principal-bound data surface tools', () => {
       args: { surfaceId: 'records' },
       db: undefined,
     });
-    expect(
-      (discover as Array<{ fields: Array<{ id: string }> }>)[0].fields.map(
-        (field) => field.id,
-      ),
-    ).toEqual(['id', 'name', 'rank']);
-    expect(
-      (inspect as { fields: Array<{ id: string }> }).fields.map(
-        (field) => field.id,
-      ),
-    ).toEqual(['id', 'name', 'rank']);
+    expect(fieldIds(discover)).toEqual(['id', 'name', 'rank']);
+    expect(fieldIds([inspect])).toEqual(['id', 'name', 'rank']);
+  });
+
+  it('includes a restricted field only when its read permission is present', async () => {
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async () => [{ id: 'r1', restricted: 'allowed' }],
+    });
+    const run = fakeRun(
+      [DATA_DISCOVER_TOOL_SLUG, DATA_INSPECT_TOOL_SLUG, DATA_QUERY_TOOL_SLUG],
+      ['records.read', 'records.secret'],
+    );
+    const discover = await tools.get(DATA_DISCOVER_TOOL_SLUG)?.execute({
+      run,
+      args: {},
+      db: undefined,
+    });
+    expect(fieldIds(discover)).toEqual(['id', 'name', 'rank', 'restricted']);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'restricted-allowed',
+          mode: 'rows',
+          projection: ['id', 'restricted'],
+        },
+      },
+      db: undefined,
+    });
+    expect(result).toMatchObject({
+      rows: [{ id: 'r1', restricted: 'allowed' }],
+    });
   });
 
   it('passes the authenticated delegated principal and tenant to the executor', async () => {
@@ -213,7 +289,74 @@ describe('principal-bound data surface tools', () => {
         },
         db: undefined,
       }),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+  });
+
+  it('does not reveal hidden field names in caller request errors', async () => {
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'request-hidden',
+            mode: 'rows',
+            projection: ['id', 'secret'],
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toBeInstanceOf(DataSurfaceRequestError);
+  });
+
+  it('returns a stable public error while retaining detailed failure telemetry server-side', async () => {
+    const failures: Array<{ error: unknown }> = [];
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      onFailure: async (entry) => {
+        failures.push({ error: entry.error });
+      },
+      execute: async () => {
+        throw new Error(
+          'SQL failed for tenant tenant-b: secret row r-private is not visible',
+        );
+      },
+    });
+    const run = fakeRun(
+      [DATA_QUERY_TOOL_SLUG],
+      ['records.read'],
+      'user-a',
+      'tenant-b',
+    );
+    const execute = tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'failure-redaction',
+          mode: 'rows',
+          projection: ['id'],
+        },
+      },
+      db: undefined,
+    });
+    await expect(execute).rejects.toMatchObject({
+      code: 'DATA_SURFACE_QUERY_FAILED',
+      message: 'Data surface query failed.',
+    });
+    await expect(execute).rejects.not.toThrow(/tenant-b|r-private|secret|SQL/);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].error).toBeInstanceOf(Error);
+    if (!(failures[0].error instanceof Error)) {
+      throw new Error('Expected detailed error telemetry');
+    }
+    expect(failures[0].error.message).toContain('tenant-b');
   });
 
   it('preserves executor order for cursor pages and validates each page', async () => {
@@ -225,11 +368,19 @@ describe('principal-bound data surface tools', () => {
         expect(request.page?.kind).toBe('cursor');
         return page === 1
           ? {
-              rows: [{ id: 'b' }, { id: 'a' }],
+              rows: [
+                { id: 'b', rank: 10 },
+                { id: 'a', rank: 2 },
+              ],
               nextCursor: 'page-2',
               truncated: true,
             }
-          : { rows: [{ id: 'd' }, { id: 'c' }] };
+          : {
+              rows: [
+                { id: 'd', rank: 8 },
+                { id: 'c', rank: 4 },
+              ],
+            };
       },
     });
     const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
@@ -238,7 +389,7 @@ describe('principal-bound data surface tools', () => {
       requestId: after ? 'cursor-2' : 'cursor-1',
       mode: 'rows' as const,
       projection: ['id'],
-      sort: [{ field: 'id', direction: 'desc' as const }],
+      sort: [{ field: 'rank', direction: 'desc' as const }],
       page: { kind: 'cursor' as const, ...(after ? { after } : {}), limit: 2 },
     });
     const first = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
@@ -251,20 +402,19 @@ describe('principal-bound data surface tools', () => {
       args: { surfaceId: 'records', request: request('page-2') },
       db: undefined,
     });
-    expect((first as { rows: Array<{ id: string }> }).rows).toEqual([
-      { id: 'b' },
-      { id: 'a' },
-    ]);
-    expect((second as { rows: Array<{ id: string }> }).rows).toEqual([
-      { id: 'd' },
-      { id: 'c' },
-    ]);
+    expect(rowIds(first)).toEqual(['b', 'a']);
+    expect(rowIds(second)).toEqual(['d', 'c']);
   });
 
   it('rejects a cursor page that is not in its requested canonical order', async () => {
     const tools = toolSet({
       surfaces: [{ id: 'records', collection: 'records', schema }],
-      execute: async () => ({ rows: [{ id: 'a' }, { id: 'b' }] }),
+      execute: async () => ({
+        rows: [
+          { id: 'a', rank: 1 },
+          { id: 'b', rank: 2 },
+        ],
+      }),
     });
     const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
     await expect(
@@ -277,7 +427,7 @@ describe('principal-bound data surface tools', () => {
             requestId: 'cursor-invalid',
             mode: 'rows',
             projection: ['id'],
-            sort: [{ field: 'id', direction: 'desc' }],
+            sort: [{ field: 'rank', direction: 'desc' }],
             page: { kind: 'cursor', limit: 2 },
           },
         },
@@ -292,8 +442,19 @@ describe('principal-bound data surface tools', () => {
       execute: async (_surface, request) => {
         expect(request.page?.kind).toBe('offset');
         return request.page?.kind === 'offset' && request.page.offset === 0
-          ? { rows: [{ id: 'b' }, { id: 'a' }], hasMore: true }
-          : { rows: [{ id: 'd' }, { id: 'c' }] };
+          ? {
+              rows: [
+                { id: 'b', rank: 10 },
+                { id: 'a', rank: 2 },
+              ],
+              hasMore: true,
+            }
+          : {
+              rows: [
+                { id: 'd', rank: 8 },
+                { id: 'c', rank: 4 },
+              ],
+            };
       },
     });
     const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
@@ -302,7 +463,7 @@ describe('principal-bound data surface tools', () => {
       requestId: `offset-${offset}`,
       mode: 'rows' as const,
       projection: ['id'],
-      sort: [{ field: 'id', direction: 'desc' as const }],
+      sort: [{ field: 'rank', direction: 'desc' as const }],
       page: { kind: 'offset' as const, offset, limit: 2 },
     });
     const first = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
@@ -315,15 +476,9 @@ describe('principal-bound data surface tools', () => {
       args: { surfaceId: 'records', request: request(2) },
       db: undefined,
     });
-    expect((first as { rows: Array<{ id: string }> }).rows).toEqual([
-      { id: 'b' },
-      { id: 'a' },
-    ]);
-    expect((first as { page: { hasMore: boolean } }).page.hasMore).toBe(true);
-    expect((second as { rows: Array<{ id: string }> }).rows).toEqual([
-      { id: 'd' },
-      { id: 'c' },
-    ]);
+    expect(rowIds(first)).toEqual(['b', 'a']);
+    expect(resultHasMore(first)).toBe(true);
+    expect(rowIds(second)).toEqual(['d', 'c']);
   });
 
   it('validates numeric sort order numerically rather than lexically', async () => {
