@@ -199,9 +199,9 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - `policyToDataSurfaceDescriptor(policy, descriptor)` is the corresponding
   mounted DataSurface adapter. It carries effective labels, help text, order,
   visibility, readable/capability state, and operator/query allowlists into
-  discovery metadata while retaining computed, row-key, selection, and action
-  columns. Static host restrictions are only narrowed; hidden fields are
-  omitted from the descriptor (the row key remains as a non-readable identity
+  discovery metadata while retaining unrestricted computed, row-key, selection,
+  and action columns. Static or resolved-policy-hidden structural columns are
+  omitted from discovery (the row key remains only as a non-readable identity
   column), and actions that explicitly depend on hidden columns are removed.
   Sensitive/secret and `readable: false` columns also fail closed when omitted
   from the resolved policy; a host must pass `authorizedColumnIds` explicitly

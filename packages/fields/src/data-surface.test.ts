@@ -292,4 +292,116 @@ describe('field policy DataSurface adapter (#2449)', () => {
     });
     expect(result.query.projectableColumnIds).not.toContain('id');
   });
+
+  it('removes static-hidden structural columns from discovery and commands', () => {
+    const hiddenIds = ['computed', 'selection', 'actions'];
+    const searchableColumnIds = descriptor.query.searchableColumnIds ?? [];
+    const filterableColumnIds = descriptor.query.filterableColumnIds ?? [];
+    const sortableColumnIds = descriptor.query.sortableColumnIds ?? [];
+    const structuralDescriptor: DataSurfaceDescriptor = {
+      ...descriptor,
+      query: {
+        ...descriptor.query,
+        projectableColumnIds: [
+          ...descriptor.query.projectableColumnIds,
+          ...hiddenIds,
+        ],
+        searchableColumnIds: [...searchableColumnIds, ...hiddenIds],
+        filterableColumnIds: [...filterableColumnIds, ...hiddenIds],
+        sortableColumnIds: [...sortableColumnIds, ...hiddenIds],
+      },
+      actions: [
+        ...descriptor.actions,
+        {
+          id: 'run-computed',
+          label: 'Run computed',
+          selectionScopes: ['current-page'],
+          columnIds: ['computed'],
+        },
+      ],
+    };
+
+    const result = policyToDataSurfaceDescriptor(policy, structuralDescriptor, {
+      staticHiddenColumnIds: hiddenIds,
+    });
+
+    for (const id of hiddenIds) {
+      expect(result.columns.map((column) => column.id)).not.toContain(id);
+      expect(result.query.projectableColumnIds).not.toContain(id);
+      expect(result.query.searchableColumnIds).not.toContain(id);
+      expect(result.query.filterableColumnIds).not.toContain(id);
+      expect(result.query.sortableColumnIds).not.toContain(id);
+    }
+    expect(result.actions.map((action) => action.id)).not.toContain(
+      'run-computed',
+    );
+  });
+
+  it('removes policy-hidden structural columns and dependent actions', () => {
+    const hiddenIds = ['computed', 'selection', 'actions'];
+    const searchableColumnIds = descriptor.query.searchableColumnIds ?? [];
+    const filterableColumnIds = descriptor.query.filterableColumnIds ?? [];
+    const sortableColumnIds = descriptor.query.sortableColumnIds ?? [];
+    const structuralDescriptor: DataSurfaceDescriptor = {
+      ...descriptor,
+      columns: descriptor.columns.map((column) =>
+        hiddenIds.includes(column.id)
+          ? { ...column, fieldName: column.id }
+          : column,
+      ),
+      query: {
+        ...descriptor.query,
+        projectableColumnIds: [
+          ...descriptor.query.projectableColumnIds,
+          ...hiddenIds,
+        ],
+        searchableColumnIds: [...searchableColumnIds, ...hiddenIds],
+        filterableColumnIds: [...filterableColumnIds, ...hiddenIds],
+        sortableColumnIds: [...sortableColumnIds, ...hiddenIds],
+      },
+      actions: [
+        ...descriptor.actions,
+        {
+          id: 'run-selection',
+          label: 'Run selection',
+          selectionScopes: ['current-page'],
+          columnIds: ['selection'],
+        },
+      ],
+    };
+    const structuralPolicy: ResolvedObjectFieldPolicy = {
+      ...policy,
+      fields: {
+        ...policy.fields,
+        ...Object.fromEntries(
+          hiddenIds.map((fieldName) => [
+            fieldName,
+            {
+              ...policy.fields.title,
+              fieldName,
+              visibility: 'hidden' as const,
+              label: `${fieldName} label`,
+              help: `${fieldName} help`,
+            },
+          ]),
+        ),
+      },
+    };
+
+    const result = policyToDataSurfaceDescriptor(
+      structuralPolicy,
+      structuralDescriptor,
+    );
+
+    for (const id of hiddenIds) {
+      expect(result.columns.map((column) => column.id)).not.toContain(id);
+      expect(result.query.projectableColumnIds).not.toContain(id);
+      expect(result.query.searchableColumnIds).not.toContain(id);
+      expect(result.query.filterableColumnIds).not.toContain(id);
+      expect(result.query.sortableColumnIds).not.toContain(id);
+    }
+    expect(result.actions.map((action) => action.id)).not.toContain(
+      'run-selection',
+    );
+  });
 });

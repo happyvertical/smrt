@@ -104,11 +104,13 @@ function policyColumn(
   structural: boolean,
   restricted: boolean,
 ): DataSurfaceColumnDescriptor {
+  const hidden = hiddenByStaticPolicy || policy?.visibility === 'hidden';
+
   // Computed, selection, action, and row-key columns have no manifest field
-  // and are intentionally copied through unchanged. This is what keeps a
-  // policy-aware descriptor usable by the same mounted table.
+  // and are intentionally copied through unchanged when unrestricted. Hidden
+  // structural columns still must not remain discoverable or executable.
   if (structural) {
-    if (restricted) {
+    if (hidden || restricted) {
       return {
         ...column,
         visibility: 'hidden',
@@ -145,7 +147,6 @@ function policyColumn(
     };
   }
 
-  const hidden = hiddenByStaticPolicy || policy.visibility === 'hidden';
   const unreadable = hidden || restricted;
   const label = policy.label ?? column.label;
   const description = policy.help ?? column.description;
@@ -223,13 +224,12 @@ export function policyToDataSurfaceDescriptor(
   // but it has no read/query capabilities when policy-hidden.
   const hiddenColumnIds = new Set<string>();
   const columns = mapped
-    .filter(({ column, effective, structural }) => {
+    .filter(({ column, effective }) => {
       const hidden =
-        !structural &&
-        (staticHidden.has(column.id) ||
-          column.visibility === 'hidden' ||
-          effective.visibility === 'hidden');
-      if (hidden) hiddenColumnIds.add(column.id);
+        staticHidden.has(column.id) ||
+        column.visibility === 'hidden' ||
+        effective.visibility === 'hidden';
+      if (hidden && column.id !== rowKey) hiddenColumnIds.add(column.id);
       return !hidden || column.id === rowKey;
     })
     .sort((left, right) => {
