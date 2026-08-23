@@ -10,6 +10,8 @@
       "@happyvertical/smrt-mobile-contract/*": [
         "packages/smrt-mobile-contract/src/*"
       ],
+      "@happyvertical/smrt-ui": ["packages/smrt-ui/src/index.ts"],
+      "@happyvertical/smrt-ui/*": ["packages/smrt-ui/src/*"],
       "@happyvertical/smrt-*": ["packages/*/src/index.ts"],
       "@happyvertical/smrt-types": ["packages/types/src/index.ts"],
       "@happyvertical/smrt-types/*": ["packages/types/src/*"],
