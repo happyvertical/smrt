@@ -1598,10 +1598,43 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     await relatedCollection.ensureStorageReady();
     const relatedFields = relatedCollection.getFieldsSync();
+    const relatedItemClassName = relatedCollection.getResolvedItemClassName();
     const relatedQualifiedName =
       relatedCollection.getResolvedItemQualifiedName();
     const relatedIsSTI =
       ObjectRegistry.getTableStrategy(relatedQualifiedName) === 'sti';
+
+    // Run the related collection's read-scope interceptors as well as the
+    // parent's. Relation targets can have their own tenant or authorization
+    // policy; omitting this scope would make the CTE a raw bypass of the
+    // target collection's normal list contract.
+    const relatedInterceptorContext = createInterceptorContext(
+      relatedItemClassName,
+      'list',
+      relatedCollection.constructor.name,
+    );
+    const relatedInterceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        relatedItemClassName,
+        { where: {} } as InterceptorListOptions,
+        relatedInterceptorContext,
+      )) ?? ({ where: {} } as InterceptorListOptions);
+    let relatedWhere = (
+      relatedInterceptedOptions as SmrtListOptions<SmrtObject>
+    ).where;
+    if (relatedIsSTI) {
+      const relatedStiBase = ObjectRegistry.getSTIBase(relatedQualifiedName);
+      if (relatedStiBase && relatedStiBase !== relatedQualifiedName) {
+        relatedWhere = {
+          _meta_type: relatedQualifiedName,
+          ...(relatedWhere || {}),
+        };
+      }
+    }
+    relatedWhere = resolveMetaTypeInWhere(relatedWhere);
+    const { sql: relatedWhereSql, values: relatedWhereValues } = buildWhere(
+      relatedCollection.convertWhereKeys(relatedWhere || {}),
+    );
     const relatedSelect = latestOptions.select ?? ['id'];
     const relatedProjection = relatedCollection.resolveProjectionSelect(
       relatedSelect,
@@ -1652,18 +1685,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     ]
       .filter(Boolean)
       .join(', ');
-    const relatedStiChildMetaType = relatedCollection.getStiChildMetaType();
-    const relatedWhereValues = relatedStiChildMetaType
-      ? [relatedStiChildMetaType]
-      : [];
-    const relatedWhereSql = relatedStiChildMetaType
-      ? ` WHERE r.${relatedCollection.quoteProjectionIdentifier('_meta_type')} = $1`
-      : '';
+    const latestRankAlias =
+      relatedCollection.quoteProjectionIdentifier('__smrt_latest_rank');
+    const latestRelatedAlias = (fieldName: string): string =>
+      relatedCollection.quoteProjectionIdentifier(
+        `__smrt_latest_related__${fieldName}`,
+      );
     const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions
       .map((expression) => `r.${expression}`)
       .join(
         ', ',
-      )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS __smrt_latest_rank FROM ${relatedCollection.tableName} r${relatedWhereSql}) `;
+      )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS ${latestRankAlias} FROM ${relatedCollection.tableName} r${relatedWhereSql ? ` ${relatedWhereSql}` : ''}) `;
 
     const parentWhere = this.convertWhereKeys(where || {});
     const { sql: rawWhereSql, values: parentWhereValues } =
@@ -1674,12 +1706,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         `$${Number(index) + relatedWhereValues.length}`,
     );
     const relatedJoinConditions = [
-      `rr.__smrt_latest_rank = 1`,
-      `rr.__smrt_latest_related__${inverseForeignKey.fieldName} = ${this.quoteProjectionIdentifier('id')}`,
+      `rr.${latestRankAlias} = 1`,
+      `rr.${latestRelatedAlias(inverseForeignKey.fieldName)} = ${this.quoteProjectionIdentifier('id')}`,
     ];
     if (parentFields.tenantId && relatedFields.tenantId) {
       relatedJoinConditions.push(
-        `(rr.__smrt_latest_related__tenantId = ${this.quoteProjectionIdentifier('tenant_id')} OR (rr.__smrt_latest_related__tenantId IS NULL AND ${this.quoteProjectionIdentifier('tenant_id')} IS NULL))`,
+        `(rr.${latestRelatedAlias('tenantId')} = ${this.quoteProjectionIdentifier('tenant_id')} OR (rr.${latestRelatedAlias('tenantId')} IS NULL AND ${this.quoteProjectionIdentifier('tenant_id')} IS NULL))`,
       );
     }
 
@@ -1732,7 +1764,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     )
       .map(
         (fieldName) =>
-          `rr.__smrt_latest_related__${fieldName} AS ${this.quoteProjectionIdentifier(`__smrt_latest_related__${fieldName}`)}`,
+          `rr.${latestRelatedAlias(fieldName)} AS ${this.quoteProjectionIdentifier(`__smrt_latest_related__${fieldName}`)}`,
       )
       .join(
         ', ',
@@ -1744,24 +1776,30 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ...limitOffsetValues,
     );
 
-    const instances = await Promise.all(
-      rows.rows.map((row: Record<string, unknown>) => {
-        const parentRow = Object.fromEntries(
-          Object.entries(row).filter(
-            ([key]) => !key.startsWith('__smrt_latest_related__'),
-          ),
-        );
-        return this.hydrateResultRow(parentRow, parentFields, isSTI);
-      }),
-    );
-    const finalInstances = await GlobalInterceptors.executeAfterList(
-      itemClassName,
-      instances,
-      interceptorContext,
-    );
+    // Hydrate in result order. initialize() hooks may issue queries through
+    // the same transaction-bound PostgreSQL client, so overlapping hydration
+    // would violate the collection-wide serial hydration invariant.
+    const instances: ModelType[] = [];
+    for (const row of rows.rows as Record<string, unknown>[]) {
+      const parentRow = Object.fromEntries(
+        Object.entries(row).filter(
+          ([key]) => !key.startsWith('__smrt_latest_related__'),
+        ),
+      );
+      instances.push(
+        await this.hydrateResultRow(parentRow, parentFields, isSTI),
+      );
+    }
 
-    return finalInstances.map((parent, index) => {
-      const row = rows.rows[index] as Record<string, unknown>;
+    // Materialize the related projection by the parent primary key before
+    // afterList hooks run. Hooks may filter or reorder hydrated parents; an
+    // array-index pairing after those hooks could attach one parent's related
+    // data to another parent.
+    const relatedByParentId = new Map<string, Record<string, unknown> | null>();
+    for (const row of rows.rows as Record<string, unknown>[]) {
+      const parentId = row.id;
+      if (parentId === null || parentId === undefined) continue;
+
       const relatedRow = Object.fromEntries(
         relatedProjection.outputFields.map((fieldName) => [
           fieldName,
@@ -1769,15 +1807,30 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         ]),
       );
       const relatedId = row.__smrt_latest_related__id;
+      relatedByParentId.set(
+        String(parentId),
+        relatedId === null || relatedId === undefined
+          ? null
+          : relatedCollection.formatProjectionRow(
+              relatedRow,
+              relatedFields,
+              relatedProjection.outputFields,
+            ),
+      );
+    }
+
+    const finalInstances = await GlobalInterceptors.executeAfterList(
+      itemClassName,
+      instances,
+      interceptorContext,
+    );
+
+    return finalInstances.map((parent) => {
       return {
         latestRelated:
-          relatedId === null || relatedId === undefined
+          parent.id === null || parent.id === undefined
             ? null
-            : relatedCollection.formatProjectionRow(
-                relatedRow,
-                relatedFields,
-                relatedProjection.outputFields,
-              ),
+            : (relatedByParentId.get(String(parent.id)) ?? null),
         parent,
       };
     });
