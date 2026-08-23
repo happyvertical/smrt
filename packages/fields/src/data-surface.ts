@@ -119,11 +119,15 @@ function policyColumn(
         sortOperators: [],
       };
     }
-    return { ...column };
+    return {
+      ...column,
+      ...(column.readable === false ? { readable: true } : {}),
+    };
   }
 
   if (!policy) {
     const unreadable = hiddenByStaticPolicy || restricted;
+    const explicitlyAuthorized = column.readable === false && !restricted;
     return {
       ...column,
       ...(unreadable ? { visibility: 'hidden' as const } : {}),
@@ -131,6 +135,7 @@ function policyColumn(
       (column.sensitivity === 'sensitive' || column.sensitivity === 'secret')
         ? { readable: true }
         : {}),
+      ...(explicitlyAuthorized ? { readable: true } : {}),
       ...(unreadable
         ? {
             readable: false,

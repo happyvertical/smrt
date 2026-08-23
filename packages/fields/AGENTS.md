@@ -208,7 +208,9 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   column), and actions that explicitly depend on hidden columns are removed.
   Sensitive/secret and `readable: false` columns also fail closed when omitted
   from the resolved policy; a host must pass `authorizedColumnIds` explicitly
-  to expose a sensitive descriptor column.
+  to expose a restricted descriptor column, and authorization sets the
+  effective `readable` metadata to `true` so capabilities and query allowlists
+  cannot contradict it.
 - **Two-tier context contract.** `PolicyField` alone reads the context with
   `tryGetFieldPolicyContext()`, because outside a Provider it still has the
   caller's children to render verbatim (incremental adoption). The

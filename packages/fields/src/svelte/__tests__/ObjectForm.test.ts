@@ -248,6 +248,12 @@ describe('ObjectForm selection and adapters', () => {
     expect([...authorizedDataTable]).toEqual(
       authorizedDataSurface.columns.map((column) => column.id),
     );
+    expect(
+      authorizedDataSurface.columns.find((column) => column.id === 'private'),
+    ).toMatchObject({
+      readable: true,
+      capabilities: ['read', 'project'],
+    });
   });
 
   it('prefers field overrides to type overrides and keeps registries isolated per app', () => {

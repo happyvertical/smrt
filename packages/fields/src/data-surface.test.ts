@@ -263,6 +263,25 @@ describe('field policy DataSurface adapter (#2449)', () => {
     });
   });
 
+  it('makes explicitly authorized unreadable metadata internally consistent', () => {
+    const denied = policyToDataSurfaceDescriptor(policy, descriptor);
+    expect(
+      denied.columns.find((column) => column.id === 'unreadable'),
+    ).toBeUndefined();
+    expect(denied.query.projectableColumnIds).not.toContain('unreadable');
+
+    const authorized = policyToDataSurfaceDescriptor(policy, descriptor, {
+      authorizedColumnIds: ['unreadable'],
+    });
+    expect(
+      authorized.columns.find((column) => column.id === 'unreadable'),
+    ).toMatchObject({
+      readable: true,
+      capabilities: ['read', 'search', 'filter', 'sort', 'project'],
+    });
+    expect(authorized.query.projectableColumnIds).toContain('unreadable');
+  });
+
   it('cannot broaden static hidden/readability constraints', () => {
     const result = policyToDataSurfaceDescriptor(policy, descriptor, {
       staticHiddenColumnIds: ['title'],
