@@ -62,13 +62,99 @@ describe('DataTable', () => {
     expect(screen.getByText('No data available')).toBeInTheDocument();
   });
 
-  it('toggles aria-sort when a sortable header is activated', async () => {
+  it('uses action-oriented labels and complete aria-sort transitions for sortable headers', async () => {
     render(DataTable, { props: { data, columns, sortable: true } });
     const nameHeader = screen.getByRole('columnheader', { name: 'Name' });
     // aria-sort is only present on the actively-sorted column.
     expect(nameHeader).not.toHaveAttribute('aria-sort');
-    await userEvent.click(screen.getByRole('button', { name: 'Name' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
     expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name descending' }),
+    );
+    expect(nameHeader).toHaveAttribute('aria-sort', 'descending');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Clear sorting for Name' }),
+    );
+    expect(nameHeader).not.toHaveAttribute('aria-sort');
+  });
+
+  it('announces the next action for each rule in a multi-column sort', async () => {
+    const multiSortColumns = [columns[0], { ...columns[1], sortable: true }];
+    render(DataTable, {
+      props: { data, columns: multiSortColumns, sortable: true },
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age ascending' }),
+      { shiftKey: true },
+    );
+    expect(
+      screen.getByRole('button', { name: 'Sort Age descending' }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps custom sortable headers interactive unless they explicitly opt out', async () => {
+    const customHeader = createRawSnippet(() => ({
+      render: () => '<span>Custom name</span>',
+    }));
+    const customColumns = [{ ...columns[0], header: customHeader }, columns[1]];
+    render(DataTable, {
+      props: { data, columns: customColumns, sortable: true },
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
+    expect(screen.getByText('Custom name')).toBeInTheDocument();
+    expect(
+      screen.getByRole('columnheader', { name: 'Custom name' }),
+    ).toHaveAttribute('aria-sort', 'ascending');
+
+    const { container } = render(DataTable, {
+      props: {
+        data,
+        columns: [
+          { ...columns[0], header: customHeader, headerSortMode: 'manual' },
+          columns[1],
+        ],
+        sortable: true,
+      },
+    });
+    expect(
+      within(container).queryByRole('button', { name: 'Sort Name ascending' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps automatic sort controls separate from interactive custom headers', async () => {
+    const customHeader = createRawSnippet(() => ({
+      render: () => '<button type="button">Column actions</button>',
+    }));
+    const customColumns = [{ ...columns[0], header: customHeader }, columns[1]];
+    render(DataTable, {
+      props: { data, columns: customColumns, sortable: true },
+    });
+
+    const customAction = screen.getByRole('button', { name: 'Column actions' });
+    const sortAction = screen.getByRole('button', {
+      name: 'Sort Name ascending',
+    });
+    expect(sortAction).not.toContainElement(customAction);
+
+    await userEvent.click(customAction);
+    expect(screen.getAllByRole('columnheader')[0]).not.toHaveAttribute(
+      'aria-sort',
+    );
+    await userEvent.click(sortAction);
+    expect(screen.getAllByRole('columnheader')[0]).toHaveAttribute(
+      'aria-sort',
+      'ascending',
+    );
   });
 
   it('routes a human sort click through the same controller transition as a command', async () => {
@@ -78,7 +164,9 @@ describe('DataTable', () => {
     const before = controller.getState();
     render(DataTable, { props: { data, columns, sortable: true, controller } });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Name' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
 
     expect(controller.getState()).toEqual(
       transitionDataTableState(before, {
@@ -102,7 +190,9 @@ describe('DataTable', () => {
     render(DataTable, { props: { data, columns, sortable: true, controller } });
 
     const nameHeader = screen.getByRole('columnheader', { name: 'Name' });
-    await userEvent.click(screen.getByRole('button', { name: 'Name' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
     expect(nameHeader).not.toHaveAttribute('aria-sort');
 
     controller.replaceState(onStateChange.mock.calls[0][0]);
@@ -319,11 +409,9 @@ describe('DataTable', () => {
         .filter((name): name is string => name !== undefined);
 
     await userEvent.click(
-      screen.getAllByRole('checkbox', { name: 'Select row' })[0],
+      screen.getByRole('checkbox', { name: 'Select row 1' }),
     );
-    await userEvent.click(
-      screen.getAllByRole('button', { name: 'Expand row' })[0],
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Expand row 1' }));
     expectAdaSelectionAndExpansion();
 
     controller.dispatch({
@@ -382,7 +470,7 @@ describe('DataTable', () => {
     ).toThrow(/rowKey is required/);
   });
 
-  it('reveals expandable row content', async () => {
+  it('links localized expansion controls to their row detail', async () => {
     render(DataTable, {
       props: {
         data,
@@ -393,10 +481,120 @@ describe('DataTable', () => {
         })),
       },
     });
-    await userEvent.click(
-      screen.getAllByRole('button', { name: 'Expand row' })[0],
-    );
+    const expandButton = screen.getByRole('button', { name: 'Expand row 1' });
+    await userEvent.click(expandButton);
     expect(screen.getByText('Row detail')).toBeInTheDocument();
+    expect(expandButton).toHaveAttribute('aria-expanded', 'true');
+    const expansionId = expandButton.getAttribute('aria-controls');
+    expect(expansionId).toBeTruthy();
+    expect(document.getElementById(expansionId ?? '')).toHaveTextContent(
+      'Row detail',
+    );
+    expect(screen.getByRole('button', { name: 'Collapse row 1' })).toBe(
+      expandButton,
+    );
+  });
+
+  it('keeps clickable rows semantic and ignores nested row actions', async () => {
+    const onRowClick = vi.fn();
+    const actionCell = createRawSnippet(() => ({
+      render: () => '<button type="button">Archive row</button>',
+    }));
+    const expandedContent = createRawSnippet(() => ({
+      render: () => '<p>Row detail</p>',
+    }));
+    render(DataTable, {
+      props: {
+        data,
+        columns: [
+          ...columns,
+          { id: 'actions', label: 'Actions', cell: actionCell },
+        ],
+        rowKey: 'id',
+        selectable: true,
+        expandedContent,
+        onRowClick,
+        rowLabel: (person: Person) => person.name,
+      },
+    });
+
+    const adaRow = screen.getByRole('cell', { name: 'Ada' }).closest('tr');
+    expect(adaRow).not.toHaveAttribute('role');
+    expect(adaRow).toHaveAttribute('tabindex', '0');
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Ada' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Expand Ada' }));
+    await userEvent.click(
+      screen.getAllByRole('button', { name: 'Archive row' })[0],
+    );
+    expect(onRowClick).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('cell', { name: 'Ada' }));
+    expect(onRowClick).toHaveBeenLastCalledWith(data[0], 0);
+
+    adaRow?.focus();
+    await userEvent.keyboard('{Enter}');
+    expect(onRowClick).toHaveBeenLastCalledWith(data[0], 0);
+  });
+
+  it('announces async states without replacing usable stale rows', async () => {
+    const onRetry = vi.fn();
+    const props = {
+      data,
+      columns,
+      rowKey: 'id' as const,
+      selectable: true,
+      loading: true,
+      stale: true,
+      partialResults: true,
+      onRetry,
+    };
+    const { rerender } = render(DataTable, { props });
+
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('cell', { name: 'Ada' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Refreshing table data',
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Showing stale results',
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Showing partial results',
+    );
+    await userEvent.click(
+      screen.getByRole('checkbox', { name: 'Select row 1' }),
+    );
+
+    await rerender({ ...props, error: 'Request failed' });
+    expect(screen.getByRole('cell', { name: 'Ada' })).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByRole('alert')).toHaveTextContent('Request failed');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+
+    await rerender({
+      ...props,
+      data: [],
+      stale: false,
+      partialResults: false,
+      error: null,
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Loading table data');
+    expect(screen.queryByText('No data available')).not.toBeInTheDocument();
+
+    await rerender({
+      ...props,
+      data: [],
+      loading: false,
+      error: 'Request failed',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Request failed');
+
+    await rerender({ ...props, data: [], loading: false, error: '' });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load table data',
+    );
   });
 
   it('rejects duplicate stable row keys and local totals that imply server paging', () => {
