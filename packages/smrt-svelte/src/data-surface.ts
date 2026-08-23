@@ -35,7 +35,8 @@ export type DataSurfaceBridgeFailureReason =
   | 'disconnected'
   | 'invalid_request'
   | 'source_mismatch'
-  | 'session_mismatch';
+  | 'session_mismatch'
+  | 'replay_capacity_exceeded';
 
 export interface DataSurfaceCommandRequest {
   type: 'data-surface.command';
@@ -84,6 +85,17 @@ export type DataSurfaceBridgeMessage =
   | DataSurfaceCommandAck
   | DataSurfaceBridgeEvent;
 
+/**
+ * Identity verified by the transport adapter, outside the wire message.
+ * Adapters must derive this from authenticated connection state (for example,
+ * a bound WebSocket session or an origin-checked postMessage peer), never
+ * from fields in `message`. `send` must route only to that bound peer.
+ */
+export interface DataSurfaceBridgePeer {
+  sessionId: string;
+  source: string;
+}
+
 export type DataSurfaceBridgeConnectionState =
   | 'connected'
   | 'disconnected'
@@ -92,7 +104,9 @@ export type DataSurfaceBridgeConnectionState =
 /** A deliberately tiny adapter for WebSocket, SSE, postMessage, or a test. */
 export interface DataSurfaceBridgeTransport {
   send(message: DataSurfaceBridgeMessage): void | Promise<void>;
-  subscribe(listener: (message: unknown) => void): () => void;
+  subscribe(
+    listener: (message: unknown, peer: DataSurfaceBridgePeer) => void,
+  ): () => void;
   subscribeStatus?: (
     listener: (state: DataSurfaceBridgeConnectionState) => void,
   ) => () => void;
@@ -117,7 +131,7 @@ export interface DataSurfaceBrowserBridge {
   /** Stop receiving transport messages and registry events. */
   dispose(): void;
   /** Handle a message directly; useful for transports that batch delivery. */
-  receive(message: unknown): Promise<void>;
+  receive(message: unknown, peer: DataSurfaceBridgePeer): Promise<void>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -126,6 +140,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 256;
+}
+
+function isPeer(value: unknown): value is DataSurfaceBridgePeer {
+  return isRecord(value) && isString(value.sessionId) && isString(value.source);
 }
 
 function isFiniteInteger(value: unknown): value is number {
@@ -219,25 +237,27 @@ export function createDataSurfaceBrowserBridge(
 
   const replay = new Map<
     string,
-    { signature: string; ack: DataSurfaceCommandAck }
+    { signature: string; ack: DataSurfaceCommandAck; expiresAt: number }
   >();
   let disposed = false;
   let lastSequence = 0;
+
+  const pruneReplay = () => {
+    const current = now();
+    for (const [commandId, entry] of replay) {
+      if (entry.expiresAt <= current) replay.delete(commandId);
+    }
+  };
 
   const remember = (
     request: DataSurfaceCommandRequest,
     ack: DataSurfaceCommandAck,
   ) => {
-    replay.delete(request.commandId);
     replay.set(request.commandId, {
       signature: commandSignature(request),
       ack: cloneMessage(ack),
+      expiresAt: request.expiresAt,
     });
-    while (replay.size > maxReplayEntries) {
-      const oldest = replay.keys().next().value as string | undefined;
-      if (!oldest) break;
-      replay.delete(oldest);
-    }
   };
 
   const sendAck = async (ack: DataSurfaceCommandAck) => {
@@ -274,9 +294,20 @@ export function createDataSurfaceBrowserBridge(
     reason,
   });
 
-  const receive = async (value: unknown): Promise<void> => {
-    if (disposed || !isRequest(value)) return;
+  const receive = async (
+    value: unknown,
+    peer: DataSurfaceBridgePeer,
+  ): Promise<void> => {
+    if (
+      disposed ||
+      !isRequest(value) ||
+      !isPeer(peer) ||
+      peer.sessionId !== options.sessionId ||
+      peer.source !== options.peerSource
+    )
+      return;
     const request = value;
+    pruneReplay();
     const existing = replay.get(request.commandId);
     const signature = commandSignature(request);
     if (existing) {
@@ -288,7 +319,7 @@ export function createDataSurfaceBrowserBridge(
       return;
     }
 
-    let ack: DataSurfaceCommandAck;
+    let ack: DataSurfaceCommandAck | undefined;
     if (request.sessionId !== options.sessionId) {
       ack = rejected(request, 'session_mismatch');
     } else if (request.source !== options.peerSource) {
@@ -298,6 +329,8 @@ export function createDataSurfaceBrowserBridge(
       request.expiresAt - now() > maxTtlMs
     ) {
       ack = rejected(request, 'expired');
+    } else if (replay.size >= maxReplayEntries) {
+      ack = rejected(request, 'replay_capacity_exceeded');
     } else {
       let command: DataSurfaceVisibleCommand;
       try {
@@ -330,6 +363,16 @@ export function createDataSurfaceBrowserBridge(
         ack = rejected(request, 'invalid_request');
       }
     }
+    if (
+      ack === undefined ||
+      request.sessionId !== options.sessionId ||
+      request.source !== options.peerSource ||
+      request.expiresAt <= now() ||
+      ack.reason === 'replay_capacity_exceeded'
+    ) {
+      if (ack !== undefined) await sendAck(ack);
+      return;
+    }
     remember(request, ack);
     await sendAck(ack);
   };
@@ -354,8 +397,8 @@ export function createDataSurfaceBrowserBridge(
     );
   };
 
-  const unsubscribeTransport = options.transport.subscribe((message) => {
-    void receive(message);
+  const unsubscribeTransport = options.transport.subscribe((message, peer) => {
+    void receive(message, peer);
   });
   const unsubscribeRegistry = options.registry.subscribe(emit);
 

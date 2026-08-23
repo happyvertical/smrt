@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceCommandBridge,
   type DataSurfaceBridgeMessage,
+  type DataSurfaceBridgePeer,
   type DataSurfaceCommandRequest,
 } from './data-surface-bridge.js';
 
@@ -17,9 +18,29 @@ const command: DataSurfaceVisibleCommand = {
   expectedRevision: 3,
   controlId: 'refresh',
 };
+const snapshot = {
+  version: 1 as const,
+  descriptor: {
+    version: 1 as const,
+    identity,
+    schemaVersion: 1,
+    label: 'Orders',
+    rowKey: 'id',
+    columns: [{ id: 'id', label: 'ID', capabilities: ['read' as const] }],
+    query: { modes: ['rows' as const], projectableColumnIds: ['id'] },
+    controls: [{ id: 'refresh', label: 'Refresh' }],
+    actions: [],
+    limits: { maxQueryRows: 10, maxQueryBytes: 1000, maxSelectionSize: 10 },
+  },
+  revision: 4,
+  state: {},
+  selection: null,
+};
 
 function transport() {
-  const listeners = new Set<(message: unknown) => void>();
+  const listeners = new Set<
+    (message: unknown, peer: DataSurfaceBridgePeer) => void
+  >();
   const statuses = new Set<
     (state: 'connected' | 'disconnected' | 'reconnecting') => void
   >();
@@ -27,7 +48,9 @@ function transport() {
   return {
     sent,
     send: vi.fn((message: DataSurfaceBridgeMessage) => sent.push(message)),
-    subscribe(listener: (message: unknown) => void) {
+    subscribe(
+      listener: (message: unknown, peer: DataSurfaceBridgePeer) => void,
+    ) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
@@ -37,8 +60,14 @@ function transport() {
       statuses.add(listener);
       return () => statuses.delete(listener);
     },
-    receive(message: unknown) {
-      for (const listener of listeners) listener(message);
+    receive(
+      message: unknown,
+      peer: DataSurfaceBridgePeer = {
+        sessionId: 'session-1',
+        source: 'browser-1',
+      },
+    ) {
+      for (const listener of listeners) listener(message, peer);
     },
     status(state: 'connected' | 'disconnected' | 'reconnecting') {
       for (const listener of statuses) listener(state);
@@ -61,6 +90,7 @@ function ack(
     expectedRevision: request.expectedRevision,
     ok: true,
     revision: request.expectedRevision + 1,
+    snapshot,
     ...overrides,
   };
 }
@@ -138,6 +168,43 @@ describe('server data-surface bridge', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('discards mismatched, malformed, and unauthenticated acknowledgements', async () => {
+    const link = transport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+      now: () => 1_000,
+      ttlMs: 1_000,
+      timeoutMs: 500,
+    });
+    const pending = bridge.send(command);
+    await Promise.resolve();
+    const request = link.sent[0] as DataSurfaceCommandRequest;
+    link.receive(
+      ack(request, { identity: { surfaceId: 'other', kind: 'table' } }),
+    );
+    link.receive(
+      ack(request, { expectedRevision: request.expectedRevision + 1 }),
+    );
+    link.receive(ack(request, { expiresAt: request.expiresAt + 1 }));
+    link.receive(ack(request, { snapshot: {} }));
+    link.receive(ack(request), { sessionId: 'session-1', source: 'attacker' });
+    link.receive(ack(request), { sessionId: 'attacker', source: 'browser-1' });
+    expect(link.sent).toHaveLength(1);
+
+    link.receive(ack(request));
+    await expect(pending).resolves.toMatchObject({
+      ok: true,
+      commandId: request.commandId,
+      identity,
+      expiresAt: request.expiresAt,
+    });
+    bridge.dispose();
   });
 
   it('coalesces concurrent replay of one command id', async () => {

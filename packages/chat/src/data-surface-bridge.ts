@@ -114,7 +114,8 @@ export type DataSurfaceBridgeFailureReason =
   | 'disconnected'
   | 'invalid_request'
   | 'source_mismatch'
-  | 'session_mismatch';
+  | 'session_mismatch'
+  | 'replay_capacity_exceeded';
 
 export interface DataSurfaceCommandRequest {
   type: 'data-surface.command';
@@ -162,6 +163,17 @@ export type DataSurfaceBridgeMessage =
   | DataSurfaceCommandAck
   | DataSurfaceBridgeEvent;
 
+/**
+ * Identity verified by the transport adapter, outside the wire message.
+ * Adapters must derive this from authenticated connection state (for example,
+ * a bound WebSocket session or an origin-checked postMessage peer), never
+ * from fields in `message`. `send` must route only to that bound peer.
+ */
+export interface DataSurfaceBridgePeer {
+  sessionId: string;
+  source: string;
+}
+
 export type DataSurfaceBridgeConnectionState =
   | 'connected'
   | 'disconnected'
@@ -169,7 +181,9 @@ export type DataSurfaceBridgeConnectionState =
 
 export interface DataSurfaceBridgeTransport {
   send(message: DataSurfaceBridgeMessage): void | Promise<void>;
-  subscribe(listener: (message: unknown) => void): () => void;
+  subscribe(
+    listener: (message: unknown, peer: DataSurfaceBridgePeer) => void,
+  ): () => void;
   subscribeStatus?: (
     listener: (state: DataSurfaceBridgeConnectionState) => void,
   ) => () => void;
@@ -207,6 +221,35 @@ function isString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 256;
 }
 
+function isPeer(value: unknown): value is DataSurfaceBridgePeer {
+  return isRecord(value) && isString(value.sessionId) && isString(value.source);
+}
+
+function isFiniteInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+function isFailureReason(
+  value: unknown,
+): value is DataSurfaceBridgeFailureReason {
+  return (
+    value === 'not_found' ||
+    value === 'unsupported' ||
+    value === 'stale_revision' ||
+    value === 'idempotency_conflict' ||
+    value === 'denied' ||
+    value === 'execution_failed' ||
+    value === 'non_monotonic_revision' ||
+    value === 'expired' ||
+    value === 'timeout' ||
+    value === 'disconnected' ||
+    value === 'invalid_request' ||
+    value === 'source_mismatch' ||
+    value === 'session_mismatch' ||
+    value === 'replay_capacity_exceeded'
+  );
+}
+
 function identityOf(value: unknown): DataSurfaceIdentity | undefined {
   if (!isRecord(value) || !isString(value.surfaceId) || !isString(value.kind))
     return undefined;
@@ -218,6 +261,53 @@ function identityOf(value: unknown): DataSurfaceIdentity | undefined {
   )
     return undefined;
   return value as unknown as DataSurfaceIdentity;
+}
+
+function identitySignature(identity: DataSurfaceIdentity): string {
+  return JSON.stringify({
+    surfaceId: identity.surfaceId,
+    kind: identity.kind,
+    ...(identity.subject
+      ? {
+          subject: {
+            type: identity.subject.type,
+            id: identity.subject.id,
+            ...(identity.subject.label === undefined
+              ? {}
+              : { label: identity.subject.label }),
+          },
+        }
+      : {}),
+  });
+}
+
+function snapshotOf(value: unknown): DataSurfaceSnapshot | undefined {
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.descriptor))
+    return undefined;
+  const descriptor = value.descriptor;
+  if (
+    descriptor.version !== 1 ||
+    identityOf(descriptor.identity) === undefined ||
+    !isFiniteInteger(descriptor.schemaVersion) ||
+    descriptor.schemaVersion < 0 ||
+    !isString(descriptor.label) ||
+    !isString(descriptor.rowKey) ||
+    !Array.isArray(descriptor.columns) ||
+    !isRecord(descriptor.query) ||
+    !Array.isArray(descriptor.controls) ||
+    !Array.isArray(descriptor.actions) ||
+    !isRecord(descriptor.limits) ||
+    !isFiniteInteger(value.revision) ||
+    value.revision < 0 ||
+    !isRecord(value.state) ||
+    !('selection' in value)
+  )
+    return undefined;
+  try {
+    return JSON.parse(JSON.stringify(value)) as DataSurfaceSnapshot;
+  } catch {
+    return undefined;
+  }
 }
 
 function isAck(value: unknown): value is DataSurfaceCommandAck {
@@ -233,6 +323,7 @@ function isAck(value: unknown): value is DataSurfaceCommandAck {
       identityOf(value.identity) &&
       typeof value.expectedRevision === 'number' &&
       Number.isSafeInteger(value.expectedRevision) &&
+      value.expectedRevision >= 0 &&
       typeof value.ok === 'boolean',
   );
 }
@@ -311,6 +402,7 @@ export function createDataSurfaceCommandBridge(
 
   type Pending = {
     command: DataSurfaceVisibleCommand;
+    request: DataSurfaceCommandRequest;
     expiresAt: number;
     resolve: (ack: DataSurfaceCommandAck) => void;
     timer: ReturnType<typeof setTimeout>;
@@ -342,8 +434,74 @@ export function createDataSurfaceCommandBridge(
     }
   };
 
-  const receive = (value: unknown) => {
-    if (disposed) return;
+  const validateAck = (
+    value: DataSurfaceCommandAck,
+    item: Pending,
+  ): DataSurfaceCommandAck | undefined => {
+    const request = item.request;
+    if (
+      value.commandId !== request.commandId ||
+      value.sessionId !== request.sessionId ||
+      value.source !== options.peerSource ||
+      value.expiresAt !== request.expiresAt ||
+      value.expectedRevision !== request.expectedRevision ||
+      identitySignature(value.identity) !== identitySignature(request.identity)
+    ) {
+      return undefined;
+    }
+    if (
+      value.revision !== undefined &&
+      (!isFiniteInteger(value.revision) || value.revision < 0)
+    ) {
+      return undefined;
+    }
+    if (value.ok) {
+      if (
+        value.reason !== undefined ||
+        value.revision === undefined ||
+        value.snapshot === undefined
+      ) {
+        return undefined;
+      }
+    } else if (!isFailureReason(value.reason)) {
+      return undefined;
+    }
+    let snapshot: DataSurfaceSnapshot | undefined;
+    if (value.snapshot !== undefined) {
+      snapshot = snapshotOf(value.snapshot);
+      if (snapshot === undefined) return undefined;
+      if (
+        identitySignature(snapshot.descriptor.identity) !==
+          identitySignature(request.identity) ||
+        (value.revision !== undefined && snapshot.revision !== value.revision)
+      ) {
+        return undefined;
+      }
+    }
+    return {
+      type: 'data-surface.ack',
+      version: 1,
+      commandId: request.commandId,
+      sessionId: request.sessionId,
+      source: options.peerSource,
+      expiresAt: request.expiresAt,
+      identity: request.identity,
+      expectedRevision: request.expectedRevision,
+      ok: value.ok,
+      ...(value.revision === undefined ? {} : { revision: value.revision }),
+      ...(snapshot === undefined ? {} : { snapshot }),
+      ...(value.reason === undefined ? {} : { reason: value.reason }),
+    };
+  };
+
+  const receive = (value: unknown, peer: DataSurfaceBridgePeer) => {
+    if (
+      disposed ||
+      !isPeer(peer) ||
+      peer.sessionId !== options.sessionId ||
+      peer.source !== options.peerSource
+    )
+      return;
     if (isAck(value)) {
       if (
         value.sessionId !== options.sessionId ||
@@ -352,6 +510,8 @@ export function createDataSurfaceCommandBridge(
         return;
       const item = pending.get(value.commandId);
       if (!item) return;
+      const validated = validateAck(value, item);
+      if (!validated) return;
       pending.delete(value.commandId);
       inflight.delete(value.commandId);
       clearTimeout(item.timer);
@@ -363,11 +523,11 @@ export function createDataSurfaceCommandBridge(
             options.sessionId,
             options.peerSource,
             'expired',
-            value.expiresAt,
+            item.expiresAt,
           ),
         );
       } else {
-        item.resolve(value);
+        item.resolve(validated);
       }
       return;
     }
@@ -455,12 +615,6 @@ export function createDataSurfaceCommandBridge(
           ),
         );
       }, timeoutMs);
-      pending.set(normalized.commandId, {
-        command: normalized,
-        expiresAt,
-        resolve,
-        timer,
-      });
       const request: DataSurfaceCommandRequest = {
         type: 'data-surface.command',
         version: 1,
@@ -475,6 +629,13 @@ export function createDataSurfaceCommandBridge(
           ? {}
           : { payload: normalized.payload }),
       };
+      pending.set(normalized.commandId, {
+        command: normalized,
+        request,
+        expiresAt,
+        resolve,
+        timer,
+      });
       Promise.resolve(options.transport.send(request)).catch(() => {
         if (!pending.delete(normalized.commandId)) return;
         inflight.delete(normalized.commandId);
