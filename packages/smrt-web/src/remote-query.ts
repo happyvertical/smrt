@@ -211,6 +211,13 @@ export function createSmrtWebQuery<TData extends object>(
         throw controller.signal.reason ?? abortError();
       }
       return result;
+    } catch (error) {
+      // A transport may reject with its own error instead of propagating the
+      // abort reason. Once cancelled, that transport error is not query state.
+      if (controller.signal.aborted) {
+        throw controller.signal.reason ?? abortError();
+      }
+      throw error;
     } finally {
       if (timer) clearTimeout(timer);
       for (const cleanup of cleanups) cleanup();

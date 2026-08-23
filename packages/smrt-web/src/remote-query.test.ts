@@ -485,6 +485,35 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('treats a transport custom error after abort as cancellation', async () => {
+    const caller = new AbortController();
+    let started = false;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (_received, options) => {
+        started = true;
+        return await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => reject(new Error('transport cancellation')),
+            { once: true },
+          );
+        });
+      },
+    });
+    const pending = query.execute(request, { signal: caller.signal });
+    await vi.waitFor(() => expect(started).toBe(true));
+    caller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(query.state.error).toBeNull();
+    expect(query.state.loading).toBe(false);
+    expect(query.state.refreshing).toBe(false);
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('clears refreshing after the current refresh is cancelled', async () => {
     const caller = new AbortController();
     let calls = 0;
