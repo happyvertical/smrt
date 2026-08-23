@@ -300,6 +300,8 @@ export interface SmrtCrudFetchers {
   create(data: Record<string, unknown>): Promise<unknown>;
   update?(id: string, data: Record<string, unknown>): Promise<unknown>;
   delete?(id: string): Promise<unknown>;
+  /** Invoke a generated custom action route. */
+  custom?(action: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
 /**
@@ -551,6 +553,24 @@ export function createDefinitionFetchers(
       }
       return true;
     },
+    custom: async (action, args) => {
+      // Generated custom routes use the action name as their default path
+      // segment. Item actions carry the identifier in the path; collection
+      // actions receive the arguments as the JSON body. Explicit route
+      // overrides remain available through a caller-supplied fetcher.
+      const { id, ...body } = args;
+      const path =
+        typeof id === 'string' && id.length > 0
+          ? `${collectionUrl}/${encodeURIComponent(id)}/${action}`
+          : `${collectionUrl}/${action}`;
+      return parse(
+        await fetchFn(path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        }),
+      );
+    },
   };
 }
 
@@ -690,6 +710,10 @@ export interface SmrtWebCollection<TData extends object> {
    * server outcome (see {@link SmrtWebTransaction}).
    */
   insert(row: SmrtWebRow<TData>): SmrtWebTransaction;
+  /** Optimistically update a row and persist it through the REST surface. */
+  update(key: string, changes: Partial<SmrtWebRow<TData>>): SmrtWebTransaction;
+  /** Optimistically delete a row and persist it through the REST surface. */
+  delete(key: string): SmrtWebTransaction;
 }
 
 /** Extract a row's server revision timestamp for sync/apply conflict guards. */
@@ -1290,6 +1314,23 @@ export function createSmrtCollection<TData extends object>(
     },
     insert(row) {
       return collection.insert(row) as unknown as SmrtWebTransaction;
+    },
+    update(key, changes) {
+      const engine = collection as unknown as {
+        update: (
+          key: string,
+          updater: (draft: Record<string, unknown>) => void,
+        ) => unknown;
+      };
+      return engine.update(key, (draft) => {
+        Object.assign(draft, changes);
+      }) as SmrtWebTransaction;
+    },
+    delete(key) {
+      const engine = collection as unknown as {
+        delete: (key: string) => unknown;
+      };
+      return engine.delete(key) as SmrtWebTransaction;
     },
   };
 

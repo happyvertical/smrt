@@ -73,6 +73,26 @@ const PRODUCT_DEF: SmrtWebCollectionDefinition = {
   ],
 };
 
+const MUTATION_DEF: SmrtWebCollectionDefinition = {
+  ...PRODUCT_DEF,
+  toolDescriptors: [
+    {
+      action: 'update',
+      name: 'product_update',
+      description: 'Update an existing Product',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+      readOnly: false,
+    },
+    {
+      action: 'delete',
+      name: 'product_delete',
+      description: 'Delete a Product by ID',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+      readOnly: false,
+    },
+  ],
+};
+
 function mockFetchers(overrides: Partial<SmrtCrudFetchers> = {}) {
   return {
     list: vi.fn(async () => [{ id: 'p1', name: 'Widget' }]),
@@ -86,6 +106,10 @@ function mockFetchers(overrides: Partial<SmrtCrudFetchers> = {}) {
       ...data,
     })),
     delete: vi.fn(async () => true),
+    custom: vi.fn(async (action: string, args: Record<string, unknown>) => ({
+      action,
+      result: args,
+    })),
     ...overrides,
   } satisfies SmrtCrudFetchers;
 }
@@ -142,7 +166,7 @@ describe('registerWebMcpTools', () => {
     ]);
   });
 
-  it('routes a create tool call through the fetchers with the tool args as the body', async () => {
+  it('routes a create tool call through the shared collection mutation path', async () => {
     const registry = installModelContext();
     const fetchers = mockFetchers();
     registerWebMcpTools([PRODUCT_DEF], { resolveFetchers: () => fetchers });
@@ -154,16 +178,15 @@ describe('registerWebMcpTools', () => {
       name: 'Gadget',
       price: 9.99,
     });
-    expect(JSON.parse(result as string)).toMatchObject({
-      id: 'p2',
-      name: 'Gadget',
-    });
+    expect(JSON.parse(result as string)).toMatchObject({ name: 'Gadget' });
+    expect(JSON.parse(result as string).id).toEqual(expect.any(String));
   });
 
-  it('returns a clear not-wired payload for custom actions (tracer scope)', async () => {
+  it('routes custom actions through the collection fetcher', async () => {
     const registry = installModelContext();
+    const fetchers = mockFetchers();
     registerWebMcpTools([PRODUCT_DEF], {
-      resolveFetchers: () => mockFetchers(),
+      resolveFetchers: () => fetchers,
     });
 
     const publishTool = registry.tools.find(
@@ -172,8 +195,25 @@ describe('registerWebMcpTools', () => {
     const parsed = JSON.parse(
       (await publishTool?.execute({ id: 'p1' })) as string,
     );
-    expect(parsed.error).toMatch(/not wired/i);
-    expect(parsed.action).toBe('publish');
+    expect(fetchers.custom).toHaveBeenCalledWith('publish', { id: 'p1' });
+    expect(parsed).toEqual({ action: 'publish', result: { id: 'p1' } });
+  });
+
+  it('hydrates the shared collection before update and delete mutations', async () => {
+    const registry = installModelContext();
+    const fetchers = mockFetchers();
+    registerWebMcpTools([MUTATION_DEF], {
+      resolveFetchers: () => fetchers,
+    });
+
+    const updateTool = registry.tools.find((t) => t.name === 'product_update');
+    const deleteTool = registry.tools.find((t) => t.name === 'product_delete');
+    await updateTool?.execute({ id: 'p1', name: 'Updated' });
+    await deleteTool?.execute({ id: 'p1' });
+
+    expect(fetchers.list.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(fetchers.update).toHaveBeenCalledWith('p1', { name: 'Updated' });
+    expect(fetchers.delete).toHaveBeenCalledWith('p1');
   });
 
   it('deregisters every registered tool when disposed', () => {
