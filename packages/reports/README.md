@@ -144,7 +144,7 @@ have a non-empty string `id`; use that value, never a display or page index, for
 row identity.
 
 When no collection is injected, reads resolve the registered report collection
-through `ObjectRegistry`, allowing normal SMRT collection interceptors to enforce
+through `ObjectRegistry`, allowing normal s-m-r-t collection interceptors to enforce
 tenant filtering. `tenantScoped` and `tenantField` in the descriptor are true
 only when the report is actually registered with tenant metadata; a scope string
 alone is not an authority boundary. An injected collection is application-owned
