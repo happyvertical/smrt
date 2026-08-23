@@ -98,11 +98,21 @@ export interface ReportSavedView {
 
 export type ReportExportFormat = 'csv' | 'json';
 
+/**
+ * Opaque identity of a host-captured materialization snapshot. The application
+ * creates and verifies it while bound to its principal and tenant; callers
+ * cannot turn an `asOf` label into a snapshot by supplying this id alone.
+ */
+export interface ReportExportSnapshotBinding {
+  id: string;
+}
+
 export interface ReportExportSnapshot {
   version: 1;
   resourceId: string;
   reportClassName: string;
   definitionFingerprint: string;
+  binding: ReportExportSnapshotBinding;
   request: DataQueryRequest;
   queryFingerprint: string;
   projection: string[];
@@ -129,12 +139,29 @@ export interface ReportExportLimits {
   foregroundRowLimit: number;
 }
 
+/**
+ * A deterministic offset-page plan over the immutable host snapshot. A worker
+ * starts at offset zero and advances by `page.limit` until `rowCount` rows have
+ * been produced or the byte/deadline limits are reached.
+ */
+export interface ReportExportReadPlan {
+  snapshotId: string;
+  queryFingerprint: string;
+  asOf: string;
+  page: {
+    kind: 'offset';
+    offset: 0;
+    limit: number;
+  };
+}
+
 export interface ReportExportRequest {
   version: 1;
   format: ReportExportFormat;
   execution: 'stream' | 'background';
   snapshot: ReportExportSnapshot;
   limits: ReportExportLimits;
+  read: ReportExportReadPlan;
   rowCount: number;
   truncated: boolean;
   action: {
@@ -185,15 +212,34 @@ export interface ReportExportActionContext {
   execution: 'stream' | 'background';
   queryFingerprint: string;
   definitionFingerprint: string;
+  snapshotId: string;
+  asOf: string;
+  pageSize: number;
 }
 
 /** The same host is used by human and agent callers. */
 export interface ReportExportActionHost {
+  /**
+   * Prove that this opaque binding still resolves to the exact immutable
+   * materialization snapshot under the host's current principal and tenant.
+   * The background worker must call `validateReportExportExecution()` again
+   * before reading or serving any rows.
+   */
+  assertSnapshot(context: ReportExportSnapshotContext): Promise<void> | void;
   authorize(context: ReportExportActionContext): Promise<void> | void;
   audit(context: ReportExportActionContext): Promise<void> | void;
   enqueue?(
     task: ReportBackgroundExportTask,
   ): Promise<{ taskId: string }> | { taskId: string };
+}
+
+export interface ReportExportSnapshotContext {
+  bindingId: string;
+  resourceId: string;
+  reportClassName: string;
+  definitionFingerprint: string;
+  queryFingerprint: string;
+  asOf: string;
 }
 
 export interface ReportExportPreview {
@@ -292,6 +338,13 @@ function normalizeIso(value: unknown, label: string): string {
     return fail(`${label} must be an RFC 3339 instant`);
   }
   return text;
+}
+
+function normalizeSnapshotBinding(value: unknown): ReportExportSnapshotBinding {
+  const input = plainObject(value, 'Report export snapshot binding');
+  return {
+    id: requiredString(input.id, 'Report export snapshot binding id'),
+  };
 }
 
 function stable(value: unknown): string {
@@ -567,6 +620,7 @@ export function createReportExportSnapshot(
     'queryFingerprint' | 'identityField' | 'total' | 'freshness' | 'truncated'
   > &
     Pick<ReportDataQueryResult, 'reportLifecycle'>,
+  binding: unknown,
 ): ReportExportSnapshot {
   const request = normalizeDataQueryRequest(input, descriptor.schema);
   if (request.mode !== 'rows') {
@@ -591,6 +645,9 @@ export function createReportExportSnapshot(
     return fail(
       'Report export snapshots require a safe non-negative row count',
     );
+  }
+  if (result.truncated) {
+    return fail('Report export snapshots cannot use a truncated query result');
   }
   if (result.freshness.state === 'unknown') {
     return fail('Report export snapshots require lifecycle freshness');
@@ -619,6 +676,7 @@ export function createReportExportSnapshot(
     resourceId: descriptor.resourceId,
     reportClassName: descriptor.reportClassName,
     definitionFingerprint: reportDefinitionFingerprint(descriptor),
+    binding: normalizeSnapshotBinding(binding),
     request,
     queryFingerprint,
     projection: [...(request.projection ?? [descriptor.identityField])],
@@ -667,6 +725,7 @@ export function verifyReportExportSnapshot(
   ) {
     return fail('Report export definition has changed');
   }
+  const binding = normalizeSnapshotBinding(snapshot.binding);
   const normalized = normalizeDataQueryRequest(
     snapshot.request,
     descriptor.schema,
@@ -694,6 +753,12 @@ export function verifyReportExportSnapshot(
     return fail('Report export snapshot projection or sort has changed');
   }
   normalizeIso(snapshot.snapshot.asOf, 'Report export snapshot asOf');
+  if (
+    snapshot.freshness.state !== 'fresh' &&
+    snapshot.freshness.state !== 'stale'
+  ) {
+    return fail('Report export snapshot freshness state is invalid');
+  }
   if (snapshot.freshness.asOf !== snapshot.snapshot.asOf) {
     return fail(
       'Report export snapshot freshness does not match its as-of instant',
@@ -704,6 +769,9 @@ export function verifyReportExportSnapshot(
       snapshot.snapshot.refreshedAt,
       'Report export snapshot refreshedAt',
     );
+  }
+  if (snapshot.snapshot.stale !== (snapshot.freshness.state === 'stale')) {
+    return fail('Report export snapshot stale state is invalid');
   }
   if (
     snapshot.total.kind !== 'exact' ||
@@ -717,6 +785,7 @@ export function verifyReportExportSnapshot(
   }
   return {
     ...snapshot,
+    binding,
     request: normalized,
     projection: [...expectedProjection],
     sort: [...expectedSort],
@@ -769,6 +838,27 @@ function hasSensitiveProjection(
   });
 }
 
+function createReadPlan(
+  descriptor: ReportAdapterDescriptor,
+  snapshot: ReportExportSnapshot,
+  limits: ReportExportLimits,
+): ReportExportReadPlan {
+  return {
+    snapshotId: snapshot.binding.id,
+    queryFingerprint: snapshot.queryFingerprint,
+    asOf: snapshot.snapshot.asOf,
+    page: {
+      kind: 'offset',
+      offset: 0,
+      limit: Math.min(
+        limits.maxRows,
+        descriptor.schema.maxPageLimit ??
+          DEFAULT_EXPORT_LIMITS.foregroundRowLimit,
+      ),
+    },
+  };
+}
+
 /**
  * Build one common request for both agent and human export clients. The
  * resulting request carries no actor, tenant, storage location, or token.
@@ -799,6 +889,7 @@ export function createReportExportRequest(
         : 'stream',
     snapshot: verified,
     limits,
+    read: createReadPlan(descriptor, verified, limits),
     rowCount,
     truncated: verified.total.value > limits.maxRows,
     action: {
@@ -829,6 +920,35 @@ export function validateReportExportRequest(
   return expected;
 }
 
+/**
+ * Build one bounded page of the immutable export read. The host applies the
+ * opaque snapshot binding separately; this function preserves the frozen
+ * projection, predicate, and deterministic sort while replacing only visible
+ * pagination. A zero-row export therefore has no pages to execute.
+ */
+export function createReportExportPageRequest(
+  descriptor: ReportAdapterDescriptor,
+  request: ReportExportRequest,
+  offset: number,
+): DataQueryRequest {
+  const verified = validateReportExportRequest(descriptor, request);
+  if (
+    !Number.isSafeInteger(offset) ||
+    offset < 0 ||
+    offset >= verified.rowCount
+  ) {
+    return fail('Report export page offset is outside the bounded export');
+  }
+  const limit = Math.min(verified.read.page.limit, verified.rowCount - offset);
+  return normalizeDataQueryRequest(
+    {
+      ...verified.snapshot.request,
+      page: { kind: 'offset', offset, limit },
+    },
+    descriptor.schema,
+  );
+}
+
 function actionContext(
   phase: ReportExportActionContext['phase'],
   request: ReportExportRequest,
@@ -842,7 +962,38 @@ function actionContext(
     execution: request.execution,
     queryFingerprint: request.snapshot.queryFingerprint,
     definitionFingerprint: request.snapshot.definitionFingerprint,
+    snapshotId: request.read.snapshotId,
+    asOf: request.read.asOf,
+    pageSize: request.read.page.limit,
   };
+}
+
+function snapshotContext(
+  request: ReportExportRequest,
+): ReportExportSnapshotContext {
+  return {
+    bindingId: request.snapshot.binding.id,
+    resourceId: request.snapshot.resourceId,
+    reportClassName: request.snapshot.reportClassName,
+    definitionFingerprint: request.snapshot.definitionFingerprint,
+    queryFingerprint: request.snapshot.queryFingerprint,
+    asOf: request.snapshot.snapshot.asOf,
+  };
+}
+
+/**
+ * Revalidate the request and prove the opaque snapshot binding through the
+ * application host. Preview, apply, and every background worker use this same
+ * operation before reading or serving export data.
+ */
+export async function validateReportExportExecution(
+  descriptor: ReportAdapterDescriptor,
+  request: ReportExportRequest,
+  host: Pick<ReportExportActionHost, 'assertSnapshot'>,
+): Promise<ReportExportRequest> {
+  const verified = validateReportExportRequest(descriptor, request);
+  await host.assertSnapshot(snapshotContext(verified));
+  return verified;
 }
 
 export async function previewReportExport(
@@ -850,9 +1001,14 @@ export async function previewReportExport(
   request: ReportExportRequest,
   host: ReportExportActionHost,
 ): Promise<ReportExportPreview> {
-  const verified = validateReportExportRequest(descriptor, request);
-  const action = actionContext('preview', verified);
+  const initial = validateReportExportRequest(descriptor, request);
+  const action = actionContext('preview', initial);
   await host.authorize(action);
+  const verified = await validateReportExportExecution(
+    descriptor,
+    initial,
+    host,
+  );
   await host.audit(action);
   return { phase: 'preview', action, request: verified };
 }
@@ -868,12 +1024,17 @@ export async function applyReportExport(
   host: ReportExportActionHost,
   options: { confirmed?: boolean } = {},
 ): Promise<AppliedReportExport> {
-  const verified = validateReportExportRequest(descriptor, request);
-  if (verified.action.confirmationRequired && options.confirmed !== true) {
+  const initial = validateReportExportRequest(descriptor, request);
+  if (initial.action.confirmationRequired && options.confirmed !== true) {
     return fail('Sensitive report exports require explicit confirmation');
   }
-  const action = actionContext('apply', verified);
+  const action = actionContext('apply', initial);
   await host.authorize(action);
+  const verified = await validateReportExportExecution(
+    descriptor,
+    initial,
+    host,
+  );
   await host.audit(action);
   if (verified.execution === 'stream') {
     return {

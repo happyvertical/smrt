@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ReportAdapterDescriptor } from '../adapter.js';
 import {
   applyReportExport,
+  createReportExportPageRequest,
   createReportExportRequest,
   createReportExportSnapshot,
   normalizeReportSavedView,
   previewReportExport,
   restoreReportSavedView,
   validateReportExportArtifact,
+  validateReportExportExecution,
 } from '../views.js';
 
 const AS_OF = '2026-08-23T22:00:00.000Z';
@@ -225,6 +227,7 @@ describe('report saved views and exports', () => {
       report,
       query(),
       sourceResult(report),
+      { id: 'snapshot-1' },
     );
 
     expect(snapshot).toMatchObject({
@@ -246,11 +249,24 @@ describe('report saved views and exports', () => {
     });
 
     expect(() =>
-      createReportExportSnapshot(report, query(), {
-        ...sourceResult(report),
-        queryFingerprint: 'dq1_wrong',
-      }),
+      createReportExportSnapshot(
+        report,
+        query(),
+        {
+          ...sourceResult(report),
+          queryFingerprint: 'dq1_wrong',
+        },
+        { id: 'snapshot-1' },
+      ),
     ).toThrow(/query fingerprint/);
+    expect(() =>
+      createReportExportSnapshot(
+        report,
+        query(),
+        { ...sourceResult(report), truncated: true },
+        { id: 'snapshot-1' },
+      ),
+    ).toThrow(/truncated/);
   });
 
   it('uses one audited, confirmation-aware operation and queues large exports', async () => {
@@ -259,6 +275,7 @@ describe('report saved views and exports', () => {
       report,
       query(),
       sourceResult(report),
+      { id: 'snapshot-2' },
     );
     const request = createReportExportRequest(report, snapshot, {
       format: 'csv',
@@ -269,10 +286,34 @@ describe('report saved views and exports', () => {
         foregroundRowLimit: 10,
       },
     });
+    const completeRequest = createReportExportRequest(report, snapshot, {
+      format: 'csv',
+      limits: {
+        maxRows: 2_000,
+        maxBytes: 10_000,
+        deadlineMs: 5_000,
+        foregroundRowLimit: 10,
+      },
+    });
+    expect(
+      createReportExportPageRequest(report, completeRequest, 0),
+    ).toMatchObject({
+      projection: ['customer_id', 'id', 'revenue'],
+      page: { kind: 'offset', offset: 0, limit: 1_000 },
+    });
+    expect(
+      createReportExportPageRequest(report, completeRequest, 1_000),
+    ).toMatchObject({
+      page: { kind: 'offset', offset: 1_000, limit: 500 },
+    });
+    expect(() =>
+      createReportExportPageRequest(report, completeRequest, 1_500),
+    ).toThrow(/outside the bounded export/);
     const authorize = vi.fn();
     const audit = vi.fn();
+    const assertSnapshot = vi.fn();
     const enqueue = vi.fn(async () => ({ taskId: 'export-task-1' }));
-    const host = { authorize, audit, enqueue };
+    const host = { assertSnapshot, authorize, audit, enqueue };
 
     const preview = await previewReportExport(report, request, host);
     expect(preview.action).toMatchObject({
@@ -287,6 +328,16 @@ describe('report saved views and exports', () => {
         {
           ...request,
           action: { ...request.action, confirmationRequired: false },
+        },
+        host,
+      ),
+    ).rejects.toThrow(/does not match current policy/);
+    await expect(
+      previewReportExport(
+        report,
+        {
+          ...request,
+          read: { ...request.read, snapshotId: 'different-snapshot' },
         },
         host,
       ),
@@ -308,10 +359,39 @@ describe('report saved views and exports', () => {
       expect.objectContaining({
         execution: 'background',
         inherits: ['principal', 'tenant', 'report-definition', 'field-policy'],
+        request: expect.objectContaining({
+          rowCount: 1_000,
+          read: {
+            snapshotId: 'snapshot-2',
+            queryFingerprint: snapshot.queryFingerprint,
+            asOf: AS_OF,
+            page: { kind: 'offset', offset: 0, limit: 1_000 },
+          },
+        }),
       }),
     );
+    await expect(
+      validateReportExportExecution(report, request, host),
+    ).resolves.toMatchObject({ read: { snapshotId: 'snapshot-2' } });
+    expect(assertSnapshot).toHaveBeenCalledWith({
+      bindingId: 'snapshot-2',
+      resourceId: report.resourceId,
+      reportClassName: report.reportClassName,
+      definitionFingerprint: snapshot.definitionFingerprint,
+      queryFingerprint: snapshot.queryFingerprint,
+      asOf: AS_OF,
+    });
+    await expect(
+      validateReportExportExecution(report, request, {
+        ...host,
+        assertSnapshot: () => {
+          throw new Error('materialization snapshot is no longer available');
+        },
+      }),
+    ).rejects.toThrow(/snapshot is no longer available/);
     expect(authorize).toHaveBeenCalledTimes(2);
     expect(audit).toHaveBeenCalledTimes(2);
+    expect(assertSnapshot).toHaveBeenCalledTimes(3);
     expect(request).toMatchObject({ rowCount: 1_000, truncated: true });
   });
 
@@ -321,6 +401,7 @@ describe('report saved views and exports', () => {
       report,
       query(),
       sourceResult(report, 2),
+      { id: 'snapshot-3' },
     );
     const request = createReportExportRequest(report, snapshot, {
       format: 'json',

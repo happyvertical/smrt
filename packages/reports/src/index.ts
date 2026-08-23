@@ -157,8 +157,11 @@ export type {
   ReportExportLimits,
   ReportExportPreview,
   ReportExportProgress,
+  ReportExportReadPlan,
   ReportExportRequest,
   ReportExportSnapshot,
+  ReportExportSnapshotBinding,
+  ReportExportSnapshotContext,
   ReportSavedView,
   ReportSavedViewColumn,
   ReportSavedViewDisplay,
@@ -167,6 +170,7 @@ export type {
 } from './views.js';
 export {
   applyReportExport,
+  createReportExportPageRequest,
   createReportExportRequest,
   createReportExportSnapshot,
   normalizeReportSavedView,
@@ -175,6 +179,7 @@ export {
   reportDefinitionFingerprint,
   restoreReportSavedView,
   validateReportExportArtifact,
+  validateReportExportExecution,
   validateReportExportRequest,
   verifyReportExportSnapshot,
 } from './views.js';

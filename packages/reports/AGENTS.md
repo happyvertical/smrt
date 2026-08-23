@@ -52,8 +52,11 @@ Materialized aggregate report models for SMRT.
   changed report definition fails closed. Export snapshots retain the canonical
   query fingerprint, projection, sort, as-of/freshness state, exact row count,
   and the fixed principal/tenant/report-definition/field-policy inheritance
-  contract. Preview, apply, worker, and artifact-serving boundaries must call
-  the validators; application hosts own authorization, audit records, durable
+  contract. A snapshot needs an application-host-issued opaque binding and an
+  explicit offset-page read plan: workers advance it from offset zero instead
+  of reusing a visible page. Preview, apply, worker, and artifact-serving
+  boundaries must call the validators, including the host's immutable-snapshot
+  assertion; application hosts own authorization, audit records, durable
   storage, download tokens, and queue execution.
 
 ## Conventions
