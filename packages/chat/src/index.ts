@@ -95,6 +95,24 @@ export {
 // Principal-bound data discovery/inspection/query tools are offered through
 // the same `extraTools` seam as invoke-agent; authority remains in agents.
 export * from './data-surface-tools.js';
+// Authenticated browser data-surface command/ack/event bridge. This adapter is
+// transport-neutral; the consuming app supplies its authorized transport.
+export {
+  createDataSurfaceBridge,
+  createDataSurfaceCommandBridge,
+  createServerDataSurfaceBridge,
+  DATA_SURFACE_BRIDGE_VERSION,
+  type DataSurfaceBridgeConnectionState,
+  type DataSurfaceBridgeEvent,
+  type DataSurfaceBridgeFailureReason,
+  type DataSurfaceBridgeMessage,
+  type DataSurfaceBridgeTransport,
+  type DataSurfaceCommandAck,
+  type DataSurfaceCommandBridge,
+  type DataSurfaceCommandBridgeOptions,
+  type DataSurfaceCommandRequest,
+  DEFAULT_DATA_SURFACE_BRIDGE_TTL_MS,
+} from './data-surface-bridge.js';
 // Models
 export {
   AgentSession,

@@ -1,0 +1,377 @@
+/**
+ * Authenticated browser bridge for mounted data surfaces.
+ *
+ * `smrt-ui` owns the local registry and deliberately knows nothing about
+ * transports or authentication. This adapter is the browser-side trust
+ * boundary: only a request carrying the configured session and peer source is
+ * delivered to the registry. A command is successful only after its ack has
+ * travelled back through the transport.
+ */
+
+import {
+  type DataSurfaceCommandResult,
+  type DataSurfaceIdentity,
+  type DataSurfaceRegistry,
+  type DataSurfaceRegistryEvent,
+  type DataSurfaceSnapshot,
+  type DataSurfaceVisibleCommand,
+  normalizeDataSurfaceVisibleCommand,
+} from '@happyvertical/smrt-ui/data';
+
+export const DATA_SURFACE_BRIDGE_VERSION = 1 as const;
+export const DEFAULT_DATA_SURFACE_BRIDGE_TTL_MS = 30_000;
+export const DEFAULT_DATA_SURFACE_BRIDGE_REPLAY_ENTRIES = 100;
+
+export type DataSurfaceBridgeFailureReason =
+  | 'not_found'
+  | 'unsupported'
+  | 'stale_revision'
+  | 'idempotency_conflict'
+  | 'denied'
+  | 'execution_failed'
+  | 'non_monotonic_revision'
+  | 'expired'
+  | 'timeout'
+  | 'disconnected'
+  | 'invalid_request'
+  | 'source_mismatch'
+  | 'session_mismatch';
+
+export interface DataSurfaceCommandRequest {
+  type: 'data-surface.command';
+  version: typeof DATA_SURFACE_BRIDGE_VERSION;
+  commandId: string;
+  sessionId: string;
+  /** Authenticated peer/source id, never a profile or tenant authority. */
+  source: string;
+  expiresAt: number;
+  identity: DataSurfaceIdentity;
+  expectedRevision: number;
+  controlId: string;
+  payload?: DataSurfaceVisibleCommand['payload'];
+}
+
+export interface DataSurfaceCommandAck {
+  type: 'data-surface.ack';
+  version: typeof DATA_SURFACE_BRIDGE_VERSION;
+  commandId: string;
+  sessionId: string;
+  source: string;
+  expiresAt: number;
+  identity: DataSurfaceIdentity;
+  expectedRevision: number;
+  ok: boolean;
+  revision?: number;
+  snapshot?: DataSurfaceSnapshot;
+  reason?: DataSurfaceBridgeFailureReason;
+}
+
+export interface DataSurfaceBridgeEvent {
+  type: 'data-surface.event';
+  version: typeof DATA_SURFACE_BRIDGE_VERSION;
+  sessionId: string;
+  source: string;
+  sequence: number;
+  identity: DataSurfaceIdentity;
+  revision: number;
+  event: DataSurfaceRegistryEvent['type'];
+  command?: DataSurfaceVisibleCommand;
+  result?: DataSurfaceCommandResult;
+}
+
+export type DataSurfaceBridgeMessage =
+  | DataSurfaceCommandRequest
+  | DataSurfaceCommandAck
+  | DataSurfaceBridgeEvent;
+
+export type DataSurfaceBridgeConnectionState =
+  | 'connected'
+  | 'disconnected'
+  | 'reconnecting';
+
+/** A deliberately tiny adapter for WebSocket, SSE, postMessage, or a test. */
+export interface DataSurfaceBridgeTransport {
+  send(message: DataSurfaceBridgeMessage): void | Promise<void>;
+  subscribe(listener: (message: unknown) => void): () => void;
+  subscribeStatus?: (
+    listener: (state: DataSurfaceBridgeConnectionState) => void,
+  ) => () => void;
+}
+
+export interface DataSurfaceBrowserBridgeOptions {
+  registry: DataSurfaceRegistry;
+  transport: DataSurfaceBridgeTransport;
+  sessionId: string;
+  /** This browser's source id, placed on acknowledgements/events. */
+  source: string;
+  /** The only server source accepted for commands. */
+  peerSource: string;
+  now?: () => number;
+  maxTtlMs?: number;
+  maxReplayEntries?: number;
+}
+
+export interface DataSurfaceBrowserBridge {
+  readonly sessionId: string;
+  readonly source: string;
+  /** Stop receiving transport messages and registry events. */
+  dispose(): void;
+  /** Handle a message directly; useful for transports that batch delivery. */
+  receive(message: unknown): Promise<void>;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256;
+}
+
+function isFiniteInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+function identityOf(value: unknown): DataSurfaceIdentity | undefined {
+  if (!isRecord(value) || !isString(value.surfaceId) || !isString(value.kind)) {
+    return undefined;
+  }
+  if (
+    value.kind !== 'table' &&
+    value.kind !== 'list' &&
+    value.kind !== 'report' &&
+    value.kind !== 'custom'
+  ) {
+    return undefined;
+  }
+  return value as unknown as DataSurfaceIdentity;
+}
+
+function isRequest(value: unknown): value is DataSurfaceCommandRequest {
+  if (
+    !isRecord(value) ||
+    value.type !== 'data-surface.command' ||
+    value.version !== 1
+  ) {
+    return false;
+  }
+  return (
+    isString(value.commandId) &&
+    isString(value.sessionId) &&
+    isString(value.source) &&
+    typeof value.expiresAt === 'number' &&
+    Number.isFinite(value.expiresAt) &&
+    identityOf(value.identity) !== undefined &&
+    isFiniteInteger(value.expectedRevision) &&
+    value.expectedRevision >= 0 &&
+    isString(value.controlId)
+  );
+}
+
+function identityKey(identity: DataSurfaceIdentity): string {
+  return JSON.stringify(identity);
+}
+
+function commandSignature(request: DataSurfaceCommandRequest): string {
+  return JSON.stringify({
+    sessionId: request.sessionId,
+    source: request.source,
+    expiresAt: request.expiresAt,
+    identity: request.identity,
+    expectedRevision: request.expectedRevision,
+    controlId: request.controlId,
+    payload: request.payload,
+  });
+}
+
+function cloneMessage<T>(message: T): T {
+  return JSON.parse(JSON.stringify(message)) as T;
+}
+
+/**
+ * Attach a mounted registry to an authenticated browser transport.
+ * Invalid, expired, cross-session, and cross-source messages are acknowledged
+ * without exposing a registry snapshot. Replays return the original ack and do
+ * not invoke the mounted surface a second time.
+ */
+export function createDataSurfaceBrowserBridge(
+  options: DataSurfaceBrowserBridgeOptions,
+): DataSurfaceBrowserBridge {
+  if (
+    !isString(options.sessionId) ||
+    !isString(options.source) ||
+    !isString(options.peerSource)
+  ) {
+    throw new TypeError('DataSurface bridge session/source ids are required');
+  }
+  const now = options.now ?? (() => Date.now());
+  const maxTtlMs = options.maxTtlMs ?? DEFAULT_DATA_SURFACE_BRIDGE_TTL_MS;
+  const maxReplayEntries =
+    options.maxReplayEntries ?? DEFAULT_DATA_SURFACE_BRIDGE_REPLAY_ENTRIES;
+  if (
+    !Number.isFinite(maxTtlMs) ||
+    maxTtlMs <= 0 ||
+    !Number.isSafeInteger(maxReplayEntries) ||
+    maxReplayEntries <= 0
+  ) {
+    throw new RangeError('Invalid DataSurface bridge bounds');
+  }
+
+  const replay = new Map<
+    string,
+    { signature: string; ack: DataSurfaceCommandAck }
+  >();
+  let disposed = false;
+  let lastSequence = 0;
+
+  const remember = (
+    request: DataSurfaceCommandRequest,
+    ack: DataSurfaceCommandAck,
+  ) => {
+    replay.delete(request.commandId);
+    replay.set(request.commandId, {
+      signature: commandSignature(request),
+      ack: cloneMessage(ack),
+    });
+    while (replay.size > maxReplayEntries) {
+      const oldest = replay.keys().next().value as string | undefined;
+      if (!oldest) break;
+      replay.delete(oldest);
+    }
+  };
+
+  const sendAck = async (ack: DataSurfaceCommandAck) => {
+    if (disposed) return;
+    try {
+      await options.transport.send(cloneMessage(ack));
+    } catch {
+      // A disconnected browser cannot repair delivery. The server-side
+      // bridge reports the bounded disconnect/timeout outcome to its caller.
+    }
+  };
+
+  const rejected = (
+    request: Partial<DataSurfaceCommandRequest>,
+    reason: DataSurfaceBridgeFailureReason,
+  ): DataSurfaceCommandAck => ({
+    type: 'data-surface.ack',
+    version: 1,
+    commandId:
+      typeof request.commandId === 'string' ? request.commandId : 'invalid',
+    sessionId: options.sessionId,
+    source: options.source,
+    expiresAt:
+      typeof request.expiresAt === 'number' ? request.expiresAt : now(),
+    identity: identityOf(request.identity) ?? {
+      surfaceId: 'unknown',
+      kind: 'custom',
+    },
+    expectedRevision:
+      isFiniteInteger(request.expectedRevision) && request.expectedRevision >= 0
+        ? request.expectedRevision
+        : 0,
+    ok: false,
+    reason,
+  });
+
+  const receive = async (value: unknown): Promise<void> => {
+    if (disposed || !isRequest(value)) return;
+    const request = value;
+    const existing = replay.get(request.commandId);
+    const signature = commandSignature(request);
+    if (existing) {
+      await sendAck(
+        existing.signature === signature
+          ? existing.ack
+          : rejected(request, 'idempotency_conflict'),
+      );
+      return;
+    }
+
+    let ack: DataSurfaceCommandAck;
+    if (request.sessionId !== options.sessionId) {
+      ack = rejected(request, 'session_mismatch');
+    } else if (request.source !== options.peerSource) {
+      ack = rejected(request, 'source_mismatch');
+    } else if (
+      request.expiresAt <= now() ||
+      request.expiresAt - now() > maxTtlMs
+    ) {
+      ack = rejected(request, 'expired');
+    } else {
+      let command: DataSurfaceVisibleCommand;
+      try {
+        command = normalizeDataSurfaceVisibleCommand({
+          version: 1,
+          commandId: request.commandId,
+          identity: request.identity,
+          expectedRevision: request.expectedRevision,
+          controlId: request.controlId,
+          ...(request.payload === undefined
+            ? {}
+            : { payload: request.payload }),
+        });
+        const result = await options.registry.execute(command);
+        ack = {
+          type: 'data-surface.ack',
+          version: 1,
+          commandId: request.commandId,
+          sessionId: options.sessionId,
+          source: options.source,
+          expiresAt: request.expiresAt,
+          identity: result.identity,
+          expectedRevision: request.expectedRevision,
+          ok: result.ok,
+          revision: result.revision,
+          snapshot: result.snapshot,
+          reason: result.reason,
+        };
+      } catch {
+        ack = rejected(request, 'invalid_request');
+      }
+    }
+    remember(request, ack);
+    await sendAck(ack);
+  };
+
+  const emit = (event: DataSurfaceRegistryEvent) => {
+    if (disposed || event.sequence <= lastSequence) return;
+    lastSequence = event.sequence;
+    const message: DataSurfaceBridgeEvent = {
+      type: 'data-surface.event',
+      version: 1,
+      sessionId: options.sessionId,
+      source: options.source,
+      sequence: event.sequence,
+      identity: event.identity,
+      revision: event.revision,
+      event: event.type,
+      ...(event.command ? { command: event.command } : {}),
+      ...(event.result ? { result: event.result } : {}),
+    };
+    void Promise.resolve(options.transport.send(cloneMessage(message))).catch(
+      () => undefined,
+    );
+  };
+
+  const unsubscribeTransport = options.transport.subscribe((message) => {
+    void receive(message);
+  });
+  const unsubscribeRegistry = options.registry.subscribe(emit);
+
+  return {
+    sessionId: options.sessionId,
+    source: options.source,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      unsubscribeTransport();
+      unsubscribeRegistry();
+      replay.clear();
+    },
+    receive,
+  };
+}
+
+/** Compatibility alias that makes the browser role explicit at call sites. */
+export const createDataSurfaceBridge = createDataSurfaceBrowserBridge;

@@ -15,6 +15,14 @@
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js"
     },
+    "./data-surface-bridge": {
+      "types": "./dist/data-surface-bridge.d.ts",
+      "import": "./dist/data-surface-bridge.js"
+    },
+    "./data-surface": {
+      "types": "./dist/data-surface-bridge.d.ts",
+      "import": "./dist/data-surface-bridge.js"
+    },
     "./ui": {
       "types": "./dist/ui.d.ts",
       "import": "./dist/ui.js"

@@ -19,6 +19,8 @@ export default defineConfig(async ({ command, mode }) => {
         // side of chat-stream.ts's contract). Dedicated subpath so widget
         // hosts never pull the server runtime into their bundle.
         'client',
+        // Authenticated data-surface command/ack/event transport adapter.
+        'data-surface-bridge',
         // Internal agent-runtime surface (S5 #1392): emitted under a dedicated
         // subpath, NOT folded into the package index, so only trusted in-process
         // agent runtimes opt into `sendAgentReply`.

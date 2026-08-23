@@ -16,6 +16,8 @@
 export * from './components/forms/index.js';
 // Module components (for dynamic module UI rendering)
 export * from './components/module/index.js';
+// Authenticated browser-side data-surface command/ack/event bridge
+export * from './data-surface.js';
 // Hooks
 export * from './hooks/index.js';
 // Core - App wrapper/provider

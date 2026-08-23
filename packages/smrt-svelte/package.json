@@ -76,6 +76,18 @@
       "svelte": "./dist/web/index.js",
       "import": "./dist/web/index.js",
       "default": "./dist/web/index.js"
+    },
+    "./data-surface": {
+      "types": "./dist/data-surface.d.ts",
+      "svelte": "./dist/data-surface.js",
+      "import": "./dist/data-surface.js",
+      "default": "./dist/data-surface.js"
+    },
+    "./data": {
+      "types": "./dist/data-surface.d.ts",
+      "svelte": "./dist/data-surface.js",
+      "import": "./dist/data-surface.js",
+      "default": "./dist/data-surface.js"
     }
   },
   "files": [
