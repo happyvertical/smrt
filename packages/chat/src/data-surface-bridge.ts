@@ -419,6 +419,12 @@ function eventOf(value: unknown): DataSurfaceBridgeEvent | undefined {
     if (value.event === 'command' && (!command || !result)) return undefined;
     if (value.event !== 'command' && (command || result)) return undefined;
     if (
+      value.event === 'command' &&
+      (result?.revision === undefined || value.revision !== result.revision)
+    ) {
+      return undefined;
+    }
+    if (
       (command &&
         identitySignature(command.identity) !== identitySignature(identity)) ||
       (result &&

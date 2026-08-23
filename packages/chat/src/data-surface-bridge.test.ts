@@ -385,6 +385,7 @@ describe('server data-surface bridge', () => {
         snapshot: { ...snapshot, state: { oversized: 'x'.repeat(100_001) } },
       },
     });
+    link.receive({ ...event, revision: 5 });
     expect(events).toHaveLength(0);
     link.receive(event);
     expect(events).toHaveLength(1);
