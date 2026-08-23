@@ -170,11 +170,16 @@ need explicit tenant predicates as described above.
 
 The descriptor's `refresh` section declares mode, triggers, stale-read behavior,
 and a permissioned, audited `refresh` action with `preview` and `apply` phases.
-It does not perform a refresh, authorize a caller, write audit records, or track
-run state. Those lifecycle responsibilities belong to the follow-up refresh
-adapter in issue #2460. Generic collection reads remain read-only and report
-unknown freshness; only a registered `SmrtReportCollection` can synchronously
-refresh a stale read, and only when its TTL policy is positive and not manual.
+The adapter itself stays read-only. Call `getReportLifecycle()` for a tenant-safe
+snapshot of current, stale, refreshing, lock-skipped, or failed materialization
+state; it redacts lock owners, raw errors, and tenant-fanout identifiers. Pass a
+`lifecycle` option to `queryReportMaterializedRows()` only when a consumer needs
+that context; the result then distinguishes a current, stale, or read-triggered
+refresh. `previewReportRefresh()` and `applyReportRefresh()` require an
+application action host to authorize and audit the caller before a durable
+report-refresh job is queued. Only a registered `SmrtReportCollection` can
+synchronously refresh a stale read, and only when its TTL policy is positive and
+not manual.
 
 ## Development
 

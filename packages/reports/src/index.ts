@@ -5,6 +5,7 @@ export type {
   ReportColumnDescriptor,
   ReportColumnKind,
   ReportColumnSensitivity,
+  ReportDataQueryResult,
   ReportDataTableColumn,
   ReportDataTableColumnOverride,
   ReportDataTableColumnResponsive,
@@ -16,6 +17,7 @@ export type {
   ReportDataTableStructuralRowInput,
   ReportDataTableStructuralRowKind,
   ReportDataTableValueFormat,
+  ReportMaterializedReadLifecycle,
   ReportQueryOptions,
   ReportRefreshActionDescriptor,
   ReportRefreshDescriptor,
@@ -53,6 +55,26 @@ export {
   week,
   year,
 } from './decorators.js';
+export type {
+  AppliedReportRefresh,
+  ApplyReportRefreshOptions,
+  PreviewReportRefreshOptions,
+  ReportLifecycleOptions,
+  ReportLifecycleRun,
+  ReportLifecycleSnapshot,
+  ReportLifecycleState,
+  ReportRefreshActionContext,
+  ReportRefreshActionHost,
+  ReportRefreshJobHandle,
+  ReportRefreshOutcome,
+  ReportRefreshPreview,
+} from './lifecycle.js';
+export {
+  applyReportRefresh,
+  getReportLifecycle,
+  previewReportRefresh,
+  reportRefreshOutcome,
+} from './lifecycle.js';
 export {
   refreshReport,
   reportRowIdentity,
