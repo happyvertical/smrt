@@ -291,6 +291,31 @@ describe('data surface registry', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it('rejects commands that unmount and replace their surface', async () => {
+    let unregister = () => undefined;
+    const registry = createDataSurfaceRegistry();
+    unregister = registry.register({
+      descriptor: descriptor(),
+      getSnapshot: () => ({ revision: 3, state: { search: 'Ada' } }),
+      execute: () => {
+        unregister();
+        registry.register({
+          descriptor: descriptor(),
+          getSnapshot: () => ({ revision: 9, state: { search: 'Grace' } }),
+        });
+      },
+    });
+
+    await expect(registry.execute(command())).resolves.toMatchObject({
+      ok: false,
+      reason: 'not_found',
+    });
+    expect(registry.inspect(identity)).toMatchObject({
+      revision: 9,
+      state: { search: 'Grace' },
+    });
+  });
+
   it('replays a command idempotently and rejects conflicting reuse of its id', async () => {
     const { registry, execute } = registerFixture();
     const initial = command();
@@ -399,7 +424,7 @@ describe('data surface registry', () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
-  it('does not run a queued command after its surface unregisters', async () => {
+  it('rejects in-flight and queued commands after their surface unregisters', async () => {
     let revision = 3;
     let releaseFirst!: () => void;
     const firstExecution = new Promise<void>((resolve) => {
@@ -423,7 +448,11 @@ describe('data surface registry', () => {
     unregister();
     releaseFirst();
 
-    await expect(first).resolves.toMatchObject({ ok: true, revision: 4 });
+    await expect(first).resolves.toMatchObject({
+      ok: false,
+      commandId: 'first',
+      reason: 'not_found',
+    });
     await expect(queued).resolves.toMatchObject({
       ok: false,
       commandId: 'queued',
@@ -776,5 +805,47 @@ describe('data surface registry', () => {
         },
       }),
     ).toThrow('more than 1000 row ids');
+  });
+
+  it('bounds query content during structural validation', () => {
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      expect(() =>
+        normalizeDataSurfaceQueryRequest({
+          version: 1,
+          requestId: 'oversized-projection',
+          identity,
+          kind: 'rows',
+          limit: 1,
+          projection: ['x'.repeat(DATA_SURFACE_MAX_REQUEST_BYTES)],
+        }),
+      ).toThrow('DataSurface query request cannot exceed');
+      expect(stringify).not.toHaveBeenCalled();
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+
+  it('accepts a query whose canonical envelope is exactly at the byte limit', () => {
+    const request = {
+      version: 1 as const,
+      requestId: 'exact-limit',
+      identity,
+      kind: 'rows' as const,
+      limit: 1,
+      projection: [''],
+    };
+    const baseLength = new TextEncoder().encode(
+      JSON.stringify(request),
+    ).byteLength;
+    const exactLimit = {
+      ...request,
+      projection: ['x'.repeat(DATA_SURFACE_MAX_REQUEST_BYTES - baseLength)],
+    };
+
+    expect(
+      new TextEncoder().encode(JSON.stringify(exactLimit)).byteLength,
+    ).toBe(DATA_SURFACE_MAX_REQUEST_BYTES);
+    expect(normalizeDataSurfaceQueryRequest(exactLimit)).toEqual(exactLimit);
   });
 });

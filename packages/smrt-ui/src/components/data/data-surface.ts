@@ -408,10 +408,97 @@ function revisionNumber(value: unknown): number {
   return value;
 }
 
+interface JsonByteBudget {
+  used: number;
+  limit: number;
+  label: string;
+}
+
+function consumeJsonBytes(
+  budget: JsonByteBudget | undefined,
+  byteLength: number,
+): void {
+  if (!budget) return;
+  assertJsonBytesAvailable(budget, byteLength);
+  budget.used += byteLength;
+}
+
+function assertJsonBytesAvailable(
+  budget: JsonByteBudget | undefined,
+  byteLength: number,
+  used = budget?.used ?? 0,
+): void {
+  if (!budget) return;
+  if (byteLength > budget.limit - used) {
+    throw new TypeError(
+      `${budget.label} cannot exceed ${budget.limit} UTF-8 bytes`,
+    );
+  }
+}
+
+/** UTF-8 byte length of JSON.stringify(value), limited to a string value. */
+function jsonStringByteLength(
+  value: string,
+  budget?: JsonByteBudget,
+  used = budget?.used ?? 0,
+): number {
+  let byteLength = 2; // Opening and closing quotes.
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit === 0x22 || codeUnit === 0x5c) {
+      byteLength += 2;
+    } else if (
+      codeUnit === 0x08 ||
+      codeUnit === 0x09 ||
+      codeUnit === 0x0a ||
+      codeUnit === 0x0c ||
+      codeUnit === 0x0d
+    ) {
+      byteLength += 2;
+    } else if (codeUnit <= 0x1f) {
+      byteLength += 6;
+    } else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        byteLength += 4;
+        index += 1;
+      } else {
+        byteLength += 6;
+      }
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      byteLength += 6;
+    } else if (codeUnit <= 0x7f) {
+      byteLength += 1;
+    } else if (codeUnit <= 0x7ff) {
+      byteLength += 2;
+    } else {
+      byteLength += 3;
+    }
+    assertJsonBytesAvailable(budget, byteLength, used);
+  }
+  return byteLength;
+}
+
+/** Preflight only: actual object bytes are consumed in canonicalJson below. */
+function assertJsonObjectKeysWithinBudget(
+  keys: readonly string[],
+  budget: JsonByteBudget | undefined,
+): void {
+  if (!budget) return;
+  let used = budget.used;
+  const structuralBytes = keys.length === 0 ? 2 : keys.length * 2 + 1;
+  assertJsonBytesAvailable(budget, structuralBytes, used);
+  used += structuralBytes;
+  for (const key of keys) {
+    used += jsonStringByteLength(key, budget, used);
+  }
+}
+
 function canonicalJson(
   value: unknown,
   ancestors = new Set<object>(),
   depth = 0,
+  budget?: JsonByteBudget,
 ): DataSurfaceJsonValue {
   if (depth > MAX_JSON_DEPTH) {
     throw new TypeError(
@@ -423,6 +510,16 @@ function canonicalJson(
     typeof value === 'string' ||
     typeof value === 'boolean'
   ) {
+    consumeJsonBytes(
+      budget,
+      value === null
+        ? 4
+        : typeof value === 'boolean'
+          ? value
+            ? 4
+            : 5
+          : jsonStringByteLength(value, budget),
+    );
     return value;
   }
   if (typeof value === 'number') {
@@ -431,7 +528,9 @@ function canonicalJson(
         'DataSurface values cannot contain non-finite numbers',
       );
     }
-    return value === 0 ? 0 : value;
+    const normalized = value === 0 ? 0 : value;
+    consumeJsonBytes(budget, String(normalized).length);
+    return normalized;
   }
   if (Array.isArray(value)) {
     if (value.length > MAX_JSON_CONTAINER_ITEMS) {
@@ -443,9 +542,13 @@ function canonicalJson(
       throw new TypeError('DataSurface values cannot be circular');
     }
     ancestors.add(value);
-    const clone = value.map((entry) =>
-      canonicalJson(entry, ancestors, depth + 1),
-    );
+    consumeJsonBytes(budget, 1);
+    const clone: DataSurfaceJsonValue[] = [];
+    for (const [index, entry] of value.entries()) {
+      if (index > 0) consumeJsonBytes(budget, 1);
+      clone.push(canonicalJson(entry, ancestors, depth + 1, budget));
+    }
+    consumeJsonBytes(budget, 1);
     ancestors.delete(value);
     return clone;
   }
@@ -462,14 +565,19 @@ function canonicalJson(
         `DataSurface objects cannot contain more than ${MAX_JSON_CONTAINER_ITEMS} keys`,
       );
     }
-    for (const key of keys.sort()) {
+    assertJsonObjectKeysWithinBudget(keys, budget);
+    consumeJsonBytes(budget, 1);
+    for (const [index, key] of keys.sort().entries()) {
+      if (index > 0) consumeJsonBytes(budget, 1);
       if (PROTOTYPE_POLLUTION_KEYS.has(key)) {
         throw new TypeError(
           `DataSurface values cannot contain prototype key: ${key}`,
         );
       }
-      clone[key] = canonicalJson(object[key], ancestors, depth + 1);
+      consumeJsonBytes(budget, jsonStringByteLength(key, budget) + 1);
+      clone[key] = canonicalJson(object[key], ancestors, depth + 1, budget);
     }
+    consumeJsonBytes(budget, 1);
     ancestors.delete(object);
     return clone;
   }
@@ -490,16 +598,21 @@ function jsonSignature(value: unknown): string {
 
 /** The UTF-8 size of the normalized, canonical query envelope. */
 function canonicalQueryByteLength(request: DataSurfaceQueryRequest): number {
-  return new TextEncoder().encode(jsonSignature(request)).byteLength;
+  const budget: JsonByteBudget = {
+    used: 0,
+    limit: Number.MAX_SAFE_INTEGER,
+    label: 'DataSurface query request',
+  };
+  canonicalJson(request, new Set<object>(), 0, budget);
+  return budget.used;
 }
 
 function assertRequestByteLimit(value: unknown, label: string): void {
-  const byteLength = new TextEncoder().encode(jsonSignature(value)).byteLength;
-  if (byteLength > DATA_SURFACE_MAX_REQUEST_BYTES) {
-    throw new TypeError(
-      `${label} cannot exceed ${DATA_SURFACE_MAX_REQUEST_BYTES} UTF-8 bytes`,
-    );
-  }
+  canonicalJson(value, new Set<object>(), 0, {
+    used: 0,
+    limit: DATA_SURFACE_MAX_REQUEST_BYTES,
+    label,
+  });
 }
 
 function boundarySafe(value: unknown, label: string): DataSurfaceJsonValue {
@@ -947,12 +1060,16 @@ export function normalizeDataSurfaceVisibleCommand(
   if (commandId.length > MAX_REQUEST_ID_LENGTH) {
     throw new TypeError('DataSurface command id is too long');
   }
+  const commandIdentity = normalizeIdentity(object.identity);
+  const expectedRevision = revisionNumber(object.expectedRevision);
+  const controlId = stringValue(object.controlId, 'DataSurface control id');
+  assertRequestByteLimit(value, 'DataSurface visible command');
   const normalized: DataSurfaceVisibleCommand = {
     version: 1,
     commandId,
-    identity: normalizeIdentity(object.identity),
-    expectedRevision: revisionNumber(object.expectedRevision),
-    controlId: stringValue(object.controlId, 'DataSurface control id'),
+    identity: commandIdentity,
+    expectedRevision,
+    controlId,
     ...(object.payload === undefined
       ? {}
       : {
@@ -993,6 +1110,7 @@ export function normalizeDataSurfaceQueryRequest(
       ],
       'DataSurface rows query request',
     );
+    assertRequestByteLimit(value, 'DataSurface query request');
     const limit = positiveInteger(object.limit, 'DataSurface rows query limit');
     if (limit > MAX_QUERY_LIMIT) {
       throw new TypeError(
@@ -1030,6 +1148,7 @@ export function normalizeDataSurfaceQueryRequest(
       ['version', 'requestId', 'identity', 'kind'],
       'DataSurface count query request',
     );
+    assertRequestByteLimit(value, 'DataSurface query request');
     return { version: 1, requestId, identity, kind };
   }
   if (kind === 'facets') {
@@ -1038,6 +1157,7 @@ export function normalizeDataSurfaceQueryRequest(
       ['version', 'requestId', 'identity', 'kind', 'columnId', 'limit'],
       'DataSurface facets query request',
     );
+    assertRequestByteLimit(value, 'DataSurface query request');
     const limit = positiveInteger(
       object.limit,
       'DataSurface facets query limit',
@@ -1098,13 +1218,17 @@ export function normalizeDataSurfaceActionRequest(
     object.confirmationToken,
     'DataSurface confirmation token',
   );
+  const actionIdentity = normalizeIdentity(object.identity);
+  const actionId = stringValue(object.actionId, 'DataSurface action id');
+  const selection = normalizeSelection(object.selection);
+  assertRequestByteLimit(value, 'DataSurface action request');
   const normalized: DataSurfaceActionRequest = {
     version: 1,
     requestId,
-    identity: normalizeIdentity(object.identity),
-    actionId: stringValue(object.actionId, 'DataSurface action id'),
+    identity: actionIdentity,
+    actionId,
     phase,
-    selection: normalizeSelection(object.selection),
+    selection,
     ...(object.payload === undefined
       ? {}
       : {
@@ -1358,23 +1482,19 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
     async execute(command) {
       const normalized = normalizeDataSurfaceVisibleCommand(command);
       const entry = entries.get(identityKey(normalized.identity));
+      const notFound = (): DataSurfaceCommandResult => ({
+        ok: false,
+        commandId: normalized.commandId,
+        identity: cloneIdentity(normalized.identity),
+        reason: 'not_found',
+      });
       if (!entry) {
-        return {
-          ok: false,
-          commandId: normalized.commandId,
-          identity: cloneIdentity(normalized.identity),
-          reason: 'not_found',
-        };
+        return notFound();
       }
 
       return serializeCommand(entry, async () => {
         if (entries.get(entry.key) !== entry) {
-          return {
-            ok: false,
-            commandId: normalized.commandId,
-            identity: cloneIdentity(normalized.identity),
-            reason: 'not_found' as const,
-          };
+          return notFound();
         }
         const signature = jsonSignature(normalized);
         const replay = entry.replay.get(normalized.commandId);
@@ -1451,6 +1571,7 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
           const execution = await entry.registration.execute(
             normalizeDataSurfaceVisibleCommand(normalized),
           );
+          if (entries.get(entry.key) !== entry) return notFound();
           const after = readSnapshot(entry);
           if (
             sameSnapshotContent(before.raw, after.raw) === false &&
@@ -1484,6 +1605,7 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
             snapshot: after.exposed,
           });
         } catch {
+          if (entries.get(entry.key) !== entry) return notFound();
           let current: ReadSnapshot | undefined;
           try {
             current = readSnapshot(entry);
