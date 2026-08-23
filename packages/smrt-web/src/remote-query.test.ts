@@ -197,6 +197,40 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('keeps an older forced flight from overwriting a newer cached result', async () => {
+    const releases: Array<() => void> = [];
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        const name = calls === 1 ? 'A' : 'B';
+        return await new Promise((resolve) => {
+          releases.push(() => resolve(envelope(received, name)));
+        });
+      },
+    });
+    const first = query.execute(request, { mode: 'background' });
+    await vi.waitFor(() => expect(calls).toBe(1));
+    const second = query.execute(request, {
+      mode: 'background',
+      force: true,
+    });
+    await vi.waitFor(() => expect(calls).toBe(2));
+    releases[1]?.();
+    await second;
+    releases[0]?.();
+    await first;
+
+    await query.execute(request);
+    expect(calls).toBe(2);
+    expect(query.state.rows[0]?.name).toBe('B');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('prefetches into the keyed cache without changing visible state, then refreshes coherently', async () => {
     let value = 'prefetched';
     const collection = createSmrtCollection(definition, {
