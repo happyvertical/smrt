@@ -2,7 +2,10 @@
 import { onMount } from 'svelte';
 import DataTable from '../../components/data/DataTable.svelte';
 import { createDataTableController } from '../../components/data/DataTableController.js';
-import type { DataTableColumn } from '../../components/data/types.js';
+import type {
+  DataTableColumn,
+  DataTableStructuralRow,
+} from '../../components/data/types.js';
 import Toggle from '../../components/forms/Toggle.svelte';
 import Badge from '../../components/ui/Badge.svelte';
 import Button from '../../components/ui/Button.svelte';
@@ -14,6 +17,16 @@ interface WorkspaceUser {
   role: string;
   status: string;
   lastSeen: string;
+}
+
+interface ReportLine {
+  id: string;
+  account: string;
+  actual: number;
+  forecast: number;
+  variance: number;
+  status: string;
+  action: string;
 }
 
 const users: WorkspaceUser[] = [
@@ -67,11 +80,104 @@ const columns: DataTableColumn<WorkspaceUser>[] = [
   { id: 'lastSeen', label: 'Last seen', sortable: true, align: 'right' },
 ];
 
+const reportRows: ReportLine[] = [
+  {
+    id: 'revenue',
+    account: 'Subscription revenue',
+    actual: 182400,
+    forecast: 176000,
+    variance: 6400,
+    status: 'On track',
+    action: 'Review',
+  },
+  {
+    id: 'services',
+    account: 'Professional services',
+    actual: 48300,
+    forecast: 52000,
+    variance: -3700,
+    status: 'Watch',
+    action: 'Review',
+  },
+];
+
+const reportColumns: DataTableColumn<ReportLine>[] = [
+  {
+    id: 'account',
+    label: 'Account',
+    headerPath: [{ id: 'dimension', label: 'Dimensions' }],
+    minWidth: '13rem',
+    resizable: true,
+  },
+  {
+    id: 'actual',
+    label: 'Actual',
+    headerPath: [{ id: 'performance', label: 'Performance' }],
+    align: 'right',
+    resizable: true,
+  },
+  {
+    id: 'forecast',
+    label: 'Forecast',
+    headerPath: [{ id: 'performance', label: 'Performance' }],
+    align: 'right',
+    resizable: true,
+  },
+  {
+    id: 'variance',
+    label: 'Variance',
+    headerPath: [{ id: 'performance', label: 'Performance' }],
+    align: 'right',
+  },
+  {
+    id: 'status',
+    label: 'Status',
+    role: 'status',
+    responsive: { keepVisible: true, priority: 10 },
+  },
+  {
+    id: 'action',
+    label: 'Action',
+    role: 'action',
+    responsive: { keepVisible: true, priority: 10 },
+  },
+];
+
+const reportStructuralRows: DataTableStructuralRow<ReportLine>[] = [
+  {
+    id: 'forecast-subtotal',
+    kind: 'subtotal',
+    label: 'Current forecast',
+    values: { actual: 230700, forecast: 228000, variance: 2700 },
+  },
+  {
+    id: 'forecast-total',
+    kind: 'footer',
+    label: 'All accounts',
+    values: { actual: 230700, forecast: 228000, variance: 2700 },
+  },
+];
+
 let loading = $state(false);
 let dense = $state(false);
 const tableController = createDataTableController({
   columnIds: columns.map((column) => column.id),
   initialState: { pageSize: 3 },
+});
+const reportController = createDataTableController({
+  columnIds: reportColumns.map((column) => column.id),
+  initialState: {
+    columnOrder: reportColumns.map((column) => column.id),
+    columnWidths: [
+      { columnId: 'account', width: 240 },
+      { columnId: 'actual', width: 112 },
+      { columnId: 'forecast', width: 112 },
+    ],
+    columnPinning: [
+      { columnId: 'account', position: 'start' },
+      { columnId: 'action', position: 'end' },
+    ],
+  },
 });
 let tableState = $state(tableController.getState());
 
@@ -91,6 +197,26 @@ function toggleActiveFilter() {
     filters: tableState.filters.length
       ? []
       : [{ columnId: 'status', operator: 'equals', value: 'Active' }],
+  });
+}
+
+function restoreReportLayout() {
+  reportController.replaceState({
+    ...reportController.getState(),
+    columnOrder: reportColumns.map((column) => column.id),
+    columnVisibility: reportColumns.map((column) => ({
+      columnId: column.id,
+      visible: true,
+    })),
+    columnWidths: [
+      { columnId: 'account', width: 240 },
+      { columnId: 'actual', width: 112 },
+      { columnId: 'forecast', width: 112 },
+    ],
+    columnPinning: [
+      { columnId: 'account', position: 'start' },
+      { columnId: 'action', position: 'end' },
+    ],
   });
 }
 </script>
@@ -148,6 +274,33 @@ function toggleActiveFilter() {
       caption="Workspace users"
     />
   </div>
+
+  <section class="report-fixture" aria-labelledby="report-fixture-title">
+    <div class="report-fixture__header">
+      <div>
+        <p class="eyebrow">Report structure</p>
+        <h4 id="report-fixture-title">Forecast report</h4>
+        <p class="supporting">
+          Grouped headers, structural totals, restored widths, and pinned status/action columns.
+        </p>
+      </div>
+      <Button variant="ghost" size="sm" onclick={restoreReportLayout}>
+        Restore saved layout
+      </Button>
+    </div>
+    <div class="table-frame">
+      <DataTable
+        data={reportRows}
+        columns={reportColumns}
+        rowKey="id"
+        structuralRows={reportStructuralRows}
+        controller={reportController}
+        caption="Forecast report"
+        hoverable
+        stickyHeader
+      />
+    </div>
+  </section>
 
   <div class="empty-state">
     <div>
@@ -243,6 +396,20 @@ function toggleActiveFilter() {
     border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
+  .report-fixture {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    padding-top: var(--smrt-spacing-4);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .report-fixture__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--smrt-spacing-4);
+  }
+
   .empty-state > div:first-child {
     justify-content: space-between;
     gap: var(--smrt-spacing-4);
@@ -255,6 +422,7 @@ function toggleActiveFilter() {
 
   @media (max-width: 760px) {
     .workbench__header,
+    .report-fixture__header,
     .empty-state > div:first-child {
       align-items: flex-start;
       flex-direction: column;

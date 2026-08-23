@@ -39,4 +39,10 @@ export const M = defineMessages({
   'ui.data_table.default_overflow_region':
     'Data table, scroll horizontally to view more columns',
   'ui.data_table.more_columns': 'More columns',
+  'ui.data_table.resize_column': 'Resize {column}',
+  'ui.data_table.structural_row': '{kind}: {label}',
+  'ui.data_table.summary': 'Summary',
+  'ui.data_table.subtotal': 'Subtotal',
+  'ui.data_table.aggregate': 'Aggregate',
+  'ui.data_table.footer_row': 'Footer',
 });

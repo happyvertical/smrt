@@ -71,6 +71,18 @@ export interface DataTableColumnVisibility {
   visible: boolean;
 }
 
+/** A persisted width in CSS pixels. Static column widths remain presentation defaults. */
+export interface DataTableColumnWidth {
+  columnId: string;
+  width: number;
+}
+
+/** A persisted edge pin. Column order is retained within each pin partition. */
+export interface DataTableColumnPinning {
+  columnId: string;
+  position: 'start' | 'end';
+}
+
 /**
  * The JSON-safe, persistable portion of a table view. Selection and expansion
  * are serialized as canonical arrays rather than Sets.
@@ -83,6 +95,8 @@ export interface DataTableViewState {
   pageSize: number | null;
   columnOrder: string[];
   columnVisibility: DataTableColumnVisibility[];
+  columnWidths: DataTableColumnWidth[];
+  columnPinning: DataTableColumnPinning[];
   selection: DataTableSelection;
   /**
    * Legacy shorthand for row-ID selections. It is always derived from
@@ -93,16 +107,23 @@ export interface DataTableViewState {
 }
 
 /**
- * Accepts a version-1 controlled state while the controller always emits the
- * normalized version-2 `DataTableViewState` with an explicit selection.
+ * Accepts version-1 and version-2 controlled state while the controller emits
+ * normalized version-3 state with explicit selection and column layout.
  */
-export type DataTableViewStateInput = Omit<DataTableViewState, 'selection'> & {
+export type DataTableViewStateInput = Omit<
+  DataTableViewState,
+  'selection' | 'columnWidths' | 'columnPinning'
+> & {
   selection?: DataTableSelection;
+  /** Optional while restoring version-1 or version-2 state. */
+  columnWidths?: DataTableColumnWidth[];
+  /** Optional while restoring version-1 or version-2 state. */
+  columnPinning?: DataTableColumnPinning[];
 };
 
 /** The stable envelope intended for URL and saved-view adapters. */
 export interface DataTableSnapshot {
-  version: 2;
+  version: 3;
   modes: DataTableModes;
   state: DataTableViewState;
 }
@@ -117,6 +138,14 @@ export type DataTableCommand =
   | { type: 'setPageSize'; pageSize: number | null }
   | { type: 'setColumnOrder'; columnIds: string[] }
   | { type: 'setColumnVisibility'; columns: DataTableColumnVisibility[] }
+  | { type: 'setColumnWidths'; columns: DataTableColumnWidth[] }
+  | { type: 'setColumnWidth'; columnId: string; width: number | null }
+  | { type: 'setColumnPinning'; columns: DataTableColumnPinning[] }
+  | {
+      type: 'setColumnPin';
+      columnId: string;
+      position: DataTableColumnPinning['position'] | null;
+    }
   | { type: 'setSelection'; selection: DataTableSelection }
   | { type: 'setPageSelection'; rowIds: DataTableRowId[] }
   | ({
@@ -144,6 +173,8 @@ export interface DataTableControllerOptions {
   modes?: Partial<DataTableModes>;
   /** Optional known columns let the controller ignore stale saved-view fields. */
   columnIds?: readonly string[];
+  /** Static schema constraints that saved or controlled state may not override. */
+  hiddenColumnIds?: readonly string[];
   onStateChange?: (
     state: DataTableViewState,
     command: DataTableCommand,
@@ -166,6 +197,8 @@ const DEFAULT_STATE: DataTableViewState = {
   pageSize: null,
   columnOrder: [],
   columnVisibility: [],
+  columnWidths: [],
+  columnPinning: [],
   selection: { scope: 'explicit', rowIds: [] },
   selectedRowIds: [],
   expandedRowIds: [],
@@ -508,6 +541,44 @@ function normalizeVisibility(
     .map(([columnId, visible]) => ({ columnId, visible }));
 }
 
+function normalizeWidths(
+  values: readonly DataTableColumnWidth[],
+): DataTableColumnWidth[] {
+  const entries = new Map<string, number>();
+  for (const entry of values) {
+    const columnId = assertColumnId(entry?.columnId, 'width column id');
+    if (
+      typeof entry?.width !== 'number' ||
+      !Number.isFinite(entry.width) ||
+      entry.width <= 0
+    ) {
+      throw new TypeError(
+        'DataTable column widths must be positive finite numbers',
+      );
+    }
+    entries.set(columnId, entry.width);
+  }
+  return [...entries.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([columnId, width]) => ({ columnId, width }));
+}
+
+function normalizePinning(
+  values: readonly DataTableColumnPinning[],
+): DataTableColumnPinning[] {
+  const entries = new Map<string, DataTableColumnPinning['position']>();
+  for (const entry of values) {
+    const columnId = assertColumnId(entry?.columnId, 'pin column id');
+    if (entry?.position !== 'start' && entry?.position !== 'end') {
+      throw new TypeError('DataTable column pins must be start or end');
+    }
+    entries.set(columnId, entry.position);
+  }
+  return [...entries.entries()]
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .map(([columnId, position]) => ({ columnId, position }));
+}
+
 function normalizeModes(
   modes: Partial<DataTableModes> | undefined,
 ): DataTableModes {
@@ -523,6 +594,7 @@ function normalizeModes(
 function normalizeState(
   state: Partial<DataTableViewState> | undefined,
   columnIds?: readonly string[],
+  hiddenColumnIds?: readonly string[],
 ): DataTableViewState {
   const input = state ?? {};
   const selection = normalizeSelection(
@@ -532,6 +604,11 @@ function normalizeState(
   const knownColumns = columnIds ? normalizeUniqueColumnIds(columnIds) : null;
   const allowed = knownColumns ? new Set(knownColumns) : null;
   const keepKnown = (columnId: string) => !allowed || allowed.has(columnId);
+  const hidden = new Set(
+    (hiddenColumnIds ? normalizeUniqueColumnIds(hiddenColumnIds) : []).filter(
+      keepKnown,
+    ),
+  );
   const visibility = normalizeVisibility(
     input.columnVisibility ?? DEFAULT_STATE.columnVisibility,
   ).filter((entry) => keepKnown(entry.columnId));
@@ -544,6 +621,7 @@ function normalizeState(
       if (!knownVisibility.has(columnId)) knownVisibility.set(columnId, true);
     }
   }
+  for (const columnId of hidden) knownVisibility.set(columnId, false);
 
   const columnOrder = normalizeUniqueColumnIds(
     input.columnOrder ?? DEFAULT_STATE.columnOrder,
@@ -553,6 +631,13 @@ function normalizeState(
       if (!columnOrder.includes(columnId)) columnOrder.push(columnId);
     }
   }
+
+  const columnWidths = normalizeWidths(
+    input.columnWidths ?? DEFAULT_STATE.columnWidths,
+  ).filter((entry) => keepKnown(entry.columnId));
+  const columnPinning = normalizePinning(
+    input.columnPinning ?? DEFAULT_STATE.columnPinning,
+  ).filter((entry) => keepKnown(entry.columnId));
 
   return {
     search:
@@ -572,6 +657,8 @@ function normalizeState(
         visible,
       })),
     ),
+    columnWidths,
+    columnPinning,
     selection,
     selectedRowIds: selectedRowIdsFor(selection),
     expandedRowIds: normalizeRowIds(
@@ -686,6 +773,63 @@ export function transitionDataTableState(
         columnVisibility: normalizeVisibility(command.columns),
       };
       break;
+    case 'setColumnWidths':
+      next = {
+        ...current,
+        columnWidths: normalizeWidths(command.columns),
+      };
+      break;
+    case 'setColumnWidth': {
+      const columnId = assertColumnId(command.columnId, 'width column id');
+      const widths = new Map(
+        current.columnWidths.map((entry) => [entry.columnId, entry.width]),
+      );
+      if (command.width === null) {
+        widths.delete(columnId);
+      } else {
+        const normalized = normalizeWidths([
+          { columnId, width: command.width },
+        ]);
+        widths.set(columnId, normalized[0].width);
+      }
+      next = {
+        ...current,
+        columnWidths: normalizeWidths(
+          [...widths.entries()].map(([id, width]) => ({ columnId: id, width })),
+        ),
+      };
+      break;
+    }
+    case 'setColumnPinning':
+      next = {
+        ...current,
+        columnPinning: normalizePinning(command.columns),
+      };
+      break;
+    case 'setColumnPin': {
+      const columnId = assertColumnId(command.columnId, 'pin column id');
+      const pins = new Map(
+        current.columnPinning.map((entry) => [entry.columnId, entry.position]),
+      );
+      if (command.position === null) {
+        pins.delete(columnId);
+      } else {
+        const normalized = normalizePinning([
+          { columnId, position: command.position },
+        ]);
+        pins.set(columnId, normalized[0].position);
+      }
+      next = {
+        ...current,
+        columnPinning: normalizePinning(
+          [...pins.entries()].map(([id, position]) => ({
+            columnId: id,
+            position,
+          })),
+        ),
+      };
+      break;
+    }
     case 'setSelection':
       next = withSelection(current, command.selection);
       break;
@@ -763,10 +907,10 @@ export function hydrateDataTableSnapshot(value: unknown): DataTableSnapshot {
     throw new TypeError('DataTable snapshot must be a plain object');
   }
   const input = value as Record<string, unknown>;
-  if (input.version !== 1 && input.version !== 2)
+  if (input.version !== 1 && input.version !== 2 && input.version !== 3)
     throw new TypeError('Unsupported DataTable snapshot version');
   return {
-    version: 2,
+    version: 3,
     modes: normalizeModes(input.modes as Partial<DataTableModes>),
     state: normalizeState(input.state as Partial<DataTableViewState>),
   };
@@ -777,6 +921,7 @@ export class DataTableController {
   private state: DataTableViewState;
   private modes: DataTableModes;
   private columnIds?: string[];
+  private hiddenColumnIds?: string[];
   private controlled: boolean;
   private readonly listeners = new Set<DataTableStateListener>();
   private readonly onStateChange?: DataTableControllerOptions['onStateChange'];
@@ -786,10 +931,14 @@ export class DataTableController {
     this.columnIds = options.columnIds
       ? normalizeUniqueColumnIds(options.columnIds)
       : undefined;
+    this.hiddenColumnIds = options.hiddenColumnIds
+      ? normalizeUniqueColumnIds(options.hiddenColumnIds)
+      : undefined;
     this.controlled = options.state !== undefined;
     this.state = normalizeState(
       options.state ?? options.initialState,
       this.columnIds,
+      this.hiddenColumnIds,
     );
     this.modes = normalizeModes(options.modes);
     this.onStateChange = options.onStateChange;
@@ -804,7 +953,7 @@ export class DataTableController {
   }
 
   snapshot(): DataTableSnapshot {
-    return { version: 2, modes: this.getModes(), state: this.getState() };
+    return { version: 3, modes: this.getModes(), state: this.getState() };
   }
 
   subscribe(listener: DataTableStateListener): () => void {
@@ -818,9 +967,10 @@ export class DataTableController {
     const candidate = normalizeState(
       transitionDataTableState(this.state, command),
       this.columnIds,
+      this.hiddenColumnIds,
     );
     const next = {
-      version: 2 as const,
+      version: 3 as const,
       modes: this.getModes(),
       state: candidate,
     };
@@ -851,9 +1001,13 @@ export class DataTableController {
   /** Supplies state from a controlled host or an external persistence adapter. */
   replaceState(state: DataTableViewStateInput): DataTableTransition {
     const previous = this.snapshot();
-    const nextState = normalizeState(state, this.columnIds);
+    const nextState = normalizeState(
+      state,
+      this.columnIds,
+      this.hiddenColumnIds,
+    );
     const next = {
-      version: 2 as const,
+      version: 3 as const,
       modes: this.getModes(),
       state: nextState,
     };
@@ -888,10 +1042,18 @@ export class DataTableController {
   }
 
   /** Reconciles stale saved-view column IDs with the renderer's current columns. */
-  setColumnIds(columnIds: readonly string[]): DataTableTransition {
+  setColumnIds(
+    columnIds: readonly string[],
+    hiddenColumnIds: readonly string[] = [],
+  ): DataTableTransition {
     const previous = this.snapshot();
     this.columnIds = normalizeUniqueColumnIds(columnIds);
-    this.state = normalizeState(this.state, this.columnIds);
+    this.hiddenColumnIds = normalizeUniqueColumnIds(hiddenColumnIds);
+    this.state = normalizeState(
+      this.state,
+      this.columnIds,
+      this.hiddenColumnIds,
+    );
     const next = this.snapshot();
     const changed = snapshotSignature(previous) !== snapshotSignature(next);
     const transition = { command: null, previous, next, changed };

@@ -239,6 +239,62 @@ describe('DataTable virtualization seam', () => {
     }
   });
 
+  it('accounts for grouped headers and structural summary rows in virtual context', async () => {
+    const offsetHeight = vi
+      .spyOn(HTMLElement.prototype, 'offsetHeight', 'get')
+      .mockImplementation(function () {
+        if (this.tagName === 'TFOOT') return 24;
+        if (
+          this.tagName === 'TBODY' &&
+          this.classList.contains('data-table__body--structural')
+        ) {
+          return 20;
+        }
+        return 0;
+      });
+    const groupedColumns = [
+      {
+        ...columns[0],
+        headerPath: [{ id: 'identity', label: 'Identity' }],
+      },
+    ];
+
+    try {
+      const { container } = render(DataTable, {
+        props: {
+          data: rows,
+          columns: groupedColumns,
+          rowKey: 'id',
+          structuralRows: [
+            { id: 'subtotal', kind: 'subtotal', label: 'Current page' },
+            { id: 'footer', kind: 'footer', label: 'All rows' },
+          ],
+          virtualization,
+        },
+      });
+      const scrollContainer = getScrollContainer(container);
+
+      expect(screen.getByRole('table')).toHaveAttribute('aria-rowcount', '104');
+      expect(screen.getByText('Record 00000').closest('tr')).toHaveAttribute(
+        'aria-rowindex',
+        '3',
+      );
+      expect(screen.getByText('Current page').closest('tr')).toHaveAttribute(
+        'aria-rowindex',
+        '103',
+      );
+      expect(screen.getByText('All rows').closest('tr')).toHaveAttribute(
+        'aria-rowindex',
+        '104',
+      );
+
+      await fireEvent.keyDown(scrollContainer, { key: 'End' });
+      expect(scrollContainer.scrollTop).toBe(1_944);
+    } finally {
+      offsetHeight.mockRestore();
+    }
+  });
+
   it('falls back for expansion without virtual scroll behavior', async () => {
     const expandedContent = createRawSnippet(() => ({
       render: () => '<p>Variable detail</p>',
