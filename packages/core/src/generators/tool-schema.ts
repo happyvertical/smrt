@@ -166,6 +166,8 @@ export interface ToolRouteDescriptor {
   path: string[];
   /** Transport names rewritten by the tool schema (e.g. `actionId` → `id`). */
   parameterAliases?: Record<string, string>;
+  /** The generated method accepts one `options` bag as its sole argument. */
+  optionsBag?: boolean;
 }
 
 /** A single generated tool descriptor — the WebMCP / MCP tool shape. */

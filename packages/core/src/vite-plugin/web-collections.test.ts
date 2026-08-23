@@ -393,6 +393,36 @@ describe('buildWebToolDescriptors', () => {
     });
   });
 
+  it('marks a generated single-options action for direct transport unwrapping', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          methods: {
+            publish: {
+              name: 'publish',
+              isPublic: true,
+              isStatic: false,
+              async: true,
+              returnType: 'Promise<void>',
+              parameters: [{ name: 'options', type: 'object', optional: true }],
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['list', 'publish'] },
+          } as SmartObjectDefinition['decoratorConfig'],
+        }),
+      ),
+    )[0];
+
+    const descriptor = buildWebToolDescriptors(entry).find(
+      (tool) => tool.action === 'publish',
+    );
+    expect(descriptor?.inputSchema.properties).toHaveProperty('options');
+    expect(descriptor?.route).toMatchObject({ optionsBag: true });
+  });
+
   it('stays OUT of buildWebCollectionDefinition, so the #1764 shape digest never covers it', () => {
     const m = manifest(
       obj({

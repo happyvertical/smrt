@@ -796,6 +796,11 @@ export function buildWebToolDescriptors(
         method: route.method,
         scope: route.scope,
         path: route.pathSegments,
+        ...(metadata.parameters === undefined ||
+        (metadata.parameters.length === 1 &&
+          metadata.parameters[0]?.name === 'options')
+          ? { optionsBag: true }
+          : {}),
         ...(Object.keys(parameterAliases).length > 0
           ? { parameterAliases }
           : {}),

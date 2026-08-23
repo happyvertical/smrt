@@ -375,6 +375,7 @@ declare module '@smrt/web' {
     scope: 'item' | 'collection';
     path: string[];
     parameterAliases?: Record<string, string>;
+    optionsBag?: boolean;
   }
 
   /** A WebMCP/MCP tool descriptor for one collection action (#1812). */

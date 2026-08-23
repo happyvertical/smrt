@@ -259,6 +259,50 @@ describe('createSmrtCollection', () => {
     await collection.cleanup();
   });
 
+  it('keeps the public row id stable and reports missing mutation fetchers clearly', async () => {
+    const updateCalls: Array<{ id: string; data: Record<string, unknown> }> =
+      [];
+    const collection = createSmrtCollection(productDefinition('products-id'), {
+      fetchers: {
+        list: async () => [{ id: 'p1', name: 'Widget' }],
+        create: async (data) => ({ ...data, id: 'p2' }),
+        update: async (id, data) => {
+          updateCalls.push({ id, data });
+          return { id, ...data };
+        },
+      },
+    });
+    await collection.preload();
+
+    const transaction = collection.update('p1', {
+      id: 'p2',
+      name: 'Updated',
+    } as unknown as Omit<Partial<ProductData>, 'id'>);
+    await transaction.isPersisted.promise;
+    expect(updateCalls).toEqual([{ id: 'p1', data: { name: 'Updated' } }]);
+    expect(collection.get('p1')?.id).toBe('p1');
+    expect(collection.has('p2')).toBe(false);
+
+    const noUpdate = createSmrtCollection(
+      productDefinition('products-no-update'),
+      {
+        fetchers: {
+          list: async () => [{ id: 'p1', name: 'Widget' }],
+          create: async (data) => ({ ...data, id: 'p2' }),
+        },
+      },
+    );
+    await noUpdate.preload();
+    expect(() => noUpdate.update('p1', { name: 'Updated' })).toThrow(
+      'products-no-update has no update action',
+    );
+    expect(() => noUpdate.delete('p1')).toThrow(
+      'products-no-update has no delete action',
+    );
+
+    await Promise.all([collection.cleanup(), noUpdate.cleanup()]);
+  });
+
   it('accepts a shared client handle without leaking the engine', async () => {
     const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
     const client = createSmrtWebClient();

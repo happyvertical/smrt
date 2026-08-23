@@ -39,13 +39,13 @@
 import { createCollection } from '@tanstack/db';
 import { QueryClient } from '@tanstack/query-core';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
-
 import type {
   SmrtWebCapability,
   SmrtWebCapabilityContext,
   SmrtWebMutationEnvelope,
 } from './capability.js';
 import { runWrapMutation } from './capability.js';
+import { persistedMutationResults } from './internal.js';
 
 // Re-export the capability seam (#1755) and the shared durable-store foundation
 // through this single entry — the package ships one export subpath, so both are
@@ -253,6 +253,8 @@ export interface SmrtWebToolRouteDescriptor {
   path: string[];
   /** Transport names rewritten by the tool schema (e.g. `actionId` → `id`). */
   parameterAliases?: Record<string, string>;
+  /** The generated method accepts one `options` bag as its sole argument. */
+  optionsBag?: boolean;
 }
 
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
@@ -577,6 +579,17 @@ export function createDefinitionFetchers(
             : ('collection' as const),
         path: [action],
       };
+      // A generated method with one `options` parameter receives that object
+      // directly on the server. Keep receiver/path arguments outside the
+      // transport body and unwrap the WebMCP schema's `{ options: ... }` bag.
+      const transportArgs =
+        customRoute.optionsBag === true &&
+        args.options !== null &&
+        typeof args.options === 'object'
+          ? (args.options as Record<string, unknown>)
+          : customRoute.optionsBag === true
+            ? {}
+            : args;
       const pathArgs = new Set(
         customRoute.path
           .filter((segment) => /^\[[^\]]+\]$/.test(segment))
@@ -609,7 +622,7 @@ export function createDefinitionFetchers(
       );
       const aliasedInputs = new Set(Object.keys(parameterAliases));
       const body = Object.fromEntries(
-        Object.entries(args).filter(
+        Object.entries(transportArgs).filter(
           ([key]) =>
             key !== 'id' &&
             !pathArgs.has(key) &&
@@ -622,10 +635,10 @@ export function createDefinitionFetchers(
       )) {
         if (
           !consumedInputs.has(inputName) &&
-          args[inputName] !== undefined &&
+          transportArgs[inputName] !== undefined &&
           originalName !== 'id'
         ) {
-          body[originalName] = args[inputName];
+          body[originalName] = transportArgs[inputName];
         }
       }
       const idAlias = Object.entries(parameterAliases).find(
@@ -634,9 +647,9 @@ export function createDefinitionFetchers(
       if (
         idAlias &&
         !consumedInputs.has(idAlias) &&
-        args[idAlias] !== undefined
+        transportArgs[idAlias] !== undefined
       ) {
-        body.id = args[idAlias];
+        body.id = transportArgs[idAlias];
       }
       const segments = [
         collectionUrl,
@@ -811,7 +824,10 @@ export interface SmrtWebCollection<TData extends object> {
    */
   insert(row: SmrtWebRow<TData>): SmrtWebTransaction;
   /** Optimistically update a row and persist it through the REST surface. */
-  update(key: string, changes: Partial<SmrtWebRow<TData>>): SmrtWebTransaction;
+  update(
+    key: string,
+    changes: Omit<Partial<SmrtWebRow<TData>>, 'id'>,
+  ): SmrtWebTransaction;
   /** Optimistically delete a row and persist it through the REST surface. */
   delete(key: string): SmrtWebTransaction;
   /** Execute a custom action and invalidate this collection's related caches. */
@@ -989,6 +1005,7 @@ export function createSmrtCollection<TData extends object>(
     createDefinitionFetchers(definition, options.basePath, options.fetchFn);
   const queryClient = resolveQueryClient(options.client);
   const idField = definition.idField || 'id';
+  const mutationResults = new Map<string, unknown>();
 
   // Scope discriminates the cache key so a shared client can materialize the
   // same collection against different backends without cross-serving reads.
@@ -1292,6 +1309,7 @@ export function createSmrtCollection<TData extends object>(
               `create(${definition.name})`,
             );
           });
+          mutationResults.set(envelope.key, outcome.result);
           anyHandled = anyHandled || outcome.handled;
         }
         // If a capability handled the write offline (#1762) it never reached the
@@ -1325,6 +1343,7 @@ export function createSmrtCollection<TData extends object>(
                   `update(${definition.name})`,
                 ),
               );
+              mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
             if (anyHandled) return { refetch: false };
@@ -1346,6 +1365,7 @@ export function createSmrtCollection<TData extends object>(
                 // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
                 fetchers.delete!(key),
               );
+              mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
             if (anyHandled) return { refetch: false };
@@ -1422,6 +1442,10 @@ export function createSmrtCollection<TData extends object>(
       return collection.insert(row) as unknown as SmrtWebTransaction;
     },
     update(key, changes) {
+      if (!fetchers.update) {
+        throw new Error(`${definition.name} has no update action`);
+      }
+      const { id: _id, ...safeChanges } = changes as Record<string, unknown>;
       const engine = collection as unknown as {
         update: (
           key: string,
@@ -1429,10 +1453,13 @@ export function createSmrtCollection<TData extends object>(
         ) => unknown;
       };
       return engine.update(key, (draft) => {
-        Object.assign(draft, changes);
+        Object.assign(draft, safeChanges);
       }) as SmrtWebTransaction;
     },
     delete(key) {
+      if (!fetchers.delete) {
+        throw new Error(`${definition.name} has no delete action`);
+      }
       const engine = collection as unknown as {
         delete: (key: string) => unknown;
       };
@@ -1450,6 +1477,8 @@ export function createSmrtCollection<TData extends object>(
       return result;
     },
   };
+
+  persistedMutationResults.set(handle as object, mutationResults);
 
   engineCollections.set(handle, collection);
 

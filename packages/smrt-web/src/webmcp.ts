@@ -17,6 +17,7 @@
 import {
   createDefinitionFetchers,
   createSmrtCollection,
+  getEngineCollection,
   newLocalId,
   type SmrtCrudFetchers,
   type SmrtWebClient,
@@ -27,6 +28,7 @@ import {
   unwrapListResult,
   type WebToolDescriptor,
 } from './index.js';
+import { persistedMutationResults } from './internal.js';
 
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
 interface WebMcpToolRegistration {
@@ -153,7 +155,11 @@ export function registerWebMcpTools(
   return () => {
     controller.abort();
     for (const collection of collections.values()) {
-      void collection.cleanup();
+      // Disposal is intentionally synchronous for WebMCP callers, but cleanup
+      // is async because the underlying cache may close durable resources.
+      // Consume a rejection so a failed engine teardown cannot become an
+      // unhandled promise rejection in the host page.
+      void collection.cleanup().catch(() => undefined);
     }
   };
 }
@@ -238,10 +244,12 @@ async function dispatch(
         throw new Error(`${definition.name} has no update action`);
       }
       const { id: _id, ...body } = args;
-      // The browser agent may target a row that is not currently materialized
-      // in this collection instance. Hydrate the shared cache before asking the
-      // collection engine to apply its optimistic update.
-      await collection.preload();
+      await hydrateMutationTarget(
+        fetchers,
+        collection,
+        definition,
+        requireId(args, 'update'),
+      );
       const row = unwrapItemResult(
         await settleTransaction(
           collection.update(requireId(args, 'update'), body),
@@ -259,9 +267,7 @@ async function dispatch(
         throw new Error(`${definition.name} has no delete action`);
       }
       const id = requireId(args, 'delete');
-      // Delete requires the engine to know the current row so its optimistic
-      // transaction can roll back if the REST request fails.
-      await collection.preload();
+      await hydrateMutationTarget(fetchers, collection, definition, id);
       await settleTransaction(collection.delete(id), collection, id, {});
       return JSON.stringify({ success: true, id });
     }
@@ -281,17 +287,42 @@ async function settleTransaction(
   key: string,
   fallback: Record<string, unknown>,
 ): Promise<unknown> {
-  const result = await transaction.isPersisted.promise;
-  if (result !== undefined && result !== null) {
-    // TanStack's transaction promise resolves with its internal collection
-    // object, which is intentionally opaque and circular. Never leak that
-    // engine value into WebMCP's JSON string contract.
-    try {
-      JSON.stringify(result);
-      return result;
-    } catch {
-      // Fall through to the plain row/fallback below.
-    }
-  }
+  await transaction.isPersisted.promise;
+  const persisted = persistedMutationResults
+    .get(collection as object)
+    ?.get(key);
+  if (persisted !== undefined) return persisted;
   return collection.get(key) ?? { ...fallback, id: key };
+}
+
+/**
+ * Fetch and materialize a mutation target before asking TanStack DB to apply
+ * its optimistic operation. `preload()` only covers the collection's bounded
+ * first page; the keyed fetch is what makes arbitrary IDs reliable.
+ */
+async function hydrateMutationTarget(
+  fetchers: SmrtCrudFetchers,
+  collection: SmrtWebCollection<Record<string, unknown>>,
+  definition: SmrtWebCollectionDefinition,
+  id: string,
+): Promise<void> {
+  if (!fetchers.get) {
+    throw new Error(
+      `${definition.name} has no get action; cannot hydrate mutation target '${id}'`,
+    );
+  }
+  const row = unwrapItemResult(
+    await fetchers.get(id),
+    `get(${definition.name})`,
+  ) as Record<string, unknown>;
+  await collection.preload();
+  const engine = getEngineCollection(collection) as {
+    utils?: { writeUpsert?: (value: Record<string, unknown>) => void };
+  };
+  if (typeof engine.utils?.writeUpsert !== 'function') {
+    throw new Error(
+      `${definition.name} cannot hydrate mutation target '${id}'`,
+    );
+  }
+  engine.utils.writeUpsert(row);
 }
