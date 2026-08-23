@@ -99,6 +99,36 @@ export interface ReportAdapterDescriptor {
 }
 
 /** Structural DataTable view hints; deliberately not a smrt-ui dependency. */
+export interface ReportDataTableHeaderPathSegment {
+  /** Stable group identity within a header level. */
+  id: string;
+  /** Human-readable grouped-header label. */
+  label: string;
+}
+
+/** Responsive metadata that maps directly to a consumer's table contract. */
+export interface ReportDataTableColumnResponsive {
+  /** Higher values make a column more important during responsive collapse. */
+  priority?: number;
+  /** Keep key dimensions reachable during responsive collapse. */
+  keepVisible?: boolean;
+}
+
+/**
+ * A rendering instruction for a raw materialized value. Formatting is never
+ * applied to a query row, so sorting, export, and agent consumers retain it.
+ */
+export type ReportDataTableValueFormat =
+  | 'text'
+  | 'date'
+  | 'datetime'
+  | 'percentage'
+  | 'count'
+  | 'money'
+  | 'number';
+
+export type ReportDataTableColumnRole = 'data' | 'status' | 'action';
+
 export interface ReportDataTableColumn {
   id: string;
   label: string;
@@ -106,6 +136,60 @@ export interface ReportDataTableColumn {
   sortable: boolean;
   searchable: false;
   filterable: false;
+  /** Group ancestry for consumers with multi-level table headers. */
+  headerPath: ReportDataTableHeaderPathSegment[];
+  /** Consumer-side display instruction; materialized rows remain raw. */
+  valueFormat: ReportDataTableValueFormat;
+  /** The default alignment for the formatted display value. */
+  align: 'left' | 'right';
+  /** Generic semantic role for status/action columns introduced by later slices. */
+  role: ReportDataTableColumnRole;
+  responsive: ReportDataTableColumnResponsive;
+}
+
+export type ReportDataTableStructuralRowKind =
+  | 'summary'
+  | 'subtotal'
+  | 'aggregate'
+  | 'footer';
+
+/** Input supplied by a report consumer that computes a summary or subtotal. */
+export interface ReportDataTableStructuralRowInput {
+  id: string;
+  kind: ReportDataTableStructuralRowKind;
+  label: string;
+  /** Raw values keyed by the adapter's stable column id. */
+  values?: Readonly<Record<string, unknown>>;
+  /** Column that renders this row's accessible row header. */
+  labelColumnId?: string;
+}
+
+/**
+ * Structural rows are intentionally separate from materialized data rows.
+ * Consumers pass them to their DataTable's structural-row slot/prop, never its
+ * selectable data collection.
+ */
+export interface ReportDataTableStructuralRow
+  extends ReportDataTableStructuralRowInput {
+  selection: 'excluded';
+  actions: 'excluded';
+}
+
+/** Per-column presentation overrides owned by the consuming report surface. */
+export interface ReportDataTableColumnOverride {
+  label?: string;
+  headerPath?: readonly ReportDataTableHeaderPathSegment[];
+  valueFormat?: ReportDataTableValueFormat;
+  align?: 'left' | 'right';
+  role?: ReportDataTableColumnRole;
+  responsive?: ReportDataTableColumnResponsive;
+}
+
+export interface ReportDataTablePresentationOptions {
+  /** Overrides are keyed by stable adapter column id, not display labels. */
+  columns?: Readonly<Record<string, ReportDataTableColumnOverride>>;
+  /** Summary/subtotal rows remain structural rather than materialized data rows. */
+  structuralRows?: readonly ReportDataTableStructuralRowInput[];
 }
 
 export interface ReportDataTableDescriptor {
@@ -115,6 +199,7 @@ export interface ReportDataTableDescriptor {
   enableFiltering: false;
   enableSearch: false;
   columns: ReportDataTableColumn[];
+  structuralRows: ReportDataTableStructuralRow[];
 }
 
 export interface ReportAdapterOptions {
@@ -122,6 +207,8 @@ export interface ReportAdapterOptions {
   tenantScope?: 'current' | 'global' | 'tenant';
   /** Permission that a lifecycle action host must require before refresh. */
   refreshPermission?: string;
+  /** Consumer-owned presentational preferences; they never affect query rows. */
+  dataTable?: ReportDataTablePresentationOptions;
 }
 
 export interface ReportQueryOptions {
@@ -362,6 +449,260 @@ function resourceId(
   return `${definition.reportClassName}#${scope ?? 'current'}`;
 }
 
+const VALUE_FORMAT_ALIASES: Readonly<
+  Record<string, ReportDataTableValueFormat>
+> = {
+  text: 'text',
+  date: 'date',
+  datetime: 'datetime',
+  'date-time': 'datetime',
+  percentage: 'percentage',
+  percent: 'percentage',
+  count: 'count',
+  money: 'money',
+  currency: 'money',
+  number: 'number',
+  decimal: 'number',
+  integer: 'number',
+};
+
+const VALUE_FORMATS = new Set<ReportDataTableValueFormat>(
+  Object.values(VALUE_FORMAT_ALIASES),
+);
+const COLUMN_ROLES = new Set<ReportDataTableColumnRole>([
+  'data',
+  'status',
+  'action',
+]);
+const STRUCTURAL_ROW_KINDS = new Set<ReportDataTableStructuralRowKind>([
+  'summary',
+  'subtotal',
+  'aggregate',
+  'footer',
+]);
+
+function valueFormat(
+  column: ReportColumnDescriptor,
+): ReportDataTableValueFormat {
+  const configured = column.format?.trim().toLowerCase();
+  if (configured && Object.hasOwn(VALUE_FORMAT_ALIASES, configured)) {
+    return VALUE_FORMAT_ALIASES[configured];
+  }
+  if (column.kind === 'bucket') {
+    return column.bucket === 'minute' || column.bucket === 'hour'
+      ? 'datetime'
+      : 'date';
+  }
+  if (column.kind === 'aggregate' && column.aggregate === 'count') {
+    return 'count';
+  }
+  if (column.type === 'datetime') return 'datetime';
+  if (column.type === 'number') return 'number';
+  return 'text';
+}
+
+function headerPath(
+  column: ReportColumnDescriptor,
+): ReportDataTableHeaderPathSegment[] {
+  if (column.kind === 'aggregate') {
+    return [
+      { id: 'measures', label: 'Measures' },
+      {
+        id: `aggregate:${column.aggregate ?? 'value'}`,
+        label: labelFor(column.aggregate ?? 'value'),
+      },
+    ];
+  }
+  if (column.kind === 'bucket') {
+    return [
+      { id: 'dimensions', label: 'Dimensions' },
+      { id: 'time', label: 'Time' },
+    ];
+  }
+  if (column.kind === 'group') {
+    return [
+      { id: 'dimensions', label: 'Dimensions' },
+      { id: 'groups', label: 'Groups' },
+    ];
+  }
+  return [{ id: 'dimensions', label: 'Dimensions' }];
+}
+
+function responsive(
+  column: ReportColumnDescriptor,
+): ReportDataTableColumnResponsive {
+  if (column.kind === 'group' || column.kind === 'bucket') {
+    return { priority: 100, keepVisible: true };
+  }
+  if (column.kind === 'identity') return { priority: 80 };
+  return { priority: 20 };
+}
+
+function assertHeaderPath(
+  columnId: string,
+  path: readonly ReportDataTableHeaderPathSegment[],
+): ReportDataTableHeaderPathSegment[] {
+  if (!Array.isArray(path)) {
+    throw new TypeError(
+      `Report DataTable headerPath for ${columnId} must be an array`,
+    );
+  }
+  return path.map((segment) => {
+    if (
+      !segment ||
+      typeof segment.id !== 'string' ||
+      segment.id.trim().length === 0 ||
+      typeof segment.label !== 'string' ||
+      segment.label.trim().length === 0
+    ) {
+      throw new TypeError(
+        `Report DataTable headerPath entries for ${columnId} require non-empty id and label`,
+      );
+    }
+    return { id: segment.id, label: segment.label };
+  });
+}
+
+function dataTableColumn(
+  column: ReportColumnDescriptor,
+  override?: ReportDataTableColumnOverride,
+): ReportDataTableColumn {
+  const format = override?.valueFormat ?? valueFormat(column);
+  const path = override?.headerPath ?? headerPath(column);
+  if (!VALUE_FORMATS.has(format)) {
+    throw new TypeError(
+      `Report DataTable valueFormat for ${column.id} is not supported: ${String(format)}`,
+    );
+  }
+  if (override?.role !== undefined && !COLUMN_ROLES.has(override.role)) {
+    throw new TypeError(
+      `Report DataTable role for ${column.id} is not supported: ${String(override.role)}`,
+    );
+  }
+  if (
+    override?.label !== undefined &&
+    (typeof override.label !== 'string' || override.label.trim().length === 0)
+  ) {
+    throw new TypeError(
+      `Report DataTable label for ${column.id} must not be empty`,
+    );
+  }
+  if (
+    override?.align !== undefined &&
+    override.align !== 'left' &&
+    override.align !== 'right'
+  ) {
+    throw new TypeError(
+      `Report DataTable align for ${column.id} is not supported: ${String(override.align)}`,
+    );
+  }
+  if (
+    override?.responsive?.priority !== undefined &&
+    (!Number.isFinite(override.responsive.priority) ||
+      override.responsive.priority < 0)
+  ) {
+    throw new TypeError(
+      `Report DataTable responsive priority for ${column.id} must be a non-negative finite number`,
+    );
+  }
+  if (
+    override?.responsive?.keepVisible !== undefined &&
+    typeof override.responsive.keepVisible !== 'boolean'
+  ) {
+    throw new TypeError(
+      `Report DataTable keepVisible for ${column.id} must be a boolean`,
+    );
+  }
+  return {
+    id: column.id,
+    label: override?.label ?? column.label,
+    accessor: column.id,
+    sortable: column.id === 'id',
+    searchable: false,
+    filterable: false,
+    headerPath: assertHeaderPath(column.id, path),
+    valueFormat: format,
+    align:
+      override?.align ??
+      (['count', 'money', 'number', 'percentage'].includes(format)
+        ? 'right'
+        : 'left'),
+    role: override?.role ?? 'data',
+    responsive: { ...responsive(column), ...override?.responsive },
+  };
+}
+
+function structuralRows(
+  columnIds: ReadonlySet<string>,
+  rows: readonly ReportDataTableStructuralRowInput[] = [],
+): ReportDataTableStructuralRow[] {
+  const ids = new Set<string>();
+  return rows.map((row) => {
+    if (
+      !row ||
+      typeof row.id !== 'string' ||
+      row.id.trim().length === 0 ||
+      typeof row.label !== 'string' ||
+      row.label.trim().length === 0
+    ) {
+      throw new TypeError(
+        'Report structural rows require non-empty id and label values',
+      );
+    }
+    if (ids.has(row.id)) {
+      throw new TypeError(`Report structural row id must be unique: ${row.id}`);
+    }
+    if (!STRUCTURAL_ROW_KINDS.has(row.kind)) {
+      throw new TypeError(
+        `Report structural row kind is not supported: ${String(row.kind)}`,
+      );
+    }
+    if (row.labelColumnId !== undefined) {
+      if (
+        typeof row.labelColumnId !== 'string' ||
+        row.labelColumnId.trim().length === 0 ||
+        !columnIds.has(row.labelColumnId)
+      ) {
+        throw new TypeError(
+          `Report structural row labelColumnId must name an adapter column: ${String(row.labelColumnId)}`,
+        );
+      }
+    }
+    if (
+      row.values !== undefined &&
+      (typeof row.values !== 'object' ||
+        row.values === null ||
+        Array.isArray(row.values))
+    ) {
+      throw new TypeError('Report structural row values must be an object');
+    }
+    if (
+      row.values &&
+      Object.keys(row.values).some((columnId) => !columnIds.has(columnId))
+    ) {
+      throw new TypeError(
+        'Report structural row values must use adapter column ids',
+      );
+    }
+    ids.add(row.id);
+    return {
+      id: row.id,
+      kind: row.kind,
+      label: row.label,
+      ...(row.values !== undefined
+        ? {
+            values: jsonSafeValue(row.values) as Record<string, unknown>,
+          }
+        : {}),
+      ...(row.labelColumnId !== undefined
+        ? { labelColumnId: row.labelColumnId }
+        : {}),
+      selection: 'excluded' as const,
+      actions: 'excluded' as const,
+    };
+  });
+}
+
 export async function buildReportAdapterDescriptor(
   reportCtor: new (...args: any[]) => SmrtObject,
   options: ReportAdapterOptions = {},
@@ -395,14 +736,13 @@ export async function buildReportAdapterDescriptor(
     manualSorting: true,
     enableFiltering: false,
     enableSearch: false,
-    columns: columns.map((column) => ({
-      id: column.id,
-      label: column.label,
-      accessor: column.id,
-      sortable: column.id === 'id',
-      searchable: false,
-      filterable: false,
-    })),
+    columns: columns.map((column) =>
+      dataTableColumn(column, options.dataTable?.columns?.[column.id]),
+    ),
+    structuralRows: structuralRows(
+      new Set(columns.map((column) => column.id)),
+      options.dataTable?.structuralRows,
+    ),
   };
   return {
     version: 1,
@@ -427,7 +767,10 @@ function publicFieldMap(
   );
 }
 
-function jsonSafeValue(value: unknown): unknown {
+function jsonSafeValue(
+  value: unknown,
+  ancestors = new WeakSet<object>(),
+): unknown {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'bigint') {
     const numeric = Number(value);
@@ -438,11 +781,24 @@ function jsonSafeValue(value: unknown): unknown {
     }
     return numeric;
   }
-  if (Array.isArray(value)) return value.map(jsonSafeValue);
   if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [key, jsonSafeValue(entry)]),
-    );
+    if (ancestors.has(value)) {
+      throw new TypeError('Values must not contain circular references');
+    }
+    ancestors.add(value);
+    try {
+      if (Array.isArray(value)) {
+        return value.map((entry) => jsonSafeValue(entry, ancestors));
+      }
+      return Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [
+          key,
+          jsonSafeValue(entry, ancestors),
+        ]),
+      );
+    } finally {
+      ancestors.delete(value);
+    }
   }
   return value;
 }

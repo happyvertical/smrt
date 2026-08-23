@@ -348,6 +348,294 @@ describe('report adapter', () => {
     expect(() => JSON.stringify(first)).not.toThrow();
   });
 
+  it('projects report metadata into neutral grouped-header and format hints', async () => {
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport);
+
+    expect(
+      descriptor.dataTable.columns.find(
+        (column) => column.id === 'customer_id',
+      ),
+    ).toMatchObject({
+      headerPath: [
+        { id: 'dimensions', label: 'Dimensions' },
+        { id: 'groups', label: 'Groups' },
+      ],
+      valueFormat: 'text',
+      align: 'left',
+      responsive: { priority: 100, keepVisible: true },
+    });
+    expect(
+      descriptor.dataTable.columns.find(
+        (column) => column.id === 'issued_month',
+      ),
+    ).toMatchObject({
+      headerPath: [
+        { id: 'dimensions', label: 'Dimensions' },
+        { id: 'time', label: 'Time' },
+      ],
+      valueFormat: 'date',
+      align: 'left',
+    });
+    expect(
+      descriptor.dataTable.columns.find((column) => column.id === 'revenue'),
+    ).toMatchObject({
+      headerPath: [
+        { id: 'measures', label: 'Measures' },
+        { id: 'aggregate:sum', label: 'Sum' },
+      ],
+      valueFormat: 'number',
+      align: 'right',
+      responsive: { priority: 20 },
+    });
+  });
+
+  it('does not treat prototype property names as configured value formats', async () => {
+    ObjectRegistry.registerFieldDecorator('AdapterReport', 'revenue', {
+      format: '__proto__',
+    });
+
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport);
+
+    expect(
+      descriptor.dataTable.columns.find((column) => column.id === 'revenue'),
+    ).toMatchObject({ valueFormat: 'number' });
+  });
+
+  it('allows consumer presentation overrides while keeping structural rows non-data', async () => {
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport, {
+      dataTable: {
+        columns: {
+          revenue: {
+            label: 'Recognized revenue',
+            headerPath: [
+              { id: 'financial', label: 'Financials' },
+              { id: 'recognized', label: 'Recognized' },
+            ],
+            valueFormat: 'money',
+            responsive: { priority: 90, keepVisible: true },
+          },
+        },
+        structuralRows: [
+          {
+            id: 'all-customers',
+            kind: 'summary',
+            label: 'All customers',
+            values: { revenue: 900_000.25 },
+            labelColumnId: 'customer_id',
+          },
+        ],
+      },
+    });
+
+    expect(
+      descriptor.dataTable.columns.find((column) => column.id === 'revenue'),
+    ).toMatchObject({
+      label: 'Recognized revenue',
+      headerPath: [
+        { id: 'financial', label: 'Financials' },
+        { id: 'recognized', label: 'Recognized' },
+      ],
+      valueFormat: 'money',
+      responsive: { priority: 90, keepVisible: true },
+    });
+    expect(descriptor.dataTable.structuralRows).toEqual([
+      {
+        id: 'all-customers',
+        kind: 'summary',
+        label: 'All customers',
+        values: { revenue: 900_000.25 },
+        labelColumnId: 'customer_id',
+        selection: 'excluded',
+        actions: 'excluded',
+      },
+    ]);
+  });
+
+  it('makes structural row values safe for JSON transport', async () => {
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport, {
+      dataTable: {
+        structuralRows: [
+          {
+            id: 'all-customers',
+            kind: 'summary',
+            label: 'All customers',
+            values: {
+              customer_id: new Date('2026-08-23T00:00:00.000Z'),
+              revenue: 42n,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(descriptor.dataTable.structuralRows[0]?.values).toEqual({
+      customer_id: '2026-08-23T00:00:00.000Z',
+      revenue: 42,
+    });
+    expect(() => JSON.stringify(descriptor)).not.toThrow();
+
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'circular',
+              kind: 'summary',
+              label: 'Circular',
+              values: { revenue: circular },
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/circular references/);
+  });
+
+  it('rejects malformed grouped headers and duplicate structural rows', async () => {
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          columns: {
+            revenue: { headerPath: [{ id: '', label: 'Financials' }] },
+          },
+        },
+      }),
+    ).rejects.toThrow(/headerPath entries/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            { id: 'total', kind: 'summary', label: 'Total' },
+            { id: 'total', kind: 'footer', label: 'Total' },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/must be unique/);
+  });
+
+  it('rejects invalid JavaScript presentation enum values at the adapter boundary', async () => {
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          columns: {
+            revenue: { valueFormat: 'scientific' as never },
+          },
+        },
+      }),
+    ).rejects.toThrow(/valueFormat.*not supported/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            { id: 'total', kind: 'data' as never, label: 'Total' },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/kind is not supported/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          columns: { revenue: { role: '' as never } },
+        },
+      }),
+    ).rejects.toThrow(/role.*not supported/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          columns: {
+            revenue: {
+              align: 'center' as never,
+              responsive: { keepVisible: 'yes' as never },
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow(/align.*not supported/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          columns: { revenue: { label: 12 as never } },
+        },
+      }),
+    ).rejects.toThrow(/label.*must not be empty/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          columns: {
+            revenue: { responsive: { keepVisible: 'yes' as never } },
+          },
+        },
+      }),
+    ).rejects.toThrow(/keepVisible.*boolean/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              labelColumnId: 'missing_column',
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/labelColumnId.*adapter column/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              labelColumnId: '' as never,
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/labelColumnId.*adapter column/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              values: null as never,
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/values must be an object/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              values: { unknown_column: 1 },
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/values must use adapter column ids/);
+  });
+
   it('does not describe a tenant-like field as a tenant boundary without registration', async () => {
     const descriptor = await buildReportAdapterDescriptor(
       UnscopedTenantMarkedReport,
