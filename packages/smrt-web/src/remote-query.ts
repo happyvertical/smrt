@@ -287,7 +287,11 @@ export function createSmrtWebQuery<TData extends object>(
       if (running) return running;
     }
     const running = runTransport(candidate, runOptions).then((result) => {
-      cache.set(key, { result, updatedAt: Date.now() });
+      // A forced successor can replace this flight before the predecessor
+      // settles. Only the current owner may publish to the keyed cache.
+      if (inFlight.get(key) === running) {
+        cache.set(key, { result, updatedAt: Date.now() });
+      }
       return result;
     });
     inFlight.set(key, running);
