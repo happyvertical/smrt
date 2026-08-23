@@ -30,7 +30,12 @@ import {
   resolveGetStringFilter,
 } from './interceptors';
 import type { SmrtObject } from './object';
-import { QueryBoundsError, QueryOrderByError } from './query-bounds';
+import {
+  DEFAULT_LIST_LIMIT,
+  MAX_LIST_LIMIT,
+  QueryBoundsError,
+  QueryOrderByError,
+} from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -53,6 +58,15 @@ const logger = createLogger({ level: 'info' });
  * see {@link SmrtCollection.resolveCollectionMemoryOwnerId} (#2365).
  */
 const COLLECTION_MEMORY_OWNER_ID = '__collection__';
+
+/** Maximum number of independent facet fields accepted by one call. */
+export const MAX_FACET_FIELDS = 20;
+
+/** Default number of distinct values returned for each facet field. */
+export const DEFAULT_FACET_LIMIT = DEFAULT_LIST_LIMIT;
+
+/** Hard ceiling for distinct values returned for one facet field. */
+export const MAX_FACET_LIMIT = MAX_LIST_LIMIT;
 
 /**
  * Validate an optional collection-level list bound (#2367).
@@ -311,7 +325,10 @@ export interface SmrtFacetResult {
 
 /** Options for a database-backed facet query. */
 export interface SmrtFacetOptions<T extends SmrtObject> {
-  /** One or more fields. Each field may optionally carry its own value limit. */
+  /**
+   * One or more fields (at most {@link MAX_FACET_FIELDS}). Each field may
+   * optionally carry its own value limit.
+   */
   fields: readonly (SmrtSelectField<T> | SmrtFacetRequest<T>)[];
   /** The same SMRT WHERE syntax accepted by {@link SmrtCollection.list}. */
   where?: SmrtWhereClause<T>;
@@ -3168,6 +3185,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param options.fields One or more fields, optionally with per-field limits
    * @param options.where Filter conditions using the same syntax as `list()`
    * @returns One value/count list per requested field, in request order
+   *
+   * Limits are always bounded: an explicit per-field limit is clamped to
+   * {@link MAX_FACET_LIMIT}, the collection's `maxListLimit` when configured,
+   * and the lower of those ceilings. When omitted, the effective limit is the
+   * collection's `defaultListLimit` or {@link DEFAULT_FACET_LIMIT}, subject to
+   * the same ceilings. This keeps facet queries bounded even when collection
+   * list bounds are unset.
    */
   public async facets(
     options: SmrtFacetOptions<ModelType>,
@@ -3179,6 +3203,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     if (options.fields.length === 0) {
       throw new Error('Invalid facets option: at least one field is required.');
+    }
+    if (options.fields.length > MAX_FACET_FIELDS) {
+      throw new Error(
+        `Invalid facets option: at most ${MAX_FACET_FIELDS} fields are allowed.`,
+      );
     }
 
     const itemClassName = this.getResolvedItemClassName();
@@ -3245,22 +3274,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const columnName = this.toDbColumnName(field);
       const quotedColumn = this.quoteProjectionIdentifier(columnName);
       const quotedField = this.quoteProjectionIdentifier(field);
-      const requestedLimit = request.limit;
-      const limit =
-        requestedLimit === undefined
-          ? undefined
-          : this.applyListBounds(
-              assertQueryBound(requestedLimit, `facet limit for '${field}'`),
-            );
-      const limitSql =
-        limit === undefined ? '' : ` LIMIT $${whereValues.length + 1}`;
+      const requestedLimit =
+        request.limit === undefined
+          ? (this._defaultListLimit ?? DEFAULT_FACET_LIMIT)
+          : assertQueryBound(request.limit, `facet limit for '${field}'`);
+      const collectionLimit = this._maxListLimit ?? MAX_FACET_LIMIT;
+      const limit = Math.min(
+        requestedLimit ?? DEFAULT_FACET_LIMIT,
+        collectionLimit,
+        MAX_FACET_LIMIT,
+      );
       const sql =
         `SELECT ${quotedColumn} AS ${quotedField}, ` +
         `COUNT(*) AS "__smrt_facet_count" FROM ${this.tableName} ` +
         `${whereSql} GROUP BY ${quotedColumn} ` +
-        `ORDER BY "__smrt_facet_count" DESC, ${quotedColumn} ASC${limitSql}`;
-      const params =
-        limit === undefined ? whereValues : [...whereValues, limit];
+        `ORDER BY "__smrt_facet_count" DESC, ${quotedColumn} ASC ` +
+        `LIMIT $${whereValues.length + 1}`;
+      const params = [...whereValues, limit];
       const queryResult = await this.db.query(sql, ...params);
 
       results.push({

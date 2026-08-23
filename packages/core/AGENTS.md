@@ -66,13 +66,17 @@ Database-backed facets and scoped counts are available through
 `collection.facets({ fields, where })` and
 `collection.counts({ where })`. Facets return `{ field, values }` entries whose
 values contain `{ value, count }`, run the same `beforeList`/tenant interceptors
-as list reads, and execute one `GROUP BY` query per requested field. They never
-hydrate model instances. `counts()` returns `{ total, filtered }` using two
-`COUNT(*)` queries; both counts retain the active read scope. Facet fields must
-be column-backed and obey the same sensitive/read-permission restrictions as
-`select`. Array/string-list fields are grouped by their stored value — SMRT does
-not split or unnest them — so consumers needing per-member options should use a
-scalar join table or consumer-specific query.
+as list reads, and execute one bounded `GROUP BY` query per requested field.
+Each call accepts at most 20 fields. A requested value limit is clamped to the
+hard maximum of 1,000 and to `maxListLimit` when configured. If omitted, the
+limit defaults to `defaultListLimit` or 50, then the same ceilings apply; facet
+queries are therefore never unbounded even when list bounds are unset. They
+never hydrate model instances. `counts()` returns `{ total, filtered }` using
+two `COUNT(*)` queries; both counts retain the active read scope. Facet fields
+must be column-backed and obey the same sensitive/read-permission restrictions
+as `select`. Array/string-list fields are grouped by their stored value — SMRT
+does not split or unnest them — so consumers needing per-member options should
+use a scalar join table or consumer-specific query.
 
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
 Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`
