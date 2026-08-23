@@ -333,4 +333,33 @@ describe('remote query controller', () => {
     query.dispose();
     await collection.cleanup();
   });
+
+  it('rejects a delayed transport result after its signal is aborted', async () => {
+    const caller = new AbortController();
+    let release!: (result: unknown) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        if (calls > 1) return envelope(received, 'cancelled');
+        return await new Promise<unknown>((resolve) => {
+          release = resolve;
+        });
+      },
+    });
+    const pending = query.execute(request, { signal: caller.signal });
+    caller.abort();
+    release(envelope(request, 'cancelled'));
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(query.state.rows).toEqual([]);
+
+    await query.execute(request);
+    expect(calls).toBe(2);
+    expect(query.state.rows[0]?.name).toBe('cancelled');
+    query.dispose();
+    await collection.cleanup();
+  });
 });
