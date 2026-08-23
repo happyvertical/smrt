@@ -24,9 +24,10 @@ import { APIGenerator } from './rest';
 @smrt({
   api: {
     public: true,
-    include: ['create', 'list', 'get', 'quote', 'ping', 'refuse'],
+    include: ['create', 'list', 'get', 'quote', 'inspect', 'ping', 'refuse'],
     routes: {
       quote: { method: 'POST', path: 'quote' },
+      inspect: { method: 'GET', path: 'inspect' },
       ping: { method: 'POST', path: 'ping' },
       refuse: { method: 'POST', path: 'refuse' },
     },
@@ -48,6 +49,15 @@ class ActionWidgetCollection extends SmrtCollection<ActionWidget> {
   /** Single `options` bag — the common shape, passed straight through. */
   async quote(options: { symbol?: string } = {}): Promise<{ symbol: string }> {
     return { symbol: options.symbol ?? 'none' };
+  }
+
+  /** GET options preserve omitted and explicit null values across the route. */
+  async inspect(
+    options?: { symbol?: string } | null,
+  ): Promise<{ value: string }> {
+    if (options === undefined) return { value: 'undefined' };
+    if (options === null) return { value: 'null' };
+    return { value: options.symbol ?? 'object' };
   }
 
   /** Zero parameters — must dispatch with NO request body at all. */
@@ -97,6 +107,9 @@ describe('runtime REST custom collection actions (#2047)', () => {
       }),
     );
 
+  const get = (path: string): Promise<Response> =>
+    handler(new Request(`http://localhost/api/v1/actionwidgets/${path}`));
+
   it('dispatches an action whose route omits an explicit scope', async () => {
     const response = await post('quote', { symbol: 'HV' });
     expect(response.status).toBe(200);
@@ -126,6 +139,23 @@ describe('runtime REST custom collection actions (#2047)', () => {
     };
     expect(payload.action).toBe('ping');
     expect(payload.result.pong).toBe(true);
+  });
+
+  it('preserves omitted, null, and object GET options', async () => {
+    const omitted = await get('inspect');
+    expect(
+      ((await omitted.json()) as { result: { value: string } }).result,
+    ).toEqual({ value: 'undefined' });
+
+    const explicitNull = await get('inspect?__smrt_options=null');
+    expect(
+      ((await explicitNull.json()) as { result: { value: string } }).result,
+    ).toEqual({ value: 'null' });
+
+    const object = await get('inspect?symbol=HV');
+    expect(
+      ((await object.json()) as { result: { value: string } }).result,
+    ).toEqual({ value: 'HV' });
   });
 
   it('maps a returned failure to its status and redacts the payload', async () => {

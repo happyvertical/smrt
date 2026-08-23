@@ -157,6 +157,19 @@ export type ToolIdType = 'uuid' | 'text';
 /** The CRUD verbs with dedicated input-schema skeletons; anything else is custom. */
 const CRUD_ACTIONS = new Set(['list', 'get', 'create', 'update', 'delete']);
 
+export interface ToolRouteDescriptor {
+  /** HTTP method emitted for the route. */
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  /** Whether the route targets one item or the whole collection. */
+  scope: 'item' | 'collection';
+  /** Route segments below the collection endpoint. Dynamic segments use `[x]`. */
+  path: string[];
+  /** Transport names rewritten by the tool schema (e.g. `actionId` → `id`). */
+  parameterAliases?: Record<string, string>;
+  /** The generated method accepts one `options` bag as its sole argument. */
+  optionsBag?: boolean;
+}
+
 /** A single generated tool descriptor — the WebMCP / MCP tool shape. */
 export interface ToolDescriptor {
   /** The action this tool performs (`list` | `get` | … | a custom method name). */
@@ -167,6 +180,8 @@ export interface ToolDescriptor {
   inputSchema: ToolJsonSchema;
   /** True for non-mutating reads (`list`/`get`) → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
+  /** Generated custom-route transport metadata, when the action has a route. */
+  route?: ToolRouteDescriptor;
 }
 
 /**

@@ -329,7 +329,13 @@ describe('buildWebToolDescriptors', () => {
               include: ['list', 'apply'],
               // A config-only collection override cannot change this instance
               // method's receiver.
-              routes: { apply: { scope: 'collection' } },
+              routes: {
+                apply: {
+                  scope: 'collection',
+                  method: 'PATCH',
+                  path: 'publish-now',
+                },
+              },
             },
           } as SmartObjectDefinition['decoratorConfig'],
         }),
@@ -347,6 +353,74 @@ describe('buildWebToolDescriptors', () => {
       },
       required: ['id', 'idempotencyKey'],
     });
+    expect(descriptor?.route).toEqual({
+      method: 'PATCH',
+      scope: 'item',
+      path: ['publish-now'],
+    });
+  });
+
+  it('emits kebab-case custom route segments when configured', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          methods: {
+            publishNow: {
+              name: 'publishNow',
+              isPublic: true,
+              isStatic: false,
+              async: true,
+              returnType: 'Promise<void>',
+              parameters: [{ name: 'id', type: 'string', optional: false }],
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['list', 'publishNow'] },
+          } as SmartObjectDefinition['decoratorConfig'],
+        }),
+      ),
+    )[0];
+    const descriptor = buildWebToolDescriptors(entry, {
+      kebabRoutes: true,
+    }).find((tool) => tool.action === 'publishNow');
+    expect(descriptor?.route).toEqual({
+      method: 'POST',
+      scope: 'item',
+      path: ['publish-now'],
+      parameterAliases: { actionId: 'id' },
+    });
+  });
+
+  it('marks a generated single-options action for direct transport unwrapping', () => {
+    const entry = selectWebCollectionEntries(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          methods: {
+            publish: {
+              name: 'publish',
+              isPublic: true,
+              isStatic: false,
+              async: true,
+              returnType: 'Promise<void>',
+              parameters: [{ name: 'options', type: 'object', optional: true }],
+            },
+          },
+          decoratorConfig: {
+            api: { include: ['list', 'publish'] },
+          } as SmartObjectDefinition['decoratorConfig'],
+        }),
+      ),
+    )[0];
+
+    const descriptor = buildWebToolDescriptors(entry).find(
+      (tool) => tool.action === 'publish',
+    );
+    expect(descriptor?.inputSchema.properties).toHaveProperty('options');
+    expect(descriptor?.route).toMatchObject({ optionsBag: true });
   });
 
   it('stays OUT of buildWebCollectionDefinition, so the #1764 shape digest never covers it', () => {

@@ -951,7 +951,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         case 'smrt:web':
           // Web collection definitions for the browser client data runtime
           // (@happyvertical/smrt-web, #1761)
-          return generateWebModule(manifest);
+          return generateWebModule(manifest, {
+            kebabRoutes: svelteKit.kebabRoutes ?? false,
+          });
 
         default:
           return null;
@@ -1300,7 +1302,10 @@ export { setupRoutes as default };
  * {@link buildWebCollectionDefinition} so this value emission, the matching d.ts
  * type emission, and the #1764 shape digest cannot drift.
  */
-function generateWebModule(manifest: SmartObjectManifest): string {
+function generateWebModule(
+  manifest: SmartObjectManifest,
+  options: { kebabRoutes?: boolean } = {},
+): string {
   const definitions: Record<string, unknown> = {};
 
   // Emit one definition per MATERIALIZABLE collection (list-exposed), built via
@@ -1314,7 +1319,7 @@ function generateWebModule(manifest: SmartObjectManifest): string {
       // WebMCP/MCP tool descriptors (#1812) — layered ON TOP of the shared shape
       // so the #1764 shape digest (computeWebManifestHash, which calls
       // buildWebCollectionDefinition directly) keeps hashing only the row shape.
-      toolDescriptors: buildWebToolDescriptors(entry),
+      toolDescriptors: buildWebToolDescriptors(entry, options),
     };
   }
 
@@ -1875,6 +1880,14 @@ declare module '@happyvertical/smrt-virt-web' {
     relatedCollection: string;
   }
 
+  export interface WebToolRouteDescriptor {
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    scope: 'item' | 'collection';
+    path: string[];
+    parameterAliases?: Record<string, string>;
+    optionsBag?: boolean;
+  }
+
   /** A WebMCP/MCP tool descriptor for one collection action (#1812). */
   export interface WebToolDescriptor {
     action: string;
@@ -1882,6 +1895,7 @@ declare module '@happyvertical/smrt-virt-web' {
     description: string;
     inputSchema: Record<string, unknown>;
     readOnly: boolean;
+    route?: WebToolRouteDescriptor;
   }
 
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {

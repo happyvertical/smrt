@@ -39,13 +39,16 @@
 import { createCollection } from '@tanstack/db';
 import { QueryClient } from '@tanstack/query-core';
 import { queryCollectionOptions } from '@tanstack/query-db-collection';
-
 import type {
   SmrtWebCapability,
   SmrtWebCapabilityContext,
   SmrtWebMutationEnvelope,
 } from './capability.js';
 import { runWrapMutation } from './capability.js';
+import {
+  mutationTargetHydrators,
+  persistedMutationResults,
+} from './internal.js';
 
 // Re-export the capability seam (#1755) and the shared durable-store foundation
 // through this single entry — the package ships one export subpath, so both are
@@ -242,7 +245,23 @@ export interface WebToolDescriptor {
   inputSchema: Record<string, unknown>;
   /** True for non-mutating reads → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
+  /** Generated custom-route transport metadata. */
+  route?: SmrtWebToolRouteDescriptor;
 }
+
+export interface SmrtWebToolRouteDescriptor {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  scope: 'item' | 'collection';
+  /** Route segments below the collection endpoint; dynamic segments use `[x]`. */
+  path: string[];
+  /** Transport names rewritten by the tool schema (e.g. `actionId` → `id`). */
+  parameterAliases?: Record<string, string>;
+  /** The generated method accepts one `options` bag as its sole argument. */
+  optionsBag?: boolean;
+}
+
+/** Reserved GET query marker for preserving an options bag's nullish value. */
+const CUSTOM_OPTIONS_QUERY_MARKER = '__smrt_options';
 
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
   /** REST collection name (e.g. `products`). */
@@ -300,6 +319,12 @@ export interface SmrtCrudFetchers {
   create(data: Record<string, unknown>): Promise<unknown>;
   update?(id: string, data: Record<string, unknown>): Promise<unknown>;
   delete?(id: string): Promise<unknown>;
+  /** Invoke a generated custom action route. */
+  custom?(
+    action: string,
+    args: Record<string, unknown>,
+    route?: SmrtWebToolRouteDescriptor,
+  ): Promise<unknown>;
 }
 
 /**
@@ -551,6 +576,155 @@ export function createDefinitionFetchers(
       }
       return true;
     },
+    custom: async (action, args, route) => {
+      const customRoute = route ?? {
+        method: 'POST' as const,
+        scope:
+          typeof args.id === 'string'
+            ? ('item' as const)
+            : ('collection' as const),
+        path: [action],
+      };
+      // A generated method with one `options` parameter receives that object
+      // directly on the server. Keep receiver/path arguments outside the
+      // transport body and unwrap the WebMCP schema's `{ options: ... }` bag.
+      const optionsBag = customRoute.optionsBag === true;
+      const optionsValue = optionsBag ? args.options : undefined;
+      const transportArgs =
+        optionsBag && optionsValue !== null && typeof optionsValue === 'object'
+          ? (optionsValue as Record<string, unknown>)
+          : args;
+      const pathArgs = new Set(
+        customRoute.path
+          .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+          .map((segment) => segment.slice(1, -1)),
+      );
+      const parameterAliases = customRoute.parameterAliases ?? {};
+      const inputNameFor = (parameterName: string): string =>
+        Object.entries(parameterAliases).find(
+          ([, originalName]) => originalName === parameterName,
+        )?.[0] ?? parameterName;
+      const valueForPath = (parameterName: string): unknown => {
+        const inputName = inputNameFor(parameterName);
+        return args[inputName] ?? args[parameterName];
+      };
+      const id = customRoute.scope === 'item' ? args.id : undefined;
+      if (customRoute.scope === 'item' && typeof id !== 'string') {
+        throw new Error(
+          `${definition.name} custom action '${action}' requires an id`,
+        );
+      }
+      for (const name of pathArgs) {
+        if (valueForPath(name) === undefined || valueForPath(name) === null) {
+          throw new Error(
+            `${definition.name} custom action '${action}' requires '${name}'`,
+          );
+        }
+      }
+      const consumedInputs = new Set(
+        [...pathArgs].map((name) => inputNameFor(name)),
+      );
+      const aliasedInputs = new Set(Object.keys(parameterAliases));
+      const body: unknown = optionsBag
+        ? optionsValue
+        : Object.fromEntries(
+            Object.entries(transportArgs).filter(
+              ([key]) =>
+                key !== 'id' &&
+                !pathArgs.has(key) &&
+                !consumedInputs.has(key) &&
+                !aliasedInputs.has(key),
+            ),
+          );
+      if (!optionsBag) {
+        for (const [inputName, originalName] of Object.entries(
+          parameterAliases,
+        )) {
+          if (
+            !consumedInputs.has(inputName) &&
+            transportArgs[inputName] !== undefined &&
+            originalName !== 'id'
+          ) {
+            (body as Record<string, unknown>)[originalName] =
+              transportArgs[inputName];
+          }
+        }
+      }
+      const idAlias = Object.entries(parameterAliases).find(
+        ([, originalName]) => originalName === 'id',
+      )?.[0];
+      if (
+        !optionsBag &&
+        idAlias &&
+        !consumedInputs.has(idAlias) &&
+        transportArgs[idAlias] !== undefined
+      ) {
+        (body as Record<string, unknown>).id = transportArgs[idAlias];
+      }
+      const segments = [
+        collectionUrl,
+        ...(customRoute.scope === 'item'
+          ? [encodeURIComponent(String(id))]
+          : []),
+        ...customRoute.path.map((segment) =>
+          /^\[[^\]]+\]$/.test(segment)
+            ? encodeURIComponent(
+                String(valueForPath(segment.slice(1, -1)) ?? ''),
+              )
+            : segment,
+        ),
+      ];
+      const requestPath = `${segments.join('/')}`;
+      const init: RequestInit = { method: customRoute.method, headers };
+      if (customRoute.method !== 'GET') {
+        init.body = JSON.stringify(body);
+      } else {
+        const queryParams = new URLSearchParams();
+        if (optionsBag) {
+          if (optionsValue === undefined) {
+            queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'undefined');
+          } else if (optionsValue === null) {
+            queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'null');
+          } else {
+            const queryBody =
+              typeof optionsValue === 'object' && !Array.isArray(optionsValue)
+                ? (optionsValue as Record<string, unknown>)
+                : {};
+            const entries = Object.entries(queryBody).filter(
+              ([, value]) => value !== undefined && value !== null,
+            );
+            for (const [key, value] of entries) {
+              queryParams.set(
+                key,
+                typeof value === 'object'
+                  ? JSON.stringify(value)
+                  : String(value),
+              );
+            }
+            if (entries.length === 0) {
+              queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'object');
+            }
+          }
+        } else {
+          const queryBody =
+            body !== null && typeof body === 'object' && !Array.isArray(body)
+              ? (body as Record<string, unknown>)
+              : {};
+          for (const [key, value] of Object.entries(queryBody)) {
+            if (value === undefined || value === null) continue;
+            queryParams.set(
+              key,
+              typeof value === 'object' ? JSON.stringify(value) : String(value),
+            );
+          }
+        }
+        const query = queryParams.toString()
+          ? `?${queryParams.toString()}`
+          : '';
+        return parse(await fetchFn(`${requestPath}${query}`, { ...init }));
+      }
+      return parse(await fetchFn(requestPath, init));
+    },
   };
 }
 
@@ -690,6 +864,19 @@ export interface SmrtWebCollection<TData extends object> {
    * server outcome (see {@link SmrtWebTransaction}).
    */
   insert(row: SmrtWebRow<TData>): SmrtWebTransaction;
+  /** Optimistically update a row and persist it through the REST surface. */
+  update(
+    key: string,
+    changes: Omit<Partial<SmrtWebRow<TData>>, 'id'>,
+  ): SmrtWebTransaction;
+  /** Optimistically delete a row and persist it through the REST surface. */
+  delete(key: string): SmrtWebTransaction;
+  /** Execute a custom action and invalidate this collection's related caches. */
+  action(
+    action: string,
+    args: Record<string, unknown>,
+    route?: SmrtWebToolRouteDescriptor,
+  ): Promise<unknown>;
 }
 
 /** Extract a row's server revision timestamp for sync/apply conflict guards. */
@@ -859,6 +1046,7 @@ export function createSmrtCollection<TData extends object>(
     createDefinitionFetchers(definition, options.basePath, options.fetchFn);
   const queryClient = resolveQueryClient(options.client);
   const idField = definition.idField || 'id';
+  const mutationResults = new Map<string, unknown>();
 
   // Scope discriminates the cache key so a shared client can materialize the
   // same collection against different backends without cross-serving reads.
@@ -1162,6 +1350,7 @@ export function createSmrtCollection<TData extends object>(
               `create(${definition.name})`,
             );
           });
+          mutationResults.set(envelope.key, outcome.result);
           anyHandled = anyHandled || outcome.handled;
         }
         // If a capability handled the write offline (#1762) it never reached the
@@ -1195,6 +1384,7 @@ export function createSmrtCollection<TData extends object>(
                   `update(${definition.name})`,
                 ),
               );
+              mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
             if (anyHandled) return { refetch: false };
@@ -1216,6 +1406,7 @@ export function createSmrtCollection<TData extends object>(
                 // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
                 fetchers.delete!(key),
               );
+              mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
             }
             if (anyHandled) return { refetch: false };
@@ -1291,7 +1482,48 @@ export function createSmrtCollection<TData extends object>(
     insert(row) {
       return collection.insert(row) as unknown as SmrtWebTransaction;
     },
+    update(key, changes) {
+      if (!fetchers.update) {
+        throw new Error(`${definition.name} has no update action`);
+      }
+      const { id: _id, ...safeChanges } = changes as Record<string, unknown>;
+      const engine = collection as unknown as {
+        update: (
+          key: string,
+          updater: (draft: Record<string, unknown>) => void,
+        ) => unknown;
+      };
+      return engine.update(key, (draft) => {
+        Object.assign(draft, safeChanges);
+      }) as SmrtWebTransaction;
+    },
+    delete(key) {
+      if (!fetchers.delete) {
+        throw new Error(`${definition.name} has no delete action`);
+      }
+      const engine = collection as unknown as {
+        delete: (key: string) => unknown;
+      };
+      return engine.delete(key) as SmrtWebTransaction;
+    },
+    async action(action, args, route) {
+      if (!fetchers.custom) {
+        throw new Error(`${definition.name} has no custom action fetcher`);
+      }
+      const result =
+        route === undefined
+          ? await fetchers.custom(action, args)
+          : await fetchers.custom(action, args, route);
+      invalidateRelated();
+      return result;
+    },
   };
+
+  persistedMutationResults.set(handle as object, mutationResults);
+  mutationTargetHydrators.set(handle as object, async (row) => {
+    await collection.preload();
+    collection.utils.writeUpsert(row as Partial<Row>);
+  });
 
   engineCollections.set(handle, collection);
 

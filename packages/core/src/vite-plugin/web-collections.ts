@@ -24,9 +24,13 @@
  */
 
 import { createHash } from 'node:crypto';
-import { resolveCustomActionMetadata } from '../generators/custom-action.js';
+import {
+  customActionParameterInputName,
+  resolveCustomActionMetadata,
+} from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
+  isCrudAction,
   type ToolDescriptor,
   type ToolFieldMeta,
 } from '../generators/tool-schema.js';
@@ -36,7 +40,10 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
-import { resolveApiActionSet } from './sveltekit-generator.js';
+import {
+  resolveApiActionRouteConfig,
+  resolveApiActionSet,
+} from './sveltekit-generator.js';
 
 /**
  * Field types that are relationship pseudo-columns rather than persisted
@@ -726,6 +733,7 @@ export function buildWebRelationships(
  */
 export function buildWebToolDescriptors(
   entry: WebCollectionEntry,
+  options: { kebabRoutes?: boolean } = {},
 ): ToolDescriptor[] {
   const webFields = buildWebFieldDefinitions(entry.obj);
   const fields: ToolFieldMeta[] = Object.entries(webFields).map(
@@ -743,7 +751,7 @@ export function buildWebToolDescriptors(
         : {}),
     }),
   );
-  return buildToolDescriptors({
+  const descriptors = buildToolDescriptors({
     className: entry.obj.className,
     fields,
     actions: entry.actions,
@@ -758,6 +766,46 @@ export function buildWebToolDescriptors(
       ]),
     ),
     idType: entry.obj.decoratorConfig.idType,
+  });
+
+  return descriptors.map((descriptor) => {
+    if (isCrudAction(descriptor.action)) return descriptor;
+    const method = entry.obj.methods?.[descriptor.action];
+    const route = resolveApiActionRouteConfig(
+      descriptor.action,
+      method ?? {},
+      entry.obj.decoratorConfig?.api,
+      { kebabRoutes: options.kebabRoutes },
+    );
+    const metadata = resolveCustomActionMetadata({
+      actionName: descriptor.action,
+      method,
+      apiConfig: entry.obj.decoratorConfig?.api,
+    });
+    const parameterAliases = Object.fromEntries(
+      (method?.parameters ?? [])
+        .map((parameter) => [
+          customActionParameterInputName(metadata, parameter.name),
+          parameter.name,
+        ])
+        .filter(([inputName, parameterName]) => inputName !== parameterName),
+    );
+    return {
+      ...descriptor,
+      route: {
+        method: route.method,
+        scope: route.scope,
+        path: route.pathSegments,
+        ...(metadata.parameters === undefined ||
+        (metadata.parameters.length === 1 &&
+          metadata.parameters[0]?.name === 'options')
+          ? { optionsBag: true }
+          : {}),
+        ...(Object.keys(parameterAliases).length > 0
+          ? { parameterAliases }
+          : {}),
+      },
+    };
   });
 }
 

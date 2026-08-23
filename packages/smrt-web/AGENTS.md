@@ -38,6 +38,7 @@ module you are editing. This file keeps what holds in every module.
 | `index.ts` hooks + `durable-store.ts` | the six capability hook points, hook error isolation, the no-op guarantee, and the shared durable-store namespacing/wipe registry | [agents/capability-seam.md](agents/capability-seam.md) |
 | `offline/` | durable offline writes — config, sync-apply-only replay, idempotency, the shared namespace-keyed engine, and Web Locks leader election | [agents/offline-outbox.md](agents/offline-outbox.md) |
 | `sse-client.ts` | the client half of live cache invalidation — the app-wide subscriber, the wire contract it consumes, and SSE-vs-polling behaviour | [agents/live-invalidation.md](agents/live-invalidation.md) |
+| `webmcp.ts` | framework-agnostic WebMCP registrar; registers generated collection tools and routes mutations through shared smrt-web cache state | — |
 | `persistence/` + `update-state.ts` | the read-cache rehydrate capability and the framework-free `updateAvailable` primitive (bundle + contract signals) | [agents/version-persistence.md](agents/version-persistence.md) |
 | `data-query.ts` | dependency-free browser mirror and defensive response normalizer for the canonical bounded data-query envelope (#2444) | — |
 

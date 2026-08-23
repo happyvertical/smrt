@@ -1,32 +1,36 @@
 /**
- * WebMCP browser tool registration (#1812, tracer).
+ * WebMCP browser tool registration (#1812).
  *
  * Registers each collection's generated {@link WebToolDescriptor}s with the
  * browser's WebMCP registry (`document.modelContext.registerTool`) so an
  * in-page AI agent can discover and invoke them — see
  * https://developer.chrome.com/docs/ai/webmcp. Each tool's `execute` runs
- * through the collection's REST fetchers AS THE PAGE'S AUTHENTICATED USER, so
+ * through the shared smrt-web collection AS THE PAGE'S AUTHENTICATED USER, so
  * the generated REST guards (auth, tenant gate #1554, writable + sensitive-field
  * policy #1540) are the security boundary — nothing is re-implemented here.
  *
- * Framework-agnostic and engine-free: this module imports no UI framework and no
- * client-data engine. `document.modelContext` is a browser global, not a
- * dependency. Reads/writes go through {@link createDefinitionFetchers} (plain
- * fetch), so registering tools never drags the TanStack engine onto a page.
- *
- * TRACER SCOPE: CRUD actions (list/get/create/update/delete) are fully wired;
- * custom actions return a clear "not wired" payload. The full slice can route
- * `execute` through the shared-client collection instead of raw fetchers so
- * agent mutations reflect in on-page live collections (cache coherence).
+ * Framework-agnostic: this module imports no UI framework. `document.modelContext`
+ * is a browser global, not a dependency. Mutation actions use the same
+ * optimistic/invalidation path as page code through `createSmrtCollection`.
  */
 
 import {
   createDefinitionFetchers,
+  createSmrtCollection,
+  newLocalId,
   type SmrtCrudFetchers,
+  type SmrtWebClient,
+  type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
+  type SmrtWebTransaction,
   unwrapItemResult,
   unwrapListResult,
+  type WebToolDescriptor,
 } from './index.js';
+import {
+  mutationTargetHydrators,
+  persistedMutationResults,
+} from './internal.js';
 
 /** The subset of Chrome's WebMCP `registerTool` input this tracer emits. */
 interface WebMcpToolRegistration {
@@ -66,6 +70,10 @@ export interface RegisterWebMcpToolsOptions {
   basePath?: string;
   /** Injectable fetch (tests / SSR-safe wrappers). */
   fetchFn?: typeof fetch;
+  /** Shared smrt-web cache handle used by page collections. */
+  client?: SmrtWebClient;
+  /** Optional cache scope matching the page collection's scope. */
+  scope?: string;
   /**
    * Override how a definition's CRUD fetchers are built. Defaults to
    * {@link createDefinitionFetchers}; the primary seam for testing `execute`
@@ -101,6 +109,10 @@ export function registerWebMcpTools(
   // tool when the signal it was registered with aborts, so the returned disposer
   // simply aborts. Idempotent — a second call is a harmless no-op.
   const controller = new AbortController();
+  const collections = new Map<
+    SmrtWebCollectionDefinition,
+    SmrtWebCollection<Record<string, unknown>>
+  >();
 
   for (const definition of definitions) {
     const descriptors = definition.toolDescriptors;
@@ -109,6 +121,14 @@ export function registerWebMcpTools(
     const fetchers = options.resolveFetchers
       ? options.resolveFetchers(definition)
       : createDefinitionFetchers(definition, basePath, options.fetchFn);
+    const collection = createSmrtCollection(definition, {
+      fetchers,
+      basePath,
+      fetchFn: options.fetchFn,
+      ...(options.client ? { client: options.client } : {}),
+      ...(options.scope ? { scope: options.scope } : {}),
+    }) as SmrtWebCollection<Record<string, unknown>>;
+    collections.set(definition, collection);
 
     for (const descriptor of descriptors) {
       if (options.filter && !options.filter(definition, descriptor)) continue;
@@ -120,14 +140,30 @@ export function registerWebMcpTools(
           inputSchema: descriptor.inputSchema,
           annotations: { readOnlyHint: descriptor.readOnly },
           execute: (args) =>
-            dispatch(fetchers, definition, descriptor.action, args ?? {}),
+            dispatch(
+              fetchers,
+              collection,
+              definition,
+              descriptor.action,
+              descriptor.route,
+              args ?? {},
+            ),
         },
         { signal: controller.signal },
       );
     }
   }
 
-  return () => controller.abort();
+  return () => {
+    controller.abort();
+    for (const collection of collections.values()) {
+      // Disposal is intentionally synchronous for WebMCP callers, but cleanup
+      // is async because the underlying cache may close durable resources.
+      // Consume a rejection so a failed engine teardown cannot become an
+      // unhandled promise rejection in the host page.
+      void collection.cleanup().catch(() => undefined);
+    }
+  };
 }
 
 /** Require and return a string `id` from tool args, or throw a clear error. */
@@ -170,8 +206,10 @@ function listParams(args: Record<string, unknown>): Record<string, unknown> {
  */
 async function dispatch(
   fetchers: SmrtCrudFetchers,
+  collection: SmrtWebCollection<Record<string, unknown>>,
   definition: SmrtWebCollectionDefinition,
   action: string,
+  route: WebToolDescriptor['route'],
   args: Record<string, unknown>,
 ): Promise<string> {
   switch (action) {
@@ -194,8 +232,10 @@ async function dispatch(
     }
 
     case 'create': {
+      const localId = newLocalId();
+      const transaction = collection.insert({ ...args, id: localId });
       const row = unwrapItemResult(
-        await fetchers.create(args),
+        await settleTransaction(transaction, collection, localId, args),
         `create(${definition.name})`,
       );
       return JSON.stringify(row);
@@ -206,8 +246,19 @@ async function dispatch(
         throw new Error(`${definition.name} has no update action`);
       }
       const { id: _id, ...body } = args;
+      await hydrateMutationTarget(
+        fetchers,
+        collection,
+        definition,
+        requireId(args, 'update'),
+      );
       const row = unwrapItemResult(
-        await fetchers.update(requireId(args, 'update'), body),
+        await settleTransaction(
+          collection.update(requireId(args, 'update'), body),
+          collection,
+          requireId(args, 'update'),
+          body,
+        ),
         `update(${definition.name})`,
       );
       return JSON.stringify(row);
@@ -217,17 +268,60 @@ async function dispatch(
       if (!fetchers.delete) {
         throw new Error(`${definition.name} has no delete action`);
       }
-      await fetchers.delete(requireId(args, 'delete'));
-      return JSON.stringify({ success: true });
+      const id = requireId(args, 'delete');
+      await hydrateMutationTarget(fetchers, collection, definition, id);
+      await settleTransaction(collection.delete(id), collection, id, {});
+      return JSON.stringify({ success: true, id });
     }
 
     default:
-      // Custom actions (e.g. invoice_record_payment) hit bespoke REST routes not
-      // covered by the CRUD fetchers. Wired in the full slice (#1812).
-      return JSON.stringify({
-        error: `WebMCP custom action '${action}' is not wired in the tracer`,
-        action,
-        collection: definition.name,
-      });
+      if (!fetchers.custom) {
+        throw new Error(`${definition.name} has no custom action fetcher`);
+      }
+      return JSON.stringify(await collection.action(action, args, route));
   }
+}
+
+/** Await the shared collection mutation lifecycle and return its server value. */
+async function settleTransaction(
+  transaction: SmrtWebTransaction,
+  collection: SmrtWebCollection<Record<string, unknown>>,
+  key: string,
+  fallback: Record<string, unknown>,
+): Promise<unknown> {
+  await transaction.isPersisted.promise;
+  const persisted = persistedMutationResults
+    .get(collection as object)
+    ?.get(key);
+  if (persisted !== undefined) return persisted;
+  return collection.get(key) ?? { ...fallback, id: key };
+}
+
+/**
+ * Fetch and materialize a mutation target before asking TanStack DB to apply
+ * its optimistic operation. `preload()` only covers the collection's bounded
+ * first page; the keyed fetch is what makes arbitrary IDs reliable.
+ */
+async function hydrateMutationTarget(
+  fetchers: SmrtCrudFetchers,
+  collection: SmrtWebCollection<Record<string, unknown>>,
+  definition: SmrtWebCollectionDefinition,
+  id: string,
+): Promise<void> {
+  if (!fetchers.get) {
+    throw new Error(
+      `${definition.name} has no get action; cannot hydrate mutation target '${id}'`,
+    );
+  }
+  const row = unwrapItemResult(
+    await fetchers.get(id),
+    `get(${definition.name})`,
+  ) as Record<string, unknown>;
+  const hydrate = mutationTargetHydrators.get(collection as object);
+  if (!hydrate) {
+    throw new Error(
+      `${definition.name} cannot hydrate mutation target '${id}'`,
+    );
+  }
+  await hydrate(row);
 }

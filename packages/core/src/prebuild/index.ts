@@ -370,6 +370,14 @@ declare module '@smrt/web' {
     relatedCollection: string;
   }
 
+  export interface WebToolRouteDescriptor {
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    scope: 'item' | 'collection';
+    path: string[];
+    parameterAliases?: Record<string, string>;
+    optionsBag?: boolean;
+  }
+
   /** A WebMCP/MCP tool descriptor for one collection action (#1812). */
   export interface WebToolDescriptor {
     action: string;
@@ -377,6 +385,7 @@ declare module '@smrt/web' {
     description: string;
     inputSchema: Record<string, unknown>;
     readOnly: boolean;
+    route?: WebToolRouteDescriptor;
   }
 
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {

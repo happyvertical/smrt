@@ -985,8 +985,12 @@ describe('SvelteKit Route Generator', () => {
         "import { ObjectRegistry } from '@happyvertical/smrt-core'",
       );
       expect(content).toContain('export const GET: RequestHandler');
-      expect(content).toMatch(
-        /Object\.fromEntries\(\s*new URL\(request\.url\)\.searchParams\.entries\(\),?\s*\)/,
+      expect(content).toContain(
+        "const optionsMarker = searchParams.get('__smrt_options');",
+      );
+      expect(content).toContain("optionsMarker === 'undefined'");
+      expect(content).not.toMatch(
+        /Object\.fromEntries\([\s\S]*\),\n\s*\) as ActionArgs\[0\];/,
       );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
       expect(content).toContain('await ClassRef.browseFacts(options)');
@@ -1182,7 +1186,10 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('type ActionArgs = Parameters<');
       expect(content).toContain("from '@happyvertical/smrt-tenancy'");
       expect(content).toContain('establishTenantContext(locals);');
-      expect(content).toContain('const body: unknown = await request.json();');
+      expect(content).toContain('const rawBody = await request.text();');
+      expect(content).toContain(
+        "const body: unknown = rawBody.trim() === '' ? undefined : JSON.parse(rawBody);",
+      );
       expect(content).toContain(
         'const options = readJsonRecord(body) as ActionOptions;',
       );

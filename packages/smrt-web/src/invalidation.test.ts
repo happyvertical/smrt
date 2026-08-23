@@ -102,7 +102,7 @@ function tagsDefinition(): SmrtWebCollectionDefinition<TagData> {
  */
 function makeScriptedFetchers(initialRows: Array<Record<string, unknown>>) {
   const serverRows = [...initialRows];
-  const calls = { list: 0, create: 0, update: 0, delete: 0 };
+  const calls = { list: 0, create: 0, update: 0, delete: 0, custom: 0 };
 
   const fetchers: SmrtCrudFetchers = {
     list: async () => {
@@ -122,6 +122,10 @@ function makeScriptedFetchers(initialRows: Array<Record<string, unknown>>) {
     delete: async () => {
       calls.delete += 1;
       return true;
+    },
+    custom: async () => {
+      calls.custom += 1;
+      return { ok: true };
     },
   };
 
@@ -240,6 +244,40 @@ describe('relationship-derived invalidation (shared client)', () => {
     expect(tagsBackend.calls.list).toBeGreaterThanOrEqual(2);
 
     tagsSub.unsubscribe();
+  });
+
+  it('refetches related collections after a custom action settles', async () => {
+    const client = createSmrtWebClient();
+    const commentsBackend = makeScriptedFetchers([
+      { id: 'c1', body: 'first', articleId: 'a1' },
+    ]);
+    const articlesBackend = makeScriptedFetchers([
+      { id: 'a1', title: 'Hello' },
+    ]);
+    const comments = track(
+      createSmrtCollection(commentsDefinition(), {
+        fetchers: commentsBackend.fetchers,
+        client,
+        staleTimeMs: 60_000,
+      }),
+    );
+    const articles = track(
+      createSmrtCollection(articlesDefinition(), {
+        fetchers: articlesBackend.fetchers,
+        client,
+        staleTimeMs: 60_000,
+      }),
+    );
+    const articlesSub = articles.subscribeChanges(() => {});
+    await Promise.all([comments.preload(), articles.preload()]);
+    expect(articlesBackend.calls.list).toBe(1);
+
+    await comments.action('publish', { id: 'c1' });
+
+    await waitFor(() => articlesBackend.calls.list >= 2);
+    expect(commentsBackend.calls.custom).toBe(1);
+    expect(articlesBackend.calls.list).toBeGreaterThanOrEqual(2);
+    articlesSub.unsubscribe();
   });
 
   it('does not refetch an UNRELATED collection sharing the same client', async () => {
