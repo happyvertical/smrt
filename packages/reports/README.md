@@ -140,6 +140,18 @@ system, and non-column fields are not surfaced. Sensitive/secret fields and
 fields with a `readPermission` are excluded without a principal, so the
 descriptor fails closed.
 
+The `dataTable.columns` entries carry neutral `headerPath`, `valueFormat`,
+alignment, role, and responsive hints. Grouping fields, time buckets, and
+aggregate measures receive deterministic multi-level header ancestry; a
+consumer can override any column by stable id with
+`buildReportAdapterDescriptor(..., { dataTable: { columns: { ... } } })`.
+`valueFormat` is an instruction for the rendering boundary only: rows returned
+by `queryReportMaterializedRows()` retain their raw JSON-safe values for
+sorting, exports, and agents. Use `dataTable.structuralRows` for a computed
+summary, subtotal, aggregate, or footer. Each is marked `selection: 'excluded'`
+and `actions: 'excluded'`, and must be passed to the consumer table's structural
+row surface rather than its selectable data rows.
+
 `queryReportMaterializedRows()` is the bounded read slice for already-materialized
 rows. It supports projection, offset/limit paging (default limit 50), and
 deterministic ordering by the stable `id` identity. Dimension/measure filters,
