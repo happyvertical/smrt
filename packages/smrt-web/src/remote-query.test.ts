@@ -329,6 +329,41 @@ describe('remote query controller', () => {
     await expect(
       query.execute(request, { deadlineMs: 0 }),
     ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(query.state.loading).toBe(false);
+    expect(query.state.refreshing).toBe(false);
+    expect(query.state.error).toBeNull();
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('clears refreshing after the current refresh is cancelled', async () => {
+    const caller = new AbortController();
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received, options) => {
+        calls += 1;
+        if (calls === 1) return envelope(received, 'cached');
+        return await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => reject(options.signal?.reason),
+            { once: true },
+          );
+        });
+      },
+    });
+    await query.execute(request);
+    const pending = query.refresh({ signal: caller.signal });
+    await vi.waitFor(() => expect(query.state.refreshing).toBe(true));
+    caller.abort();
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(query.state.rows[0]?.name).toBe('cached');
+    expect(query.state.loading).toBe(false);
+    expect(query.state.refreshing).toBe(false);
+    expect(query.state.stale).toBe(true);
     expect(query.state.error).toBeNull();
     query.dispose();
     await collection.cleanup();

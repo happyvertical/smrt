@@ -253,14 +253,20 @@ export function createSmrtWebQuery<TData extends object>(
         if (current === generation) apply(result, candidate);
         return result;
       } catch (error) {
-        if (current === generation && !isAbort(error)) {
-          publish({
-            ...state,
-            loading: false,
-            refreshing: false,
-            stale: entry !== undefined,
-            error,
-          });
+        if (current === generation) {
+          if (isAbort(error)) {
+            // Cancellation is not an error, but the current invocation must
+            // still release its busy state. Preserve all other state fields.
+            publish({ ...state, loading: false, refreshing: false });
+          } else {
+            publish({
+              ...state,
+              loading: false,
+              refreshing: false,
+              stale: entry !== undefined,
+              error,
+            });
+          }
         }
         throw error;
       } finally {
