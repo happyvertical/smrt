@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.42.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - export terminal auth approval limit (#2490) (users)
+  - @happyvertical/smrt-config@0.42.6
+  - @happyvertical/smrt-types@0.42.6
+  - @happyvertical/smrt-scanner@0.42.6
+
 ## 0.42.5
 
 ### Patch Changes

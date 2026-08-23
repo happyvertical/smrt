@@ -1,5 +1,14 @@
 # @happyvertical/smrt-reports
 
+## 0.42.6
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.42.6
+  - @happyvertical/smrt-jobs@0.42.6
+  - @happyvertical/smrt-tenancy@0.42.6
+
 ## 0.42.5
 
 ### Patch Changes
