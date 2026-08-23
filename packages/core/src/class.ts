@@ -976,6 +976,16 @@ export class SmrtClass {
   }
 
   /**
+   * Return the database engine hint captured from the caller's configuration.
+   * Adapters may not expose their original type after construction (notably
+   * in-memory DuckDB/JSON connections), so query helpers can combine this
+   * hint with their public connection capabilities.
+   */
+  protected getDatabaseEngineHint(): string | undefined {
+    return this._dbEngineHint;
+  }
+
+  /**
    * Initialize signal bus and adapters
    *
    * Merges global configuration with instance-specific overrides.

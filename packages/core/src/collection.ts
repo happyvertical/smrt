@@ -1,5 +1,5 @@
 import { createLogger } from '@happyvertical/logger';
-import { buildWhere } from '@happyvertical/sql';
+import { buildWhere, type DatabaseInterface } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -38,6 +38,7 @@ import {
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
+import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   classnameToTablename,
@@ -362,6 +363,40 @@ export interface SmrtListOptions<ModelType extends SmrtObject> {
    * Opt-in read-through cache for this call (issue #1498).
    */
   cache?: CollectionCacheConfig | false;
+}
+
+/**
+ * Declarative latest-row configuration for a declared `@oneToMany` relation.
+ *
+ * `orderBy` determines which related row wins for each parent. `sortBy`, when
+ * supplied, orders parent rows by a field on that winning row before the
+ * parent's own `limit`/`offset` are applied. Related rows are returned as
+ * plain selected data rather than hydrated objects so this remains a bounded
+ * read primitive.
+ */
+export interface SmrtLatestRelatedOptions {
+  /** The `@oneToMany` field on the parent collection's item class. */
+  relation: string;
+  /** Related field(s) used to select the latest row, e.g. `createdAt DESC`. */
+  orderBy: string | string[];
+  /** Column-backed related fields returned in `latestRelated`. Defaults to the declared related primary key. */
+  select?: readonly string[];
+  /** Related field(s) used to order parent rows by the selected latest row. */
+  sortBy?: string | string[];
+}
+
+/** Options accepted by {@link SmrtCollection.listWithLatestRelated}. */
+export type SmrtLatestRelatedListOptions<ModelType extends SmrtObject> = Omit<
+  SmrtListOptions<ModelType>,
+  'select' | 'include' | 'cache'
+> & {
+  latestRelated: SmrtLatestRelatedOptions;
+};
+
+/** A hydrated parent paired with its selected latest related row, if present. */
+export interface SmrtLatestRelatedRow<ModelType extends SmrtObject> {
+  parent: ModelType;
+  latestRelated: Record<string, unknown> | null;
 }
 
 /**
@@ -1235,6 +1270,47 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  private resolvePrimaryKeyField(
+    fields: Record<string, CollectionFieldDefinition>,
+    label: string,
+  ): { field: string; column: string } {
+    const declared = Object.entries(fields)
+      .filter(
+        ([, fieldDef]) =>
+          fieldDef.primaryKey === true || fieldDef._meta?.primaryKey === true,
+      )
+      .map(([field]) => field);
+    if (declared.length > 1) {
+      throw new Error(
+        `${label} declares multiple primary-key fields (${declared.join(', ')}); listWithLatestRelated requires a single primary key.`,
+      );
+    }
+    const field = declared[0] ?? 'id';
+    return { field, column: this.toDbColumnName(field) };
+  }
+
+  private getDatabaseEngine(): ReturnType<typeof detectEngine> {
+    const db = this.db as DatabaseInterface & {
+      config?: { type?: string; url?: string };
+      type?: string;
+      client?: { constructor?: { name?: string }; connection?: unknown };
+      exportTable?: unknown;
+    };
+    const clientName = db.client?.constructor?.name?.toLowerCase() ?? '';
+    const isDuckDbConnection =
+      clientName.includes('duckdb') ||
+      (typeof db.exportTable === 'function' &&
+        db.client !== undefined &&
+        'connection' in db.client);
+    return detectEngine(
+      db.url || db.config?.url || '',
+      this.getDatabaseEngineHint() ||
+        db.type ||
+        db.config?.type ||
+        (isDuckDbConnection ? 'duckdb' : undefined),
+    );
+  }
+
   private isOmittedCustomPrimaryKeySystemField(
     fieldName: string,
     hasCustomPrimaryKey: boolean,
@@ -1361,6 +1437,512 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       sql: selectExpressions.join(', '),
       outputFields,
     };
+  }
+
+  /**
+   * Parse and validate order terms while retaining the resolved database
+   * column. The normal list order builder remains the source of truth for
+   * field, sensitive-field, and permission validation; this companion shape
+   * lets the latest-row CTE qualify the same safe identifiers with its alias.
+   */
+  private resolveOrderByTerms(
+    orderBy: string | string[],
+    fields: Record<string, CollectionFieldDefinition>,
+    label: string,
+  ): Array<{ field: string; column: string; direction: 'ASC' | 'DESC' }> {
+    const validatedSql = this.buildOrderBySql(orderBy, fields);
+    const items = Array.isArray(orderBy) ? orderBy : [orderBy];
+    if (items.length === 0) {
+      throw new Error(
+        `Invalid ${label}: at least one order field is required.`,
+      );
+    }
+
+    const validatedTerms = validatedSql
+      .replace(/^ ORDER BY /, '')
+      .split(', ')
+      .map((term) => term.split(/\s+/));
+
+    return items.map((item, index) => {
+      const [field, direction = 'ASC'] = String(item).trim().split(/\s+/);
+      if (!field) {
+        throw new Error(`Invalid ${label}: an order field is required.`);
+      }
+      const normalizedDirection = direction.toUpperCase();
+      if (normalizedDirection !== 'ASC' && normalizedDirection !== 'DESC') {
+        throw new Error(
+          `Invalid ${label} direction: ${direction}. Must be ASC or DESC.`,
+        );
+      }
+
+      return {
+        column: validatedTerms[index]?.[0] ?? this.toDbColumnName(field),
+        direction: normalizedDirection,
+        field,
+      };
+    });
+  }
+
+  private qualifyLatestOrderTerms(
+    alias: string,
+    terms: ReadonlyArray<{
+      column: string;
+      direction: 'ASC' | 'DESC';
+    }>,
+  ): string {
+    return terms
+      .flatMap((term) => {
+        const column = `${alias}.${this.quoteProjectionIdentifier(term.column)}`;
+        // Explicit NULLS LAST keeps ranking and parent sorting identical on
+        // PostgreSQL, SQLite, DuckDB, and JSON-on-DuckDB.
+        return [
+          `CASE WHEN ${column} IS NULL THEN 1 ELSE 0 END ASC`,
+          `${column} ${term.direction}`,
+        ];
+      })
+      .join(', ');
+  }
+
+  private qualifyLatestParentOrderTerms(
+    alias: string,
+    terms: ReadonlyArray<{
+      column: string;
+      direction: 'ASC' | 'DESC';
+    }>,
+  ): string {
+    return terms
+      .flatMap((term) => {
+        const column = `${alias}.${this.quoteProjectionIdentifier(term.column)}`;
+        return [
+          `CASE WHEN ${column} IS NULL THEN 1 ELSE 0 END ASC`,
+          `${column} ${term.direction}`,
+        ];
+      })
+      .join(', ');
+  }
+
+  private resolveOneToManyInverseForeignKey(
+    relationship: import('./registry').RelationshipMetadata,
+  ): import('./registry').RelationshipMetadata {
+    const inverseCandidates = ObjectRegistry.getInverseRelationshipsForSelf(
+      this._itemClass.name,
+    ).filter(
+      (candidate) =>
+        candidate.sourceClass === relationship.targetClass &&
+        candidate.type === 'foreignKey',
+    );
+    const explicitForeignKey = relationship.options?.foreignKey as
+      | string
+      | undefined;
+    const matchedForeignKey = explicitForeignKey
+      ? inverseCandidates.find(
+          (candidate) => candidate.fieldName === explicitForeignKey,
+        )
+      : undefined;
+    if (explicitForeignKey && !matchedForeignKey) {
+      throw new Error(
+        `oneToMany ${relationship.fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((candidate) => candidate.fieldName).join(', ') || '(none)'}`,
+      );
+    }
+
+    const inverseForeignKey =
+      matchedForeignKey ??
+      inverseCandidates.find(
+        (candidate) => candidate.targetClass === this._itemClass.name,
+      ) ??
+      inverseCandidates[0];
+    if (!inverseForeignKey) {
+      throw new Error(
+        `Could not find inverse foreignKey on ${relationship.targetClass} for oneToMany relationship ${relationship.fieldName}`,
+      );
+    }
+    return inverseForeignKey;
+  }
+
+  /**
+   * Load a page of hydrated parents with one selected latest row from a
+   * declared `@oneToMany` relation. The parent page is sliced only after the
+   * latest-row join and optional related sort are applied, so unrelated rows
+   * are never hydrated in application code.
+   *
+   * Missing related rows return `latestRelated: null`. Related order and sort
+   * fields place null values after non-null values consistently on all
+   * supported adapters. The related row is a plain projection and is never a
+   * full `SmrtObject` hydration.
+   *
+   * @example
+   * ```typescript
+   * const page = await opportunities.listWithLatestRelated({
+   *   latestRelated: {
+   *     relation: 'evaluations',
+   *     orderBy: 'evaluatedAt DESC',
+   *     select: ['score', 'evaluatedAt'],
+   *     sortBy: 'score DESC',
+   *   },
+   *   limit: 25,
+   *   offset: 0,
+   * });
+   * console.log(page[0].parent, page[0].latestRelated?.score);
+   * ```
+   */
+  public async listWithLatestRelated(
+    options: SmrtLatestRelatedListOptions<ModelType>,
+  ): Promise<SmrtLatestRelatedRow<ModelType>[]> {
+    await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+
+    const interceptorContext = createInterceptorContext(
+      itemClassName,
+      'list',
+      this.constructor.name,
+    );
+    const interceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        itemClassName,
+        options as InterceptorListOptions,
+        interceptorContext,
+      )) ?? (options as InterceptorListOptions);
+
+    let { where, offset, limit, orderBy } =
+      interceptedOptions as SmrtListOptions<ModelType>;
+    const latestOptions =
+      (interceptedOptions as SmrtLatestRelatedListOptions<ModelType>)
+        .latestRelated ?? options.latestRelated;
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
+    const isSTI = tableStrategy === 'sti';
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase && stiBase !== itemQualifiedName) {
+        where = { _meta_type: itemQualifiedName, ...(where || {}) };
+      }
+    }
+    where = resolveMetaTypeInWhere(where);
+
+    const relationship = ObjectRegistry.getRelationships(
+      this._itemClass.name,
+    ).find(
+      (candidate) =>
+        candidate.fieldName === latestOptions.relation &&
+        candidate.type === 'oneToMany',
+    );
+    if (!relationship) {
+      throw new Error(
+        `latestRelated.relation '${latestOptions.relation}' is not a declared oneToMany relationship on ${itemClassName}.`,
+      );
+    }
+
+    const inverseForeignKey =
+      this.resolveOneToManyInverseForeignKey(relationship);
+    const relatedCollection = await ObjectRegistry.getCollection(
+      relationship.targetClass,
+      this.options,
+    );
+    await relatedCollection.ensureStorageReady();
+    const relatedFields = relatedCollection.getFieldsSync();
+    const relatedItemClassName = relatedCollection.getResolvedItemClassName();
+    const relatedQualifiedName =
+      relatedCollection.getResolvedItemQualifiedName();
+    const relatedIsSTI =
+      ObjectRegistry.getTableStrategy(relatedQualifiedName) === 'sti';
+
+    // Run the related collection's read-scope interceptors as well as the
+    // parent's. Relation targets can have their own tenant or authorization
+    // policy; omitting this scope would make the CTE a raw bypass of the
+    // target collection's normal list contract.
+    const relatedInterceptorContext = createInterceptorContext(
+      relatedItemClassName,
+      'list',
+      relatedCollection.constructor.name,
+    );
+    const relatedInterceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        relatedItemClassName,
+        { where: {} } as InterceptorListOptions,
+        relatedInterceptorContext,
+      )) ?? ({ where: {} } as InterceptorListOptions);
+    let relatedWhere = (
+      relatedInterceptedOptions as SmrtListOptions<SmrtObject>
+    ).where;
+    if (relatedIsSTI) {
+      const relatedStiBase = ObjectRegistry.getSTIBase(relatedQualifiedName);
+      if (relatedStiBase && relatedStiBase !== relatedQualifiedName) {
+        relatedWhere = {
+          _meta_type: relatedQualifiedName,
+          ...(relatedWhere || {}),
+        };
+      }
+    }
+    relatedWhere = resolveMetaTypeInWhere(relatedWhere);
+    const { sql: relatedWhereSql, values: relatedWhereValues } = buildWhere(
+      relatedCollection.convertWhereKeys(relatedWhere || {}),
+    );
+    const relatedPrimaryKey = relatedCollection.resolvePrimaryKeyField(
+      relatedFields,
+      `Related model ${relatedItemClassName}`,
+    );
+    const relatedSelect = latestOptions.select ?? [relatedPrimaryKey.field];
+    const relatedProjection = relatedCollection.resolveProjectionSelect(
+      relatedSelect,
+      relatedFields,
+      relatedIsSTI,
+    );
+    const relatedOrderTerms = relatedCollection.resolveOrderByTerms(
+      latestOptions.orderBy,
+      relatedFields,
+      'latestRelated.orderBy',
+    );
+    const relatedSortTerms = latestOptions.sortBy
+      ? relatedCollection.resolveOrderByTerms(
+          latestOptions.sortBy,
+          relatedFields,
+          'latestRelated.sortBy',
+        )
+      : [];
+
+    const parentFields = this.getFieldsSync();
+    const parentPrimaryKey = this.resolvePrimaryKeyField(
+      parentFields,
+      `Parent model ${itemClassName}`,
+    );
+    const relatedOutputFields = new Set(relatedProjection.outputFields);
+    relatedOutputFields.add(relatedPrimaryKey.field);
+    relatedOutputFields.add(inverseForeignKey.fieldName);
+    if (parentFields.tenantId && relatedFields.tenantId) {
+      relatedOutputFields.add('tenantId');
+    }
+    for (const term of [...relatedOrderTerms, ...relatedSortTerms]) {
+      relatedOutputFields.add(term.field);
+    }
+    const relatedFieldColumns = new Map(
+      [...relatedOrderTerms, ...relatedSortTerms].map((term) => [
+        term.field,
+        term.column,
+      ]),
+    );
+    const parentSchema =
+      ObjectRegistry.getSchema(itemQualifiedName) ??
+      ObjectRegistry.getSchema(itemClassName);
+    const liveParentSchema =
+      typeof this.db.getTableSchema === 'function'
+        ? await this.db.getTableSchema(this.tableName)
+        : undefined;
+    const parentColumnNames = Object.keys(
+      liveParentSchema?.columns ?? parentSchema?.columns ?? {},
+    );
+    const occupiedParentIdentifiers = new Set([
+      ...Object.keys(parentFields),
+      ...Object.keys(parentFields).map((fieldName) =>
+        this.toDbColumnName(fieldName),
+      ),
+      ...parentColumnNames,
+      ...Object.keys(parentSchema?.columns ?? {}),
+    ]);
+    const relatedFieldAliases = new Map<string, string>();
+    let nextAliasIndex = 0;
+    for (const fieldName of relatedOutputFields) {
+      let alias: string;
+      do {
+        alias = `__smrt_lr_${nextAliasIndex++}`;
+      } while (
+        occupiedParentIdentifiers.has(alias) ||
+        [...relatedFieldAliases.values()].includes(alias)
+      );
+      relatedFieldAliases.set(fieldName, alias);
+    }
+    const parentSelectSql =
+      parentColumnNames.length > 0
+        ? parentColumnNames
+            .map((columnName) => this.quoteProjectionIdentifier(columnName))
+            .join(', ')
+        : '*';
+    const relatedAlias = (fieldName: string): string => {
+      const alias = relatedFieldAliases.get(fieldName);
+      if (!alias) {
+        throw new Error(`Missing latest-related alias for '${fieldName}'.`);
+      }
+      return alias;
+    };
+    const relatedSelectExpressions = Array.from(relatedOutputFields).map(
+      (fieldName) => {
+        const column =
+          relatedFieldColumns.get(fieldName) ??
+          relatedCollection.toDbColumnName(fieldName);
+        const alias = relatedAlias(fieldName);
+        return `${relatedCollection.quoteProjectionIdentifier(column)} AS ${relatedCollection.quoteProjectionIdentifier(alias)}`;
+      },
+    );
+    const relatedRankOrder = [
+      relatedCollection.qualifyLatestOrderTerms('r', relatedOrderTerms),
+      `r.${relatedCollection.quoteProjectionIdentifier(relatedPrimaryKey.column)} DESC`,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    const latestRankAlias =
+      relatedCollection.quoteProjectionIdentifier('__smrt_latest_rank');
+    const latestRelatedAlias = (fieldName: string): string =>
+      relatedCollection.quoteProjectionIdentifier(relatedAlias(fieldName));
+    const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions
+      .map((expression) => `r.${expression}`)
+      .join(
+        ', ',
+      )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS ${latestRankAlias} FROM ${relatedCollection.tableName} r${relatedWhereSql ? ` ${relatedWhereSql}` : ''}) `;
+
+    const parentWhere = this.convertWhereKeys(where || {});
+    const { sql: rawWhereSql, values: parentWhereValues } =
+      buildWhere(parentWhere);
+    const parentWhereSql = rawWhereSql.replace(
+      /\$(\d+)/g,
+      (_match, index: string) =>
+        `$${Number(index) + relatedWhereValues.length}`,
+    );
+    const relatedJoinConditions = [
+      `rr.${latestRankAlias} = 1`,
+      `rr.${latestRelatedAlias(inverseForeignKey.fieldName)} = ${this.quoteProjectionIdentifier(parentPrimaryKey.column)}`,
+    ];
+    if (parentFields.tenantId && relatedFields.tenantId) {
+      relatedJoinConditions.push(
+        `(rr.${latestRelatedAlias('tenantId')} = ${this.quoteProjectionIdentifier('tenant_id')} OR (rr.${latestRelatedAlias('tenantId')} IS NULL AND ${this.quoteProjectionIdentifier('tenant_id')} IS NULL))`,
+      );
+    }
+
+    const orderFragments: string[] = [];
+    if (relatedSortTerms.length > 0) {
+      orderFragments.push(
+        relatedCollection.qualifyLatestParentOrderTerms(
+          'rr',
+          relatedSortTerms.map((term) => ({
+            ...term,
+            column: relatedAlias(term.field),
+          })),
+        ),
+      );
+    }
+    if (orderBy) {
+      const parentOrderTerms = this.resolveOrderByTerms(
+        orderBy,
+        parentFields,
+        'orderBy',
+      );
+      orderFragments.push(
+        parentOrderTerms
+          .map(
+            (term) =>
+              `${this.quoteProjectionIdentifier(term.column)} ${term.direction}`,
+          )
+          .join(', '),
+      );
+    }
+    orderFragments.push(
+      `${this.quoteProjectionIdentifier(parentPrimaryKey.column)} ASC`,
+    );
+
+    const boundedLimit = this.applyListBounds(assertQueryBound(limit, 'limit'));
+    const boundedOffset = assertQueryBound(offset, 'offset');
+    let limitOffsetSql = '';
+    const limitOffsetValues: number[] = [];
+    let nextParameter =
+      relatedWhereValues.length + parentWhereValues.length + 1;
+    if (boundedLimit !== undefined) {
+      limitOffsetSql += ` LIMIT $${nextParameter++}`;
+      limitOffsetValues.push(boundedLimit);
+    }
+    if (boundedOffset !== undefined) {
+      if (boundedLimit === undefined) {
+        // SQLite requires LIMIT before OFFSET. SQLite uses -1 for an
+        // unlimited limit; DuckDB and PostgreSQL use the standard LIMIT ALL.
+        limitOffsetSql +=
+          this.getDatabaseEngine() === 'sqlite' ? ' LIMIT -1' : ' LIMIT ALL';
+      }
+      limitOffsetSql += ` OFFSET $${nextParameter++}`;
+      limitOffsetValues.push(boundedOffset);
+    }
+
+    const sql = `${relatedCte}SELECT ${parentSelectSql}, ${Array.from(
+      relatedOutputFields,
+    )
+      .map(
+        (fieldName) =>
+          `rr.${latestRelatedAlias(fieldName)} AS ${this.quoteProjectionIdentifier(relatedAlias(fieldName))}`,
+      )
+      .join(
+        ', ',
+      )} FROM ${this.quoteProjectionIdentifier(this.tableName)} LEFT JOIN ranked_latest_related rr ON ${relatedJoinConditions.join(' AND ')} ${parentWhereSql} ${orderFragments.length > 0 ? `ORDER BY ${orderFragments.join(', ')}` : ''}${limitOffsetSql}`;
+    const rows = await this.db.query(
+      sql,
+      ...relatedWhereValues,
+      ...parentWhereValues,
+      ...limitOffsetValues,
+    );
+
+    // Hydrate in result order. initialize() hooks may issue queries through
+    // the same transaction-bound PostgreSQL client, so overlapping hydration
+    // would violate the collection-wide serial hydration invariant.
+    const instances: ModelType[] = [];
+    const relatedAliasNames = new Set(relatedFieldAliases.values());
+    for (const row of rows.rows as Record<string, unknown>[]) {
+      const parentRow = Object.fromEntries(
+        Object.entries(row).filter(([key]) => !relatedAliasNames.has(key)),
+      );
+      instances.push(
+        await this.hydrateResultRow(parentRow, parentFields, isSTI),
+      );
+    }
+
+    // Materialize the related projection by the parent primary key before
+    // afterList hooks run. Hooks may filter or reorder hydrated parents; an
+    // array-index pairing after those hooks could attach one parent's related
+    // data to another parent.
+    const relatedByParentId = new Map<string, Record<string, unknown> | null>();
+    for (const row of rows.rows as Record<string, unknown>[]) {
+      const parentId = row[parentPrimaryKey.column];
+      if (parentId === null || parentId === undefined) continue;
+
+      const relatedRow = Object.fromEntries(
+        relatedProjection.outputFields.map((fieldName) => [
+          fieldName,
+          row[relatedAlias(fieldName)],
+        ]),
+      );
+      const relatedId = row[relatedAlias(relatedPrimaryKey.field)];
+      relatedByParentId.set(
+        String(parentId),
+        relatedId === null || relatedId === undefined
+          ? null
+          : relatedCollection.formatProjectionRow(
+              relatedRow,
+              relatedFields,
+              relatedProjection.outputFields,
+            ),
+      );
+    }
+
+    const finalInstances = await GlobalInterceptors.executeAfterList(
+      itemClassName,
+      instances,
+      interceptorContext,
+    );
+
+    return finalInstances.map((parent) => {
+      return {
+        latestRelated:
+          (parent as unknown as Record<string, unknown>)[
+            parentPrimaryKey.field
+          ] === null ||
+          (parent as unknown as Record<string, unknown>)[
+            parentPrimaryKey.field
+          ] === undefined
+            ? null
+            : (relatedByParentId.get(
+                String(
+                  (parent as unknown as Record<string, unknown>)[
+                    parentPrimaryKey.field
+                  ],
+                ),
+              ) ?? null),
+        parent,
+      };
+    });
   }
 
   private formatProjectionRow(
