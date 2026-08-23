@@ -1,6 +1,9 @@
 export type {
   ReportAdapterDescriptor,
   ReportAdapterOptions,
+  ReportBackgroundQueryOptions,
+  ReportBackgroundQueryResult,
+  ReportBackgroundQueryTask,
   ReportColumnCapability,
   ReportColumnDescriptor,
   ReportColumnKind,
@@ -17,15 +20,24 @@ export type {
   ReportDataTableStructuralRowInput,
   ReportDataTableStructuralRowKind,
   ReportDataTableValueFormat,
+  ReportDrilldownConstraint,
+  ReportDrilldownDescriptor,
+  ReportDrilldownFieldDescriptor,
+  ReportDrilldownQuery,
+  ReportFilterScope,
   ReportMaterializedReadLifecycle,
+  ReportQueryExecutionDescriptor,
+  ReportQueryExecutionMode,
   ReportQueryOptions,
   ReportRefreshActionDescriptor,
   ReportRefreshDescriptor,
 } from './adapter.js';
 export {
   buildReportAdapterDescriptor,
+  buildReportDrilldownQuery,
   queryReportMaterializedRows,
   reportMaterializedRowKey,
+  splitReportFilterScopes,
 } from './adapter.js';
 export {
   bucketExpr,

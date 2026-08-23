@@ -127,8 +127,13 @@ function assertQueryBound(
  * @returns Modified WHERE clause with qualified _meta_type, or original if no resolution needed
  */
 function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
-  where: T | undefined,
-): T | undefined {
+  where: T | T[][] | undefined,
+): T | T[][] | undefined {
+  if (Array.isArray(where)) {
+    return where.map((group) =>
+      group.map((condition) => resolveMetaTypeInWhere(condition) as T),
+    );
+  }
   if (!where?._meta_type || typeof where._meta_type !== 'string') {
     return where;
   }
@@ -149,6 +154,20 @@ function resolveMetaTypeInWhere<T extends Record<string, unknown>>(
   }
 
   return where;
+}
+
+/** Add an AND predicate without collapsing a caller's DNF OR branches. */
+function andWhereCondition<T extends Record<string, unknown>>(
+  where: T | T[][] | undefined,
+  condition: T,
+): T | T[][] {
+  if (Array.isArray(where)) {
+    return where.map((group) => [condition, ...group]);
+  }
+  // The collection-owned predicate is an enforcement boundary (for example,
+  // an STI child collection's discriminator), so it must win when a caller
+  // supplies the same key.
+  return { ...(where ?? {}), ...condition } as T;
 }
 
 /**
@@ -246,7 +265,7 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
 };
 
 /**
- * WHERE clause type for `collection.list()`.
+ * Basic WHERE clause type for point lookups and AND-only collection reads.
  *
  * Uses `Record<string, unknown>` because WHERE keys often include operator
  * suffixes (e.g., `'price >'`, `'name like'`, `'status in'`) which can't be
@@ -254,6 +273,16 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
  * `convertWhereKeys()` handles field and operator checking.
  */
 export type SmrtWhereClause<T extends SmrtObject> = Record<string, unknown>;
+
+/**
+ * Bounded disjunctive-normal-form WHERE clause for collection list/count/facet
+ * reads. Inner arrays are ANDed and outer arrays are ORed by the SQL adapter.
+ * Keeping this at the collection boundary preserves field validation, STI, and
+ * tenant interception for callers that need an allowlisted `any` filter.
+ */
+export type SmrtListWhereClause<T extends SmrtObject> =
+  | SmrtWhereClause<T>
+  | SmrtWhereClause<T>[][];
 
 type SmrtModelData<T extends SmrtObject> = Omit<
   {
@@ -336,7 +365,7 @@ export interface SmrtFacetOptions<T extends SmrtObject> {
    */
   fields: readonly (SmrtSelectField<T> | SmrtFacetRequest<T>)[];
   /** The same SMRT WHERE syntax accepted by {@link SmrtCollection.list}. */
-  where?: SmrtWhereClause<T>;
+  where?: SmrtListWhereClause<T>;
 }
 
 /** Exact unfiltered and filtered row counts for a list scope. */
@@ -346,7 +375,7 @@ export interface SmrtCollectionCounts {
 }
 
 export interface SmrtListOptions<ModelType extends SmrtObject> {
-  where?: SmrtWhereClause<ModelType>;
+  where?: SmrtListWhereClause<ModelType>;
   offset?: number;
   limit?: number;
   orderBy?: string | string[];
@@ -888,6 +917,25 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * ```
    */
   private convertWhereKeys(
+    where: SmrtListWhereClause<ModelType>,
+  ): SmrtListWhereClause<ModelType> {
+    if (Array.isArray(where)) {
+      if (
+        where.length === 0 ||
+        where.some((group) => !Array.isArray(group) || group.length === 0)
+      ) {
+        throw new Error(
+          'Invalid DNF where clause: each OR branch must contain at least one condition.',
+        );
+      }
+      return where.map((group) =>
+        group.map((condition) => this.convertWhereKeysRecord(condition)),
+      );
+    }
+    return this.convertWhereKeysRecord(where);
+  }
+
+  private convertWhereKeysRecord(
     where: Record<string, unknown>,
   ): Record<string, unknown> {
     // Whitelist of allowed SQL operators.
@@ -2649,10 +2697,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (isSTI) {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
-        where = {
+        where = andWhereCondition(where, {
           _meta_type: itemQualifiedName,
-          ...(where || {}),
-        };
+        });
       }
     }
 
@@ -3692,7 +3739,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @see {@link list} for retrieving the actual records
    */
-  public async count(options: { where?: SmrtWhereClause<ModelType> } = {}) {
+  public async count(options: { where?: SmrtListWhereClause<ModelType> } = {}) {
     await this.ensureStorageReady();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
     const itemClassName = this.getResolvedItemClassName();
@@ -3728,10 +3775,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (isSTI) {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
-        where = {
+        where = andWhereCondition(where, {
           _meta_type: itemQualifiedName,
-          ...(where || {}),
-        };
+        });
       }
     }
 
@@ -3823,10 +3869,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     if (isSTI) {
       const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
-        where = {
+        where = andWhereCondition(where, {
           _meta_type: itemQualifiedName,
-          ...(where || {}),
-        };
+        });
       }
     }
     where = resolveMetaTypeInWhere(where);
@@ -3933,7 +3978,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * count adds the caller's `where` conditions.
    */
   public async counts(
-    options: { where?: SmrtWhereClause<ModelType> } = {},
+    options: { where?: SmrtListWhereClause<ModelType> } = {},
   ): Promise<SmrtCollectionCounts> {
     const total = await this.count();
     const filtered = await this.count(options);

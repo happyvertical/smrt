@@ -1,5 +1,6 @@
 import {
   createDataQueryFingerprint,
+  DataQueryValidationError,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
   ObjectRegistry,
@@ -7,8 +8,12 @@ import {
 } from '@happyvertical/smrt-core';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import type {
+  DataQueryCondition,
   DataQueryFieldDescriptor,
+  DataQueryFilter,
+  DataQueryFilterOperator,
   DataQueryFreshness,
+  DataQueryRequest,
   DataQueryResult,
   DataQuerySchema,
 } from '@happyvertical/smrt-types';
@@ -44,12 +49,21 @@ export type ReportColumnCapability =
 
 export type ReportColumnKind = 'identity' | 'group' | 'bucket' | 'aggregate';
 
+/**
+ * Source-query clause a field belongs to. The materialized read executor
+ * applies both kinds through its tenant-scoped collection, but consumers use
+ * this declaration to keep dimensions/periods (WHERE) distinct from measures
+ * (HAVING) when constructing drilldowns, saved views, or a live query.
+ */
+export type ReportFilterScope = 'where' | 'having';
+
 export interface ReportColumnDescriptor extends DataQueryFieldDescriptor {
   /** Stable output column id (never a property path). */
   id: string;
   fieldName: string;
   label: string;
   kind: ReportColumnKind;
+  filterScope: ReportFilterScope;
   /** Capabilities available from this adapter revision. */
   capabilities: ReportColumnCapability[];
   format?: string;
@@ -100,8 +114,94 @@ export interface ReportAdapterDescriptor {
   identityField: 'id';
   columns: ReportColumnDescriptor[];
   schema: DataQuerySchema;
+  queryExecution: ReportQueryExecutionDescriptor;
   dataTable: ReportDataTableDescriptor;
+  drilldown: ReportDrilldownDescriptor;
   refresh: ReportRefreshDescriptor;
+}
+
+/**
+ * Delivery choices for the same bounded report query. They never add
+ * authority: a host owns visible state and background-job execution.
+ */
+export type ReportQueryExecutionMode = 'visible' | 'background' | 'silent';
+
+export interface ReportQueryExecutionDescriptor {
+  modes: ReportQueryExecutionMode[];
+  /** The caller may apply the returned rows to an already-authorized surface. */
+  visible: { delivery: 'result' };
+  /** A host queues the authority-free task and returns no materialized rows yet. */
+  background: { delivery: 'queued'; requiresHost: true };
+  /** The caller receives rows but the adapter makes no visible-surface change. */
+  silent: { delivery: 'result'; mutatesVisibleSurface: false };
+}
+
+/**
+ * The exact bounded request a background host may persist. Tenant, principal,
+ * collection, database, and display state deliberately remain with that host.
+ */
+export interface ReportBackgroundQueryTask {
+  version: 1;
+  execution: 'background';
+  resourceId: string;
+  reportClassName: string;
+  request: DataQueryRequest;
+  inherits: Array<
+    'principal' | 'tenant' | 'report-definition' | 'field-policy'
+  >;
+}
+
+/** Queuing a background query returns a handle, never rows from another scope. */
+export interface ReportBackgroundQueryResult {
+  version: 1;
+  execution: 'background';
+  status: 'queued';
+  taskId: string;
+  queryFingerprint: string;
+}
+
+/** One row value that can safely constrain a source-record drilldown. */
+export interface ReportDrilldownFieldDescriptor {
+  /** Stable report column id; never a display label. */
+  id: string;
+  /** Declared source field/column chosen by report metadata, not caller input. */
+  sourceColumn: string;
+  kind: 'group' | 'bucket';
+  /** A bucket stays declarative so the source adapter preserves report timezone semantics. */
+  bucket?: ReportTimeBucketUnit;
+}
+
+/**
+ * Declarative source-query handoff for a report row. No client can supply a
+ * principal, tenant, report definition, or arbitrary source field here.
+ */
+export interface ReportDrilldownDescriptor {
+  id: 'drilldown';
+  sourceClassName: string;
+  fields: ReportDrilldownFieldDescriptor[];
+  inherits: Array<
+    'principal' | 'tenant' | 'report-definition' | 'field-policy'
+  >;
+}
+
+export interface ReportDrilldownConstraint {
+  id: string;
+  sourceColumn: string;
+  kind: 'group' | 'bucket';
+  value: unknown;
+  bucket?: ReportTimeBucketUnit;
+}
+
+/** A server adapter uses this authority-free handoff to execute a source drilldown. */
+export interface ReportDrilldownQuery {
+  version: 1;
+  resourceId: string;
+  reportClassName: string;
+  sourceClassName: string;
+  constraints: ReportDrilldownConstraint[];
+  inherits: Array<
+    'principal' | 'tenant' | 'report-definition' | 'field-policy'
+  >;
 }
 
 /** Structural DataTable view hints; deliberately not a smrt-ui dependency. */
@@ -141,7 +241,7 @@ export interface ReportDataTableColumn {
   accessor: string;
   sortable: boolean;
   searchable: false;
-  filterable: false;
+  filterable: boolean;
   /** Group ancestry for consumers with multi-level table headers. */
   headerPath: ReportDataTableHeaderPathSegment[];
   /** Consumer-side display instruction; materialized rows remain raw. */
@@ -202,7 +302,7 @@ export interface ReportDataTableDescriptor {
   rowKey: 'id';
   manualPagination: true;
   manualSorting: true;
-  enableFiltering: false;
+  enableFiltering: true;
   enableSearch: false;
   columns: ReportDataTableColumn[];
   structuralRows: ReportDataTableStructuralRow[];
@@ -217,13 +317,22 @@ export interface ReportAdapterOptions {
   dataTable?: ReportDataTablePresentationOptions;
 }
 
-export interface ReportQueryOptions {
+interface ReportQueryCommonOptions {
   /** Injected collection seam for tests and application-owned adapters. */
   collection?: {
     list(
       options: Record<string, unknown>,
     ): Promise<Array<Record<string, unknown>>>;
     count(options?: Record<string, unknown>): Promise<number>;
+    facets?(options: Record<string, unknown>): Promise<
+      Array<{
+        field: string;
+        values: Array<{
+          value: string | number | boolean | null;
+          count: number;
+        }>;
+      }>
+    >;
   };
   db?: import('@happyvertical/sql').DatabaseInterface;
   /**
@@ -231,6 +340,19 @@ export interface ReportQueryOptions {
    * read. It never makes a generic read mutate.
    */
   lifecycle?: Omit<ReportLifecycleOptions, 'db'>;
+}
+
+/** Visible is the default; silent has identical data authority but no UI intent. */
+export interface ReportQueryOptions extends ReportQueryCommonOptions {
+  execution?: 'visible' | 'silent';
+}
+
+/** Background execution is possible only through an application-owned queue host. */
+export interface ReportBackgroundQueryOptions extends ReportQueryCommonOptions {
+  execution: 'background';
+  enqueueBackgroundQuery(
+    task: ReportBackgroundQueryTask,
+  ): Promise<{ taskId: string }>;
 }
 
 /** Lifecycle context attached only when a caller explicitly opts in. */
@@ -241,6 +363,8 @@ export interface ReportMaterializedReadLifecycle {
 }
 
 export interface ReportDataQueryResult extends DataQueryResult {
+  /** Delivery intent only; the adapter never mutates a visible surface. */
+  execution: 'visible' | 'silent';
   reportLifecycle?: ReportMaterializedReadLifecycle;
 }
 
@@ -366,16 +490,30 @@ function reportColumn(
   const report = field.report;
   if (!report) return undefined;
   const type = queryType(field.type ?? registryField?.type);
+  const filterOperators = filterOperatorsFor(type);
   const base: ReportColumnDescriptor = {
     id,
     fieldName: field.fieldName,
     label: registryField?.description || labelFor(field.fieldName),
     kind: report.kind,
+    filterScope: report.kind === 'aggregate' ? 'having' : 'where',
     type,
     projectable: true,
-    sortable: false,
-    facetable: false,
-    capabilities: ['project', 'read'],
+    sortable: true,
+    facetable: report.kind !== 'aggregate',
+    ...(filterOperators ? { filterOperators } : {}),
+    capabilities: [
+      'project',
+      'read',
+      ...(filterOperators ? (['filter'] as const) : []),
+      'sort',
+      ...(report.kind !== 'aggregate' ? (['facet'] as const) : []),
+      ...(report.kind === 'aggregate'
+        ? (['aggregate'] as const)
+        : report.kind === 'group'
+          ? (['group'] as const)
+          : []),
+    ],
     ...(report.kind === 'group'
       ? { sourceColumn: toSnakeCase(report.sourceColumn ?? field.fieldName) }
       : {}),
@@ -404,10 +542,13 @@ function identityColumn(): ReportColumnDescriptor {
     fieldName: 'id',
     label: 'ID',
     kind: 'identity',
+    filterScope: 'where',
     type: 'string',
     projectable: true,
     sortable: true,
-    capabilities: ['project', 'read', 'sort'],
+    facetable: false,
+    filterOperators: filterOperatorsFor('string'),
+    capabilities: ['project', 'read', 'filter', 'sort'],
   };
 }
 
@@ -420,9 +561,28 @@ function toQueryField(
     ...(column.projectable === undefined
       ? {}
       : { projectable: column.projectable }),
-    sortable: column.id === 'id',
-    facetable: false,
+    sortable: column.sortable === true,
+    facetable: column.facetable === true,
+    ...(column.filterOperators === undefined
+      ? {}
+      : { filterOperators: [...column.filterOperators] }),
   };
+}
+
+function filterOperatorsFor(
+  type: DataQueryFieldDescriptor['type'],
+): DataQueryFilterOperator[] | undefined {
+  switch (type) {
+    case 'string':
+      return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn', 'like'];
+    case 'number':
+    case 'datetime':
+      return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'notIn'];
+    case 'boolean':
+      return ['eq', 'ne', 'in', 'notIn'];
+    case 'json':
+      return undefined;
+  }
 }
 
 function refreshDescriptor(
@@ -639,9 +799,9 @@ function dataTableColumn(
     id: column.id,
     label: override?.label ?? column.label,
     accessor: column.id,
-    sortable: column.id === 'id',
+    sortable: column.sortable === true,
     searchable: false,
-    filterable: false,
+    filterable: column.filterOperators !== undefined,
     headerPath: assertHeaderPath(column.id, path),
     valueFormat: format,
     align:
@@ -725,6 +885,36 @@ function structuralRows(
   });
 }
 
+function drilldownDescriptor(
+  columns: readonly ReportColumnDescriptor[],
+  sourceClassName: string,
+): ReportDrilldownDescriptor {
+  return {
+    id: 'drilldown',
+    sourceClassName,
+    fields: columns
+      .filter(
+        (
+          column,
+        ): column is ReportColumnDescriptor & {
+          kind: 'group' | 'bucket';
+          sourceColumn: string;
+        } =>
+          (column.kind === 'group' || column.kind === 'bucket') &&
+          typeof column.sourceColumn === 'string',
+      )
+      .map((column) => ({
+        id: column.id,
+        sourceColumn: column.sourceColumn,
+        kind: column.kind,
+        ...(column.kind === 'bucket' && column.bucket
+          ? { bucket: column.bucket }
+          : {}),
+      })),
+    inherits: ['principal', 'tenant', 'report-definition', 'field-policy'],
+  };
+}
+
 export async function buildReportAdapterDescriptor(
   reportCtor: new (...args: any[]) => SmrtObject,
   options: ReportAdapterOptions = {},
@@ -750,13 +940,13 @@ export async function buildReportAdapterDescriptor(
     identityField: 'id',
     fields: columns.map(toQueryField),
     defaultSort: [{ field: 'id', direction: 'asc' }],
-    supports: { cursorPagination: false, consistency: false, facets: false },
+    supports: { cursorPagination: false, consistency: false, facets: true },
   };
   const dataTable: ReportDataTableDescriptor = {
     rowKey: 'id',
     manualPagination: true,
     manualSorting: true,
-    enableFiltering: false,
+    enableFiltering: true,
     enableSearch: false,
     columns: columns.map((column) =>
       dataTableColumn(column, options.dataTable?.columns?.[column.id]),
@@ -776,7 +966,14 @@ export async function buildReportAdapterDescriptor(
     identityField: 'id',
     columns,
     schema,
+    queryExecution: {
+      modes: ['visible', 'background', 'silent'],
+      visible: { delivery: 'result' },
+      background: { delivery: 'queued', requiresHost: true },
+      silent: { delivery: 'result', mutatesVisibleSurface: false },
+    },
     dataTable,
+    drilldown: drilldownDescriptor(columns, definition.sourceClassName),
     refresh: refreshDescriptor(definition.refresh, options.refreshPermission),
   };
 }
@@ -787,6 +984,292 @@ function publicFieldMap(
   return new Map(
     descriptor.columns.map((column) => [column.id, column.fieldName]),
   );
+}
+
+/**
+ * Bind a materialized report row to its declared source dimensions. This is a
+ * query handoff, not an executor: an authenticated source adapter must apply
+ * the inherited principal, tenant, definition, and field policy before it
+ * reads source records.
+ */
+export async function buildReportDrilldownQuery(
+  reportCtor: new (...args: any[]) => SmrtObject,
+  row: Readonly<Record<string, unknown>>,
+  options: ReportAdapterOptions = {},
+): Promise<ReportDrilldownQuery> {
+  const descriptor = await buildReportAdapterDescriptor(reportCtor, options);
+  const constraints = descriptor.drilldown.fields.map((field) => {
+    if (!Object.hasOwn(row, field.id)) {
+      throw new DataQueryValidationError(
+        `Report drilldown row is missing grouping field: ${field.id}`,
+        'DATA_QUERY_RESULT_INVALID',
+      );
+    }
+    return {
+      id: field.id,
+      sourceColumn: field.sourceColumn,
+      kind: field.kind,
+      value: jsonSafeValue(row[field.id]),
+      ...(field.bucket ? { bucket: field.bucket } : {}),
+    };
+  });
+  return {
+    version: 1,
+    resourceId: descriptor.resourceId,
+    reportClassName: descriptor.reportClassName,
+    sourceClassName: descriptor.drilldown.sourceClassName,
+    constraints,
+    inherits: [...descriptor.drilldown.inherits],
+  };
+}
+
+type MaterializedWhere = Array<Array<Record<string, unknown>>>;
+
+/** Keep OR expansion bounded before it reaches the database collection. */
+const MAX_REPORT_FILTER_OR_GROUPS = 128;
+
+function reportFilterError(message: string): never {
+  throw new DataQueryValidationError(message, 'DATA_QUERY_UNSUPPORTED');
+}
+
+function crossProductWhere(
+  left: MaterializedWhere,
+  right: MaterializedWhere,
+): MaterializedWhere {
+  if (left.length * right.length > MAX_REPORT_FILTER_OR_GROUPS) {
+    return reportFilterError(
+      `Report filter expands beyond ${MAX_REPORT_FILTER_OR_GROUPS} OR groups`,
+    );
+  }
+  return left.flatMap((leftGroup) =>
+    right.map((rightGroup) => [...leftGroup, ...rightGroup]),
+  );
+}
+
+function inverseOperator(
+  operator: DataQueryFilterOperator,
+): DataQueryFilterOperator {
+  switch (operator) {
+    case 'eq':
+      return 'ne';
+    case 'ne':
+      return 'eq';
+    case 'gt':
+      return 'lte';
+    case 'gte':
+      return 'lt';
+    case 'lt':
+      return 'gte';
+    case 'lte':
+      return 'gt';
+    case 'in':
+      return 'notIn';
+    case 'notIn':
+      return 'in';
+    case 'like':
+      return reportFilterError(
+        'Report filters do not support negating a LIKE predicate',
+      );
+  }
+}
+
+function collectionCondition(
+  field: string,
+  operator: DataQueryFilterOperator,
+  value: DataQueryCondition['value'],
+): MaterializedWhere {
+  const keyFor = (suffix: string) => (suffix ? `${field} ${suffix}` : field);
+  const scalar = (key: string, scalarValue: unknown): MaterializedWhere => [
+    [{ [key]: scalarValue }],
+  ];
+
+  if (operator === 'in') {
+    const values = value as Array<string | number | boolean | null>;
+    const nonNull = values.filter((entry) => entry !== null);
+    if (nonNull.length === 0) return scalar(field, null);
+    if (nonNull.length === values.length) return scalar(keyFor('in'), nonNull);
+    // SQL IN does not match NULL. Model the user-visible union explicitly.
+    return [[{ [field]: null }], [{ [keyFor('in')]: nonNull }]];
+  }
+
+  if (operator === 'notIn') {
+    const values = value as Array<string | number | boolean | null>;
+    // `buildWhere()` does not have a `NOT IN` primitive. A bounded AND of
+    // inequality predicates has the same null-safe semantics and remains fully
+    // validated by the collection.
+    return [values.map((entry) => ({ [keyFor('!=')]: entry }))];
+  }
+
+  const suffix: Record<
+    Exclude<DataQueryFilterOperator, 'in' | 'notIn'>,
+    string
+  > = {
+    eq: '',
+    ne: '!=',
+    gt: '>',
+    gte: '>=',
+    lt: '<',
+    lte: '<=',
+    like: 'like',
+  };
+  return scalar(keyFor(suffix[operator]), value);
+}
+
+function materializedWhereForFilter(
+  filter: DataQueryFilter,
+  fields: Map<string, string>,
+  negate = false,
+): MaterializedWhere {
+  if (filter.kind === 'condition') {
+    const field = fields.get(filter.field);
+    if (!field) {
+      return reportFilterError(
+        `Report filter field is not declared: ${filter.field}`,
+      );
+    }
+    return collectionCondition(
+      field,
+      negate ? inverseOperator(filter.operator) : filter.operator,
+      filter.value,
+    );
+  }
+
+  if (filter.kind === 'not') {
+    return materializedWhereForFilter(filter.filter, fields, !negate);
+  }
+
+  const combineWithAnd =
+    (filter.kind === 'all' && !negate) || (filter.kind === 'any' && negate);
+  if (combineWithAnd) {
+    return filter.filters.reduce<MaterializedWhere>(
+      (combined, child) =>
+        crossProductWhere(
+          combined,
+          materializedWhereForFilter(child, fields, negate),
+        ),
+      [[]],
+    );
+  }
+
+  const groups = filter.filters.flatMap((child) =>
+    materializedWhereForFilter(child, fields, negate),
+  );
+  if (groups.length > MAX_REPORT_FILTER_OR_GROUPS) {
+    return reportFilterError(
+      `Report filter expands beyond ${MAX_REPORT_FILTER_OR_GROUPS} OR groups`,
+    );
+  }
+  return groups;
+}
+
+/**
+ * Converts a normalized report filter to collection-owned, parameterized
+ * predicates. The returned DNF form gives each OR branch a complete AND
+ * clause, so tenant interception can add its tenant predicate to every branch.
+ */
+function materializedWhere(
+  filter: DataQueryFilter | undefined,
+  fields: Map<string, string>,
+): MaterializedWhere | undefined {
+  return filter ? materializedWhereForFilter(filter, fields) : undefined;
+}
+
+function filterScopeForColumn(
+  column: ReportColumnDescriptor,
+): ReportFilterScope {
+  return column.filterScope;
+}
+
+/**
+ * Split the declared filter language by report semantics for consumers that
+ * construct a live source query. Mixed AND expressions are represented as two
+ * independent clauses; mixed OR/NOT expressions are rejected because moving
+ * either half across WHERE/HAVING would change their meaning.
+ */
+export function splitReportFilterScopes(
+  descriptor: ReportAdapterDescriptor,
+  filter: DataQueryFilter | undefined,
+): { where?: DataQueryFilter; having?: DataQueryFilter } {
+  if (!filter) return {};
+  const columns = new Map(
+    descriptor.columns.map((column) => [column.id, column]),
+  );
+  const combineAll = (
+    filters: DataQueryFilter[],
+  ): DataQueryFilter | undefined => {
+    const flattened = filters.flatMap((candidate) =>
+      candidate.kind === 'all' ? candidate.filters : [candidate],
+    );
+    return flattened.length === 0
+      ? undefined
+      : flattened.length === 1
+        ? flattened[0]
+        : { kind: 'all', filters: flattened };
+  };
+  const split = (
+    candidate: DataQueryFilter,
+  ): { where?: DataQueryFilter; having?: DataQueryFilter } => {
+    if (candidate.kind === 'condition') {
+      const column = columns.get(candidate.field);
+      if (!column) {
+        reportFilterError(
+          `Report filter field is not declared: ${candidate.field}`,
+        );
+      }
+      return filterScopeForColumn(column) === 'where'
+        ? { where: candidate }
+        : { having: candidate };
+    }
+
+    if (candidate.kind === 'all') {
+      const children = candidate.filters.map(split);
+      const where = combineAll(
+        children.flatMap((child) => (child.where ? [child.where] : [])),
+      );
+      const having = combineAll(
+        children.flatMap((child) => (child.having ? [child.having] : [])),
+      );
+      return {
+        ...(where ? { where } : {}),
+        ...(having ? { having } : {}),
+      };
+    }
+
+    const children =
+      candidate.kind === 'not'
+        ? [split(candidate.filter)]
+        : candidate.filters.map(split);
+    const scopes = new Set(
+      children.flatMap((child) => [
+        ...(child.where ? (['where'] as const) : []),
+        ...(child.having ? (['having'] as const) : []),
+      ]),
+    );
+    if (scopes.size !== 1) {
+      reportFilterError(
+        'Report WHERE and HAVING filters cannot be mixed inside one OR or NOT expression',
+      );
+    }
+    const scope = scopes.has('where') ? 'where' : 'having';
+    const filters = children.flatMap((child) => {
+      const filter = scope === 'where' ? child.where : child.having;
+      return filter ? [filter] : [];
+    });
+    if (candidate.kind === 'not') {
+      const [filter] = filters;
+      if (!filter) {
+        reportFilterError('Report NOT expressions must contain one filter');
+      }
+      return scope === 'where'
+        ? { where: { kind: 'not', filter } }
+        : { having: { kind: 'not', filter } };
+    }
+    return scope === 'where'
+      ? { where: { kind: 'any', filters } }
+      : { having: { kind: 'any', filters } };
+  };
+
+  return split(filter);
 }
 
 function jsonSafeValue(
@@ -865,25 +1348,58 @@ function queryFreshness(
 }
 
 /**
- * Execute the bounded materialized-read slice owned by #2457.
- *
- * Dimension/measure filters, HAVING/WHERE mapping, facets, and caller-selected
- * dimension/measure ordering intentionally remain unsupported until their
- * report-specific adapter slice lands. Identity ordering stays available for
- * deterministic paging. The collection is the tenant boundary: callers may
- * inject one, but the default path resolves it through ObjectRegistry so the
- * normal SMRT tenancy interceptors apply.
+ * Execute bounded materialized report reads through the canonical query
+ * envelope. Every predicate is an adapter-declared field/operator pair; the
+ * collection converts it to parameterized SQL and applies tenant interceptors
+ * to list, count, and facet reads alike.
  */
+export function queryReportMaterializedRows(
+  reportCtor: new (...args: any[]) => SmrtObject,
+  input: unknown,
+  options: ReportBackgroundQueryOptions,
+): Promise<ReportBackgroundQueryResult>;
+export function queryReportMaterializedRows(
+  reportCtor: new (...args: any[]) => SmrtObject,
+  input: unknown,
+  options?: ReportQueryOptions,
+): Promise<ReportDataQueryResult>;
 export async function queryReportMaterializedRows(
   reportCtor: new (...args: any[]) => SmrtObject,
   input: unknown,
-  options: ReportQueryOptions = {},
-): Promise<ReportDataQueryResult> {
+  options: ReportQueryOptions | ReportBackgroundQueryOptions = {},
+): Promise<ReportDataQueryResult | ReportBackgroundQueryResult> {
   const descriptor = await buildReportAdapterDescriptor(reportCtor);
   const request = normalizeDataQueryRequest(input, descriptor.schema);
-  if (request.mode === 'facets') {
-    throw new Error('Report materialized reads do not support facets yet');
+  // Validate the semantic split even though materialized-row reads execute the
+  // complete predicate against one persisted table. It prevents an adapter
+  // consumer from silently treating a mixed source WHERE/HAVING expression as
+  // either side of the aggregate boundary.
+  splitReportFilterScopes(descriptor, request.filter);
+  const queryFingerprint = createDataQueryFingerprint(
+    request,
+    descriptor.schema,
+  );
+  if (options.execution === 'background') {
+    const queued = await options.enqueueBackgroundQuery({
+      version: 1,
+      execution: 'background',
+      resourceId: descriptor.resourceId,
+      reportClassName: descriptor.reportClassName,
+      request,
+      inherits: ['principal', 'tenant', 'report-definition', 'field-policy'],
+    });
+    if (typeof queued.taskId !== 'string' || queued.taskId.length === 0) {
+      throw new Error('Background report query hosts must return a task id');
+    }
+    return {
+      version: 1,
+      execution: 'background',
+      status: 'queued',
+      taskId: queued.taskId,
+      queryFingerprint,
+    };
   }
+  const execution = options.execution ?? 'visible';
   const lifecycleDb = options.db;
   if (options.lifecycle && !lifecycleDb) {
     throw new Error('Report lifecycle disclosure requires a database handle');
@@ -896,6 +1412,7 @@ export async function queryReportMaterializedRows(
     ? await getReportLifecycle(reportCtor, lifecycleOptions)
     : undefined;
   const fieldMap = publicFieldMap(descriptor);
+  const where = materializedWhere(request.filter, fieldMap);
   const collection: NonNullable<ReportQueryOptions['collection']> =
     options.collection ??
     ((await ObjectRegistry.getCollection(descriptor.reportClassName, {
@@ -904,6 +1421,7 @@ export async function queryReportMaterializedRows(
   let rows: Record<string, unknown>[] = [];
   let page: DataQueryResult['page'];
   let total: number;
+  let facets: DataQueryResult['facets'];
   if (request.mode === 'rows') {
     const projection = request.projection ?? [descriptor.identityField];
     const select = projection.map((id) => fieldMap.get(id) ?? id);
@@ -918,6 +1436,7 @@ export async function queryReportMaterializedRows(
       offset,
       limit,
       orderBy: orderBy?.length === 1 ? orderBy[0] : orderBy,
+      ...(where === undefined ? {} : { where }),
     });
     rows = materialized.map((row) =>
       mapMaterializedRow(row, projection, fieldMap),
@@ -931,7 +1450,7 @@ export async function queryReportMaterializedRows(
     });
     // SmrtReportCollection performs an eligible TTL refresh from list(). Count
     // must follow that operation so total/hasMore describe the same snapshot.
-    total = await collection.count();
+    total = await collection.count(where === undefined ? undefined : { where });
     page = {
       kind: 'offset',
       offset,
@@ -946,17 +1465,51 @@ export async function queryReportMaterializedRows(
       offset: 0,
       limit: 1,
       orderBy: 'id ASC',
+      ...(where === undefined ? {} : { where }),
     });
-    total = await collection.count();
+    total = await collection.count(where === undefined ? undefined : { where });
+    if (request.mode === 'facets') {
+      if (!collection.facets) {
+        throw new Error(
+          'Report materialized facet reads require a collection facets() implementation',
+        );
+      }
+      const requested = request.facets ?? [];
+      const sourceFacets = await collection.facets({
+        fields: requested.map((facet) => ({
+          field: fieldMap.get(facet.field) ?? facet.field,
+          limit: facet.limit,
+        })),
+        ...(where === undefined ? {} : { where }),
+      });
+      const byField = new Map(
+        sourceFacets.map((facet) => [facet.field, facet]),
+      );
+      facets = requested.map((facet) => {
+        const sourceField = fieldMap.get(facet.field) ?? facet.field;
+        const values = byField.get(sourceField)?.values ?? [];
+        return {
+          field: facet.field,
+          values: values.map((value) => ({
+            value: value.value,
+            count: value.count,
+          })),
+          // The collection deliberately bounds this database grouping query;
+          // an exactly-full page may have more values, so report conservatively.
+          truncated: values.length >= facet.limit,
+        };
+      });
+    }
   }
   const result = {
     version: 1 as const,
     requestId: request.requestId,
-    queryFingerprint: createDataQueryFingerprint(request, descriptor.schema),
+    queryFingerprint,
     identityField: descriptor.identityField,
     rows,
     ...(page ? { page } : {}),
     total: { kind: 'exact' as const, value: total },
+    ...(facets === undefined ? {} : { facets }),
     freshness: { state: 'unknown' as const },
     warnings: [],
     truncated: false,
@@ -966,11 +1519,14 @@ export async function queryReportMaterializedRows(
     request,
     descriptor.schema,
   );
-  if (!lifecycleBefore || !lifecycleOptions) return normalized;
+  if (!lifecycleBefore || !lifecycleOptions) {
+    return { ...normalized, execution };
+  }
 
   const lifecycleAfter = await getReportLifecycle(reportCtor, lifecycleOptions);
   return {
     ...normalized,
+    execution,
     freshness: queryFreshness(lifecycleAfter),
     reportLifecycle: {
       snapshot: lifecycleAfter,

@@ -108,8 +108,10 @@ The package also exports a transport-neutral adapter for report surfaces:
 ```ts
 import {
   buildReportAdapterDescriptor,
+  buildReportDrilldownQuery,
   queryReportMaterializedRows,
   reportMaterializedRowKey,
+  splitReportFilterScopes,
 } from '@happyvertical/smrt-reports';
 
 const descriptor = await buildReportAdapterDescriptor(MonthlyRevenue, {
@@ -123,12 +125,30 @@ const result = await queryReportMaterializedRows(
     requestId: 'monthly-revenue-first-page',
     mode: 'rows',
     projection: ['id', 'customer_id', 'revenue'],
+    filter: {
+      kind: 'all',
+      filters: [
+        {
+          kind: 'condition',
+          field: 'customer_id',
+          operator: 'eq',
+          value: 'customer-42',
+        },
+        {
+          kind: 'condition',
+          field: 'revenue',
+          operator: 'gte',
+          value: 1000,
+        },
+      ],
+    },
     page: { kind: 'offset', offset: 0, limit: 25 },
-    sort: [{ field: 'id', direction: 'asc' }],
+    sort: [{ field: 'revenue', direction: 'desc' }],
   },
   { collection: reports },
 );
 const rowKey = reportMaterializedRowKey(result.rows[0]);
+const drilldown = await buildReportDrilldownQuery(MonthlyRevenue, result.rows[0]);
 ```
 
 `ReportAdapterDescriptor` is deterministic JSON with a stable resource id,
@@ -153,12 +173,32 @@ and `actions: 'excluded'`, and must be passed to the consumer table's structural
 row surface rather than its selectable data rows.
 
 `queryReportMaterializedRows()` is the bounded read slice for already-materialized
-rows. It supports projection, offset/limit paging (default limit 50), and
-deterministic ordering by the stable `id` identity. Dimension/measure filters,
-`WHERE`/`HAVING` mapping, facets, and caller-selected dimension/measure ordering
-are intentionally not part of this adapter contract. Every returned row must
-have a non-empty string `id`; use that value, never a display or page index, for
-row identity.
+rows. It supports projection, offset/limit paging (default limit 50),
+deterministic multi-sort (with `id` as the final tie-break), typed filters, and
+database-backed dimension facets. A descriptor marks group/time fields as
+`filterScope: 'where'` and aggregate measures as `filterScope: 'having'`; use
+`splitReportFilterScopes()` when constructing a live source query. An AND may
+combine the two scopes, but an OR or NOT cannot mix them, because moving either
+side across a source `WHERE`/`HAVING` boundary would change its meaning.
+
+The materialized collection executes the normalized, allowlisted predicate as
+parameterized SQL and applies it identically to rows, totals, and facets. It
+never accepts raw SQL, source field paths, tenant ids, or principal ids.
+The descriptor's `queryExecution` contract declares three delivery choices:
+`visible` (the default) returns rows for an already-authorized surface,
+`silent` returns the same bounded result while making no visible-surface change,
+and `background` delegates a normalized, authority-free task to the application's
+`enqueueBackgroundQuery` host. A background result is only a queue handle, never
+materialized rows. The host retains the authenticated principal, tenant, report
+definition, field policy, database, and eventual job execution; none can be
+supplied in a query request or background task.
+`buildReportDrilldownQuery()` carries only the row's declared groups/buckets
+and a fixed inheritance contract for the current principal, tenant, report
+definition, and field policy; an authenticated source adapter must enforce that
+contract before it reads source records. Time buckets remain declarative so the
+source adapter keeps the report's database/timezone semantics. Every returned
+row must have a non-empty string `id`; use that value, never a display or page
+index, for row identity.
 
 When no collection is injected, reads resolve the registered report collection
 through `ObjectRegistry`, allowing normal s-m-r-t collection interceptors to enforce

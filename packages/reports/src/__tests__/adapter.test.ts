@@ -11,8 +11,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildReportAdapterDescriptor,
+  buildReportDrilldownQuery,
   queryReportMaterializedRows,
   reportMaterializedRowKey,
+  splitReportFilterScopes,
 } from '../adapter.js';
 import { reportRowIdentity } from '../refresh.js';
 
@@ -208,29 +210,11 @@ function registerRefreshAndTenancyDescriptorFixtures() {
 }
 
 function registerRuntimeTenantFixture() {
-  ObjectRegistry.registerFieldDecorator('AdapterInvoice', 'tenantId', {
-    type: 'text',
-    _meta: { __tenancy: { isTenantIdField: true } },
-  });
-  ObjectRegistry.register(AdapterInvoice, { tableName: 'adapter_invoices' });
-
-  ObjectRegistry.registerFieldDecorator('AdapterReport', 'tenantId', {
-    type: 'text',
-    _meta: { __tenancy: { isTenantIdField: true } },
-  });
-  ObjectRegistry.registerFieldDecorator('AdapterReport', 'customerId', {
-    type: 'text',
-    __report: { kind: 'group', sourceColumn: 'customerId' },
-  });
-  ObjectRegistry.registerFieldDecorator('AdapterReport', 'revenue', {
-    type: 'decimal',
-    __report: { kind: 'aggregate', fn: 'sum', column: 'totalAmount' },
-  });
-  ObjectRegistry.register(AdapterReport, {
-    tableName: 'adapter_reports',
-    tenantScoped: { field: 'tenantId', mode: 'optional' },
-    report: { source: 'AdapterInvoice' },
-  });
+  // Exercise the manifest-hydrated deployment path used by the default
+  // collection resolver. Registering an unqualified test constructor here
+  // would leave its fields on a different registry entry than the qualified
+  // adapter descriptor resolves.
+  registerFixture();
 }
 
 describe('report adapter', () => {
@@ -263,6 +247,12 @@ describe('report adapter', () => {
     );
     expect(first.identityField).toBe('id');
     expect(first.schema.identityField).toBe('id');
+    expect(first.queryExecution).toEqual({
+      modes: ['visible', 'background', 'silent'],
+      visible: { delivery: 'result' },
+      background: { delivery: 'queued', requiresHost: true },
+      silent: { delivery: 'result', mutatesVisibleSurface: false },
+    });
     expect(first.schema.fields[0].id).toBe('customer_id');
     expect(first.columns.map((column) => column.id)).toEqual([
       'customer_id',
@@ -310,41 +300,50 @@ describe('report adapter', () => {
       rowKey: 'id',
       manualPagination: true,
       manualSorting: true,
-      enableFiltering: false,
+      enableFiltering: true,
       enableSearch: false,
     });
+    expect(first.dataTable.columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'customer_id',
+          searchable: false,
+          filterable: true,
+        }),
+        expect.objectContaining({
+          id: 'revenue',
+          searchable: false,
+          filterable: true,
+        }),
+      ]),
+    );
     expect(
-      first.dataTable.columns.every(
-        (column) => column.searchable === false && column.filterable === false,
-      ),
-    ).toBe(true);
+      first.schema.fields.find((field) => field.id === 'customer_id'),
+    ).toMatchObject({
+      filterOperators: expect.arrayContaining(['eq', 'in', 'like']),
+      sortable: true,
+      facetable: true,
+    });
     expect(
-      first.schema.fields.every((field) => field.filterOperators === undefined),
-    ).toBe(true);
+      first.schema.fields.find((field) => field.id === 'revenue'),
+    ).toMatchObject({ sortable: true, facetable: false });
+    expect(first.schema.supports?.facets).toBe(true);
     expect(
-      first.schema.fields.filter((field) => field.id === 'id')[0]?.sortable,
-    ).toBe(true);
+      first.columns.find((column) => column.id === 'customer_id'),
+    ).toMatchObject({
+      filterScope: 'where',
+      sortable: true,
+      facetable: true,
+      capabilities: ['project', 'read', 'filter', 'sort', 'facet', 'group'],
+    });
     expect(
-      first.schema.fields
-        .filter((field) => field.id !== 'id')
-        .every(
-          (field) => field.sortable === false && field.facetable === false,
-        ),
-    ).toBe(true);
-    expect(first.schema.supports?.facets).toBe(false);
-    expect(
-      first.columns
-        .filter((column) => column.kind !== 'identity')
-        .every(
-          (column) =>
-            column.sortable === false &&
-            column.facetable === false &&
-            column.capabilities.join(',') === 'project,read',
-        ),
-    ).toBe(true);
-    expect(
-      first.columns.find((column) => column.id === 'id')?.capabilities,
-    ).toEqual(['project', 'read', 'sort']);
+      first.columns.find((column) => column.id === 'revenue'),
+    ).toMatchObject({
+      filterScope: 'having',
+      sortable: true,
+      facetable: false,
+      capabilities: ['project', 'read', 'filter', 'sort', 'aggregate'],
+    });
     expect(() => JSON.stringify(first)).not.toThrow();
   });
 
@@ -679,6 +678,60 @@ describe('report adapter', () => {
     expect(descriptor.schema.identityField).toBe('id');
   });
 
+  it('builds a principal-and-tenant-bound drilldown handoff from declared groups', async () => {
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport);
+    expect(descriptor.drilldown).toEqual({
+      id: 'drilldown',
+      sourceClassName: 'AdapterInvoice',
+      fields: [
+        {
+          id: 'customer_id',
+          sourceColumn: 'customer_id',
+          kind: 'group',
+        },
+        {
+          id: 'issued_month',
+          sourceColumn: 'issued_at',
+          kind: 'bucket',
+          bucket: 'month',
+        },
+      ],
+      inherits: ['principal', 'tenant', 'report-definition', 'field-policy'],
+    });
+
+    await expect(
+      buildReportDrilldownQuery(AdapterReport, {
+        customer_id: 'customer-1',
+        issued_month: new Date('2026-08-01T00:00:00.000Z'),
+      }),
+    ).resolves.toEqual({
+      version: 1,
+      resourceId: '@happyvertical/smrt-reports:AdapterReport#current',
+      reportClassName: '@happyvertical/smrt-reports:AdapterReport',
+      sourceClassName: 'AdapterInvoice',
+      constraints: [
+        {
+          id: 'customer_id',
+          sourceColumn: 'customer_id',
+          kind: 'group',
+          value: 'customer-1',
+        },
+        {
+          id: 'issued_month',
+          sourceColumn: 'issued_at',
+          kind: 'bucket',
+          bucket: 'month',
+          value: '2026-08-01T00:00:00.000Z',
+        },
+      ],
+      inherits: ['principal', 'tenant', 'report-definition', 'field-policy'],
+    });
+
+    await expect(buildReportDrilldownQuery(AdapterReport, {})).rejects.toThrow(
+      /missing grouping field: customer_id/,
+    );
+  });
+
   it('projects and pages materialized rows through the canonical result envelope', async () => {
     let listOptions: Record<string, unknown> | undefined;
     const collection = {
@@ -716,6 +769,75 @@ describe('report adapter', () => {
     });
     expect(result.total).toEqual({ kind: 'exact', value: 2 });
     expect(result.freshness).toEqual({ state: 'unknown' });
+    expect(result.execution).toBe('visible');
+  });
+
+  it('executes silent reads without a visible-surface side effect', async () => {
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      { version: 1, requestId: 'request-silent', mode: 'rows' },
+      {
+        execution: 'silent',
+        collection: {
+          async list() {
+            return [{ id: 'row-silent' }];
+          },
+          async count() {
+            return 1;
+          },
+        },
+      },
+    );
+
+    expect(result.execution).toBe('silent');
+    expect(result.rows).toEqual([{ id: 'row-silent' }]);
+  });
+
+  it('delegates background queries to a host without reading or serializing authority', async () => {
+    const list = vi.fn(async () => [{ id: 'must-not-read' }]);
+    const enqueueBackgroundQuery = vi.fn(async (task: unknown) => {
+      expect(task).toMatchObject({
+        version: 1,
+        execution: 'background',
+        resourceId: '@test/reports:AdapterReport#current',
+        reportClassName: '@test/reports:AdapterReport',
+        request: {
+          version: 1,
+          requestId: 'request-background',
+          mode: 'rows',
+          projection: ['customer_id', 'id'],
+        },
+        inherits: ['principal', 'tenant', 'report-definition', 'field-policy'],
+      });
+      expect(task).not.toHaveProperty('tenantId');
+      expect(task).not.toHaveProperty('principalId');
+      return { taskId: 'job-report-query-1' };
+    });
+
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'request-background',
+        mode: 'rows',
+        projection: ['customer_id'],
+      },
+      {
+        execution: 'background',
+        collection: { list, count: async () => 1 },
+        enqueueBackgroundQuery,
+      },
+    );
+
+    expect(list).not.toHaveBeenCalled();
+    expect(enqueueBackgroundQuery).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      version: 1,
+      execution: 'background',
+      status: 'queued',
+      taskId: 'job-report-query-1',
+    });
+    expect(result).not.toHaveProperty('rows');
   });
 
   it('rejects bigint values that cannot be represented safely in JSON', async () => {
@@ -834,32 +956,208 @@ describe('report adapter', () => {
     expect(result.total).toEqual({ kind: 'exact', value: 2 });
   });
 
-  it('rejects caller filters until report-specific semantics exist', async () => {
+  it('maps declared dimension and measure filters into a bounded materialized predicate', async () => {
+    let listOptions: Record<string, unknown> | undefined;
+    let countOptions: Record<string, unknown> | undefined;
+    const collection = {
+      async list(options: Record<string, unknown>) {
+        listOptions = options;
+        return [{ id: 'row-2', customerId: 'customer-1', revenue: 25 }];
+      },
+      async count(options?: Record<string, unknown>) {
+        countOptions = options;
+        return 1;
+      },
+    };
+    const filter = {
+      kind: 'all' as const,
+      filters: [
+        {
+          kind: 'condition' as const,
+          field: 'customer_id',
+          operator: 'eq' as const,
+          value: 'customer-1',
+        },
+        {
+          kind: 'condition' as const,
+          field: 'revenue',
+          operator: 'gte' as const,
+          value: 10,
+        },
+      ],
+    };
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport);
+    expect(splitReportFilterScopes(descriptor, filter)).toEqual({
+      where: filter.filters[0],
+      having: filter.filters[1],
+    });
+    expect(
+      splitReportFilterScopes(descriptor, {
+        kind: 'all',
+        filters: [
+          filter.filters[0],
+          { kind: 'all', filters: [filter.filters[0]] },
+          filter.filters[1],
+        ],
+      }),
+    ).toEqual({
+      where: { kind: 'all', filters: [filter.filters[0], filter.filters[0]] },
+      having: filter.filters[1],
+    });
+
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'request-filter-and-sort',
+        mode: 'rows',
+        projection: ['customer_id', 'revenue'],
+        filter,
+        sort: [{ field: 'revenue', direction: 'desc' }],
+      },
+      { collection },
+    );
+
+    expect(listOptions).toMatchObject({
+      select: ['customerId', 'id', 'revenue'],
+      orderBy: ['revenue DESC', 'id ASC'],
+      where: [[{ customerId: 'customer-1' }, { 'revenue >=': 10 }]],
+    });
+    expect(countOptions).toEqual({
+      where: [[{ customerId: 'customer-1' }, { 'revenue >=': 10 }]],
+    });
+    expect(result.rows).toEqual([
+      { customer_id: 'customer-1', id: 'row-2', revenue: 25 },
+    ]);
+  });
+
+  it('keeps OR and null-bucket report filters parameterized and branch-bounded', async () => {
+    let listOptions: Record<string, unknown> | undefined;
+    const collection = {
+      async list(options: Record<string, unknown>) {
+        listOptions = options;
+        return [{ id: 'row-2', customerId: null }];
+      },
+      async count() {
+        return 1;
+      },
+    };
+
+    await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'request-null-or-filter',
+        mode: 'rows',
+        projection: ['customer_id'],
+        filter: {
+          kind: 'any',
+          filters: [
+            {
+              kind: 'condition',
+              field: 'customer_id',
+              operator: 'eq',
+              value: null,
+            },
+            {
+              kind: 'condition',
+              field: 'customer_id',
+              operator: 'in',
+              value: ['customer-1', 'customer-2'],
+            },
+          ],
+        },
+      },
+      { collection },
+    );
+
+    expect(listOptions).toMatchObject({
+      where: [
+        [{ customerId: null }],
+        [{ 'customerId in': ['customer-1', 'customer-2'] }],
+      ],
+    });
+  });
+
+  it('returns database-backed dimension facets under the same report filter', async () => {
+    let facetOptions: Record<string, unknown> | undefined;
     const collection = {
       async list() {
         return [];
       },
       async count() {
-        return 0;
+        return 4;
+      },
+      async facets(options: Record<string, unknown>) {
+        facetOptions = options;
+        return [
+          {
+            field: 'customerId',
+            values: [
+              { value: 'customer-1', count: 3 },
+              { value: null, count: 1 },
+            ],
+          },
+        ];
       },
     };
-    await expect(
-      queryReportMaterializedRows(
-        AdapterReport,
-        {
-          version: 1,
-          requestId: 'request-2',
-          mode: 'rows',
-          filter: {
+
+    const result = await queryReportMaterializedRows(
+      AdapterReport,
+      {
+        version: 1,
+        requestId: 'request-dimension-facet',
+        mode: 'facets',
+        filter: {
+          kind: 'condition',
+          field: 'revenue',
+          operator: 'gte',
+          value: 10,
+        },
+        facets: [{ field: 'customer_id', limit: 2 }],
+      },
+      { collection },
+    );
+
+    expect(facetOptions).toEqual({
+      fields: [{ field: 'customerId', limit: 2 }],
+      where: [[{ 'revenue >=': 10 }]],
+    });
+    expect(result.rows).toEqual([]);
+    expect(result.total).toEqual({ kind: 'exact', value: 4 });
+    expect(result.facets).toEqual([
+      {
+        field: 'customer_id',
+        values: [
+          { value: 'customer-1', count: 3 },
+          { value: null, count: 1 },
+        ],
+        truncated: true,
+      },
+    ]);
+  });
+
+  it('rejects a mixed WHERE/HAVING OR expression before it can be miscompiled', async () => {
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport);
+    expect(() =>
+      splitReportFilterScopes(descriptor, {
+        kind: 'any',
+        filters: [
+          {
             kind: 'condition',
             field: 'customer_id',
             operator: 'eq',
             value: 'customer-1',
           },
-        },
-        { collection },
-      ),
-    ).rejects.toThrow(/not allowed|do not support filter or sort/);
+          {
+            kind: 'condition',
+            field: 'revenue',
+            operator: 'gte',
+            value: 10,
+          },
+        ],
+      }),
+    ).toThrow(/WHERE and HAVING filters cannot be mixed/);
   });
 
   it('resolves the default collection through ObjectRegistry for tenant-bound reads', async () => {
@@ -926,6 +1224,67 @@ describe('report adapter', () => {
       );
 
       expect(result.rows).toEqual([{ id: 'tenant-a-row' }]);
+      expect(result.total).toEqual({ kind: 'exact', value: 1 });
+    } finally {
+      disableTenancy();
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('applies the active tenant to every OR branch of a report query', async () => {
+    ObjectRegistry.clear();
+    registerRuntimeTenantFixture();
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      classes: ['AdapterReport'],
+    });
+    try {
+      await db.insert('adapter_reports', {
+        id: 'tenant-a-customer-a',
+        slug: 'tenant-a-customer-a',
+        tenant_id: 'tenant-a',
+        customer_id: 'customer-a',
+        revenue: 10,
+      });
+      await db.insert('adapter_reports', {
+        id: 'tenant-b-customer-b',
+        slug: 'tenant-b-customer-b',
+        tenant_id: 'tenant-b',
+        customer_id: 'customer-b',
+        revenue: 90,
+      });
+      enableTenancy();
+
+      const result = await withTenant({ tenantId: 'tenant-a' }, () =>
+        queryReportMaterializedRows(
+          AdapterReport,
+          {
+            version: 1,
+            requestId: 'request-tenant-or-filter',
+            mode: 'rows',
+            filter: {
+              kind: 'any',
+              filters: [
+                {
+                  kind: 'condition',
+                  field: 'customer_id',
+                  operator: 'eq',
+                  value: 'customer-a',
+                },
+                {
+                  kind: 'condition',
+                  field: 'customer_id',
+                  operator: 'eq',
+                  value: 'customer-b',
+                },
+              ],
+            },
+          },
+          { db },
+        ),
+      );
+
+      expect(result.rows).toEqual([{ id: 'tenant-a-customer-a' }]);
       expect(result.total).toEqual({ kind: 'exact', value: 1 });
     } finally {
       disableTenancy();

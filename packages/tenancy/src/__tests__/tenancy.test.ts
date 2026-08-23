@@ -442,6 +442,30 @@ describe('TenantInterceptor', () => {
       });
     });
 
+    it('rejects empty DNF predicates before applying tenant scope', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+      const invalidDnfWhereClauses: Array<
+        Array<Array<Record<string, unknown>>>
+      > = [[], [[]]];
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        for (const where of invalidDnfWhereClauses) {
+          expect(() =>
+            interceptor.beforeList?.(
+              'Document',
+              { where },
+              {
+                className: 'Document',
+                operation: 'list',
+                timestamp: new Date(),
+              },
+            ),
+          ).toThrow(/Invalid DNF where clause/);
+        }
+      });
+    });
+
     it('should throw when context required but missing', () => {
       registerTenantScopedClass('Document', { mode: 'required' });
       const interceptor = createTenantInterceptor();
