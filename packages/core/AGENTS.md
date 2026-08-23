@@ -19,6 +19,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
 | `src/schema/` | the four `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
 | `src/data-query.ts` | canonical bounded data-query normalizer: allowlisted fields, deterministic fingerprints, output validation, and transport-neutral envelope (#2444) | — |
+| `src/collection.ts` | latest-related bounded parent/child reads and their adapter, alias, and primary-key invariants (#1903) | [agents/latest-related.md](agents/latest-related.md) |
 
 ## SmrtObject Lifecycle
 
@@ -57,17 +58,9 @@ composes with `where`, `orderBy`, `limit`, and `offset`; `beforeList`
 interceptors still run. It is for column-backed fields only and cannot combine
 with `include`/relationship eager loading.
 
-Latest-related primitive (#1903): use `listWithLatestRelated()` when a page
-needs one row from a declared `@oneToMany` relationship without N+1 queries or
-hydrating unrelated children. `latestRelated.orderBy` ranks rows within each
-parent, `select` chooses the returned child fields (defaulting to the related
-model's declared primary key), and an
-optional `sortBy` orders parents by the winning child before the parent
-`limit`/`offset` are applied. The result is `{ parent, latestRelated }`, where
-`parent` is hydrated and `latestRelated` is a plain projection or `null` when
-the parent has no child. Ranking uses a portable `ROW_NUMBER()` CTE with an
-declared related-primary-key tie-break and explicit null-last ordering across SQLite, DuckDB, and
-PostgreSQL; only the visible parent page is hydrated.
+Latest-related primitive (#1903): `SmrtCollection.listWithLatestRelated()` is
+documented in [agents/latest-related.md](agents/latest-related.md), including
+its primary-key, dialect, alias, and cleanup invariants.
 
 `list()` and `query()` hydrate model instances serially in result order because
 an `initialize()` hook may query through the same transaction-bound PostgreSQL
