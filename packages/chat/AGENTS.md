@@ -44,6 +44,13 @@ Facade: `sendMessage()` (authors as the actor with `role: 'user'`; room-membersh
 
 `allowedTools` is a JSON array controlled by the consuming app. Fail-closed: an empty/unparseable whitelist permits NO tools. The internal `sendAgentReply(service, params)` function enforces the whitelist before emitting any `tool`/`tool_call` message; a caller cannot supply a `senderProfileId`/`role` to post as the agent, and the function is not reachable from the package index.
 
+Principal-bound data discovery and reads are available as `PrincipalTool[]` via
+`createDataSurfaceTools()` (re-exported by the chat package). Pass the tools as
+`extraTools` to the persona conversation/tool loop. They use the same
+fail-closed `allowedTools` offer/execution gates; RBAC, tenant, redaction,
+bounded query results, and audit authority remain in the authenticated
+`PrincipalRun` supplied by `@happyvertical/smrt-agents`.
+
 ## Conversational Harness (L3, #1891)
 
 The "chat with your learning agent" surface — the real agentic runtime for `AgentSession` (the only shipping chat runtime before this was a single-shot completion). This is the new **acyclic `chat → personas` / `chat → agents` / `chat → users` edge**; keep it that way (personas/agents/users never depend back on chat).

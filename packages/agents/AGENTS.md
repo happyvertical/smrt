@@ -142,6 +142,27 @@ The **`default` persona reuses the singleton identity** (a `null` key), which is
 
 `executeAsPrincipal(options, fn)` runs agent work **AS a persona's bound user**, reusing the existing RBAC cascade with no snapshotting. It publishes `(user_id, tenant_id, permissions[])` onto the DB session (Postgres RLS then bounds every query per-`(table, action)` and per-tenant) and hands `fn` a `PrincipalRun` whose `assertToolAllowed()` / `assertOperation()` enforce the persona tool ceiling and the RLS-off catalog gate. Effective authority = **bound-user RBAC ∩ agent-class ceiling ∩ persona `allowedTools`**. Actions audit as on-behalf-of the originating user via a `PrincipalAuditSink`.
 
+## Data Surface Read Tools (issue #2447)
+
+`createDataSurfaceTools()` produces the `data.discover`, `data.inspect`, and
+`data.query` `PrincipalTool`s consumed through chat's `extraTools` seam. The
+caller supplies a server-owned surface catalog and executor; the tools copy
+`userId`, `tenantId`, database, and permissions only from the live
+`PrincipalRun`. Discovery and inspection first assert the collection's read
+catalog permission and omit denied surfaces/fields. Query requests and results
+are normalized with the core bounded data-query protocol, including projection,
+cursor/page, row/byte, fingerprint, freshness, total, and truncation rules.
+Sensitive/read-permission fields are removed from descriptors, and
+`DataSurfaceField` policy metadata is stripped before the core schema validator.
+Executor-provided paginated rows retain their order and are validated with a
+stable identity tie-breaker (including type-aware numeric/date comparisons),
+while internal sort keys are stripped when they were not requested in the
+projection. Execution has a bounded deadline; public executor/result failures
+use stable generic errors while optional `onFailure` telemetry receives the
+authenticated/delegated principal and detailed server-side error. Hidden field
+request failures also use a stable public error. Tool arguments never contain
+principal or tenant authority.
+
 ## Agent Orchestration (issue #1892) — invoke-agent + principal delegation
 
 A conversational (orchestrator) agent can invoke worker agents with **principal delegation**. This is *not* a new engine — it is a standard `invoke-agent` tool plus a completion-dispatch convention on top of `executeAsPrincipal` + the DispatchBus.

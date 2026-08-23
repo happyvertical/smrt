@@ -94,6 +94,37 @@ export {
   resolveAgentAIOptions,
 } from './ai-config.js';
 export { AgentConfig, AgentConfigCollection } from './config.js';
+// Principal-bound data discovery, schema inspection, and bounded reads (#2447).
+export {
+  createDataSurfaceQueryFingerprint,
+  createDataSurfaceTools,
+  DATA_DISCOVER_FUNCTION_NAME,
+  DATA_DISCOVER_TOOL_SLUG,
+  DATA_INSPECT_FUNCTION_NAME,
+  DATA_INSPECT_TOOL_SLUG,
+  DATA_QUERY_FUNCTION_NAME,
+  DATA_QUERY_TOOL_SLUG,
+  type DataSurfaceAuditEntry,
+  type DataSurfaceAuditSink,
+  DataSurfaceDeadlineError,
+  type DataSurfaceDefinition,
+  DataSurfaceDeniedError,
+  type DataSurfaceExecutionContext,
+  type DataSurfaceExecutor,
+  type DataSurfaceExecutorResult,
+  type DataSurfaceFailureEntry,
+  type DataSurfaceFailureSink,
+  type DataSurfaceField,
+  type DataSurfaceFieldMetadata,
+  type DataSurfacePrincipal,
+  DataSurfaceQueryError,
+  DataSurfaceRequestError,
+  DataSurfaceResultOrderError,
+  type DataSurfaceSchema,
+  type DataSurfaceToolsOptions,
+  DEFAULT_DATA_SURFACE_DEADLINE_MS,
+  MAX_DATA_SURFACE_DEADLINE_MS,
+} from './data-surface.js';
 // Principal delegation for agent orchestration (#1892): the immutable-principal,
 // bounded-depth delegation envelope.
 export {
