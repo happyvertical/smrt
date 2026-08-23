@@ -28,6 +28,15 @@ export interface DataTableColumn<T> {
   cell?: Snippet<[{ row: T; value: unknown; index: number }]>;
   /** Custom header renderer */
   header?: Snippet<[{ column: DataTableColumn<T> }]>;
+  /**
+   * How a custom header participates in sorting. `automatic` (the default)
+   * renders a separate action-labelled sort button alongside the custom header,
+   * so custom markup can safely contain its own interactive controls.
+   * Set `manual` only when the custom header provides and owns its own sorting
+   * interaction; this explicit opt-out prevents custom markup from silently
+   * disabling a sortable column.
+   */
+  headerSortMode?: 'automatic' | 'manual';
   /** Whether column is sortable */
   sortable?: boolean;
   /** Column width (CSS value) */
@@ -56,6 +65,9 @@ export interface DataTableColumn<T> {
  * Sort direction
  */
 export type SortDirection = 'asc' | 'desc' | null;
+
+/** A load failure that can be announced and optionally retried by DataTable. */
+export type DataTableLoadError = string | Error;
 
 /**
  * Sort state
@@ -88,6 +100,11 @@ export interface DataTableProps<T> {
   onSelectionChange?: (selected: Set<string | number>) => void;
   /** Row click callback */
   onRowClick?: (row: T, index: number) => void;
+  /**
+   * Supplies the accessible label used for a row's selection and expansion
+   * controls. Defaults to the 1-based display row number.
+   */
+  rowLabel?: (row: T, index: number) => string;
   /** Enable sorting */
   sortable?: boolean;
   /** Current sort state */
@@ -143,8 +160,21 @@ export interface DataTableProps<T> {
   ) => void;
   /** Explicit ownership for local or caller-supplied filtering, sorting, and paging. */
   modes?: Partial<DataTableModes>;
-  /** Loading state */
+  /**
+   * The initial loading state. When rows are already present, loading keeps
+   * them interactive and is announced as a refresh instead of replacing them.
+   */
   loading?: boolean;
+  /** Explicitly announces a refresh while rendered rows remain available. */
+  refreshing?: boolean;
+  /** Marks rendered rows as stale while a caller refreshes them. */
+  stale?: boolean;
+  /** Marks rendered rows as a partial result set. */
+  partialResults?: boolean;
+  /** Load failure shown without discarding already rendered rows. */
+  error?: DataTableLoadError | null;
+  /** Invoked by the localized retry button when a load error is present. */
+  onRetry?: () => void;
   /** Empty state content */
   empty?: Snippet;
   /** Custom row class function */

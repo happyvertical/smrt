@@ -56,6 +56,7 @@ let {
   selected = $bindable(new Set<string | number>()),
   onSelectionChange,
   onRowClick,
+  rowLabel,
   sortable = false,
   sort = $bindable({ columnId: null, direction: null }),
   onSortChange,
@@ -75,6 +76,11 @@ let {
   footer,
   visibleColumnIds,
   loading = false,
+  refreshing = false,
+  stale = false,
+  partialResults = false,
+  error = null,
+  onRetry,
   empty,
   rowClass,
   size = 'md',
@@ -90,6 +96,8 @@ let {
   onStateChange,
   modes,
 }: ExtendedProps<T> = $props();
+
+const dataTableId = $props.id();
 
 function legacyModes(): DataTableModes {
   return {
@@ -272,6 +280,22 @@ function handleSort(column: DataTableColumn<T>, event: MouseEvent) {
   });
 }
 
+function usesAutomaticSortButton(column: DataTableColumn<T>): boolean {
+  return (
+    sortable && column.sortable === true && column.headerSortMode !== 'manual'
+  );
+}
+
+function sortActionLabel(column: DataTableColumn<T>): string {
+  if (currentSort.columnId !== column.id) {
+    return t(M['ui.data_table.sort_ascending'], { column: column.label });
+  }
+  if (currentSort.direction === 'asc') {
+    return t(M['ui.data_table.sort_descending'], { column: column.label });
+  }
+  return t(M['ui.data_table.clear_sort'], { column: column.label });
+}
+
 function handleRowSelect(key: DataTableRowId, event: Event) {
   event.stopPropagation();
   dispatch({ type: 'toggleRowSelection', rowId: key });
@@ -314,6 +338,43 @@ function handlePageChange(next: number) {
 // Handle row click
 function handleRowClick(row: T, index: number) {
   onRowClick?.(row, index);
+}
+
+function getRowLabel(row: T, index: number): string {
+  return (
+    rowLabel?.(row, index) ??
+    t(M['ui.data_table.row_number'], { number: index + 1 })
+  );
+}
+
+function expansionContentId(key: DataTableRowId): string {
+  return `${dataTableId}-expanded-${encodeURIComponent(dataTableRowIdKey(key))}`;
+}
+
+function isNestedInteractiveTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      'a, button, input, select, textarea, label, summary, [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="checkbox"], [role="switch"]',
+    ) !== null
+  );
+}
+
+function handleRowActivation(event: MouseEvent, row: T, index: number) {
+  if (isNestedInteractiveTarget(event.target)) return;
+  handleRowClick(row, index);
+}
+
+function handleRowKeydown(event: KeyboardEvent, row: T, index: number) {
+  if (
+    !onRowClick ||
+    isNestedInteractiveTarget(event.target) ||
+    (event.key !== 'Enter' && event.key !== ' ')
+  ) {
+    return;
+  }
+  event.preventDefault();
+  handleRowClick(row, index);
 }
 
 function updateOverflowState() {
@@ -727,6 +788,21 @@ const someSelected = $derived(
     !allSelected,
 );
 
+const errorMessage = $derived.by(() => {
+  if (!error) return undefined;
+  return typeof error === 'string'
+    ? error
+    : error.message || t(M['ui.data_table.load_error']);
+});
+const hasRenderedRows = $derived(displayRows.length > 0);
+const isInitialLoading = $derived(
+  (loading || refreshing) && !hasRenderedRows && !errorMessage,
+);
+const isRefreshing = $derived(
+  (loading || refreshing) && hasRenderedRows && !errorMessage,
+);
+const isBusy = $derived(loading || refreshing);
+
 const columnCount = $derived(
   visibleColumns.length + (selectable ? 1 : 0) + (expandedContent ? 1 : 0),
 );
@@ -783,8 +859,8 @@ $effect(() => {
   role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
   aria-label={virtualizationWindow.enabled
     ? caption
-      ? `${caption} rows`
-      : 'Data table rows'
+      ? t(M['ui.data_table.virtual_region'], { caption })
+      : t(M['ui.data_table.default_virtual_region'])
     : hasHorizontalOverflow
       ? overflowRegionLabel
       : undefined}
@@ -803,7 +879,8 @@ $effect(() => {
     class:data-table--virtualized={virtualizationWindow.enabled}
     class:data-table--hoverable={hoverable}
     class:data-table--dense={dense}
-    class:data-table--loading={loading}
+    class:data-table--loading={isInitialLoading}
+    aria-busy={isBusy}
     aria-rowcount={virtualizationWindow.enabled
       ? virtualRowCount + 1 + (footer ? 1 : 0)
       : undefined}
@@ -815,7 +892,7 @@ $effect(() => {
 
     <thead bind:this={tableHead} class="data-table__head">
       <tr class="data-table__row data-table__row--header">
-        {#if expandedContent}<th class="data-table__cell data-table__cell--expand" scope="col"><span class="sr-only">Expand</span></th>{/if}
+        {#if expandedContent}<th class="data-table__cell data-table__cell--expand" scope="col"><span class="sr-only"><Trans key={M['ui.data_table.expand']} /></span></th>{/if}
         {#if selectable}
           <th class="data-table__cell data-table__cell--checkbox" scope="col">
             <input
@@ -832,7 +909,7 @@ $effect(() => {
         {#each visibleColumns as column (column.id)}
           <th
             class="data-table__cell data-table__cell--header"
-            class:data-table__cell--sortable={sortable && column.sortable}
+            class:data-table__cell--sortable={usesAutomaticSortButton(column)}
             class:data-table__cell--sorted={currentSort.columnId === column.id}
             style:width={column.width}
             style:min-width={column.minWidth}
@@ -845,23 +922,44 @@ $effect(() => {
                 : 'descending'
               : undefined}
           >
-            {#if column.header}
+            {#if usesAutomaticSortButton(column)}
+              {#if column.header}
+                <div class="data-table__header-content">
+                  {@render column.header({ column })}
+                  <button
+                    type="button"
+                    class="data-table__sort-button"
+                    onclick={(event) => handleSort(column, event)}
+                    aria-label={sortActionLabel(column)}
+                  >
+                    <span class="data-table__sort-icon" aria-hidden="true">
+                      {#if currentSort.columnId === column.id}
+                        {currentSort.direction === 'asc' ? '↑' : '↓'}
+                      {:else}
+                        ↕
+                      {/if}
+                    </span>
+                  </button>
+                </div>
+              {:else}
+                <button
+                  type="button"
+                  class="data-table__sort-button"
+                  onclick={(event) => handleSort(column, event)}
+                  aria-label={sortActionLabel(column)}
+                >
+                  <span>{column.label}</span>
+                  <span class="data-table__sort-icon" aria-hidden="true">
+                    {#if currentSort.columnId === column.id}
+                      {currentSort.direction === 'asc' ? '↑' : '↓'}
+                    {:else}
+                      ↕
+                    {/if}
+                  </span>
+                </button>
+              {/if}
+            {:else if column.header}
               {@render column.header({ column })}
-            {:else if sortable && column.sortable}
-              <button
-                type="button"
-                class="data-table__sort-button"
-                onclick={(event) => handleSort(column, event)}
-              >
-                <span>{column.label}</span>
-                <span class="data-table__sort-icon" aria-hidden="true">
-                  {#if currentSort.columnId === column.id}
-                    {currentSort.direction === 'asc' ? '↑' : '↓'}
-                  {:else}
-                    ↕
-                  {/if}
-                </span>
-              </button>
             {:else}
               {column.label}
             {/if}
@@ -871,13 +969,29 @@ $effect(() => {
     </thead>
 
     <tbody bind:this={tableBody} class="data-table__body">
-      {#if loading}
+      {#if errorMessage && !hasRenderedRows}
+        <tr class="data-table__row data-table__row--error">
+          <td
+            class="data-table__cell data-table__cell--error"
+            colspan={columnCount}
+          >
+            <div class="data-table__error-state" role="alert">
+              <span>{errorMessage}</span>
+              {#if onRetry}
+                <button type="button" class="data-table__retry-button" onclick={onRetry}>
+                  {t(M['ui.data_table.retry'])}
+                </button>
+              {/if}
+            </div>
+          </td>
+        </tr>
+      {:else if isInitialLoading}
         <tr class="data-table__row data-table__row--loading">
           <td
             class="data-table__cell data-table__cell--loading"
             colspan={columnCount}
           >
-            <div class="data-table__loading-indicator">
+            <div class="data-table__loading-indicator" role="status" aria-live="polite">
               <span class="data-table__spinner"></span>
               <span><Trans key={M['ui.data_table.loading']} /></span>
             </div>
@@ -917,24 +1031,19 @@ $effect(() => {
             class:data-table__row--striped={
               virtualizationWindow.enabled && striped && displayIndex % 2 === 1
             }
+            class:data-table__row--interactive={Boolean(onRowClick)}
             data-row-id={dataTableRowIdKey(key)}
             aria-rowindex={virtualizationWindow.enabled
               ? virtualRowOffset + displayIndex + 2
               : undefined}
-            onclick={() => handleRowClick(row, displayIndex)}
-            role={onRowClick ? 'button' : undefined}
+            onclick={(event) => handleRowActivation(event, row, displayIndex)}
             tabindex={onRowClick || virtualizationWindow.enabled ? 0 : undefined}
             onfocusin={() => handleRowFocus(key)}
-            onkeydown={(e) => {
-              if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
-                e.preventDefault();
-                handleRowClick(row, displayIndex);
-              }
-            }}
+            onkeydown={(event) => handleRowKeydown(event, row, displayIndex)}
           >
             {#if expandedContent}
               <td class="data-table__cell data-table__cell--expand">
-                {#if rowCanExpand}<button type="button" class="data-table__expand-button" aria-label={isExpanded ? 'Collapse row' : 'Expand row'} aria-expanded={isExpanded} onclick={(event) => handleExpanded(key, event)}>{isExpanded ? '−' : '+'}</button>{/if}
+                {#if rowCanExpand}<button type="button" class="data-table__expand-button" aria-label={isExpanded ? t(M['ui.data_table.collapse_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.expand_row'], { row: getRowLabel(row, displayIndex) })} aria-expanded={isExpanded} aria-controls={expansionContentId(key)} onclick={(event) => handleExpanded(key, event)}>{isExpanded ? '−' : '+'}</button>{/if}
               </td>
             {/if}
             {#if selectable}
@@ -944,7 +1053,7 @@ $effect(() => {
                   checked={isSelected}
                   disabled={tableState.selection.scope === 'allMatching'}
                   onchange={(e) => handleRowSelect(key, e)}
-                  aria-label={t(M['ui.data_table.select_row'])}
+                  aria-label={isSelected ? t(M['ui.data_table.deselect_row'], { row: getRowLabel(row, displayIndex) }) : t(M['ui.data_table.select_row'], { row: getRowLabel(row, displayIndex) })}
                   class="data-table__checkbox"
                 />
               </td>
@@ -967,7 +1076,7 @@ $effect(() => {
             {/each}
           </tr>
           {#if expandedContent && isExpanded}
-            <tr class="data-table__row data-table__row--expanded">
+            <tr id={expansionContentId(key)} class="data-table__row data-table__row--expanded">
               <td class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index: displayIndex })}</td>
             </tr>
           {/if}
@@ -983,6 +1092,22 @@ $effect(() => {
       <tfoot bind:this={tableFooter}><tr aria-rowindex={virtualizationWindow.enabled ? virtualRowCount + 2 : undefined}><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
     {/if}
   </table>
+  {#if errorMessage && hasRenderedRows}
+    <div class="data-table__async-status data-table__async-status--error" role="alert">
+      <span>{errorMessage}</span>
+      {#if onRetry}
+        <button type="button" class="data-table__retry-button" onclick={onRetry}>
+          {t(M['ui.data_table.retry'])}
+        </button>
+      {/if}
+    </div>
+  {:else if isRefreshing || stale || partialResults}
+    <div class="data-table__async-status" role="status" aria-live="polite" aria-atomic="true">
+      {#if isRefreshing}<span>{t(M['ui.data_table.refreshing'])}</span>{/if}
+      {#if stale}<span>{t(M['ui.data_table.stale'])}</span>{/if}
+      {#if partialResults}<span>{t(M['ui.data_table.partial_results'])}</span>{/if}
+    </div>
+  {/if}
 </div>
 {#if hasHorizontalOverflow}
   <div class="data-table__overflow-cue" aria-hidden="true">
@@ -990,7 +1115,7 @@ $effect(() => {
     {#if canScrollRight}<span>{t(M['ui.data_table.more_columns'])} →</span>{/if}
   </div>
 {/if}
-{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label="Table pages" />{/if}
+{#if tableState.pageSize && totalPages && totalPages > 1}<Pagination currentPage={tableState.page} {totalPages} onPageChange={handlePageChange} aria-label={t(M['ui.data_table.pagination'])} />{/if}
 
 <style>
   .data-table-container {
@@ -1101,6 +1226,12 @@ $effect(() => {
     cursor: pointer;
   }
 
+  .data-table__header-content {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--smrt-spacing-1, 0.25rem);
+  }
+
   .data-table__sort-button:hover {
     color: var(--smrt-color-primary, #3b82f6);
   }
@@ -1143,11 +1274,11 @@ $effect(() => {
     background: var(--smrt-color-surface-container-lowest, #fafafa);
   }
 
-  .data-table__row[role='button'] {
+  .data-table__row--interactive {
     cursor: pointer;
   }
 
-  .data-table__row[role='button']:focus-visible {
+  .data-table__row--interactive:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #3b82f6);
     outline-offset: -2px;
   }
@@ -1182,7 +1313,8 @@ $effect(() => {
 
   /* Loading */
   .data-table__cell--loading,
-  .data-table__cell--empty {
+  .data-table__cell--empty,
+  .data-table__cell--error {
     padding: var(--smrt-spacing-8, 2rem);
     text-align: center;
   }
@@ -1214,6 +1346,42 @@ $effect(() => {
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
+  .data-table__error-state,
+  .data-table__async-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: var(--smrt-spacing-3, 0.75rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+  }
+
+  .data-table__error-state,
+  .data-table__async-status--error {
+    color: var(--smrt-color-error, #b3261e);
+  }
+
+  .data-table__async-status {
+    padding: var(--smrt-spacing-3, 0.75rem);
+    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    font: var(--smrt-typography-body-small-font);
+  }
+
+  .data-table__retry-button {
+    border: 1px solid currentColor;
+    border-radius: var(--smrt-radius-small, 0.25rem);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
+  }
+
+  .data-table__retry-button:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline-offset: 2px;
+  }
+
   /* Size variants */
   .data-table--sm .data-table__cell {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
@@ -1243,6 +1411,11 @@ $effect(() => {
   /* Loading overlay */
   .data-table--loading {
     opacity: 0.7;
-    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .data-table__spinner {
+      animation: none;
+    }
   }
 </style>
