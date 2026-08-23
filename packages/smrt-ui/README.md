@@ -39,8 +39,10 @@ pnpm add @happyvertical/smrt-ui
 | Collections | `CollectionToolbar`, `CollectionList`/`ContentList`, `DataTable`, `Pagination` |
 | Layout and navigation | `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState`, `Tabs`, `FilterChips` |
 
-Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`, `/layout`,
-`/themes`) to keep imports explicit. The package root remains a compatibility
+Use the focused subpaths (`/forms`, `/ui`, `/feedback`, `/data`,
+`/data-surface`, `/layout`, `/themes`) to keep imports explicit. The
+Svelte-free `/data-surface` entry exposes the registry contracts and shared
+protocol limits for server adapters. The package root remains a compatibility
 barrel.
 
 ## Component standard

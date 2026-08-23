@@ -292,11 +292,13 @@ export interface DataSurfaceRegistry {
 /** Generic browser-transport ceiling for normalized command/action envelopes. */
 export const DATA_SURFACE_MAX_REQUEST_BYTES = 100_000;
 
+/** Maximum length shared by every DataSurface protocol identifier. */
+export const DATA_SURFACE_IDENTIFIER_MAX_LENGTH = 256;
+
 /** Per-surface LRU capacity for command acknowledgement replay. */
 export const DATA_SURFACE_MAX_REPLAY_ENTRIES = 100;
 
 const MAX_QUERY_LIMIT = 1_000;
-const MAX_REQUEST_ID_LENGTH = 256;
 const MAX_CURSOR_LENGTH = 2_048;
 const MAX_JSON_DEPTH = 16;
 const MAX_JSON_CONTAINER_ITEMS = 1_000;
@@ -385,6 +387,16 @@ function stringValue(value: unknown, label: string): string {
     throw new TypeError(`${label} must be a non-empty string`);
   }
   return value;
+}
+
+function identifierValue(value: unknown, label: string): string {
+  const result = stringValue(value, label);
+  if (result.length > DATA_SURFACE_IDENTIFIER_MAX_LENGTH) {
+    throw new TypeError(
+      `${label} cannot exceed ${DATA_SURFACE_IDENTIFIER_MAX_LENGTH} characters`,
+    );
+  }
+  return result;
 }
 
 function optionalString(value: unknown, label: string): string | undefined {
@@ -662,13 +674,13 @@ function normalizeIdentity(value: unknown): DataSurfaceIdentity {
     exactKeys(source, ['type', 'id', 'label'], 'DataSurface subject');
     const label = optionalString(source.label, 'DataSurface subject label');
     subject = {
-      type: stringValue(source.type, 'DataSurface subject type'),
-      id: stringValue(source.id, 'DataSurface subject id'),
+      type: identifierValue(source.type, 'DataSurface subject type'),
+      id: identifierValue(source.id, 'DataSurface subject id'),
       ...(label ? { label } : {}),
     };
   }
   return {
-    surfaceId: stringValue(object.surfaceId, 'DataSurface surface id'),
+    surfaceId: identifierValue(object.surfaceId, 'DataSurface surface id'),
     kind,
     ...(subject ? { subject } : {}),
   };
@@ -702,6 +714,16 @@ function normalizeStringArray(
     throw new TypeError(`${label} cannot contain duplicates`);
   }
   return options.sort ? values.sort() : values;
+}
+
+function normalizeIdentifierArray(
+  value: unknown,
+  label: string,
+  options: { sort?: boolean } = {},
+): string[] {
+  return normalizeStringArray(value, label, options).map((entry) =>
+    identifierValue(entry, label),
+  );
 }
 
 function normalizeCapabilityArray(
@@ -766,7 +788,12 @@ function normalizeSelection(value: unknown): DataSurfaceSelectionReference {
           'DataSurface row ids must be finite strings or numbers',
         );
       }
-      const normalized = typeof rowId === 'number' && rowId === 0 ? 0 : rowId;
+      const normalized =
+        typeof rowId === 'string'
+          ? identifierValue(rowId, 'DataSurface row id')
+          : rowId === 0
+            ? 0
+            : rowId;
       rowIds.set(`${typeof normalized}:${String(normalized)}`, normalized);
     }
     return {
@@ -787,7 +814,7 @@ function normalizeSelection(value: unknown): DataSurfaceSelectionReference {
   );
   return {
     scope,
-    queryFingerprint: stringValue(
+    queryFingerprint: identifierValue(
       object.queryFingerprint,
       'DataSurface query fingerprint',
     ),
@@ -837,7 +864,7 @@ export function normalizeDataSurfaceDescriptor(
       'DataSurface column description',
     );
     return {
-      id: stringValue(column.id, 'DataSurface column id'),
+      id: identifierValue(column.id, 'DataSurface column id'),
       label: stringValue(column.label, 'DataSurface column label'),
       ...(description ? { description } : {}),
       ...(sensitivity ? { sensitivity } : {}),
@@ -865,7 +892,7 @@ export function normalizeDataSurfaceDescriptor(
       throw new TypeError(`Unsupported DataSurface query mode: ${mode}`);
     }
   }
-  const projectableColumnIds = normalizeStringArray(
+  const projectableColumnIds = normalizeIdentifierArray(
     query.projectableColumnIds,
     'DataSurface projectable column ids',
     { sort: true },
@@ -890,7 +917,7 @@ export function normalizeDataSurfaceDescriptor(
       'DataSurface control description',
     );
     return {
-      id: stringValue(control.id, 'DataSurface control id'),
+      id: identifierValue(control.id, 'DataSurface control id'),
       label: stringValue(control.label, 'DataSurface control label'),
       ...(description ? { description } : {}),
     };
@@ -945,7 +972,7 @@ export function normalizeDataSurfaceDescriptor(
       'DataSurface action description',
     );
     return {
-      id: stringValue(action.id, 'DataSurface action id'),
+      id: identifierValue(action.id, 'DataSurface action id'),
       label: stringValue(action.label, 'DataSurface action label'),
       ...(description ? { description } : {}),
       ...(sensitivity ? { sensitivity } : {}),
@@ -974,7 +1001,7 @@ export function normalizeDataSurfaceDescriptor(
       `DataSurface maxQueryRows cannot exceed ${MAX_QUERY_LIMIT}`,
     );
   }
-  const rowKey = stringValue(object.rowKey, 'DataSurface row key');
+  const rowKey = identifierValue(object.rowKey, 'DataSurface row key');
   if (!knownColumns.has(rowKey)) {
     throw new TypeError('DataSurface rowKey must name a declared column');
   }
@@ -1056,13 +1083,10 @@ export function normalizeDataSurfaceVisibleCommand(
   if (object.version !== 1) {
     throw new TypeError('Unsupported DataSurface visible command version');
   }
-  const commandId = stringValue(object.commandId, 'DataSurface command id');
-  if (commandId.length > MAX_REQUEST_ID_LENGTH) {
-    throw new TypeError('DataSurface command id is too long');
-  }
+  const commandId = identifierValue(object.commandId, 'DataSurface command id');
   const commandIdentity = normalizeIdentity(object.identity);
   const expectedRevision = revisionNumber(object.expectedRevision);
-  const controlId = stringValue(object.controlId, 'DataSurface control id');
+  const controlId = identifierValue(object.controlId, 'DataSurface control id');
   assertRequestByteLimit(value, 'DataSurface visible command');
   const normalized: DataSurfaceVisibleCommand = {
     version: 1,
@@ -1088,13 +1112,10 @@ export function normalizeDataSurfaceQueryRequest(
   if (object.version !== 1) {
     throw new TypeError('Unsupported DataSurface query request version');
   }
-  const requestId = stringValue(
+  const requestId = identifierValue(
     object.requestId,
     'DataSurface query request id',
   );
-  if (requestId.length > MAX_REQUEST_ID_LENGTH) {
-    throw new TypeError('DataSurface query request id is too long');
-  }
   const identity = normalizeIdentity(object.identity);
   if (kind === 'rows') {
     exactKeys(
@@ -1134,7 +1155,7 @@ export function normalizeDataSurfaceQueryRequest(
       ...(object.projection === undefined
         ? {}
         : {
-            projection: normalizeStringArray(
+            projection: normalizeIdentifierArray(
               object.projection,
               'DataSurface query projection',
               { sort: true },
@@ -1172,7 +1193,7 @@ export function normalizeDataSurfaceQueryRequest(
       requestId,
       identity,
       kind,
-      columnId: stringValue(
+      columnId: identifierValue(
         object.columnId,
         'DataSurface facets query column id',
       ),
@@ -1203,13 +1224,10 @@ export function normalizeDataSurfaceActionRequest(
   if (object.version !== 1) {
     throw new TypeError('Unsupported DataSurface action request version');
   }
-  const requestId = stringValue(
+  const requestId = identifierValue(
     object.requestId,
     'DataSurface action request id',
   );
-  if (requestId.length > MAX_REQUEST_ID_LENGTH) {
-    throw new TypeError('DataSurface action request id is too long');
-  }
   const phase = stringValue(object.phase, 'DataSurface action phase');
   if (phase !== 'preview' && phase !== 'apply') {
     throw new TypeError(`Unsupported DataSurface action phase: ${phase}`);
@@ -1219,7 +1237,7 @@ export function normalizeDataSurfaceActionRequest(
     'DataSurface confirmation token',
   );
   const actionIdentity = normalizeIdentity(object.identity);
-  const actionId = stringValue(object.actionId, 'DataSurface action id');
+  const actionId = identifierValue(object.actionId, 'DataSurface action id');
   const selection = normalizeSelection(object.selection);
   assertRequestByteLimit(value, 'DataSurface action request');
   const normalized: DataSurfaceActionRequest = {

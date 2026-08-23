@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceRegistry,
+  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
   DATA_SURFACE_MAX_REPLAY_ENTRIES,
   DATA_SURFACE_MAX_REQUEST_BYTES,
   type DataSurfaceDescriptor,
@@ -743,6 +744,68 @@ describe('data surface registry', () => {
     ).toThrow('authority or SQL');
   });
 
+  it('enforces the shared identifier bound at registry boundaries', () => {
+    const tooLong = 'x'.repeat(DATA_SURFACE_IDENTIFIER_MAX_LENGTH + 1);
+    const identifiers = [
+      ['command id', command({ commandId: tooLong })],
+      ['control id', command({ controlId: tooLong })],
+      [
+        'surface id',
+        command({ identity: { ...identity, surfaceId: tooLong } }),
+      ],
+      [
+        'subject type',
+        command({
+          identity: {
+            ...identity,
+            subject: { type: tooLong, id: 'docs' },
+          },
+        }),
+      ],
+      [
+        'subject id',
+        command({
+          identity: {
+            ...identity,
+            subject: { type: 'site', id: tooLong },
+          },
+        }),
+      ],
+    ] as const;
+
+    for (const [label, value] of identifiers) {
+      expect(() => normalizeDataSurfaceVisibleCommand(value), label).toThrow();
+    }
+    expect(() =>
+      normalizeDataSurfaceActionRequest({
+        version: 1,
+        requestId: tooLong,
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'current-page' },
+      }),
+    ).toThrow();
+    expect(() =>
+      normalizeDataSurfaceActionRequest({
+        version: 1,
+        requestId: 'row-id',
+        identity,
+        actionId: 'archive',
+        phase: 'preview',
+        selection: { scope: 'explicit-ids', rowIds: [tooLong] },
+      }),
+    ).toThrow();
+    expect(() =>
+      createDataSurfaceRegistry().register({
+        descriptor: descriptor({
+          identity: { ...identity, surfaceId: tooLong },
+        }),
+        getSnapshot: () => ({ revision: 0, state: {} }),
+      }),
+    ).toThrow();
+  });
+
   it('rejects parsed prototype keys at every browser-contract boundary', () => {
     const prototypePayload = JSON.parse('{"__proto__":{"tenantId":"other"}}');
     expect(() =>
@@ -833,14 +896,22 @@ describe('data surface registry', () => {
       identity,
       kind: 'rows' as const,
       limit: 1,
-      projection: [''],
+      projection: Array.from(
+        { length: 394 },
+        (_, index) => `${String(index).padStart(3, '0')}${'x'.repeat(247)}`,
+      ),
     };
-    const baseLength = new TextEncoder().encode(
-      JSON.stringify(request),
-    ).byteLength;
+    const withEmpty = { ...request, projection: [...request.projection, ''] };
+    const overhead =
+      new TextEncoder().encode(JSON.stringify(withEmpty)).byteLength -
+      new TextEncoder().encode(JSON.stringify(request)).byteLength;
+    const finalLength =
+      DATA_SURFACE_MAX_REQUEST_BYTES -
+      new TextEncoder().encode(JSON.stringify(request)).byteLength -
+      overhead;
     const exactLimit = {
       ...request,
-      projection: ['x'.repeat(DATA_SURFACE_MAX_REQUEST_BYTES - baseLength)],
+      projection: [...request.projection, 'x'.repeat(finalLength)],
     };
 
     expect(

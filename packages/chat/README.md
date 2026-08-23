@@ -8,6 +8,25 @@ Chat rooms, DMs, threads, and agent conversations for the s-m-r-t framework. Sup
 pnpm add @happyvertical/smrt-chat
 ```
 
+## Data-surface bridge security
+
+The `./data-surface-bridge` entry point is the server half of the browser data-
+surface protocol. Supply a transport adapter whose `subscribe` callback
+provides peer metadata derived from authenticated connection state (such as a
+bound WebSocket session or origin-checked `postMessage` peer). Never copy
+`sessionId` or `source` from an untrusted message into that metadata, and route
+`send` only to the authenticated peer.
+
+The bridge validates and bounds every command, acknowledgement, and event
+before it crosses the server boundary, using the shared identifier limit from
+`@happyvertical/smrt-ui/data-surface`. `authorize` remains the application’s
+responsibility and must fail closed. Commands are scoped to the configured
+session/source, expire by TTL, and are idempotent by command ID plus command
+signature; replay retention is bounded and capacity exhaustion returns an
+explicit `replay_capacity_exceeded` outcome. Invalid, stale, disconnected, or
+transport-failed work resolves with a protocol failure reason rather than
+trusting browser data or throwing raw transport errors.
+
 ## Usage
 
 ### Local dev server
