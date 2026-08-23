@@ -31,11 +31,20 @@ import {
 } from './DataTableController.js';
 import { resolveDataTableRows } from './DataTableIdentity.js';
 import {
+  type DataTableResolvedColumn,
+  resolveDataTableLayout,
+} from './DataTableLayout.js';
+import {
   maximumDataTableVirtualScrollTop,
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
 } from './DataTableVirtualization.js';
-import type { DataTableColumn, DataTableProps, SortState } from './types.js';
+import type {
+  DataTableColumn,
+  DataTableProps,
+  DataTableStructuralRow,
+  SortState,
+} from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
 
 const { t } = useI18n();
@@ -74,6 +83,7 @@ let {
   expandedContent,
   toolbar,
   footer,
+  structuralRows = [],
   visibleColumnIds,
   loading = false,
   refreshing = false,
@@ -108,21 +118,23 @@ function legacyModes(): DataTableModes {
 }
 
 function legacyViewState(): Partial<DataTableViewState> {
-  return {
+  const next: Partial<DataTableViewState> = {
     sorting:
       sort.columnId && sort.direction
         ? [{ columnId: sort.columnId, direction: sort.direction }]
         : [],
     page,
     pageSize: pageSize ?? null,
-    columnOrder: columns.map((column) => column.id),
-    columnVisibility: columns.map((column) => ({
-      columnId: column.id,
-      visible: !visibleColumnIds || visibleColumnIds.has(column.id),
-    })),
     selectedRowIds: [...selected],
     expandedRowIds: [...expanded],
   };
+  if (visibleColumnIds) {
+    next.columnVisibility = columns.map((column) => ({
+      columnId: column.id,
+      visible: visibleColumnIds.has(column.id),
+    }));
+  }
+  return next;
 }
 
 function mergedLegacyState(): Omit<DataTableViewState, 'selection'> {
@@ -136,6 +148,7 @@ const localController = createDataTableController({
 });
 
 let controllerSnapshot = $state<DataTableSnapshot>(localController.snapshot());
+let measuredColumnWidths = $state<Record<string, number>>({});
 let publishedLegacySignature: string | undefined;
 let localControllerInitialized = false;
 let hasHorizontalOverflow = $state(false);
@@ -205,7 +218,14 @@ $effect(() => {
 
   localController.setControlled(controlledState !== undefined);
   localController.setModes(legacyModes());
-  localController.setColumnIds(columns.map((column) => column.id));
+  const columnIds = columns.map((column) => column.id);
+  const hiddenColumnIds = columns
+    .filter(
+      (column) =>
+        column.hidden ||
+        (visibleColumnIds !== undefined && !visibleColumnIds.has(column.id)),
+    )
+    .map((column) => column.id);
 
   if (!localControllerInitialized) {
     localControllerInitialized = true;
@@ -214,8 +234,11 @@ $effect(() => {
       ...initialState,
     };
     localController.replaceState(nextState);
+    localController.setColumnIds(columnIds, hiddenColumnIds);
     return;
   }
+
+  localController.setColumnIds(columnIds, hiddenColumnIds);
 
   if (controlledState !== undefined) {
     localController.replaceState(controlledState);
@@ -232,7 +255,16 @@ $effect(() => {
 
 $effect(() => {
   const current = activeController();
-  current.setColumnIds(columns.map((column) => column.id));
+  current.setColumnIds(
+    columns.map((column) => column.id),
+    columns
+      .filter(
+        (column) =>
+          column.hidden ||
+          (visibleColumnIds !== undefined && !visibleColumnIds.has(column.id)),
+      )
+      .map((column) => column.id),
+  );
   controllerSnapshot = current.snapshot();
   return current.subscribe((transition) => {
     controllerSnapshot = transition.next;
@@ -252,6 +284,15 @@ $effect(() => {
 
 const tableState = $derived(controllerSnapshot.state);
 const tableModes = $derived(controllerSnapshot.modes);
+const constrainedLayoutState = $derived.by(() => ({
+  ...tableState,
+  columnWidths: tableState.columnWidths.map((entry) => {
+    const column = columns.find((candidate) => candidate.id === entry.columnId);
+    return column
+      ? { ...entry, width: clampedColumnWidth(column, entry.width) }
+      : entry;
+  }),
+}));
 const requiresStableRowIdentity = $derived(
   selectable ||
     Boolean(expandedContent) ||
@@ -447,23 +488,22 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   };
 }
 
-const visibleColumns = $derived.by(() => {
-  const configuredOrder = new Map(
-    tableState.columnOrder.map((id, index) => [id, index]),
-  );
-  const visibility = new Map(
-    tableState.columnVisibility.map((entry) => [entry.columnId, entry.visible]),
-  );
-  return columns
-    .filter((column) => !column.hidden && visibility.get(column.id) !== false)
-    .slice()
-    .sort((left, right) => {
-      const leftOrder = configuredOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder =
-        configuredOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder;
-    });
-});
+const dataTableLayout = $derived(
+  resolveDataTableLayout(columns, constrainedLayoutState, measuredColumnWidths),
+);
+const visibleColumns = $derived(dataTableLayout.columns);
+const dataBodyStructuralRows = $derived(
+  structuralRows.filter((row) => row.kind !== 'footer'),
+);
+const footerStructuralRows = $derived(
+  structuralRows.filter((row) => row.kind === 'footer'),
+);
+const structuralRowCount = $derived(
+  dataBodyStructuralRows.length +
+    footerStructuralRows.length +
+    (footer ? 1 : 0),
+);
+const headerRowCount = $derived(dataTableLayout.headerRows.length);
 
 function sameFilterValue(value: unknown, expected: unknown): boolean {
   return Object.is(value, expected);
@@ -602,6 +642,7 @@ let tableContainer: HTMLDivElement | undefined = $state();
 let tableCaption: HTMLTableCaptionElement | undefined = $state();
 let tableHead: HTMLTableSectionElement | undefined = $state();
 let tableBody: HTMLTableSectionElement | undefined = $state();
+let tableStructuralBody: HTMLTableSectionElement | undefined = $state();
 let tableFooter: HTMLTableSectionElement | undefined = $state();
 let virtualScrollTop = $state(0);
 let virtualStructuralHeight = $state(0);
@@ -616,8 +657,8 @@ const virtualizationWindow = $derived.by(() =>
     rowCount: displayRows.length,
     scrollTop: virtualization?.scrollTop ?? virtualScrollTop,
     hasVariableRowHeight: Boolean(expandedContent),
-    headerRowCount: 1,
-    summaryRowCount: footer ? 1 : 0,
+    headerRowCount,
+    summaryRowCount: structuralRowCount,
   }),
 );
 const renderedRows = $derived.by(() =>
@@ -741,11 +782,13 @@ $effect(() => {
   const body = tableBody;
   const captionElement = tableCaption;
   const head = tableHead;
+  const structuralBody = tableStructuralBody;
   const footerElement = tableFooter;
   const measureStructure = () => {
     virtualStructuralHeight = body.offsetTop;
     virtualCaptionHeight = captionElement?.offsetHeight ?? 0;
-    virtualFooterHeight = footerElement?.offsetHeight ?? 0;
+    virtualFooterHeight =
+      (structuralBody?.offsetHeight ?? 0) + (footerElement?.offsetHeight ?? 0);
   };
   measureStructure();
   if (typeof ResizeObserver === 'undefined') return;
@@ -753,6 +796,7 @@ $effect(() => {
   const observer = new ResizeObserver(measureStructure);
   if (captionElement) observer.observe(captionElement);
   if (head) observer.observe(head);
+  if (structuralBody) observer.observe(structuralBody);
   if (footerElement) observer.observe(footerElement);
   return () => observer.disconnect();
 });
@@ -821,6 +865,165 @@ function getCellValue(row: T, column: DataTableColumn<T>): unknown {
   return getNestedValue(row, String(accessor));
 }
 
+function widthForColumn(
+  column: DataTableResolvedColumn<T>,
+): string | undefined {
+  return column.width === undefined ? column.column.width : `${column.width}px`;
+}
+
+function observeColumnWidth(node: HTMLElement, initialColumnId: string) {
+  let columnId = initialColumnId;
+  const recordWidth = () => {
+    const width = Math.ceil(node.getBoundingClientRect().width);
+    if (width <= 0 || measuredColumnWidths[columnId] === width) return;
+    measuredColumnWidths = { ...measuredColumnWidths, [columnId]: width };
+  };
+  recordWidth();
+  if (typeof ResizeObserver === 'undefined') return;
+  const observer = new ResizeObserver(recordWidth);
+  observer.observe(node);
+  return {
+    update(nextColumnId: string) {
+      columnId = nextColumnId;
+      recordWidth();
+    },
+    destroy() {
+      observer.disconnect();
+    },
+  };
+}
+
+function numberFromCssPixels(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const match = /^(\d+(?:\.\d+)?)(px|rem)$/.exec(value.trim());
+  if (!match) return undefined;
+  const number = Number(match[1]);
+  if (match[2] === 'px') return number;
+  const rootFontSize =
+    typeof document === 'undefined'
+      ? undefined
+      : /^\d+(?:\.\d+)?px$/.exec(
+          getComputedStyle(document.documentElement).fontSize.trim(),
+        );
+  return number * (rootFontSize ? Number(rootFontSize[0].slice(0, -2)) : 16);
+}
+
+function minimumWidth(column: DataTableColumn<T>): number {
+  return numberFromCssPixels(column.minWidth) ?? 40;
+}
+
+function maximumWidth(column: DataTableColumn<T>): number | undefined {
+  return numberFromCssPixels(column.maxWidth);
+}
+
+function clampedColumnWidth(column: DataTableColumn<T>, width: number): number {
+  const maximum = maximumWidth(column);
+  return Math.min(
+    Math.max(minimumWidth(column), Math.round(width)),
+    maximum ?? Infinity,
+  );
+}
+
+function currentColumnWidth(
+  resolved: DataTableResolvedColumn<T>,
+  target?: EventTarget | null,
+): number {
+  const measuredWidth = measuredColumnWidths[resolved.column.id];
+  if (measuredWidth !== undefined && measuredWidth > 0) return measuredWidth;
+  if (resolved.width !== undefined) return resolved.width;
+  const staticWidth = numberFromCssPixels(resolved.column.width);
+  if (staticWidth !== undefined) return staticWidth;
+  const header = target instanceof Element ? target.closest('th') : undefined;
+  return header?.getBoundingClientRect().width ?? 160;
+}
+
+function setColumnWidth(column: DataTableColumn<T>, width: number) {
+  dispatch({
+    type: 'setColumnWidth',
+    columnId: column.id,
+    width: clampedColumnWidth(column, width),
+  });
+}
+
+function handleResizeKeydown(
+  event: KeyboardEvent,
+  resolved: DataTableResolvedColumn<T>,
+) {
+  const step = event.shiftKey ? 32 : 8;
+  const current = currentColumnWidth(resolved, event.currentTarget);
+  const maximum = maximumWidth(resolved.column);
+  const next =
+    event.key === 'ArrowLeft'
+      ? current - step
+      : event.key === 'ArrowRight'
+        ? current + step
+        : event.key === 'Home'
+          ? minimumWidth(resolved.column)
+          : event.key === 'End' && maximum !== undefined
+            ? maximum
+            : undefined;
+  if (next === undefined) return;
+  event.preventDefault();
+  setColumnWidth(resolved.column, next);
+}
+
+function handleResizePointerDown(
+  event: PointerEvent,
+  resolved: DataTableResolvedColumn<T>,
+) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const handle = event.currentTarget as HTMLElement;
+  const startX = event.clientX;
+  const startWidth = currentColumnWidth(resolved, handle);
+  handle.setPointerCapture?.(event.pointerId);
+  const update = (nextEvent: PointerEvent) =>
+    setColumnWidth(resolved.column, startWidth + nextEvent.clientX - startX);
+  const finish = () => {
+    handle.removeEventListener('pointermove', update);
+    handle.removeEventListener('pointerup', finish);
+    handle.removeEventListener('pointercancel', finish);
+  };
+  handle.addEventListener('pointermove', update);
+  handle.addEventListener('pointerup', finish, { once: true });
+  handle.addEventListener('pointercancel', finish, { once: true });
+}
+
+function structuralLabelColumnId(
+  row: DataTableStructuralRow<T>,
+): string | undefined {
+  if (
+    row.labelColumnId &&
+    visibleColumns.some((column) => column.column.id === row.labelColumnId)
+  ) {
+    return row.labelColumnId;
+  }
+  return visibleColumns[0]?.column.id;
+}
+
+function structuralRowLabel(row: DataTableStructuralRow<T>): string {
+  const kind =
+    row.kind === 'summary'
+      ? t(M['ui.data_table.summary'])
+      : row.kind === 'subtotal'
+        ? t(M['ui.data_table.subtotal'])
+        : row.kind === 'aggregate'
+          ? t(M['ui.data_table.aggregate'])
+          : t(M['ui.data_table.footer_row']);
+  return t(M['ui.data_table.structural_row'], { kind, label: row.label });
+}
+
+function structuralCellValue(
+  row: DataTableStructuralRow<T>,
+  column: DataTableColumn<T>,
+): unknown {
+  return (
+    row.values?.[column.id] ??
+    (column.id === structuralLabelColumnId(row) ? row.label : '')
+  );
+}
+
 const sizeClasses = {
   sm: 'data-table--sm',
   md: 'data-table--md',
@@ -886,7 +1089,7 @@ $effect(() => {
     class:data-table--loading={isInitialLoading}
     aria-busy={isBusy}
     aria-rowcount={virtualizationWindow.enabled
-      ? virtualRowCount + 1 + (footer ? 1 : 0)
+      ? virtualRowCount + headerRowCount + structuralRowCount
       : undefined}
     style={`--data-table-caption-height: ${virtualCaptionHeight}px`}
   >
@@ -895,81 +1098,132 @@ $effect(() => {
     {/if}
 
     <thead bind:this={tableHead} class="data-table__head">
-      <tr class="data-table__row data-table__row--header">
-        {#if expandedContent}<th class="data-table__cell data-table__cell--expand" scope="col"><span class="sr-only"><Trans key={M['ui.data_table.expand']} /></span></th>{/if}
-        {#if selectable}
-          <th class="data-table__cell data-table__cell--checkbox" scope="col">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              use:setIndeterminate={someSelected}
-              onchange={handleSelectAll}
-              aria-label={t(M['ui.data_table.select_current_page'])}
-              class="data-table__checkbox"
-            />
-          </th>
-        {/if}
+      {#each dataTableLayout.headerRows as headerRow, headerIndex (headerIndex)}
+        <tr class="data-table__row data-table__row--header">
+          {#if headerIndex === 0 && expandedContent}
+            <th class="data-table__cell data-table__cell--expand" scope="col" rowspan={headerRowCount}>
+              <span class="sr-only"><Trans key={M['ui.data_table.expand']} /></span>
+            </th>
+          {/if}
+          {#if headerIndex === 0 && selectable}
+            <th class="data-table__cell data-table__cell--checkbox" scope="col" rowspan={headerRowCount}>
+              <input
+                type="checkbox"
+                checked={allSelected}
+                use:setIndeterminate={someSelected}
+                onchange={handleSelectAll}
+                aria-label={t(M['ui.data_table.select_current_page'])}
+                class="data-table__checkbox"
+              />
+            </th>
+          {/if}
 
-        {#each visibleColumns as column (column.id)}
-          <th
-            class="data-table__cell data-table__cell--header"
-            class:data-table__cell--sortable={usesAutomaticSortButton(column)}
-            class:data-table__cell--sorted={currentSort.columnId === column.id}
-            style:width={column.width}
-            style:min-width={column.minWidth}
-            style:max-width={column.maxWidth}
-            style:text-align={column.align}
-            scope="col"
-            aria-sort={currentSort.columnId === column.id
-              ? currentSort.direction === 'asc'
-                ? 'ascending'
-                : 'descending'
-              : undefined}
-          >
-            {#if usesAutomaticSortButton(column)}
-              {#if column.header}
-                <div class="data-table__header-content">
-                  {@render column.header({ column })}
-                  <button
-                    type="button"
-                    class="data-table__sort-button"
-                    onclick={(event) => handleSort(column, event)}
-                    aria-label={sortActionLabel(column)}
-                  >
-                    <span class="data-table__sort-icon" aria-hidden="true">
-                      {#if currentSort.columnId === column.id}
-                        {currentSort.direction === 'asc' ? '↑' : '↓'}
-                      {:else}
-                        ↕
-                      {/if}
-                    </span>
-                  </button>
-                </div>
-              {:else}
-                <button
-                  type="button"
-                  class="data-table__sort-button"
-                  onclick={(event) => handleSort(column, event)}
-                  aria-label={sortActionLabel(column)}
-                >
-                  <span>{column.label}</span>
-                  <span class="data-table__sort-icon" aria-hidden="true">
-                    {#if currentSort.columnId === column.id}
-                      {currentSort.direction === 'asc' ? '↑' : '↓'}
-                    {:else}
-                      ↕
-                    {/if}
-                  </span>
-                </button>
-              {/if}
-            {:else if column.header}
-              {@render column.header({ column })}
+          {#each headerRow as headerCell, cellIndex (`${headerIndex}:${cellIndex}`)}
+            {#if headerCell.kind === 'group'}
+              <th
+                class="data-table__cell data-table__cell--header data-table__cell--header-group"
+                class:data-table__cell--pinned-start={headerCell.pin === 'start'}
+                class:data-table__cell--pinned-end={headerCell.pin === 'end'}
+                scope="colgroup"
+                colspan={headerCell.colspan}
+                rowspan={headerCell.rowspan}
+                style:left={headerCell.pin === 'start' ? headerCell.stickyOffset : undefined}
+                style:right={headerCell.pin === 'end' ? headerCell.stickyOffset : undefined}
+              >
+                {headerCell.label}
+              </th>
             {:else}
-              {column.label}
+              {@const resolvedColumn = headerCell.column}
+              {@const column = resolvedColumn.column}
+              <th
+                class="data-table__cell data-table__cell--header"
+                class:data-table__cell--sortable={usesAutomaticSortButton(column)}
+                class:data-table__cell--sorted={currentSort.columnId === column.id}
+                class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                data-column-id={column.id}
+                data-column-role={column.role}
+                data-responsive-priority={column.responsive?.priority}
+                data-keep-visible={column.responsive?.keepVisible ? 'true' : undefined}
+                use:observeColumnWidth={column.id}
+                style:width={widthForColumn(resolvedColumn)}
+                style:min-width={column.minWidth}
+                style:max-width={column.maxWidth}
+                style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
+                style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
+                style:text-align={column.align}
+                scope="col"
+                rowspan={headerCell.rowspan}
+                aria-label={column.resizable && !column.header
+                  ? column.label
+                  : undefined}
+                aria-sort={currentSort.columnId === column.id
+                  ? currentSort.direction === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : undefined}
+              >
+                {#if usesAutomaticSortButton(column)}
+                  {#if column.header}
+                    <div class="data-table__header-content">
+                      {@render column.header({ column })}
+                      <button
+                        type="button"
+                        class="data-table__sort-button"
+                        onclick={(event) => handleSort(column, event)}
+                        aria-label={sortActionLabel(column)}
+                      >
+                        <span class="data-table__sort-icon" aria-hidden="true">
+                          {#if currentSort.columnId === column.id}
+                            {currentSort.direction === 'asc' ? '↑' : '↓'}
+                          {:else}
+                            ↕
+                          {/if}
+                        </span>
+                      </button>
+                    </div>
+                  {:else}
+                    <button
+                      type="button"
+                      class="data-table__sort-button"
+                      onclick={(event) => handleSort(column, event)}
+                      aria-label={sortActionLabel(column)}
+                    >
+                      <span>{column.label}</span>
+                      <span class="data-table__sort-icon" aria-hidden="true">
+                        {#if currentSort.columnId === column.id}
+                          {currentSort.direction === 'asc' ? '↑' : '↓'}
+                        {:else}
+                          ↕
+                        {/if}
+                      </span>
+                    </button>
+                  {/if}
+                {:else if column.header}
+                  {@render column.header({ column })}
+                {:else}
+                  {column.label}
+                {/if}
+                {#if column.resizable}
+                  <!-- svelte-ignore a11y_no_noninteractive_element_interactions: a focusable ARIA separator is the resize control. -->
+                  <span
+                    class="data-table__resize-handle"
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={t(M['ui.data_table.resize_column'], { column: column.label })}
+                    aria-valuemin={minimumWidth(column)}
+                    aria-valuemax={maximumWidth(column)}
+                    aria-valuenow={Math.round(currentColumnWidth(resolvedColumn))}
+                    tabindex="0"
+                    onpointerdown={(event) => handleResizePointerDown(event, resolvedColumn)}
+                    onkeydown={(event) => handleResizeKeydown(event, resolvedColumn)}
+                  ></span>
+                {/if}
+              </th>
             {/if}
-          </th>
-        {/each}
-      </tr>
+          {/each}
+        </tr>
+      {/each}
     </thead>
 
     <tbody bind:this={tableBody} class="data-table__body">
@@ -1038,7 +1292,7 @@ $effect(() => {
             class:data-table__row--interactive={Boolean(onRowClick)}
             data-row-id={dataTableRowIdKey(key)}
             aria-rowindex={virtualizationWindow.enabled
-              ? virtualRowOffset + displayIndex + 2
+              ? virtualRowOffset + displayIndex + headerRowCount + 1
               : undefined}
             onclick={(event) => handleRowActivation(event, row, displayIndex)}
             tabindex={onRowClick || virtualizationWindow.enabled ? 0 : undefined}
@@ -1063,10 +1317,22 @@ $effect(() => {
               </td>
             {/if}
 
-            {#each visibleColumns as column (column.id)}
+            {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
+              {@const column = resolvedColumn.column}
               {@const value = getCellValue(row, column)}
               <td
                 class="data-table__cell {column.className ?? ''}"
+                class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                data-column-id={column.id}
+                data-column-role={column.role}
+                data-responsive-priority={column.responsive?.priority}
+                data-keep-visible={column.responsive?.keepVisible ? 'true' : undefined}
+                style:width={widthForColumn(resolvedColumn)}
+                style:min-width={column.minWidth}
+                style:max-width={column.maxWidth}
+                style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
+                style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
                 style:text-align={column.align}
               >
                 {#if cell}
@@ -1092,8 +1358,143 @@ $effect(() => {
         {/if}
       {/if}
     </tbody>
-    {#if footer}
-      <tfoot bind:this={tableFooter}><tr aria-rowindex={virtualizationWindow.enabled ? virtualRowCount + 2 : undefined}><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
+    {#if dataBodyStructuralRows.length > 0}
+      <tbody
+        bind:this={tableStructuralBody}
+        class="data-table__body data-table__body--structural"
+      >
+        {#each dataBodyStructuralRows as structuralRow, structuralIndex (structuralRow.id)}
+          {@const labelColumnId = structuralLabelColumnId(structuralRow)}
+          <tr
+            class="data-table__row data-table__row--structural"
+            data-row-kind={structuralRow.kind}
+            aria-label={structuralRowLabel(structuralRow)}
+            aria-rowindex={virtualizationWindow.enabled
+              ? virtualRowOffset + displayRows.length + headerRowCount + structuralIndex + 1
+              : undefined}
+          >
+            {#if expandedContent}<td class="data-table__cell data-table__cell--expand"></td>{/if}
+            {#if selectable}<td class="data-table__cell data-table__cell--checkbox"></td>{/if}
+            {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
+              {@const column = resolvedColumn.column}
+              {@const value = structuralCellValue(structuralRow, column)}
+              {#if column.id === labelColumnId}
+                <th
+                  class="data-table__cell data-table__cell--structural-label {column.className ?? ''}"
+                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  scope="row"
+                  data-column-id={column.id}
+                  style:width={widthForColumn(resolvedColumn)}
+                  style:min-width={column.minWidth}
+                  style:max-width={column.maxWidth}
+                  style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
+                  style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
+                  style:text-align={column.align}
+                >
+                  <span class="sr-only">{structuralRowLabel(structuralRow)}: </span>
+                  {#if structuralRow.cell}
+                    {@render structuralRow.cell({ row: structuralRow, column, value })}
+                  {:else}
+                    {value ?? ''}
+                  {/if}
+                </th>
+              {:else}
+                <td
+                  class="data-table__cell {column.className ?? ''}"
+                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  data-column-id={column.id}
+                  style:width={widthForColumn(resolvedColumn)}
+                  style:min-width={column.minWidth}
+                  style:max-width={column.maxWidth}
+                  style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
+                  style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
+                  style:text-align={column.align}
+                >
+                  {#if structuralRow.cell}
+                    {@render structuralRow.cell({ row: structuralRow, column, value })}
+                  {:else}
+                    {value ?? ''}
+                  {/if}
+                </td>
+              {/if}
+            {/each}
+          </tr>
+        {/each}
+      </tbody>
+    {/if}
+    {#if footer || footerStructuralRows.length > 0}
+      <tfoot bind:this={tableFooter}>
+        {#each footerStructuralRows as structuralRow, structuralIndex (structuralRow.id)}
+          {@const labelColumnId = structuralLabelColumnId(structuralRow)}
+          <tr
+            class="data-table__row data-table__row--structural data-table__row--footer"
+            data-row-kind={structuralRow.kind}
+            aria-label={structuralRowLabel(structuralRow)}
+            aria-rowindex={virtualizationWindow.enabled
+              ? virtualRowCount + headerRowCount + dataBodyStructuralRows.length + structuralIndex + 1
+              : undefined}
+          >
+            {#if expandedContent}<td class="data-table__cell data-table__cell--expand"></td>{/if}
+            {#if selectable}<td class="data-table__cell data-table__cell--checkbox"></td>{/if}
+            {#each visibleColumns as resolvedColumn (resolvedColumn.column.id)}
+              {@const column = resolvedColumn.column}
+              {@const value = structuralCellValue(structuralRow, column)}
+              {#if column.id === labelColumnId}
+                <th
+                  class="data-table__cell data-table__cell--structural-label {column.className ?? ''}"
+                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  scope="row"
+                  data-column-id={column.id}
+                  style:width={widthForColumn(resolvedColumn)}
+                  style:min-width={column.minWidth}
+                  style:max-width={column.maxWidth}
+                  style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
+                  style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
+                  style:text-align={column.align}
+                >
+                  <span class="sr-only">{structuralRowLabel(structuralRow)}: </span>
+                  {#if structuralRow.cell}
+                    {@render structuralRow.cell({ row: structuralRow, column, value })}
+                  {:else}
+                    {value ?? ''}
+                  {/if}
+                </th>
+              {:else}
+                <td
+                  class="data-table__cell {column.className ?? ''}"
+                  class:data-table__cell--pinned-start={resolvedColumn.pin === 'start'}
+                  class:data-table__cell--pinned-end={resolvedColumn.pin === 'end'}
+                  data-column-id={column.id}
+                  style:width={widthForColumn(resolvedColumn)}
+                  style:min-width={column.minWidth}
+                  style:max-width={column.maxWidth}
+                  style:left={resolvedColumn.pin === 'start' ? resolvedColumn.stickyOffset : undefined}
+                  style:right={resolvedColumn.pin === 'end' ? resolvedColumn.stickyOffset : undefined}
+                  style:text-align={column.align}
+                >
+                  {#if structuralRow.cell}
+                    {@render structuralRow.cell({ row: structuralRow, column, value })}
+                  {:else}
+                    {value ?? ''}
+                  {/if}
+                </td>
+              {/if}
+            {/each}
+          </tr>
+        {/each}
+        {#if footer}
+          <tr aria-rowindex={virtualizationWindow.enabled
+            ? virtualRowCount + headerRowCount + structuralRowCount
+            : undefined}>
+            <td class="data-table__cell data-table__footer" colspan={columnCount}>
+              {@render footer({ rows: displayRows.map(({ row }) => row) })}
+            </td>
+          </tr>
+        {/if}
+      </tfoot>
     {/if}
   </table>
   {#if errorMessage && hasRenderedRows}
@@ -1205,6 +1606,7 @@ $effect(() => {
   }
 
   .data-table__cell--header {
+    position: relative;
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
     font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
@@ -1234,6 +1636,39 @@ $effect(() => {
     display: inline-flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
+  }
+
+  .data-table__cell--header-group {
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    font: var(--smrt-typography-label-medium-font);
+    letter-spacing: 0.02em;
+  }
+
+  .data-table__resize-handle {
+    position: absolute;
+    top: 0;
+    right: -0.35rem;
+    z-index: 3;
+    display: block;
+    width: 0.7rem;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .data-table__resize-handle::after {
+    position: absolute;
+    top: 20%;
+    right: 0.3rem;
+    width: 1px;
+    height: 60%;
+    background: var(--smrt-color-outline, #9ca3af);
+    content: '';
+  }
+
+  .data-table__resize-handle:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline-offset: -2px;
   }
 
   .data-table__sort-button:hover {
@@ -1297,6 +1732,24 @@ $effect(() => {
     vertical-align: middle;
   }
 
+  .data-table__cell--pinned-start,
+  .data-table__cell--pinned-end {
+    position: sticky;
+    z-index: 1;
+    background: var(--smrt-color-surface, #ffffff);
+  }
+
+  .data-table__cell--header.data-table__cell--pinned-start,
+  .data-table__cell--header.data-table__cell--pinned-end {
+    z-index: 3;
+    background: var(--smrt-color-surface-container, #f3f4f6);
+  }
+
+  .data-table__row--selected .data-table__cell--pinned-start,
+  .data-table__row--selected .data-table__cell--pinned-end {
+    background: var(--smrt-color-primary-container, #dbeafe);
+  }
+
   .data-table__cell--checkbox {
     width: 48px;
     text-align: center;
@@ -1307,6 +1760,9 @@ $effect(() => {
   .data-table__expand-button:focus-visible { outline: 2px solid var(--smrt-color-primary); outline-offset: 2px; }
   .data-table__cell--expanded { padding: var(--smrt-spacing-4); background: var(--smrt-color-surface-container-low); }
   .data-table__footer { border-top: 2px solid var(--smrt-color-outline-variant); font-weight: var(--smrt-typography-weight-medium); }
+  .data-table__row--structural { background: var(--smrt-color-surface-container-low, #f9fafb); }
+  .data-table__row--footer { border-top: 2px solid var(--smrt-color-outline-variant); }
+  .data-table__cell--structural-label { font-weight: var(--smrt-typography-weight-semibold, 600); }
 
   .data-table__checkbox {
     width: 18px;

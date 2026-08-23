@@ -696,6 +696,245 @@ describe('DataTable', () => {
     expect(tableContainer.scrollLeft).toBe(0);
   });
 
+  it('renders grouped headers from final visible leaf columns without losing leaf sort controls', async () => {
+    const groupedColumns = [
+      {
+        ...columns[0],
+        headerPath: [{ id: 'identity', label: 'Identity' }],
+      },
+      {
+        ...columns[1],
+        sortable: true,
+        headerPath: [{ id: 'measures', label: 'Measures' }],
+      },
+    ];
+    render(DataTable, {
+      props: { data, columns: groupedColumns, sortable: true },
+    });
+
+    const identity = screen.getByRole('columnheader', { name: 'Identity' });
+    expect(identity).toHaveAttribute('scope', 'colgroup');
+    expect(identity).toHaveAttribute('colspan', '1');
+    expect(screen.getAllByRole('row')).toHaveLength(data.length + 2);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveAttribute(
+      'aria-sort',
+      'ascending',
+    );
+  });
+
+  it('keeps a group header aligned when all of its leaves are pinned', () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: {
+        columnPinning: [
+          { columnId: 'name', position: 'start' },
+          { columnId: 'age', position: 'start' },
+        ],
+      },
+    });
+    render(DataTable, {
+      props: {
+        data,
+        controller,
+        columns: columns.map((column) => ({
+          ...column,
+          headerPath: [{ id: 'detail', label: 'Detail' }],
+        })),
+      },
+    });
+
+    const group = screen.getByRole('columnheader', { name: 'Detail' });
+    expect(group).toHaveClass('data-table__cell--pinned-start');
+    expect(group).toHaveStyle({ left: '0px' });
+  });
+
+  it('keeps report structural rows semantic and outside data-row selection', () => {
+    const { container } = render(DataTable, {
+      props: {
+        data,
+        columns,
+        rowKey: 'id',
+        selectable: true,
+        structuralRows: [
+          {
+            id: 'subtotal',
+            kind: 'subtotal',
+            label: 'Current page total',
+            values: { age: 90 },
+          },
+          {
+            id: 'footer',
+            kind: 'footer',
+            label: 'All people',
+            values: { age: 90 },
+          },
+        ],
+      },
+    });
+
+    expect(
+      screen.getByRole('rowheader', { name: /Subtotal: Current page total/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('rowheader', { name: /Footer: All people/ }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('checkbox')).toHaveLength(data.length + 1);
+    expect(
+      container.querySelectorAll('tbody.data-table__body--structural input'),
+    ).toHaveLength(0);
+    expect(container.querySelector('tfoot')).toContainElement(
+      screen.getByRole('rowheader', { name: /Footer: All people/ }),
+    );
+  });
+
+  it('uses controlled width and pin state for the accessible header resize control', async () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: {
+        columnWidths: [{ columnId: 'name', width: 120 }],
+        columnPinning: [{ columnId: 'name', position: 'start' }],
+      },
+    });
+    const { container } = render(DataTable, {
+      props: {
+        data,
+        columns: [{ ...columns[0], resizable: true }, columns[1]],
+        controller,
+      },
+    });
+
+    const nameHeader = screen.getByRole('columnheader', { name: 'Name' });
+    expect(nameHeader).toHaveClass('data-table__cell--pinned-start');
+    expect(nameHeader).toHaveStyle({ width: '120px', left: '0px' });
+    expect(nameHeader).toHaveAttribute('data-column-id', 'name');
+    const separator = screen.getByRole('separator', { name: 'Resize Name' });
+    separator.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(controller.getState().columnWidths).toContainEqual({
+      columnId: 'name',
+      width: 128,
+    });
+    expect(container.querySelector('[data-column-id="name"]')).toHaveAttribute(
+      'data-column-id',
+      'name',
+    );
+  });
+
+  it('uses rem constraints and rendered header widths for resize announcements', async () => {
+    const getBoundingClientRect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 208 } as DOMRect);
+    const originalRootFontSize = document.documentElement.style.fontSize;
+    try {
+      document.documentElement.style.fontSize = '16px';
+      const controller = createDataTableController({
+        columnIds: columns.map((column) => column.id),
+      });
+      render(DataTable, {
+        props: {
+          data,
+          controller,
+          columns: [
+            { ...columns[0], minWidth: '13rem', resizable: true },
+            columns[1],
+          ],
+        },
+      });
+
+      const separator = screen.getByRole('separator', { name: 'Resize Name' });
+      await vi.waitFor(() =>
+        expect(separator).toHaveAttribute('aria-valuenow', '208'),
+      );
+      separator.focus();
+      await userEvent.keyboard('{Home}');
+      expect(controller.getState().columnWidths).toContainEqual({
+        columnId: 'name',
+        width: 208,
+      });
+    } finally {
+      getBoundingClientRect.mockRestore();
+      document.documentElement.style.fontSize = originalRootFontSize;
+    }
+  });
+
+  it('clamps restored widths to the declared header constraints', () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: {
+        columnWidths: [{ columnId: 'name', width: 200 }],
+      },
+    });
+    render(DataTable, {
+      props: {
+        data,
+        controller,
+        columns: [
+          { ...columns[0], maxWidth: '100px', resizable: true },
+          columns[1],
+        ],
+      },
+    });
+
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveStyle({
+      width: '100px',
+    });
+    expect(
+      screen.getByRole('separator', { name: 'Resize Name' }),
+    ).toHaveAttribute('aria-valuenow', '100');
+  });
+
+  it('keeps custom resizable header content as the header name', () => {
+    const customHeader = createRawSnippet(() => ({
+      render: () => '<span>Account total in USD</span>',
+    }));
+    render(DataTable, {
+      props: {
+        data,
+        columns: [
+          { ...columns[0], header: customHeader, resizable: true },
+          columns[1],
+        ],
+      },
+    });
+
+    expect(
+      screen.getByRole('columnheader', { name: /Account total in USD/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps statically hidden columns hidden when a controller restores them visible', async () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: {
+        columnVisibility: [
+          { columnId: 'name', visible: true },
+          { columnId: 'age', visible: true },
+        ],
+      },
+    });
+    render(DataTable, {
+      props: {
+        data,
+        columns: [columns[0], { ...columns[1], hidden: true }],
+        controller,
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(controller.getState().columnVisibility).toContainEqual({
+        columnId: 'age',
+        visible: false,
+      }),
+    );
+    expect(
+      screen.queryByRole('columnheader', { name: 'Age' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(DataTable, {
       props: { data, columns, caption: 'People' },

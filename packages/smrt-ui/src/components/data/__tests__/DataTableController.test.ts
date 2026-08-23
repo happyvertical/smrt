@@ -18,6 +18,8 @@ const state: DataTableViewState = {
     { columnId: 'age', visible: true },
     { columnId: 'name', visible: true },
   ],
+  columnWidths: [],
+  columnPinning: [],
   selection: { scope: 'explicit', rowIds: [] },
   selectedRowIds: [],
   expandedRowIds: [],
@@ -198,10 +200,10 @@ describe('DataTableController', () => {
         state: legacyState,
       }),
     ).toMatchObject({
-      version: 2,
+      version: 3,
       state: { selection: { scope: 'explicit', rowIds: [] } },
     });
-    expect(() => hydrateDataTableSnapshot({ version: 3 })).toThrow(/version/);
+    expect(() => hydrateDataTableSnapshot({ version: 4 })).toThrow(/version/);
     expect(() =>
       transitionDataTableState(state, { type: 'setPageSize', pageSize: 0 }),
     ).toThrow(/pageSize/);
@@ -210,6 +212,135 @@ describe('DataTableController', () => {
         transitionDataTableState(state, { type: 'setPage', page }),
       ).toThrow(/page/);
     }
+  });
+
+  it('persists canonical column widths and pinning without resetting the table order', () => {
+    const controller = createDataTableController({
+      columnIds: ['name', 'age', 'status'],
+      initialState: {
+        ...state,
+        columnOrder: ['status', 'name', 'age'],
+        columnWidths: [
+          { columnId: 'status', width: 96 },
+          { columnId: 'name', width: 220 },
+        ],
+        columnPinning: [
+          { columnId: 'status', position: 'end' },
+          { columnId: 'name', position: 'start' },
+        ],
+      },
+    });
+
+    expect(controller.snapshot()).toMatchObject({
+      version: 3,
+      state: {
+        columnOrder: ['status', 'name', 'age'],
+        columnWidths: [
+          { columnId: 'name', width: 220 },
+          { columnId: 'status', width: 96 },
+        ],
+        columnPinning: [
+          { columnId: 'name', position: 'start' },
+          { columnId: 'status', position: 'end' },
+        ],
+      },
+    });
+
+    controller.dispatch({ type: 'setColumnWidth', columnId: 'age', width: 80 });
+    controller.dispatch({
+      type: 'setColumnPin',
+      columnId: 'age',
+      position: 'start',
+    });
+    expect(controller.getState().columnWidths).toEqual([
+      { columnId: 'age', width: 80 },
+      { columnId: 'name', width: 220 },
+      { columnId: 'status', width: 96 },
+    ]);
+    expect(controller.getState().columnPinning).toEqual([
+      { columnId: 'age', position: 'start' },
+      { columnId: 'name', position: 'start' },
+      { columnId: 'status', position: 'end' },
+    ]);
+
+    controller.dispatch({
+      type: 'setColumnWidth',
+      columnId: 'age',
+      width: null,
+    });
+    controller.dispatch({
+      type: 'setColumnPin',
+      columnId: 'age',
+      position: null,
+    });
+    expect(controller.getState().columnWidths).not.toContainEqual({
+      columnId: 'age',
+      width: 80,
+    });
+    expect(controller.getState().columnPinning).not.toContainEqual({
+      columnId: 'age',
+      position: 'start',
+    });
+  });
+
+  it('never restores or commands a static hidden column visible', () => {
+    const controller = createDataTableController({
+      columnIds: ['name', 'internal', 'age'],
+      hiddenColumnIds: ['internal'],
+      initialState: {
+        ...state,
+        columnVisibility: [
+          { columnId: 'internal', visible: true },
+          { columnId: 'name', visible: true },
+        ],
+      },
+    });
+
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: false,
+    });
+    controller.dispatch({
+      type: 'setColumnVisibility',
+      columns: [{ columnId: 'internal', visible: true }],
+    });
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: false,
+    });
+    controller.replaceState({
+      ...controller.getState(),
+      columnVisibility: [{ columnId: 'internal', visible: true }],
+    });
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: false,
+    });
+  });
+
+  it('restores the saved visibility when a static hidden constraint is removed', () => {
+    const controller = createDataTableController({
+      columnIds: ['name', 'internal'],
+      initialState: {
+        ...state,
+        columnVisibility: [
+          { columnId: 'name', visible: true },
+          { columnId: 'internal', visible: true },
+        ],
+      },
+    });
+
+    controller.setColumnIds(['name', 'internal'], ['internal']);
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: false,
+    });
+
+    controller.setColumnIds(['name', 'internal']);
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: true,
+    });
   });
 
   it('models current-page and explicit row selections separately', () => {

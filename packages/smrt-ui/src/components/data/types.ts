@@ -14,6 +14,54 @@ import type {
 import type { DataTableRowKey } from './DataTableIdentity.js';
 import type { DataTableVirtualizationOptions } from './DataTableVirtualization.js';
 
+/** A group segment owned by a leaf column so restored order can stay valid. */
+export interface DataTableHeaderPathSegment {
+  /** Stable group identity within its header level. */
+  id: string;
+  /** Human-readable group header. */
+  label: string;
+}
+
+/** Presentation metadata for responsive adapters. */
+export interface DataTableColumnResponsive {
+  /** Higher values are more important when an adapter collapses columns. */
+  priority?: number;
+  /** Keep this column visible when an adapter performs responsive collapse. */
+  keepVisible?: boolean;
+}
+
+export type DataTableColumnRole = 'data' | 'status' | 'action';
+
+export type DataTableStructuralRowKind =
+  | 'summary'
+  | 'subtotal'
+  | 'aggregate'
+  | 'footer';
+
+/** A non-data row rendered outside the selectable, virtualized data body. */
+export interface DataTableStructuralRow<T> {
+  /** Stable identifier for a structural row. */
+  id: string;
+  /** Distinguishes report structure without importing report-domain semantics. */
+  kind: DataTableStructuralRowKind;
+  /** Row-header content announced to assistive technology. */
+  label: string;
+  /** Column that receives the row header. Defaults to the first visible column. */
+  labelColumnId?: string;
+  /** Plain values keyed by column id. */
+  values?: Readonly<Record<string, unknown>>;
+  /** Optional cell renderer for this one structural row. */
+  cell?: Snippet<
+    [
+      {
+        row: DataTableStructuralRow<T>;
+        column: DataTableColumn<T>;
+        value: unknown;
+      },
+    ]
+  >;
+}
+
 /**
  * Column definition for DataTable
  */
@@ -28,6 +76,8 @@ export interface DataTableColumn<T> {
   cell?: Snippet<[{ row: T; value: unknown; index: number }]>;
   /** Custom header renderer */
   header?: Snippet<[{ column: DataTableColumn<T> }]>;
+  /** Optional group ancestry. Groups are resolved from the final visible layout. */
+  headerPath?: readonly DataTableHeaderPathSegment[];
   /**
    * How a custom header participates in sorting. `automatic` (the default)
    * renders a separate action-labelled sort button alongside the custom header,
@@ -45,6 +95,12 @@ export interface DataTableColumn<T> {
   minWidth?: string;
   /** Maximum width (CSS value) */
   maxWidth?: string;
+  /** Enables the accessible header resize separator for this column. */
+  resizable?: boolean;
+  /** Semantic metadata for generic responsive adapters. */
+  role?: DataTableColumnRole;
+  /** Metadata consumed by responsive adapters without domain coupling. */
+  responsive?: DataTableColumnResponsive;
   /** Text alignment */
   align?: 'left' | 'center' | 'right';
   /** Whether column is hidden */
@@ -142,6 +198,8 @@ export interface DataTableProps<T> {
   toolbar?: Snippet;
   /** Optional full-width table footer content. */
   footer?: Snippet<[{ rows: T[] }]>;
+  /** Generic report-like rows rendered independently from data row interactions. */
+  structuralRows?: readonly DataTableStructuralRow<T>[];
   /** Controlled visible column ids. Column.hidden is still respected. */
   visibleColumnIds?: Set<string>;
   /**
