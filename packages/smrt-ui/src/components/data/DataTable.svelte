@@ -29,8 +29,6 @@ import {
   type DataTableViewStateInput,
   dataTableRowIdKey,
 } from './DataTableController.js';
-import type { DataSurfaceJsonValue } from './data-surface.js';
-import { dataTableCommandFromDataSurfaceCommand } from './data-table-surface.js';
 import { resolveDataTableRows } from './DataTableIdentity.js';
 import {
   type DataTableResolvedColumn,
@@ -41,6 +39,8 @@ import {
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
 } from './DataTableVirtualization.js';
+import type { DataSurfaceJsonValue } from './data-surface.js';
+import { dataTableCommandFromDataSurfaceCommand } from './data-table-surface.js';
 import type {
   DataTableColumn,
   DataTableDataSurfaceOptions,
@@ -366,66 +366,66 @@ $effect(() => {
       if (transition.changed) revision += 1;
     });
     const unregister = surface.registry.register({
-    descriptor: surface.descriptor,
-    getSnapshot: () => {
-      const snapshot = surfaceController.snapshot();
-      return {
-        revision,
-        state: { table: snapshot as unknown as DataSurfaceJsonValue },
-        selection:
-          snapshot.state.selectedRowIds.length > 0
-            ? {
-                scope: 'explicit-ids' as const,
-                rowIds: snapshot.state.selectedRowIds,
-              }
-            : null,
-      };
-    },
-    execute: async (command) => {
-      const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
-      if (tableCommand) {
-        const transition = surfaceController.dispatch(tableCommand);
-        if (surfaceController.isControlled() && transition.changed) {
-          const settled = await surface.applyControlledState?.(
-            transition.next.state,
-            tableCommand,
-          );
-          if (settled) surfaceController.replaceState(settled);
-          if (
-            JSON.stringify(surfaceController.getState()) !==
-            JSON.stringify(transition.next.state)
-          ) {
-            return { ok: false };
+      descriptor: surface.descriptor,
+      getSnapshot: () => {
+        const snapshot = surfaceController.snapshot();
+        return {
+          revision,
+          state: { table: snapshot as unknown as DataSurfaceJsonValue },
+          selection:
+            snapshot.state.selectedRowIds.length > 0
+              ? {
+                  scope: 'explicit-ids' as const,
+                  rowIds: snapshot.state.selectedRowIds,
+                }
+              : null,
+        };
+      },
+      execute: async (command) => {
+        const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
+        if (tableCommand) {
+          const transition = surfaceController.dispatch(tableCommand);
+          if (surfaceController.isControlled() && transition.changed) {
+            const settled = await surface.applyControlledState?.(
+              transition.next.state,
+              tableCommand,
+            );
+            if (settled) surfaceController.replaceState(settled);
+            if (
+              JSON.stringify(surfaceController.getState()) !==
+              JSON.stringify(transition.next.state)
+            ) {
+              return { ok: false };
+            }
           }
+          return;
         }
-        return;
-      }
-      switch (command.controlId) {
-        case 'focus':
-          tableContainer?.focus();
-          return;
-        case 'reveal':
-          tableContainer?.scrollIntoView({ block: 'nearest' });
-          return;
-        case 'highlight':
-          surfaceHighlighted = true;
-          if (highlightTimer) clearTimeout(highlightTimer);
-          highlightTimer = setTimeout(() => {
-            surfaceHighlighted = false;
-          }, 1_000);
-          return;
-        case 'refresh':
-          if (!surface.onRefresh) return { ok: false };
-          await surface.onRefresh();
-          return;
-        case 'retry':
-          if (!surface.onRetry) return { ok: false };
-          await surface.onRetry();
-          return;
-        default:
-          return { ok: false };
-      }
-    },
+        switch (command.controlId) {
+          case 'focus':
+            tableContainer?.focus();
+            return;
+          case 'reveal':
+            tableContainer?.scrollIntoView({ block: 'nearest' });
+            return;
+          case 'highlight':
+            surfaceHighlighted = true;
+            if (highlightTimer) clearTimeout(highlightTimer);
+            highlightTimer = setTimeout(() => {
+              surfaceHighlighted = false;
+            }, 1_000);
+            return;
+          case 'refresh':
+            if (!surface.onRefresh) return { ok: false };
+            await surface.onRefresh();
+            return;
+          case 'retry':
+            if (!surface.onRetry) return { ok: false };
+            await surface.onRetry();
+            return;
+          default:
+            return { ok: false };
+        }
+      },
     });
     return () => {
       if (highlightTimer) clearTimeout(highlightTimer);

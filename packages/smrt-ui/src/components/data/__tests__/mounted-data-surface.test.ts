@@ -66,7 +66,9 @@ describe('mounted data surfaces', () => {
     });
 
     await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
-    await userEvent.click(screen.getByRole('button', { name: 'Name' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
     const humanSnapshot = registry.inspect(identity);
 
     expect(humanSnapshot).toMatchObject({
@@ -136,6 +138,102 @@ describe('mounted data surfaces', () => {
       revision: 1,
       snapshot: { state: { table: { state: { search: 'Grace' } } } },
     });
+  });
+
+  it('denies or fails controlled commands when the host does not settle them', async () => {
+    const registry = createDataSurfaceRegistry();
+    const initial = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    }).getState();
+    const deniedIdentity: DataSurfaceIdentity = {
+      surfaceId: 'denied-controlled-table',
+      kind: 'table',
+    };
+    const failedIdentity: DataSurfaceIdentity = {
+      surfaceId: 'failed-controlled-table',
+      kind: 'table',
+    };
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        controller: createDataTableController({
+          state: initial,
+          columnIds: columns.map((column) => column.id),
+        }),
+        dataSurface: {
+          registry,
+          descriptor: descriptor(deniedIdentity, ['set-search']),
+          applyControlledState: () => undefined,
+        },
+      },
+    });
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        controller: createDataTableController({
+          state: initial,
+          columnIds: columns.map((column) => column.id),
+        }),
+        dataSurface: {
+          registry,
+          descriptor: descriptor(failedIdentity, ['set-search']),
+          applyControlledState: () => {
+            throw new Error('host rejected state');
+          },
+        },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(registry.inspect(deniedIdentity)).toBeDefined();
+      expect(registry.inspect(failedIdentity)).toBeDefined();
+    });
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'denied-search',
+        identity: deniedIdentity,
+        expectedRevision: 0,
+        controlId: 'set-search',
+        payload: { search: 'Ada' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'failed-search',
+        identity: failedIdentity,
+        expectedRevision: 0,
+        controlId: 'set-search',
+        payload: { search: 'Ada' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'execution_failed' });
+  });
+
+  it('unregisters a mounted DataTable when the component unmounts', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'unmounted-table',
+      kind: 'table',
+    };
+    const { unmount } = render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        dataSurface: {
+          registry,
+          descriptor: descriptor(identity, ['set-search']),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    unmount();
+    expect(registry.inspect(identity)).toBeUndefined();
   });
 
   it('reactively registers delayed and replacement DataTable surface props', async () => {

@@ -11,12 +11,12 @@ import type {
   DataTableViewState,
   DataTableViewStateInput,
 } from './DataTableController.js';
+import type { DataTableRowKey } from './DataTableIdentity.js';
+import type { DataTableVirtualizationOptions } from './DataTableVirtualization.js';
 import type {
   DataSurfaceDescriptor,
   DataSurfaceRegistry,
 } from './data-surface.js';
-import type { DataTableRowKey } from './DataTableIdentity.js';
-import type { DataTableVirtualizationOptions } from './DataTableVirtualization.js';
 
 /** Opt-in mounted-surface wiring for a DataTable instance. */
 export interface DataTableDataSurfaceOptions {
