@@ -246,6 +246,7 @@ describe('principal-bound data surface tools', () => {
       },
       onFailure: async (entry) => {
         failures.push(entry.error);
+        expect(Object.hasOwn(entry, 'surfaceId')).toBe(false);
       },
     });
     const discoverRun = fakeRun([DATA_DISCOVER_TOOL_SLUG]);
@@ -284,6 +285,7 @@ describe('principal-bound data surface tools', () => {
 
   it('redacts discovery and inspection audit failures', async () => {
     const failures: unknown[] = [];
+    const failureEntries: Array<{ surfaceId?: string }> = [];
     const tools = toolSet({
       surfaces: [{ id: 'records', collection: 'records', schema }],
       audit: async () => {
@@ -291,6 +293,7 @@ describe('principal-bound data surface tools', () => {
       },
       onFailure: async (entry) => {
         failures.push(entry.error);
+        failureEntries.push(entry);
       },
     });
     const run = fakeRun([DATA_DISCOVER_TOOL_SLUG, DATA_INSPECT_TOOL_SLUG]);
@@ -315,6 +318,44 @@ describe('principal-bound data surface tools', () => {
       message: 'Data surface query failed.',
     });
     expect(failures).toHaveLength(2);
+    expect(failureEntries.map((entry) => entry.surfaceId)).toEqual([
+      undefined,
+      'records',
+    ]);
+    expect(Object.hasOwn(failureEntries[0], 'surfaceId')).toBe(false);
+  });
+
+  it('reports a query audit failure only once', async () => {
+    const failures: unknown[] = [];
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      audit: async () => {
+        throw new Error('tenant-b audit SQL hidden identifier');
+      },
+      onFailure: async (entry) => {
+        failures.push(entry.error);
+        expect(entry.surfaceId).toBe('records');
+      },
+      execute: async () => [{ id: 'r1' }],
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'query-audit-failure',
+            mode: 'rows',
+            projection: ['id'],
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toBeInstanceOf(Error);
   });
 
   it('redacts sensitive and permissioned fields from discovery and inspection', async () => {
@@ -373,7 +414,7 @@ describe('principal-bound data surface tools', () => {
       surfaces: [{ id: 'records', collection: 'records', schema }],
       execute: async (_surface, request, context) => {
         seen.push(context.principal);
-        return [{ id: 'r1', name: 'one' }];
+        return { rows: [{ id: 'r1', name: 'one' }], hasMore: false };
       },
     });
     const run = fakeRun(
@@ -403,6 +444,35 @@ describe('principal-bound data surface tools', () => {
       rows: [{ id: 'r1', name: 'one' }],
       truncated: false,
     });
+  });
+
+  it('rejects ambiguous exact-limit array pages without continuation metadata', async () => {
+    for (const page of [
+      { kind: 'offset' as const, offset: 0, limit: 1 },
+      { kind: 'cursor' as const, limit: 1 },
+    ]) {
+      const tools = toolSet({
+        surfaces: [{ id: 'records', collection: 'records', schema }],
+        execute: async () => [{ id: 'r1', name: 'one' }],
+      });
+      const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+      await expect(
+        tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+          run,
+          args: {
+            surfaceId: 'records',
+            request: {
+              version: 1,
+              requestId: `ambiguous-${page.kind}`,
+              mode: 'rows',
+              projection: ['id', 'name'],
+              page,
+            },
+          },
+          db: undefined,
+        }),
+      ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+    }
   });
 
   it('rejects an executor result that exceeds the requested page limit', async () => {
@@ -606,6 +676,7 @@ describe('principal-bound data surface tools', () => {
                 { id: 'd', rank: 8 },
                 { id: 'c', rank: 4 },
               ],
+              hasMore: false,
             };
       },
     });
@@ -642,6 +713,7 @@ describe('principal-bound data surface tools', () => {
           { id: 'a', rank: 1 },
           { id: 'b', rank: 2 },
         ],
+        hasMore: false,
       }),
     });
     const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
@@ -682,6 +754,7 @@ describe('principal-bound data surface tools', () => {
                 { id: 'd', rank: 8 },
                 { id: 'c', rank: 4 },
               ],
+              hasMore: false,
             };
       },
     });
@@ -717,6 +790,7 @@ describe('principal-bound data surface tools', () => {
           { id: 'r2', rank: 2 },
           { id: 'r10', rank: 10 },
         ],
+        hasMore: false,
       }),
     });
     const run = fakeRun([DATA_QUERY_TOOL_SLUG]);

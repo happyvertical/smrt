@@ -144,7 +144,7 @@ export interface DataSurfaceToolsOptions {
 
 export interface DataSurfaceFailureEntry {
   action: 'discover' | 'inspect' | 'query';
-  surfaceId: string;
+  surfaceId?: string;
   requestId?: string;
   userId: string;
   tenantId: string | null;
@@ -195,6 +195,11 @@ export class DataSurfaceQueryError extends Error {
     this.name = 'DataSurfaceQueryError';
   }
 }
+
+// Audit failures are reported at the point where the audit sink rejects. Keep
+// the wrapped public error marked so the query boundary does not report it a
+// second time when it unwinds through the outer executor catch.
+const reportedFailureErrors = new WeakSet<object>();
 
 /** Stable public failure for requests that name hidden schema capabilities. */
 export class DataSurfaceRequestError extends Error {
@@ -479,6 +484,29 @@ function shorthandResultCandidate(
   rows: readonly unknown[],
 ): Record<string, unknown> {
   const rawPage = isRecord(rawRecord?.page) ? rawRecord.page : undefined;
+  const explicitHasMore =
+    typeof rawPage?.hasMore === 'boolean'
+      ? rawPage.hasMore
+      : typeof rawRecord?.hasMore === 'boolean'
+        ? rawRecord.hasMore
+        : undefined;
+  const nextCursor =
+    typeof rawPage?.nextCursor === 'string'
+      ? rawPage.nextCursor
+      : typeof rawRecord?.nextCursor === 'string'
+        ? rawRecord.nextCursor
+        : undefined;
+  if (
+    request.page &&
+    rows.length === request.page.limit &&
+    explicitHasMore === undefined &&
+    !nextCursor
+  ) {
+    // An exact-limit shorthand page may have more rows. Require the adapter
+    // to provide continuation metadata instead of falsely declaring a final
+    // page and silently truncating a result set.
+    throw new DataSurfaceQueryError();
+  }
   return {
     version: 1,
     requestId: request.requestId,
@@ -493,32 +521,13 @@ function shorthandResultCandidate(
                   kind: 'offset',
                   offset: request.page.offset,
                   limit: request.page.limit,
-                  hasMore:
-                    typeof rawPage?.hasMore === 'boolean'
-                      ? rawPage.hasMore
-                      : typeof rawRecord?.hasMore === 'boolean'
-                        ? rawRecord.hasMore
-                        : Boolean(rawRecord?.nextCursor),
+                  hasMore: explicitHasMore ?? Boolean(nextCursor),
                 }
               : {
                   kind: 'cursor',
                   limit: request.page.limit,
-                  hasMore:
-                    typeof rawPage?.hasMore === 'boolean'
-                      ? rawPage.hasMore
-                      : Boolean(rawRecord?.nextCursor),
-                  ...((
-                    typeof rawPage?.nextCursor === 'string'
-                      ? rawPage.nextCursor
-                      : rawRecord?.nextCursor
-                  )
-                    ? {
-                        nextCursor:
-                          typeof rawPage?.nextCursor === 'string'
-                            ? rawPage.nextCursor
-                            : rawRecord?.nextCursor,
-                      }
-                    : {}),
+                  hasMore: explicitHasMore ?? Boolean(nextCursor),
+                  ...(nextCursor ? { nextCursor } : {}),
                 },
         }
       : {}),
@@ -739,7 +748,7 @@ async function reportFailure(
   options: DataSurfaceToolsOptions,
   run: PrincipalRun,
   action: DataSurfaceFailureEntry['action'],
-  surfaceId: string,
+  surfaceId: string | undefined,
   requestId: string | undefined,
   error: unknown,
 ): Promise<void> {
@@ -747,7 +756,7 @@ async function reportFailure(
     const principal = principalFromRun(run);
     await options.onFailure?.({
       action,
-      surfaceId,
+      ...(surfaceId !== undefined ? { surfaceId } : {}),
       requestId,
       ...principal,
       error,
@@ -822,11 +831,13 @@ export function createDataSurfaceTools(
         options,
         run,
         entry.action,
-        entry.surfaceId ?? '',
+        entry.surfaceId,
         entry.requestId,
         error,
       );
-      throw new DataSurfaceQueryError();
+      const publicError = new DataSurfaceQueryError();
+      reportedFailureErrors.add(publicError);
+      throw publicError;
     }
   };
   const catalog = async (
@@ -836,7 +847,7 @@ export function createDataSurfaceTools(
     try {
       return await availableSurfaces(options, run);
     } catch (error) {
-      await reportFailure(options, run, action, '', undefined, error);
+      await reportFailure(options, run, action, undefined, undefined, error);
       throw new DataSurfaceQueryError();
     }
   };
@@ -1008,14 +1019,21 @@ export function createDataSurfaceTools(
         );
         return result;
       } catch (error) {
-        await reportFailure(
-          options,
-          run,
-          'query',
-          entry.surface.id,
-          request.requestId,
-          error,
-        );
+        const alreadyReported =
+          (typeof error === 'object' && error !== null) ||
+          typeof error === 'function'
+            ? reportedFailureErrors.has(error)
+            : false;
+        if (!alreadyReported) {
+          await reportFailure(
+            options,
+            run,
+            'query',
+            entry.surface.id,
+            request.requestId,
+            error,
+          );
+        }
         if (
           error instanceof DataSurfaceDeadlineError ||
           error instanceof DataSurfaceResultOrderError ||
