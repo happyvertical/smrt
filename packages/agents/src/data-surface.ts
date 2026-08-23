@@ -229,7 +229,7 @@ function normalizeSurfaceRequest(
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
+    ? Object.fromEntries(Object.entries(value))
     : {};
 }
 
@@ -632,9 +632,9 @@ export function createDataSurfaceTools(
         );
         const rawRecord = record(raw);
         const rows = Array.isArray(raw)
-          ? raw
+          ? raw.map((row) => record(row))
           : Array.isArray(rawRecord.rows)
-            ? (rawRecord.rows as DataQueryRow[])
+            ? rawRecord.rows.map((row) => record(row))
             : [];
         if (request.mode === 'rows') {
           requireSortValues(rows, internal.request);
