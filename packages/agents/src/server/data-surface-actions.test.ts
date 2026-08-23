@@ -2,6 +2,7 @@ import type {
   DataSurfaceActionDescriptor,
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
+  DataSurfaceSelectionReference,
 } from '@happyvertical/smrt-ui';
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import { describe, expect, it, vi } from 'vitest';
@@ -74,8 +75,11 @@ function harness(options: {
   enqueue?: (job: DataSurfaceBackgroundActionJob) => Promise<{ jobId: string }>;
   state?: DataSurfaceActionStateStore;
   runAsPrincipal?: typeof executeAsPrincipal;
+  confirmation?: DataSurfaceServerActionDefinition['confirmation'];
+  surfaceIdentity?: DataSurfaceIdentity;
 }) {
   const calls: ExecuteAsPrincipalOptions[] = [];
+  const resolveSelectionCalls: DataSurfaceSelectionReference[] = [];
   const allowedTools = ['orders.archive'];
   const assertOperation = vi.fn();
   const run: PrincipalRun = {
@@ -96,7 +100,10 @@ function harness(options: {
     return fn(run);
   }) as typeof import('../execute-as-principal.js').executeAsPrincipal;
   const definition: DataSurfaceServerActionDefinition = {
-    descriptor: actionDescriptor,
+    descriptor: {
+      ...actionDescriptor,
+      requiresConfirmation: (options.confirmation ?? 'required') === 'required',
+    },
     inputSchema: { type: 'object', required: ['reason'] },
     validatePayload: (payload) =>
       payload === undefined ||
@@ -106,7 +113,7 @@ function harness(options: {
         typeof payload.reason === 'string')
         ? { valid: true }
         : { valid: false, reason: 'invalid_payload' },
-    confirmation: 'required',
+    confirmation: options.confirmation ?? 'required',
     execution: options.execution ?? 'foreground',
     tool: 'orders.archive',
     operation: {
@@ -128,19 +135,26 @@ function harness(options: {
     createToken: () => 'opaque-preview-token',
     runAsPrincipal: options.runAsPrincipal ?? runAsPrincipal,
     resolveSurface: async () => ({
-      descriptor,
+      descriptor: {
+        ...descriptor,
+        identity: options.surfaceIdentity ?? descriptor.identity,
+        actions: [definition.descriptor],
+      },
       revision: options.revision?.() ?? 7,
       actions: { archive: definition },
     }),
-    resolveSelection: async (_invocation, selection) => ({
-      revision: options.revision?.() ?? 7,
-      queryFingerprint: options.queryFingerprint?.() ?? 'query-v1',
-      rowIds:
-        options.rowIds?.() ??
-        (selection.scope === 'explicit-ids'
-          ? selection.rowIds
-          : ['one', 'two']),
-    }),
+    resolveSelection: async (_invocation, selection) => {
+      resolveSelectionCalls.push(selection);
+      return {
+        revision: options.revision?.() ?? 7,
+        queryFingerprint: options.queryFingerprint?.() ?? 'query-v1',
+        rowIds:
+          options.rowIds?.() ??
+          (selection.scope === 'explicit-ids'
+            ? selection.rowIds
+            : ['one', 'two']),
+      };
+    },
     ...(options.enqueue
       ? { backgroundQueue: { enqueue: options.enqueue } }
       : {}),
@@ -157,7 +171,7 @@ function harness(options: {
       audit: vi.fn(),
     },
   };
-  return { adapter, assertOperation, calls, context };
+  return { adapter, assertOperation, calls, context, resolveSelectionCalls };
 }
 
 async function previewToken(
@@ -298,11 +312,27 @@ describe('data-surface action adapter', () => {
     ).resolves.toMatchObject({ ok: false, reason: 'invalid_payload' });
   });
 
+  it('applies actions with confirmation:none without a preview token', async () => {
+    const applyRow = vi.fn();
+    const setup = harness({ confirmation: 'none', apply: applyRow });
+
+    const applied = await setup.adapter.apply(request('apply'), setup.context);
+
+    expect(applied).toMatchObject({
+      ok: true,
+      details: { accepted: 2, skipped: 0, failed: 0 },
+    });
+    expect(applyRow).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects forged and expired confirmation tokens', async () => {
     let now = 10;
     const setup = harness({ now: () => now });
     await expect(
-      setup.adapter.apply(request('apply'), setup.context),
+      setup.adapter.apply(
+        request('apply', { idempotencyKey: 'missing-confirmation' }),
+        setup.context,
+      ),
     ).resolves.toMatchObject({
       ok: false,
       reason: 'confirmation_required',
@@ -328,6 +358,96 @@ describe('data-surface action adapter', () => {
       ok: false,
       reason: 'invalid_or_expired_confirmation',
     });
+  });
+
+  it('replays a completed idempotent apply after its confirmation token expires', async () => {
+    let now = 10;
+    const applyRow = vi.fn();
+    const setup = harness({ now: () => now, apply: applyRow });
+    const token = await previewToken(setup);
+    const applyRequest = request('apply', { confirmationToken: token });
+
+    const first = await setup.adapter.apply(applyRequest, setup.context);
+    now += 5 * 60 * 1_000;
+    const retry = await setup.adapter.apply(applyRequest, setup.context);
+
+    expect(first).toMatchObject({ ok: true, details: { accepted: 2 } });
+    expect(retry).toEqual(first);
+    expect(applyRow).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats reordered and duplicated explicit ids as equivalent for a confirmation-bound apply', async () => {
+    const applyRow = vi.fn();
+    const setup = harness({
+      apply: applyRow,
+    });
+    const previewSelection = {
+      scope: 'explicit-ids' as const,
+      rowIds: ['two', 'one', 'one'],
+    };
+    const preview = await setup.adapter.preview(
+      request('preview', { selection: previewSelection }),
+      setup.context,
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.confirmationToken) throw new Error('preview token missing');
+
+    const applied = await setup.adapter.apply(
+      request('apply', {
+        confirmationToken: preview.confirmationToken,
+        selection: { scope: 'explicit-ids', rowIds: ['one', 'two'] },
+      }),
+      setup.context,
+    );
+
+    expect(applied).toMatchObject({
+      ok: true,
+      details: { accepted: 2, skipped: 0, failed: 0 },
+    });
+    expect(applyRow).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not bind confirmation identity to a subject display label', async () => {
+    const previewIdentity: DataSurfaceIdentity = {
+      ...identity,
+      subject: { type: 'tenant', id: 'tenant-a', label: 'Orders A' },
+    };
+    const applyIdentity: DataSurfaceIdentity = {
+      ...identity,
+      subject: { type: 'tenant', id: 'tenant-a', label: 'Orders B' },
+    };
+    const setup = harness({ surfaceIdentity: previewIdentity });
+    const preview = await setup.adapter.preview(
+      request('preview', { identity: previewIdentity }),
+      setup.context,
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.confirmationToken) throw new Error('preview token missing');
+
+    const applied = await setup.adapter.apply(
+      request('apply', {
+        identity: applyIdentity,
+        confirmationToken: preview.confirmationToken,
+      }),
+      setup.context,
+    );
+
+    expect(applied).toMatchObject({ ok: true, details: { accepted: 2 } });
+  });
+
+  it('caps explicit ids before resolving the authoritative selection', async () => {
+    const setup = harness({});
+    const rowIds = Array.from({ length: 1_001 }, (_, index) => `row-${index}`);
+
+    const preview = await setup.adapter.preview(
+      request('preview', {
+        selection: { scope: 'explicit-ids', rowIds },
+      }),
+      setup.context,
+    );
+
+    expect(preview).toMatchObject({ ok: false, reason: 'invalid_request' });
+    expect(setup.resolveSelectionCalls).toHaveLength(0);
   });
 
   it('rechecks authorization, revision, query fingerprint, and resolved rows at apply', async () => {
@@ -438,6 +558,40 @@ describe('data-surface action adapter', () => {
       },
     });
     expect(JSON.stringify(applied)).not.toContain('sensitive internal failure');
+  });
+
+  it('persists a partial result when eligibility throws after an earlier mutation', async () => {
+    let applying = false;
+    const applyRow = vi.fn();
+    const setup = harness({
+      eligible: (rowId) => {
+        if (applying && rowId === 'two')
+          throw new Error('internal eligibility');
+        return { eligible: true };
+      },
+      apply: applyRow,
+    });
+    const token = await previewToken(setup);
+    applying = true;
+    const applyRequest = request('apply', { confirmationToken: token });
+
+    const first = await setup.adapter.apply(applyRequest, setup.context);
+    const retry = await setup.adapter.apply(applyRequest, setup.context);
+
+    expect(first).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 1,
+        skipped: 0,
+        failed: 1,
+        outcomes: [
+          { rowId: 'one', status: 'accepted' },
+          { rowId: 'two', status: 'failed' },
+        ],
+      },
+    });
+    expect(retry).toEqual(first);
+    expect(applyRow).toHaveBeenCalledTimes(1);
   });
 
   it('replays identical idempotent applies and rejects token replay under a new key', async () => {

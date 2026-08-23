@@ -359,6 +359,7 @@ function validSelection(
     return validIdentifier(candidate.queryFingerprint);
   if (candidate.scope !== 'explicit-ids' || !Array.isArray(candidate.rowIds))
     return false;
+  if (candidate.rowIds.length > MAX_JSON_ITEMS) return false;
   return candidate.rowIds.every(
     (rowId) =>
       (typeof rowId === 'string' && rowId.length > 0) ||
@@ -370,7 +371,7 @@ function stable(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
   return `{${Object.entries(value as Record<string, unknown>)
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`)
     .join(',')}}`;
 }
@@ -380,7 +381,61 @@ function fingerprint(value: unknown): string {
 }
 
 function identityKey(identity: DataSurfaceIdentity): string {
-  return stable(identity);
+  return stable(canonicalIdentity(identity));
+}
+
+function canonicalIdentity(identity: DataSurfaceIdentity): DataSurfaceIdentity {
+  return {
+    kind: identity.kind,
+    surfaceId: identity.surfaceId,
+    ...(identity.subject
+      ? {
+          subject: {
+            type: identity.subject.type,
+            id: identity.subject.id,
+          },
+        }
+      : {}),
+  };
+}
+
+function rowIdKey(rowId: DataSurfaceRowId): string {
+  return `${typeof rowId}:${String(rowId)}`;
+}
+
+function compareRowIds(
+  left: DataSurfaceRowId,
+  right: DataSurfaceRowId,
+): number {
+  if (typeof left !== typeof right) return typeof left === 'number' ? -1 : 1;
+  if (typeof left === 'number' && typeof right === 'number')
+    return left - right;
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function canonicalRowIds(
+  rowIds: readonly DataSurfaceRowId[],
+): DataSurfaceRowId[] {
+  const ids = new Map<string, DataSurfaceRowId>();
+  for (const rowId of rowIds) ids.set(rowIdKey(rowId), rowId);
+  return [...ids.values()].sort(compareRowIds);
+}
+
+function canonicalSelection(
+  selection: DataSurfaceSelectionReference,
+): DataSurfaceSelectionReference {
+  if (selection.scope !== 'explicit-ids') return selection;
+  return { scope: selection.scope, rowIds: canonicalRowIds(selection.rowIds) };
+}
+
+function requestFingerprint(request: DataSurfaceServerActionRequest): string {
+  return fingerprint({
+    identity: canonicalIdentity(request.identity),
+    actionId: request.actionId,
+    selection: canonicalSelection(request.selection),
+    payload: request.payload,
+    expectedRevision: request.expectedRevision,
+  });
 }
 
 function actionFingerprint(action: DataSurfaceServerActionDefinition): string {
@@ -462,9 +517,10 @@ function validateRequest(
   if (
     phase === 'apply' &&
     (!validIdentifier(request.idempotencyKey) ||
-      !validIdentifier(request.confirmationToken))
+      (request.confirmationToken !== undefined &&
+        !validIdentifier(request.confirmationToken)))
   )
-    return 'confirmation_required';
+    return 'invalid_request';
   return undefined;
 }
 
@@ -537,7 +593,10 @@ export function createDataSurfaceActionAdapter(
       descriptor: surface.descriptor,
       action,
     };
-    const selection = await options.resolveSelection(base, request.selection);
+    const selection = await options.resolveSelection(
+      base,
+      canonicalSelection(request.selection),
+    );
     const invocation = { ...base, selection };
     if (!(await action.authorize(invocation))) {
       return result(request, false, 'denied');
@@ -584,14 +643,10 @@ export function createDataSurfaceActionAdapter(
           });
         }
         const confirmationToken = createToken();
-        const selectionFingerprint = fingerprint(request.selection);
-        const requestFingerprint = fingerprint({
-          identity: request.identity,
-          actionId: request.actionId,
-          selection: request.selection,
-          payload: request.payload,
-          expectedRevision: request.expectedRevision,
-        });
+        const selectionFingerprint = fingerprint(
+          canonicalSelection(request.selection),
+        );
+        const requestFingerprintValue = requestFingerprint(request);
         const expiresAt = now() + tokenTtlMs;
         await state.putToken(confirmationToken, {
           expiresAt,
@@ -605,8 +660,10 @@ export function createDataSurfaceActionAdapter(
           revision: invocation.selection.revision,
           queryFingerprint: invocation.selection.queryFingerprint,
           selectionFingerprint,
-          resolvedRowsFingerprint: fingerprint(invocation.selection.rowIds),
-          requestFingerprint,
+          resolvedRowsFingerprint: fingerprint(
+            canonicalRowIds(invocation.selection.rowIds),
+          ),
+          requestFingerprint: requestFingerprintValue,
         });
         return result(
           request,
@@ -630,12 +687,16 @@ export function createDataSurfaceActionAdapter(
   ): Promise<DataSurfaceActionResult> {
     const outcomes: DataSurfaceActionRowOutcome[] = [];
     for (const rowId of invocation.selection.rowIds) {
-      const eligibility = await invocation.action.eligible(invocation, rowId);
-      if (!eligibility.eligible) {
-        outcomes.push({ rowId, status: 'skipped', reason: eligibility.reason });
-        continue;
-      }
       try {
+        const eligibility = await invocation.action.eligible(invocation, rowId);
+        if (!eligibility.eligible) {
+          outcomes.push({
+            rowId,
+            status: 'skipped',
+            ...(eligibility.reason ? { reason: eligibility.reason } : {}),
+          });
+          continue;
+        }
         await invocation.action.apply(invocation, rowId);
         outcomes.push({ rowId, status: 'accepted' });
       } catch {
@@ -652,21 +713,26 @@ export function createDataSurfaceActionAdapter(
   async function executeBackgroundOnce(
     request: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
-    token: DataSurfacePreviewTokenRecord,
+    token: DataSurfacePreviewTokenRecord | undefined,
   ): Promise<DataSurfaceActionResult> {
     const ownerToken = randomBytes(16).toString('base64url');
     const executionFingerprint = fingerprint({
       kind: 'background-execution',
-      request: token.requestFingerprint,
-      action: token.actionFingerprint,
+      request: token?.requestFingerprint ?? requestFingerprint(request),
+      action: token?.actionFingerprint ?? request.actionId,
     });
     const executionScope = fingerprint({
       kind: 'background-execution',
-      actorUserId: token.actorUserId,
-      tenantId: token.tenantId,
-      onBehalfOfUserId: token.onBehalfOfUserId,
-      actsAsProfileId: token.actsAsProfileId,
-      identity: request.identity,
+      actorUserId:
+        token?.actorUserId ?? context.principal.principal.runAsUserId,
+      tenantId: token?.tenantId ?? context.principal.principal.tenantId,
+      onBehalfOfUserId:
+        token?.onBehalfOfUserId ?? context.principal.onBehalfOfUserId ?? null,
+      actsAsProfileId:
+        token?.actsAsProfileId ??
+        context.principal.principal.actsAsProfileId ??
+        null,
+      identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
       idempotencyKey: request.idempotencyKey,
     });
@@ -716,7 +782,7 @@ export function createDataSurfaceActionAdapter(
   async function authorizedApply(
     request: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
-    token: DataSurfacePreviewTokenRecord,
+    token: DataSurfacePreviewTokenRecord | undefined,
     allowBackground: boolean,
   ): Promise<DataSurfaceActionResult> {
     const idempotencyKey = request.idempotencyKey;
@@ -736,22 +802,23 @@ export function createDataSurfaceActionAdapter(
       async (run) => {
         const invocation = await resolveInvocation(request, run);
         if ('ok' in invocation) return invocation;
-        if (
-          invocation.selection.revision !== token.revision ||
-          invocation.selection.revision !== request.expectedRevision ||
-          invocation.selection.queryFingerprint !== token.queryFingerprint ||
-          fingerprint(request.selection) !== token.selectionFingerprint ||
-          actionFingerprint(invocation.action) !== token.actionFingerprint ||
-          fingerprint(invocation.selection.rowIds) !==
-            token.resolvedRowsFingerprint
-        ) {
-          return result(request, false, 'stale_preview');
-        }
-        if (
-          invocation.action.confirmation === 'required' &&
-          !request.confirmationToken
-        ) {
+        if (token) {
+          if (
+            invocation.selection.revision !== token.revision ||
+            invocation.selection.revision !== request.expectedRevision ||
+            invocation.selection.queryFingerprint !== token.queryFingerprint ||
+            fingerprint(canonicalSelection(request.selection)) !==
+              token.selectionFingerprint ||
+            actionFingerprint(invocation.action) !== token.actionFingerprint ||
+            fingerprint(canonicalRowIds(invocation.selection.rowIds)) !==
+              token.resolvedRowsFingerprint
+          ) {
+            return result(request, false, 'stale_preview');
+          }
+        } else if (invocation.action.confirmation === 'required') {
           return result(request, false, 'confirmation_required');
+        } else if (invocation.selection.revision !== request.expectedRevision) {
+          return result(request, false, 'stale_revision');
         }
         if (invocation.action.execution === 'background' && allowBackground) {
           if (!options.backgroundQueue) {
@@ -786,50 +853,48 @@ export function createDataSurfaceActionAdapter(
     if (invalid) return result(request, false, invalid);
     const confirmationToken = request.confirmationToken;
     const idempotencyKey = request.idempotencyKey;
-    if (!confirmationToken || !idempotencyKey)
-      return result(request, false, 'invalid_request');
-    const token = await state.getToken(confirmationToken);
-    if (!token || token.expiresAt <= now()) {
-      return result(request, false, 'invalid_or_expired_confirmation');
-    }
+    if (!idempotencyKey) return result(request, false, 'invalid_request');
     const actorUserId = context.principal.principal.runAsUserId;
     const tenantId = context.principal.principal.tenantId;
     const onBehalfOfUserId = context.principal.onBehalfOfUserId ?? null;
     const actsAsProfileId = context.principal.principal.actsAsProfileId ?? null;
-    const requestFingerprint = fingerprint({
-      identity: request.identity,
-      actionId: request.actionId,
-      selection: request.selection,
-      payload: request.payload,
-      expectedRevision: request.expectedRevision,
-    });
-    if (
-      token.actorUserId !== actorUserId ||
-      token.tenantId !== tenantId ||
-      token.onBehalfOfUserId !== onBehalfOfUserId ||
-      token.actsAsProfileId !== actsAsProfileId ||
-      token.identityKey !== identityKey(request.identity) ||
-      token.actionId !== request.actionId
-    ) {
-      return result(request, false, 'confirmation_mismatch');
-    }
+    const requestFingerprintValue = requestFingerprint(request);
     const idempotencyScope = fingerprint({
       actorUserId,
       tenantId,
       onBehalfOfUserId,
       actsAsProfileId,
-      identity: request.identity,
+      identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
-      idempotencyKey: request.idempotencyKey,
+      idempotencyKey,
     });
     const prior = await state.getIdempotency(idempotencyScope);
-    if (prior && prior.requestFingerprint !== requestFingerprint)
+    if (prior && prior.requestFingerprint !== requestFingerprintValue)
       return result(request, false, 'idempotency_conflict');
-    if (token.requestFingerprint !== requestFingerprint) {
-      return result(request, false, 'confirmation_mismatch');
-    }
-    if (!(await state.markTokenConsumed(confirmationToken, idempotencyKey))) {
-      return result(request, false, 'confirmation_replayed');
+    // A completed durable result is safe to replay from its actor/tenant-bound
+    // idempotency scope even when the one-time confirmation has expired.
+    if (prior?.status === 'completed') return prior.result;
+
+    let token: DataSurfacePreviewTokenRecord | undefined;
+    if (confirmationToken) {
+      token = await state.getToken(confirmationToken);
+      if (!token || token.expiresAt <= now()) {
+        return result(request, false, 'invalid_or_expired_confirmation');
+      }
+      if (
+        token.actorUserId !== actorUserId ||
+        token.tenantId !== tenantId ||
+        token.onBehalfOfUserId !== onBehalfOfUserId ||
+        token.actsAsProfileId !== actsAsProfileId ||
+        token.identityKey !== identityKey(request.identity) ||
+        token.actionId !== request.actionId ||
+        token.requestFingerprint !== requestFingerprintValue
+      ) {
+        return result(request, false, 'confirmation_mismatch');
+      }
+      if (!(await state.markTokenConsumed(confirmationToken, idempotencyKey))) {
+        return result(request, false, 'confirmation_replayed');
+      }
     }
     // Ownership is an internal compare-and-set nonce. Keep it independent of
     // the injectable preview-token factory, which tests or callers may make
@@ -841,11 +906,11 @@ export function createDataSurfaceActionAdapter(
     );
     for (let poll = 0; poll <= maxPolls; poll += 1) {
       const winner = await state.reserveIdempotency(idempotencyScope, {
-        requestFingerprint,
+        requestFingerprint: requestFingerprintValue,
         ownerToken,
         reservedAt: now(),
       });
-      if (winner.requestFingerprint !== requestFingerprint)
+      if (winner.requestFingerprint !== requestFingerprintValue)
         return result(request, false, 'idempotency_conflict');
       if (winner.status === 'completed') return winner.result;
       if (winner.ownerToken === ownerToken) {

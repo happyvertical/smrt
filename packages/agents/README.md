@@ -149,8 +149,10 @@ execution.
 
 Preview issues a short-lived opaque token bound to the principal, tenant,
 surface/action, selection, query fingerprint, and revision. Apply verifies that
-binding and repeats its principal-bound checks before returning accepted,
-skipped, and failed row outcomes. Callers must supply a durable shared
+binding for confirmation-required actions and repeats its principal-bound checks
+before returning accepted, skipped, and failed row outcomes. Actions declared
+with `confirmation: 'none'` may apply directly with an idempotency key; every
+other apply must include its current preview token. Callers must supply a durable shared
 `DataSurfaceActionStateStore` with atomic token and idempotency operations.
 `InMemoryDataSurfaceActionStateStore` is for single-process test harnesses only.
 Background queues must invoke the supplied job `run()` callback so checks are
