@@ -430,6 +430,35 @@ describe('report adapter', () => {
     expect(result.freshness).toEqual({ state: 'unknown' });
   });
 
+  it('rejects bigint values that cannot be represented safely in JSON', async () => {
+    const collection = {
+      async list() {
+        return [
+          {
+            id: 'row-bigint',
+            revenue: 9_007_199_254_740_993n,
+          },
+        ];
+      },
+      async count() {
+        return 1;
+      },
+    };
+
+    await expect(
+      queryReportMaterializedRows(
+        AdapterReport,
+        {
+          version: 1,
+          requestId: 'request-bigint-precision',
+          mode: 'rows',
+          projection: ['revenue'],
+        },
+        { collection },
+      ),
+    ).rejects.toThrow(/safely representable/);
+  });
+
   it('honors the bounded identity sort declared in its canonical schema', async () => {
     let listOptions: Record<string, unknown> | undefined;
     const collection = {

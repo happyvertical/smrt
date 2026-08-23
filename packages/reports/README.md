@@ -115,14 +115,19 @@ import {
 const descriptor = await buildReportAdapterDescriptor(MonthlyRevenue, {
   tenantScope: 'current',
 });
-const result = await queryReportMaterializedRows(MonthlyRevenue, {
-  version: 1,
-  requestId: 'monthly-revenue-first-page',
-  mode: 'rows',
-  projection: ['id', 'customer_id', 'revenue'],
-  page: { kind: 'offset', offset: 0, limit: 25 },
-  sort: [{ field: 'id', direction: 'asc' }],
-});
+const reports = await MonthlyRevenueCollection.create({ db: 'app.db' });
+const result = await queryReportMaterializedRows(
+  MonthlyRevenue,
+  {
+    version: 1,
+    requestId: 'monthly-revenue-first-page',
+    mode: 'rows',
+    projection: ['id', 'customer_id', 'revenue'],
+    page: { kind: 'offset', offset: 0, limit: 25 },
+    sort: [{ field: 'id', direction: 'asc' }],
+  },
+  { collection: reports },
+);
 const rowKey = reportMaterializedRowKey(result.rows[0]);
 ```
 

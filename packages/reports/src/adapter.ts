@@ -429,7 +429,15 @@ function publicFieldMap(
 
 function jsonSafeValue(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'bigint') {
+    const numeric = Number(value);
+    if (!Number.isSafeInteger(numeric)) {
+      throw new RangeError(
+        'Materialized bigint values must be safely representable as numbers',
+      );
+    }
+    return numeric;
+  }
   if (Array.isArray(value)) return value.map(jsonSafeValue);
   if (value && typeof value === 'object') {
     return Object.fromEntries(
