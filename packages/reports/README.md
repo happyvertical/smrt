@@ -221,6 +221,31 @@ report-refresh job is queued. Only a registered `SmrtReportCollection` can
 synchronously refresh a stale read, and only when its TTL policy is positive and
 not manual.
 
+### Saved views and snapshot exports
+
+`normalizeReportSavedView()` and `restoreReportSavedView()` provide the
+serializable view boundary. A storage host owns the saved view's tenant and
+owner; on every restore it must pass the stored payload through the current
+descriptor. That reapplies field, projection, sorting, grouping, and definition
+policy, so a stale view cannot reveal a field that is no longer allowed.
+
+Build an export from a completed materialized-row read with
+`createReportExportSnapshot()`, then call `createReportExportRequest()`. The
+snapshot fixes the canonical query fingerprint, normalized projection and sort,
+exact row count, `asOf`, `refreshedAt`, stale state, and definition fingerprint.
+Every request is bounded by rows, bytes, and deadline; exports over the
+foreground row limit become an authority-free background handoff. Use
+`previewReportExport()` and `applyReportExport()` with the same application
+action host for human and agent callers. The host authorizes and audits the
+fixed `reports.export` action; exports containing personal, sensitive, or secret
+columns require explicit confirmation.
+
+Workers must call `validateReportExportRequest()` after re-entering their bound
+principal, tenant, report definition, and field policy. Artifact metadata has no
+URL or download token; before serving it, call `validateReportExportArtifact()`
+to reject expiry, definition drift, and out-of-bounds progress, then apply the
+host's current authorization again.
+
 ## Development
 
 ```bash
