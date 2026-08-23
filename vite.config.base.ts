@@ -36,6 +36,11 @@ interface PackageConfigOptions {
    */
   dtsExclude?: string[];
   /**
+   * Public package specifiers that must remain intact in generated
+   * declarations instead of being rewritten through workspace source aliases.
+   */
+  dtsAliasesExclude?: (string | RegExp)[];
+  /**
    * When true, abort the build if `vite-plugin-dts` surfaces any
    * TypeScript error-level diagnostics while generating `.d.ts` files.
    *
@@ -497,6 +502,7 @@ export function createPackageConfig(
           // Prefer a package-specific build tsconfig when present so workspace
           // source resolution stays clean without requiring sibling dist output.
           tsconfigPath,
+          aliasesExclude: options.dtsAliasesExclude,
           // Fail the build on TS error-level diagnostics during dts
           // generation when opted in. Without this, `vite-plugin-dts`
           // prints errors to stderr but still emits and exits 0, which

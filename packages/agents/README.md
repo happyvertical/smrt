@@ -138,6 +138,26 @@ such as `MessagingSettingsService`.
 | `QueryFn` | Query function type |
 | `AgentWithInterestsOptions` | Agent options with interests |
 
+### Server Export (`@happyvertical/smrt-agents/server`)
+
+`createDataSurfaceActionAdapter()` provides server-only preview and confirmed
+apply orchestration for the `smrt-ui` data-surface action contract. Browser
+selections and action payloads are hints, never authority: each action declares
+its input validator, confirmation policy, principal tool/RBAC operation, fresh
+authorization and row-eligibility checks, and foreground or injected-background
+execution.
+
+Preview issues a short-lived opaque token bound to the principal, tenant,
+surface/action, selection, query fingerprint, and revision. Apply verifies that
+binding for confirmation-required actions and repeats its principal-bound checks
+before returning accepted, skipped, and failed row outcomes. Actions declared
+with `confirmation: 'none'` may apply directly with an idempotency key; every
+other apply must include its current preview token. Callers must supply a durable shared
+`DataSurfaceActionStateStore` with atomic token and idempotency operations.
+`InMemoryDataSurfaceActionStateStore` is for single-process test harnesses only.
+Background queues must invoke the supplied job `run()` callback so checks are
+repeated at execution time.
+
 ### UI Export (`@happyvertical/smrt-agents/ui`)
 
 | Export | Description |
