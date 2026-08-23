@@ -231,6 +231,50 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('retains an older result when its forced successor aborts', async () => {
+    const caller = new AbortController();
+    let resolveA!: (result: unknown) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received, options) => {
+        calls += 1;
+        if (calls === 1) {
+          return await new Promise((resolve) => {
+            resolveA = resolve;
+          });
+        }
+        return await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => reject(options.signal?.reason),
+            { once: true },
+          );
+        });
+      },
+    });
+    const first = query.execute(request, { mode: 'background' });
+    await vi.waitFor(() => expect(calls).toBe(1));
+    const second = query.execute(request, {
+      mode: 'background',
+      force: true,
+      signal: caller.signal,
+    });
+    await vi.waitFor(() => expect(calls).toBe(2));
+    caller.abort();
+    await expect(second).rejects.toMatchObject({ name: 'AbortError' });
+    resolveA(envelope(request, 'A'));
+    await first;
+
+    await query.execute(request);
+    expect(calls).toBe(2);
+    expect(query.state.rows[0]?.name).toBe('A');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('prefetches into the keyed cache without changing visible state, then refreshes coherently', async () => {
     let value = 'prefetched';
     const collection = createSmrtCollection(definition, {

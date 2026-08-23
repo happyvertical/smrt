@@ -116,6 +116,8 @@ export function createSmrtWebQuery<TData extends object>(
   const staleTimeMs = options.staleTimeMs ?? 30_000;
   const cache = new Map<string, CacheEntry>();
   const inFlight = new Map<string, Promise<SmrtWebDataQueryResult>>();
+  const latestSuccessfulFlight = new Map<string, number>();
+  let flightSequence = 0;
   const listeners = new Set<(state: SmrtWebQueryState<TData>) => void>();
   let request: SmrtWebDataQueryRequest | undefined;
   let visibleController: AbortController | undefined;
@@ -286,10 +288,13 @@ export function createSmrtWebQuery<TData extends object>(
       const running = inFlight.get(key);
       if (running) return running;
     }
+    const flight = ++flightSequence;
     const running = runTransport(candidate, runOptions).then((result) => {
-      // A forced successor can replace this flight before the predecessor
-      // settles. Only the current owner may publish to the keyed cache.
-      if (inFlight.get(key) === running) {
+      // A failed or aborted successor must not suppress an older valid result,
+      // but a successful successor must win over any later predecessor.
+      const latest = latestSuccessfulFlight.get(key);
+      if (latest === undefined || flight > latest) {
+        latestSuccessfulFlight.set(key, flight);
         cache.set(key, { result, updatedAt: Date.now() });
       }
       return result;
