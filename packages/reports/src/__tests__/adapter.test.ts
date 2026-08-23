@@ -389,6 +389,18 @@ describe('report adapter', () => {
     });
   });
 
+  it('does not treat prototype property names as configured value formats', async () => {
+    ObjectRegistry.registerFieldDecorator('AdapterReport', 'revenue', {
+      format: '__proto__',
+    });
+
+    const descriptor = await buildReportAdapterDescriptor(AdapterReport);
+
+    expect(
+      descriptor.dataTable.columns.find((column) => column.id === 'revenue'),
+    ).toMatchObject({ valueFormat: 'number' });
+  });
+
   it('allows consumer presentation overrides while keeping structural rows non-data', async () => {
     const descriptor = await buildReportAdapterDescriptor(AdapterReport, {
       dataTable: {
@@ -486,6 +498,14 @@ describe('report adapter', () => {
     await expect(
       buildReportAdapterDescriptor(AdapterReport, {
         dataTable: {
+          columns: { revenue: { role: '' as never } },
+        },
+      }),
+    ).rejects.toThrow(/role.*not supported/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
           columns: {
             revenue: {
               align: 'center' as never,
@@ -528,6 +548,51 @@ describe('report adapter', () => {
         },
       }),
     ).rejects.toThrow(/labelColumnId.*adapter column/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              labelColumnId: '' as never,
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/labelColumnId.*adapter column/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              values: null as never,
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/values must be an object/);
+
+    await expect(
+      buildReportAdapterDescriptor(AdapterReport, {
+        dataTable: {
+          structuralRows: [
+            {
+              id: 'total',
+              kind: 'summary',
+              label: 'Total',
+              values: { unknown_column: 1 },
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/values must use adapter column ids/);
   });
 
   it('does not describe a tenant-like field as a tenant boundary without registration', async () => {

@@ -485,7 +485,7 @@ function valueFormat(
   column: ReportColumnDescriptor,
 ): ReportDataTableValueFormat {
   const configured = column.format?.trim().toLowerCase();
-  if (configured && VALUE_FORMAT_ALIASES[configured]) {
+  if (configured && Object.hasOwn(VALUE_FORMAT_ALIASES, configured)) {
     return VALUE_FORMAT_ALIASES[configured];
   }
   if (column.kind === 'bucket') {
@@ -574,7 +574,7 @@ function dataTableColumn(
       `Report DataTable valueFormat for ${column.id} is not supported: ${String(format)}`,
     );
   }
-  if (override?.role && !COLUMN_ROLES.has(override.role)) {
+  if (override?.role !== undefined && !COLUMN_ROLES.has(override.role)) {
     throw new TypeError(
       `Report DataTable role for ${column.id} is not supported: ${String(override.role)}`,
     );
@@ -657,9 +657,31 @@ function structuralRows(
         `Report structural row kind is not supported: ${String(row.kind)}`,
       );
     }
-    if (row.labelColumnId && !columnIds.has(row.labelColumnId)) {
+    if (row.labelColumnId !== undefined) {
+      if (
+        typeof row.labelColumnId !== 'string' ||
+        row.labelColumnId.trim().length === 0 ||
+        !columnIds.has(row.labelColumnId)
+      ) {
+        throw new TypeError(
+          `Report structural row labelColumnId must name an adapter column: ${String(row.labelColumnId)}`,
+        );
+      }
+    }
+    if (
+      row.values !== undefined &&
+      (typeof row.values !== 'object' ||
+        row.values === null ||
+        Array.isArray(row.values))
+    ) {
+      throw new TypeError('Report structural row values must be an object');
+    }
+    if (
+      row.values &&
+      Object.keys(row.values).some((columnId) => !columnIds.has(columnId))
+    ) {
       throw new TypeError(
-        `Report structural row labelColumnId must name an adapter column: ${row.labelColumnId}`,
+        'Report structural row values must use adapter column ids',
       );
     }
     ids.add(row.id);
@@ -667,8 +689,10 @@ function structuralRows(
       id: row.id,
       kind: row.kind,
       label: row.label,
-      ...(row.values ? { values: { ...row.values } } : {}),
-      ...(row.labelColumnId ? { labelColumnId: row.labelColumnId } : {}),
+      ...(row.values !== undefined ? { values: { ...row.values } } : {}),
+      ...(row.labelColumnId !== undefined
+        ? { labelColumnId: row.labelColumnId }
+        : {}),
       selection: 'excluded' as const,
       actions: 'excluded' as const,
     };
