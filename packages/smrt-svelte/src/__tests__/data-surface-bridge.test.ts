@@ -190,6 +190,24 @@ describe('data-surface browser bridge', () => {
     await link.receive(
       request({ identity: { surfaceId: tooLong, kind: 'table' } }),
     );
+    await link.receive(
+      request({
+        identity: {
+          surfaceId: 'orders',
+          kind: 'table',
+          subject: { type: tooLong, id: 'docs' },
+        },
+      }),
+    );
+    await link.receive(
+      request({
+        identity: {
+          surfaceId: 'orders',
+          kind: 'table',
+          subject: { type: 'site', id: tooLong },
+        },
+      }),
+    );
     expect(execute).not.toHaveBeenCalled();
     expect(link.messages).toHaveLength(0);
   });

@@ -2,10 +2,10 @@ import type {
   DataSurfaceIdentity,
   DataSurfaceVisibleCommand,
 } from '@happyvertical/smrt-ui/data';
+import { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from '@happyvertical/smrt-ui/data-surface';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceCommandBridge,
-  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
   type DataSurfaceBridgeMessage,
   type DataSurfaceBridgePeer,
   type DataSurfaceCommandRequest,
@@ -252,6 +252,26 @@ describe('server data-surface bridge', () => {
         identity: { surfaceId: tooLong, kind: 'table' },
       }),
     ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    await expect(
+      bridge.send({
+        ...command,
+        identity: {
+          surfaceId: 'orders',
+          kind: 'table',
+          subject: { type: tooLong, id: 'docs' },
+        },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    await expect(
+      bridge.send({
+        ...command,
+        identity: {
+          surfaceId: 'orders',
+          kind: 'table',
+          subject: { type: 'site', id: tooLong },
+        },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
     expect(link.sent).toHaveLength(0);
     bridge.dispose();
   });
@@ -462,6 +482,52 @@ describe('server data-surface bridge', () => {
     link.receive(event);
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ command, result: { snapshot } });
+    link.receive({
+      ...event,
+      sequence: 2,
+      revision: 1,
+      result: {
+        ok: false,
+        commandId: command.commandId,
+        identity,
+        revision: 1,
+        reason: 'stale_revision',
+      },
+    });
+    expect(events).toHaveLength(2);
+    bridge.dispose();
+  });
+
+  it('accepts a bound stale-revision failure below the requested revision', async () => {
+    const link = transport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+      timeoutMs: 500,
+    });
+    const pending = bridge.send({
+      ...command,
+      commandId: 'stale-revision',
+      expectedRevision: 99,
+    });
+    await Promise.resolve();
+    const request = link.sent[0] as DataSurfaceCommandRequest;
+    link.receive(
+      ack(request, {
+        ok: false,
+        reason: 'stale_revision',
+        revision: 1,
+        snapshot: undefined,
+      }),
+    );
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      reason: 'stale_revision',
+      revision: 1,
+    });
     bridge.dispose();
   });
 

@@ -5,8 +5,9 @@
  * includes component modules and is not safe to load from a plain Node server.
  */
 
+import { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from '@happyvertical/smrt-ui/data-surface';
+
 const MAX_REQUEST_BYTES = 100_000;
-export const DATA_SURFACE_IDENTIFIER_MAX_LENGTH = 256;
 const MAX_QUERY_LIMIT = 1_000;
 const MAX_JSON_DEPTH = 16;
 const MAX_JSON_CONTAINER_ITEMS = 1_000;
@@ -378,7 +379,12 @@ function normalizeSelection(value: unknown): Record<string, unknown> {
           'DataSurface row ids must be finite strings or numbers',
         );
       }
-      const normalized = typeof rowId === 'number' && rowId === 0 ? 0 : rowId;
+      const normalized =
+        typeof rowId === 'string'
+          ? identifierValue(rowId, 'DataSurface row id')
+          : rowId === 0
+            ? 0
+            : rowId;
       rowIds.set(`${typeof normalized}:${String(normalized)}`, normalized);
     }
     return {
@@ -399,7 +405,7 @@ function normalizeSelection(value: unknown): Record<string, unknown> {
   );
   return {
     scope,
-    queryFingerprint: stringValue(
+    queryFingerprint: identifierValue(
       object.queryFingerprint,
       'DataSurface query fingerprint',
     ),

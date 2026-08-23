@@ -47,7 +47,8 @@ from the configured server peer and emits acknowledgements/events only on the
 bound route; wire `sessionId` and `source` fields must never be treated as
 proof of identity.
 
-The adapter canonicalizes requests and bounds identifiers and envelopes before
+The adapter canonicalizes requests and applies the shared identifier limit
+from `@happyvertical/smrt-ui/data-surface` along with bounded envelopes before
 calling the registry. The registry remains the authority for command
 authorization and execution. Command IDs are idempotent while their bounded
 replay entries are retained; concurrent same-signature requests coalesce, a

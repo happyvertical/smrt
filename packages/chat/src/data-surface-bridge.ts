@@ -8,14 +8,12 @@
  * server-bound session context, never authority supplied by the command.
  */
 
+import { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from '@happyvertical/smrt-ui/data-surface';
 import {
   assertDataSurfaceEnvelope,
-  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
   normalizeDataSurfaceSnapshot,
   normalizeDataSurfaceVisibleCommand,
 } from './data-surface-normalizer.js';
-
-export { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from './data-surface-normalizer.js';
 
 // Keep the wire contract self-contained in this package's declarations. These
 // serializable shapes intentionally mirror #2442. Runtime validation is
@@ -234,6 +232,10 @@ function isString(value: unknown): value is string {
   );
 }
 
+function isDisplayString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
 function isPeer(value: unknown): value is DataSurfaceBridgePeer {
   return isRecord(value) && isString(value.sessionId) && isString(value.source);
 }
@@ -293,7 +295,8 @@ function identityOf(value: unknown): DataSurfaceIdentity | undefined {
       !isRecord(value.subject) ||
       !isString(value.subject.type) ||
       !isString(value.subject.id) ||
-      (value.subject.label !== undefined && !isString(value.subject.label))
+      (value.subject.label !== undefined &&
+        !isDisplayString(value.subject.label))
     ) {
       return undefined;
     }
@@ -446,7 +449,7 @@ function eventOf(value: unknown): DataSurfaceBridgeEvent | undefined {
       value.event === 'command' &&
       (result?.revision === undefined ||
         value.revision !== result.revision ||
-        result.revision < (command?.expectedRevision ?? 0))
+        (result.ok && result.revision < (command?.expectedRevision ?? 0)))
     ) {
       return undefined;
     }
@@ -589,7 +592,7 @@ export function createDataSurfaceCommandBridge(
         value.reason !== undefined ||
         value.revision === undefined ||
         value.snapshot === undefined ||
-        value.revision < request.expectedRevision
+        (value.ok && value.revision < request.expectedRevision)
       ) {
         return undefined;
       }
@@ -603,7 +606,7 @@ export function createDataSurfaceCommandBridge(
       if (
         identitySignature(snapshot.descriptor.identity) !==
           identitySignature(request.identity) ||
-        snapshot.revision < request.expectedRevision ||
+        (value.ok && snapshot.revision < request.expectedRevision) ||
         (value.revision !== undefined && snapshot.revision !== value.revision)
       ) {
         return undefined;

@@ -17,11 +17,12 @@ import {
   type DataSurfaceVisibleCommand,
   normalizeDataSurfaceVisibleCommand,
 } from '@happyvertical/smrt-ui/data';
+import { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from '@happyvertical/smrt-ui/data-surface';
 
 export const DATA_SURFACE_BRIDGE_VERSION = 1 as const;
 export const DEFAULT_DATA_SURFACE_BRIDGE_TTL_MS = 30_000;
 export const DEFAULT_DATA_SURFACE_BRIDGE_REPLAY_ENTRIES = 100;
-export const DATA_SURFACE_IDENTIFIER_MAX_LENGTH = 256;
+export { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from '@happyvertical/smrt-ui/data-surface';
 
 export type DataSurfaceBridgeFailureReason =
   | 'not_found'
@@ -147,6 +148,10 @@ function isString(value: unknown): value is string {
   );
 }
 
+function isDisplayString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
 function isPeer(value: unknown): value is DataSurfaceBridgePeer {
   return isRecord(value) && isString(value.sessionId) && isString(value.source);
 }
@@ -172,7 +177,8 @@ function identityOf(value: unknown): DataSurfaceIdentity | undefined {
       !isRecord(value.subject) ||
       !isString(value.subject.type) ||
       !isString(value.subject.id) ||
-      (value.subject.label !== undefined && !isString(value.subject.label))
+      (value.subject.label !== undefined &&
+        !isDisplayString(value.subject.label))
     ) {
       return undefined;
     }

@@ -35,6 +35,11 @@
       "import": "./dist/components/data/index.js",
       "default": "./dist/components/data/index.js"
     },
+    "./data-surface": {
+      "types": "./dist/components/data/data-surface.d.ts",
+      "import": "./dist/components/data/data-surface.js",
+      "default": "./dist/components/data/data-surface.js"
+    },
     "./layout": {
       "types": "./dist/components/layout/index.d.ts",
       "svelte": "./dist/components/layout/index.js",

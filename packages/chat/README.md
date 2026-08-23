@@ -18,7 +18,8 @@ bound WebSocket session or origin-checked `postMessage` peer). Never copy
 `send` only to the authenticated peer.
 
 The bridge validates and bounds every command, acknowledgement, and event
-before it crosses the server boundary. `authorize` remains the application’s
+before it crosses the server boundary, using the shared identifier limit from
+`@happyvertical/smrt-ui/data-surface`. `authorize` remains the application’s
 responsibility and must fail closed. Commands are scoped to the configured
 session/source, expire by TTL, and are idempotent by command ID plus command
 signature; replay retention is bounded and capacity exhaustion returns an
