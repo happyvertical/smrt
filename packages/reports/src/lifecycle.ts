@@ -1,5 +1,5 @@
 import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
-import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { getTenantId, withSystemContext } from '@happyvertical/smrt-tenancy';
 import {
   type DatabaseInterface,
   tableExists,
@@ -21,6 +21,13 @@ import type {
 } from './types.js';
 
 type ReportCtor = new (...args: any[]) => SmrtObject;
+
+function registeredReport(reportCtor: ReportCtor) {
+  return (
+    ObjectRegistry.getClassByConstructor(reportCtor) ??
+    ObjectRegistry.getClass(reportCtor.name)
+  );
+}
 
 export type ReportLifecycleState =
   | 'current'
@@ -138,9 +145,7 @@ export interface ReportRefreshOutcome {
 }
 
 function canonicalClassName(reportCtor: ReportCtor): string {
-  const registered =
-    ObjectRegistry.getClassByConstructor(reportCtor) ??
-    ObjectRegistry.getClass(reportCtor.name);
+  const registered = registeredReport(reportCtor);
   return registered?.qualifiedName ?? registered?.name ?? reportCtor.name;
 }
 
@@ -172,6 +177,23 @@ function toIso(value: unknown): string | undefined {
   if (!value) return undefined;
   const date = value instanceof Date ? value : new Date(String(value));
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function latestIso(
+  first: string | undefined,
+  second: string | undefined,
+): string | undefined {
+  if (!first) return second;
+  if (!second) return first;
+  return new Date(first).getTime() >= new Date(second).getTime()
+    ? first
+    : second;
+}
+
+function lifecycleTenantId(reportCtor: ReportCtor): string | null {
+  return registeredReport(reportCtor)?.tenantScopedConfig
+    ? (getTenantId() ?? null)
+    : null;
 }
 
 function numberValue(value: unknown): number {
@@ -267,7 +289,7 @@ export async function getReportLifecycle(
 
   const definition = await buildReportDefinition(reportCtor);
   const reportClassName = canonicalClassName(reportCtor);
-  const tenantId = getTenantId() ?? null;
+  const tenantId = lifecycleTenantId(reportCtor);
   const scopeKey = scopeKeyForTenant(tenantId);
   const where = rowWhere(reportClassName, scopeKey, tenantId);
   const now = options.now ?? new Date();
@@ -301,9 +323,7 @@ export async function getReportLifecycle(
     reportClassName,
     'refreshedAt',
   );
-  const registered =
-    ObjectRegistry.getClassByConstructor(reportCtor) ??
-    ObjectRegistry.getClass(reportCtor.name);
+  const registered = registeredReport(reportCtor);
   const configuredTenantField = registered?.tenantScopedConfig?.field;
   const tenantColumn = configuredTenantField
     ? await reportColumnName(reportClassName, configuredTenantField)
@@ -322,7 +342,7 @@ export async function getReportLifecycle(
   );
   const refreshedAt = toIso(materialized.rows[0]?.refreshed_at);
   const completedAt = run?.status === 'success' ? run.completedAt : undefined;
-  const asOf = refreshedAt ?? completedAt;
+  const asOf = latestIso(refreshedAt, completedAt);
   const ttlMs = definition.refresh?.ttl;
   const isStale =
     !asOf ||
@@ -330,15 +350,17 @@ export async function getReportLifecycle(
   const lockExpiresAt = toIso(lockResult.rows[0]?.expires_at);
   const lockHeld = Boolean(lockExpiresAt);
   const state: ReportLifecycleState =
-    run?.status === 'running' || lockHeld
-      ? 'refreshing'
-      : run?.status === 'skipped'
-        ? 'lock-skipped'
+    run?.status === 'skipped'
+      ? 'lock-skipped'
+      : lockHeld
+        ? 'refreshing'
         : run?.status === 'failed'
           ? 'failed'
-          : isStale
+          : run?.status === 'running'
             ? 'stale'
-            : 'current';
+            : isStale
+              ? 'stale'
+              : 'current';
 
   return {
     version: 1,
@@ -424,18 +446,24 @@ export async function applyReportRefresh(
   );
   await options.host.authorize(action);
   await options.host.audit(action);
-  const job = await enqueueReportRefresh({
-    db: options.db,
-    reportClass: canonicalClassName(reportCtor),
-    mode,
-    trigger: 'manual',
-    tenantId: getTenantId() ?? null,
-    queue: options.queue,
-    priority: options.priority,
-    timeout: options.timeout,
-    maxAttempts: options.maxAttempts,
-    tenantJobCap: options.tenantJobCap,
-  });
+  const tenantId = lifecycleTenantId(reportCtor);
+  const enqueue = () =>
+    enqueueReportRefresh({
+      db: options.db,
+      reportClass: canonicalClassName(reportCtor),
+      mode,
+      trigger: 'manual',
+      tenantId,
+      queue: options.queue,
+      priority: options.priority,
+      timeout: options.timeout,
+      maxAttempts: options.maxAttempts,
+      tenantJobCap: options.tenantJobCap,
+    });
+  const job =
+    tenantId === null && getTenantId()
+      ? await withSystemContext(enqueue)
+      : await enqueue();
   return { phase: 'apply', job: jobHandle(job) };
 }
 

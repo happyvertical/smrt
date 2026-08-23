@@ -24,6 +24,7 @@ import {
 
 class LifecycleInvoice extends SmrtObject {}
 class LifecycleReport extends SmrtObject {}
+class GlobalLifecycleReport extends SmrtObject {}
 
 const NOW = new Date('2026-08-23T16:30:00.000Z');
 
@@ -73,6 +74,37 @@ function registerFixture() {
       },
       schema: {
         tableName: 'lifecycle_reports',
+        ddl: '',
+        columns: {},
+        indexes: [],
+        version: 'test',
+      },
+    },
+    '@test/reports',
+  );
+  ObjectRegistry.registerFromManifest(
+    'GlobalLifecycleReport',
+    {
+      className: 'GlobalLifecycleReport',
+      fields: {
+        revenue: {
+          type: 'decimal',
+          _meta: {
+            __report: { kind: 'aggregate', fn: 'sum', column: 'totalAmount' },
+          },
+        },
+        refreshedAt: { type: 'datetime' },
+      },
+      methods: {},
+      decoratorConfig: {
+        tableName: 'global_lifecycle_reports',
+        report: {
+          source: 'LifecycleInvoice',
+          refresh: { mode: 'incremental', ttl: 60_000 },
+        },
+      },
+      schema: {
+        tableName: 'global_lifecycle_reports',
         ddl: '',
         columns: {},
         indexes: [],
@@ -272,6 +304,14 @@ describe('report lifecycle', () => {
       expect(stale).toMatchObject({ state: 'stale', hasUsableRows: false });
 
       await insertRun(db, { id: 'skipped-run', status: 'skipped' });
+      await db.insert('_smrt_report_locks', {
+        id: 'lock-for-skipped-run',
+        tenant_id: 'tenant-a',
+        scope_key: 'tenant:tenant-a',
+        report_class: await lifecycleClassName(),
+        owner_id: 'worker',
+        expires_at: '2026-08-23T16:31:00.000Z',
+      });
       const skipped = await withTenant({ tenantId: 'tenant-a' }, () =>
         getReportLifecycle(LifecycleReport, { db, now: NOW }),
       );
@@ -285,6 +325,18 @@ describe('report lifecycle', () => {
         status: 'failed',
         started_at: '2026-08-23T16:29:30.000Z',
       });
+      const retryingFailed = await withTenant({ tenantId: 'tenant-a' }, () =>
+        getReportLifecycle(LifecycleReport, { db, now: NOW }),
+      );
+      expect(retryingFailed).toMatchObject({
+        state: 'refreshing',
+        run: { id: 'failed-run', status: 'failed' },
+        lock: { held: true },
+      });
+
+      await db.delete('_smrt_report_locks', {
+        id: 'lock-for-skipped-run',
+      });
       const failed = await withTenant({ tenantId: 'tenant-a' }, () =>
         getReportLifecycle(LifecycleReport, { db, now: NOW }),
       );
@@ -292,6 +344,63 @@ describe('report lifecycle', () => {
         state: 'failed',
         run: { id: 'failed-run', mayRetry: true },
         failure: { code: 'refresh_failed', retryable: true },
+      });
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('uses the newest successful lifecycle signal', async () => {
+    const db = await setupDb();
+    try {
+      await db.insert('lifecycle_reports', {
+        id: 'tenant-a-row',
+        tenant_id: 'tenant-a',
+        revenue: 12,
+        refreshed_at: '2026-08-23T16:00:00.000Z',
+      });
+      await insertRun(db, {
+        id: 'successful-noop-run',
+        completed_at: '2026-08-23T16:29:30.000Z',
+      });
+
+      const completedNoop = await withTenant({ tenantId: 'tenant-a' }, () =>
+        getReportLifecycle(LifecycleReport, { db, now: NOW }),
+      );
+      expect(completedNoop).toMatchObject({
+        state: 'current',
+        asOf: '2026-08-23T16:29:30.000Z',
+        refreshedAt: '2026-08-23T16:00:00.000Z',
+      });
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('does not retain abandoned running work as refreshing', async () => {
+    const db = await setupDb();
+    try {
+      await db.insert('lifecycle_reports', {
+        id: 'tenant-a-row',
+        tenant_id: 'tenant-a',
+        revenue: 12,
+        refreshed_at: '2026-08-23T16:29:30.000Z',
+      });
+      await insertRun(db, {
+        id: 'abandoned-running-run',
+        status: 'running',
+        started_at: '2026-08-23T16:10:00.000Z',
+        completed_at: null,
+      });
+
+      const abandoned = await withTenant({ tenantId: 'tenant-a' }, () =>
+        getReportLifecycle(LifecycleReport, { db, now: NOW }),
+      );
+      expect(abandoned).toMatchObject({
+        state: 'stale',
+        asOf: '2026-08-23T16:29:30.000Z',
+        run: { id: 'abandoned-running-run', status: 'running' },
+        lock: { held: false },
       });
     } finally {
       if (typeof db.close === 'function') await db.close();
@@ -437,6 +546,24 @@ describe('report lifecycle', () => {
           priority: 90,
         },
       ]);
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('queues global reports outside an ambient tenant scope', async () => {
+    const db = await setupDb();
+    const host = { authorize: vi.fn(), audit: vi.fn() };
+    try {
+      await withTenant({ tenantId: 'tenant-a' }, () =>
+        applyReportRefresh(GlobalLifecycleReport, { db, host }),
+      );
+
+      const jobs = await db.query('SELECT tenant_id, args FROM _smrt_jobs');
+      expect(jobs.rows).toEqual([expect.objectContaining({ tenant_id: null })]);
+      expect(JSON.parse(String(jobs.rows[0]?.args))).toMatchObject({
+        tenantId: null,
+      });
     } finally {
       if (typeof db.close === 'function') await db.close();
     }
