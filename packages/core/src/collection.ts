@@ -1293,10 +1293,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const db = this.db as DatabaseInterface & {
       config?: { type?: string; url?: string };
       type?: string;
+      client?: { constructor?: { name?: string }; connection?: unknown };
+      exportTable?: unknown;
     };
+    const clientName = db.client?.constructor?.name?.toLowerCase() ?? '';
+    const isDuckDbConnection =
+      clientName.includes('duckdb') ||
+      (typeof db.exportTable === 'function' &&
+        db.client !== undefined &&
+        'connection' in db.client);
     return detectEngine(
       db.url || db.config?.url || '',
-      db.type || db.config?.type,
+      this.getDatabaseEngineHint() ||
+        db.type ||
+        db.config?.type ||
+        (isDuckDbConnection ? 'duckdb' : undefined),
     );
   }
 
@@ -1712,11 +1723,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const parentSchema =
       ObjectRegistry.getSchema(itemQualifiedName) ??
       ObjectRegistry.getSchema(itemClassName);
+    const liveParentSchema =
+      typeof this.db.getTableSchema === 'function'
+        ? await this.db.getTableSchema(this.tableName)
+        : undefined;
+    const parentColumnNames = Object.keys(
+      liveParentSchema?.columns ?? parentSchema?.columns ?? {},
+    );
     const occupiedParentIdentifiers = new Set([
       ...Object.keys(parentFields),
       ...Object.keys(parentFields).map((fieldName) =>
         this.toDbColumnName(fieldName),
       ),
+      ...parentColumnNames,
       ...Object.keys(parentSchema?.columns ?? {}),
     ]);
     const relatedFieldAliases = new Map<string, string>();
@@ -1731,6 +1750,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
       relatedFieldAliases.set(fieldName, alias);
     }
+    const parentSelectSql =
+      parentColumnNames.length > 0
+        ? parentColumnNames
+            .map((columnName) => this.quoteProjectionIdentifier(columnName))
+            .join(', ')
+        : '*';
     const relatedAlias = (fieldName: string): string => {
       const alias = relatedFieldAliases.get(fieldName);
       if (!alias) {
@@ -1833,7 +1858,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       limitOffsetValues.push(boundedOffset);
     }
 
-    const sql = `${relatedCte}SELECT ${this.quoteProjectionIdentifier(this.tableName)}.*, ${Array.from(
+    const sql = `${relatedCte}SELECT ${parentSelectSql}, ${Array.from(
       relatedOutputFields,
     )
       .map(

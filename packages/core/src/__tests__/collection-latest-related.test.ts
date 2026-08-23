@@ -541,7 +541,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
   it('uses the same window-query shape on DuckDB', async () => {
     const duckDb = await getTestDatabase({
       type: 'duckdb',
-      url: join(tmpdir(), `latest-related-${randomUUID()}.duckdb`),
+      url: ':memory:',
     });
     try {
       const duckParents = await LatestRelatedParentCollection.create({
@@ -603,12 +603,22 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
         db: jsonDb,
       });
       const parent = await jsonParents.create({ name: 'json parent' });
+      const secondParent = await jsonParents.create({
+        name: 'json second parent',
+      });
       await jsonEvaluations.create({
         parentId: parent.id,
         sequence: 1,
         score: 8.0,
         evaluationScore: 8.0,
         note: 'json latest',
+      });
+      await jsonEvaluations.create({
+        parentId: secondParent.id,
+        sequence: 1,
+        score: 9.0,
+        evaluationScore: 9.0,
+        note: 'json second latest',
       });
 
       const rows = await jsonParents.listWithLatestRelated({
@@ -617,10 +627,13 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
           orderBy: 'sequence DESC',
           select: ['score', 'note'],
         },
+        orderBy: 'name ASC',
+        offset: 1,
       });
+      expect(rows[0].parent.name).toBe('json second parent');
       expect(rows[0].latestRelated).toEqual({
-        score: 8,
-        note: 'json latest',
+        score: 9,
+        note: 'json second latest',
       });
     } finally {
       await jsonDb.close?.();
