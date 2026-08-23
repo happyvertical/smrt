@@ -60,12 +60,13 @@ with `include`/relationship eager loading.
 Latest-related primitive (#1903): use `listWithLatestRelated()` when a page
 needs one row from a declared `@oneToMany` relationship without N+1 queries or
 hydrating unrelated children. `latestRelated.orderBy` ranks rows within each
-parent, `select` chooses the returned child fields (default `['id']`), and an
+parent, `select` chooses the returned child fields (defaulting to the related
+model's declared primary key), and an
 optional `sortBy` orders parents by the winning child before the parent
 `limit`/`offset` are applied. The result is `{ parent, latestRelated }`, where
 `parent` is hydrated and `latestRelated` is a plain projection or `null` when
 the parent has no child. Ranking uses a portable `ROW_NUMBER()` CTE with an
-`id` tie-break and explicit null-last ordering across SQLite, DuckDB, and
+declared related-primary-key tie-break and explicit null-last ordering across SQLite, DuckDB, and
 PostgreSQL; only the visible parent page is hydrated.
 
 `list()` and `query()` hydrate model instances serially in result order because

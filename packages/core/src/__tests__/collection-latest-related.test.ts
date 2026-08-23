@@ -25,6 +25,9 @@ function resetInitializationEvidence(): void {
 class LatestRelatedParent extends SmrtObject {
   name = '';
 
+  @field()
+  __smrt_lr_0 = '';
+
   @oneToMany('LatestRelatedEvaluation')
   evaluations: LatestRelatedEvaluation[] = [];
 
@@ -309,6 +312,17 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
 
   it('maps long related field names through bounded internal aliases', async () => {
     const parent = await parents.create({ name: 'long alias parent' });
+    // Simulate a legacy/externally-managed column using the reserved-looking
+    // alias. The materializer must preserve it while also returning related
+    // data, so aliases must avoid all legitimate parent identifiers.
+    await db.query(
+      'ALTER TABLE latest_related_parents ADD COLUMN "__smrt_lr_0" TEXT',
+    );
+    await db.query(
+      'UPDATE latest_related_parents SET "__smrt_lr_0" = $1 WHERE id = $2',
+      'parent marker',
+      parent.id,
+    );
     await evaluations.create({
       parentId: parent.id,
       sequence: 1,
@@ -331,6 +345,7 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
       thisIsAnExtremelyLongLatestRelatedFieldNameForPostgresAliasCoverage:
         'preserved',
     });
+    expect(rows[0].parent.__smrt_lr_0).toBe('parent marker');
   });
 
   it('keeps related rows paired when afterList filters and reorders parents', async () => {
@@ -536,12 +551,22 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
         db: duckDb,
       });
       const parent = await duckParents.create({ name: 'duck parent' });
+      const secondParent = await duckParents.create({
+        name: 'duck second parent',
+      });
       await duckEvaluations.create({
         parentId: parent.id,
         sequence: 1,
         score: 7.0,
         evaluationScore: 7.0,
         note: 'duck latest',
+      });
+      await duckEvaluations.create({
+        parentId: secondParent.id,
+        sequence: 1,
+        score: 8.0,
+        evaluationScore: 8.0,
+        note: 'duck second latest',
       });
 
       const rows = await duckParents.listWithLatestRelated({
@@ -550,10 +575,13 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
           orderBy: 'sequence DESC',
           select: ['score', 'note'],
         },
+        orderBy: 'name ASC',
+        offset: 1,
       });
+      expect(rows[0].parent.name).toBe('duck second parent');
       expect(rows[0].latestRelated).toEqual({
-        score: 7,
-        note: 'duck latest',
+        score: 8,
+        note: 'duck second latest',
       });
     } finally {
       await duckDb.close?.();

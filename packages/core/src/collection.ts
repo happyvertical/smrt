@@ -1,5 +1,5 @@
 import { createLogger } from '@happyvertical/logger';
-import { buildWhere } from '@happyvertical/sql';
+import { buildWhere, type DatabaseInterface } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -38,6 +38,7 @@ import {
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
+import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   classnameToTablename,
@@ -378,7 +379,7 @@ export interface SmrtLatestRelatedOptions {
   relation: string;
   /** Related field(s) used to select the latest row, e.g. `createdAt DESC`. */
   orderBy: string | string[];
-  /** Column-backed related fields returned in `latestRelated`. Defaults to `id`. */
+  /** Column-backed related fields returned in `latestRelated`. Defaults to the declared related primary key. */
   select?: readonly string[];
   /** Related field(s) used to order parent rows by the selected latest row. */
   sortBy?: string | string[];
@@ -1288,6 +1289,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return { field, column: this.toDbColumnName(field) };
   }
 
+  private getDatabaseEngine(): ReturnType<typeof detectEngine> {
+    const db = this.db as DatabaseInterface & {
+      config?: { type?: string; url?: string };
+      type?: string;
+    };
+    return detectEngine(
+      db.url || db.config?.url || '',
+      db.type || db.config?.type,
+    );
+  }
+
   private isOmittedCustomPrimaryKeySystemField(
     fieldName: string,
     hasCustomPrimaryKey: boolean,
@@ -1697,12 +1709,28 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         term.column,
       ]),
     );
-    const relatedFieldAliases = new Map(
-      Array.from(relatedOutputFields).map((fieldName, index) => [
-        fieldName,
-        `__smrt_lr_${index}`,
-      ]),
-    );
+    const parentSchema =
+      ObjectRegistry.getSchema(itemQualifiedName) ??
+      ObjectRegistry.getSchema(itemClassName);
+    const occupiedParentIdentifiers = new Set([
+      ...Object.keys(parentFields),
+      ...Object.keys(parentFields).map((fieldName) =>
+        this.toDbColumnName(fieldName),
+      ),
+      ...Object.keys(parentSchema?.columns ?? {}),
+    ]);
+    const relatedFieldAliases = new Map<string, string>();
+    let nextAliasIndex = 0;
+    for (const fieldName of relatedOutputFields) {
+      let alias: string;
+      do {
+        alias = `__smrt_lr_${nextAliasIndex++}`;
+      } while (
+        occupiedParentIdentifiers.has(alias) ||
+        [...relatedFieldAliases.values()].includes(alias)
+      );
+      relatedFieldAliases.set(fieldName, alias);
+    }
     const relatedAlias = (fieldName: string): string => {
       const alias = relatedFieldAliases.get(fieldName);
       if (!alias) {
@@ -1796,9 +1824,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     if (boundedOffset !== undefined) {
       if (boundedLimit === undefined) {
-        // SQLite requires LIMIT before OFFSET. LIMIT -1 is the portable
-        // unlimited form accepted by SQLite, DuckDB, and PostgreSQL.
-        limitOffsetSql += ' LIMIT -1';
+        // SQLite requires LIMIT before OFFSET. SQLite uses -1 for an
+        // unlimited limit; DuckDB and PostgreSQL use the standard LIMIT ALL.
+        limitOffsetSql +=
+          this.getDatabaseEngine() === 'sqlite' ? ' LIMIT -1' : ' LIMIT ALL';
       }
       limitOffsetSql += ` OFFSET $${nextParameter++}`;
       limitOffsetValues.push(boundedOffset);
