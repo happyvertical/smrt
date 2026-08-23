@@ -218,16 +218,14 @@ $effect(() => {
 
   localController.setControlled(controlledState !== undefined);
   localController.setModes(legacyModes());
-  localController.setColumnIds(
-    columns.map((column) => column.id),
-    columns
-      .filter(
-        (column) =>
-          column.hidden ||
-          (visibleColumnIds !== undefined && !visibleColumnIds.has(column.id)),
-      )
-      .map((column) => column.id),
-  );
+  const columnIds = columns.map((column) => column.id);
+  const hiddenColumnIds = columns
+    .filter(
+      (column) =>
+        column.hidden ||
+        (visibleColumnIds !== undefined && !visibleColumnIds.has(column.id)),
+    )
+    .map((column) => column.id);
 
   if (!localControllerInitialized) {
     localControllerInitialized = true;
@@ -236,8 +234,11 @@ $effect(() => {
       ...initialState,
     };
     localController.replaceState(nextState);
+    localController.setColumnIds(columnIds, hiddenColumnIds);
     return;
   }
+
+  localController.setColumnIds(columnIds, hiddenColumnIds);
 
   if (controlledState !== undefined) {
     localController.replaceState(controlledState);
@@ -283,6 +284,15 @@ $effect(() => {
 
 const tableState = $derived(controllerSnapshot.state);
 const tableModes = $derived(controllerSnapshot.modes);
+const constrainedLayoutState = $derived.by(() => ({
+  ...tableState,
+  columnWidths: tableState.columnWidths.map((entry) => {
+    const column = columns.find((candidate) => candidate.id === entry.columnId);
+    return column
+      ? { ...entry, width: clampedColumnWidth(column, entry.width) }
+      : entry;
+  }),
+}));
 const requiresStableRowIdentity = $derived(
   selectable ||
     Boolean(expandedContent) ||
@@ -479,7 +489,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 }
 
 const dataTableLayout = $derived(
-  resolveDataTableLayout(columns, tableState, measuredColumnWidths),
+  resolveDataTableLayout(columns, constrainedLayoutState, measuredColumnWidths),
 );
 const visibleColumns = $derived(dataTableLayout.columns);
 const dataBodyStructuralRows = $derived(
@@ -885,8 +895,17 @@ function observeColumnWidth(node: HTMLElement, initialColumnId: string) {
 
 function numberFromCssPixels(value: string | undefined): number | undefined {
   if (!value) return undefined;
-  const match = /^(\d+(?:\.\d+)?)px$/.exec(value.trim());
-  return match ? Number(match[1]) : undefined;
+  const match = /^(\d+(?:\.\d+)?)(px|rem)$/.exec(value.trim());
+  if (!match) return undefined;
+  const number = Number(match[1]);
+  if (match[2] === 'px') return number;
+  const rootFontSize =
+    typeof document === 'undefined'
+      ? undefined
+      : /^\d+(?:\.\d+)?px$/.exec(
+          getComputedStyle(document.documentElement).fontSize.trim(),
+        );
+  return number * (rootFontSize ? Number(rootFontSize[0].slice(0, -2)) : 16);
 }
 
 function minimumWidth(column: DataTableColumn<T>): number {
@@ -909,6 +928,8 @@ function currentColumnWidth(
   resolved: DataTableResolvedColumn<T>,
   target?: EventTarget | null,
 ): number {
+  const measuredWidth = measuredColumnWidths[resolved.column.id];
+  if (measuredWidth !== undefined && measuredWidth > 0) return measuredWidth;
   if (resolved.width !== undefined) return resolved.width;
   const staticWidth = numberFromCssPixels(resolved.column.width);
   if (staticWidth !== undefined) return staticWidth;
@@ -1133,7 +1154,9 @@ $effect(() => {
                 style:text-align={column.align}
                 scope="col"
                 rowspan={headerCell.rowspan}
-                aria-label={column.resizable ? column.label : undefined}
+                aria-label={column.resizable && !column.header
+                  ? column.label
+                  : undefined}
                 aria-sort={currentSort.columnId === column.id
                   ? currentSort.direction === 'asc'
                     ? 'ascending'

@@ -203,4 +203,29 @@ describe('resolveDataTableLayout', () => {
       }),
     );
   });
+
+  it('uses a rendered width before a restored width for pinned offsets', () => {
+    const layout = resolveDataTableLayout(
+      [columns[1], columns[2]],
+      {
+        ...state,
+        columnOrder: ['actual', 'budget'],
+        columnVisibility: [
+          { columnId: 'actual', visible: true },
+          { columnId: 'budget', visible: true },
+        ],
+        columnPinning: [
+          { columnId: 'actual', position: 'start' },
+          { columnId: 'budget', position: 'start' },
+        ],
+        columnWidths: [{ columnId: 'actual', width: 80 }],
+      },
+      { actual: 200, budget: 120 },
+    );
+
+    expect(layout.columns[1]).toMatchObject({
+      column: { id: 'budget' },
+      stickyOffset: 'calc(0px + 200px)',
+    });
+  });
 });

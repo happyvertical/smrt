@@ -824,6 +824,88 @@ describe('DataTable', () => {
     );
   });
 
+  it('uses rem constraints and rendered header widths for resize announcements', async () => {
+    const getBoundingClientRect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 208 } as DOMRect);
+    const originalRootFontSize = document.documentElement.style.fontSize;
+    try {
+      document.documentElement.style.fontSize = '16px';
+      const controller = createDataTableController({
+        columnIds: columns.map((column) => column.id),
+      });
+      render(DataTable, {
+        props: {
+          data,
+          controller,
+          columns: [
+            { ...columns[0], minWidth: '13rem', resizable: true },
+            columns[1],
+          ],
+        },
+      });
+
+      const separator = screen.getByRole('separator', { name: 'Resize Name' });
+      await vi.waitFor(() =>
+        expect(separator).toHaveAttribute('aria-valuenow', '208'),
+      );
+      separator.focus();
+      await userEvent.keyboard('{Home}');
+      expect(controller.getState().columnWidths).toContainEqual({
+        columnId: 'name',
+        width: 208,
+      });
+    } finally {
+      getBoundingClientRect.mockRestore();
+      document.documentElement.style.fontSize = originalRootFontSize;
+    }
+  });
+
+  it('clamps restored widths to the declared header constraints', () => {
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+      initialState: {
+        columnWidths: [{ columnId: 'name', width: 200 }],
+      },
+    });
+    render(DataTable, {
+      props: {
+        data,
+        controller,
+        columns: [
+          { ...columns[0], maxWidth: '100px', resizable: true },
+          columns[1],
+        ],
+      },
+    });
+
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toHaveStyle({
+      width: '100px',
+    });
+    expect(
+      screen.getByRole('separator', { name: 'Resize Name' }),
+    ).toHaveAttribute('aria-valuenow', '100');
+  });
+
+  it('keeps custom resizable header content as the header name', () => {
+    const customHeader = createRawSnippet(() => ({
+      render: () => '<span>Account total in USD</span>',
+    }));
+    render(DataTable, {
+      props: {
+        data,
+        columns: [
+          { ...columns[0], header: customHeader, resizable: true },
+          columns[1],
+        ],
+      },
+    });
+
+    expect(
+      screen.getByRole('columnheader', { name: /Account total in USD/ }),
+    ).toBeInTheDocument();
+  });
+
   it('keeps statically hidden columns hidden when a controller restores them visible', async () => {
     const controller = createDataTableController({
       columnIds: columns.map((column) => column.id),

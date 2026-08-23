@@ -74,10 +74,10 @@ function offsetWidth<T>(
   width?: number,
   measuredWidth?: number,
 ): string {
-  if (width !== undefined) return `${width}px`;
   if (measuredWidth !== undefined && measuredWidth > 0) {
     return `${measuredWidth}px`;
   }
+  if (width !== undefined) return `${width}px`;
   return column.width ?? column.minWidth ?? '0px';
 }
 

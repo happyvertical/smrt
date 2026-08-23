@@ -318,6 +318,31 @@ describe('DataTableController', () => {
     });
   });
 
+  it('restores the saved visibility when a static hidden constraint is removed', () => {
+    const controller = createDataTableController({
+      columnIds: ['name', 'internal'],
+      initialState: {
+        ...state,
+        columnVisibility: [
+          { columnId: 'name', visible: true },
+          { columnId: 'internal', visible: true },
+        ],
+      },
+    });
+
+    controller.setColumnIds(['name', 'internal'], ['internal']);
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: false,
+    });
+
+    controller.setColumnIds(['name', 'internal']);
+    expect(controller.getState().columnVisibility).toContainEqual({
+      columnId: 'internal',
+      visible: true,
+    });
+  });
+
   it('models current-page and explicit row selections separately', () => {
     const controller = createDataTableController({ initialState: state });
 

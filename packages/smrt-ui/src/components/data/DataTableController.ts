@@ -922,6 +922,12 @@ export class DataTableController {
   private modes: DataTableModes;
   private columnIds?: string[];
   private hiddenColumnIds?: string[];
+  /**
+   * Static schema visibility is a rendering constraint, not a saved-view
+   * preference. Keep the latter while a column is constrained so removing the
+   * constraint restores the caller's prior intent.
+   */
+  private readonly visibilityBeforeStaticHide = new Map<string, boolean>();
   private controlled: boolean;
   private readonly listeners = new Set<DataTableStateListener>();
   private readonly onStateChange?: DataTableControllerOptions['onStateChange'];
@@ -934,6 +940,10 @@ export class DataTableController {
     this.hiddenColumnIds = options.hiddenColumnIds
       ? normalizeUniqueColumnIds(options.hiddenColumnIds)
       : undefined;
+    this.rememberStaticVisibility(
+      options.state ?? options.initialState ?? {},
+      this.hiddenColumnIds ?? [],
+    );
     this.controlled = options.state !== undefined;
     this.state = normalizeState(
       options.state ?? options.initialState,
@@ -1001,6 +1011,9 @@ export class DataTableController {
   /** Supplies state from a controlled host or an external persistence adapter. */
   replaceState(state: DataTableViewStateInput): DataTableTransition {
     const previous = this.snapshot();
+    if (this.controlled) {
+      this.rememberStaticVisibility(state, this.hiddenColumnIds ?? [], true);
+    }
     const nextState = normalizeState(
       state,
       this.columnIds,
@@ -1047,10 +1060,39 @@ export class DataTableController {
     hiddenColumnIds: readonly string[] = [],
   ): DataTableTransition {
     const previous = this.snapshot();
+    const previousHidden = new Set(this.hiddenColumnIds ?? []);
     this.columnIds = normalizeUniqueColumnIds(columnIds);
     this.hiddenColumnIds = normalizeUniqueColumnIds(hiddenColumnIds);
-    this.state = normalizeState(
+    this.rememberStaticVisibility(
       this.state,
+      this.hiddenColumnIds.filter((columnId) => !previousHidden.has(columnId)),
+    );
+
+    const restoredVisibility = new Map(
+      this.state.columnVisibility.map((entry) => [
+        entry.columnId,
+        entry.visible,
+      ]),
+    );
+    for (const columnId of previousHidden) {
+      if (this.hiddenColumnIds.includes(columnId)) continue;
+      const visible = this.visibilityBeforeStaticHide.get(columnId);
+      if (visible !== undefined) restoredVisibility.set(columnId, visible);
+      this.visibilityBeforeStaticHide.delete(columnId);
+    }
+    const knownColumns = new Set(this.columnIds);
+    for (const columnId of this.visibilityBeforeStaticHide.keys()) {
+      if (!knownColumns.has(columnId)) {
+        this.visibilityBeforeStaticHide.delete(columnId);
+      }
+    }
+    this.state = normalizeState(
+      {
+        ...this.state,
+        columnVisibility: [...restoredVisibility.entries()].map(
+          ([columnId, visible]) => ({ columnId, visible }),
+        ),
+      },
       this.columnIds,
       this.hiddenColumnIds,
     );
@@ -1059,6 +1101,30 @@ export class DataTableController {
     const transition = { command: null, previous, next, changed };
     if (changed) this.emit(transition);
     return transition;
+  }
+
+  private rememberStaticVisibility(
+    state: Partial<DataTableViewState>,
+    hiddenColumnIds: readonly string[],
+    overwrite = false,
+  ): void {
+    const visibility = new Map(
+      normalizeVisibility(state.columnVisibility ?? []).map((entry) => [
+        entry.columnId,
+        entry.visible,
+      ]),
+    );
+    for (const columnId of hiddenColumnIds) {
+      const visible = visibility.get(columnId);
+      if (
+        visible !== undefined &&
+        (overwrite || !this.visibilityBeforeStaticHide.has(columnId))
+      ) {
+        this.visibilityBeforeStaticHide.set(columnId, visible);
+      } else if (!this.visibilityBeforeStaticHide.has(columnId)) {
+        this.visibilityBeforeStaticHide.set(columnId, true);
+      }
+    }
   }
 
   /** Clamp against a reliable total. A missing total intentionally does not guess. */
