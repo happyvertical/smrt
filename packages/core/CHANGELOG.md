@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.42.5
+
+### Patch Changes
+
+- ### Features
+
+  - complete DataTable release conformance (#2476) (smrt-ui)
+  - add mounted data surface registry (#2468) (smrt-ui)
+  - define bounded query protocol (#2469) (data)
+  - add report-grade DataTable layout (#2474) (smrt-ui)
+  - add DataTable virtualization seam (#2472) (smrt-ui)
+
+  ### Bug Fixes
+
+  - let release jobs honor hosted fallback (#2488) (ci)
+  - harden terminal device credentials (#2477) (users)
+  - complete DataTable accessibility states (#2473) (smrt-ui)
+  - make DataTable overflow keyboard accessible (#2471) (smrt-ui)
+  - @happyvertical/smrt-config@0.42.5
+  - @happyvertical/smrt-types@0.42.5
+  - @happyvertical/smrt-scanner@0.42.5
+
 ## 0.42.4
 
 ### Patch Changes
