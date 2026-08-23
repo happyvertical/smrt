@@ -194,7 +194,9 @@ const virtualRows = createDataTableConformanceRows(120);
 const virtualColumns = dataTableConformanceColumns.slice(0, 2);
 const virtualization = { rowHeight: 32, viewportHeight: 176, overscan: 3 };
 const manualQueryCommands = new Set([
+  'setSearch',
   'setFilters',
+  'setSorting',
   'toggleSorting',
   'setPage',
   'setPageSize',
@@ -205,6 +207,15 @@ let manualLifecycle = $state<'ready' | 'refreshing' | 'stale' | 'error'>(
   'ready',
 );
 let manualQueryRevision = $state(1);
+const manualQueryFingerprint = $derived(
+  JSON.stringify({
+    search: manualState.search,
+    filters: manualState.filters,
+    sorting: manualState.sorting,
+    page: manualState.page,
+    pageSize: manualState.pageSize,
+  }),
+);
 
 onMount(() => {
   const unsubscribeTable = tableController.subscribe((transition) => {
@@ -289,7 +300,7 @@ function toggleManualFilter() {
 function selectAllMatching() {
   manualController.dispatch({
     type: 'selectAllMatching',
-    queryFingerprint: 'workspace-report:active',
+    queryFingerprint: manualQueryFingerprint,
     queryRevision: `revision-${manualQueryRevision}`,
     expectedCount: 120,
   });

@@ -24,7 +24,9 @@ interface ManualQueryToken {
 
 function isManualQueryCommand(command: DataTableCommand | undefined) {
   return (
+    command?.type === 'setSearch' ||
     command?.type === 'setFilters' ||
+    command?.type === 'setSorting' ||
     command?.type === 'toggleSorting' ||
     command?.type === 'setPage' ||
     command?.type === 'setPageSize'
@@ -49,6 +51,7 @@ function createManualQueryHost(initialRows: DataTableConformanceRow[]) {
       revision += 1;
       current = {
         queryFingerprint: JSON.stringify({
+          search: state.search,
           filters: state.filters,
           sorting: state.sorting,
           page: state.page,
@@ -170,7 +173,7 @@ describe('DataTable release conformance', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('commits only the current manually owned sort, filter, and page response', async () => {
+  it('commits only the current manually owned search, sort, filter, and page response', async () => {
     const controller = createDataTableController({
       columnIds: dataTableConformanceColumns.map((column) => column.id),
       modes: { filtering: 'manual', sorting: 'manual', pagination: 'manual' },
@@ -198,14 +201,22 @@ describe('DataTable release conformance', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Sort Account ascending' }),
     );
+    controller.dispatch({ type: 'setSearch', search: 'Growth' });
+    controller.dispatch({
+      type: 'setSorting',
+      sorting: [{ columnId: 'account', direction: 'desc' }],
+    });
     controller.dispatch({
       type: 'setFilters',
       filters: [{ columnId: 'status', operator: 'equals', value: 'On track' }],
     });
     await userEvent.click(screen.getByRole('button', { name: 'Next page' }));
 
-    expect(requests).toHaveLength(3);
-    expect(requests[0]).not.toEqual(requests[2]);
+    expect(requests).toHaveLength(5);
+    expect(JSON.parse(requests[1].queryFingerprint)).toMatchObject({
+      search: 'Growth',
+    });
+    expect(requests[0]).not.toEqual(requests[4]);
     expect(
       host.resolve({
         ...requests[0],
@@ -215,7 +226,7 @@ describe('DataTable release conformance', () => {
     expect(host.rows()).toEqual(dataTableConformanceRows);
     expect(
       host.resolve({
-        ...requests[2],
+        ...requests[4],
         rows: [dataTableConformanceRows[0]],
       }),
     ).toBe(true);

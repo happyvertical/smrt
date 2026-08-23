@@ -246,17 +246,19 @@ selection, and expansion never change the page.
 ### Manual query, retry, and race contract
 
 When any stage is `manual`, the host owns the request and result lifecycle. On
-each query-shape change, derive a stable `queryFingerprint` and monotonically
-increasing `queryRevision`; start the request, retain the currently displayed
-rows with `refreshing`/`stale` as appropriate, and only commit a response when
-both values still match. A late response is discarded by the host, not merged
-by `DataTable`.
+each query-shape change, derive a stable `queryFingerprint` from every
+server-owned input (search, filters, sort rules, page, and page size) and a
+monotonically increasing `queryRevision`; start the request, retain the
+currently displayed rows with `refreshing`/`stale` as appropriate, and only
+commit a response when both values still match. A late response is discarded by
+the host, not merged by `DataTable`.
 
 ```ts
-const query = { queryFingerprint: filterHash, queryRevision: String(revision) };
+const queryFingerprint = JSON.stringify({ search, filters, sorting, page, pageSize });
+const query = { queryFingerprint, queryRevision: String(revision) };
 const result = await loadRows(query);
 
-if (query.queryRevision === String(revision) && query.queryFingerprint === filterHash) {
+if (query.queryRevision === String(revision) && query.queryFingerprint === currentQueryFingerprint()) {
   rows = result.rows;
   totalRows = result.totalRows;
 }
