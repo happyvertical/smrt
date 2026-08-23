@@ -170,6 +170,37 @@ describe('server data-surface bridge', () => {
     }
   });
 
+  it('does not send when authorization loses its connection before it returns', async () => {
+    for (const transition of ['disconnect', 'dispose'] as const) {
+      const link = transport();
+      let releaseAuthorization!: (allowed: boolean) => void;
+      const authorization = new Promise<boolean>((resolve) => {
+        releaseAuthorization = resolve;
+      });
+      const bridge = createDataSurfaceCommandBridge({
+        transport: link,
+        sessionId: 'session-1',
+        source: 'server-1',
+        peerSource: 'browser-1',
+        authorize: () => authorization,
+      });
+      const pending = bridge.send({
+        ...command,
+        commandId: `auth-${transition}`,
+      });
+      await Promise.resolve();
+      if (transition === 'disconnect') link.status('disconnected');
+      else bridge.dispose();
+      releaseAuthorization(true);
+      await expect(pending).resolves.toMatchObject({
+        ok: false,
+        reason: 'disconnected',
+      });
+      expect(link.sent).toHaveLength(0);
+      bridge.dispose();
+    }
+  });
+
   it('discards mismatched, malformed, and unauthenticated acknowledgements', async () => {
     const link = transport();
     const bridge = createDataSurfaceCommandBridge({
@@ -262,6 +293,130 @@ describe('server data-surface bridge', () => {
       identity,
       expiresAt: request.expiresAt,
       snapshot,
+    });
+    bridge.dispose();
+  });
+
+  it('binds acknowledgements to stable identity fields while tolerating labels', async () => {
+    const link = transport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+    });
+    const addressedIdentity = {
+      surfaceId: 'orders',
+      kind: 'table' as const,
+      subject: { type: 'tenant', id: 'tenant-1', label: 'Orders' },
+    };
+    const pending = bridge.send({
+      ...command,
+      commandId: 'subject-command',
+      identity: addressedIdentity,
+    });
+    await Promise.resolve();
+    const request = link.sent[0] as DataSurfaceCommandRequest;
+    link.receive(
+      ack(request, {
+        identity: {
+          surfaceId: 'orders',
+          kind: 'table',
+          subject: { type: 'tenant', id: 'tenant-1' },
+        },
+        snapshot: {
+          ...snapshot,
+          descriptor: {
+            ...snapshot.descriptor,
+            identity: {
+              surfaceId: 'orders',
+              kind: 'table',
+              subject: { type: 'tenant', id: 'tenant-1' },
+            },
+          },
+        },
+      }),
+    );
+    await expect(pending).resolves.toMatchObject({
+      ok: true,
+      identity: addressedIdentity,
+    });
+    bridge.dispose();
+  });
+
+  it('rejects invalid or oversized event payloads before notifying listeners', () => {
+    const link = transport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+    });
+    const events: unknown[] = [];
+    bridge.subscribe((event) => events.push(event));
+    const event = {
+      type: 'data-surface.event' as const,
+      version: 1 as const,
+      sessionId: 'session-1',
+      source: 'browser-1',
+      sequence: 1,
+      identity,
+      revision: 4,
+      event: 'command' as const,
+      command,
+      result: {
+        ok: true,
+        commandId: command.commandId,
+        identity,
+        revision: 4,
+        snapshot,
+      },
+    };
+    link.receive({
+      ...event,
+      command: { ...command, payload: { oversized: 'x'.repeat(100_001) } },
+    });
+    link.receive({
+      ...event,
+      result: {
+        ...event.result,
+        snapshot: { ...snapshot, state: { oversized: 'x'.repeat(100_001) } },
+      },
+    });
+    expect(events).toHaveLength(0);
+    link.receive(event);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ command, result: { snapshot } });
+    bridge.dispose();
+  });
+
+  it('accepts a canonical snapshot at the byte ceiling when it fits', async () => {
+    const link = transport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+    });
+    const base = { ...snapshot, state: { canonicalJson: '' } };
+    const baseBytes = new TextEncoder().encode(JSON.stringify(base)).byteLength;
+    const nearLimitSnapshot = {
+      ...snapshot,
+      state: { canonicalJson: 'x'.repeat(100_000 - baseBytes - 1) },
+    };
+    expect(
+      new TextEncoder().encode(JSON.stringify(nearLimitSnapshot)).byteLength,
+    ).toBe(99_999);
+    const pending = bridge.send({ ...command, commandId: 'near-limit' });
+    await Promise.resolve();
+    const request = link.sent[0] as DataSurfaceCommandRequest;
+    link.receive(ack(request, { snapshot: nearLimitSnapshot }));
+    await expect(pending).resolves.toMatchObject({
+      ok: true,
+      snapshot: nearLimitSnapshot,
     });
     bridge.dispose();
   });
