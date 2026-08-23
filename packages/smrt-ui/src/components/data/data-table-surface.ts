@@ -4,6 +4,8 @@ import type {
   DataTableColumnVisibility,
   DataTableCommand,
   DataTableFilter,
+  DataTableFilterOperator,
+  DataTableRowId,
   DataTableSortRule,
 } from './DataTableController.js';
 import type {
@@ -43,6 +45,121 @@ function arrayValue(
   return Array.isArray(value) ? value : undefined;
 }
 
+const FILTER_OPERATORS = [
+  'equals',
+  'notEquals',
+  'contains',
+  'notContains',
+  'startsWith',
+  'endsWith',
+  'in',
+  'notIn',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'isNull',
+  'isNotNull',
+] as const satisfies readonly DataTableFilterOperator[];
+
+function filterOperator(
+  value: DataSurfaceJsonValue | undefined,
+): DataTableFilterOperator | undefined {
+  return typeof value === 'string'
+    ? FILTER_OPERATORS.find((operator) => operator === value)
+    : undefined;
+}
+
+function dataTableFilter(
+  value: DataSurfaceJsonValue,
+): DataTableFilter | undefined {
+  if (!value || Array.isArray(value) || typeof value !== 'object')
+    return undefined;
+  const entry = value as Record<string, DataSurfaceJsonValue>;
+  const columnId = stringValue(entry.columnId);
+  const operator = filterOperator(entry.operator);
+  if (!columnId || !operator) return undefined;
+  const needsValue = operator !== 'isNull' && operator !== 'isNotNull';
+  if (needsValue && !Object.hasOwn(entry, 'value')) return undefined;
+  return needsValue
+    ? { columnId, operator, value: entry.value }
+    : { columnId, operator };
+}
+
+function dataTableFilters(
+  value: DataSurfaceJsonValue | undefined,
+): DataTableFilter[] | undefined {
+  const values = arrayValue(value);
+  if (!values) return undefined;
+  const filters = values.map(dataTableFilter);
+  return filters.every(
+    (filter): filter is DataTableFilter => filter !== undefined,
+  )
+    ? filters
+    : undefined;
+}
+
+function dataTableSort(
+  value: DataSurfaceJsonValue,
+): DataTableSortRule | undefined {
+  if (!value || Array.isArray(value) || typeof value !== 'object')
+    return undefined;
+  const entry = value as Record<string, DataSurfaceJsonValue>;
+  const columnId = stringValue(entry.columnId);
+  const direction = stringValue(entry.direction);
+  return columnId && (direction === 'asc' || direction === 'desc')
+    ? { columnId, direction }
+    : undefined;
+}
+
+function dataTableSorting(
+  value: DataSurfaceJsonValue | undefined,
+): DataTableSortRule[] | undefined {
+  const values = arrayValue(value);
+  if (!values) return undefined;
+  const sorting = values.map(dataTableSort);
+  return sorting.every((sort): sort is DataTableSortRule => sort !== undefined)
+    ? sorting
+    : undefined;
+}
+
+function dataTableVisibility(
+  value: DataSurfaceJsonValue,
+): DataTableColumnVisibility | undefined {
+  if (!value || Array.isArray(value) || typeof value !== 'object')
+    return undefined;
+  const entry = value as Record<string, DataSurfaceJsonValue>;
+  const columnId = stringValue(entry.columnId);
+  return columnId && typeof entry.visible === 'boolean'
+    ? { columnId, visible: entry.visible }
+    : undefined;
+}
+
+function dataTableVisibilities(
+  value: DataSurfaceJsonValue | undefined,
+): DataTableColumnVisibility[] | undefined {
+  const values = arrayValue(value);
+  if (!values) return undefined;
+  const columns = values.map(dataTableVisibility);
+  return columns.every(
+    (column): column is DataTableColumnVisibility => column !== undefined,
+  )
+    ? columns
+    : undefined;
+}
+
+function dataTableRowIds(
+  value: DataSurfaceJsonValue | undefined,
+): DataTableRowId[] | undefined {
+  const values = arrayValue(value);
+  if (!values) return undefined;
+  return values.every(
+    (rowId) => typeof rowId === 'string' || typeof rowId === 'number',
+  )
+    ? values
+    : undefined;
+}
+
 /**
  * Returns `null` for a component-local control (focus, reveal, refresh, …) or
  * an invalid table command. The mounted component owns those local controls.
@@ -57,22 +174,12 @@ export function dataTableCommandFromDataSurfaceCommand(
       return search === undefined ? null : { type: 'setSearch', search };
     }
     case 'set-filters': {
-      const filters = arrayValue(payload?.filters);
-      return filters === undefined
-        ? null
-        : {
-            type: 'setFilters',
-            filters: filters as unknown as DataTableFilter[],
-          };
+      const filters = dataTableFilters(payload?.filters);
+      return filters === undefined ? null : { type: 'setFilters', filters };
     }
     case 'set-sorting': {
-      const sorting = arrayValue(payload?.sorting);
-      return sorting === undefined
-        ? null
-        : {
-            type: 'setSorting',
-            sorting: sorting as unknown as DataTableSortRule[],
-          };
+      const sorting = dataTableSorting(payload?.sorting);
+      return sorting === undefined ? null : { type: 'setSorting', sorting };
     }
     case 'toggle-sorting': {
       const columnId = stringValue(payload?.columnId);
@@ -90,32 +197,31 @@ export function dataTableCommandFromDataSurfaceCommand(
     }
     case 'set-page-size': {
       const pageSize = payload?.pageSize;
-      return pageSize === null || numberValue(pageSize) !== undefined
-        ? { type: 'setPageSize', pageSize: pageSize as number | null }
-        : null;
+      if (pageSize === null) return { type: 'setPageSize', pageSize: null };
+      const numericPageSize = numberValue(pageSize);
+      return numericPageSize === undefined
+        ? null
+        : { type: 'setPageSize', pageSize: numericPageSize };
     }
     case 'set-column-order': {
       const columnIds = arrayValue(payload?.columnIds);
-      return columnIds?.every((value) => typeof value === 'string')
-        ? { type: 'setColumnOrder', columnIds: columnIds as string[] }
-        : null;
+      if (!columnIds?.every((value) => typeof value === 'string')) return null;
+      const ids: string[] = [];
+      for (const value of columnIds) {
+        if (typeof value !== 'string' || value.length === 0) return null;
+        ids.push(value);
+      }
+      return { type: 'setColumnOrder', columnIds: ids };
     }
     case 'set-column-visibility': {
-      const columns = arrayValue(payload?.columns);
+      const columns = dataTableVisibilities(payload?.columns);
       return columns === undefined
         ? null
-        : {
-            type: 'setColumnVisibility',
-            columns: columns as unknown as DataTableColumnVisibility[],
-          };
+        : { type: 'setColumnVisibility', columns };
     }
     case 'set-selected-rows': {
-      const rowIds = arrayValue(payload?.rowIds);
-      return rowIds?.every(
-        (value) => typeof value === 'string' || typeof value === 'number',
-      )
-        ? { type: 'setSelectedRows', rowIds: rowIds as Array<string | number> }
-        : null;
+      const rowIds = dataTableRowIds(payload?.rowIds);
+      return rowIds === undefined ? null : { type: 'setSelectedRows', rowIds };
     }
     case 'toggle-row-selection': {
       const rowId = payload?.rowId;
@@ -124,12 +230,8 @@ export function dataTableCommandFromDataSurfaceCommand(
         : null;
     }
     case 'set-expanded-rows': {
-      const rowIds = arrayValue(payload?.rowIds);
-      return rowIds?.every(
-        (value) => typeof value === 'string' || typeof value === 'number',
-      )
-        ? { type: 'setExpandedRows', rowIds: rowIds as Array<string | number> }
-        : null;
+      const rowIds = dataTableRowIds(payload?.rowIds);
+      return rowIds === undefined ? null : { type: 'setExpandedRows', rowIds };
     }
     case 'toggle-row-expansion': {
       const rowId = payload?.rowId;

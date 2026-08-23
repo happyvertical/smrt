@@ -94,6 +94,161 @@ describe('mounted data surfaces', () => {
     ]);
   });
 
+  it('preserves page and all-matching selection scopes in mounted snapshots', async () => {
+    const registry = createDataSurfaceRegistry();
+    const pageIdentity: DataSurfaceIdentity = {
+      surfaceId: 'page-selection-table',
+      kind: 'table',
+    };
+    const allMatchingIdentity: DataSurfaceIdentity = {
+      surfaceId: 'all-matching-selection-table',
+      kind: 'table',
+    };
+    const props = {
+      data: rows,
+      columns,
+      rowKey: 'name' as const,
+      dataSurface: {
+        registry,
+        descriptor: descriptor(pageIdentity, []),
+      },
+    };
+    render(DataTable, {
+      props: {
+        ...props,
+        controller: createDataTableController({
+          initialState: { selection: { scope: 'page', rowIds: ['Ada'] } },
+        }),
+      },
+    });
+    render(DataTable, {
+      props: {
+        ...props,
+        controller: createDataTableController({
+          initialState: {
+            selection: {
+              scope: 'allMatching',
+              expectedCount: 42,
+              queryFingerprint: 'people-query',
+              queryRevision: 'revision-1',
+            },
+          },
+          columnIds: columns.map((column) => column.id),
+        }),
+        dataSurface: {
+          registry,
+          descriptor: descriptor(allMatchingIdentity, []),
+        },
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(registry.inspect(pageIdentity)?.selection).toEqual({
+        scope: 'current-page',
+      });
+      expect(registry.inspect(allMatchingIdentity)?.selection).toEqual({
+        scope: 'all-matching',
+        queryFingerprint: 'people-query',
+      });
+    });
+  });
+
+  it('rejects visibility commands that would hide declared surface columns', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'visible-columns-table',
+      kind: 'table',
+    };
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        controller,
+        dataSurface: {
+          registry,
+          descriptor: descriptor(identity, ['set-column-visibility']),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'hide-age',
+        identity,
+        expectedRevision: 0,
+        controlId: 'set-column-visibility',
+        payload: {
+          columns: [
+            { columnId: 'name', visible: true },
+            { columnId: 'age', visible: false },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(controller.getState().columnVisibility).toEqual([
+      { columnId: 'age', visible: true },
+      { columnId: 'name', visible: true },
+    ]);
+  });
+
+  it('turns malformed table command payloads into bounded denials', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'malformed-command-table',
+      kind: 'table',
+    };
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        dataSurface: {
+          registry,
+          descriptor: descriptor(identity, [
+            'set-filters',
+            'set-sorting',
+            'set-column-visibility',
+          ]),
+        },
+      },
+    });
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    for (const [commandId, controlId, payload] of [
+      [
+        'bad-filter',
+        'set-filters',
+        { filters: [{ columnId: 'name', operator: 'unknown' }] },
+      ],
+      [
+        'bad-sort',
+        'set-sorting',
+        { sorting: [{ columnId: 'name', direction: 'sideways' }] },
+      ],
+      [
+        'bad-visibility',
+        'set-column-visibility',
+        { columns: [{ columnId: 'name', visible: 'yes' }] },
+      ],
+    ] as const) {
+      await expect(
+        registry.execute({
+          version: 1,
+          commandId,
+          identity,
+          expectedRevision: 0,
+          controlId,
+          payload,
+        }),
+      ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    }
+  });
+
   it('waits for a controlled DataTable host to settle candidate state before acknowledgement', async () => {
     const registry = createDataSurfaceRegistry();
     const identity: DataSurfaceIdentity = {

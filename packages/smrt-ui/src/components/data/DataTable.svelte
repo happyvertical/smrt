@@ -24,6 +24,7 @@ import {
   type DataTableFilter,
   type DataTableModes,
   type DataTableRowId,
+  type DataTableSelection,
   type DataTableSnapshot,
   type DataTableViewState,
   type DataTableViewStateInput,
@@ -39,7 +40,10 @@ import {
   resolveDataTableVirtualWindow,
   scrollTopForDataTableRow,
 } from './DataTableVirtualization.js';
-import type { DataSurfaceJsonValue } from './data-surface.js';
+import type {
+  DataSurfaceJsonValue,
+  DataSurfaceSelectionReference,
+} from './data-surface.js';
 import { dataTableCommandFromDataSurfaceCommand } from './data-table-surface.js';
 import type {
   DataTableColumn,
@@ -354,6 +358,34 @@ function assertSurfaceDescriptorMatchesTable(
   }
 }
 
+function dataSurfaceSelection(
+  selection: DataTableSelection,
+): DataSurfaceSelectionReference | null {
+  if (selection.scope === 'page') return { scope: 'current-page' };
+  if (selection.scope === 'allMatching') {
+    return {
+      scope: 'all-matching',
+      queryFingerprint: selection.queryFingerprint,
+    };
+  }
+  return selection.rowIds.length > 0
+    ? { scope: 'explicit-ids', rowIds: selection.rowIds }
+    : null;
+}
+
+function preservesDeclaredVisibleColumns(
+  surface: DataTableDataSurfaceOptions,
+  command: DataTableCommand,
+): boolean {
+  if (command.type !== 'setColumnVisibility') return true;
+  const requested = new Map(
+    command.columns.map((column) => [column.columnId, column.visible]),
+  );
+  return surface.descriptor.columns
+    .filter((column) => column.id !== surface.descriptor.rowKey)
+    .every((column) => requested.get(column.id) === true);
+}
+
 $effect(() => {
   const surface = dataSurface;
   if (!surface) return;
@@ -372,18 +404,15 @@ $effect(() => {
         return {
           revision,
           state: { table: snapshot as unknown as DataSurfaceJsonValue },
-          selection:
-            snapshot.state.selectedRowIds.length > 0
-              ? {
-                  scope: 'explicit-ids' as const,
-                  rowIds: snapshot.state.selectedRowIds,
-                }
-              : null,
+          selection: dataSurfaceSelection(snapshot.state.selection),
         };
       },
       execute: async (command) => {
         const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
         if (tableCommand) {
+          if (!preservesDeclaredVisibleColumns(surface, tableCommand)) {
+            return { ok: false };
+          }
           const transition = surfaceController.dispatch(tableCommand);
           if (surfaceController.isControlled() && transition.changed) {
             const settled = await surface.applyControlledState?.(
