@@ -1148,7 +1148,7 @@ function buildActionOptionsLoad(
               '              [...searchParams.entries()].filter(',
               "                ([key]) => key !== '__smrt_options',",
               '              ),',
-              '            ),',
+              '            )',
               '  ) as ActionArgs[0];',
             ]
           : [

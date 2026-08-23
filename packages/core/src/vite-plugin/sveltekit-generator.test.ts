@@ -989,6 +989,9 @@ describe('SvelteKit Route Generator', () => {
         "const optionsMarker = searchParams.get('__smrt_options');",
       );
       expect(content).toContain("optionsMarker === 'undefined'");
+      expect(content).not.toMatch(
+        /Object\.fromEntries\([\s\S]*\),\n\s*\) as ActionArgs\[0\];/,
+      );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
       expect(content).toContain('await ClassRef.browseFacts(options)');
       expect(content).not.toContain('params.id');
