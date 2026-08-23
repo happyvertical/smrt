@@ -94,6 +94,117 @@ describe('mounted data surfaces', () => {
     ]);
   });
 
+  it('focuses a normal mounted table through its programmatic focus target', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'focusable-people-table',
+      kind: 'table',
+    };
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        dataSurface: {
+          registry,
+          descriptor: descriptor(identity, ['focus']),
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'focus-table',
+        identity,
+        expectedRevision: 0,
+        controlId: 'focus',
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(document.activeElement).toBe(
+      document.querySelector('.data-table-container'),
+    );
+  });
+
+  it('enforces descriptor membership and filter/sort capabilities before dispatch', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'policy-filtered-people-table',
+      kind: 'table',
+    };
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    render(DataTable, {
+      props: {
+        data: rows,
+        columns,
+        rowKey: 'name',
+        controller,
+        dataSurface: {
+          registry,
+          descriptor: {
+            ...descriptor(identity, [
+              'set-filters',
+              'set-sorting',
+              'toggle-sorting',
+              'set-column-order',
+              'set-column-visibility',
+            ]),
+            columns: [
+              {
+                id: 'name',
+                label: 'Name',
+                capabilities: ['read', 'sort'],
+              },
+            ],
+            query: { modes: ['rows'], projectableColumnIds: ['name'] },
+          },
+        },
+      },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    for (const [commandId, controlId, payload] of [
+      [
+        'hidden-age-filter',
+        'set-filters',
+        { filters: [{ columnId: 'age', operator: 'equals', value: 36 }] },
+      ],
+      [
+        'hidden-age-sort',
+        'set-sorting',
+        { sorting: [{ columnId: 'age', direction: 'asc' }] },
+      ],
+      ['hidden-age-toggle', 'toggle-sorting', { columnId: 'age' }],
+      ['hidden-age-order', 'set-column-order', { columnIds: ['name', 'age'] }],
+      [
+        'hidden-age-visibility',
+        'set-column-visibility',
+        { columns: [{ columnId: 'age', visible: true }] },
+      ],
+      [
+        'non-filterable-name',
+        'set-filters',
+        { filters: [{ columnId: 'name', operator: 'equals', value: 'Ada' }] },
+      ],
+    ] as const) {
+      await expect(
+        registry.execute({
+          version: 1,
+          commandId,
+          identity,
+          expectedRevision: 0,
+          controlId,
+          payload,
+        }),
+      ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    }
+    expect(controller.getState().filters).toEqual([]);
+    expect(controller.getState().sorting).toEqual([]);
+  });
+
   it('preserves page and all-matching selection scopes in mounted snapshots', async () => {
     const registry = createDataSurfaceRegistry();
     const pageIdentity: DataSurfaceIdentity = {
@@ -707,6 +818,66 @@ describe('mounted data surfaces', () => {
         expectedRevision: 0,
         controlId: 'set-view',
         payload: { view: 'list' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
+  });
+
+  it('preserves DataTable registration and replay state for equivalent bindings', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity: DataSurfaceIdentity = {
+      surfaceId: 'equivalent-table-binding',
+      kind: 'table',
+    };
+    const equivalentColumns = () => columns.map((column) => ({ ...column }));
+    const surface = () => ({
+      registry,
+      descriptor: descriptor(identity, ['toggle-sorting']),
+    });
+    const controller = createDataTableController({
+      columnIds: columns.map((column) => column.id),
+    });
+    const { rerender } = render(DataTable, {
+      props: {
+        data: rows,
+        columns: equivalentColumns(),
+        rowKey: 'name',
+        sortable: true,
+        controller,
+        dataSurface: surface(),
+      },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'table-sort',
+        identity,
+        expectedRevision: 0,
+        controlId: 'toggle-sorting',
+        payload: { columnId: 'name' },
+      }),
+    ).resolves.toMatchObject({ ok: true, revision: 1 });
+
+    await rerender({
+      data: rows,
+      columns: equivalentColumns(),
+      rowKey: 'name',
+      sortable: true,
+      controller,
+      dataSurface: surface(),
+    });
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)).toMatchObject({ revision: 1 }),
+    );
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'stale-table-sort',
+        identity,
+        expectedRevision: 0,
+        controlId: 'toggle-sorting',
+        payload: { columnId: 'name' },
       }),
     ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
   });
