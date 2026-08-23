@@ -241,6 +241,14 @@ describe('server data-surface bridge', () => {
       }),
     );
     link.receive(ack(request, { snapshot: { ...snapshot, extra: true } }));
+    link.receive(
+      ack(request, {
+        snapshot: {
+          ...snapshot,
+          state: { oversized: 'x'.repeat(100_001) },
+        },
+      }),
+    );
     link.receive(ack(request), { sessionId: 'session-1', source: 'attacker' });
     link.receive(ack(request), { sessionId: 'attacker', source: 'browser-1' });
     expect(link.sent).toHaveLength(1);

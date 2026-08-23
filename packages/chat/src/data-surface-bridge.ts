@@ -9,6 +9,7 @@
  */
 
 import {
+  DATA_SURFACE_MAX_REQUEST_BYTES,
   normalizeDataSurfaceSnapshot,
   normalizeDataSurfaceVisibleCommand,
 } from '@happyvertical/smrt-ui/data';
@@ -284,8 +285,126 @@ function identitySignature(identity: DataSurfaceIdentity): string {
   });
 }
 
+const MAX_SNAPSHOT_JSON_DEPTH = 16;
+const MAX_SNAPSHOT_CONTAINER_ITEMS = 1_000;
+
+function addSnapshotEnvelopeBytes(
+  budget: { used: number },
+  bytes: number,
+): boolean {
+  budget.used += bytes;
+  return budget.used <= DATA_SURFACE_MAX_REQUEST_BYTES;
+}
+
+function addSnapshotEnvelopeString(
+  value: string,
+  budget: { used: number },
+): boolean {
+  if (!addSnapshotEnvelopeBytes(budget, 2)) return false;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    let bytes: number;
+    if (codeUnit === 0x22 || codeUnit === 0x5c) {
+      bytes = 2;
+    } else if (codeUnit === 0x08 || codeUnit === 0x09) {
+      bytes = 2;
+    } else if (codeUnit === 0x0a || codeUnit === 0x0c || codeUnit === 0x0d) {
+      bytes = 2;
+    } else if (codeUnit <= 0x1f) {
+      bytes = 6;
+    } else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes = 4;
+        index += 1;
+      } else {
+        bytes = 6;
+      }
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      bytes = 6;
+    } else if (codeUnit <= 0x7f) {
+      bytes = 1;
+    } else if (codeUnit <= 0x7ff) {
+      bytes = 2;
+    } else {
+      bytes = 3;
+    }
+    if (!addSnapshotEnvelopeBytes(budget, bytes)) return false;
+  }
+  return addSnapshotEnvelopeBytes(budget, 1);
+}
+
+function fitsSnapshotEnvelope(
+  value: unknown,
+  ancestors = new Set<object>(),
+  depth = 0,
+  budget = { used: 0 },
+): boolean {
+  if (depth > MAX_SNAPSHOT_JSON_DEPTH) return false;
+  if (value === null) return addSnapshotEnvelopeBytes(budget, 4);
+  if (typeof value === 'string') {
+    return addSnapshotEnvelopeString(value, budget);
+  }
+  if (typeof value === 'boolean') {
+    return addSnapshotEnvelopeBytes(budget, value ? 4 : 5);
+  }
+  if (typeof value === 'number') {
+    return (
+      Number.isFinite(value) &&
+      addSnapshotEnvelopeBytes(budget, String(value === 0 ? 0 : value).length)
+    );
+  }
+  if (!value || typeof value !== 'object' || ancestors.has(value)) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    if (value.length > MAX_SNAPSHOT_CONTAINER_ITEMS) return false;
+    ancestors.add(value);
+    try {
+      if (!addSnapshotEnvelopeBytes(budget, 1)) return false;
+      for (const [index, item] of value.entries()) {
+        if (index > 0 && !addSnapshotEnvelopeBytes(budget, 1)) return false;
+        if (!fitsSnapshotEnvelope(item, ancestors, depth + 1, budget)) {
+          return false;
+        }
+      }
+      return addSnapshotEnvelopeBytes(budget, 1);
+    } finally {
+      ancestors.delete(value);
+    }
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype) return false;
+  const keys = Object.keys(value);
+  if (keys.length > MAX_SNAPSHOT_CONTAINER_ITEMS) return false;
+  ancestors.add(value);
+  try {
+    if (!addSnapshotEnvelopeBytes(budget, 1)) return false;
+    for (const [index, key] of keys.entries()) {
+      if (index > 0 && !addSnapshotEnvelopeBytes(budget, 1)) return false;
+      if (
+        !addSnapshotEnvelopeString(key, budget) ||
+        !addSnapshotEnvelopeBytes(budget, 1) ||
+        !fitsSnapshotEnvelope(
+          (value as Record<string, unknown>)[key],
+          ancestors,
+          depth + 1,
+          budget,
+        )
+      ) {
+        return false;
+      }
+    }
+    return addSnapshotEnvelopeBytes(budget, 1);
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
 function snapshotOf(value: unknown): DataSurfaceSnapshot | undefined {
   try {
+    // The normalizer defensively clones state and descriptor arrays. Bound the
+    // untrusted wire envelope before it can do that work on a browser ACK.
+    if (!fitsSnapshotEnvelope(value)) return undefined;
     return normalizeDataSurfaceSnapshot(
       value as Parameters<typeof normalizeDataSurfaceSnapshot>[0],
     ) as DataSurfaceSnapshot;
