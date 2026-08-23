@@ -182,7 +182,11 @@ describe('server data-surface bridge', () => {
       ttlMs: 1_000,
       timeoutMs: 500,
     });
-    const pending = bridge.send(command);
+    let settled = false;
+    const pending = bridge.send(command).then((result) => {
+      settled = true;
+      return result;
+    });
     await Promise.resolve();
     const request = link.sent[0] as DataSurfaceCommandRequest;
     link.receive(
@@ -240,6 +244,8 @@ describe('server data-surface bridge', () => {
     link.receive(ack(request), { sessionId: 'session-1', source: 'attacker' });
     link.receive(ack(request), { sessionId: 'attacker', source: 'browser-1' });
     expect(link.sent).toHaveLength(1);
+    await Promise.resolve();
+    expect(settled).toBe(false);
 
     link.receive(ack(request));
     await expect(pending).resolves.toMatchObject({
@@ -247,6 +253,7 @@ describe('server data-surface bridge', () => {
       commandId: request.commandId,
       identity,
       expiresAt: request.expiresAt,
+      snapshot,
     });
     bridge.dispose();
   });
