@@ -39,6 +39,7 @@ module you are editing. This file keeps what holds in every module.
 | `offline/` | durable offline writes — config, sync-apply-only replay, idempotency, the shared namespace-keyed engine, and Web Locks leader election | [agents/offline-outbox.md](agents/offline-outbox.md) |
 | `sse-client.ts` | the client half of live cache invalidation — the app-wide subscriber, the wire contract it consumes, and SSE-vs-polling behaviour | [agents/live-invalidation.md](agents/live-invalidation.md) |
 | `persistence/` + `update-state.ts` | the read-cache rehydrate capability and the framework-free `updateAvailable` primitive (bundle + contract signals) | [agents/version-persistence.md](agents/version-persistence.md) |
+| `data-query.ts` | dependency-free browser mirror and defensive response normalizer for the canonical bounded data-query envelope (#2444) | — |
 
 ## The engine-absorption boundary (ratified conditions, #1761)
 
@@ -60,6 +61,12 @@ module you are editing. This file keeps what holds in every module.
 
 - **No inter-smrt dependencies** — depends only on TanStack packages
   (dependency-DAG guardrails). Definitions and fetchers arrive as arguments.
+- **Data-query mirror** — `data-query.ts` mirrors the portable
+  `smrt-types` request/result shape structurally because this package cannot
+  depend on another SMRT package. Server adapters own authorization and full
+query/result policy; browser code calls `executeSmrtWebDataQuery()` to reject
+malformed or over-limit returned envelopes — including a response for a
+different request id — before they reach a UI surface.
 - Rows are plain DTOs with a required `id`; optimistic inserts use
   `newLocalId()` — the generated REST layer strips client ids on create
   (#1540), so the post-persist refetch reconciles server-assigned ids.

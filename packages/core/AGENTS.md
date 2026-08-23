@@ -18,6 +18,7 @@ subsystem you are editing. This file keeps what holds across all of them.
 | `src/change-signals.ts` + the generated `_events` SSE route | the push companion to the change feed — the signal bus, cross-replica fan-out, the SSE route, and its documented gaps | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/` + `src/vite-plugin/web-collections.ts` | REST/CLI/MCP/web-collection generation, the `manifestHash` emission sites, and generated conditional-GET / ETag v2 semantics | [agents/generators.md](agents/generators.md) |
 | `src/schema/` | the four `SchemaGenerator` entry points, which two reach production, why schema drift stayed invisible, and the #2382 index/tenancy rules | [agents/schema-paths.md](agents/schema-paths.md) |
+| `src/data-query.ts` | canonical bounded data-query normalizer: allowlisted fields, deterministic fingerprints, output validation, and transport-neutral envelope (#2444) | — |
 
 ## SmrtObject Lifecycle
 
@@ -89,6 +90,25 @@ explicit positive `maxConcurrency` and pass their normal shared
 The executor deliberately does not compose SQL, cache the plan, or change pool
 defaults. On failure it stops starting queued entries, drains operations already
 in flight, and rethrows the first error.
+
+## Canonical Bounded Data Queries (#2444)
+
+`normalizeDataQueryRequest()` and `normalizeDataQueryResult()` are the trust
+boundary for the transport-neutral table/report/content query envelope. An
+authenticated adapter supplies a trusted `DataQuerySchema`; the caller only
+gets its declared projectable/sortable/filterable/facetable fields. The helpers
+never execute a query or decide tenant/principal access.
+
+Use `createDataQueryFingerprint()` for cache and result correlation. It omits
+the request id and page position, canonicalizes equivalent filter/projection/
+facet forms, and adds the identity sort tie-break. Keep data-query values
+scalar, requests/pages/facets positive and bounded, results within the schema
+byte cap with declared field types preserved. Datetimes must be valid RFC 3339
+instants, identity fields must be string/number/datetime-compatible, and JSON
+result fields are depth/container/string/byte bounded before cloning. Return
+only normalized `DataQueryResult` envelopes to REST, MCP,
+WebMCP, and browser consumers. Adapter-specific report/content context wraps
+the base envelope; it does not add unsafe fields or SQL-like controls to it.
 
 ## Object Memory & Semantic Search
 

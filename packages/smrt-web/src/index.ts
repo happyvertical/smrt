@@ -61,6 +61,31 @@ export type {
   WrapMutationOutcome,
 } from './capability.js';
 export { runWrapMutation } from './capability.js';
+// Canonical bounded data-query browser transport (#2444). This package stays
+// dependency-free; its structural mirror is validated at the browser boundary.
+export type {
+  SmrtWebDataQueryFacetResult,
+  SmrtWebDataQueryFilter,
+  SmrtWebDataQueryFilterOperator,
+  SmrtWebDataQueryRequest,
+  SmrtWebDataQueryResult,
+  SmrtWebDataQueryScalar,
+  SmrtWebDataQueryTotal,
+  SmrtWebDataQueryTransport,
+} from './data-query.js';
+export {
+  executeSmrtWebDataQuery,
+  MAX_SMRT_WEB_DATA_QUERY_CONTAINER_ITEMS,
+  MAX_SMRT_WEB_DATA_QUERY_FACET_VALUES,
+  MAX_SMRT_WEB_DATA_QUERY_FACETS,
+  MAX_SMRT_WEB_DATA_QUERY_OFFSET,
+  MAX_SMRT_WEB_DATA_QUERY_PAGE_LIMIT,
+  MAX_SMRT_WEB_DATA_QUERY_RESULT_BYTES,
+  MAX_SMRT_WEB_DATA_QUERY_ROWS,
+  MAX_SMRT_WEB_DATA_QUERY_STRING_LENGTH,
+  MAX_SMRT_WEB_DATA_QUERY_WARNINGS,
+  normalizeSmrtWebDataQueryResult,
+} from './data-query.js';
 export type { DurableResource, DurableStoreKey } from './durable-store.js';
 export {
   durableStoreNamespace,

@@ -39,6 +39,15 @@ import { UserStatus, TenantStatus, MembershipStatus } from '@happyvertical/smrt-
 | `ModuleUIBaseProps` | Base props interface for module UI components |
 | `ModuleUIRegistryInterface` | Registry interface for module UI registration |
 
+### Bounded Data Queries (types)
+
+| Export | Description |
+|--------|------------|
+| `DataQueryRequest` / `DataQueryResult` | Serializable, transport-neutral bounded query and normalized result envelopes |
+| `DataQuerySchema` / `DataQueryFieldDescriptor` | Trusted adapter allowlist for projection, filter, sort, and facet capabilities |
+| `DataQueryFilter` / `DataQuerySort` / `DataQueryPage` | Typed predicates, deterministic sort terms, and cursor/offset paging |
+| `DataQueryTotal` / `DataQueryFreshness` | Explicit total exactness/as-of semantics and response freshness |
+
 ### User/Tenant Status (enums — runtime values)
 
 | Export | Description |

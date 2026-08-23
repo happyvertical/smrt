@@ -11,6 +11,7 @@ Shared TypeScript type definitions. Prevents circular dependencies between packa
 | `user.ts` | `UserStatus`, `TenantStatus`, `MembershipStatus`, `SessionStatus`, `OverrideEffect` — status enums |
 | `identity.ts` | `User`, `Tenant`, `Role`, `Membership`, `SmrtEntityFields` — cross-package identity data contracts (runtime classes live in smrt-users, which `implements` these) |
 | `knowledge.ts` | Additive schema-version-1 domain knowledge contracts shared by core generation and development tooling |
+| `data-query.ts` | Serializable bounded query request/result envelope, allowlisted schema, filters, paging, totals, freshness, and facets |
 
 ## Rules
 
