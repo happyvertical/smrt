@@ -208,14 +208,14 @@ export function createSmrtWebQuery<TData extends object>(
       // authoritative after they resolve, so their result must not reach the
       // cache or visible state.
       if (controller.signal.aborted) {
-        throw controller.signal.reason ?? abortError();
+        throw abortError();
       }
       return result;
     } catch (error) {
       // A transport may reject with its own error instead of propagating the
       // abort reason. Once cancelled, that transport error is not query state.
       if (controller.signal.aborted) {
-        throw controller.signal.reason ?? abortError();
+        throw abortError();
       }
       throw error;
     } finally {
