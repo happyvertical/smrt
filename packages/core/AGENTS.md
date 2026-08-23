@@ -57,6 +57,17 @@ composes with `where`, `orderBy`, `limit`, and `offset`; `beforeList`
 interceptors still run. It is for column-backed fields only and cannot combine
 with `include`/relationship eager loading.
 
+Latest-related primitive (#1903): use `listWithLatestRelated()` when a page
+needs one row from a declared `@oneToMany` relationship without N+1 queries or
+hydrating unrelated children. `latestRelated.orderBy` ranks rows within each
+parent, `select` chooses the returned child fields (default `['id']`), and an
+optional `sortBy` orders parents by the winning child before the parent
+`limit`/`offset` are applied. The result is `{ parent, latestRelated }`, where
+`parent` is hydrated and `latestRelated` is a plain projection or `null` when
+the parent has no child. Ranking uses a portable `ROW_NUMBER()` CTE with an
+`id` tie-break and explicit null-last ordering across SQLite, DuckDB, and
+PostgreSQL; only the visible parent page is hydrated.
+
 `list()` and `query()` hydrate model instances serially in result order because
 an `initialize()` hook may query through the same transaction-bound PostgreSQL
 client. Keep this serialization invariant; use `select` when callers need plain
