@@ -11,7 +11,7 @@
  * - Material 3 styling with theme token support
  */
 
-import type { Snippet } from 'svelte';
+import { type Snippet, tick } from 'svelte';
 import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
@@ -27,8 +27,14 @@ import {
   type DataTableSnapshot,
   type DataTableViewState,
   type DataTableViewStateInput,
+  dataTableRowIdKey,
 } from './DataTableController.js';
 import { resolveDataTableRows } from './DataTableIdentity.js';
+import {
+  maximumDataTableVirtualScrollTop,
+  resolveDataTableVirtualWindow,
+  scrollTopForDataTableRow,
+} from './DataTableVirtualization.js';
 import type { DataTableColumn, DataTableProps, SortState } from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
 
@@ -58,6 +64,7 @@ let {
   page = $bindable(1),
   pageSize,
   manualPagination = false,
+  virtualization,
   totalRows,
   onPageChange,
   expanded = $bindable(new Set<string | number>()),
@@ -123,7 +130,6 @@ const localController = createDataTableController({
 let controllerSnapshot = $state<DataTableSnapshot>(localController.snapshot());
 let publishedLegacySignature: string | undefined;
 let localControllerInitialized = false;
-let tableContainer = $state<HTMLDivElement>();
 let hasHorizontalOverflow = $state(false);
 let canScrollLeft = $state(false);
 let canScrollRight = $state(false);
@@ -244,7 +250,8 @@ const requiresStableRowIdentity = $derived(
     agentAddressable ||
     tableModes.filtering === 'manual' ||
     tableModes.sorting === 'manual' ||
-    tableModes.pagination === 'manual',
+    tableModes.pagination === 'manual' ||
+    Boolean(virtualization),
 );
 const sourceRows = $derived.by(() =>
   resolveDataTableRows(data, rowKey, {
@@ -525,6 +532,165 @@ const displayRows = $derived.by(() => {
   return sortedRows.slice(start, start + tableState.pageSize);
 });
 
+let tableContainer: HTMLDivElement | undefined = $state();
+let tableCaption: HTMLTableCaptionElement | undefined = $state();
+let tableHead: HTMLTableSectionElement | undefined = $state();
+let tableBody: HTMLTableSectionElement | undefined = $state();
+let tableFooter: HTMLTableSectionElement | undefined = $state();
+let virtualScrollTop = $state(0);
+let virtualStructuralHeight = $state(0);
+let virtualCaptionHeight = $state(0);
+let virtualFooterHeight = $state(0);
+
+const virtualizedBody = $derived(Boolean(virtualization) && !expandedContent);
+
+const virtualizationWindow = $derived.by(() =>
+  resolveDataTableVirtualWindow({
+    options: virtualization,
+    rowCount: displayRows.length,
+    scrollTop: virtualization?.scrollTop ?? virtualScrollTop,
+    hasVariableRowHeight: Boolean(expandedContent),
+    headerRowCount: 1,
+    summaryRowCount: footer ? 1 : 0,
+  }),
+);
+const renderedRows = $derived.by(() =>
+  displayRows.slice(
+    virtualizationWindow.startIndex,
+    virtualizationWindow.endIndex,
+  ),
+);
+const virtualRowCount = $derived(totalRowCount ?? displayRows.length);
+const virtualRowOffset = $derived(
+  tableModes.pagination === 'manual' && tableState.pageSize
+    ? (tableState.page - 1) * tableState.pageSize
+    : 0,
+);
+const virtualContainerHeight = $derived(
+  virtualizedBody && virtualization
+    ? virtualization.viewportHeight + virtualStructuralHeight
+    : undefined,
+);
+
+function clampVirtualScrollTop(nextScrollTop: number): number {
+  if (!virtualization) return 0;
+  const maximum = Math.max(
+    0,
+    maximumDataTableVirtualScrollTop(
+      displayRows.length,
+      virtualization,
+      virtualFooterHeight,
+    ),
+  );
+  return Math.min(Math.max(0, nextScrollTop), maximum);
+}
+
+function setVirtualScrollTop(nextScrollTop: number, notify = false) {
+  if (!virtualization || !tableContainer || !virtualizedBody) return;
+  const clampedScrollTop = clampVirtualScrollTop(nextScrollTop);
+  tableContainer.scrollTop = clampedScrollTop;
+  virtualScrollTop = clampedScrollTop;
+  if (notify) virtualization.onScrollTopChange?.(clampedScrollTop);
+}
+
+function handleTableScroll(event: Event) {
+  if (!virtualizationWindow.enabled) return;
+  const nextScrollTop = (event.currentTarget as HTMLDivElement).scrollTop;
+  const clampedScrollTop = clampVirtualScrollTop(nextScrollTop);
+  virtualScrollTop = clampedScrollTop;
+  virtualization?.onScrollTopChange?.(clampedScrollTop);
+}
+
+function handleVirtualizationKeydown(event: KeyboardEvent) {
+  if (!virtualizationWindow.enabled || !virtualization || !tableContainer)
+    return;
+  const pageStep = Math.max(
+    virtualization.rowHeight,
+    virtualization.viewportHeight - virtualization.rowHeight,
+  );
+  const currentScrollTop = tableContainer.scrollTop;
+  const nextScrollTop =
+    event.key === 'ArrowDown'
+      ? currentScrollTop + virtualization.rowHeight
+      : event.key === 'ArrowUp'
+        ? currentScrollTop - virtualization.rowHeight
+        : event.key === 'PageDown'
+          ? currentScrollTop + pageStep
+          : event.key === 'PageUp'
+            ? currentScrollTop - pageStep
+            : event.key === 'Home'
+              ? 0
+              : event.key === 'End'
+                ? Number.POSITIVE_INFINITY
+                : undefined;
+  if (nextScrollTop === undefined) return;
+  event.preventDefault();
+  setVirtualScrollTop(nextScrollTop, true);
+}
+
+function handleRowFocus(rowId: DataTableRowId) {
+  virtualization?.onFocusedRowIdChange?.(rowId);
+}
+
+$effect(() => {
+  if (!virtualizedBody || !tableContainer) return;
+  const controlledScrollTop = virtualization?.scrollTop;
+  if (controlledScrollTop !== undefined) {
+    setVirtualScrollTop(controlledScrollTop);
+  }
+});
+
+$effect(() => {
+  if (!virtualizedBody || !virtualization || !tableContainer) return;
+  const focusRowId = virtualization.focusedRowId;
+  const focusIndex =
+    focusRowId == null
+      ? -1
+      : displayRows.findIndex(({ rowId }) => rowId === focusRowId);
+  if (focusIndex < 0 || focusRowId == null) return;
+  const nextScrollTop = scrollTopForDataTableRow(
+    focusIndex,
+    displayRows.length,
+    virtualization,
+    tableContainer.scrollTop,
+  );
+  setVirtualScrollTop(nextScrollTop, virtualization.scrollTop !== undefined);
+  const focusContainer = tableContainer;
+  void tick().then(() => {
+    const focusedRow = Array.from(
+      focusContainer.querySelectorAll<HTMLTableRowElement>('tr[data-row-id]'),
+    ).find((row) => row.dataset.rowId === dataTableRowIdKey(focusRowId));
+    focusedRow?.focus({ preventScroll: true });
+  });
+});
+
+$effect(() => {
+  if (!virtualizedBody || !tableBody) {
+    virtualStructuralHeight = 0;
+    virtualCaptionHeight = 0;
+    virtualFooterHeight = 0;
+    return;
+  }
+
+  const body = tableBody;
+  const captionElement = tableCaption;
+  const head = tableHead;
+  const footerElement = tableFooter;
+  const measureStructure = () => {
+    virtualStructuralHeight = body.offsetTop;
+    virtualCaptionHeight = captionElement?.offsetHeight ?? 0;
+    virtualFooterHeight = footerElement?.offsetHeight ?? 0;
+  };
+  measureStructure();
+  if (typeof ResizeObserver === 'undefined') return;
+
+  const observer = new ResizeObserver(measureStructure);
+  if (captionElement) observer.observe(captionElement);
+  if (head) observer.observe(head);
+  if (footerElement) observer.observe(footerElement);
+  return () => observer.disconnect();
+});
+
 $effect(() => {
   const total = totalRows;
   if (total === undefined) return;
@@ -605,30 +771,49 @@ $effect(() => {
 </script>
 
 {#if toolbar}<div class="data-table-toolbar">{@render toolbar()}</div>{/if}
-<!-- svelte-ignore a11y_no_noninteractive_tabindex: the region is only focusable while it overflows. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex: the region provides horizontal or virtual keyboard scrolling. -->
 <div
   bind:this={tableContainer}
   class="data-table-container"
-  class:data-table-container--sticky={stickyHeader}
+  class:data-table-container--sticky={stickyHeader || virtualizedBody}
   class:data-table-container--overflowing={hasHorizontalOverflow}
-  role={hasHorizontalOverflow ? 'region' : undefined}
-  tabindex={hasHorizontalOverflow ? 0 : undefined}
-  aria-label={hasHorizontalOverflow ? overflowRegionLabel : undefined}
-  onkeydown={handleOverflowKeydown}
-  onscroll={updateOverflowState}
+  class:data-table-container--virtualized={virtualizationWindow.enabled}
+  style:height={virtualContainerHeight === undefined ? undefined : `${virtualContainerHeight}px`}
+  tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : undefined}
+  role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
+  aria-label={virtualizationWindow.enabled
+    ? caption
+      ? `${caption} rows`
+      : 'Data table rows'
+    : hasHorizontalOverflow
+      ? overflowRegionLabel
+      : undefined}
+  onscroll={(event) => {
+    updateOverflowState();
+    handleTableScroll(event);
+  }}
+  onkeydown={(event) => {
+    handleVirtualizationKeydown(event);
+    if (!event.defaultPrevented) handleOverflowKeydown(event);
+  }}
 >
   <table
     class="data-table {sizeClasses[size]}"
     class:data-table--striped={striped}
+    class:data-table--virtualized={virtualizationWindow.enabled}
     class:data-table--hoverable={hoverable}
     class:data-table--dense={dense}
     class:data-table--loading={loading}
+    aria-rowcount={virtualizationWindow.enabled
+      ? virtualRowCount + 1 + (footer ? 1 : 0)
+      : undefined}
+    style={`--data-table-caption-height: ${virtualCaptionHeight}px`}
   >
     {#if caption}
-      <caption class="data-table__caption">{caption}</caption>
+      <caption bind:this={tableCaption} class="data-table__caption">{caption}</caption>
     {/if}
 
-    <thead class="data-table__head">
+    <thead bind:this={tableHead} class="data-table__head">
       <tr class="data-table__row data-table__row--header">
         {#if expandedContent}<th class="data-table__cell data-table__cell--expand" scope="col"><span class="sr-only">Expand</span></th>{/if}
         {#if selectable}
@@ -685,7 +870,7 @@ $effect(() => {
       </tr>
     </thead>
 
-    <tbody class="data-table__body">
+    <tbody bind:this={tableBody} class="data-table__body">
       {#if loading}
         <tr class="data-table__row data-table__row--loading">
           <td
@@ -714,22 +899,36 @@ $effect(() => {
           </td>
         </tr>
       {:else}
-        {#each displayRows as entry, index (entry.rowId)}
+        {#if virtualizationWindow.topSpacerHeight > 0}
+          <tr class="data-table__virtual-spacer" aria-hidden="true">
+            <td colspan={columnCount} style:height={`${virtualizationWindow.topSpacerHeight}px`}></td>
+          </tr>
+        {/if}
+        {#each renderedRows as entry, index (entry.rowId)}
           {@const row = entry.row}
           {@const key = entry.rowId}
+          {@const displayIndex = virtualizationWindow.startIndex + index}
           {@const isSelected = tableState.selection.scope === 'allMatching' || selectedIds.has(key)}
           {@const isExpanded = expandedIds.has(key)}
-          {@const rowCanExpand = canExpand?.(row, index) ?? true}
+          {@const rowCanExpand = canExpand?.(row, displayIndex) ?? true}
           <tr
-            class="data-table__row {rowClass?.(row, index) ?? ''}"
+            class="data-table__row {rowClass?.(row, displayIndex) ?? ''}"
             class:data-table__row--selected={isSelected}
-            onclick={() => handleRowClick(row, index)}
+            class:data-table__row--striped={
+              virtualizationWindow.enabled && striped && displayIndex % 2 === 1
+            }
+            data-row-id={dataTableRowIdKey(key)}
+            aria-rowindex={virtualizationWindow.enabled
+              ? virtualRowOffset + displayIndex + 2
+              : undefined}
+            onclick={() => handleRowClick(row, displayIndex)}
             role={onRowClick ? 'button' : undefined}
-            tabindex={onRowClick ? 0 : undefined}
+            tabindex={onRowClick || virtualizationWindow.enabled ? 0 : undefined}
+            onfocusin={() => handleRowFocus(key)}
             onkeydown={(e) => {
               if (onRowClick && (e.key === 'Enter' || e.key === ' ')) {
                 e.preventDefault();
-                handleRowClick(row, index);
+                handleRowClick(row, displayIndex);
               }
             }}
           >
@@ -758,9 +957,9 @@ $effect(() => {
                 style:text-align={column.align}
               >
                 {#if cell}
-                  {@render cell({ column, row, value, index })}
+                  {@render cell({ column, row, value, index: displayIndex })}
                 {:else if column.cell}
-                  {@render column.cell({ row, value, index })}
+                  {@render column.cell({ row, value, index: displayIndex })}
                 {:else}
                   {value ?? ''}
                 {/if}
@@ -769,14 +968,19 @@ $effect(() => {
           </tr>
           {#if expandedContent && isExpanded}
             <tr class="data-table__row data-table__row--expanded">
-              <td class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index })}</td>
+              <td class="data-table__cell data-table__cell--expanded" colspan={columnCount}>{@render expandedContent({ row, index: displayIndex })}</td>
             </tr>
           {/if}
         {/each}
+        {#if virtualizationWindow.bottomSpacerHeight > 0}
+          <tr class="data-table__virtual-spacer" aria-hidden="true">
+            <td colspan={columnCount} style:height={`${virtualizationWindow.bottomSpacerHeight}px`}></td>
+          </tr>
+        {/if}
       {/if}
     </tbody>
     {#if footer}
-      <tfoot><tr><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
+      <tfoot bind:this={tableFooter}><tr aria-rowindex={virtualizationWindow.enabled ? virtualRowCount + 2 : undefined}><td class="data-table__cell data-table__footer" colspan={columnCount}>{@render footer({ rows: displayRows.map(({ row }) => row) })}</td></tr></tfoot>
     {/if}
   </table>
 </div>
@@ -819,6 +1023,23 @@ $effect(() => {
   .data-table-container--sticky {
     max-height: 100%;
     overflow-y: auto;
+  }
+
+  .data-table-container--virtualized {
+    overflow: auto;
+  }
+
+  /* Keep structural context fixed so scrollTop is measured from data row zero. */
+  .data-table-container--virtualized .data-table__caption {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+
+  .data-table-container--sticky.data-table-container--virtualized .data-table__head {
+    position: sticky;
+    top: var(--data-table-caption-height, 0px);
+    z-index: 1;
   }
 
   .data-table {
@@ -904,6 +1125,11 @@ $effect(() => {
     transition: background-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
+  .data-table__virtual-spacer td {
+    padding: 0;
+    border: 0;
+  }
+
   .data-table--hoverable .data-table__row:hover:not(.data-table__row--loading):not(.data-table__row--empty) {
     background: var(--smrt-color-surface-container-low, #f9fafb);
   }
@@ -912,7 +1138,8 @@ $effect(() => {
     background: var(--smrt-color-primary-container, #dbeafe) !important;
   }
 
-  .data-table--striped .data-table__row:nth-child(even) {
+  .data-table--striped:not(.data-table--virtualized) .data-table__row:nth-child(even),
+  .data-table__row--striped {
     background: var(--smrt-color-surface-container-lowest, #fafafa);
   }
 
@@ -921,6 +1148,11 @@ $effect(() => {
   }
 
   .data-table__row[role='button']:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #3b82f6);
+    outline-offset: -2px;
+  }
+
+  .data-table-container--virtualized .data-table__row:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #3b82f6);
     outline-offset: -2px;
   }

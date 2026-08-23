@@ -223,6 +223,38 @@ the value changes. Data or total changes clamp an out-of-range page but do not
 otherwise reset it; empty known totals normalize to page 1. Column layout,
 selection, and expansion never change the page.
 
+### Scale boundaries and virtualization
+
+`DATA_TABLE_SCALE_THRESHOLDS` publishes the measured operating boundaries used
+by the reproducible DataTable benchmark:
+
+| Work | Boundary | Use after the boundary |
+| --- | --- | --- |
+| Ordinary local rendering | 250 rows / 5,000 cells | Page or virtualize the body. |
+| Local filtering and sorting | 1,000 rows / 20,000 cells | Move the transform to the caller or server. |
+| Manual/server paging | 100 supplied rows per page | Keep `totalRows` server-owned and bounded. |
+
+Run `pnpm --filter @happyvertical/smrt-ui bench:data-table` to measure the
+250-row local render, 1,000-row client-transform, and 100-row manual-paging
+fixtures. The fixture data has deterministic `rowKey` values so a browser or
+renderer comparison does not depend on array-arrival identity.
+
+`virtualization` is opt-in and requires `rowKey`. It virtualizes only a
+fixed-height data body; table headers (including grouped headers) and the
+`footer` summary remain normal semantic table sections and do not count toward
+the window. The virtual scroll region keeps captions and headers sticky, is
+keyboard-scrollable, and reports the full row count plus each rendered row's
+logical row index. Supplying `expandedContent` makes data-row height variable,
+so the component deliberately falls back to the full semantic body and does
+not emit virtual scroll callbacks. Use controlled `scrollTop`/
+`onScrollTopChange` for scroll restoration, and pair `focusedRowId` with
+`onFocusedRowIdChange` to restore DOM focus to a stable row after a data
+refresh. A measured footer extends the virtual scroll range, so keyboard End
+and a controlled scroll position can still reveal the summary. Selection and
+expansion continue to be controller state keyed by `rowKey`, never by a
+rendered window index. With manual pagination, `totalRows` and the current page
+set that full row count and each rendered row's global index.
+
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the

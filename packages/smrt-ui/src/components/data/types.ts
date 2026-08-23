@@ -12,6 +12,7 @@ import type {
   DataTableViewStateInput,
 } from './DataTableController.js';
 import type { DataTableRowKey } from './DataTableIdentity.js';
+import type { DataTableVirtualizationOptions } from './DataTableVirtualization.js';
 
 /**
  * Column definition for DataTable
@@ -103,6 +104,11 @@ export interface DataTableProps<T> {
   pageSize?: number;
   /** Parent owns pagination and supplies only the current page. */
   manualPagination?: boolean;
+  /**
+   * Opt-in fixed-height virtualization for the data body. It requires rowKey
+   * and falls back to the normal semantic body when expanded rows are enabled.
+   */
+  virtualization?: DataTableVirtualizationOptions;
   /** Total server row count when manualPagination is enabled. */
   totalRows?: number;
   /** Page change callback. */
