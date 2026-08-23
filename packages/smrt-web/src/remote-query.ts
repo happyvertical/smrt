@@ -185,9 +185,16 @@ export function createSmrtWebQuery<TData extends object>(
         );
     }
     try {
-      return await executeSmrtWebDataQuery(transport, candidate, {
+      const result = await executeSmrtWebDataQuery(transport, candidate, {
         signal: controller.signal,
       });
+      // Some transports cannot observe AbortSignal. Cancellation remains
+      // authoritative after they resolve, so their result must not reach the
+      // cache or visible state.
+      if (controller.signal.aborted) {
+        throw controller.signal.reason ?? abortError();
+      }
+      return result;
     } finally {
       if (timer) clearTimeout(timer);
       for (const cleanup of cleanups) cleanup();
