@@ -560,6 +560,12 @@ const renderedRows = $derived.by(() =>
     virtualizationWindow.endIndex,
   ),
 );
+const virtualRowCount = $derived(totalRowCount ?? displayRows.length);
+const virtualRowOffset = $derived(
+  tableModes.pagination === 'manual' && tableState.pageSize
+    ? (tableState.page - 1) * tableState.pageSize
+    : 0,
+);
 const virtualContainerHeight = $derived(
   virtualizedBody && virtualization
     ? virtualization.viewportHeight + virtualStructuralHeight
@@ -799,7 +805,7 @@ $effect(() => {
     class:data-table--dense={dense}
     class:data-table--loading={loading}
     aria-rowcount={virtualizationWindow.enabled
-      ? displayRows.length + 1 + (footer ? 1 : 0)
+      ? virtualRowCount + 1 + (footer ? 1 : 0)
       : undefined}
     style={`--data-table-caption-height: ${virtualCaptionHeight}px`}
   >
@@ -912,7 +918,9 @@ $effect(() => {
               virtualizationWindow.enabled && striped && displayIndex % 2 === 1
             }
             data-row-id={dataTableRowIdKey(key)}
-            aria-rowindex={virtualizationWindow.enabled ? displayIndex + 2 : undefined}
+            aria-rowindex={virtualizationWindow.enabled
+              ? virtualRowOffset + displayIndex + 2
+              : undefined}
             onclick={() => handleRowClick(row, displayIndex)}
             role={onRowClick ? 'button' : undefined}
             tabindex={onRowClick || virtualizationWindow.enabled ? 0 : undefined}

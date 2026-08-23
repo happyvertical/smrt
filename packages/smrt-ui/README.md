@@ -252,7 +252,8 @@ not emit virtual scroll callbacks. Use controlled `scrollTop`/
 refresh. A measured footer extends the virtual scroll range, so keyboard End
 and a controlled scroll position can still reveal the summary. Selection and
 expansion continue to be controller state keyed by `rowKey`, never by a
-rendered window index.
+rendered window index. With manual pagination, `totalRows` and the current page
+set that full row count and each rendered row's global index.
 
 ## Themes
 

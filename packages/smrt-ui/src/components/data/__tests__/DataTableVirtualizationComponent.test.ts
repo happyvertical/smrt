@@ -87,6 +87,7 @@ describe('DataTable virtualization seam', () => {
     });
     const scrollContainer = getScrollContainer(container);
 
+    expect(screen.getByRole('table')).toHaveAttribute('aria-rowcount', '10001');
     await userEvent.click(
       screen.getAllByRole('checkbox', { name: 'Select row' })[0],
     );
@@ -96,6 +97,10 @@ describe('DataTable virtualization seam', () => {
     await fireEvent.scroll(scrollContainer);
     await vi.waitFor(() =>
       expect(screen.getByText('Record 00020')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('Record 00020').closest('tr')).toHaveAttribute(
+      'aria-rowindex',
+      '1122',
     );
 
     expect(controller.getState().selectedRowIds).toEqual(['row-0']);
