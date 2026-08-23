@@ -41,6 +41,7 @@ const descriptor: DataSurfaceDescriptor = {
       label: 'Restricted',
       fieldName: 'restricted',
       sensitivity: 'sensitive',
+      readable: true,
       capabilities: ['read', 'search', 'filter', 'sort', 'project'],
     },
     {

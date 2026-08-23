@@ -162,6 +162,17 @@ function rewriteWorkspaceDeclarationImports(
       .replace(/\.[mc]?ts$/, '')
       .replace(/\.js$/, '');
 
+    // Keep the published smrt-ui data contract stable when declaration
+    // generation resolves the workspace source path first. Its public export
+    // is `@happyvertical/smrt-ui/data`, while the source entry lives under
+    // `src/components/data/index.ts`.
+    if (
+      targetPackage.name === '@happyvertical/smrt-ui' &&
+      subpath === 'components/data/index'
+    ) {
+      return `${targetPackage.name}/data`;
+    }
+
     if (subpath === 'index') {
       return targetPackage.name;
     }

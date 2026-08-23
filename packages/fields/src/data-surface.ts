@@ -55,10 +55,7 @@ function isAuthorizedColumn(
   column: DataSurfaceColumnDescriptor,
   options: FieldPolicyDataSurfaceOptions,
 ): boolean {
-  return (
-    column.readable === true ||
-    options.authorizedColumnIds?.includes(column.id) === true
-  );
+  return options.authorizedColumnIds?.includes(column.id) === true;
 }
 
 function isStructuralColumn(

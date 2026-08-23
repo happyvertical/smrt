@@ -6,6 +6,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DataSurfaceDescriptor } from '@happyvertical/smrt-ui/data';
 import {
   expectNoA11yViolations,
   fireEvent,
@@ -15,6 +16,7 @@ import {
 } from '@happyvertical/smrt-vitest/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { policyToDataSurfaceDescriptor } from '../../data-surface.js';
 import type { ResolvedObjectFieldPolicy } from '../../types.js';
 import FieldInput from '../components/FieldInput.svelte';
 import type { ObjectFormProps } from '../components/ObjectForm.svelte';
@@ -197,6 +199,55 @@ describe('ObjectForm selection and adapters', () => {
         { id: 'metadata', hidden: true },
       ]),
     ]).toEqual(['name', 'computed', 'actions']);
+  });
+
+  it('keeps DataTable visibility aligned with DataSurface restrictions', () => {
+    const columns = [
+      { id: 'id', readable: true },
+      { id: 'public' },
+      { id: 'sensitive', sensitivity: 'sensitive' as const, readable: true },
+      { id: 'private', readable: false },
+    ];
+    const surface: DataSurfaceDescriptor = {
+      version: 1,
+      identity: { surfaceId: 'parity', kind: 'table' },
+      schemaVersion: 1,
+      label: 'Parity',
+      rowKey: 'id',
+      columns: columns.map((column) => ({
+        ...column,
+        label: column.id,
+        capabilities: ['read', 'project'],
+      })),
+      query: {
+        modes: ['rows'],
+        projectableColumnIds: columns.map((column) => column.id),
+      },
+      controls: [],
+      actions: [],
+      limits: { maxQueryRows: 10, maxQueryBytes: 1000, maxSelectionSize: 10 },
+    };
+
+    const dataSurface = policyToDataSurfaceDescriptor(policy, surface);
+    const dataTable = policyToVisibleColumnIds(policy, columns);
+    expect([...dataTable]).toEqual(
+      dataSurface.columns.map((column) => column.id),
+    );
+
+    const authorizedDataTable = policyToVisibleColumnIds(
+      policy,
+      columns,
+      {},
+      { authorizedColumnIds: ['sensitive', 'private'] },
+    );
+    const authorizedDataSurface = policyToDataSurfaceDescriptor(
+      policy,
+      surface,
+      { authorizedColumnIds: ['sensitive', 'private'] },
+    );
+    expect([...authorizedDataTable]).toEqual(
+      authorizedDataSurface.columns.map((column) => column.id),
+    );
   });
 
   it('prefers field overrides to type overrides and keeps registries isolated per app', () => {

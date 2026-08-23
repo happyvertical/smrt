@@ -75,11 +75,6 @@ export type FieldPolicySuggestionQueueProps = ComponentProps<
 >;
 export type PolicyFieldProps = ComponentProps<typeof PolicyField>;
 
-export {
-  applyFieldPolicyToDataSurface,
-  type FieldPolicyDataSurfaceOptions,
-  policyToDataSurfaceDescriptor,
-} from '../data-surface.js';
 export type {
   FieldPolicyCatalogObjectSummary,
   FieldPolicyDetailItem,
@@ -102,7 +97,10 @@ export {
   setFieldPolicyContext,
   tryGetFieldPolicyContext,
 } from './context.svelte.js';
-export type { PolicyDataTableColumn } from './data-table.js';
+export type {
+  PolicyDataTableColumn,
+  PolicyDataTableOptions,
+} from './data-table.js';
 export { policyToVisibleColumnIds } from './data-table.js';
 export type {
   FieldPolicyEditorAdapter,

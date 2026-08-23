@@ -194,8 +194,11 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
   select-like widgets. Reference fields intentionally default to identifier
   inputs unless an app supplies a chooser.
 - `policyToVisibleColumnIds(policy, columns)` feeds smrt-ui `DataTable`'s
-  `visibleColumnIds`; it filters policy-hidden mapped fields, preserves unmapped
-  computed/action columns, and cannot reveal a static `column.hidden` column.
+  `visibleColumnIds`; it filters policy-hidden mapped fields and restricted
+  (`sensitive`/`secret` or `readable: false`) columns, preserves unrestricted
+  unmapped computed/action columns, and cannot reveal a static `column.hidden`
+  column. Pass `authorizedColumnIds` only when the host explicitly authorizes a
+  restricted column; `readable: true` alone does not override sensitivity.
 - `policyToDataSurfaceDescriptor(policy, descriptor)` is the corresponding
   mounted DataSurface adapter. It carries effective labels, help text, order,
   visibility, readable/capability state, and operator/query allowlists into
