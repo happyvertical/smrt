@@ -3253,7 +3253,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.convertWhereKeys(where || {}),
     );
     const fields = this.getFieldsSync();
-    const requested = options.fields.map((entry) =>
+    const interceptedFields = (
+      interceptedOptions as unknown as Partial<SmrtFacetOptions<ModelType>>
+    ).fields;
+    const effectiveFields = interceptedFields ?? options.fields;
+    if (!Array.isArray(effectiveFields) || effectiveFields.length === 0) {
+      throw new Error(
+        'Invalid facets option: at least one field is required after interception.',
+      );
+    }
+    if (effectiveFields.length > MAX_FACET_FIELDS) {
+      throw new Error(
+        `Invalid facets option: at most ${MAX_FACET_FIELDS} fields are allowed after interception.`,
+      );
+    }
+    const requested = effectiveFields.map((entry) =>
       typeof entry === 'string' ? { field: entry } : entry,
     );
     const seen = new Set<string>();
@@ -3296,7 +3310,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         `SELECT ${quotedColumn} AS ${quotedField}, ` +
         `COUNT(*) AS "__smrt_facet_count" FROM ${this.tableName} ` +
         `${whereSql} GROUP BY ${quotedColumn} ` +
-        `ORDER BY "__smrt_facet_count" DESC, ${quotedColumn} ASC ` +
+        `ORDER BY "__smrt_facet_count" DESC, ` +
+        `CASE WHEN ${quotedColumn} IS NULL THEN 1 ELSE 0 END ASC, ` +
+        `${quotedColumn} ASC ` +
         `LIMIT $${whereValues.length + 1}`;
       const params = [...whereValues, limit];
       const queryResult = await this.db.query(sql, ...params);

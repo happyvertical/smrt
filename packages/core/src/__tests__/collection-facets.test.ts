@@ -46,6 +46,7 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
 
   afterEach(async () => {
     GlobalInterceptors.unregister('facet-opportunity-tenant');
+    GlobalInterceptors.unregister('facet-opportunity-rewrite-fields');
     await db?.close?.();
   });
 
@@ -94,8 +95,8 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
         field: 'status',
         values: [
           { value: 'open', count: 2 },
-          { value: null, count: 1 },
           { value: 'closed', count: 1 },
+          { value: null, count: 1 },
         ],
       },
       {
@@ -221,6 +222,32 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
     ).resolves.toEqual({ total: 3, filtered: 2 });
   });
 
+  it('uses fields rewritten by beforeList interceptors', async () => {
+    await seed();
+    GlobalInterceptors.register({
+      name: 'facet-opportunity-rewrite-fields',
+      beforeList(_className, options) {
+        return {
+          ...options,
+          fields: ['workMode'],
+        } as never;
+      },
+    });
+
+    await expect(opportunities.facets({ fields: ['status'] })).resolves.toEqual(
+      [
+        {
+          field: 'workMode',
+          values: [
+            { value: 'remote', count: 2 },
+            { value: 'hybrid', count: 1 },
+            { value: null, count: 1 },
+          ],
+        },
+      ],
+    );
+  });
+
   it('rejects duplicate, unknown, and invalid facet requests', async () => {
     await expect(
       opportunities.facets({ fields: ['status', 'status'] }),
@@ -260,6 +287,12 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
         skills: null,
         tenantId: 'tenant-a',
       });
+      await portable.create({
+        status: null,
+        workMode: 'remote',
+        skills: null,
+        tenantId: 'tenant-a',
+      });
 
       await expect(portable.facets({ fields: ['status'] })).resolves.toEqual([
         {
@@ -267,6 +300,7 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
           values: [
             { value: 'closed', count: 1 },
             { value: 'open', count: 1 },
+            { value: null, count: 1 },
           ],
         },
       ]);

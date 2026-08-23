@@ -20,8 +20,8 @@ const TABLE = 'issue_1904_postgres_facets';
 
 @smrt({ tableName: 'issue_1904_postgres_facets' })
 class Issue1904PostgresFacet extends SmrtObject {
-  @field({ type: 'text' })
-  status = '';
+  @field({ type: 'text', nullable: true })
+  status: string | null = null;
 }
 
 class Issue1904PostgresFacetCollection extends SmrtCollection<Issue1904PostgresFacet> {
@@ -65,10 +65,22 @@ describe.skipIf(!pgUrl)('PostgreSQL facets (#1904)', () => {
     collection = await Issue1904PostgresFacetCollection.create({ db });
   });
 
-  it('groups scalar values and applies a per-field limit', async () => {
+  it('groups scalar values with portable null ordering', async () => {
     await collection.create({ status: 'open' });
     await collection.create({ status: 'closed' });
     await collection.create({ status: 'open' });
+    await collection.create({ status: null });
+
+    await expect(collection.facets({ fields: ['status'] })).resolves.toEqual([
+      {
+        field: 'status',
+        values: [
+          { value: 'open', count: 2 },
+          { value: 'closed', count: 1 },
+          { value: null, count: 1 },
+        ],
+      },
+    ]);
 
     await expect(
       collection.facets({ fields: [{ field: 'status', limit: 1 }] }),
