@@ -136,6 +136,17 @@ export class DataSurfaceDeadlineError extends Error {
   }
 }
 
+/** Adapter output was not in the requested deterministic order. */
+export class DataSurfaceResultOrderError extends Error {
+  readonly status = 502;
+
+  constructor() {
+    // Do not include field/row values in the public error.
+    super('Data surface returned results in an invalid order.');
+    this.name = 'DataSurfaceResultOrderError';
+  }
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -253,13 +264,45 @@ function sortRows(
     if (right === null || right === undefined) return 1;
     return String(left).localeCompare(String(right));
   };
-  return [...rows].sort((left, right) => {
-    for (const term of terms) {
-      const result = compare(left[term.field], right[term.field]);
-      if (result !== 0) return term.direction === 'desc' ? -result : result;
+  return [...rows].sort((left, right) =>
+    compareRows(left, right, terms, identity, compare),
+  );
+}
+
+function compareRows(
+  left: DataQueryRow,
+  right: DataQueryRow,
+  terms: readonly NonNullable<DataQueryRequest['sort']>[number][],
+  identity: string,
+  compare: (left: unknown, right: unknown) => number,
+): number {
+  for (const term of terms) {
+    const result = compare(left[term.field], right[term.field]);
+    if (result !== 0) return term.direction === 'desc' ? -result : result;
+  }
+  return compare(left[identity], right[identity]);
+}
+
+function isCanonicalOrder(
+  rows: DataQueryRow[],
+  request: DataQueryRequest,
+  identity: string,
+): boolean {
+  const terms = request.sort ?? [];
+  const compare = (left: unknown, right: unknown): number => {
+    if (left === right) return 0;
+    if (left === null || left === undefined) return -1;
+    if (right === null || right === undefined) return 1;
+    return String(left).localeCompare(String(right));
+  };
+  for (let index = 1; index < rows.length; index += 1) {
+    if (
+      compareRows(rows[index - 1], rows[index], terms, identity, compare) > 0
+    ) {
+      return false;
     }
-    return compare(left[identity], right[identity]);
-  });
+  }
+  return true;
 }
 
 async function bounded<T>(
@@ -404,7 +447,9 @@ export function createDataSurfaceTools(
           : [];
       const normalizedRows =
         request.mode === 'rows'
-          ? sortRows(rows, request, entry.schema.identityField)
+          ? request.page?.kind === 'cursor'
+            ? rows
+            : sortRows(rows, request, entry.schema.identityField)
           : [];
       const validated = normalizeDataQueryResult(
         raw && !Array.isArray(raw) && 'version' in rawRecord
@@ -455,10 +500,17 @@ export function createDataSurfaceTools(
       const result: DataQueryResult = {
         ...validated,
         rows:
-          request.mode === 'rows'
+          request.mode === 'rows' && request.page?.kind !== 'cursor'
             ? sortRows(validated.rows, request, entry.schema.identityField)
             : validated.rows,
       };
+      if (
+        request.mode === 'rows' &&
+        request.page?.kind === 'cursor' &&
+        !isCanonicalOrder(result.rows, request, entry.schema.identityField)
+      ) {
+        throw new DataSurfaceResultOrderError();
+      }
       await audit(
         {
           action: 'query',

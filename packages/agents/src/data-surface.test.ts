@@ -6,6 +6,7 @@ import {
   DATA_INSPECT_TOOL_SLUG,
   DATA_QUERY_TOOL_SLUG,
   DataSurfaceDeniedError,
+  DataSurfaceResultOrderError,
 } from './data-surface.js';
 import type { PrincipalRun } from './execute-as-principal.js';
 
@@ -29,9 +30,10 @@ const schema: DataQuerySchema = {
       ...({ readPermission: 'records.secret' } as unknown as {}),
     },
   ],
-  defaultPageLimit: 1,
-  maxPageLimit: 1,
+  defaultPageLimit: 2,
+  maxPageLimit: 2,
   maxResultBytes: 10_000,
+  supports: { cursorPagination: true },
 };
 
 function fakeRun(
@@ -110,8 +112,16 @@ describe('principal-bound data surface tools', () => {
       args: { surfaceId: 'records' },
       db: undefined,
     });
-    expect(JSON.stringify(discover)).not.toContain('secret');
-    expect(JSON.stringify(inspect)).not.toContain('restricted');
+    expect(
+      (discover as Array<{ fields: Array<{ id: string }> }>)[0].fields.map(
+        (field) => field.id,
+      ),
+    ).toEqual(['id', 'name']);
+    expect(
+      (inspect as { fields: Array<{ id: string }> }).fields.map(
+        (field) => field.id,
+      ),
+    ).toEqual(['id', 'name']);
   });
 
   it('passes the authenticated delegated principal and tenant to the executor', async () => {
@@ -177,6 +187,102 @@ describe('principal-bound data surface tools', () => {
         db: undefined,
       }),
     ).rejects.toThrow();
+  });
+
+  it('rejects hidden or restricted fields crossing the query result boundary', async () => {
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async () => [
+        { id: 'r1', name: 'one', secret: 'do-not-return', restricted: 'nope' },
+      ],
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'req-hidden',
+            mode: 'rows',
+            projection: ['id', 'name'],
+            page: { kind: 'offset', offset: 0, limit: 1 },
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it('preserves executor order for cursor pages and validates each page', async () => {
+    let page = 0;
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async (_surface, request) => {
+        page += 1;
+        expect(request.page?.kind).toBe('cursor');
+        return page === 1
+          ? {
+              rows: [{ id: 'b' }, { id: 'a' }],
+              nextCursor: 'page-2',
+              truncated: true,
+            }
+          : { rows: [{ id: 'd' }, { id: 'c' }] };
+      },
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const request = (after?: string) => ({
+      version: 1,
+      requestId: after ? 'cursor-2' : 'cursor-1',
+      mode: 'rows' as const,
+      projection: ['id'],
+      sort: [{ field: 'id', direction: 'desc' as const }],
+      page: { kind: 'cursor' as const, ...(after ? { after } : {}), limit: 2 },
+    });
+    const first = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: { surfaceId: 'records', request: request() },
+      db: undefined,
+    });
+    const second = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: { surfaceId: 'records', request: request('page-2') },
+      db: undefined,
+    });
+    expect((first as { rows: Array<{ id: string }> }).rows).toEqual([
+      { id: 'b' },
+      { id: 'a' },
+    ]);
+    expect((second as { rows: Array<{ id: string }> }).rows).toEqual([
+      { id: 'd' },
+      { id: 'c' },
+    ]);
+  });
+
+  it('rejects a cursor page that is not in its requested canonical order', async () => {
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async () => ({ rows: [{ id: 'a' }, { id: 'b' }] }),
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'cursor-invalid',
+            mode: 'rows',
+            projection: ['id'],
+            sort: [{ field: 'id', direction: 'desc' }],
+            page: { kind: 'cursor', limit: 2 },
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toBeInstanceOf(DataSurfaceResultOrderError);
   });
 
   it('does not let a caller select an unauthorized surface by changing args', async () => {

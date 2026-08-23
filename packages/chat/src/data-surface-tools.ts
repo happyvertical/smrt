@@ -22,6 +22,7 @@ export {
   type DataSurfaceExecutor,
   type DataSurfaceExecutorResult,
   type DataSurfacePrincipal,
+  DataSurfaceResultOrderError,
   type DataSurfaceToolsOptions,
   DEFAULT_DATA_SURFACE_DEADLINE_MS,
   MAX_DATA_SURFACE_DEADLINE_MS,
