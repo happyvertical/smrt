@@ -7,6 +7,10 @@
 export { AccessRequestCollection } from './AccessRequestCollection.js';
 // CLI / terminal auth
 export {
+  type CliAuthApproveReservation,
+  UsersCliAuthApproveLimitCollection,
+} from './CliAuthApproveLimitCollection.js';
+export {
   CliAuthRequestCollection,
   UsersCliAuthRequestCollection,
 } from './CliAuthRequestCollection.js';
