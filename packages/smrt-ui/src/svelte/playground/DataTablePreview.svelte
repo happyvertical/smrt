@@ -1,5 +1,11 @@
 <script lang="ts">
 import { onMount } from 'svelte';
+import {
+  createDataTableConformanceRows,
+  dataTableConformanceColumns,
+  dataTableConformanceRows,
+  dataTableConformanceScenarios,
+} from '../../components/data/__fixtures__/DataTableConformanceFixture.js';
 import DataTable from '../../components/data/DataTable.svelte';
 import { createDataTableController } from '../../components/data/DataTableController.js';
 import type {
@@ -179,13 +185,46 @@ const reportController = createDataTableController({
     ],
   },
 });
+const manualController = createDataTableController({
+  columnIds: dataTableConformanceColumns.map((column) => column.id),
+  modes: { filtering: 'manual', sorting: 'manual', pagination: 'manual' },
+  initialState: { page: 2, pageSize: 25 },
+});
+const virtualRows = createDataTableConformanceRows(120);
+const virtualColumns = dataTableConformanceColumns.slice(0, 2);
+const virtualization = { rowHeight: 32, viewportHeight: 176, overscan: 3 };
+const manualQueryCommands = new Set([
+  'setFilters',
+  'toggleSorting',
+  'setPage',
+  'setPageSize',
+]);
 let tableState = $state(tableController.getState());
-
-onMount(() =>
-  tableController.subscribe((transition) => {
-    tableState = transition.next.state;
-  }),
+let manualState = $state(manualController.getState());
+let manualLifecycle = $state<'ready' | 'refreshing' | 'stale' | 'error'>(
+  'ready',
 );
+let manualQueryRevision = $state(1);
+
+onMount(() => {
+  const unsubscribeTable = tableController.subscribe((transition) => {
+    tableState = transition.next.state;
+  });
+  const unsubscribeManual = manualController.subscribe((transition) => {
+    manualState = transition.next.state;
+    if (
+      transition.command &&
+      manualQueryCommands.has(transition.command.type)
+    ) {
+      manualQueryRevision += 1;
+      manualLifecycle = 'refreshing';
+    }
+  });
+  return () => {
+    unsubscribeTable();
+    unsubscribeManual();
+  };
+});
 
 function clearSelection() {
   tableController.dispatch({ type: 'setSelectedRows', rowIds: [] });
@@ -217,6 +256,42 @@ function restoreReportLayout() {
       { columnId: 'account', position: 'start' },
       { columnId: 'action', position: 'end' },
     ],
+  });
+}
+
+function showStaleManualResult() {
+  manualQueryRevision += 1;
+  manualLifecycle = 'stale';
+}
+
+function resolveManualQuery() {
+  manualLifecycle = 'ready';
+}
+
+function retryManualQuery() {
+  manualLifecycle = 'refreshing';
+  manualQueryRevision += 1;
+}
+
+function showManualFailure() {
+  manualLifecycle = 'error';
+}
+
+function toggleManualFilter() {
+  manualController.dispatch({
+    type: 'setFilters',
+    filters: manualState.filters.length
+      ? []
+      : [{ columnId: 'status', operator: 'equals', value: 'On track' }],
+  });
+}
+
+function selectAllMatching() {
+  manualController.dispatch({
+    type: 'selectAllMatching',
+    queryFingerprint: 'workspace-report:active',
+    queryRevision: `revision-${manualQueryRevision}`,
+    expectedCount: 120,
   });
 }
 </script>
@@ -300,6 +375,94 @@ function restoreReportLayout() {
         stickyHeader
       />
     </div>
+  </section>
+
+  <section class="manual-fixture" aria-labelledby="manual-fixture-title">
+    <div class="report-fixture__header">
+      <div>
+        <p class="eyebrow">Manual query and async states</p>
+        <h4 id="manual-fixture-title">Server-owned results</h4>
+        <p class="supporting">
+          Supplied rows remain usable through refresh, stale, and error states. The caller owns
+          query revisions and discards late responses.
+        </p>
+      </div>
+      <Badge variant={manualLifecycle === 'error' ? 'error' : 'default'}>
+        Revision {manualQueryRevision}
+      </Badge>
+    </div>
+    <div class="table-controls" aria-label="Manual query controls">
+      <Button variant="ghost" size="sm" onclick={showStaleManualResult}>
+        Show stale result
+      </Button>
+      <Button variant="ghost" size="sm" onclick={resolveManualQuery}>
+        Accept newer result
+      </Button>
+      <Button variant="ghost" size="sm" onclick={showManualFailure}>
+        Show failure
+      </Button>
+      <Button variant="ghost" size="sm" onclick={toggleManualFilter}>
+        {manualState.filters.length ? 'Clear manual filter' : 'Request manual filter'}
+      </Button>
+      <Button variant="ghost" size="sm" onclick={selectAllMatching}>
+        Select all 120 matching
+      </Button>
+      {#if manualState.selection.scope === 'allMatching'}
+        <span>All matching selection is bound to {manualState.selection.queryRevision}.</span>
+      {/if}
+    </div>
+    <div class="table-frame">
+      <DataTable
+        data={dataTableConformanceRows}
+        columns={dataTableConformanceColumns}
+        rowKey="id"
+        selectable
+        controller={manualController}
+        sortable
+        totalRows={120}
+        refreshing={manualLifecycle === 'refreshing'}
+        stale={manualLifecycle === 'stale'}
+        partialResults={manualLifecycle === 'stale'}
+        error={manualLifecycle === 'error' ? 'The query failed. Retry to request the current revision.' : null}
+        onRetry={retryManualQuery}
+        caption="Manual workspace report"
+        stickyHeader
+      />
+    </div>
+  </section>
+
+  <section class="scale-fixture" aria-labelledby="scale-fixture-title">
+    <div>
+      <p class="eyebrow">Scale boundary</p>
+      <h4 id="scale-fixture-title">Virtualized result window</h4>
+      <p class="supporting">
+        A fixed-height, keyboard-scrollable body renders a stable row-key window while its
+        semantic header remains visible.
+      </p>
+    </div>
+    <div class="table-frame table-frame--virtual">
+      <DataTable
+        data={virtualRows}
+        columns={virtualColumns}
+        rowKey="id"
+        {virtualization}
+        caption="Virtual workspace report"
+        striped
+        stickyHeader
+      />
+    </div>
+  </section>
+
+  <section class="coverage-fixture" aria-labelledby="coverage-fixture-title">
+    <div>
+      <p class="eyebrow">Release conformance</p>
+      <h4 id="coverage-fixture-title">Every supported DataTable surface</h4>
+    </div>
+    <ul>
+      {#each dataTableConformanceScenarios as scenario}
+        <li><strong>{scenario.title}:</strong> {scenario.contracts.join(', ')}</li>
+      {/each}
+    </ul>
   </section>
 
   <div class="empty-state">
@@ -401,6 +564,33 @@ function restoreReportLayout() {
     gap: var(--smrt-spacing-3);
     padding-top: var(--smrt-spacing-4);
     border-top: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .manual-fixture,
+  .scale-fixture,
+  .coverage-fixture {
+    display: grid;
+    gap: var(--smrt-spacing-3);
+    padding-top: var(--smrt-spacing-4);
+    border-top: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .table-frame--virtual {
+    max-height: 20rem;
+  }
+
+  .coverage-fixture ul {
+    display: grid;
+    gap: var(--smrt-spacing-2);
+    padding: 0;
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+    font: var(--smrt-typography-body-small-font);
+    list-style: none;
+  }
+
+  .coverage-fixture strong {
+    color: var(--smrt-color-on-surface);
   }
 
   .report-fixture__header {

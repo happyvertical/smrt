@@ -1,4 +1,5 @@
 <script lang="ts">
+import '@happyvertical/smrt-ui/themes/styles/all.css';
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 import { WorkbenchHost } from '@happyvertical/smrt-workbench/svelte';
 import {

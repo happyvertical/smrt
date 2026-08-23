@@ -135,9 +135,9 @@ transition path.
 <DataTable {controller} data={rows} {columns} rowKey="id" sortable selectable />
 ```
 
-`controller.snapshot()` returns the canonical JSON-safe version-2 `{ version,
-modes, state }` envelope. `hydrateDataTableSnapshot()` accepts version 1 and
-migrates it to version 2. The envelope contains no rows, callbacks, snippets,
+`controller.snapshot()` returns the canonical JSON-safe version-3 `{ version,
+modes, state }` envelope. `hydrateDataTableSnapshot()` accepts versions 1, 2,
+and 3 and normalizes them to version 3. The envelope contains no rows, callbacks, snippets,
 storage handles, tenant/principal data, query objects, or authority. URL and
 saved-view adapters remain application-owned: persist the snapshot (normally
 excluding selection and expansion IDs), validate it with
@@ -166,6 +166,26 @@ An explicit `controller` takes precedence over `state` and legacy bindables.
 Without one, the component creates an internal controller and maps the legacy
 props. Multi-column sorting and persisted layouts use the controller state;
 the legacy `SortState` remains intentionally single-column.
+
+### Public surface and supported combinations
+
+`DataTable` supports the following contracts. These are intentionally composed
+through the controller rather than through a separate report or remote-table
+component.
+
+| Need | Public API | Important constraint |
+| --- | --- | --- |
+| Stable row interaction | `rowKey`, `selectable`, `expanded`, `onRowClick`, `agentAddressable` | `rowKey` is mandatory whenever a row has durable or remote identity. |
+| Declarative view state | `controller`, `state`, `initialState`, `onStateChange` | A supplied `controller` wins over controlled state and legacy bindables. |
+| Local or remote transformations | `modes`, `manualSorting`, `manualPagination`, `filterFn`, `totalRows` | A manual stage never runs locally; never mix a local transform with an already transformed remote result. |
+| Query lifecycle | `loading`, `refreshing`, `stale`, `partialResults`, `error`, `onRetry` | The caller owns request cancellation and revision checks; the table only presents the supplied result state. |
+| Report layout | column `headerPath`, `resizable`, `role`, `responsive`; `structuralRows`; controller widths/pinning | Group structure follows final visible leaf columns. Structural rows are never selectable or virtualized. |
+| Narrow screens | `visibleColumnIds` and responsive column metadata | The table preserves its semantic columns behind a named, keyboard-scrollable horizontal overflow region; it does not silently collapse content. |
+| Continuous browsing | `virtualization` | Requires `rowKey` and a fixed-height body. Expanded rows deliberately use the normal semantic body. |
+
+The interactive workbench's **Data Table** entry contains a release conformance
+fixture for each row in this table: local interaction, manual query lifecycle,
+responsive overflow, report layout, and virtualization.
 
 ### Row identity and selection
 
@@ -223,6 +243,42 @@ the value changes. Data or total changes clamp an out-of-range page but do not
 otherwise reset it; empty known totals normalize to page 1. Column layout,
 selection, and expansion never change the page.
 
+### Manual query, retry, and race contract
+
+When any stage is `manual`, the host owns the request and result lifecycle. On
+each query-shape change, derive a stable `queryFingerprint` and monotonically
+increasing `queryRevision`; start the request, retain the currently displayed
+rows with `refreshing`/`stale` as appropriate, and only commit a response when
+both values still match. A late response is discarded by the host, not merged
+by `DataTable`.
+
+```ts
+const query = { queryFingerprint: filterHash, queryRevision: String(revision) };
+const result = await loadRows(query);
+
+if (query.queryRevision === String(revision) && query.queryFingerprint === filterHash) {
+  rows = result.rows;
+  totalRows = result.totalRows;
+}
+```
+
+Set `error` without clearing a usable page, and make `onRetry` create a new
+revision. For query-wide actions, dispatch `selectAllMatching` with the same
+fingerprint/revision and call `assertDataTableSelectionCurrent` directly before
+the destructive request. This gives ContentList, reporting, admin, and agent
+surfaces the same stale-result and selection guardrail.
+
+### Saved layout and report guidance
+
+Use `headerPath` on every leaf that belongs to a grouped heading; matching IDs
+at a given depth form a column group after visibility and restored column order
+are applied. Keep report totals in `structuralRows` or `footer`, not in the
+data array. Persist `controller.snapshot()` only after removing tenant-specific
+selection and expansion IDs, then hydrate it before creating the next
+controller. The version-3 snapshot includes `columnOrder`,
+`columnVisibility`, `columnWidths`, and `columnPinning`, so a report can safely
+restore layout without persisting row data or query authority.
+
 ### Scale boundaries and virtualization
 
 `DATA_TABLE_SCALE_THRESHOLDS` publishes the measured operating boundaries used
@@ -269,6 +325,7 @@ hand-authored, and every text pairing clears WCAG AA.
 ```svelte
 <script>
   import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/all.css';
   import '@happyvertical/smrt-ui/themes/styles/fonts.css';
 </script>
 
