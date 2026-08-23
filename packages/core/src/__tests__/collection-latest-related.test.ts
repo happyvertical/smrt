@@ -67,6 +67,9 @@ class LatestRelatedEvaluation extends SmrtObject {
 
   @field()
   note = '';
+
+  @field()
+  thisIsAnExtremelyLongLatestRelatedFieldNameForPostgresAliasCoverage = '';
 }
 
 class LatestRelatedParentCollection extends SmrtCollection<LatestRelatedParent> {
@@ -75,6 +78,41 @@ class LatestRelatedParentCollection extends SmrtCollection<LatestRelatedParent> 
 
 class LatestRelatedEvaluationCollection extends SmrtCollection<LatestRelatedEvaluation> {
   static readonly _itemClass = LatestRelatedEvaluation;
+}
+
+@smrt()
+class LatestRelatedCustomParent extends SmrtObject {
+  @field({ required: true, primaryKey: true })
+  parentKey = '';
+
+  @field()
+  name = '';
+
+  @oneToMany('LatestRelatedCustomEvaluation')
+  evaluations: LatestRelatedCustomEvaluation[] = [];
+}
+
+@smrt()
+class LatestRelatedCustomEvaluation extends SmrtObject {
+  @field({ required: true, primaryKey: true })
+  evaluationKey = '';
+
+  @foreignKey(LatestRelatedCustomParent)
+  parentKey = '';
+
+  @field()
+  sequence = 0;
+
+  @field()
+  note = '';
+}
+
+class LatestRelatedCustomParentCollection extends SmrtCollection<LatestRelatedCustomParent> {
+  static readonly _itemClass = LatestRelatedCustomParent;
+}
+
+class LatestRelatedCustomEvaluationCollection extends SmrtCollection<LatestRelatedCustomEvaluation> {
+  static readonly _itemClass = LatestRelatedCustomEvaluation;
 }
 
 @smrt()
@@ -113,14 +151,16 @@ class LatestRelatedStiScoreEvaluationCollection extends SmrtCollection<LatestRel
 
 describe('SmrtCollection.listWithLatestRelated()', () => {
   let db: DatabaseInterface;
+  let sqlitePath: string;
   let parents: LatestRelatedParentCollection;
   let evaluations: LatestRelatedEvaluationCollection;
 
   beforeEach(async () => {
     resetInitializationEvidence();
+    sqlitePath = join(tmpdir(), `latest-related-${randomUUID()}.db`);
     db = await getTestDatabase({
       type: 'sqlite',
-      url: join(tmpdir(), `latest-related-${randomUUID()}.db`),
+      url: sqlitePath,
     });
     parents = await LatestRelatedParentCollection.create({ db });
     evaluations = await LatestRelatedEvaluationCollection.create({ db });
@@ -130,6 +170,9 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     GlobalInterceptors.unregister('latest-related-transform');
     GlobalInterceptors.unregister('latest-related-scope');
     await db.close?.();
+    if (existsSync(sqlitePath)) {
+      rmSync(sqlitePath, { force: true });
+    }
   });
 
   it('selects one latest row per parent and sorts before pagination', async () => {
@@ -192,6 +235,102 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     expect(nextPage[0].latestRelated).toBeNull();
     expect(initializationOrder).toEqual(['first', 'second', 'third']);
     expect(maximumActiveInitializers).toBe(1);
+  });
+
+  it('supports offset-only pagination on SQLite', async () => {
+    await parents.create({ name: 'first' });
+    await parents.create({ name: 'second' });
+
+    const page = await parents.listWithLatestRelated({
+      latestRelated: {
+        relation: 'evaluations',
+        orderBy: 'sequence DESC',
+        select: ['note'],
+      },
+      orderBy: 'name ASC',
+      offset: 1,
+    });
+
+    expect(page).toHaveLength(1);
+    expect(page[0].parent.name).toBe('second');
+  });
+
+  it('uses declared primary keys for parent and related rows', async () => {
+    const customParents = await LatestRelatedCustomParentCollection.create({
+      db,
+    });
+    const customEvaluations =
+      await LatestRelatedCustomEvaluationCollection.create({ db });
+    // Build the contract represented by @field({ primaryKey: true })
+    // directly: the production schema path omits synthetic id/slug/context
+    // columns for these models, while this test's manifest fixture includes
+    // them for unrelated collection tests.
+    await db.query('DROP TABLE latest_related_custom_evaluations');
+    await db.query('DROP TABLE latest_related_custom_parents');
+    await db.query(
+      'CREATE TABLE latest_related_custom_parents (parent_key TEXT PRIMARY KEY NOT NULL, name TEXT)',
+    );
+    await db.query(
+      'CREATE TABLE latest_related_custom_evaluations (evaluation_key TEXT PRIMARY KEY NOT NULL, parent_key TEXT NOT NULL, sequence INTEGER NOT NULL, note TEXT)',
+    );
+    await db.query(
+      'INSERT INTO latest_related_custom_parents (parent_key, name) VALUES ($1, $2)',
+      'parent-one',
+      'custom parent',
+    );
+    await db.query(
+      'INSERT INTO latest_related_custom_evaluations (evaluation_key, parent_key, sequence, note) VALUES ($1, $2, $3, $4)',
+      'evaluation-old',
+      'parent-one',
+      1,
+      'old',
+    );
+    await db.query(
+      'INSERT INTO latest_related_custom_evaluations (evaluation_key, parent_key, sequence, note) VALUES ($1, $2, $3, $4)',
+      'evaluation-new',
+      'parent-one',
+      2,
+      'new',
+    );
+
+    const rows = await customParents.listWithLatestRelated({
+      latestRelated: {
+        relation: 'evaluations',
+        orderBy: 'sequence DESC',
+      },
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].parent.parentKey).toBe('parent-one');
+    expect(rows[0].latestRelated).toEqual({
+      evaluationKey: 'evaluation-new',
+    });
+  });
+
+  it('maps long related field names through bounded internal aliases', async () => {
+    const parent = await parents.create({ name: 'long alias parent' });
+    await evaluations.create({
+      parentId: parent.id,
+      sequence: 1,
+      note: 'long alias',
+      thisIsAnExtremelyLongLatestRelatedFieldNameForPostgresAliasCoverage:
+        'preserved',
+    });
+
+    const rows = await parents.listWithLatestRelated({
+      latestRelated: {
+        relation: 'evaluations',
+        orderBy: 'sequence DESC',
+        select: [
+          'thisIsAnExtremelyLongLatestRelatedFieldNameForPostgresAliasCoverage',
+        ],
+      },
+    });
+
+    expect(rows[0].latestRelated).toEqual({
+      thisIsAnExtremelyLongLatestRelatedFieldNameForPostgresAliasCoverage:
+        'preserved',
+    });
   });
 
   it('keeps related rows paired when afterList filters and reorders parents', async () => {

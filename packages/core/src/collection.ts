@@ -387,7 +387,7 @@ export interface SmrtLatestRelatedOptions {
 /** Options accepted by {@link SmrtCollection.listWithLatestRelated}. */
 export type SmrtLatestRelatedListOptions<ModelType extends SmrtObject> = Omit<
   SmrtListOptions<ModelType>,
-  'select' | 'include'
+  'select' | 'include' | 'cache'
 > & {
   latestRelated: SmrtLatestRelatedOptions;
 };
@@ -1269,6 +1269,25 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  private resolvePrimaryKeyField(
+    fields: Record<string, CollectionFieldDefinition>,
+    label: string,
+  ): { field: string; column: string } {
+    const declared = Object.entries(fields)
+      .filter(
+        ([, fieldDef]) =>
+          fieldDef.primaryKey === true || fieldDef._meta?.primaryKey === true,
+      )
+      .map(([field]) => field);
+    if (declared.length > 1) {
+      throw new Error(
+        `${label} declares multiple primary-key fields (${declared.join(', ')}); listWithLatestRelated requires a single primary key.`,
+      );
+    }
+    const field = declared[0] ?? 'id';
+    return { field, column: this.toDbColumnName(field) };
+  }
+
   private isOmittedCustomPrimaryKeySystemField(
     fieldName: string,
     hasCustomPrimaryKey: boolean,
@@ -1635,7 +1654,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const { sql: relatedWhereSql, values: relatedWhereValues } = buildWhere(
       relatedCollection.convertWhereKeys(relatedWhere || {}),
     );
-    const relatedSelect = latestOptions.select ?? ['id'];
+    const relatedPrimaryKey = relatedCollection.resolvePrimaryKeyField(
+      relatedFields,
+      `Related model ${relatedItemClassName}`,
+    );
+    const relatedSelect = latestOptions.select ?? [relatedPrimaryKey.field];
     const relatedProjection = relatedCollection.resolveProjectionSelect(
       relatedSelect,
       relatedFields,
@@ -1655,8 +1678,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       : [];
 
     const parentFields = this.getFieldsSync();
+    const parentPrimaryKey = this.resolvePrimaryKeyField(
+      parentFields,
+      `Parent model ${itemClassName}`,
+    );
     const relatedOutputFields = new Set(relatedProjection.outputFields);
-    relatedOutputFields.add('id');
+    relatedOutputFields.add(relatedPrimaryKey.field);
     relatedOutputFields.add(inverseForeignKey.fieldName);
     if (parentFields.tenantId && relatedFields.tenantId) {
       relatedOutputFields.add('tenantId');
@@ -1670,27 +1697,38 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         term.column,
       ]),
     );
+    const relatedFieldAliases = new Map(
+      Array.from(relatedOutputFields).map((fieldName, index) => [
+        fieldName,
+        `__smrt_lr_${index}`,
+      ]),
+    );
+    const relatedAlias = (fieldName: string): string => {
+      const alias = relatedFieldAliases.get(fieldName);
+      if (!alias) {
+        throw new Error(`Missing latest-related alias for '${fieldName}'.`);
+      }
+      return alias;
+    };
     const relatedSelectExpressions = Array.from(relatedOutputFields).map(
       (fieldName) => {
         const column =
           relatedFieldColumns.get(fieldName) ??
           relatedCollection.toDbColumnName(fieldName);
-        const alias = `__smrt_latest_related__${fieldName}`;
+        const alias = relatedAlias(fieldName);
         return `${relatedCollection.quoteProjectionIdentifier(column)} AS ${relatedCollection.quoteProjectionIdentifier(alias)}`;
       },
     );
     const relatedRankOrder = [
       relatedCollection.qualifyLatestOrderTerms('r', relatedOrderTerms),
-      `r.${relatedCollection.quoteProjectionIdentifier('id')} DESC`,
+      `r.${relatedCollection.quoteProjectionIdentifier(relatedPrimaryKey.column)} DESC`,
     ]
       .filter(Boolean)
       .join(', ');
     const latestRankAlias =
       relatedCollection.quoteProjectionIdentifier('__smrt_latest_rank');
     const latestRelatedAlias = (fieldName: string): string =>
-      relatedCollection.quoteProjectionIdentifier(
-        `__smrt_latest_related__${fieldName}`,
-      );
+      relatedCollection.quoteProjectionIdentifier(relatedAlias(fieldName));
     const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions
       .map((expression) => `r.${expression}`)
       .join(
@@ -1707,7 +1745,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const relatedJoinConditions = [
       `rr.${latestRankAlias} = 1`,
-      `rr.${latestRelatedAlias(inverseForeignKey.fieldName)} = ${this.quoteProjectionIdentifier('id')}`,
+      `rr.${latestRelatedAlias(inverseForeignKey.fieldName)} = ${this.quoteProjectionIdentifier(parentPrimaryKey.column)}`,
     ];
     if (parentFields.tenantId && relatedFields.tenantId) {
       relatedJoinConditions.push(
@@ -1722,7 +1760,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           'rr',
           relatedSortTerms.map((term) => ({
             ...term,
-            column: `__smrt_latest_related__${term.field}`,
+            column: relatedAlias(term.field),
           })),
         ),
       );
@@ -1742,7 +1780,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           .join(', '),
       );
     }
-    orderFragments.push(`${this.quoteProjectionIdentifier('id')} ASC`);
+    orderFragments.push(
+      `${this.quoteProjectionIdentifier(parentPrimaryKey.column)} ASC`,
+    );
 
     const boundedLimit = this.applyListBounds(assertQueryBound(limit, 'limit'));
     const boundedOffset = assertQueryBound(offset, 'offset');
@@ -1755,6 +1795,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       limitOffsetValues.push(boundedLimit);
     }
     if (boundedOffset !== undefined) {
+      if (boundedLimit === undefined) {
+        // SQLite requires LIMIT before OFFSET. LIMIT -1 is the portable
+        // unlimited form accepted by SQLite, DuckDB, and PostgreSQL.
+        limitOffsetSql += ' LIMIT -1';
+      }
       limitOffsetSql += ` OFFSET $${nextParameter++}`;
       limitOffsetValues.push(boundedOffset);
     }
@@ -1764,7 +1809,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     )
       .map(
         (fieldName) =>
-          `rr.${latestRelatedAlias(fieldName)} AS ${this.quoteProjectionIdentifier(`__smrt_latest_related__${fieldName}`)}`,
+          `rr.${latestRelatedAlias(fieldName)} AS ${this.quoteProjectionIdentifier(relatedAlias(fieldName))}`,
       )
       .join(
         ', ',
@@ -1780,11 +1825,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // the same transaction-bound PostgreSQL client, so overlapping hydration
     // would violate the collection-wide serial hydration invariant.
     const instances: ModelType[] = [];
+    const relatedAliasNames = new Set(relatedFieldAliases.values());
     for (const row of rows.rows as Record<string, unknown>[]) {
       const parentRow = Object.fromEntries(
-        Object.entries(row).filter(
-          ([key]) => !key.startsWith('__smrt_latest_related__'),
-        ),
+        Object.entries(row).filter(([key]) => !relatedAliasNames.has(key)),
       );
       instances.push(
         await this.hydrateResultRow(parentRow, parentFields, isSTI),
@@ -1797,16 +1841,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // data to another parent.
     const relatedByParentId = new Map<string, Record<string, unknown> | null>();
     for (const row of rows.rows as Record<string, unknown>[]) {
-      const parentId = row.id;
+      const parentId = row[parentPrimaryKey.column];
       if (parentId === null || parentId === undefined) continue;
 
       const relatedRow = Object.fromEntries(
         relatedProjection.outputFields.map((fieldName) => [
           fieldName,
-          row[`__smrt_latest_related__${fieldName}`],
+          row[relatedAlias(fieldName)],
         ]),
       );
-      const relatedId = row.__smrt_latest_related__id;
+      const relatedId = row[relatedAlias(relatedPrimaryKey.field)];
       relatedByParentId.set(
         String(parentId),
         relatedId === null || relatedId === undefined
@@ -1828,9 +1872,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return finalInstances.map((parent) => {
       return {
         latestRelated:
-          parent.id === null || parent.id === undefined
+          (parent as unknown as Record<string, unknown>)[
+            parentPrimaryKey.field
+          ] === null ||
+          (parent as unknown as Record<string, unknown>)[
+            parentPrimaryKey.field
+          ] === undefined
             ? null
-            : (relatedByParentId.get(String(parent.id)) ?? null),
+            : (relatedByParentId.get(
+                String(
+                  (parent as unknown as Record<string, unknown>)[
+                    parentPrimaryKey.field
+                  ],
+                ),
+              ) ?? null),
         parent,
       };
     });
