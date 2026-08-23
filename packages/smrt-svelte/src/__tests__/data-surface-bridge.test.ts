@@ -206,6 +206,104 @@ describe('data-surface browser bridge', () => {
     expect(execute).toHaveBeenCalledTimes(2);
   });
 
+  it('atomically reserves replay capacity while concurrent executions are held', async () => {
+    const registry = createDataSurfaceRegistry();
+    const releases: Array<() => void> = [];
+    const execute = vi.fn(
+      () => new Promise<void>((resolve) => releases.push(resolve)),
+    );
+    registry.register({
+      descriptor,
+      getSnapshot: () => ({ revision: 1, state: {} }),
+      execute,
+    });
+    const link = transport();
+    createDataSurfaceBrowserBridge({
+      registry,
+      transport: link,
+      sessionId: 'session-1',
+      source: 'browser-1',
+      peerSource: 'server-1',
+      now: () => 1_000,
+      maxReplayEntries: 2,
+    });
+
+    void link.receive(request({ commandId: 'held-one', expiresAt: 5_000 }));
+    void link.receive(request({ commandId: 'held-two', expiresAt: 5_000 }));
+    void link.receive(request({ commandId: 'held-three', expiresAt: 5_000 }));
+    for (
+      let attempt = 0;
+      attempt < 5 && execute.mock.calls.length < 1;
+      attempt++
+    ) {
+      await drain();
+    }
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(link.messages).toContainEqual(
+      expect.objectContaining({
+        type: 'data-surface.ack',
+        commandId: 'held-three',
+        reason: 'replay_capacity_exceeded',
+      }),
+    );
+
+    releases[0]?.();
+    for (
+      let attempt = 0;
+      attempt < 5 && execute.mock.calls.length < 2;
+      attempt++
+    ) {
+      await drain();
+    }
+    releases[1]?.();
+    await drain();
+    await drain();
+    expect(
+      link.messages.filter(
+        (message) => message.type === 'data-surface.ack' && message.ok === true,
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('releases replay reservations when execution errors after expiry', async () => {
+    let current = 1_000;
+    const registry = createDataSurfaceRegistry();
+    const execute = vi
+      .fn<() => void>()
+      .mockImplementationOnce(() => {
+        throw new Error('boom');
+      })
+      .mockImplementationOnce(() => undefined);
+    registry.register({
+      descriptor,
+      getSnapshot: () => ({ revision: 1, state: {} }),
+      execute,
+    });
+    const link = transport();
+    createDataSurfaceBrowserBridge({
+      registry,
+      transport: link,
+      sessionId: 'session-1',
+      source: 'browser-1',
+      peerSource: 'server-1',
+      now: () => current,
+      maxReplayEntries: 1,
+    });
+
+    await link.receive(
+      request({ commandId: 'expired-error', expiresAt: 1_100 }),
+    );
+    await drain();
+    current = 1_200;
+    await link.receive(request({ commandId: 'after-error', expiresAt: 5_000 }));
+    await drain();
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(link.messages.at(-1)).toMatchObject({
+      commandId: 'after-error',
+      ok: true,
+    });
+  });
+
   it('forwards only monotonic registry events', async () => {
     const { registry } = fixture();
     const link = transport();

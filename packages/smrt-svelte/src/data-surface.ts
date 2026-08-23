@@ -239,6 +239,11 @@ export function createDataSurfaceBrowserBridge(
     string,
     { signature: string; ack: DataSurfaceCommandAck; expiresAt: number }
   >();
+  const reservations = new Set<string>();
+  const inflight = new Map<
+    string,
+    { signature: string; promise: Promise<void> }
+  >();
   let disposed = false;
   let lastSequence = 0;
 
@@ -318,6 +323,21 @@ export function createDataSurfaceBrowserBridge(
       );
       return;
     }
+    const active = inflight.get(request.commandId);
+    if (active) {
+      if (active.signature !== signature) {
+        await sendAck(rejected(request, 'idempotency_conflict'));
+        return;
+      }
+      await active.promise;
+      const completed = replay.get(request.commandId);
+      if (completed?.signature === signature) {
+        await sendAck(completed.ack);
+      } else if (request.expiresAt <= now()) {
+        await sendAck(rejected(request, 'expired'));
+      }
+      return;
+    }
 
     let ack: DataSurfaceCommandAck | undefined;
     if (request.sessionId !== options.sessionId) {
@@ -329,52 +349,62 @@ export function createDataSurfaceBrowserBridge(
       request.expiresAt - now() > maxTtlMs
     ) {
       ack = rejected(request, 'expired');
-    } else if (replay.size >= maxReplayEntries) {
+    } else if (replay.size + reservations.size >= maxReplayEntries) {
       ack = rejected(request, 'replay_capacity_exceeded');
     } else {
-      let command: DataSurfaceVisibleCommand;
+      reservations.add(request.commandId);
+      const promise = (async () => {
+        try {
+          let resultAck: DataSurfaceCommandAck;
+          try {
+            const command = normalizeDataSurfaceVisibleCommand({
+              version: 1,
+              commandId: request.commandId,
+              identity: request.identity,
+              expectedRevision: request.expectedRevision,
+              controlId: request.controlId,
+              ...(request.payload === undefined
+                ? {}
+                : { payload: request.payload }),
+            });
+            const result = await options.registry.execute(command);
+            resultAck = {
+              type: 'data-surface.ack',
+              version: 1,
+              commandId: request.commandId,
+              sessionId: options.sessionId,
+              source: options.source,
+              expiresAt: request.expiresAt,
+              identity: result.identity,
+              expectedRevision: request.expectedRevision,
+              ok: result.ok,
+              revision: result.revision,
+              snapshot: result.snapshot,
+              reason: result.reason,
+            };
+          } catch {
+            resultAck = rejected(request, 'invalid_request');
+          }
+          if (request.expiresAt <= now()) {
+            resultAck = rejected(request, 'expired');
+          }
+          remember(request, resultAck);
+          await sendAck(resultAck);
+        } finally {
+          reservations.delete(request.commandId);
+        }
+      })();
+      inflight.set(request.commandId, { signature, promise });
       try {
-        command = normalizeDataSurfaceVisibleCommand({
-          version: 1,
-          commandId: request.commandId,
-          identity: request.identity,
-          expectedRevision: request.expectedRevision,
-          controlId: request.controlId,
-          ...(request.payload === undefined
-            ? {}
-            : { payload: request.payload }),
-        });
-        const result = await options.registry.execute(command);
-        ack = {
-          type: 'data-surface.ack',
-          version: 1,
-          commandId: request.commandId,
-          sessionId: options.sessionId,
-          source: options.source,
-          expiresAt: request.expiresAt,
-          identity: result.identity,
-          expectedRevision: request.expectedRevision,
-          ok: result.ok,
-          revision: result.revision,
-          snapshot: result.snapshot,
-          reason: result.reason,
-        };
-      } catch {
-        ack = rejected(request, 'invalid_request');
+        await promise;
+      } finally {
+        if (inflight.get(request.commandId)?.promise === promise) {
+          inflight.delete(request.commandId);
+        }
       }
-    }
-    if (
-      ack === undefined ||
-      request.sessionId !== options.sessionId ||
-      request.source !== options.peerSource ||
-      request.expiresAt <= now() ||
-      ack.reason === 'replay_capacity_exceeded'
-    ) {
-      if (ack !== undefined) await sendAck(ack);
       return;
     }
-    remember(request, ack);
-    await sendAck(ack);
+    if (ack !== undefined) await sendAck(ack);
   };
 
   const emit = (event: DataSurfaceRegistryEvent) => {
