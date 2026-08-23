@@ -143,7 +143,7 @@ export interface DataSurfaceToolsOptions {
 }
 
 export interface DataSurfaceFailureEntry {
-  action: 'query';
+  action: 'discover' | 'inspect' | 'query';
   surfaceId: string;
   requestId?: string;
   userId: string;
@@ -458,7 +458,14 @@ function canonicalRequestValue(value: unknown): unknown {
   return value;
 }
 
-function dataSurfaceFingerprint(request: DataQueryRequest): string {
+/**
+ * Create the fingerprint for the already-normalized request passed to a
+ * surface executor. This supports internal projections beyond core's public
+ * 50-field projection limit; callers must use the exact request received.
+ */
+export function createDataSurfaceQueryFingerprint(
+  request: DataQueryRequest,
+): string {
   const { requestId: _requestId, page: _page, ...semanticQuery } = request;
   return `dq1_${createHash('sha256')
     .update(JSON.stringify(canonicalRequestValue(semanticQuery)))
@@ -523,7 +530,8 @@ function normalizeWideRows(
     (rawRecord.version !== 1 ||
       rawRecord.requestId !== internal.request.requestId ||
       rawRecord.identityField !== internal.schema.identityField ||
-      rawRecord.queryFingerprint !== dataSurfaceFingerprint(internal.request))
+      rawRecord.queryFingerprint !==
+        createDataSurfaceQueryFingerprint(internal.request))
   ) {
     throw new DataSurfaceQueryError();
   }
@@ -577,7 +585,7 @@ function normalizeWideRows(
   const result = {
     ...chunks[0],
     requestId: request.requestId,
-    queryFingerprint: dataSurfaceFingerprint(request),
+    queryFingerprint: createDataSurfaceQueryFingerprint(request),
     identityField: schema.identityField,
     rows,
   };
@@ -593,14 +601,40 @@ function addSortOnlyValues(
   rawRows: DataQueryRow[],
   request: DataQueryRequest,
   schema: DataQuerySchema,
+  rawRecord: Record<string, unknown> | undefined,
 ): DataQueryRow[] {
   const projection = new Set(request.projection ?? [schema.identityField]);
+  const sortOnly = (request.sort ?? [])
+    .map((term) => term.field)
+    .filter((field) => !projection.has(field));
+  if (sortOnly.length === 0) return rows;
+  const validationProjection = [
+    ...new Set([schema.identityField, ...sortOnly]),
+  ].sort();
+  const validationRequest = { ...request, projection: validationProjection };
+  const validationRows = rawRows.map((row) =>
+    Object.fromEntries(
+      Object.entries(row).filter(([field]) =>
+        validationProjection.includes(field),
+      ),
+    ),
+  );
+  const validated = normalizeDataQueryResult(
+    shorthandResultCandidate(
+      validationRequest,
+      schema,
+      rawRecord,
+      validationRows,
+    ),
+    validationRequest,
+    schema,
+  );
   return rows.map((row, index) => {
-    const rawRow = rawRows[index];
+    const validatedRow = validated.rows[index];
     const result = { ...row };
-    for (const term of request.sort ?? []) {
-      if (!projection.has(term.field) && Object.hasOwn(rawRow, term.field)) {
-        result[term.field] = rawRow[term.field];
+    for (const field of sortOnly) {
+      if (Object.hasOwn(validatedRow, field)) {
+        result[field] = validatedRow[field];
       }
     }
     return result;
@@ -671,14 +705,15 @@ function stripInternalProjection(
 async function reportFailure(
   options: DataSurfaceToolsOptions,
   run: PrincipalRun,
+  action: DataSurfaceFailureEntry['action'],
   surfaceId: string,
-  requestId: string,
+  requestId: string | undefined,
   error: unknown,
 ): Promise<void> {
   try {
     const principal = principalFromRun(run);
     await options.onFailure?.({
-      action: 'query',
+      action,
       surfaceId,
       requestId,
       ...principal,
@@ -746,8 +781,31 @@ export function createDataSurfaceTools(
     entry: DataSurfaceAuditInput,
     run: PrincipalRun,
   ): Promise<void> => {
-    const principal = principalFromRun(run);
-    await options.audit?.({ ...entry, ...principal });
+    try {
+      const principal = principalFromRun(run);
+      await options.audit?.({ ...entry, ...principal });
+    } catch (error) {
+      await reportFailure(
+        options,
+        run,
+        entry.action,
+        entry.surfaceId ?? '',
+        entry.requestId,
+        error,
+      );
+      throw new DataSurfaceQueryError();
+    }
+  };
+  const catalog = async (
+    run: PrincipalRun,
+    action: DataSurfaceFailureEntry['action'],
+  ) => {
+    try {
+      return await availableSurfaces(options, run);
+    } catch (error) {
+      await reportFailure(options, run, action, '', undefined, error);
+      throw new DataSurfaceQueryError();
+    }
   };
 
   const discover = tool(
@@ -757,7 +815,7 @@ export function createDataSurfaceTools(
     { type: 'object', properties: {}, additionalProperties: false },
     async ({ run }) => {
       run.assertToolAllowed(DATA_DISCOVER_TOOL_SLUG);
-      const entries = await availableSurfaces(options, run);
+      const entries = await catalog(run, 'discover');
       await audit({ action: 'discover' }, run);
       return entries.map(({ surface, schema }) => descriptor(surface, schema));
     },
@@ -775,10 +833,7 @@ export function createDataSurfaceTools(
     },
     async ({ run, args }) => {
       run.assertToolAllowed(DATA_INSPECT_TOOL_SLUG);
-      const entry = findSurface(
-        await availableSurfaces(options, run),
-        args.surfaceId,
-      );
+      const entry = findSurface(await catalog(run, 'inspect'), args.surfaceId);
       if (!entry) throw new DataSurfaceDeniedError();
       await audit({ action: 'inspect', surfaceId: entry.surface.id }, run);
       return descriptor(entry.surface, entry.schema);
@@ -800,10 +855,7 @@ export function createDataSurfaceTools(
     },
     async ({ run, args, db }) => {
       run.assertToolAllowed(DATA_QUERY_TOOL_SLUG);
-      const entry = findSurface(
-        await availableSurfaces(options, run),
-        args.surfaceId,
-      );
+      const entry = findSurface(await catalog(run, 'query'), args.surfaceId);
       if (!entry) throw new DataSurfaceDeniedError();
       const request = normalizeSurfaceRequest(
         requestFromArgs(args),
@@ -875,6 +927,7 @@ export function createDataSurfaceTools(
                 rawOrderRows,
                 request,
                 entry.schema,
+                rawRecord,
               )
             : rawOrderRows;
         if (request.mode === 'rows') {
@@ -896,7 +949,7 @@ export function createDataSurfaceTools(
           requestId: resultRequest.requestId,
           queryFingerprint: canValidateInternal
             ? createDataQueryFingerprint(resultRequest, entry.schema)
-            : dataSurfaceFingerprint(request),
+            : createDataSurfaceQueryFingerprint(request),
           identityField: entry.schema.identityField,
           rows: stripInternalProjection(orderedRows, request),
         };
@@ -908,7 +961,7 @@ export function createDataSurfaceTools(
             )
           : {
               ...resultCandidate,
-              queryFingerprint: dataSurfaceFingerprint(request),
+              queryFingerprint: createDataSurfaceQueryFingerprint(request),
             };
         await audit(
           {
@@ -925,6 +978,7 @@ export function createDataSurfaceTools(
         await reportFailure(
           options,
           run,
+          'query',
           entry.surface.id,
           request.requestId,
           error,

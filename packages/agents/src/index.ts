@@ -96,6 +96,7 @@ export {
 export { AgentConfig, AgentConfigCollection } from './config.js';
 // Principal-bound data discovery, schema inspection, and bounded reads (#2447).
 export {
+  createDataSurfaceQueryFingerprint,
   createDataSurfaceTools,
   DATA_DISCOVER_FUNCTION_NAME,
   DATA_DISCOVER_TOOL_SLUG,

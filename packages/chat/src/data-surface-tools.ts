@@ -6,6 +6,7 @@
  * No collection or ChatService internals are exposed here.
  */
 export {
+  createDataSurfaceQueryFingerprint,
   createDataSurfaceTools,
   DATA_DISCOVER_FUNCTION_NAME,
   DATA_DISCOVER_TOOL_SLUG,

@@ -1,9 +1,13 @@
 import { createDataQueryFingerprint } from '@happyvertical/smrt-core';
-import type { DataQuerySchema } from '@happyvertical/smrt-types';
+import type {
+  DataQueryRequest,
+  DataQuerySchema,
+} from '@happyvertical/smrt-types';
 import type { SessionPermissionRuntimeContext } from '@happyvertical/smrt-users';
 import { describe, expect, it, vi } from 'vitest';
 import type { DataSurfaceSchema } from './data-surface.js';
 import {
+  createDataSurfaceQueryFingerprint,
   createDataSurfaceTools,
   DATA_DISCOVER_TOOL_SLUG,
   DATA_INSPECT_TOOL_SLUG,
@@ -217,6 +221,85 @@ describe('principal-bound data surface tools', () => {
       db: undefined,
     });
     expect(result).toEqual([]);
+  });
+
+  it('redacts dynamic catalog failures from discovery and query observations', async () => {
+    const failures: unknown[] = [];
+    const tools = toolSet({
+      surfaces: async () => {
+        throw new Error('SQL tenant-b hidden-row-secret');
+      },
+      onFailure: async (entry) => {
+        failures.push(entry.error);
+      },
+    });
+    const discoverRun = fakeRun([DATA_DISCOVER_TOOL_SLUG]);
+    const queryRun = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_DISCOVER_TOOL_SLUG)?.execute({
+        run: discoverRun,
+        args: {},
+        db: undefined,
+      }),
+    ).rejects.toMatchObject({
+      code: 'DATA_SURFACE_QUERY_FAILED',
+      message: 'Data surface query failed.',
+    });
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run: queryRun,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'catalog-failure',
+            mode: 'rows',
+            projection: ['id'],
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toMatchObject({
+      code: 'DATA_SURFACE_QUERY_FAILED',
+      message: 'Data surface query failed.',
+    });
+    expect(failures).toHaveLength(2);
+    expect(failures.every((error) => error instanceof Error)).toBe(true);
+  });
+
+  it('redacts discovery and inspection audit failures', async () => {
+    const failures: unknown[] = [];
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      audit: async () => {
+        throw new Error('tenant-b audit SQL hidden identifier');
+      },
+      onFailure: async (entry) => {
+        failures.push(entry.error);
+      },
+    });
+    const run = fakeRun([DATA_DISCOVER_TOOL_SLUG, DATA_INSPECT_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_DISCOVER_TOOL_SLUG)?.execute({
+        run,
+        args: {},
+        db: undefined,
+      }),
+    ).rejects.toMatchObject({
+      code: 'DATA_SURFACE_QUERY_FAILED',
+      message: 'Data surface query failed.',
+    });
+    await expect(
+      tools.get(DATA_INSPECT_TOOL_SLUG)?.execute({
+        run,
+        args: { surfaceId: 'records' },
+        db: undefined,
+      }),
+    ).rejects.toMatchObject({
+      code: 'DATA_SURFACE_QUERY_FAILED',
+      message: 'Data surface query failed.',
+    });
+    expect(failures).toHaveLength(2);
   });
 
   it('redacts sensitive and permissioned fields from discovery and inspection', async () => {
@@ -712,6 +795,128 @@ describe('principal-bound data surface tools', () => {
     expect(executorProjection).toEqual(
       expect.arrayContaining(['id', 'rank', 'field-0']),
     );
+    expect(rowFieldNames(result)).toEqual([['id']]);
+  });
+
+  it('rejects malformed numeric values in a non-projected sort key', async () => {
+    const fields = Array.from({ length: 50 }, (_, index) => `field-${index}`);
+    const tools = toolSet({
+      surfaces: [
+        { id: 'records', collection: 'records', schema: wideSchema() },
+      ],
+      execute: async () => [{ id: 'r1', rank: Number.NaN }],
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'wide-invalid-sort-value',
+            mode: 'rows',
+            projection: fields,
+            sort: [{ field: 'rank', direction: 'asc' }],
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+  });
+
+  it('rejects out-of-order wide cursor and offset pages', async () => {
+    const fields = Array.from({ length: 50 }, (_, index) => `field-${index}`);
+    for (const kind of ['cursor', 'offset'] as const) {
+      const tools = toolSet({
+        surfaces: [
+          { id: 'records', collection: 'records', schema: wideSchema() },
+        ],
+        execute: async () =>
+          kind === 'cursor'
+            ? {
+                rows: [
+                  { id: 'r10', rank: 10 },
+                  { id: 'r2', rank: 2 },
+                ],
+                nextCursor: 'next-page',
+              }
+            : {
+                rows: [
+                  { id: 'r10', rank: 10 },
+                  { id: 'r2', rank: 2 },
+                ],
+                hasMore: true,
+              },
+      });
+      const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+      await expect(
+        tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+          run,
+          args: {
+            surfaceId: 'records',
+            request: {
+              version: 1,
+              requestId: `wide-invalid-${kind}`,
+              mode: 'rows',
+              projection: fields,
+              sort: [{ field: 'rank', direction: 'asc' }],
+              page:
+                kind === 'cursor'
+                  ? { kind, limit: 2 }
+                  : { kind, offset: 0, limit: 2 },
+            },
+          },
+          db: undefined,
+        }),
+      ).rejects.toBeInstanceOf(DataSurfaceResultOrderError);
+    }
+  });
+
+  it('accepts a versioned wide result using the public internal fingerprint', async () => {
+    const fields = Array.from({ length: 50 }, (_, index) => `field-${index}`);
+    let executorRequest: DataQueryRequest | undefined;
+    const tools = toolSet({
+      surfaces: [
+        { id: 'records', collection: 'records', schema: wideSchema() },
+      ],
+      execute: async (_surface, request) => {
+        executorRequest = request;
+        return {
+          version: 1,
+          requestId: request.requestId,
+          queryFingerprint: createDataSurfaceQueryFingerprint(request),
+          identityField: 'id',
+          rows: [{ id: 'r1', rank: 1 }],
+          page: {
+            kind: 'offset' as const,
+            offset: request.page?.kind === 'offset' ? request.page.offset : 0,
+            limit: request.page?.limit ?? 2,
+            hasMore: false,
+          },
+          total: { kind: 'unavailable' as const },
+          freshness: { state: 'unknown' as const },
+          warnings: [],
+          truncated: false,
+        };
+      },
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'wide-versioned-result',
+          mode: 'rows',
+          projection: fields,
+          sort: [{ field: 'rank', direction: 'asc' }],
+        },
+      },
+      db: undefined,
+    });
+    expect(executorRequest?.projection).toHaveLength(52);
     expect(rowFieldNames(result)).toEqual([['id']]);
   });
 
