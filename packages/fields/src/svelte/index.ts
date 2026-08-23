@@ -75,6 +75,11 @@ export type FieldPolicySuggestionQueueProps = ComponentProps<
 >;
 export type PolicyFieldProps = ComponentProps<typeof PolicyField>;
 
+export {
+  applyFieldPolicyToDataSurface,
+  type FieldPolicyDataSurfaceOptions,
+  policyToDataSurfaceDescriptor,
+} from '../data-surface.js';
 export type {
   FieldPolicyCatalogObjectSummary,
   FieldPolicyDetailItem,

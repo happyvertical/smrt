@@ -196,6 +196,13 @@ per-field `{defaultValue, visibility, help, label, order, locked}` for any
 - `policyToVisibleColumnIds(policy, columns)` feeds smrt-ui `DataTable`'s
   `visibleColumnIds`; it filters policy-hidden mapped fields, preserves unmapped
   computed/action columns, and cannot reveal a static `column.hidden` column.
+- `policyToDataSurfaceDescriptor(policy, descriptor)` is the corresponding
+  mounted DataSurface adapter. It carries effective labels, help text, order,
+  visibility, readable/capability state, and operator/query allowlists into
+  discovery metadata while retaining computed, row-key, selection, and action
+  columns. Static host restrictions are only narrowed; hidden fields are
+  omitted from the descriptor (the row key remains as a non-readable identity
+  column), and actions that explicitly depend on hidden columns are removed.
 - **Two-tier context contract.** `PolicyField` alone reads the context with
   `tryGetFieldPolicyContext()`, because outside a Provider it still has the
   caller's children to render verbatim (incremental adoption). The

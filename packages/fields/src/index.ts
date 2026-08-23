@@ -33,6 +33,11 @@ export {
   serializeHistogramSample,
 } from './collections/FieldUsageCounterCollection.js';
 export {
+  applyFieldPolicyToDataSurface,
+  type FieldPolicyDataSurfaceOptions,
+  policyToDataSurfaceDescriptor,
+} from './data-surface.js';
+export {
   assertDefaultValueMatchesFieldType,
   buildCodeSeedDelta,
   buildCodeSeedVisibility,

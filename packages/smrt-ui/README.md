@@ -421,6 +421,12 @@ Toolbar snapshots also advance their revision when the host updates exposed
 uncontrolled `search` or `view` props, so a command based on an earlier view is
 rejected as stale instead of overwriting host state.
 
+DataSurface columns may also carry domain-neutral policy metadata (`fieldName`,
+`visibility`, `order`, `role`, `responsivePriority`, `readable`, and per-column
+operator allowlists). Domain packages such as `@happyvertical/smrt-fields`
+apply their effective policy above this package; `smrt-ui` validates and
+serializes the metadata without owning field authorization or policy rules.
+
 ## Themes
 
 `@happyvertical/smrt-ui/themes` is the canonical theme API and includes the
