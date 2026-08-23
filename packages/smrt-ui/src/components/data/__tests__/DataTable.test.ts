@@ -81,6 +81,24 @@ describe('DataTable', () => {
     expect(nameHeader).not.toHaveAttribute('aria-sort');
   });
 
+  it('announces the next action for each rule in a multi-column sort', async () => {
+    const multiSortColumns = [columns[0], { ...columns[1], sortable: true }];
+    render(DataTable, {
+      props: { data, columns: multiSortColumns, sortable: true },
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Name ascending' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Sort Age ascending' }),
+      { shiftKey: true },
+    );
+    expect(
+      screen.getByRole('button', { name: 'Sort Age descending' }),
+    ).toBeInTheDocument();
+  });
+
   it('keeps custom sortable headers interactive unless they explicitly opt out', async () => {
     const customHeader = createRawSnippet(() => ({
       render: () => '<span>Custom name</span>',
@@ -550,6 +568,7 @@ describe('DataTable', () => {
 
     await rerender({ ...props, error: 'Request failed' });
     expect(screen.getByRole('cell', { name: 'Ada' })).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'false');
     expect(screen.getByRole('alert')).toHaveTextContent('Request failed');
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -571,6 +590,11 @@ describe('DataTable', () => {
       error: 'Request failed',
     });
     expect(screen.getByRole('alert')).toHaveTextContent('Request failed');
+
+    await rerender({ ...props, data: [], loading: false, error: '' });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to load table data',
+    );
   });
 
   it('rejects duplicate stable row keys and local totals that imply server paging', () => {

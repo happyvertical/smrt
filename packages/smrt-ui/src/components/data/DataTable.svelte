@@ -287,10 +287,13 @@ function usesAutomaticSortButton(column: DataTableColumn<T>): boolean {
 }
 
 function sortActionLabel(column: DataTableColumn<T>): string {
-  if (currentSort.columnId !== column.id) {
+  const columnSort = tableState.sorting.find(
+    (sort) => sort.columnId === column.id,
+  );
+  if (!columnSort) {
     return t(M['ui.data_table.sort_ascending'], { column: column.label });
   }
-  if (currentSort.direction === 'asc') {
+  if (columnSort.direction === 'asc') {
     return t(M['ui.data_table.sort_descending'], { column: column.label });
   }
   return t(M['ui.data_table.clear_sort'], { column: column.label });
@@ -343,7 +346,9 @@ function handleRowClick(row: T, index: number) {
 function getRowLabel(row: T, index: number): string {
   return (
     rowLabel?.(row, index) ??
-    t(M['ui.data_table.row_number'], { number: index + 1 })
+    t(M['ui.data_table.row_number'], {
+      number: virtualRowOffset + index + 1,
+    })
   );
 }
 
@@ -789,10 +794,9 @@ const someSelected = $derived(
 );
 
 const errorMessage = $derived.by(() => {
-  if (!error) return undefined;
-  return typeof error === 'string'
-    ? error
-    : error.message || t(M['ui.data_table.load_error']);
+  if (error == null) return undefined;
+  const message = typeof error === 'string' ? error : error.message;
+  return message.trim() || t(M['ui.data_table.load_error']);
 });
 const hasRenderedRows = $derived(displayRows.length > 0);
 const isInitialLoading = $derived(
@@ -801,7 +805,7 @@ const isInitialLoading = $derived(
 const isRefreshing = $derived(
   (loading || refreshing) && hasRenderedRows && !errorMessage,
 );
-const isBusy = $derived(loading || refreshing);
+const isBusy = $derived((loading || refreshing) && !errorMessage);
 
 const columnCount = $derived(
   visibleColumns.length + (selectable ? 1 : 0) + (expandedContent ? 1 : 0),

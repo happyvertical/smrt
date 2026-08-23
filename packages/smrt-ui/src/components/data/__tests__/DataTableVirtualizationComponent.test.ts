@@ -97,7 +97,7 @@ describe('DataTable virtualization seam', () => {
       '10002',
     );
     await userEvent.click(
-      screen.getAllByRole('checkbox', { name: 'Select row 1' })[0],
+      screen.getAllByRole('checkbox', { name: 'Select row 1101' })[0],
     );
     expect(controller.getState().selectedRowIds).toEqual(['row-0']);
 
