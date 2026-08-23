@@ -1201,14 +1201,18 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
       ...(result ? { result: cloneResult(result) } : {}),
     };
     for (const listener of listeners) {
-      listener({
-        ...event,
-        identity: cloneIdentity(event.identity),
-        ...(event.command
-          ? { command: normalizeDataSurfaceVisibleCommand(event.command) }
-          : {}),
-        ...(event.result ? { result: cloneResult(event.result) } : {}),
-      });
+      try {
+        listener({
+          ...event,
+          identity: cloneIdentity(event.identity),
+          ...(event.command
+            ? { command: normalizeDataSurfaceVisibleCommand(event.command) }
+            : {}),
+          ...(event.result ? { result: cloneResult(event.result) } : {}),
+        });
+      } catch {
+        // Subscribers are observational and cannot alter registry operations.
+      }
     }
   };
 

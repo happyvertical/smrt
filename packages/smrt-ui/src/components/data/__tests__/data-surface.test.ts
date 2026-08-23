@@ -457,6 +457,28 @@ describe('data surface registry', () => {
     expect(registry.list()).toEqual([]);
   });
 
+  it('isolates subscriber failures from registry operations', async () => {
+    const { registry, execute } = registerFixture();
+    registry.subscribe(() => {
+      throw new Error('transport failed');
+    });
+
+    await expect(registry.execute(command())).resolves.toMatchObject({
+      ok: true,
+      revision: 4,
+    });
+    expect(execute).toHaveBeenCalledTimes(1);
+
+    const secondIdentity = { ...identity, surfaceId: 'secondary-surface' };
+    expect(() =>
+      registry.register({
+        descriptor: descriptor({ identity: secondIdentity }),
+        getSnapshot: () => ({ revision: 0, state: {} }),
+      }),
+    ).not.toThrow();
+    expect(() => registry.unregister(secondIdentity)).not.toThrow();
+  });
+
   it('validates bounded query and preview/apply action envelopes without executing them', () => {
     const { registry } = registerFixture();
 
