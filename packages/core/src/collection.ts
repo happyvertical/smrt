@@ -164,7 +164,10 @@ function andWhereCondition<T extends Record<string, unknown>>(
   if (Array.isArray(where)) {
     return where.map((group) => [condition, ...group]);
   }
-  return { ...condition, ...(where ?? {}) } as T;
+  // The collection-owned predicate is an enforcement boundary (for example,
+  // an STI child collection's discriminator), so it must win when a caller
+  // supplies the same key.
+  return { ...(where ?? {}), ...condition } as T;
 }
 
 /**

@@ -387,8 +387,11 @@ describe('STI Polymorphic Queries', () => {
       });
       await concert.save();
 
-      // Query via MeetingCollection - should only get meetings
-      const meetings = await meetingCollection.list({});
+      // A caller cannot replace the child collection's enforced discriminator
+      // with a sibling subtype filter.
+      const meetings = await meetingCollection.list({
+        where: { _meta_type: '@happyvertical/smrt-core:PolyConcert' },
+      });
 
       expect(meetings).toHaveLength(2);
       expect(meetings.every((m) => m instanceof PolyMeeting)).toBe(true);

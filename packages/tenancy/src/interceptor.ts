@@ -257,6 +257,14 @@ export function createTenantInterceptor(
       // make one branch escape tenant scope, so validate direct tenant filters
       // branch-by-branch before adding the current tenant where absent.
       if (Array.isArray(where)) {
+        if (
+          where.length === 0 ||
+          where.some((andGroup) => andGroup.length === 0)
+        ) {
+          throw new Error(
+            'Invalid DNF where clause: every OR branch must contain at least one condition',
+          );
+        }
         const scopedWhere = where.map((andGroup) => {
           const directValues = andGroup.flatMap((condition) => {
             if (!Object.hasOwn(condition, tenantField)) return [];

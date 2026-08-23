@@ -23,9 +23,11 @@ Materialized aggregate report models for SMRT.
   the canonical `DataQuerySchema`, and UI-neutral DataTable hints. It must not
   import `smrt-ui` or expose a report-domain class to the consumer.
 - `queryReportMaterializedRows()` owns only the bounded read slice for rows that
-  are already materialized. It supports projection, offset/limit paging, and
-  deterministic `id` ordering. Filters, `WHERE`/`HAVING` translation, facets,
-  and dimension/measure ordering are reserved for later adapter slices.
+  are already materialized. It supports projection, offset/limit paging,
+  validated filters, deterministic multi-sort with an `id` tie-breaker, exact
+  totals, and dimension facets. At source-query compilation,
+  dimension and bucket filters compile to `WHERE`, aggregate-measure filters
+  compile to `HAVING`, and mixed `OR`/`NOT` filter scopes fail closed.
 - `id` is the only row identity. It must be a non-empty persisted string and is
   never replaced by a display index or page position.
 - The descriptor is an exposure boundary. Sensitive/secret fields, fields with
