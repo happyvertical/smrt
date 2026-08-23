@@ -2,6 +2,7 @@ import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('agents', {
   svelte: 'svelte',
+  dtsAliasesExclude: ['@happyvertical/smrt-ui/data'],
   entries: [
     'playground',
     'summary-article',

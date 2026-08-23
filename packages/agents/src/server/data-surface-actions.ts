@@ -17,7 +17,7 @@ import type {
   DataSurfaceJsonValue,
   DataSurfaceRowId,
   DataSurfaceSelectionReference,
-} from '@happyvertical/smrt-ui';
+} from '@happyvertical/smrt-ui/data';
 import {
   type ExecuteAsPrincipalOptions,
   executeAsPrincipal,

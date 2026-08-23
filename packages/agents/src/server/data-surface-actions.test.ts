@@ -3,7 +3,7 @@ import type {
   DataSurfaceDescriptor,
   DataSurfaceIdentity,
   DataSurfaceSelectionReference,
-} from '@happyvertical/smrt-ui';
+} from '@happyvertical/smrt-ui/data';
 import { registerPermissionDefinitions } from '@happyvertical/smrt-users';
 import { describe, expect, it, vi } from 'vitest';
 import type {
