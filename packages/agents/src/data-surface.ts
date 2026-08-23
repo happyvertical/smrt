@@ -227,10 +227,8 @@ function normalizeSurfaceRequest(
   }
 }
 
-function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? Object.fromEntries(Object.entries(value))
-    : {};
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -630,31 +628,22 @@ export function createDataSurfaceTools(
           deadlineMs,
           signal,
         );
-        const rawRecord = record(raw);
-        const rows = Array.isArray(raw)
-          ? raw.map((row) => record(row))
-          : Array.isArray(rawRecord.rows)
-            ? rawRecord.rows.map((row) => record(row))
+        const rawRecord = isRecord(raw) ? raw : undefined;
+        const rawRows = Array.isArray(raw)
+          ? raw
+          : rawRecord && Array.isArray(rawRecord.rows)
+            ? rawRecord.rows
             : [];
-        if (request.mode === 'rows') {
-          requireSortValues(rows, internal.request);
+        if (
+          request.mode === 'rows' &&
+          request.page &&
+          rawRows.length > request.page.limit
+        ) {
+          throw new DataSurfaceQueryError();
         }
-        const normalizedRows =
-          request.mode === 'rows' && request.page === undefined
-            ? sortRows(rows, internal.request, internal.schema)
-            : rows;
         const candidate =
-          raw && !Array.isArray(raw) && 'version' in rawRecord
-            ? {
-                ...rawRecord,
-                requestId: internal.request.requestId,
-                queryFingerprint: createDataQueryFingerprint(
-                  internal.request,
-                  internal.schema,
-                ),
-                identityField: internal.schema.identityField,
-                rows: normalizedRows,
-              }
+          rawRecord && Object.hasOwn(rawRecord, 'version')
+            ? raw
             : {
                 version: 1,
                 requestId: internal.request.requestId,
@@ -663,7 +652,7 @@ export function createDataSurfaceTools(
                   internal.schema,
                 ),
                 identityField: internal.schema.identityField,
-                rows: normalizedRows,
+                rows: rawRows,
                 ...(request.page
                   ? {
                       page:
@@ -673,37 +662,44 @@ export function createDataSurfaceTools(
                               offset: request.page.offset,
                               limit: request.page.limit,
                               hasMore:
-                                typeof rawRecord.hasMore === 'boolean'
+                                typeof rawRecord?.hasMore === 'boolean'
                                   ? rawRecord.hasMore
-                                  : Boolean(rawRecord.nextCursor),
+                                  : Boolean(rawRecord?.nextCursor),
                             }
                           : {
                               kind: 'cursor',
                               limit: request.page.limit,
-                              hasMore: Boolean(rawRecord.nextCursor),
-                              ...(rawRecord.nextCursor
+                              hasMore: Boolean(rawRecord?.nextCursor),
+                              ...(rawRecord?.nextCursor
                                 ? { nextCursor: rawRecord.nextCursor }
                                 : {}),
                             },
                     }
                   : {}),
-                total: rawRecord.total ?? { kind: 'unavailable' },
-                ...(rawRecord.facets ? { facets: rawRecord.facets } : {}),
-                freshness: rawRecord.freshness ?? { state: 'unknown' },
-                warnings: Array.isArray(rawRecord.warnings)
+                total: rawRecord?.total ?? { kind: 'unavailable' },
+                ...(rawRecord?.facets ? { facets: rawRecord.facets } : {}),
+                freshness: rawRecord?.freshness ?? { state: 'unknown' },
+                warnings: Array.isArray(rawRecord?.warnings)
                   ? rawRecord.warnings
                   : [],
-                truncated: rawRecord.truncated === true,
+                truncated: rawRecord?.truncated === true,
               };
         const validated = normalizeDataQueryResult(
           candidate,
           internal.request,
           internal.schema,
         );
+        if (request.mode === 'rows') {
+          requireSortValues(validated.rows, internal.request);
+        }
+        const orderedRows =
+          request.mode === 'rows' && request.page === undefined
+            ? sortRows(validated.rows, internal.request, internal.schema)
+            : validated.rows;
         if (
           request.mode === 'rows' &&
           request.page !== undefined &&
-          !isCanonicalOrder(validated.rows, internal.request, internal.schema)
+          !isCanonicalOrder(orderedRows, internal.request, internal.schema)
         ) {
           throw new DataSurfaceResultOrderError();
         }
@@ -712,7 +708,7 @@ export function createDataSurfaceTools(
           requestId: request.requestId,
           queryFingerprint: createDataQueryFingerprint(request, entry.schema),
           identityField: entry.schema.identityField,
-          rows: stripInternalProjection(validated.rows, request),
+          rows: stripInternalProjection(orderedRows, request),
         };
         const result: DataQueryResult = normalizeDataQueryResult(
           resultCandidate,

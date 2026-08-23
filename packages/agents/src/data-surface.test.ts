@@ -1,3 +1,5 @@
+import { createDataQueryFingerprint } from '@happyvertical/smrt-core';
+import type { DataQuerySchema } from '@happyvertical/smrt-types';
 import type { SessionPermissionRuntimeContext } from '@happyvertical/smrt-users';
 import { describe, expect, it, vi } from 'vitest';
 import type { DataSurfaceSchema } from './data-surface.js';
@@ -39,6 +41,46 @@ const schema: DataSurfaceSchema = {
   maxResultBytes: 10_000,
   supports: { cursorPagination: true },
 };
+
+const querySchema: DataQuerySchema = {
+  ...schema,
+  fields: schema.fields.map(
+    ({
+      sensitive: _sensitive,
+      readPermission: _readPermission,
+      metadata: _metadata,
+      ...field
+    }) => field,
+  ),
+};
+
+const versionedRequest = {
+  version: 1 as const,
+  requestId: 'versioned-result',
+  mode: 'rows' as const,
+  projection: ['id'],
+};
+
+function versionedResult(
+  overrides: Partial<{
+    requestId: string;
+    queryFingerprint: string;
+    identityField: string;
+  }> = {},
+) {
+  return {
+    version: 1 as const,
+    requestId: versionedRequest.requestId,
+    queryFingerprint: createDataQueryFingerprint(versionedRequest, querySchema),
+    identityField: 'id',
+    rows: [{ id: 'r1' }],
+    total: { kind: 'unavailable' as const },
+    freshness: { state: 'unknown' as const },
+    warnings: [],
+    truncated: false,
+    ...overrides,
+  };
+}
 
 function fakeRun(
   allowedTools: string[],
@@ -302,6 +344,65 @@ describe('principal-bound data surface tools', () => {
         db: undefined,
       }),
     ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+  });
+
+  it('rejects oversized pages before reading or cloning adapter rows', async () => {
+    let rowRead = false;
+    const row: Record<string, unknown> = {};
+    Object.defineProperty(row, 'id', {
+      enumerable: true,
+      get() {
+        rowRead = true;
+        throw new Error('row should not be read');
+      },
+    });
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async () => [row, row],
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: 'records',
+          request: {
+            version: 1,
+            requestId: 'oversized-before-read',
+            mode: 'rows',
+            projection: ['id'],
+            page: { kind: 'offset', offset: 0, limit: 1 },
+          },
+        },
+        db: undefined,
+      }),
+    ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+    expect(rowRead).toBe(false);
+  });
+
+  it('rejects versioned executor results with mismatched correlation fields', async () => {
+    const mismatches = [
+      versionedResult({ requestId: 'wrong-request' }),
+      versionedResult({ queryFingerprint: 'wrong-fingerprint' }),
+      versionedResult({ identityField: 'wrong-identity' }),
+    ];
+    for (const result of mismatches) {
+      const tools = toolSet({
+        surfaces: [{ id: 'records', collection: 'records', schema }],
+        execute: async () => result,
+      });
+      const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+      await expect(
+        tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+          run,
+          args: {
+            surfaceId: 'records',
+            request: versionedRequest,
+          },
+          db: undefined,
+        }),
+      ).rejects.toBeInstanceOf(DataSurfaceQueryError);
+    }
   });
 
   it('does not reveal hidden field names in caller request errors', async () => {
