@@ -130,11 +130,7 @@ export type {
   SmrtWebQueryState,
   SmrtWebQueryTransport,
 } from './remote-query.js';
-export {
-  createSmrtDataQuery,
-  createSmrtQuery,
-  createSmrtWebQuery,
-} from './remote-query.js';
+export { createSmrtWebQuery } from './remote-query.js';
 // Live-updates subscriber (#1763-client): the ONE app-wide SSE `_events`
 // subscriber (with `_changes` polling fallback) and the thin per-collection
 // `liveInvalidation` capability that wires a collection's `ctx.invalidate()` to
