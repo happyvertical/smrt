@@ -260,6 +260,9 @@ export interface SmrtWebToolRouteDescriptor {
   optionsBag?: boolean;
 }
 
+/** Reserved GET query marker for preserving an options bag's nullish value. */
+const CUSTOM_OPTIONS_QUERY_MARKER = '__smrt_options';
+
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
   /** REST collection name (e.g. `products`). */
   name: string;
@@ -677,16 +680,43 @@ export function createDefinitionFetchers(
         init.body = JSON.stringify(body);
       } else {
         const queryParams = new URLSearchParams();
-        const queryBody =
-          body !== null && typeof body === 'object' && !Array.isArray(body)
-            ? (body as Record<string, unknown>)
-            : {};
-        for (const [key, value] of Object.entries(queryBody)) {
-          if (value === undefined || value === null) continue;
-          queryParams.set(
-            key,
-            typeof value === 'object' ? JSON.stringify(value) : String(value),
-          );
+        if (optionsBag) {
+          if (optionsValue === undefined) {
+            queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'undefined');
+          } else if (optionsValue === null) {
+            queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'null');
+          } else {
+            const queryBody =
+              typeof optionsValue === 'object' && !Array.isArray(optionsValue)
+                ? (optionsValue as Record<string, unknown>)
+                : {};
+            const entries = Object.entries(queryBody).filter(
+              ([, value]) => value !== undefined && value !== null,
+            );
+            for (const [key, value] of entries) {
+              queryParams.set(
+                key,
+                typeof value === 'object'
+                  ? JSON.stringify(value)
+                  : String(value),
+              );
+            }
+            if (entries.length === 0) {
+              queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'object');
+            }
+          }
+        } else {
+          const queryBody =
+            body !== null && typeof body === 'object' && !Array.isArray(body)
+              ? (body as Record<string, unknown>)
+              : {};
+          for (const [key, value] of Object.entries(queryBody)) {
+            if (value === undefined || value === null) continue;
+            queryParams.set(
+              key,
+              typeof value === 'object' ? JSON.stringify(value) : String(value),
+            );
+          }
         }
         const query = queryParams.toString()
           ? `?${queryParams.toString()}`

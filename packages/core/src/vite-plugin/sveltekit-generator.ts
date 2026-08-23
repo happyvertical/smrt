@@ -1132,9 +1132,30 @@ function buildActionOptionsLoad(
       );
     } else {
       lines.push(
-        '  const options = Object.fromEntries(',
-        '    new URL(request.url).searchParams.entries(),',
-        `  ) as ${isSingleOptionsParameter ? 'ActionArgs[0]' : 'ActionOptions'};`,
+        ...(isSingleOptionsParameter
+          ? [
+              '  const searchParams = new URL(request.url).searchParams;',
+              "  const optionsMarker = searchParams.get('__smrt_options');",
+              '  const options = (',
+              "    optionsMarker === 'undefined' ||",
+              '    (optionsMarker === null && searchParams.size === 0)',
+              '      ? undefined',
+              "      : optionsMarker === 'null'",
+              '        ? null',
+              "        : optionsMarker === 'object'",
+              '          ? {}',
+              '          : Object.fromEntries(',
+              '              [...searchParams.entries()].filter(',
+              "                ([key]) => key !== '__smrt_options',",
+              '              ),',
+              '            ),',
+              '  ) as ActionArgs[0];',
+            ]
+          : [
+              '  const options = Object.fromEntries(',
+              '    new URL(request.url).searchParams.entries(),',
+              '  ) as ActionOptions;',
+            ]),
         '',
       );
     }

@@ -985,9 +985,10 @@ describe('SvelteKit Route Generator', () => {
         "import { ObjectRegistry } from '@happyvertical/smrt-core'",
       );
       expect(content).toContain('export const GET: RequestHandler');
-      expect(content).toMatch(
-        /Object\.fromEntries\(\s*new URL\(request\.url\)\.searchParams\.entries\(\),?\s*\)/,
+      expect(content).toContain(
+        "const optionsMarker = searchParams.get('__smrt_options');",
       );
+      expect(content).toContain("optionsMarker === 'undefined'");
       expect(content).toContain("ObjectRegistry.getClass('Document')");
       expect(content).toContain('await ClassRef.browseFacts(options)');
       expect(content).not.toContain('params.id');

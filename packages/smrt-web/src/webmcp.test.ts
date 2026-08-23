@@ -375,12 +375,18 @@ describe('registerWebMcpTools', () => {
     await publishTool?.execute({ id: 'p1' });
     await publishTool?.execute({ id: 'p1', options: null });
     await previewTool?.execute({ options: { format: 'summary' } });
+    await previewTool?.execute({});
+    await previewTool?.execute({ options: null });
 
     expect(calls[0]?.url).toBe('/api/v1/products/p1/publish-now');
     expect(calls[0]?.init?.body).toBe(JSON.stringify({ reason: 'agent' }));
     expect(calls[1]?.init?.body).toBeUndefined();
     expect(calls[2]?.init?.body).toBe('null');
     expect(calls[3]?.url).toBe('/api/v1/products/preview?format=summary');
+    expect(calls[4]?.url).toBe(
+      '/api/v1/products/preview?__smrt_options=undefined',
+    );
+    expect(calls[5]?.url).toBe('/api/v1/products/preview?__smrt_options=null');
   });
 
   it('maps actionId aliases for item bodies and collection path parameters', async () => {
