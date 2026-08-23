@@ -16,6 +16,7 @@ const schema: DataQuerySchema = {
   fields: [
     { id: 'id', type: 'string', projectable: true, sortable: true },
     { id: 'name', type: 'string', projectable: true, filterOperators: ['eq'] },
+    { id: 'rank', type: 'number', projectable: true, sortable: true },
     // These extensions are intentionally stripped from descriptors/results.
     {
       id: 'secret',
@@ -116,12 +117,12 @@ describe('principal-bound data surface tools', () => {
       (discover as Array<{ fields: Array<{ id: string }> }>)[0].fields.map(
         (field) => field.id,
       ),
-    ).toEqual(['id', 'name']);
+    ).toEqual(['id', 'name', 'rank']);
     expect(
       (inspect as { fields: Array<{ id: string }> }).fields.map(
         (field) => field.id,
       ),
-    ).toEqual(['id', 'name']);
+    ).toEqual(['id', 'name', 'rank']);
   });
 
   it('passes the authenticated delegated principal and tenant to the executor', async () => {
@@ -283,6 +284,79 @@ describe('principal-bound data surface tools', () => {
         db: undefined,
       }),
     ).rejects.toBeInstanceOf(DataSurfaceResultOrderError);
+  });
+
+  it('preserves executor order for multiple offset pages', async () => {
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async (_surface, request) => {
+        expect(request.page?.kind).toBe('offset');
+        return request.page?.kind === 'offset' && request.page.offset === 0
+          ? { rows: [{ id: 'b' }, { id: 'a' }], hasMore: true }
+          : { rows: [{ id: 'd' }, { id: 'c' }] };
+      },
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const request = (offset: number) => ({
+      version: 1,
+      requestId: `offset-${offset}`,
+      mode: 'rows' as const,
+      projection: ['id'],
+      sort: [{ field: 'id', direction: 'desc' as const }],
+      page: { kind: 'offset' as const, offset, limit: 2 },
+    });
+    const first = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: { surfaceId: 'records', request: request(0) },
+      db: undefined,
+    });
+    const second = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: { surfaceId: 'records', request: request(2) },
+      db: undefined,
+    });
+    expect((first as { rows: Array<{ id: string }> }).rows).toEqual([
+      { id: 'b' },
+      { id: 'a' },
+    ]);
+    expect((first as { page: { hasMore: boolean } }).page.hasMore).toBe(true);
+    expect((second as { rows: Array<{ id: string }> }).rows).toEqual([
+      { id: 'd' },
+      { id: 'c' },
+    ]);
+  });
+
+  it('validates numeric sort order numerically rather than lexically', async () => {
+    const tools = toolSet({
+      surfaces: [{ id: 'records', collection: 'records', schema }],
+      execute: async () => ({
+        rows: [
+          { id: 'r2', rank: 2 },
+          { id: 'r10', rank: 10 },
+        ],
+      }),
+    });
+    const run = fakeRun([DATA_QUERY_TOOL_SLUG]);
+    const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: 'records',
+        request: {
+          version: 1,
+          requestId: 'numeric-order',
+          mode: 'rows',
+          projection: ['id', 'rank'],
+          sort: [{ field: 'rank', direction: 'asc' }],
+        },
+      },
+      db: undefined,
+    });
+    expect(result).toMatchObject({
+      rows: [
+        { id: 'r2', rank: 2 },
+        { id: 'r10', rank: 10 },
+      ],
+    });
   });
 
   it('does not let a caller select an unauthorized surface by changing args', async () => {

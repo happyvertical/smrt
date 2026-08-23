@@ -76,6 +76,7 @@ export type DataSurfaceExecutorResult =
       warnings?: string[];
       truncated?: boolean;
       nextCursor?: string;
+      hasMore?: boolean;
     };
 
 export type DataSurfaceExecutor = (
@@ -255,50 +256,64 @@ function findSurface(
 function sortRows(
   rows: DataQueryRow[],
   request: DataQueryRequest,
-  identity: string,
+  schema: DataQuerySchema,
 ): DataQueryRow[] {
   const terms = request.sort ?? [];
-  const compare = (left: unknown, right: unknown): number => {
-    if (left === right) return 0;
-    if (left === null || left === undefined) return -1;
-    if (right === null || right === undefined) return 1;
-    return String(left).localeCompare(String(right));
-  };
   return [...rows].sort((left, right) =>
-    compareRows(left, right, terms, identity, compare),
+    compareRows(left, right, terms, schema),
   );
+}
+
+function compareDataValues(
+  left: unknown,
+  right: unknown,
+  type: DataQuerySchema['fields'][number]['type'],
+): number {
+  if (left === right) return 0;
+  if (left === null || left === undefined) return -1;
+  if (right === null || right === undefined) return 1;
+  if (type === 'number') return Number(left) - Number(right);
+  if (type === 'datetime') {
+    const leftTime = Date.parse(String(left));
+    const rightTime = Date.parse(String(right));
+    if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+      return leftTime - rightTime;
+    }
+  }
+  if (type === 'boolean') return Number(Boolean(left)) - Number(Boolean(right));
+  return String(left).localeCompare(String(right));
 }
 
 function compareRows(
   left: DataQueryRow,
   right: DataQueryRow,
   terms: readonly NonNullable<DataQueryRequest['sort']>[number][],
-  identity: string,
-  compare: (left: unknown, right: unknown) => number,
+  schema: DataQuerySchema,
 ): number {
   for (const term of terms) {
-    const result = compare(left[term.field], right[term.field]);
+    const type =
+      schema.fields.find((field) => field.id === term.field)?.type ?? 'string';
+    const result = compareDataValues(left[term.field], right[term.field], type);
     if (result !== 0) return term.direction === 'desc' ? -result : result;
   }
-  return compare(left[identity], right[identity]);
+  const identityType =
+    schema.fields.find((field) => field.id === schema.identityField)?.type ??
+    'string';
+  return compareDataValues(
+    left[schema.identityField],
+    right[schema.identityField],
+    identityType,
+  );
 }
 
 function isCanonicalOrder(
   rows: DataQueryRow[],
   request: DataQueryRequest,
-  identity: string,
+  schema: DataQuerySchema,
 ): boolean {
   const terms = request.sort ?? [];
-  const compare = (left: unknown, right: unknown): number => {
-    if (left === right) return 0;
-    if (left === null || left === undefined) return -1;
-    if (right === null || right === undefined) return 1;
-    return String(left).localeCompare(String(right));
-  };
   for (let index = 1; index < rows.length; index += 1) {
-    if (
-      compareRows(rows[index - 1], rows[index], terms, identity, compare) > 0
-    ) {
+    if (compareRows(rows[index - 1], rows[index], terms, schema) > 0) {
       return false;
     }
   }
@@ -447,9 +462,9 @@ export function createDataSurfaceTools(
           : [];
       const normalizedRows =
         request.mode === 'rows'
-          ? request.page?.kind === 'cursor'
+          ? request.page
             ? rows
-            : sortRows(rows, request, entry.schema.identityField)
+            : sortRows(rows, request, entry.schema)
           : [];
       const validated = normalizeDataQueryResult(
         raw && !Array.isArray(raw) && 'version' in rawRecord
@@ -471,7 +486,10 @@ export function createDataSurfaceTools(
                             kind: 'offset',
                             offset: request.page.offset,
                             limit: request.page.limit,
-                            hasMore: Boolean(rawRecord.nextCursor),
+                            hasMore:
+                              typeof rawRecord.hasMore === 'boolean'
+                                ? rawRecord.hasMore
+                                : Boolean(rawRecord.nextCursor),
                           }
                         : {
                             kind: 'cursor',
@@ -500,14 +518,14 @@ export function createDataSurfaceTools(
       const result: DataQueryResult = {
         ...validated,
         rows:
-          request.mode === 'rows' && request.page?.kind !== 'cursor'
-            ? sortRows(validated.rows, request, entry.schema.identityField)
+          request.mode === 'rows' && request.page === undefined
+            ? sortRows(validated.rows, request, entry.schema)
             : validated.rows,
       };
       if (
         request.mode === 'rows' &&
-        request.page?.kind === 'cursor' &&
-        !isCanonicalOrder(result.rows, request, entry.schema.identityField)
+        request.page !== undefined &&
+        !isCanonicalOrder(result.rows, request, entry.schema)
       ) {
         throw new DataSurfaceResultOrderError();
       }
