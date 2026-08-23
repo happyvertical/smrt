@@ -11,7 +11,7 @@
  * - Material 3 styling with theme token support
  */
 
-import { type Snippet, tick } from 'svelte';
+import { onDestroy, type Snippet, tick, untrack } from 'svelte';
 import { M } from '../../i18n/strings.js';
 import Trans from '../../i18n/Trans.svelte';
 import { useI18n } from '../../i18n/use-i18n.js';
@@ -24,6 +24,7 @@ import {
   type DataTableFilter,
   type DataTableModes,
   type DataTableRowId,
+  type DataTableSelection,
   type DataTableSnapshot,
   type DataTableViewState,
   type DataTableViewStateInput,
@@ -40,7 +41,14 @@ import {
   scrollTopForDataTableRow,
 } from './DataTableVirtualization.js';
 import type {
+  DataSurfaceJsonValue,
+  DataSurfaceSelectionReference,
+} from './data-surface.js';
+import { normalizeDataSurfaceDescriptor } from './data-surface.js';
+import { dataTableCommandFromDataSurfaceCommand } from './data-table-surface.js';
+import type {
   DataTableColumn,
+  DataTableDataSurfaceOptions,
   DataTableProps,
   DataTableStructuralRow,
   SortState,
@@ -105,6 +113,7 @@ let {
   initialState,
   onStateChange,
   modes,
+  dataSurface,
 }: ExtendedProps<T> = $props();
 
 const dataTableId = $props.id();
@@ -154,6 +163,21 @@ let localControllerInitialized = false;
 let hasHorizontalOverflow = $state(false);
 let canScrollLeft = $state(false);
 let canScrollRight = $state(false);
+let surfaceHighlighted = $state(false);
+
+interface DataTableSurfaceRegistration<T> {
+  surface: DataTableDataSurfaceOptions;
+  registry: DataTableDataSurfaceOptions['registry'];
+  descriptorSignature: string;
+  tableBindingSignature: string;
+  controller: DataTableController;
+  columns: DataTableColumn<T>[];
+  rowKey: DataTableProps<T>['rowKey'];
+  visibleColumnIds: Set<string> | undefined;
+  cleanup: () => void;
+}
+
+let surfaceRegistration: DataTableSurfaceRegistration<T> | undefined;
 
 function activeController(): DataTableController {
   return controller ?? localController;
@@ -311,6 +335,312 @@ const sourceRows = $derived.by(() =>
 function dispatch(command: DataTableCommand) {
   activeController().dispatch(command);
 }
+
+function assertSurfaceDescriptorMatchesTable(
+  surface: DataTableDataSurfaceOptions,
+  tableColumns: DataTableColumn<T>[],
+  tableRowKey: DataTableProps<T>['rowKey'],
+  tableVisibleColumnIds: Set<string> | undefined,
+) {
+  if (typeof tableRowKey !== 'string') {
+    throw new Error(
+      'DataTable requires a string rowKey for mounted data surfaces',
+    );
+  }
+  const tableController = activeController();
+  const columnState = new Map(
+    tableController
+      .getState()
+      .columnVisibility.map((entry) => [entry.columnId, entry.visible]),
+  );
+  for (const descriptorColumn of surface.descriptor.columns) {
+    if (descriptorColumn.id === surface.descriptor.rowKey) continue;
+    const column = tableColumns.find(
+      (candidate) => candidate.id === descriptorColumn.id,
+    );
+    if (
+      !column ||
+      column.hidden ||
+      tableVisibleColumnIds?.has(column.id) === false ||
+      columnState.get(column.id) === false
+    ) {
+      throw new Error(
+        `DataSurface descriptor exposes a non-visible DataTable column: ${descriptorColumn.id}`,
+      );
+    }
+  }
+  if (surface.descriptor.rowKey !== tableRowKey) {
+    throw new Error(
+      'DataSurface descriptor rowKey must match the DataTable rowKey',
+    );
+  }
+}
+
+function descriptorColumnAllows(
+  surface: DataTableDataSurfaceOptions,
+  tableColumns: DataTableColumn<T>[],
+  columnId: string,
+  capability?: 'filter' | 'sort',
+): boolean {
+  const descriptorColumn = surface.descriptor.columns.find(
+    (column) => column.id === columnId,
+  );
+  const tableColumn = tableColumns.find((column) => column.id === columnId);
+  if (!descriptorColumn || !tableColumn) return false;
+  if (!descriptorColumn.capabilities.includes('read')) return false;
+  return capability === undefined
+    ? true
+    : descriptorColumn.capabilities.includes(capability);
+}
+
+function descriptorAllowsTableCommand(
+  surface: DataTableDataSurfaceOptions,
+  tableColumns: DataTableColumn<T>[],
+  command: DataTableCommand,
+): boolean {
+  switch (command.type) {
+    case 'setFilters':
+      return command.filters.every((filter) => {
+        const column = tableColumns.find(
+          (candidate) => candidate.id === filter.columnId,
+        );
+        return (
+          column?.filterable !== false &&
+          descriptorColumnAllows(
+            surface,
+            tableColumns,
+            filter.columnId,
+            'filter',
+          )
+        );
+      });
+    case 'setSorting':
+      return command.sorting.every((sortRule) => {
+        const column = tableColumns.find(
+          (candidate) => candidate.id === sortRule.columnId,
+        );
+        return (
+          column?.sortable === true &&
+          descriptorColumnAllows(
+            surface,
+            tableColumns,
+            sortRule.columnId,
+            'sort',
+          )
+        );
+      });
+    case 'toggleSorting': {
+      const column = tableColumns.find(
+        (candidate) => candidate.id === command.columnId,
+      );
+      return (
+        column?.sortable === true &&
+        descriptorColumnAllows(surface, tableColumns, command.columnId, 'sort')
+      );
+    }
+    case 'setColumnOrder':
+      return command.columnIds.every((columnId) =>
+        descriptorColumnAllows(surface, tableColumns, columnId),
+      );
+    case 'setColumnVisibility':
+      return command.columns.every((column) =>
+        descriptorColumnAllows(surface, tableColumns, column.columnId),
+      );
+    default:
+      return true;
+  }
+}
+
+function dataSurfaceSelection(
+  selection: DataTableSelection,
+): DataSurfaceSelectionReference | null {
+  if (selection.scope === 'page') return { scope: 'current-page' };
+  if (selection.scope === 'allMatching') {
+    return {
+      scope: 'all-matching',
+      queryFingerprint: selection.queryFingerprint,
+    };
+  }
+  return selection.rowIds.length > 0
+    ? { scope: 'explicit-ids', rowIds: selection.rowIds }
+    : null;
+}
+
+function preservesDeclaredVisibleColumns(
+  surface: DataTableDataSurfaceOptions,
+  visibility: DataTableViewState['columnVisibility'],
+): boolean {
+  const requested = new Map(
+    visibility.map((column) => [column.columnId, column.visible]),
+  );
+  return surface.descriptor.columns
+    .filter((column) => column.id !== surface.descriptor.rowKey)
+    .every((column) => requested.get(column.id) === true);
+}
+
+function preservesDeclaredVisibleColumnsForCommand(
+  surface: DataTableDataSurfaceOptions,
+  command: DataTableCommand,
+): boolean {
+  return command.type !== 'setColumnVisibility'
+    ? true
+    : preservesDeclaredVisibleColumns(surface, command.columns);
+}
+
+$effect(() => {
+  const surface = dataSurface;
+  const surfaceController = activeController();
+  if (!surface) {
+    surfaceRegistration?.cleanup();
+    surfaceRegistration = undefined;
+    return;
+  }
+  assertSurfaceDescriptorMatchesTable(
+    surface,
+    columns,
+    rowKey,
+    visibleColumnIds,
+  );
+  const descriptorSignature = JSON.stringify(
+    normalizeDataSurfaceDescriptor(surface.descriptor),
+  );
+  const tableBindingSignature = JSON.stringify({
+    rowKey,
+    visibleColumnIds: visibleColumnIds ? [...visibleColumnIds].sort() : null,
+    columns: columns.map((column) => ({
+      id: column.id,
+      hidden: column.hidden === true,
+      sortable: column.sortable === true,
+      filterable: column.filterable !== false,
+    })),
+  });
+  if (
+    surfaceRegistration?.registry === surface.registry &&
+    surfaceRegistration.descriptorSignature === descriptorSignature &&
+    surfaceRegistration.tableBindingSignature === tableBindingSignature &&
+    surfaceRegistration.controller === surfaceController
+  ) {
+    surfaceRegistration.surface = surface;
+    surfaceRegistration.columns = columns;
+    surfaceRegistration.rowKey = rowKey;
+    surfaceRegistration.visibleColumnIds = visibleColumnIds;
+    return;
+  }
+  surfaceRegistration?.cleanup();
+  surfaceRegistration = undefined;
+  const registration: DataTableSurfaceRegistration<T> = {
+    surface,
+    registry: surface.registry,
+    descriptorSignature,
+    tableBindingSignature,
+    controller: surfaceController,
+    columns,
+    rowKey,
+    visibleColumnIds,
+    cleanup: () => {},
+  };
+  const cleanup = untrack(() => {
+    let revision = 0;
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+    let restoringInvalidVisibility = false;
+    const unsubscribe = surfaceController.subscribe((transition) => {
+      if (
+        !restoringInvalidVisibility &&
+        !preservesDeclaredVisibleColumns(
+          registration.surface,
+          transition.next.state.columnVisibility,
+        )
+      ) {
+        restoringInvalidVisibility = true;
+        try {
+          surfaceController.replaceState(transition.previous.state);
+        } finally {
+          restoringInvalidVisibility = false;
+        }
+        return;
+      }
+      if (transition.changed) revision += 1;
+    });
+    const unregister = surface.registry.register({
+      descriptor: registration.surface.descriptor,
+      getSnapshot: () => {
+        const snapshot = surfaceController.snapshot();
+        return {
+          revision,
+          state: { table: snapshot as unknown as DataSurfaceJsonValue },
+          selection: dataSurfaceSelection(snapshot.state.selection),
+        };
+      },
+      execute: async (command) => {
+        const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
+        if (tableCommand) {
+          if (
+            !descriptorAllowsTableCommand(
+              registration.surface,
+              registration.columns,
+              tableCommand,
+            ) ||
+            !preservesDeclaredVisibleColumnsForCommand(
+              registration.surface,
+              tableCommand,
+            )
+          ) {
+            return { ok: false };
+          }
+          const transition = surfaceController.dispatch(tableCommand);
+          if (surfaceController.isControlled() && transition.changed) {
+            const settled = await registration.surface.applyControlledState?.(
+              transition.next.state,
+              tableCommand,
+            );
+            if (settled) surfaceController.replaceState(settled);
+            if (
+              JSON.stringify(surfaceController.getState()) !==
+              JSON.stringify(transition.next.state)
+            ) {
+              return { ok: false };
+            }
+          }
+          return;
+        }
+        switch (command.controlId) {
+          case 'focus':
+            tableContainer?.focus();
+            return;
+          case 'reveal':
+            tableContainer?.scrollIntoView({ block: 'nearest' });
+            return;
+          case 'highlight':
+            surfaceHighlighted = true;
+            if (highlightTimer) clearTimeout(highlightTimer);
+            highlightTimer = setTimeout(() => {
+              surfaceHighlighted = false;
+            }, 1_000);
+            return;
+          case 'refresh':
+            if (!registration.surface.onRefresh) return { ok: false };
+            await registration.surface.onRefresh();
+            return;
+          case 'retry':
+            if (!registration.surface.onRetry) return { ok: false };
+            await registration.surface.onRetry();
+            return;
+          default:
+            return { ok: false };
+        }
+      },
+    });
+    return () => {
+      if (highlightTimer) clearTimeout(highlightTimer);
+      unsubscribe();
+      unregister();
+    };
+  });
+  registration.cleanup = cleanup;
+  surfaceRegistration = registration;
+});
+
+onDestroy(() => surfaceRegistration?.cleanup());
 
 function handleSort(column: DataTableColumn<T>, event: MouseEvent) {
   if (!sortable || !column.sortable) return;
@@ -1061,8 +1391,9 @@ $effect(() => {
   class:data-table-container--sticky={stickyHeader || virtualizedBody}
   class:data-table-container--overflowing={hasHorizontalOverflow}
   class:data-table-container--virtualized={virtualizationWindow.enabled}
+  class:data-table-container--highlighted={surfaceHighlighted}
   style:height={virtualContainerHeight === undefined ? undefined : `${virtualContainerHeight}px`}
-  tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : undefined}
+  tabindex={virtualizationWindow.enabled || hasHorizontalOverflow ? 0 : dataSurface ? -1 : undefined}
   role={virtualizationWindow.enabled || hasHorizontalOverflow ? 'region' : undefined}
   aria-label={virtualizationWindow.enabled
     ? caption
@@ -1532,6 +1863,11 @@ $effect(() => {
   .data-table-container--overflowing:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #3b82f6);
     outline-offset: 2px;
+  }
+
+  .data-table-container--highlighted {
+    outline: 2px solid var(--smrt-color-primary, #2563eb);
+    outline-offset: 3px;
   }
 
   .data-table__overflow-cue {

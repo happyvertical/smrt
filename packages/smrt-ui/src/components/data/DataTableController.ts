@@ -962,6 +962,11 @@ export class DataTableController {
     return { ...this.modes };
   }
 
+  /** Whether commands are proposals until an owning host supplies state. */
+  isControlled(): boolean {
+    return this.controlled;
+  }
+
   snapshot(): DataTableSnapshot {
     return { version: 3, modes: this.getModes(), state: this.getState() };
   }

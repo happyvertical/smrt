@@ -13,6 +13,35 @@ import type {
 } from './DataTableController.js';
 import type { DataTableRowKey } from './DataTableIdentity.js';
 import type { DataTableVirtualizationOptions } from './DataTableVirtualization.js';
+import type {
+  DataSurfaceDescriptor,
+  DataSurfaceRegistry,
+} from './data-surface.js';
+
+/** Opt-in mounted-surface wiring for a DataTable instance. */
+export interface DataTableDataSurfaceOptions {
+  registry: DataSurfaceRegistry;
+  /** Explicit stable identity and effective, policy-filtered capabilities. */
+  descriptor: DataSurfaceDescriptor;
+  /** Controlled tables must settle candidate state before acknowledgement. */
+  applyControlledState?: DataTableControlledStateApplier;
+  onRefresh?: () => void | Promise<void>;
+  onRetry?: () => void | Promise<void>;
+}
+
+export type DataTableControlledStateApplier = (
+  state: DataTableViewState,
+  command: DataTableCommand,
+) => DataTableViewState | undefined | Promise<DataTableViewState | undefined>;
+
+/** Opt-in registration for a standalone search/view toolbar. */
+export interface CollectionToolbarDataSurfaceOptions {
+  registry: DataSurfaceRegistry;
+  descriptor: DataSurfaceDescriptor;
+  applyControlledState?: DataTableControlledStateApplier;
+  onRefresh?: () => void | Promise<void>;
+  onRetry?: () => void | Promise<void>;
+}
 
 /** A group segment owned by a leaf column so restored order can stay valid. */
 export interface DataTableHeaderPathSegment {
@@ -218,6 +247,8 @@ export interface DataTableProps<T> {
   ) => void;
   /** Explicit ownership for local or caller-supplied filtering, sorting, and paging. */
   modes?: Partial<DataTableModes>;
+  /** Registers this mounted instance only when explicitly supplied. */
+  dataSurface?: DataTableDataSurfaceOptions;
   /**
    * The initial loading state. When rows are already present, loading keeps
    * them interactive and is announced as a refresh instead of replacing them.
