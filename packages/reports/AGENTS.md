@@ -14,6 +14,7 @@ Materialized aggregate report models for SMRT.
 | state | Internal `_smrt_report_*` system models for runs, watermarks, locks, schedules, and refresh tasks |
 | scheduler | Cron schedule runner, durable refresh job enqueueing, and `onChange` interceptor registration |
 | adapter | Transport-neutral report descriptor, canonical materialized-row reads, and stable `id` row identity |
+| lifecycle | Tenant-safe freshness, run, lock, failure, and manual refresh preview/apply surfaces |
 
 ## Adapter contract
 
@@ -37,9 +38,10 @@ Materialized aggregate report models for SMRT.
   collection is application-owned and must preserve the same boundary.
 - `refresh` is a declaration, not execution. It describes configured mode,
   triggers, positive-TTL stale-read behavior, and a permissioned/audited action
-  with preview/apply phases. The adapter does not authorize, audit, mutate, or
-  track refresh runs; issue #2460 owns that lifecycle. Generic collection reads
-  remain read-only with unknown freshness. Only a registered
+  with preview/apply phases. The adapter remains read-only, while
+  `getReportLifecycle()` provides an explicit, tenant-safe lifecycle snapshot
+  and `previewReportRefresh()` / `applyReportRefresh()` delegate authorization,
+  audit, and queueing through an application action host. Only a registered
   `SmrtReportCollection` may synchronously refresh stale reads, when its TTL is
   positive and the report is not manual.
 
