@@ -319,6 +319,74 @@ describe('registerWebMcpTools', () => {
     expect(calls[0]?.init?.body).toBe(JSON.stringify({ reason: 'agent' }));
   });
 
+  it('maps actionId aliases for item bodies and collection path parameters', async () => {
+    const registry = installModelContext();
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchFn = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      toolDescriptors: [
+        {
+          action: 'archive',
+          name: 'product_archive',
+          description: 'Archive a Product',
+          inputSchema: { type: 'object' },
+          readOnly: false,
+          route: {
+            method: 'PATCH',
+            scope: 'item',
+            path: ['archive'],
+            parameterAliases: { actionId: 'id' },
+          },
+        },
+        {
+          action: 'archiveCollection',
+          name: 'product_archiveCollection',
+          description: 'Archive a Product by alternate ID',
+          inputSchema: { type: 'object' },
+          readOnly: false,
+          route: {
+            method: 'PATCH',
+            scope: 'collection',
+            path: ['by-id', '[id]'],
+            parameterAliases: { actionId: 'id' },
+          },
+        },
+      ],
+    };
+    registerWebMcpTools([definition], { basePath: '/api/v1', fetchFn });
+    const itemTool = registry.tools.find((t) => t.name === 'product_archive');
+    const collectionTool = registry.tools.find(
+      (t) => t.name === 'product_archiveCollection',
+    );
+    await itemTool?.execute({
+      id: 'receiver-1',
+      actionId: 'target-7',
+      reason: 'item',
+    });
+    await collectionTool?.execute({
+      actionId: 'target-7',
+      reason: 'collection',
+    });
+
+    expect(calls[0]?.url).toBe('/api/v1/products/receiver-1/archive');
+    expect(JSON.parse(calls[0]?.init?.body as string)).toEqual({
+      id: 'target-7',
+      reason: 'item',
+    });
+    expect(calls[1]?.url).toBe('/api/v1/products/by-id/target-7');
+    expect(JSON.parse(calls[1]?.init?.body as string)).toEqual({
+      reason: 'collection',
+    });
+  });
+
   it('resolves a get tool by slug when no id is provided', async () => {
     const registry = installModelContext();
     const fetchers = mockFetchers();

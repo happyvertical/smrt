@@ -251,6 +251,8 @@ export interface SmrtWebToolRouteDescriptor {
   scope: 'item' | 'collection';
   /** Route segments below the collection endpoint; dynamic segments use `[x]`. */
   path: string[];
+  /** Transport names rewritten by the tool schema (e.g. `actionId` → `id`). */
+  parameterAliases?: Record<string, string>;
 }
 
 export interface SmrtWebCollectionDefinition<TData extends object = object> {
@@ -580,6 +582,15 @@ export function createDefinitionFetchers(
           .filter((segment) => /^\[[^\]]+\]$/.test(segment))
           .map((segment) => segment.slice(1, -1)),
       );
+      const parameterAliases = customRoute.parameterAliases ?? {};
+      const inputNameFor = (parameterName: string): string =>
+        Object.entries(parameterAliases).find(
+          ([, originalName]) => originalName === parameterName,
+        )?.[0] ?? parameterName;
+      const valueForPath = (parameterName: string): unknown => {
+        const inputName = inputNameFor(parameterName);
+        return args[inputName] ?? args[parameterName];
+      };
       const id = customRoute.scope === 'item' ? args.id : undefined;
       if (customRoute.scope === 'item' && typeof id !== 'string') {
         throw new Error(
@@ -587,17 +598,46 @@ export function createDefinitionFetchers(
         );
       }
       for (const name of pathArgs) {
-        if (args[name] === undefined || args[name] === null) {
+        if (valueForPath(name) === undefined || valueForPath(name) === null) {
           throw new Error(
             `${definition.name} custom action '${action}' requires '${name}'`,
           );
         }
       }
+      const consumedInputs = new Set(
+        [...pathArgs].map((name) => inputNameFor(name)),
+      );
+      const aliasedInputs = new Set(Object.keys(parameterAliases));
       const body = Object.fromEntries(
         Object.entries(args).filter(
-          ([key]) => key !== 'id' && !pathArgs.has(key),
+          ([key]) =>
+            key !== 'id' &&
+            !pathArgs.has(key) &&
+            !consumedInputs.has(key) &&
+            !aliasedInputs.has(key),
         ),
       );
+      for (const [inputName, originalName] of Object.entries(
+        parameterAliases,
+      )) {
+        if (
+          !consumedInputs.has(inputName) &&
+          args[inputName] !== undefined &&
+          originalName !== 'id'
+        ) {
+          body[originalName] = args[inputName];
+        }
+      }
+      const idAlias = Object.entries(parameterAliases).find(
+        ([, originalName]) => originalName === 'id',
+      )?.[0];
+      if (
+        idAlias &&
+        !consumedInputs.has(idAlias) &&
+        args[idAlias] !== undefined
+      ) {
+        body.id = args[idAlias];
+      }
       const segments = [
         collectionUrl,
         ...(customRoute.scope === 'item'
@@ -605,7 +645,9 @@ export function createDefinitionFetchers(
           : []),
         ...customRoute.path.map((segment) =>
           /^\[[^\]]+\]$/.test(segment)
-            ? encodeURIComponent(String(args[segment.slice(1, -1)] ?? ''))
+            ? encodeURIComponent(
+                String(valueForPath(segment.slice(1, -1)) ?? ''),
+              )
             : segment,
         ),
       ];

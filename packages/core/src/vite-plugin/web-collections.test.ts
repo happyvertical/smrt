@@ -373,7 +373,7 @@ describe('buildWebToolDescriptors', () => {
               isStatic: false,
               async: true,
               returnType: 'Promise<void>',
-              parameters: [],
+              parameters: [{ name: 'id', type: 'string', optional: false }],
             },
           },
           decoratorConfig: {
@@ -389,6 +389,7 @@ describe('buildWebToolDescriptors', () => {
       method: 'POST',
       scope: 'item',
       path: ['publish-now'],
+      parameterAliases: { actionId: 'id' },
     });
   });
 

@@ -1884,6 +1884,7 @@ declare module '@happyvertical/smrt-virt-web' {
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
     scope: 'item' | 'collection';
     path: string[];
+    parameterAliases?: Record<string, string>;
   }
 
   /** A WebMCP/MCP tool descriptor for one collection action (#1812). */

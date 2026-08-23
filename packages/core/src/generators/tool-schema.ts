@@ -164,6 +164,8 @@ export interface ToolRouteDescriptor {
   scope: 'item' | 'collection';
   /** Route segments below the collection endpoint. Dynamic segments use `[x]`. */
   path: string[];
+  /** Transport names rewritten by the tool schema (e.g. `actionId` → `id`). */
+  parameterAliases?: Record<string, string>;
 }
 
 /** A single generated tool descriptor — the WebMCP / MCP tool shape. */

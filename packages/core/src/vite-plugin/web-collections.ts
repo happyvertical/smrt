@@ -24,7 +24,10 @@
  */
 
 import { createHash } from 'node:crypto';
-import { resolveCustomActionMetadata } from '../generators/custom-action.js';
+import {
+  customActionParameterInputName,
+  resolveCustomActionMetadata,
+} from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
   isCrudAction,
@@ -767,11 +770,25 @@ export function buildWebToolDescriptors(
 
   return descriptors.map((descriptor) => {
     if (isCrudAction(descriptor.action)) return descriptor;
+    const method = entry.obj.methods?.[descriptor.action];
     const route = resolveApiActionRouteConfig(
       descriptor.action,
-      entry.obj.methods?.[descriptor.action] ?? {},
+      method ?? {},
       entry.obj.decoratorConfig?.api,
       { kebabRoutes: options.kebabRoutes },
+    );
+    const metadata = resolveCustomActionMetadata({
+      actionName: descriptor.action,
+      method,
+      apiConfig: entry.obj.decoratorConfig?.api,
+    });
+    const parameterAliases = Object.fromEntries(
+      (method?.parameters ?? [])
+        .map((parameter) => [
+          customActionParameterInputName(metadata, parameter.name),
+          parameter.name,
+        ])
+        .filter(([inputName, parameterName]) => inputName !== parameterName),
     );
     return {
       ...descriptor,
@@ -779,6 +796,9 @@ export function buildWebToolDescriptors(
         method: route.method,
         scope: route.scope,
         path: route.pathSegments,
+        ...(Object.keys(parameterAliases).length > 0
+          ? { parameterAliases }
+          : {}),
       },
     };
   });
