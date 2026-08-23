@@ -173,6 +173,7 @@ export {
   createReportExportPageRequest,
   createReportExportRequest,
   createReportExportSnapshot,
+  migrateReportSavedView,
   normalizeReportSavedView,
   previewReportExport,
   ReportSurfaceValidationError,

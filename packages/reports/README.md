@@ -228,6 +228,9 @@ serializable view boundary. A storage host owns the saved view's tenant and
 owner; on every restore it must pass the stored payload through the current
 descriptor. That reapplies field, projection, sorting, grouping, and definition
 policy, so a stale view cannot reveal a field that is no longer allowed.
+`migrateReportSavedView()` upgrades the original unversioned (or explicit v0)
+layout to v1 before that current-policy validation; unsupported future versions
+fail clearly rather than being guessed.
 
 Build an export from a completed materialized-row read with
 `createReportExportSnapshot()`, supplying an opaque binding from the

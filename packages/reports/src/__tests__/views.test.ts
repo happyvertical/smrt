@@ -6,6 +6,7 @@ import {
   createReportExportPageRequest,
   createReportExportRequest,
   createReportExportSnapshot,
+  migrateReportSavedView,
   normalizeReportSavedView,
   previewReportExport,
   restoreReportSavedView,
@@ -180,7 +181,8 @@ function sourceResult(report: ReportAdapterDescriptor, rowCount = 1_500) {
 describe('report saved views and exports', () => {
   it('normalizes saved views through the current descriptor policy', () => {
     const report = descriptor();
-    const saved = normalizeReportSavedView(report, {
+    const legacy = {
+      version: 0,
       id: 'view-1',
       title: 'Customers by revenue',
       query: query(),
@@ -190,7 +192,9 @@ describe('report saved views and exports', () => {
       ],
       grouping: { fields: ['customer_id'], expanded: true },
       display: { density: 'compact', showTotals: true },
-    });
+    };
+    expect(migrateReportSavedView(legacy)).toMatchObject({ version: 1 });
+    const saved = normalizeReportSavedView(report, legacy);
 
     expect(saved).toMatchObject({
       version: 1,
@@ -219,6 +223,9 @@ describe('report saved views and exports', () => {
         saved,
       ),
     ).toThrow(/definition has changed/);
+    expect(() => migrateReportSavedView({ ...legacy, version: 2 })).toThrow(
+      /version is unsupported/,
+    );
   });
 
   it('freezes the exact normalized query and materialization metadata for export', () => {

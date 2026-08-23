@@ -544,6 +544,23 @@ function normalizeDisplay(value: unknown): ReportSavedViewDisplay | undefined {
 }
 
 /**
+ * Version 0 is the original unversioned persisted layout shape. It contains
+ * the same allowlisted fields as v1, so the migration only records the schema
+ * version; current descriptor normalization still revalidates every field.
+ */
+export function migrateReportSavedView(value: unknown): SavedViewInput {
+  const input = plainObject(
+    value,
+    'Saved report view',
+  ) as unknown as SavedViewInput;
+  if (input.version === undefined || input.version === 0) {
+    return { ...input, version: 1 };
+  }
+  if (input.version === 1) return input;
+  return fail('Saved report view version is unsupported');
+}
+
+/**
  * Normalize a view both when it is saved and when it is restored. Re-running
  * this against the live descriptor is what prevents a former field/action
  * grant from surviving a policy or definition change.
@@ -552,13 +569,7 @@ export function normalizeReportSavedView(
   descriptor: ReportAdapterDescriptor,
   value: unknown,
 ): ReportSavedView {
-  const input = plainObject(
-    value,
-    'Saved report view',
-  ) as unknown as SavedViewInput;
-  if (input.version !== undefined && input.version !== 1) {
-    return fail('Saved report view version is unsupported');
-  }
+  const input = migrateReportSavedView(value);
   const fingerprint = reportDefinitionFingerprint(descriptor);
   if (
     input.resourceId !== undefined &&
