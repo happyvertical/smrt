@@ -94,7 +94,3 @@ export function remoteQuery<TData extends object>(
   };
   return binding;
 }
-
-/** Explicit alias for consumers that prefer the data-source terminology. */
-export const createRemoteQueryBinding = remoteQuery;
-export const queryBinding = remoteQuery;

@@ -125,7 +125,7 @@ core.
 | Group | Main exports |
 | --- | --- |
 | Collections | `createSmrtCollection`, `createSmrtWebClient`, `newLocalId` |
-| Remote queries | `createSmrtWebQuery`, `createSmrtDataQuery`, `SmrtWebQueryTransport` |
+| Remote queries | `createSmrtWebQuery`, `SmrtWebQueryTransport` |
 | HTTP | `createDefinitionFetchers`, `unwrapListResult`, `unwrapItemResult` |
 | Offline | `offlineOutbox`, `getOutboxHandle` |
 | Persistence | `persistCollection`, `wipeDurableStore` |

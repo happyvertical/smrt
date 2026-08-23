@@ -121,6 +121,8 @@ export function createSmrtWebQuery<TData extends object>(
   let visibleController: AbortController | undefined;
   let generation = 0;
   let live: SmrtWebQueryLiveSubscription | undefined;
+  let liveGeneration = 0;
+  let disposed = false;
   let state: SmrtWebQueryState<TData> = {
     rows: [],
     page: undefined,
@@ -230,7 +232,13 @@ export function createSmrtWebQuery<TData extends object>(
         stale: entry !== undefined,
         error: null,
       });
-      runOptions = { ...runOptions, signal: visibleController.signal };
+      // A visible run is a successor boundary: it must never adopt an older
+      // same-key shared promise whose signal was just aborted above.
+      runOptions = {
+        ...runOptions,
+        signal: visibleController.signal,
+        force: true,
+      };
       try {
         const result = await runShared(candidate, key, runOptions);
         if (current === generation) apply(result, candidate);
@@ -259,13 +267,22 @@ export function createSmrtWebQuery<TData extends object>(
       const running = inFlight.get(key);
       if (running) return running;
     }
-    const running = runTransport(candidate, runOptions)
-      .then((result) => {
-        cache.set(key, { result, updatedAt: Date.now() });
-        return result;
-      })
-      .finally(() => inFlight.delete(key));
+    const running = runTransport(candidate, runOptions).then((result) => {
+      cache.set(key, { result, updatedAt: Date.now() });
+      return result;
+    });
     inFlight.set(key, running);
+    // A forced successor may replace this map entry while the predecessor is
+    // still settling. Only the promise that currently owns the key may delete
+    // it, otherwise a third caller can miss the active successor flight.
+    void running.then(
+      () => {
+        if (inFlight.get(key) === running) inFlight.delete(key);
+      },
+      () => {
+        if (inFlight.get(key) === running) inFlight.delete(key);
+      },
+    );
     return running;
   };
   const refresh = (
@@ -279,42 +296,85 @@ export function createSmrtWebQuery<TData extends object>(
     });
   };
   const subscribeLive = (): SmrtWebQueryLiveSubscription | undefined => {
-    if (!request || !transport.subscribe) return undefined;
+    if (disposed || !request || !transport.subscribe) return undefined;
     live?.unsubscribe();
     const candidate = request;
-    const controller = new AbortController();
-    const subscription = transport.subscribe(
-      candidate,
-      (raw) => {
-        void (async () => {
-          const result = await executeSmrtWebDataQuery(
-            { query: async () => raw },
-            candidate,
-          );
-          if (request && keyFor(request) === keyFor(candidate))
-            apply(result, candidate);
-        })().catch((error) => {
-          if (!isAbort(error)) publish({ ...state, error });
-        });
-      },
-      { signal: controller.signal },
-    );
-    const reconnect =
-      'reconnect' in subscription &&
-      typeof subscription.reconnect === 'function'
-        ? () => (subscription as SmrtWebQueryLiveSubscription).reconnect()
-        : () => {
-            controller.abort();
-            void execute(candidate, { mode: 'background', force: true });
-          };
-    live = {
-      unsubscribe: () => {
-        controller.abort();
-        subscription.unsubscribe();
-      },
-      reconnect,
+    const currentGeneration = ++liveGeneration;
+    let connectionGeneration = 0;
+    let controller: AbortController | undefined;
+    let subscription: SmrtWebQueryLiveSubscription | { unsubscribe(): void };
+    let active = true;
+    let handle: SmrtWebQueryLiveSubscription;
+    const connect = (): void => {
+      if (!active || disposed || currentGeneration !== liveGeneration) return;
+      controller = new AbortController();
+      const connection = ++connectionGeneration;
+      const subscribe = transport.subscribe;
+      if (!subscribe) return;
+      subscription = subscribe(
+        candidate,
+        (raw) => {
+          if (
+            !active ||
+            disposed ||
+            currentGeneration !== liveGeneration ||
+            connection !== connectionGeneration ||
+            controller?.signal.aborted
+          )
+            return;
+          void (async () => {
+            const result = await executeSmrtWebDataQuery(
+              { query: async () => raw },
+              candidate,
+            );
+            if (
+              active &&
+              !disposed &&
+              currentGeneration === liveGeneration &&
+              connection === connectionGeneration &&
+              request &&
+              keyFor(request) === keyFor(candidate)
+            )
+              apply(result, candidate);
+          })().catch((error) => {
+            if (
+              !isAbort(error) &&
+              active &&
+              !disposed &&
+              currentGeneration === liveGeneration &&
+              connection === connectionGeneration
+            )
+              publish({ ...state, error });
+          });
+        },
+        { signal: controller.signal },
+      );
     };
-    return live;
+    const unsubscribe = (): void => {
+      if (!active) return;
+      active = false;
+      liveGeneration += 1;
+      controller?.abort();
+      subscription.unsubscribe();
+      if (live === handle) live = undefined;
+    };
+    const reconnect = (): void => {
+      if (!active || disposed || currentGeneration !== liveGeneration) return;
+      controller?.abort();
+      subscription.unsubscribe();
+      // Refresh the exact page first, then replace the old subscription. This
+      // avoids reconnecting against a stale cursor or cached snapshot.
+      void execute(candidate, { mode: 'background', force: true })
+        .catch(() => undefined)
+        .finally(() => {
+          if (active && !disposed && currentGeneration === liveGeneration)
+            connect();
+        });
+    };
+    handle = { unsubscribe, reconnect };
+    connect();
+    live = handle;
+    return handle;
   };
   return {
     get state() {
@@ -334,21 +394,22 @@ export function createSmrtWebQuery<TData extends object>(
     subscribeLive,
     invalidate() {
       if (!request) return;
-      cache.delete(keyFor(request));
+      const key = keyFor(request);
+      const entry = cache.get(key);
+      if (entry) cache.set(key, { ...entry, updatedAt: 0 });
       publish({ ...state, stale: true });
     },
     dispose() {
+      disposed = true;
       generation += 1;
+      liveGeneration += 1;
       visibleController?.abort(abortError());
       live?.unsubscribe();
+      live = undefined;
+      request = undefined;
       listeners.clear();
       cache.clear();
       inFlight.clear();
     },
   };
 }
-
-// Naming aliases keep the capability discoverable for consumers that call the
-// feature a data query or a remote query; all aliases share the same controller.
-export const createSmrtDataQuery = createSmrtWebQuery;
-export const createSmrtQuery = createSmrtWebQuery;
