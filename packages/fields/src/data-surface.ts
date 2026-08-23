@@ -119,9 +119,11 @@ function policyColumn(
         sortOperators: [],
       };
     }
+    const explicitlyAuthorized =
+      !restricted && (column.readable === false || isSensitiveColumn(column));
     return {
       ...column,
-      ...(column.readable === false ? { readable: true } : {}),
+      ...(explicitlyAuthorized ? { readable: true } : {}),
     };
   }
 

@@ -282,6 +282,56 @@ describe('field policy DataSurface adapter (#2449)', () => {
     expect(authorized.query.projectableColumnIds).toContain('unreadable');
   });
 
+  it('normalizes authorized sensitive structural readability and projectability', () => {
+    const structuralIds = ['id', 'computed', 'selection', 'actions'];
+    const structuralDescriptor: DataSurfaceDescriptor = {
+      ...descriptor,
+      columns: descriptor.columns.map((column) =>
+        structuralIds.includes(column.id)
+          ? {
+              ...column,
+              sensitivity: 'sensitive' as const,
+              capabilities:
+                column.id === 'id' || column.id === 'computed'
+                  ? ['read', 'project']
+                  : [],
+            }
+          : column,
+      ),
+      query: {
+        ...descriptor.query,
+        projectableColumnIds: [
+          ...descriptor.query.projectableColumnIds,
+          'computed',
+        ],
+      },
+    };
+
+    const denied = policyToDataSurfaceDescriptor(policy, structuralDescriptor);
+    expect(denied.columns.map((column) => column.id)).not.toEqual(
+      expect.arrayContaining(['computed', 'selection', 'actions']),
+    );
+    expect(denied.columns.find((column) => column.id === 'id')).toMatchObject({
+      readable: false,
+      capabilities: [],
+    });
+    expect(denied.query.projectableColumnIds).not.toContain('id');
+    expect(denied.query.projectableColumnIds).not.toContain('computed');
+
+    const authorized = policyToDataSurfaceDescriptor(
+      policy,
+      structuralDescriptor,
+      { authorizedColumnIds: structuralIds },
+    );
+    for (const id of structuralIds) {
+      expect(
+        authorized.columns.find((column) => column.id === id),
+      ).toMatchObject({ readable: true });
+    }
+    expect(authorized.query.projectableColumnIds).toContain('id');
+    expect(authorized.query.projectableColumnIds).toContain('computed');
+  });
+
   it('cannot broaden static hidden/readability constraints', () => {
     const result = policyToDataSurfaceDescriptor(policy, descriptor, {
       staticHiddenColumnIds: ['title'],
