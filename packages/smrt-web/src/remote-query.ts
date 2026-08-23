@@ -214,17 +214,19 @@ export function createSmrtWebQuery<TData extends object>(
     if (mode === 'visible') {
       generation += 1;
       visibleController?.abort(abortError());
-      visibleController = new AbortController();
+      const invocationController = new AbortController();
+      visibleController = invocationController;
       request = candidate;
       const current = generation;
       const signal = runOptions.signal;
-      if (signal?.aborted) visibleController.abort(signal.reason);
-      else if (signal)
-        signal.addEventListener(
-          'abort',
-          () => visibleController?.abort(signal.reason),
-          { once: true },
-        );
+      let removeCallerAbort: (() => void) | undefined;
+      if (signal?.aborted) invocationController.abort(signal.reason);
+      else if (signal) {
+        const abortCaller = () => invocationController.abort(signal.reason);
+        signal.addEventListener('abort', abortCaller, { once: true });
+        removeCallerAbort = () =>
+          signal.removeEventListener('abort', abortCaller);
+      }
       publish({
         ...state,
         loading: entry === undefined,
@@ -236,7 +238,7 @@ export function createSmrtWebQuery<TData extends object>(
       // same-key shared promise whose signal was just aborted above.
       runOptions = {
         ...runOptions,
-        signal: visibleController.signal,
+        signal: invocationController.signal,
         force: true,
       };
       try {
@@ -254,6 +256,10 @@ export function createSmrtWebQuery<TData extends object>(
           });
         }
         throw error;
+      } finally {
+        removeCallerAbort?.();
+        if (visibleController === invocationController)
+          visibleController = undefined;
       }
     }
     return runShared(candidate, key, runOptions);
@@ -360,6 +366,10 @@ export function createSmrtWebQuery<TData extends object>(
     };
     const reconnect = (): void => {
       if (!active || disposed || currentGeneration !== liveGeneration) return;
+      // Invalidate callbacks that already entered envelope validation before
+      // aborting this connection; the replacement is installed only after the
+      // background refetch settles.
+      connectionGeneration += 1;
       controller?.abort();
       subscription.unsubscribe();
       // Refresh the exact page first, then replace the old subscription. This

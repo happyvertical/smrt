@@ -128,6 +128,45 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it("does not let an earlier caller's abort cancel its visible successor", async () => {
+    const callerA = new AbortController();
+    const calls: string[] = [];
+    let resolveB!: (result: unknown) => void;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received, options) => {
+        calls.push(received.requestId);
+        if (received.requestId === 'request-1') {
+          return await new Promise<never>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              'abort',
+              () => reject(options.signal?.reason),
+              { once: true },
+            );
+          });
+        }
+        return await new Promise((resolve) => {
+          resolveB = resolve;
+        });
+      },
+    });
+    const first = query
+      .execute(request, { signal: callerA.signal })
+      .catch(() => undefined);
+    await vi.waitFor(() => expect(calls).toEqual(['request-1']));
+    const second = query.execute({ ...request, requestId: 'request-2' });
+    await vi.waitFor(() => expect(calls).toEqual(['request-1', 'request-2']));
+    callerA.abort();
+    resolveB(envelope({ ...request, requestId: 'request-2' }, 'successor'));
+    await second;
+    await first;
+    expect(query.state.rows[0]?.name).toBe('successor');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('keeps the forced successor in the in-flight map until it settles', async () => {
     const releases: Array<() => void> = [];
     let calls = 0;
@@ -226,6 +265,7 @@ describe('remote query controller', () => {
     await query.execute(request);
     const live = query.subscribeLive();
     const oldCallback = callbacks[0];
+    oldCallback?.(envelope(request, 'late-before-reconnect'));
     live?.reconnect();
     await vi.waitFor(() => expect(subscriptions).toBe(2));
     expect(queryCalls).toBe(2);
