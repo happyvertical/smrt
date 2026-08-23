@@ -5,6 +5,7 @@ import type {
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceCommandBridge,
+  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
   type DataSurfaceBridgeMessage,
   type DataSurfaceBridgePeer,
   type DataSurfaceCommandRequest,
@@ -201,6 +202,60 @@ describe('server data-surface bridge', () => {
     }
   });
 
+  it('converts a synchronous transport send throw into a disconnected outcome', async () => {
+    const link = transport();
+    link.send.mockImplementation(() => {
+      throw new Error('transport unavailable');
+    });
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+    });
+    await expect(bridge.send(command)).resolves.toMatchObject({
+      ok: false,
+      reason: 'disconnected',
+    });
+
+    link.send.mockImplementation((message) => {
+      link.sent.push(message);
+    });
+    const retry = bridge.send(command);
+    await Promise.resolve();
+    const request = link.sent[0] as DataSurfaceCommandRequest;
+    link.receive(ack(request));
+    await expect(retry).resolves.toMatchObject({ ok: true });
+    bridge.dispose();
+  });
+
+  it('rejects identifiers longer than the shared bridge contract', async () => {
+    const link = transport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport: link,
+      sessionId: 'session-1',
+      source: 'server-1',
+      peerSource: 'browser-1',
+      authorize: () => true,
+    });
+    const tooLong = 'x'.repeat(DATA_SURFACE_IDENTIFIER_MAX_LENGTH + 1);
+    await expect(
+      bridge.send({ ...command, commandId: tooLong }),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    await expect(
+      bridge.send({ ...command, controlId: tooLong }),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    await expect(
+      bridge.send({
+        ...command,
+        identity: { surfaceId: tooLong, kind: 'table' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    expect(link.sent).toHaveLength(0);
+    bridge.dispose();
+  });
+
   it('discards mismatched, malformed, and unauthenticated acknowledgements', async () => {
     const link = transport();
     const bridge = createDataSurfaceCommandBridge({
@@ -227,6 +282,12 @@ describe('server data-surface bridge', () => {
       ack(request, { expectedRevision: request.expectedRevision + 1 }),
     );
     link.receive(ack(request, { expiresAt: request.expiresAt + 1 }));
+    link.receive(
+      ack(request, {
+        revision: request.expectedRevision - 1,
+        snapshot: { ...snapshot, revision: request.expectedRevision - 1 },
+      }),
+    );
     link.receive(ack(request, { snapshot: {} }));
     link.receive(
       ack(request, {
@@ -386,6 +447,17 @@ describe('server data-surface bridge', () => {
       },
     });
     link.receive({ ...event, revision: 5 });
+    link.receive({
+      ...event,
+      result: { ...event.result, ok: false, reason: 'timeout' },
+    });
+    link.receive({
+      ...event,
+      event: 'registered' as const,
+      revision: -1,
+      command: undefined,
+      result: undefined,
+    });
     expect(events).toHaveLength(0);
     link.receive(event);
     expect(events).toHaveLength(1);

@@ -21,6 +21,7 @@ import {
 export const DATA_SURFACE_BRIDGE_VERSION = 1 as const;
 export const DEFAULT_DATA_SURFACE_BRIDGE_TTL_MS = 30_000;
 export const DEFAULT_DATA_SURFACE_BRIDGE_REPLAY_ENTRIES = 100;
+export const DATA_SURFACE_IDENTIFIER_MAX_LENGTH = 256;
 
 export type DataSurfaceBridgeFailureReason =
   | 'not_found'
@@ -139,7 +140,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256;
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= DATA_SURFACE_IDENTIFIER_MAX_LENGTH
+  );
 }
 
 function isPeer(value: unknown): value is DataSurfaceBridgePeer {
@@ -161,6 +166,16 @@ function identityOf(value: unknown): DataSurfaceIdentity | undefined {
     value.kind !== 'custom'
   ) {
     return undefined;
+  }
+  if (value.subject !== undefined) {
+    if (
+      !isRecord(value.subject) ||
+      !isString(value.subject.type) ||
+      !isString(value.subject.id) ||
+      (value.subject.label !== undefined && !isString(value.subject.label))
+    ) {
+      return undefined;
+    }
   }
   return value as unknown as DataSurfaceIdentity;
 }

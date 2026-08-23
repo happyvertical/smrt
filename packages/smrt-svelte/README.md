@@ -38,6 +38,23 @@ Svelte 5 component library for the s-m-r-t framework. Provides UI components, br
 pnpm add @happyvertical/smrt-svelte
 ```
 
+## Data-surface browser bridge security
+
+The browser bridge is a transport adapter, not an authentication system.
+Configure it only with a session/source binding established by the server and
+use a transport that supplies verified peer metadata. It accepts commands only
+from the configured server peer and emits acknowledgements/events only on the
+bound route; wire `sessionId` and `source` fields must never be treated as
+proof of identity.
+
+The adapter canonicalizes requests and bounds identifiers and envelopes before
+calling the registry. The registry remains the authority for command
+authorization and execution. Command IDs are idempotent while their bounded
+replay entries are retained; concurrent same-signature requests coalesce, a
+conflicting signature is rejected, and replay-capacity exhaustion is reported
+explicitly. TTL, disconnect, invalid-request, and transport failures produce
+protocol outcomes without exposing registry state.
+
 ## Usage
 
 ### Provider Setup

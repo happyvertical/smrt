@@ -7,6 +7,7 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import {
   createDataSurfaceBrowserBridge,
+  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
   type DataSurfaceBridgeMessage,
   type DataSurfaceBridgePeer,
   type DataSurfaceCommandRequest,
@@ -168,6 +169,27 @@ describe('data-surface browser bridge', () => {
       sessionId: 'attacker',
       source: 'server-1',
     });
+    expect(execute).not.toHaveBeenCalled();
+    expect(link.messages).toHaveLength(0);
+  });
+
+  it('rejects identifiers longer than the shared bridge contract', async () => {
+    const { registry, execute } = fixture();
+    const link = transport();
+    createDataSurfaceBrowserBridge({
+      registry,
+      transport: link,
+      sessionId: 'session-1',
+      source: 'browser-1',
+      peerSource: 'server-1',
+      now: () => 1_000,
+    });
+    const tooLong = 'x'.repeat(DATA_SURFACE_IDENTIFIER_MAX_LENGTH + 1);
+    await link.receive(request({ commandId: tooLong }));
+    await link.receive(request({ controlId: tooLong }));
+    await link.receive(
+      request({ identity: { surfaceId: tooLong, kind: 'table' } }),
+    );
     expect(execute).not.toHaveBeenCalled();
     expect(link.messages).toHaveLength(0);
   });

@@ -10,12 +10,15 @@
 
 import {
   assertDataSurfaceEnvelope,
+  DATA_SURFACE_IDENTIFIER_MAX_LENGTH,
   normalizeDataSurfaceSnapshot,
   normalizeDataSurfaceVisibleCommand,
 } from './data-surface-normalizer.js';
 
-// Keep the wire contract self-contained in this package's declarations. The
-// These serializable shapes intentionally mirror #2442. Runtime validation is
+export { DATA_SURFACE_IDENTIFIER_MAX_LENGTH } from './data-surface-normalizer.js';
+
+// Keep the wire contract self-contained in this package's declarations. These
+// serializable shapes intentionally mirror #2442. Runtime validation is
 // kept in this package's Node-safe local normalizer so this server entry has no
 // Svelte-bearing dependency.
 export type DataSurfaceJsonPrimitive = string | number | boolean | null;
@@ -34,6 +37,15 @@ export interface DataSurfaceIdentity {
   kind: DataSurfaceKind;
   subject?: DataSurfaceSubject;
 }
+
+export type DataSurfaceCommandResultReason =
+  | 'not_found'
+  | 'unsupported'
+  | 'stale_revision'
+  | 'idempotency_conflict'
+  | 'denied'
+  | 'execution_failed'
+  | 'non_monotonic_revision';
 export interface DataSurfaceDescriptor {
   version: 1;
   identity: DataSurfaceIdentity;
@@ -92,14 +104,7 @@ export interface DataSurfaceCommandResult {
   identity: DataSurfaceIdentity;
   revision?: number;
   snapshot?: DataSurfaceSnapshot;
-  reason?:
-    | 'not_found'
-    | 'unsupported'
-    | 'stale_revision'
-    | 'idempotency_conflict'
-    | 'denied'
-    | 'execution_failed'
-    | 'non_monotonic_revision';
+  reason?: DataSurfaceCommandResultReason;
 }
 
 export const DATA_SURFACE_BRIDGE_VERSION = 1 as const;
@@ -222,7 +227,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 256;
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= DATA_SURFACE_IDENTIFIER_MAX_LENGTH
+  );
 }
 
 function isPeer(value: unknown): value is DataSurfaceBridgePeer {
@@ -251,6 +260,20 @@ function isFailureReason(
     value === 'source_mismatch' ||
     value === 'session_mismatch' ||
     value === 'replay_capacity_exceeded'
+  );
+}
+
+function isCommandResultReason(
+  value: unknown,
+): value is DataSurfaceCommandResultReason {
+  return (
+    value === 'not_found' ||
+    value === 'unsupported' ||
+    value === 'stale_revision' ||
+    value === 'idempotency_conflict' ||
+    value === 'denied' ||
+    value === 'execution_failed' ||
+    value === 'non_monotonic_revision'
   );
 }
 
@@ -348,6 +371,7 @@ function isEvent(value: unknown): value is DataSurfaceBridgeEvent {
       identityOf(value.identity) &&
       typeof value.revision === 'number' &&
       Number.isSafeInteger(value.revision) &&
+      value.revision >= 0 &&
       (value.event === 'registered' ||
         value.event === 'unregistered' ||
         value.event === 'command'),
@@ -376,7 +400,7 @@ function resultOf(value: unknown): DataSurfaceCommandResult | undefined {
   }
   if (value.ok) {
     if (value.reason !== undefined) return undefined;
-  } else if (!isFailureReason(value.reason)) {
+  } else if (!isCommandResultReason(value.reason)) {
     return undefined;
   }
   let snapshot: DataSurfaceSnapshot | undefined;
@@ -420,7 +444,9 @@ function eventOf(value: unknown): DataSurfaceBridgeEvent | undefined {
     if (value.event !== 'command' && (command || result)) return undefined;
     if (
       value.event === 'command' &&
-      (result?.revision === undefined || value.revision !== result.revision)
+      (result?.revision === undefined ||
+        value.revision !== result.revision ||
+        result.revision < (command?.expectedRevision ?? 0))
     ) {
       return undefined;
     }
@@ -562,7 +588,8 @@ export function createDataSurfaceCommandBridge(
       if (
         value.reason !== undefined ||
         value.revision === undefined ||
-        value.snapshot === undefined
+        value.snapshot === undefined ||
+        value.revision < request.expectedRevision
       ) {
         return undefined;
       }
@@ -576,6 +603,7 @@ export function createDataSurfaceCommandBridge(
       if (
         identitySignature(snapshot.descriptor.identity) !==
           identitySignature(request.identity) ||
+        snapshot.revision < request.expectedRevision ||
         (value.revision !== undefined && snapshot.revision !== value.revision)
       ) {
         return undefined;
@@ -750,7 +778,7 @@ export function createDataSurfaceCommandBridge(
         resolve,
         timer,
       });
-      Promise.resolve(options.transport.send(request)).catch(() => {
+      const handleSendFailure = () => {
         if (!pending.delete(normalized.commandId)) return;
         inflight.delete(normalized.commandId);
         clearTimeout(timer);
@@ -763,7 +791,14 @@ export function createDataSurfaceCommandBridge(
             expiresAt,
           ),
         );
-      });
+      };
+      try {
+        Promise.resolve(options.transport.send(request)).catch(
+          handleSendFailure,
+        );
+      } catch {
+        handleSendFailure();
+      }
     });
     inflight.set(normalized.commandId, { signature, promise });
     if (!pending.has(normalized.commandId))
