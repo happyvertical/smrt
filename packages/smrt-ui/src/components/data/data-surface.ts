@@ -182,17 +182,33 @@ export type DataSurfaceQueryRequest =
       limit: number;
     };
 
-export interface DataSurfaceQueryResult {
+interface DataSurfaceQueryResultBase {
   version: 1;
   requestId: string;
   identity: DataSurfaceIdentity;
   revision: number;
-  rowKey: string;
-  rows: DataSurfaceJsonObject[];
-  hasMore: boolean;
-  truncated: boolean;
-  nextCursor?: string;
 }
+
+/** Bounded read result shapes; #2444 owns their canonical query semantics. */
+export type DataSurfaceQueryResult =
+  | (DataSurfaceQueryResultBase & {
+      kind: 'rows';
+      rowKey: string;
+      rows: DataSurfaceJsonObject[];
+      hasMore: boolean;
+      truncated: boolean;
+      nextCursor?: string;
+    })
+  | (DataSurfaceQueryResultBase & {
+      kind: 'count';
+      count: number;
+    })
+  | (DataSurfaceQueryResultBase & {
+      kind: 'facets';
+      columnId: string;
+      facets: Array<{ value: DataSurfaceJsonPrimitive; count: number }>;
+      truncated: boolean;
+    });
 
 /** Preview/apply is a contract only here; server-side adapters execute it. */
 export interface DataSurfaceActionRequest {
@@ -1294,9 +1310,7 @@ export function createDataSurfaceRegistry(): DataSurfaceRegistry {
       );
       const key = identityKey(descriptor.identity);
       if (entries.has(key)) {
-        throw new Error(
-          `DataSurface identity is already registered: ${descriptor.identity.surfaceId}`,
-        );
+        throw new Error(`DataSurface identity is already registered: ${key}`);
       }
       const entry: Entry = {
         key,

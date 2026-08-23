@@ -5,6 +5,7 @@ import {
   DATA_SURFACE_MAX_REQUEST_BYTES,
   type DataSurfaceDescriptor,
   type DataSurfaceIdentity,
+  type DataSurfaceQueryResult,
   type DataSurfaceVisibleCommand,
   normalizeDataSurfaceActionRequest,
   normalizeDataSurfaceQueryRequest,
@@ -107,6 +108,46 @@ function registerFixture(
 }
 
 describe('data surface registry', () => {
+  it('aligns bounded query result shapes with each query kind', () => {
+    const results = [
+      {
+        version: 1,
+        requestId: 'rows-1',
+        identity,
+        revision: 3,
+        kind: 'rows',
+        rowKey: 'id',
+        rows: [{ id: 'a' }],
+        hasMore: false,
+        truncated: false,
+      },
+      {
+        version: 1,
+        requestId: 'count-1',
+        identity,
+        revision: 3,
+        kind: 'count',
+        count: 1,
+      },
+      {
+        version: 1,
+        requestId: 'facets-1',
+        identity,
+        revision: 3,
+        kind: 'facets',
+        columnId: 'title',
+        facets: [{ value: 'Guide', count: 1 }],
+        truncated: false,
+      },
+    ] satisfies DataSurfaceQueryResult[];
+
+    expect(results.map((result) => result.kind)).toEqual([
+      'rows',
+      'count',
+      'facets',
+    ]);
+  });
+
   it('discovers defensive serializable descriptors and snapshots', () => {
     const { registry } = registerFixture();
 
@@ -135,7 +176,7 @@ describe('data surface registry', () => {
         descriptor: descriptor(),
         getSnapshot: () => ({ revision: 0, state: {} }),
       }),
-    ).toThrow('already registered');
+    ).toThrow(JSON.stringify(['table', 'content-library', ['site', 'docs']]));
   });
 
   it('keeps identities with delimiter-like components distinct', () => {
