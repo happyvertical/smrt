@@ -60,10 +60,10 @@ export default {
       id: 'data-table',
       title: 'Data Table',
       description:
-        'Sortable and selectable tabular data with loading, density, and empty states.',
+        'Accessible local and manual tables with query lifecycle states, grouped reports, saved layout, responsive overflow, and virtualization.',
       loadComponent: loadDataTable,
       order: 5,
-      tags: ['data', 'table', 'grid'],
+      tags: ['data', 'table', 'manual-query', 'reporting', 'accessibility'],
       modes: {
         mock: {
           label: 'Interactive',
