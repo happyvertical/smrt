@@ -8,10 +8,16 @@ import {
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import type {
   DataQueryFieldDescriptor,
+  DataQueryFreshness,
   DataQueryResult,
   DataQuerySchema,
 } from '@happyvertical/smrt-types';
 import { buildReportDefinition } from './compiler.js';
+import {
+  getReportLifecycle,
+  type ReportLifecycleOptions,
+  type ReportLifecycleSnapshot,
+} from './lifecycle.js';
 import type {
   ReportAggregateFn,
   ReportDefinition,
@@ -220,6 +226,22 @@ export interface ReportQueryOptions {
     count(options?: Record<string, unknown>): Promise<number>;
   };
   db?: import('@happyvertical/sql').DatabaseInterface;
+  /**
+   * Opt in to a tenant-safe lifecycle snapshot alongside this materialized
+   * read. It never makes a generic read mutate.
+   */
+  lifecycle?: Omit<ReportLifecycleOptions, 'db'>;
+}
+
+/** Lifecycle context attached only when a caller explicitly opts in. */
+export interface ReportMaterializedReadLifecycle {
+  snapshot: ReportLifecycleSnapshot;
+  /** Whether this collection read appears to have completed a TTL refresh. */
+  read: 'current' | 'stale' | 'refresh-triggered';
+}
+
+export interface ReportDataQueryResult extends DataQueryResult {
+  reportLifecycle?: ReportMaterializedReadLifecycle;
 }
 
 type RegistryField = {
@@ -816,6 +838,32 @@ function mapMaterializedRow(
   return mapped;
 }
 
+function queryFreshness(
+  lifecycle: ReportLifecycleSnapshot,
+): DataQueryFreshness {
+  switch (lifecycle.state) {
+    case 'current':
+      return {
+        state: 'fresh',
+        ...(lifecycle.asOf ? { asOf: lifecycle.asOf } : {}),
+      };
+    case 'stale':
+    case 'lock-skipped':
+    case 'failed':
+      return {
+        state: 'stale',
+        ...(lifecycle.asOf ? { asOf: lifecycle.asOf } : {}),
+      };
+    case 'refreshing':
+      return lifecycle.hasUsableRows
+        ? {
+            state: 'stale',
+            ...(lifecycle.asOf ? { asOf: lifecycle.asOf } : {}),
+          }
+        : { state: 'unknown' };
+  }
+}
+
 /**
  * Execute the bounded materialized-read slice owned by #2457.
  *
@@ -830,12 +878,23 @@ export async function queryReportMaterializedRows(
   reportCtor: new (...args: any[]) => SmrtObject,
   input: unknown,
   options: ReportQueryOptions = {},
-): Promise<DataQueryResult> {
+): Promise<ReportDataQueryResult> {
   const descriptor = await buildReportAdapterDescriptor(reportCtor);
   const request = normalizeDataQueryRequest(input, descriptor.schema);
   if (request.mode === 'facets') {
     throw new Error('Report materialized reads do not support facets yet');
   }
+  const lifecycleDb = options.db;
+  if (options.lifecycle && !lifecycleDb) {
+    throw new Error('Report lifecycle disclosure requires a database handle');
+  }
+  const lifecycleOptions =
+    options.lifecycle && lifecycleDb
+      ? { db: lifecycleDb, ...options.lifecycle }
+      : undefined;
+  const lifecycleBefore = lifecycleOptions
+    ? await getReportLifecycle(reportCtor, lifecycleOptions)
+    : undefined;
   const fieldMap = publicFieldMap(descriptor);
   const collection: NonNullable<ReportQueryOptions['collection']> =
     options.collection ??
@@ -902,7 +961,28 @@ export async function queryReportMaterializedRows(
     warnings: [],
     truncated: false,
   };
-  return normalizeDataQueryResult(result, request, descriptor.schema);
+  const normalized = normalizeDataQueryResult(
+    result,
+    request,
+    descriptor.schema,
+  );
+  if (!lifecycleBefore || !lifecycleOptions) return normalized;
+
+  const lifecycleAfter = await getReportLifecycle(reportCtor, lifecycleOptions);
+  return {
+    ...normalized,
+    freshness: queryFreshness(lifecycleAfter),
+    reportLifecycle: {
+      snapshot: lifecycleAfter,
+      read:
+        lifecycleBefore.state !== 'current' &&
+        lifecycleAfter.state === 'current'
+          ? 'refresh-triggered'
+          : lifecycleAfter.state === 'current'
+            ? 'current'
+            : 'stale',
+    },
+  };
 }
 
 /** Read the already-materialized primary key; never use a display/page index. */
