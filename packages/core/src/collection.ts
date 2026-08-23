@@ -289,6 +289,40 @@ export type SmrtSelectedRow<
       : unknown;
 };
 
+/** A field requested by {@link SmrtCollection.facets}. */
+export interface SmrtFacetRequest<T extends SmrtObject> {
+  /** A column-backed SMRT field name (for example, `status`). */
+  field: SmrtSelectField<T>;
+  /** Maximum number of values to return. Omit to return every value. */
+  limit?: number;
+}
+
+/** One distinct facet value and the number of matching rows containing it. */
+export interface SmrtFacetValue {
+  value: unknown;
+  count: number;
+}
+
+/** Database-backed values returned for one requested facet field. */
+export interface SmrtFacetResult {
+  field: string;
+  values: SmrtFacetValue[];
+}
+
+/** Options for a database-backed facet query. */
+export interface SmrtFacetOptions<T extends SmrtObject> {
+  /** One or more fields. Each field may optionally carry its own value limit. */
+  fields: readonly (SmrtSelectField<T> | SmrtFacetRequest<T>)[];
+  /** The same SMRT WHERE syntax accepted by {@link SmrtCollection.list}. */
+  where?: SmrtWhereClause<T>;
+}
+
+/** Exact unfiltered and filtered row counts for a list scope. */
+export interface SmrtCollectionCounts {
+  total: number;
+  filtered: number;
+}
+
 export interface SmrtListOptions<ModelType extends SmrtObject> {
   where?: SmrtWhereClause<ModelType>;
   offset?: number;
@@ -3112,6 +3146,162 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
 
     return toSafeInteger(result.rows[0].count, 'Collection count');
+  }
+
+  /**
+   * Return database-backed distinct values and row counts for one or more
+   * column-backed fields.
+   *
+   * Each requested field is executed as a bounded `GROUP BY` query. Keeping
+   * one query per field works on every supported adapter (SQLite, DuckDB and
+   * PostgreSQL) while avoiding a full collection read or model hydration.
+   * The same `beforeList` interceptors as `list()` and `count()` run first,
+   * so tenancy and other read scopes are applied to every facet query.
+   *
+   * Facets group by the value stored in the column. SMRT does not split,
+   * unnest, or otherwise interpret array/string-list fields; consumers that
+   * need a facet per array member should maintain a scalar join table or use
+   * a consumer-specific query. JSON fields are grouped by their stored JSON
+   * value and decoded in the returned `value` when the field metadata allows
+   * it.
+   *
+   * @param options.fields One or more fields, optionally with per-field limits
+   * @param options.where Filter conditions using the same syntax as `list()`
+   * @returns One value/count list per requested field, in request order
+   */
+  public async facets(
+    options: SmrtFacetOptions<ModelType>,
+  ): Promise<SmrtFacetResult[]> {
+    await this.ensureStorageReady();
+
+    if (!options || !Array.isArray(options.fields)) {
+      throw new Error('Invalid facets option: fields must be an array.');
+    }
+    if (options.fields.length === 0) {
+      throw new Error('Invalid facets option: at least one field is required.');
+    }
+
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const interceptorContext = createInterceptorContext(
+      itemClassName,
+      'list',
+      this.constructor.name,
+    );
+    const interceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        itemClassName,
+        options as unknown as InterceptorListOptions,
+        interceptorContext,
+      )) ??
+      (options as unknown as InterceptorListOptions) ??
+      {};
+
+    let { where } =
+      interceptedOptions as unknown as SmrtFacetOptions<ModelType>;
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
+    const isSTI = tableStrategy === 'sti';
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase && stiBase !== itemQualifiedName) {
+        where = {
+          _meta_type: itemQualifiedName,
+          ...(where || {}),
+        };
+      }
+    }
+    where = resolveMetaTypeInWhere(where);
+
+    const { sql: whereSql, values: whereValues } = buildWhere(
+      this.convertWhereKeys(where || {}),
+    );
+    const fields = this.getFieldsSync();
+    const requested = options.fields.map((entry) =>
+      typeof entry === 'string' ? { field: entry } : entry,
+    );
+    const seen = new Set<string>();
+    const results: SmrtFacetResult[] = [];
+
+    for (const request of requested) {
+      if (!request || typeof request.field !== 'string') {
+        throw new Error(
+          'Invalid facet field: expected a string or { field, limit }.',
+        );
+      }
+      const field = request.field;
+      if (seen.has(field)) {
+        throw new Error(
+          `Invalid facet field: '${field}' was requested more than once.`,
+        );
+      }
+      seen.add(field);
+
+      // Reuse projection validation so facets cannot expose sensitive,
+      // readPermission-gated, relationship-only, transient, or unknown
+      // fields. The returned SQL is intentionally not used: aggregation needs
+      // the same safe column identifier without hydrating a projection row.
+      this.resolveProjectionSelect([field], fields, isSTI);
+
+      const columnName = this.toDbColumnName(field);
+      const quotedColumn = this.quoteProjectionIdentifier(columnName);
+      const quotedField = this.quoteProjectionIdentifier(field);
+      const requestedLimit = request.limit;
+      const limit =
+        requestedLimit === undefined
+          ? undefined
+          : this.applyListBounds(
+              assertQueryBound(requestedLimit, `facet limit for '${field}'`),
+            );
+      const limitSql =
+        limit === undefined ? '' : ` LIMIT $${whereValues.length + 1}`;
+      const sql =
+        `SELECT ${quotedColumn} AS ${quotedField}, ` +
+        `COUNT(*) AS "__smrt_facet_count" FROM ${this.tableName} ` +
+        `${whereSql} GROUP BY ${quotedColumn} ` +
+        `ORDER BY "__smrt_facet_count" DESC, ${quotedColumn} ASC${limitSql}`;
+      const params =
+        limit === undefined ? whereValues : [...whereValues, limit];
+      const queryResult = await this.db.query(sql, ...params);
+
+      results.push({
+        field,
+        values: queryResult.rows.map((row) => {
+          const rawValue = row[field];
+          const formatted = formatDataJs({ [columnName]: rawValue }, fields);
+          const formattedKey = Object.hasOwn(formatted, field)
+            ? field
+            : toCamelCase(field);
+          const value = Object.hasOwn(formatted, formattedKey)
+            ? formatted[formattedKey]
+            : rawValue;
+          return {
+            value,
+            count: toSafeInteger(
+              row.__smrt_facet_count,
+              `Facet count for '${field}'`,
+            ),
+          };
+        }),
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Return both the tenant/read-scoped total and a filtered count.
+   *
+   * This intentionally issues two `COUNT(*)` queries rather than reading
+   * rows into application memory. `count()` applies `beforeList` for each
+   * query, so the unfiltered total remains tenant-scoped while the filtered
+   * count adds the caller's `where` conditions.
+   */
+  public async counts(
+    options: { where?: SmrtWhereClause<ModelType> } = {},
+  ): Promise<SmrtCollectionCounts> {
+    const total = await this.count();
+    const filtered = await this.count(options);
+    return { total, filtered };
   }
 
   /**
