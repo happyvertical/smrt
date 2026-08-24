@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.42.7
+
+### Patch Changes
+
+- ### Features
+
+  - add lifecycle-aware WebMCP tools (#2499) (smrt-svelte)
+  - add materialized query contracts (#2495) (reports)
+  - add paged latest-related list hydration (#2487) (core)
+  - add principal-bound data-surface actions (#2492) (agents)
+  - expose report lifecycle state (#2494) (reports)
+  - extend field policy data-surface metadata (#2482) (fields)
+  - bridge authenticated data surface commands (#2484) (chat)
+  - register generated WebMCP tools (#2485) (smrt-web)
+  - add report presentation metadata (#2493) (reports)
+  - add safe data-surface read tools (#2483) (agents)
+  - register mounted data surfaces (#2479) (smrt-ui)
+  - add scoped facets and counts (#2481) (core)
+  - add materialized report adapter (#2480) (reports)
+  - @happyvertical/smrt-config@0.42.7
+  - @happyvertical/smrt-types@0.42.7
+  - @happyvertical/smrt-scanner@0.42.7
+
 ## 0.42.6
 
 ### Patch Changes
