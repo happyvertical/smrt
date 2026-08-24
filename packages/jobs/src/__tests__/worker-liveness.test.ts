@@ -183,7 +183,14 @@ describe('worker-lease recovery (#1474)', () => {
   // the adapter's rowCount reporting (always ≥1 on DuckDB) — recovery must use
   // RETURNING, not rowCount, to decide what actually transitioned.
   it('registers leases and recovers correctly on DuckDB', async () => {
-    const db = await getTestDatabase({ type: 'duckdb', url: ':memory:' });
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      // This scenario validates DuckDB lease timestamps/rowCount behavior,
+      // not referential enforcement. DuckDB cannot honor SMRT's default
+      // ON UPDATE CASCADE action, so the test-only schema opt-out is explicit.
+      omitForeignKeyConstraints: true,
+    });
     const collection = await SmrtJobCollection.create({ db });
     const workers = await SmrtWorkerCollection.create({ db });
 

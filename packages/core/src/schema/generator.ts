@@ -251,6 +251,11 @@ export class SchemaGenerator {
       const column = columns[columnName];
       if (!column) continue;
 
+      if (field._meta?.constraint === false) {
+        column.foreignKey = undefined;
+        continue;
+      }
+
       const isTenantIdField =
         field.__tenancy?.isTenantIdField === true ||
         field._meta?.__tenancy?.isTenantIdField === true;
@@ -1141,6 +1146,7 @@ export class SchemaGenerator {
       // Handle foreign keys
       if (
         field.type === 'foreignKey' &&
+        field._meta?.constraint !== false &&
         field._meta?.__tenancy?.isTenantIdField !== true
       ) {
         // Type cast to access relationship-specific properties
@@ -1483,6 +1489,7 @@ export class SchemaGenerator {
         // Handle foreign keys
         if (
           field.type === 'foreignKey' &&
+          field._meta?.constraint !== false &&
           field._meta?.__tenancy?.isTenantIdField !== true
         ) {
           const relatedName = field.related; // Top-level property

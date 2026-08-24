@@ -859,6 +859,7 @@ export class ManifestGenerator {
         if (
           field.type !== 'foreignKey' ||
           !field.related ||
+          field._meta?.constraint === false ||
           field._meta?.__tenancy?.isTenantIdField === true
         ) {
           continue;

@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import {
   type DatabaseInterface,
   getDatabase,
@@ -683,7 +683,19 @@ describe('OIDC Account Linking', () => {
 
     it('serializes one issuer/subject with different emails across independent DuckDB handles', async () => {
       const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
-      await ProfileTypeCollection.create({ db });
+      // This test exercises DuckDB connection serialization, not FK actions.
+      // Use the focused test schema because DuckDB cannot honor SMRT's default
+      // ON UPDATE CASCADE contract for generated same-package constraints.
+      await getTestDatabase({
+        db,
+        classes: [
+          'ProfileType',
+          'Profile',
+          'OidcIdentity',
+          'OidcProfileEmailReservation',
+        ],
+        omitForeignKeyConstraints: true,
+      });
       await backfillProfileEmailKeys(db);
       let activeLookups = 0;
       let maxActiveLookups = 0;
@@ -1014,8 +1026,16 @@ async function runProfileMatrixScenario(
   let identityProfileId: string | undefined;
   let identityId: string | undefined;
   let emailProfileId: string | undefined;
+  const legacyOrphanScenario = scenario.identity === 'exact_missing_profile';
 
-  if (scenario.identity === 'exact_missing_profile') {
+  if (legacyOrphanScenario) {
+    // Reproduce a legacy orphan that predates #2413's physical constraint.
+    // Keep enforcement disabled through repair/rebinding because the legacy
+    // row remains orphaned until that flow has completed.
+    await db.query('PRAGMA foreign_keys = OFF');
+  }
+
+  if (legacyOrphanScenario) {
     identityId = await seedProfileMatrixIdentity(
       db,
       randomUUID(),
@@ -1151,6 +1171,9 @@ async function runProfileMatrixScenario(
     await expect(profileMatrixIdentityBindings(db, subject)).resolves.toEqual(
       identityBindingsBefore,
     );
+  }
+  if (legacyOrphanScenario) {
+    await db.query('PRAGMA foreign_keys = ON');
   }
 }
 

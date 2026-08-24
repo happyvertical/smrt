@@ -214,6 +214,13 @@ agree on same-package foreign keys as well as columns and indexes:
 Natural-key references default to `CASCADE`; ordinary references default to
 immediate `NO ACTION`, matching `SmrtObject.delete()`.
 
+Same-package archival/audit identifiers that intentionally outlive their
+parent may use `@foreignKey(Target, { constraint: false })`. This explicit
+exception retains relationship loading, indexing, and application-side delete
+policy while omitting only the physical constraint and schema dependency;
+document the retention reason at the field, and keep ordinary same-package
+relationships constrained.
+
 - Change column/index emission on every shipping path, proven by the path-parity
   test `src/schema/schema-path-parity.test.ts` (#2359; index rules in the module doc). A "same as migrations" comment is a claim to check.
 - Every new query predicate ships with its index, or a reason it doesn't.

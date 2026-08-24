@@ -260,6 +260,90 @@ describe('createIsolatedTestDbFromManifest', () => {
       ).rejects.toThrow('No objects with schema found matching: NonExistent');
     });
 
+    it('removes a structured foreign key when its parent is filtered out', async () => {
+      const manifestPath = join(testDir, 'filtered-foreign-key.json');
+      const manifest = {
+        objects: {
+          Parent: {
+            className: 'Parent',
+            schema: {
+              tableName: 'filtered_parents',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true, notNull: true },
+              },
+            },
+          },
+          Child: {
+            className: 'Child',
+            schema: {
+              tableName: 'filtered_children',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true, notNull: true },
+                parent_id: {
+                  type: 'TEXT',
+                  referenceKind: 'foreignKey',
+                  foreignKey: {
+                    table: 'filtered_parents',
+                    column: 'id',
+                    onDelete: 'NO ACTION',
+                    onUpdate: 'CASCADE',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['Child'],
+      });
+      try {
+        await expect(db.list('filtered_children', {})).resolves.toEqual([]);
+        await expect(db.list('filtered_parents', {})).rejects.toThrow();
+        const foreignKeys = await db.query(
+          'PRAGMA foreign_key_list("filtered_children")',
+        );
+        expect(foreignKeys.rows).toEqual([]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('refuses filtered legacy DDL whose referenced parent is omitted', async () => {
+      const manifestPath = join(testDir, 'filtered-legacy-foreign-key.json');
+      const manifest = {
+        objects: {
+          Parent: {
+            className: 'Parent',
+            schema: {
+              tableName: 'legacy_filter_parents',
+              ddl: 'CREATE TABLE "legacy_filter_parents" ("id" TEXT PRIMARY KEY);',
+            },
+          },
+          Child: {
+            className: 'Child',
+            schema: {
+              tableName: 'legacy_filter_children',
+              ddl: 'CREATE TABLE "legacy_filter_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "legacy_filter_parents"("id"));',
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      await expect(
+        createIsolatedTestDbFromManifest({
+          manifestPath,
+          includeObjects: ['Child'],
+        }),
+      ).rejects.toThrow(
+        'legacy DDL for "legacy_filter_children" references omitted table "legacy_filter_parents"',
+      );
+    });
+
     it('should filter using className even when manifest keys are namespaced (Issue #860)', async () => {
       const manifestPath = join(testDir, 'namespaced-filter.json');
       const manifest = {

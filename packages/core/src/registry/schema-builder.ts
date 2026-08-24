@@ -395,6 +395,7 @@ function applyContributorForeignKeys(
     const column = tableSchema.columns[columnName];
     if (!column) continue;
     if (
+      field._meta?.constraint === false ||
       field._meta?.__tenancy?.isTenantIdField === true ||
       (
         field as FieldDefinition & {
@@ -1025,6 +1026,7 @@ export function fieldsToColumns(
     if (
       fieldDef.type === 'foreignKey' &&
       fieldDef.related &&
+      fieldDef._meta?.constraint !== false &&
       fieldDef._meta?.__tenancy?.isTenantIdField !== true &&
       !(
         fieldDef as FieldDefinition & {

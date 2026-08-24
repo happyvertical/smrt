@@ -155,7 +155,10 @@ the framework retention sweep in `@happyvertical/smrt-core`.
 - Windows (`DEFAULT_JOB_RETENTION`): completed/cancelled 7 days, failed 30
   days, events 30 days, 10 000 job rows per sweep. Events deliberately outlive
   the jobs they describe, so a job row removed at 7 days still has a readable
-  log for another three weeks.
+  log for another three weeks. `SmrtJobEvent.jobId` is therefore the explicit
+  same-package archival exception: `@foreignKey('SmrtJob', { constraint:
+  false })` retains runtime relationship metadata and its index without a
+  physical database constraint that would block parent pruning.
 - `cleanup()` counts before deleting (`rowCount` is unreliable across engines)
   and honours `dryRun`, which is what makes `smrt db:prune --dry-run` an exact
   preview. Its `(status, completed_at)` predicate is indexed by

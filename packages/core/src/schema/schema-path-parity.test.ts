@@ -119,6 +119,11 @@ function buildFixtureManifest(): SmartObjectManifest {
     objectDef('ParityPost', {
       body: { type: 'text' },
       authorId: { type: 'foreignKey', related: 'ParityAuthor' },
+      archiveAuthorId: {
+        type: 'foreignKey',
+        related: 'ParityAuthor',
+        _meta: { constraint: false },
+      },
       profileId: {
         type: 'crossPackageRef',
         related: '@happyvertical/smrt-profiles:Profile',
@@ -837,6 +842,7 @@ describe('schema path parity (#2359)', () => {
 
     it('CTI references: FK + cross-package ref indexed, indexed:true honoured, inline unique kept on the column', () => {
       expect(names('parity_posts')).toEqual([
+        'parity_posts_archive_author_id_idx',
         'parity_posts_author_id_idx',
         'parity_posts_created_at_idx',
         'parity_posts_profile_id_idx',
@@ -856,6 +862,14 @@ describe('schema path parity (#2359)', () => {
       });
       expect(
         manifestSchemas.get('parity_posts')?.columns.profile_id.foreignKey,
+      ).toBeUndefined();
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.archive_author_id
+          .referenceKind,
+      ).toBe('foreignKey');
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.archive_author_id
+          .foreignKey,
       ).toBeUndefined();
     });
 

@@ -962,11 +962,43 @@ function extractTablesFromManifest(
     entries.push({ schema: objectDef.schema, source: key });
   }
 
-  return Array.from(collectManifestTables(entries).values()).map((table) => ({
-    tableName: table.tableName,
-    table,
-    dependencies: collectTableDependencies(table),
-  }));
+  const collected = Array.from(collectManifestTables(entries).values());
+  const includedTables = new Set(collected.map((table) => table.tableName));
+
+  return collected.map((table) => {
+    const missingDependencies = collectTableDependencies(table).filter(
+      (dependency) => !includedTables.has(dependency),
+    );
+    if (missingDependencies.length > 0 && !table.structured) {
+      throw new Error(
+        `Cannot safely create filtered manifest schema: legacy DDL for "${table.tableName}" references omitted table "${missingDependencies[0]}". Include the referenced object or regenerate a structured manifest.`,
+      );
+    }
+
+    const definition = {
+      ...table.definition,
+      columns: Object.fromEntries(
+        Object.entries(table.definition.columns).map(([name, column]) => [
+          name,
+          column.foreignKey && !includedTables.has(column.foreignKey.table)
+            ? { ...column, foreignKey: undefined }
+            : column,
+        ]),
+      ),
+      foreignKeys: table.definition.foreignKeys.filter((foreignKey) =>
+        includedTables.has(foreignKey.referencesTable),
+      ),
+      dependencies: table.definition.dependencies.filter((dependency) =>
+        includedTables.has(dependency),
+      ),
+    };
+    const filteredTable = { ...table, definition };
+    return {
+      tableName: filteredTable.tableName,
+      table: filteredTable,
+      dependencies: collectTableDependencies(filteredTable),
+    };
+  });
 }
 
 /**

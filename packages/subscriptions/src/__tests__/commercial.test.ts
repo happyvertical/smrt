@@ -35,6 +35,21 @@ describe('commercial usage tracer', () => {
     await usage.db.close?.();
   });
 
+  async function seedUsageEvent(
+    id: string,
+    tenantId: string,
+    metricKey = 'ai.tokens',
+  ): Promise<void> {
+    await usage.create({
+      id,
+      tenantId,
+      metricKey,
+      quantity: 0,
+      windowStart: new Date('2026-07-01T00:00:00Z'),
+      windowEnd: new Date('2026-07-01T00:01:00Z'),
+    });
+  }
+
   it('keeps usage idempotent and prices an immutable effective-dated snapshot', async () => {
     const event = await service.record({
       tenantId: '11111111-1111-4111-8111-111111111111',
@@ -230,6 +245,7 @@ describe('commercial usage tracer', () => {
   });
 
   it('rejects adjustments until a charge is approved', async () => {
+    await seedUsageEvent('usage-draft', '11111111-1111-4111-8111-111111111111');
     const charge = await charges.create({
       tenantId: '11111111-1111-4111-8111-111111111111',
       usageEventId: 'usage-draft',
@@ -242,6 +258,10 @@ describe('commercial usage tracer', () => {
   });
 
   it('deduplicates concurrent sourced billing adjustments', async () => {
+    await seedUsageEvent(
+      'usage-adjustment-retry',
+      '11111111-1111-4111-8111-111111111111',
+    );
     const charge = await charges.create({
       tenantId: '11111111-1111-4111-8111-111111111111',
       usageEventId: 'usage-adjustment-retry',
@@ -504,6 +524,7 @@ describe('commercial usage tracer', () => {
       ['ai.tokens', 4],
       ['storage.bytes', 5],
     ] as const) {
+      await seedUsageEvent(`usage-${metricKey}`, tenantId, metricKey);
       await charges.create({
         tenantId,
         usageEventId: `usage-${metricKey}`,
@@ -551,6 +572,7 @@ describe('commercial usage tracer', () => {
       limitAmount: 5,
       behavior: 'block',
     });
+    await seedUsageEvent('usage-earlier-this-month', tenantId);
     await charges.create({
       tenantId,
       usageEventId: 'usage-earlier-this-month',
@@ -597,6 +619,7 @@ describe('commercial usage tracer', () => {
       ['USD', 4],
       ['EUR', 100],
     ] as const) {
+      await seedUsageEvent(`usage-${currency.toLowerCase()}`, tenantId);
       await charges.create({
         tenantId,
         usageEventId: `usage-${currency.toLowerCase()}`,
@@ -680,6 +703,7 @@ describe('commercial usage tracer', () => {
       limitAmount: 10,
       behavior: 'block',
     });
+    await seedUsageEvent('usage-approved-in-july', tenantId);
     await charges.create({
       tenantId,
       usageEventId: 'usage-approved-in-july',
