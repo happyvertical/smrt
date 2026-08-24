@@ -147,12 +147,69 @@ describe('Campaign customer scope', () => {
     ).toMatchObject({ id: uppercaseContextSaved.id });
     expect(
       await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
-        campaigns.list({
-          where: { id: [uppercaseContextSaved.id?.toUpperCase()] },
-          select: ['id', 'tenantId'] as const,
+        campaigns.get({
+          tenantId: tenantA.toUpperCase(),
+          customerId: customerA.id?.toUpperCase(),
+          id: uppercaseContextSaved.id?.toUpperCase(),
         }),
       ),
-    ).toEqual([{ id: uppercaseContextSaved.id, tenantId: tenantA }]);
+    ).toMatchObject({
+      id: uppercaseContextSaved.id,
+      tenantId: tenantA,
+      customerId: customerA.id,
+    });
+    expect(
+      await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
+        campaigns.list({
+          where: [
+            [
+              {
+                'id in': [uppercaseContextSaved.id?.toUpperCase()],
+                'customerId =': customerA.id?.toUpperCase(),
+                'tenantId in': [tenantA.toUpperCase()],
+              },
+            ],
+          ],
+          select: ['id', 'tenantId', 'customerId'] as const,
+        }),
+      ),
+    ).toEqual([
+      {
+        id: uppercaseContextSaved.id,
+        tenantId: tenantA,
+        customerId: customerA.id,
+      },
+    ]);
+    expect(
+      await withSystemContext(() =>
+        campaigns.get({
+          tenantId: null,
+          customerId: globalCustomer.id?.toUpperCase(),
+          id: globalSaved.id?.toUpperCase(),
+        }),
+      ),
+    ).toMatchObject({
+      id: globalSaved.id,
+      tenantId: null,
+      customerId: globalCustomer.id,
+    });
+    expect(
+      await withSystemContext(() =>
+        campaigns.list({
+          where: {
+            tenantId: null,
+            'customerId in': [globalCustomer.id?.toUpperCase()],
+          },
+          select: ['id', 'tenantId', 'customerId'] as const,
+        }),
+      ),
+    ).toEqual([
+      {
+        id: globalSaved.id,
+        tenantId: null,
+        customerId: globalCustomer.id,
+      },
+    ]);
     expect(
       await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
         campaigns.findByCampaignKey('uppercase-context-campaign'),

@@ -413,7 +413,7 @@ function withCanonicalActiveTenant<T>(operation: () => Promise<T>): Promise<T> {
 function normalizeCampaignGetFilter(
   filter: string | SmrtWhereClause<Campaign>,
 ): string | SmrtWhereClause<Campaign> {
-  if (typeof filter !== 'string') return normalizeCampaignIdWhere(filter);
+  if (typeof filter !== 'string') return normalizeCampaignUuidWhere(filter);
   try {
     return normalizeUuid(filter, 'campaign id');
   } catch {
@@ -426,27 +426,35 @@ function normalizeCampaignListOptions(
 ): SmrtListOptions<Campaign> {
   return options.where === undefined
     ? options
-    : { ...options, where: normalizeCampaignIdWhere(options.where) };
+    : { ...options, where: normalizeCampaignUuidWhere(options.where) };
 }
 
-function normalizeCampaignIdWhere<T>(where: T): T {
+function normalizeCampaignUuidWhere<T>(where: T): T {
   if (Array.isArray(where)) {
-    return where.map((entry) => normalizeCampaignIdWhere(entry)) as T;
+    return where.map((entry) => normalizeCampaignUuidWhere(entry)) as T;
   }
   if (!where || typeof where !== 'object') return where;
 
   const normalized: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(where)) {
     const field = key.trim().split(/\s+/u)[0];
-    if (field !== 'id') {
+    const label =
+      field === 'id'
+        ? 'campaign id'
+        : field === 'customerId'
+          ? 'customerId'
+          : field === 'tenantId'
+            ? 'tenantId'
+            : null;
+    if (!label) {
       normalized[key] = value;
     } else if (Array.isArray(value)) {
-      normalized[key] = value.map((id) =>
-        typeof id === 'string' ? normalizeUuid(id, 'campaign id') : id,
+      normalized[key] = value.map((uuid) =>
+        typeof uuid === 'string' ? normalizeUuid(uuid, label) : uuid,
       );
     } else {
       normalized[key] =
-        typeof value === 'string' ? normalizeUuid(value, 'campaign id') : value;
+        typeof value === 'string' ? normalizeUuid(value, label) : value;
     }
   }
   return normalized as T;
