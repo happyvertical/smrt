@@ -50,6 +50,8 @@ export interface FieldDefinition {
   readable?: boolean;
   writable?: boolean;
   constraints?: ControlConstraints;
+  /** Optional WebMCP schema override for structured field values. */
+  webMcpSchema?: Record<string, unknown>;
   options?: ControlOption[];
   unit?: string;
   clear?: () => void;

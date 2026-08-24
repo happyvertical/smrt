@@ -64,6 +64,8 @@ onMount(() => {
         }
       },
       getValue: () => checked,
+      constraints: { required },
+      validate: () => !required || checked,
     };
     formContext.registerField(fieldDef);
   }

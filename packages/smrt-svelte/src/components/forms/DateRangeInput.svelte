@@ -206,6 +206,9 @@ onMount(() => {
           .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
+      constraints: { required },
+      validate: () =>
+        !required || (startDate.trim().length > 0 && endDate.trim().length > 0),
     };
     formContext.registerField(fieldDef);
   }

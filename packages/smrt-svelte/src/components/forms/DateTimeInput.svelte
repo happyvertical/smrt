@@ -122,6 +122,8 @@ onMount(() => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
+      constraints: { required },
+      validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);
   }
