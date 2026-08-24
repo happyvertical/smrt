@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - enforce same-package foreign keys (#2501) (core)
+
+  ### Features
+
+  - add tenant-scoped Customer campaigns (#2500) (marketing)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.42.7
 
 ### Patch Changes
