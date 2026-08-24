@@ -106,8 +106,8 @@ export class ReferralAgreementCollection extends SmrtCollection<ReferralAgreemen
           : latest.effectiveTo,
       // An amendment is a fresh unsigned version. Executed evidence belongs
       // to the exact terms that were accepted and is never copied forward.
-      executionId: '',
-      executedAgreementId: '',
+      executionId: null,
+      executedAgreementId: null,
       metadata:
         changes.metadata !== undefined
           ? JSON.stringify(changes.metadata)

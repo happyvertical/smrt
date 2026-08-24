@@ -2,6 +2,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { SchemaComparer } from '../migrations/differ.js';
 import { MigrationGenerator } from '../migrations/generator.js';
+import { resolveTestDatabaseDDLEngine } from '../testing/database.js';
 import { generateDDLForEngine } from './ddl/index.js';
 import {
   foreignKeyConstraintName,
@@ -148,6 +149,14 @@ describe('same-package foreign-key policy (#2413)', () => {
 });
 
 describe('deterministic creation planning (#2413)', () => {
+  it('preserves PostgreSQL DDL when preparing an existing test database', () => {
+    expect(
+      resolveTestDatabaseDDLEngine('postgres', {
+        query: async () => [],
+      } as never),
+    ).toBe('postgres');
+  });
+
   it('orders an acyclic graph parent-first on every supported engine', () => {
     const parent = schema('parents');
     const child = schema('children', {

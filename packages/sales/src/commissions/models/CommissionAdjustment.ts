@@ -89,7 +89,7 @@ export class CommissionAdjustment extends SmrtObject {
    * until stamped. This is the ONLY field mutable after creation.
    */
   @foreignKey('CommissionPayout')
-  payoutId: string = '';
+  payoutId: string | null = null;
 
   /** Additional metadata as a JSON string. Frozen once persisted. */
   metadata: string = '{}';

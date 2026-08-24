@@ -62,7 +62,7 @@ export class ExecutedAgreement extends SmrtObject {
   effectiveTo: Date | null = null;
 
   @foreignKey('ExecutedAgreement')
-  supersedesExecutedAgreementId: string = '';
+  supersedesExecutedAgreementId: string | null = null;
 
   metadata: string = '{}';
 

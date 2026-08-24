@@ -290,8 +290,8 @@ export interface ReferralAgreementOptions extends SmrtObjectOptions {
   commissionPlanVersion?: number;
   clearingDays?: number;
   approvalMode?: ReferralAgreementApprovalMode;
-  executionId?: string;
-  executedAgreementId?: string;
+  executionId?: string | null;
+  executedAgreementId?: string | null;
   metadata?: string;
 }
 

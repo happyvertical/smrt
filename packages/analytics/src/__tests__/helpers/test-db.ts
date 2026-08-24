@@ -7,7 +7,9 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import { AnalyticsPropertyCollection } from '../../collections/AnalyticsPropertyCollection.js';
 
 export type TestAdapter = 'sqlite' | 'postgres' | 'json';
 
@@ -70,6 +72,21 @@ export async function createTestDb(): Promise<{
   const config = getTestDbConfig();
   const db = await getDatabase(config);
 
+  await getTestDatabase({
+    db,
+    type: config.type,
+    classes: [
+      '@happyvertical/smrt-analytics:AnalyticsProperty',
+      '@happyvertical/smrt-analytics:AnalyticsDataStream',
+      '@happyvertical/smrt-analytics:AnalyticsEvent',
+      '@happyvertical/smrt-analytics:AnalyticsReport',
+    ],
+    // DuckDB cannot enforce the package's generated ON UPDATE CASCADE action.
+    // These adapter/query tests still prepare every table and seed real parents;
+    // physical FK enforcement remains covered by SQLite/PostgreSQL lanes.
+    omitForeignKeyConstraints: config.type === 'json',
+  });
+
   const cleanup = async () => {
     if (db && typeof (db as any).close === 'function') {
       try {
@@ -105,6 +122,22 @@ export async function createTestDb(): Promise<{
   };
 
   return { db, config, cleanup };
+}
+
+/** Seed explicit real parents for collection fixtures that exercise child rows. */
+export async function seedAnalyticsProperties(
+  db: DatabaseInterface,
+  ids: readonly string[],
+): Promise<void> {
+  const properties = await AnalyticsPropertyCollection.create({ db });
+  for (const id of ids) {
+    await properties.create({
+      id,
+      name: id,
+      displayName: id,
+      externalId: `fixture:${id}`,
+    });
+  }
 }
 
 // Cache the postgres availability check result

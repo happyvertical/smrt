@@ -378,7 +378,13 @@ describe('CommissionAdjustmentService', () => {
   });
 
   it('returns an exact persisted replay on DuckDB native UUID columns', async () => {
-    const duckDb = await getTestDatabase({ type: 'duckdb', url: ':memory:' });
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      // This UUID replay test is not a referential-enforcement lane; DuckDB
+      // cannot implement the package's generated ON UPDATE CASCADE actions.
+      omitForeignKeyConstraints: true,
+    });
     const duckTenantId = randomUUID();
     try {
       const duckEarners = await EarnerCollection.create({ db: duckDb });

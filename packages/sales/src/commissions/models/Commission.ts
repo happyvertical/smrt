@@ -82,7 +82,7 @@ export class Commission extends SmrtObject {
 
   /** The {@link EarningEvent} evidence row this commission derives from. */
   @foreignKey('EarningEvent')
-  earningEventId: string = '';
+  earningEventId: string | null = null;
 
   /** Snapshot reference: plan key at calculation time. */
   planKey: string = '';
@@ -159,7 +159,7 @@ export class Commission extends SmrtObject {
    * until a payout batch stamps it.
    */
   @foreignKey('CommissionPayout')
-  payoutId: string = '';
+  payoutId: string | null = null;
 
   /** Copied from the earning event for reporting (generic source pair). */
   sourceKind: string = '';

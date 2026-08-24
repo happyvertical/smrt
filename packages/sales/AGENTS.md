@@ -53,6 +53,7 @@ Business/domain models are generally `@TenantScoped({ mode: 'optional' })` with 
 ## Gotchas
 
 - **Cents vs. rates**: `*Cents` fields are INTEGER (`= 0` defaults); `rate`/`probability`/`shareFraction` are DECIMAL (`= 0.0` defaults). Don't mix the two conventions on one field.
+- **Optional same-package foreign keys use null**: execution, supersession, earning-event, and payout references that are absent persist as `null`, never `''`; their physical database constraints remain enabled when a real id is present.
 - **Versioned terms are rows, not edits**: CommissionPlan / AttributionPolicy / ReferralAgreement amendments insert `version + 1`; active versions are save-guarded immutable.
 - **Idempotency is dedupeKey-based**: EarningEvent, Commission, and CommissionPayout carry natural keys (`conflictColumns`) — retried ingestion/settlement upserts instead of duplicating.
 - **Adjustments never rewrite**: correcting an earned/paid Commission means appending a CommissionAdjustment, not editing the Commission.

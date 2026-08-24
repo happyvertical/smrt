@@ -174,8 +174,9 @@ export interface TestDatabaseOptions {
    * - 'sqlite': SQLite database
    * - 'json': JSON adapter (stores data as JSON files with DuckDB for querying)
    * - 'duckdb': Native DuckDB database
+   * - 'postgres': PostgreSQL database (normally supplied through `db`)
    */
-  type?: 'sqlite' | 'json' | 'duckdb';
+  type?: 'sqlite' | 'json' | 'duckdb' | 'postgres';
 
   /**
    * Database URL (default: ':memory:')
@@ -209,6 +210,20 @@ export interface TestDatabaseOptions {
    * fixture uses generated `ON UPDATE CASCADE`, which DuckDB cannot enforce.
    */
   omitForeignKeyConstraints?: boolean;
+}
+
+/** Resolve the DDL dialect used when preparing an existing test database. */
+export function resolveTestDatabaseDDLEngine(
+  type: NonNullable<TestDatabaseOptions['type']>,
+  db: DatabaseInterface,
+): 'sqlite' | 'json' | 'duckdb' | 'postgres' {
+  if (
+    type === 'json' ||
+    typeof (db as { exportTable?: unknown }).exportTable === 'function'
+  ) {
+    return 'json';
+  }
+  return type;
 }
 
 function omitTestForeignKeyConstraints(
@@ -348,13 +363,7 @@ export async function getTestDatabase(
 
   // Use the same schema generation as production
   const schemaGenerator = new SchemaGenerator();
-  const ddlEngine =
-    type === 'json' ||
-    typeof (db as { exportTable?: unknown }).exportTable === 'function'
-      ? 'json'
-      : type === 'duckdb'
-        ? 'duckdb'
-        : 'sqlite';
+  const ddlEngine = resolveTestDatabaseDDLEngine(type, db);
 
   // Collect every table before executing DDL so dependency ordering and cycle
   // handling are identical to production migration/schema paths (#2413).

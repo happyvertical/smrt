@@ -59,6 +59,28 @@ describe('AgreementExecutionService', () => {
     if (db && typeof db.close === 'function') await db.close();
   });
 
+  it('persists an absent supersedes reference as null', async () => {
+    await withTenant({ tenantId: TENANT }, async () => {
+      const execution = await executions.create({
+        tenantId: TENANT,
+        provider: 'fixture',
+        idempotencyKey: 'null-supersedes',
+        sourceKind: 'agreement',
+        sourceId: 'agreement-null-supersedes',
+        status: 'completed',
+      });
+      const executed = await executedAgreements.create({
+        tenantId: TENANT,
+        executionId: execution.id as string,
+        sourceKind: 'agreement',
+        sourceId: 'agreement-null-supersedes',
+        acceptedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      const loaded = await executedAgreements.get({ id: executed.id });
+      expect(loaded?.supersedesExecutedAgreementId).toBeNull();
+    });
+  });
+
   it('creates once, stores exact source evidence, and never persists access codes', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       const first = await service.createExecution(createInput());

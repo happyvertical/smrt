@@ -261,7 +261,7 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       expect(refused.payout).toBeNull();
     });
 
-    it('proves adjustment ownership through the parent and fails closed when the parent cannot vouch', async () => {
+    it('proves adjustment ownership through the parent and refuses a missing parent', async () => {
       // Batch whose membership is one adjustment; its parent commission
       // belongs to NETWORK_A — authorizing against NETWORK_B must refuse.
       const parent = await createPayableCommission(NETWORK_A);
@@ -297,8 +297,9 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
       });
       expect(rightSource.outcome).toBe('transitioned');
 
-      // An adjustment whose parent row is unloadable can vouch for
-      // nothing: approve must refuse adjustment_parent_missing.
+      // Physical FK enforcement now prevents the orphan state before the
+      // service can observe it. Existing-orphan handling remains a migration
+      // concern; fresh writes must fail at persistence.
       const orphanBatch = await payouts.create({
         earnerId: earner.id as string,
         currency: 'USD',
@@ -309,22 +310,17 @@ describe('Source-authorized payout lifecycle transitions (#1987)', () => {
         idempotencyKey: 'adj-orphan-batch',
         ...NETWORK_A,
       });
-      await adjustments.create({
-        commissionId: '00000000-0000-4000-8000-00000000dead',
-        earnerId: earner.id as string,
-        adjustmentKind: 'credit',
-        amountCents: 120,
-        currency: 'USD',
-        reason: 'orphaned adjustment',
-        payoutId: orphanBatch.id as string,
-      });
-      const orphaned = await service.transitionPayoutForSource({
-        payoutId: orphanBatch.id as string,
-        ...NETWORK_A,
-        action: 'approve',
-      });
-      expect(orphaned.outcome).toBe('refused');
-      expect(orphaned.refusal?.reason).toBe('adjustment_parent_missing');
+      await expect(
+        adjustments.create({
+          commissionId: '00000000-0000-4000-8000-00000000dead',
+          earnerId: earner.id as string,
+          adjustmentKind: 'credit',
+          amountCents: 120,
+          currency: 'USD',
+          reason: 'orphaned adjustment',
+          payoutId: orphanBatch.id as string,
+        }),
+      ).rejects.toThrow(/FOREIGN KEY constraint failed/);
     });
 
     it('refuses memberless payouts through the source-authorized door', async () => {

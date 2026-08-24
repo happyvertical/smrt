@@ -10,6 +10,8 @@ import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ReferralCollection } from '../collections/ReferralCollection.js';
+import { ReferralProgramCollection } from '../collections/ReferralProgramCollection.js';
+import { ReferrerCollection } from '../collections/ReferrerCollection.js';
 // Side-effect import: fire every model's decorators so ObjectRegistry
 // carries the full @smrt() config (api/mcp/cli/conflictColumns) for all
 // public classes and the private click-operation fence.
@@ -152,6 +154,18 @@ describe('Referrals schema and generation surfaces', () => {
     beforeEach(async () => {
       db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
       referrals = await ReferralCollection.create({ db });
+      const referrers = await ReferrerCollection.create({ db });
+      const programs = await ReferralProgramCollection.create({ db });
+      await referrers.create({
+        id: '11111111-1111-4111-8111-111111111111',
+        profileId: 'fixture-profile',
+        displayName: 'Fixture referrer',
+      });
+      await programs.create({
+        id: '22222222-2222-4222-8222-222222222222',
+        key: 'fixture-program',
+        name: 'Fixture program',
+      });
     });
 
     afterEach(async () => {
