@@ -8,23 +8,33 @@ let {
   onsubmit = undefined,
   webmcp = false,
   addressFields = ['street', 'city', 'province', 'postalCode', 'country'],
+  structuredRequired = true,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
   addressFields?: Array<
     'street' | 'city' | 'province' | 'postalCode' | 'country'
   >;
+  structuredRequired?: boolean;
 } = $props();
 </script>
 
 <Form {onsubmit} {webmcp}>
-	<MeasurementInput name="measurement" label="Measurement" required />
-	<DateRangeInput name="dates" label="Dates" required />
+	<MeasurementInput
+		name="measurement"
+		label="Measurement"
+		required={structuredRequired}
+	/>
+	<DateRangeInput
+		name="dates"
+		label="Dates"
+		required={structuredRequired}
+	/>
 	<AddressInput
 		name="address"
 		label="Address"
 		fields={addressFields}
-		required
+		required={structuredRequired}
 	/>
 	<button type="submit">Submit</button>
 </Form>

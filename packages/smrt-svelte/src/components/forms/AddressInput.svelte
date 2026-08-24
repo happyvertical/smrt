@@ -239,7 +239,7 @@ onMount(() => {
         properties: Object.fromEntries(
           fields.map((field) => [field, { type: 'string' }]),
         ),
-        required: [...fields],
+        ...(required ? { required: [...fields] } : {}),
       },
       validate: () =>
         !required ||

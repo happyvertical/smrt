@@ -232,4 +232,40 @@ describe('Form WebMCP submit intent', () => {
     expect(await registered[0].execute(values)).toBe('Submitted successfully');
     expect(onsubmit).toHaveBeenCalledWith(values);
   });
+
+  it('allows partial payloads for optional structured fields', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const onsubmit = vi.fn();
+    render(FormWithStructuredFields, {
+      props: { webmcp: true, structuredRequired: false, onsubmit },
+    });
+    await tick();
+    await tick();
+
+    expect(registered).toHaveLength(1);
+    const schema = registered[0].inputSchema as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.properties.measurement).not.toHaveProperty('required');
+    expect(schema.properties.dates).not.toHaveProperty('required');
+    expect(schema.properties.address).not.toHaveProperty('required');
+
+    const partialValues = {
+      measurement: { value: 1.5 },
+      dates: { startDate: '2026-01-01' },
+      address: { city: 'Edmonton' },
+    };
+    expect(await registered[0].execute(partialValues)).toBe(
+      'Submitted successfully',
+    );
+    expect(onsubmit).toHaveBeenCalledTimes(1);
+  });
 });

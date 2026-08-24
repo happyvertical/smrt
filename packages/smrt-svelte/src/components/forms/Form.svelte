@@ -218,7 +218,9 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
               enum: ['ft', 'in', 'm', 'cm', 'mm', 'yd'],
             },
           },
-          required: ['value', 'unit'],
+          ...(field.constraints?.required
+            ? { required: ['value', 'unit'] }
+            : {}),
         };
         break;
       case 'daterange':
@@ -228,7 +230,9 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
             startDate: { type: 'string' },
             endDate: { type: 'string' },
           },
-          required: ['startDate', 'endDate'],
+          ...(field.constraints?.required
+            ? { required: ['startDate', 'endDate'] }
+            : {}),
         };
         break;
       case 'address':
@@ -241,7 +245,17 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
             postalCode: { type: 'string' },
             country: { type: 'string' },
           },
-          required: ['street', 'city', 'province', 'postalCode', 'country'],
+          ...(field.constraints?.required
+            ? {
+                required: [
+                  'street',
+                  'city',
+                  'province',
+                  'postalCode',
+                  'country',
+                ],
+              }
+            : {}),
         };
         break;
       case 'number':
