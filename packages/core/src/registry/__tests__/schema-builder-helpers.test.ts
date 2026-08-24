@@ -270,6 +270,20 @@ describe('schema-builder: fieldsToColumns', () => {
     expect(columns.owner_ref.foreignKey?.column).toBe('code');
   });
 
+  it('uses the shared CASCADE default for a natural-key foreign key', () => {
+    const fields = fieldMap({
+      parentId: { type: 'foreignKey', related: 'Parent' },
+      reviewerId: { type: 'foreignKey', related: 'Reviewer' },
+    });
+
+    const columns = fieldsToColumns(fields, {
+      conflictColumns: ['parent_id', 'label'],
+    });
+
+    expect(columns.parent_id.foreignKey?.onDelete).toBe('CASCADE');
+    expect(columns.reviewer_id.foreignKey?.onDelete).toBe('NO ACTION');
+  });
+
   it('maps crossPackageRef with text idType to TEXT', () => {
     const columns = fieldsToColumns(
       fieldMap({

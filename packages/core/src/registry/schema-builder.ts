@@ -619,6 +619,9 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
   for (const [tableName, contributors] of contributorsByTable) {
     for (const contributor of sortTableContributors(contributors)) {
       const { registered, simpleName, isSTI } = contributor;
+      const conflictColumns = ObjectRegistry.getConflictColumns(
+        contributor.conflictKey,
+      );
 
       // The manifest schema stays authoritative for the columns it defines.
       // Runtime field metadata backfills columns the manifest never had (for
@@ -628,7 +631,7 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
         simpleName,
         registered.schema?.columns,
         registered.fields,
-        { stiUnionColumns: isSTI },
+        { stiUnionColumns: isSTI, conflictColumns },
       );
 
       let tableSchema = tableSchemas[tableName];
@@ -642,9 +645,7 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
           indexes: [],
           ddl: registered.schema?.ddl || '',
           isSTI,
-          conflictColumns: ObjectRegistry.getConflictColumns(
-            contributor.conflictKey,
-          ),
+          conflictColumns,
         };
         tableSchemas[tableName] = tableSchema;
       } else {
@@ -952,6 +953,12 @@ export interface FieldsToColumnsOptions {
    * Declared defaults are still emitted.
    */
   stiUnionColumns?: boolean;
+  /**
+   * Physical column names that form the table's natural conflict key.
+   * Undeclared delete actions on foreign-key members use the shared CASCADE
+   * default, matching app-side relationship cleanup.
+   */
+  conflictColumns?: readonly string[];
 }
 
 /**
@@ -975,6 +982,9 @@ export function fieldsToColumns(
   options?: FieldsToColumnsOptions,
 ): Record<string, ColumnDefinition> {
   const columns: Record<string, ColumnDefinition> = {};
+  const conflictColumns = new Set(
+    (options?.conflictColumns ?? []).map((column) => toSnakeCase(column)),
+  );
 
   for (const [fieldName, fieldDef] of fields) {
     // Skip id, timestamps - they're on the base table
@@ -1063,7 +1073,7 @@ export function fieldsToColumns(
         column: columnName,
         onDelete: resolveForeignKeyDeleteAction({
           declared: fieldMeta?.onDelete,
-          isConflictColumn: false,
+          isConflictColumn: conflictColumns.has(toSnakeCase(fieldName)),
           isTenantIdField: false,
         }).action,
         onUpdate:
