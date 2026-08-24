@@ -1444,6 +1444,9 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
     devDependencies:
+      '@happyvertical/smrt-commerce':
+        specifier: workspace:*
+        version: link:../commerce
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

@@ -19,6 +19,7 @@ const campaigns = await CampaignCollection.create({ db });
 const channels = await CampaignChannelCollection.create({ db });
 const campaign = await campaigns.create({
   tenantId,
+  customerId,
   campaignKey: 'summer-demand-2026',
   name: 'Summer demand 2026',
   objective: 'demand_generation',
@@ -58,6 +59,50 @@ await ingestion.ingest({
 const pacing = await BudgetPacingService.create({ db });
 console.log(await pacing.getCampaignPacing(campaign.id));
 ```
+
+## Customer-scoped campaign reads
+
+`Campaign.customerId` is the native UUID relationship to the canonical
+`@happyvertical/smrt-commerce:Customer`. A campaign and its Customer must have
+exactly the same tenant, and customer-scoped reads require that tenant
+explicitly (`null` selects the global/global scope). Associated Campaign saves
+validate and persist in one transaction; customer-scoped reads validate and
+query in one transaction. Missing and cross-tenant Customers fail with
+`CampaignCustomerScopeError` without disclosing which condition occurred.
+
+```ts
+const firstPage = await campaigns.listByCustomer(tenantId, customerId, {
+  limit: 50,
+});
+const secondPage = firstPage.nextCursor
+  ? await campaigns.listByCustomer(tenantId, customerId, {
+      limit: 50,
+      after: firstPage.nextCursor,
+    })
+  : null;
+
+const summaries = await campaigns.summarizeByCustomers(tenantId, customerIds);
+// [{ customerId, totalCount, activeCount, latestStartAt }]
+```
+
+Pages and summary batches are capped at 100 items and reject larger inputs.
+Pagination is newest-first by `startAt`, then UUID; campaigns without a start
+time follow scheduled campaigns. Summary resolution uses a bounded grouped
+query rather than loading tenant campaigns or issuing one query per Customer.
+
+### Migrating metadata-backed associations
+
+1. Apply the generated schema migration that adds nullable native-UUID
+   `campaigns.customer_id` and the
+   `(tenant_id, customer_id, start_at, id)` index.
+2. In an operator-owned data migration, extract the old metadata Customer id,
+   validate that it exists in commerce and has the exact same `tenant_id`, then
+   write `customer_id`. Stop on missing, malformed, or mismatched values.
+3. Verify every expected association through `listByCustomer()` or
+   `summarizeByCustomers()`, then update consumers to use these APIs.
+4. Remove the old metadata key after verification. Marketing never reads it as
+   a compatibility fallback, so there is no tenant-wide JSON or raw-SQL path to
+   keep in sync.
 
 Svelte components are exported from `@happyvertical/smrt-marketing/svelte`.
 They are presentational and accept plain view models; consumers remain in
