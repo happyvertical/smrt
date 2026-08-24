@@ -194,19 +194,85 @@ const formContext: SMRTFormContext = {
   },
 };
 
-function webMcpFieldType(type: FieldDefinition['type']): string {
-  switch (type) {
+function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
+  let schema: Record<string, unknown>;
+  switch (field.type) {
+    case 'measurement':
+      schema = {
+        type: 'object',
+        properties: {
+          value: {
+            type: 'number',
+            ...(field.constraints?.min !== undefined
+              ? { minimum: Number(field.constraints.min) }
+              : {}),
+            ...(field.constraints?.max !== undefined
+              ? { maximum: Number(field.constraints.max) }
+              : {}),
+          },
+          unit: {
+            type: 'string',
+            enum: ['ft', 'in', 'm', 'cm', 'mm', 'yd'],
+          },
+        },
+        required: ['value', 'unit'],
+      };
+      break;
+    case 'daterange':
+      schema = {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string' },
+          endDate: { type: 'string' },
+        },
+        required: ['startDate', 'endDate'],
+      };
+      break;
+    case 'address':
+      schema = {
+        type: 'object',
+        properties: {
+          street: { type: 'string' },
+          city: { type: 'string' },
+          province: { type: 'string' },
+          postalCode: { type: 'string' },
+          country: { type: 'string' },
+        },
+        required: ['street', 'city', 'province', 'postalCode', 'country'],
+      };
+      break;
     case 'number':
     case 'money':
-    case 'measurement':
-      return 'number';
+      schema = { type: 'number' };
+      break;
     case 'checkbox':
-      return 'boolean';
-    case 'daterange':
-      return 'array';
+      schema = { type: 'boolean' };
+      break;
     default:
-      return 'string';
+      schema = { type: 'string' };
   }
+
+  if (field.label) schema.title = field.label;
+  if (field.description) schema.description = field.description;
+  if (field.options) {
+    schema.enum = field.options.map((option) => option.value);
+  }
+  if (schema.type === 'number' && field.constraints?.min !== undefined) {
+    schema.minimum = Number(field.constraints.min);
+  }
+  if (schema.type === 'number' && field.constraints?.max !== undefined) {
+    schema.maximum = Number(field.constraints.max);
+  }
+  if (schema.type === 'string' && field.constraints?.minLength !== undefined) {
+    schema.minLength = field.constraints.minLength;
+  }
+  if (schema.type === 'string' && field.constraints?.maxLength !== undefined) {
+    schema.maxLength = field.constraints.maxLength;
+  }
+  if (schema.type === 'string' && field.constraints?.pattern) {
+    schema.pattern = field.constraints.pattern;
+  }
+  return schema;
 }
 
 function formInputSchema(): Record<string, unknown> {
@@ -214,29 +280,7 @@ function formInputSchema(): Record<string, unknown> {
   const required: string[] = [];
 
   for (const field of fields.values()) {
-    properties[field.name] = {
-      type: webMcpFieldType(field.type),
-      ...(field.label ? { title: field.label } : {}),
-      ...(field.description ? { description: field.description } : {}),
-      ...(field.options
-        ? { enum: field.options.map((option) => option.value) }
-        : {}),
-      ...(field.constraints?.min !== undefined
-        ? { minimum: Number(field.constraints.min) }
-        : {}),
-      ...(field.constraints?.max !== undefined
-        ? { maximum: Number(field.constraints.max) }
-        : {}),
-      ...(field.constraints?.minLength !== undefined
-        ? { minLength: field.constraints.minLength }
-        : {}),
-      ...(field.constraints?.maxLength !== undefined
-        ? { maxLength: field.constraints.maxLength }
-        : {}),
-      ...(field.constraints?.pattern
-        ? { pattern: field.constraints.pattern }
-        : {}),
-    };
+    properties[field.name] = webMcpFieldSchema(field);
     if (field.constraints?.required) required.push(field.name);
   }
 

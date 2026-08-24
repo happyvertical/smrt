@@ -21,6 +21,7 @@ vi.mock('../../../hooks/useSTT.svelte.js', () => ({
 }));
 
 import FormWithFields from './form-with-fields.fixture.svelte';
+import FormWithStructuredFields from './form-with-structured-fields.fixture.svelte';
 
 afterEach(() => {
   delete document.modelContext;
@@ -114,5 +115,69 @@ describe('Form WebMCP submit intent', () => {
     const view = render(FormWithFields, { props: { onsubmit } });
     await userEvent.click(view.getByRole('button', { name: 'Submit' }));
     expect(onsubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes and accepts structured measurement, date range, and address fields', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const onsubmit = vi.fn();
+    render(FormWithStructuredFields, { props: { webmcp: true, onsubmit } });
+    await tick();
+    await tick();
+
+    expect(registered).toHaveLength(1);
+    const schema = registered[0].inputSchema as {
+      required?: string[];
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.required).toEqual(['measurement', 'dates', 'address']);
+    expect(schema.properties.measurement).toMatchObject({
+      type: 'object',
+      properties: {
+        value: { type: 'number' },
+        unit: { type: 'string' },
+      },
+      required: ['value', 'unit'],
+    });
+    expect(schema.properties.dates).toMatchObject({
+      type: 'object',
+      properties: {
+        startDate: { type: 'string' },
+        endDate: { type: 'string' },
+      },
+      required: ['startDate', 'endDate'],
+    });
+    expect(schema.properties.address).toMatchObject({
+      type: 'object',
+      properties: {
+        street: { type: 'string' },
+        city: { type: 'string' },
+        province: { type: 'string' },
+        postalCode: { type: 'string' },
+        country: { type: 'string' },
+      },
+      required: ['street', 'city', 'province', 'postalCode', 'country'],
+    });
+
+    const values = {
+      measurement: { value: 1.5, unit: 'm' },
+      dates: { startDate: '2026-01-01', endDate: '2026-01-02' },
+      address: {
+        street: '1 Main St',
+        city: 'Edmonton',
+        province: 'AB',
+        postalCode: 'T1A 1A1',
+        country: 'CA',
+      },
+    };
+    expect(await registered[0].execute(values)).toBe('Submitted successfully');
+    expect(onsubmit).toHaveBeenCalledWith(values);
   });
 });
