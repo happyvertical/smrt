@@ -11,8 +11,10 @@ import {
   getCurrentTenant,
   isSuperAdminBypass,
   isSystemContext,
+  TenantIsolationError,
   TenantScoped,
   tenantId,
+  withTenant,
 } from '@happyvertical/smrt-tenancy';
 import {
   assertCustomersBelongToTenant,
@@ -105,12 +107,20 @@ export class Campaign extends SmrtObject {
   }
 
   override async initialize(): Promise<this> {
+    if (this.id) {
+      try {
+        this.id = normalizeUuid(this.id, 'id');
+      } catch (error) {
+        if (this.customerId !== null) {
+          throw new CampaignCustomerScopeError('Campaign.initialize');
+        }
+        throw error;
+      }
+    }
     await super.initialize();
     this.startAt = Campaign.coerceDate(this.startAt);
     this.endAt = Campaign.coerceDate(this.endAt);
-    if (await this.isSaved()) {
-      loadedCampaignStatus.set(this, this.status);
-    }
+    loadedCampaignStatus.set(this, this.status);
     return this;
   }
 
@@ -129,35 +139,35 @@ export class Campaign extends SmrtObject {
   }
 
   private async saveLifecycle(): Promise<this> {
-    const prior = await this.resolvePriorStatus();
-    this.assertStatusTransition(prior);
-    this.assertSchedule();
+    this.prepareIdentityForSave();
     if (this.customerId !== null) {
-      try {
-        this.customerId = normalizeUuid(this.customerId, 'customerId');
-        if (this.tenantId !== null) {
-          this.tenantId = normalizeUuid(this.tenantId, 'tenantId');
-        }
-      } catch {
-        throw new CampaignCustomerScopeError('Campaign.save');
-      }
-      const tenantContext =
-        isSystemContext() || isSuperAdminBypass()
-          ? undefined
-          : getCurrentTenant();
-      const effectiveTenantId =
-        this.tenantId ?? tenantContext?.tenantId ?? null;
       await assertCustomersBelongToTenant(
         this.options,
-        effectiveTenantId,
+        this.tenantId,
         [this.customerId],
         'Campaign.save',
         'update',
       );
     }
+    const prior = await this.resolvePriorStatus();
+    this.assertStatusTransition(prior);
+    this.assertSchedule();
     let result: this;
     try {
-      result = (await super.save()) as this;
+      const persist = async () => (await super.save()) as this;
+      const tenantContext =
+        isSystemContext() || isSuperAdminBypass()
+          ? undefined
+          : getCurrentTenant();
+      result = tenantContext
+        ? await withTenant(
+            {
+              ...tenantContext,
+              tenantId: this.tenantId ?? tenantContext.tenantId,
+            },
+            persist,
+          )
+        : await persist();
     } catch (error) {
       if (
         error instanceof ValidationError &&
@@ -170,6 +180,45 @@ export class Campaign extends SmrtObject {
     }
     loadedCampaignStatus.set(this, this.status);
     return result;
+  }
+
+  /** Canonicalize and authorize identity before any status or scope read. */
+  private prepareIdentityForSave(): void {
+    try {
+      if (this.id) this.id = normalizeUuid(this.id, 'id');
+      if (this.customerId !== null) {
+        this.customerId = normalizeUuid(this.customerId, 'customerId');
+      }
+      if (this.tenantId !== null) {
+        this.tenantId = normalizeUuid(this.tenantId, 'tenantId');
+      }
+    } catch (error) {
+      if (this.customerId !== null) {
+        throw new CampaignCustomerScopeError('Campaign.save');
+      }
+      throw error;
+    }
+
+    if (isSystemContext() || isSuperAdminBypass()) return;
+    const tenantContext = getCurrentTenant();
+    if (!tenantContext) return;
+
+    let contextTenantId: string;
+    try {
+      contextTenantId = normalizeUuid(tenantContext.tenantId, 'tenantId');
+    } catch (error) {
+      if (this.customerId !== null) {
+        throw new CampaignCustomerScopeError('Campaign.save');
+      }
+      throw error;
+    }
+    if (this.tenantId !== null && this.tenantId !== contextTenantId) {
+      throw new TenantIsolationError(
+        'Tenant isolation violation in Campaign.save.',
+        { tenantId: contextTenantId, attemptedTenantId: this.tenantId },
+      );
+    }
+    this.tenantId = contextTenantId;
   }
 
   /** Apply one legal transition in memory; callers choose the save boundary. */
@@ -217,11 +266,29 @@ export class Campaign extends SmrtObject {
 
   private async resolvePriorStatus(): Promise<CampaignStatus | undefined> {
     if (this.id) {
+      let scopedRow: Record<string, unknown> | null = null;
       try {
-        const row = await this.db.get(this.tableName, { id: this.id });
-        if (row && row.status != null) return row.status as CampaignStatus;
+        scopedRow = await this.db.get(this.tableName, {
+          id: this.id,
+          tenant_id: this.tenantId,
+        });
       } catch {
         // DB not ready / table absent; fall through to the hydrated state.
+      }
+      if (scopedRow?.status != null) {
+        return scopedRow.status as CampaignStatus;
+      }
+
+      // A caller-supplied ID already owned by another lane must not expose its
+      // lifecycle state or be repurposed by an upsert.
+      let rowInAnotherLane: Record<string, unknown> | null = null;
+      try {
+        rowInAnotherLane = await this.db.get(this.tableName, { id: this.id });
+      } catch {
+        // DB not ready / table absent; fall through to the hydrated state.
+      }
+      if (rowInAnotherLane) {
+        throw new CampaignCustomerScopeError('Campaign.save');
       }
     }
     if (this.campaignKey) {

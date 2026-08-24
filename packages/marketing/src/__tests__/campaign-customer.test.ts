@@ -5,6 +5,7 @@ import {
   disableTenancy,
   enableTenancy,
   TenantIsolationError,
+  withSystemContext,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -15,6 +16,7 @@ import {
 } from '../collections/CampaignCollection.js';
 import { CampaignCustomerScopeError } from '../errors.js';
 import * as marketing from '../index.js';
+import { CampaignLifecycleService } from '../services/CampaignLifecycleService.js';
 import type { CampaignCustomerCursor } from '../types.js';
 
 describe('Campaign customer scope', () => {
@@ -107,6 +109,13 @@ describe('Campaign customer scope', () => {
         latestStartAt: null,
       },
     ]);
+    expect(
+      (
+        await withSystemContext(() =>
+          campaigns.listByCustomer(null, globalCustomer.id ?? ''),
+        )
+      ).items.map((campaign) => campaign.id),
+    ).toEqual([globalSaved.id]);
     await expect(
       withTenant({ tenantId: tenantA }, () =>
         campaigns.listByCustomer(null, globalCustomer.id ?? ''),
@@ -121,6 +130,44 @@ describe('Campaign customer scope', () => {
       }),
     );
     expect(contextSaved.tenantId).toBe(tenantA);
+    const uppercaseContextSaved = await withTenant(
+      { tenantId: tenantA.toUpperCase() },
+      () =>
+        campaigns.create({
+          customerId: customerA.id,
+          campaignKey: 'uppercase-context-campaign',
+          name: 'Uppercase context campaign',
+        }),
+    );
+    expect(uppercaseContextSaved.tenantId).toBe(tenantA);
+    expect(
+      await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
+        campaigns.get({ id: uppercaseContextSaved.id?.toUpperCase() }),
+      ),
+    ).toMatchObject({ id: uppercaseContextSaved.id });
+    expect(
+      await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
+        campaigns.list({
+          where: { id: [uppercaseContextSaved.id?.toUpperCase()] },
+          select: ['id', 'tenantId'] as const,
+        }),
+      ),
+    ).toEqual([{ id: uppercaseContextSaved.id, tenantId: tenantA }]);
+    expect(
+      await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
+        campaigns.findByCampaignKey('uppercase-context-campaign'),
+      ),
+    ).toMatchObject({ id: uppercaseContextSaved.id });
+    expect(
+      (
+        await withTenant({ tenantId: tenantA.toUpperCase() }, () =>
+          campaigns.listByCustomer(
+            tenantA.toUpperCase(),
+            (customerA.id ?? '').toUpperCase(),
+          ),
+        )
+      ).items.map((campaign) => campaign.id),
+    ).toContain(uppercaseContextSaved.id);
     await expect(
       withTenant({ tenantId: tenantA }, () =>
         campaigns.create({
@@ -130,6 +177,52 @@ describe('Campaign customer scope', () => {
         }),
       ),
     ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+    await expect(
+      campaigns.create({
+        tenantId: tenantA,
+        customerId: customerB.id,
+        campaignKey: 'tenant-a-campaign',
+        name: 'Rejected scope before lifecycle',
+        status: 'active',
+      }),
+    ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+
+    const rootGet = vi.spyOn(db, 'get');
+    rootGet.mockClear();
+    await expect(
+      withTenant({ tenantId: tenantA }, () =>
+        campaigns.create({
+          tenantId: tenantB,
+          campaignKey: 'unassociated-context-cross-tenant',
+          name: 'Rejected unassociated cross-tenant campaign',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(TenantIsolationError);
+    expect(rootGet).not.toHaveBeenCalled();
+
+    const originalTransaction = db.transaction?.bind(db);
+    expect(originalTransaction).toBeTypeOf('function');
+    let transactionGet: ReturnType<typeof vi.spyOn> | undefined;
+    let transactionQuery: ReturnType<typeof vi.spyOn> | undefined;
+    vi.spyOn(db, 'transaction').mockImplementation(async (operation) =>
+      originalTransaction?.(async (tx) => {
+        transactionGet = vi.spyOn(tx, 'get');
+        transactionQuery = vi.spyOn(tx, 'query');
+        return operation(tx);
+      }),
+    );
+    await expect(
+      withTenant({ tenantId: tenantA }, () =>
+        campaigns.create({
+          tenantId: tenantB,
+          customerId: customerB.id,
+          campaignKey: 'context-cross-tenant-campaign',
+          name: 'Rejected cross-tenant context campaign',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(TenantIsolationError);
+    expect(transactionGet).not.toHaveBeenCalled();
+    expect(transactionQuery).not.toHaveBeenCalled();
 
     for (const input of [
       { tenantId: tenantA, customerId: customerB.id },
@@ -161,6 +254,100 @@ describe('Campaign customer scope', () => {
         name: 'Invalid tenant id',
       }),
     ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+  });
+
+  it('resolves natural-key lifecycle state within the effective tenant', async () => {
+    const tenantId = randomUUID();
+    const customer = await customers.create({ tenantId });
+    const customerCampaign = await withTenant({ tenantId }, () =>
+      campaigns.create({
+        customerId: customer.id,
+        campaignKey: 'context-natural-key',
+        name: 'Context natural key',
+        status: 'draft',
+      }),
+    );
+
+    await expect(
+      withTenant({ tenantId }, () =>
+        campaigns.create({
+          customerId: customer.id,
+          campaignKey: 'context-natural-key',
+          name: 'Context natural key replay',
+          status: 'active',
+        }),
+      ),
+    ).rejects.toThrow(/illegal status transition 'draft' → 'active'/);
+
+    await withTenant({ tenantId }, () =>
+      campaigns.create({
+        campaignKey: 'unassociated-context-natural-key',
+        name: 'Unassociated context natural key',
+        status: 'draft',
+      }),
+    );
+    await expect(
+      withTenant({ tenantId }, () =>
+        campaigns.create({
+          campaignKey: 'unassociated-context-natural-key',
+          name: 'Unassociated context natural key replay',
+          status: 'active',
+        }),
+      ),
+    ).rejects.toThrow(/illegal status transition 'draft' → 'active'/);
+
+    const lifecycle = await CampaignLifecycleService.create({ db });
+    const scheduled = await withTenant(
+      { tenantId: tenantId.toUpperCase() },
+      () => lifecycle.schedule((customerCampaign.id ?? '').toUpperCase()),
+    );
+    expect(scheduled.status).toBe('scheduled');
+  });
+
+  it('rejects Campaign IDs owned by a different tenant or global lane', async () => {
+    const tenantA = randomUUID();
+    const tenantB = randomUUID();
+    const customerA = await customers.create({ tenantId: tenantA });
+    const customerB = await customers.create({ tenantId: tenantB });
+    const globalCustomer = await customers.create({});
+    const tenantBCampaign = await campaigns.create({
+      tenantId: tenantB,
+      customerId: customerB.id,
+      campaignKey: 'tenant-b-owned-id',
+      name: 'Tenant B owned ID',
+      status: 'draft',
+    });
+    const globalCampaign = await campaigns.create({
+      customerId: globalCustomer.id,
+      campaignKey: 'global-owned-id',
+      name: 'Global owned ID',
+      status: 'scheduled',
+    });
+
+    for (const id of [
+      tenantBCampaign.id?.toUpperCase(),
+      globalCampaign.id?.toUpperCase(),
+    ]) {
+      await expect(
+        withTenant({ tenantId: tenantA }, () =>
+          campaigns.create({
+            id,
+            customerId: customerA.id,
+            campaignKey: `local-replay-${id}`,
+            name: 'Rejected foreign ID replay',
+            status: 'active',
+          }),
+        ),
+      ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+    }
+
+    expect(await db.get('campaigns', { id: tenantBCampaign.id })).toMatchObject(
+      { tenant_id: tenantB, status: 'draft' },
+    );
+    expect(await db.get('campaigns', { id: globalCampaign.id })).toMatchObject({
+      tenant_id: null,
+      status: 'scheduled',
+    });
   });
 
   it('validates and persists a Campaign on the same transaction database', async () => {
@@ -306,6 +493,18 @@ describe('Campaign customer scope', () => {
       nullStart.id,
     ]);
     expect(new Set(seen.map((campaign) => campaign.id)).size).toBe(7);
+
+    const boundedCampaigns = await CampaignCollection.create({
+      db,
+      maxListLimit: 2,
+    });
+    const boundedFirst = await boundedCampaigns.listByCustomer(
+      tenantId,
+      customer.id ?? '',
+      { limit: 2 },
+    );
+    expect(boundedFirst.items).toHaveLength(2);
+    expect(boundedFirst.nextCursor).not.toBeNull();
 
     const numericFirst = await campaigns.listByCustomer(
       tenantId.toUpperCase(),

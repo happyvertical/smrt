@@ -1,9 +1,18 @@
-import { resolveListLimit, SmrtCollection } from '@happyvertical/smrt-core';
 import {
-  assertTenantReadAllowed,
+  type CollectionCacheConfig,
+  resolveListLimit,
+  SmrtCollection,
+  type SmrtListOptions,
+  type SmrtSelectedRow,
+  type SmrtSelectField,
+  type SmrtWhereClause,
+} from '@happyvertical/smrt-core';
+import {
   getCurrentTenant,
   isSuperAdminBypass,
+  isSystemContext,
   TenantIsolationError,
+  withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
@@ -25,6 +34,36 @@ export const MAX_CAMPAIGN_CUSTOMER_BATCH_SIZE = 100;
 
 export class CampaignCollection extends SmrtCollection<Campaign> {
   static readonly _itemClass = Campaign;
+
+  override async get(
+    filter: string | SmrtWhereClause<Campaign>,
+    options: { cache?: CollectionCacheConfig | false } = {},
+  ): Promise<Campaign | null> {
+    return withCanonicalActiveTenant(() =>
+      super.get(normalizeCampaignGetFilter(filter), options),
+    );
+  }
+
+  override async list<
+    const Select extends readonly SmrtSelectField<Campaign>[],
+  >(
+    options: SmrtListOptions<Campaign> & { select: Select; include?: never },
+  ): Promise<SmrtSelectedRow<Campaign, Select>[]>;
+  override async list(
+    options?: Omit<SmrtListOptions<Campaign>, 'select'> & {
+      select?: undefined;
+    },
+  ): Promise<Campaign[]>;
+  override async list(
+    options: SmrtListOptions<Campaign> = {},
+  ): Promise<Campaign[] | Record<string, unknown>[]> {
+    return withCanonicalActiveTenant(
+      () =>
+        super.list(normalizeCampaignListOptions(options) as never) as Promise<
+          Campaign[] | Record<string, unknown>[]
+        >,
+    );
+  }
 
   async findByCampaignKey(
     campaignKey: string,
@@ -72,12 +111,14 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
       throw new Error('Campaign customer page limit must be at least 1.');
     }
     const cursor = normalizeCursor(options.after);
-    return this.inCustomerReadTransaction(async (bound) =>
-      bound.listByCustomerInTransaction(
-        normalizedTenantId,
-        normalizedCustomerId,
-        limit,
-        cursor,
+    return withCanonicalTenantContext(normalizedTenantId, () =>
+      this.inCustomerReadTransaction(async (bound) =>
+        bound.listByCustomerInTransaction(
+          normalizedTenantId,
+          normalizedCustomerId,
+          limit,
+          cursor,
+        ),
       ),
     );
   }
@@ -137,11 +178,13 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
     const uniqueIds = [...new Set(normalizedCustomerIds)];
     if (uniqueIds.length === 0) return [];
 
-    return this.inCustomerReadTransaction(async (bound) =>
-      bound.summarizeByCustomersInTransaction(
-        normalizedTenantId,
-        normalizedCustomerIds,
-        uniqueIds,
+    return withCanonicalTenantContext(normalizedTenantId, () =>
+      this.inCustomerReadTransaction(async (bound) =>
+        bound.summarizeByCustomersInTransaction(
+          normalizedTenantId,
+          normalizedCustomerIds,
+          uniqueIds,
+        ),
       ),
     );
   }
@@ -209,6 +252,8 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
       const bound = await CampaignCollection.create({
         ...this.options,
         db: transactionDb,
+        defaultListLimit: undefined,
+        maxListLimit: undefined,
       });
       return operation(bound);
     });
@@ -319,17 +364,92 @@ function normalizeTenantScope(
 ): string | null {
   if (tenantId !== null) {
     const normalized = normalizeUuid(tenantId, 'tenantId');
-    assertTenantReadAllowed(normalized, label);
+    const tenantContext = getCurrentTenant();
+    if (tenantContext && !isSuperAdminBypass()) {
+      const contextTenantId = normalizeUuid(tenantContext.tenantId, 'tenantId');
+      if (normalized !== contextTenantId) {
+        throw new TenantIsolationError(
+          `Tenant isolation violation in ${label}.`,
+          { tenantId: contextTenantId, attemptedTenantId: normalized },
+        );
+      }
+    }
     return normalized;
   }
   const tenantContext = getCurrentTenant();
-  if (tenantContext && !isSuperAdminBypass()) {
+  if (tenantContext && !isSuperAdminBypass() && !isSystemContext()) {
     throw new TenantIsolationError(
       `Tenant isolation violation in ${label}: tenant context cannot read global Campaign rows.`,
       { tenantId: tenantContext.tenantId, attemptedTenantId: 'global' },
     );
   }
   return null;
+}
+
+function withCanonicalTenantContext<T>(
+  tenantId: string | null,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const tenantContext = getCurrentTenant();
+  return tenantId !== null &&
+    tenantContext &&
+    !isSuperAdminBypass() &&
+    !isSystemContext()
+    ? withTenant({ ...tenantContext, tenantId }, operation)
+    : operation();
+}
+
+function withCanonicalActiveTenant<T>(operation: () => Promise<T>): Promise<T> {
+  const tenantContext = getCurrentTenant();
+  if (!tenantContext || isSuperAdminBypass() || isSystemContext()) {
+    return operation();
+  }
+  const normalizedTenantId = normalizeUuid(tenantContext.tenantId, 'tenantId');
+  return normalizedTenantId === tenantContext.tenantId
+    ? operation()
+    : withTenant({ ...tenantContext, tenantId: normalizedTenantId }, operation);
+}
+
+function normalizeCampaignGetFilter(
+  filter: string | SmrtWhereClause<Campaign>,
+): string | SmrtWhereClause<Campaign> {
+  if (typeof filter !== 'string') return normalizeCampaignIdWhere(filter);
+  try {
+    return normalizeUuid(filter, 'campaign id');
+  } catch {
+    return filter;
+  }
+}
+
+function normalizeCampaignListOptions(
+  options: SmrtListOptions<Campaign>,
+): SmrtListOptions<Campaign> {
+  return options.where === undefined
+    ? options
+    : { ...options, where: normalizeCampaignIdWhere(options.where) };
+}
+
+function normalizeCampaignIdWhere<T>(where: T): T {
+  if (Array.isArray(where)) {
+    return where.map((entry) => normalizeCampaignIdWhere(entry)) as T;
+  }
+  if (!where || typeof where !== 'object') return where;
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(where)) {
+    const field = key.trim().split(/\s+/u)[0];
+    if (field !== 'id') {
+      normalized[key] = value;
+    } else if (Array.isArray(value)) {
+      normalized[key] = value.map((id) =>
+        typeof id === 'string' ? normalizeUuid(id, 'campaign id') : id,
+      );
+    } else {
+      normalized[key] =
+        typeof value === 'string' ? normalizeUuid(value, 'campaign id') : value;
+    }
+  }
+  return normalized as T;
 }
 
 export default CampaignCollection;
