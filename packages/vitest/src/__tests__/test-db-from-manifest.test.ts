@@ -327,7 +327,7 @@ describe('createIsolatedTestDbFromManifest', () => {
             className: 'Child',
             schema: {
               tableName: 'legacy_filter_children',
-              ddl: 'CREATE TABLE "legacy_filter_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "legacy_filter_parents"("id"));',
+              ddl: 'CREATE TABLE "legacy_filter_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "public"."legacy_filter_parents"("id"));',
             },
           },
         },

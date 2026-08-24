@@ -628,11 +628,22 @@ interface TableInfo {
  */
 function extractForeignKeyDependencies(ddl: string): string[] {
   const dependencies: string[] = [];
-  // Match REFERENCES "tablename"( or REFERENCES tablename(
-  const regex = /REFERENCES\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*\(/gi;
+  const identifier = '(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)';
+  const regex = new RegExp(
+    `\\bREFERENCES\\s+((?:${identifier}\\s*\\.\\s*)*${identifier})\\s*\\(`,
+    'gi',
+  );
 
   for (const match of ddl.matchAll(regex)) {
-    const tableName = match[1];
+    const qualifiedTarget = match[1] ?? '';
+    const parts = Array.from(
+      qualifiedTarget.matchAll(/"((?:[^"]|"")*)"|([A-Za-z_][A-Za-z0-9_$]*)/g),
+    );
+    const finalIdentifier = parts.at(-1);
+    const tableName = finalIdentifier?.[1]
+      ? finalIdentifier[1].replaceAll('""', '"')
+      : finalIdentifier?.[2];
+    if (!tableName) continue;
     if (!dependencies.includes(tableName)) {
       dependencies.push(tableName);
     }
