@@ -729,6 +729,9 @@ describe('OIDC Account Linking', () => {
         ]);
 
         expect(maxActiveLookups).toBe(1);
+        expect(typeof first.profile.id).toBe('string');
+        expect(typeof first.oidcIdentity.id).toBe('string');
+        expect(typeof first.oidcIdentity.profileId).toBe('string');
         expect(second.profile.id).toBe(first.profile.id);
         expect(second.oidcIdentity.id).toBe(first.oidcIdentity.id);
         await expect(countRows(firstDb, 'profiles')).resolves.toBe(1);

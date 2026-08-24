@@ -34,7 +34,11 @@ import {
   type RetentionSweeperOptions,
   startRetentionSweeper,
 } from './retention.js';
-import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
+import {
+  SMRT_JOB_PORTABLE_SELECT_COLUMNS,
+  type SmrtJob,
+  SmrtJobCollection,
+} from './smrt-job.js';
 import { type SmrtJobEvent, SmrtJobEventCollection } from './smrt-job-event.js';
 import { SmrtWorkerCollection } from './smrt-worker.js';
 import {
@@ -981,7 +985,9 @@ export class TaskRunner extends EventEmitter {
     // Worker-internal cross-tenant recovery scan; SmrtJob is @TenantScoped
     // (S5 #1402) so this raw read needs an explicit opt-in.
     const running = await this.collection.query(
-      `SELECT * FROM _smrt_jobs WHERE status = 'running'`,
+      `SELECT ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}
+         FROM _smrt_jobs
+        WHERE status = 'running'`,
       [],
       { allowRawOnTenantScoped: true },
     );
@@ -1021,7 +1027,7 @@ export class TaskRunner extends EventEmitter {
               worker_heartbeat = NULL
         WHERE status = 'running'
           AND id IN (${placeholders})
-        RETURNING id`,
+        RETURNING CAST(id AS VARCHAR) AS id`,
       recoveredAt.toISOString(),
       errorMessage,
       ...orphanIds,

@@ -201,6 +201,18 @@ describe('worker-lease recovery (#1474)', () => {
     const fresh = await workers.freshLeaseWorkerKeys();
     expect(fresh.has('duck-live')).toBe(true);
 
+    await collection.create({
+      objectType: 'LivenessProbe',
+      method: 'noop',
+      args: {},
+    });
+    const claimed = await collection.claimReady({
+      workerId: 'duck-live',
+      limit: 1,
+    });
+    expect(claimed).toHaveLength(1);
+    expect(typeof claimed[0]?.id).toBe('string');
+
     const liveJob = await collection.create({
       objectType: 'LivenessProbe',
       method: 'noop',

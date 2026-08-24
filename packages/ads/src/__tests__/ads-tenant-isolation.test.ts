@@ -29,7 +29,9 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AdDeliveryTierCollection } from '../collections/AdDeliveryTierCollection';
 import { AdEventCollection } from '../collections/AdEventCollection';
+import { AdFormatCollection } from '../collections/AdFormatCollection';
 import { AdGroupCollection } from '../collections/AdGroupCollection';
 import { AdVariationCollection } from '../collections/AdVariationCollection';
 
@@ -38,9 +40,23 @@ const sorted = (rows: Array<Record<string, any>>, field: string): string[] =>
 
 describe('ads tenant isolation (#1600)', () => {
   let db: DatabaseInterface;
+  let tierId: string;
+  let formatId: string;
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const tiers = await AdDeliveryTierCollection.create({ db });
+    const formats = await AdFormatCollection.create({ db });
+    const tier = await tiers.create({ name: 'Test Tier', priority: 1 });
+    const format = await formats.create({
+      name: 'Test Format',
+      width: 1,
+      height: 1,
+    });
+    await tier.save();
+    await format.save();
+    tierId = tier.id;
+    formatId = format.id;
     enableTenancy(); // default rawQueryPolicy: 'throw'
   });
 
@@ -100,13 +116,13 @@ describe('ads tenant isolation (#1600)', () => {
   it('AdGroupCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const groups = await AdGroupCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
-      await (await groups.create({ name: 't1-group' })).save();
+      await (await groups.create({ name: 't1-group', tierId })).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
-      await (await groups.create({ name: 't2-group' })).save();
+      await (await groups.create({ name: 't2-group', tierId })).save();
     });
     await withSystemContext(async () => {
-      await (await groups.create({ name: 'g-group' })).save();
+      await (await groups.create({ name: 'g-group', tierId })).save();
     });
 
     expect(
@@ -138,14 +154,51 @@ describe('ads tenant isolation (#1600)', () => {
 
   it('AdVariationCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const variations = await AdVariationCollection.create({ db });
+    const groups = await AdGroupCollection.create({ db });
+    const tenant1Group = await withTenant(
+      { tenantId: 'tenant-1' },
+      async () => {
+        const group = await groups.create({ name: 't1-parent', tierId });
+        return group.save();
+      },
+    );
+    const tenant2Group = await withTenant(
+      { tenantId: 'tenant-2' },
+      async () => {
+        const group = await groups.create({ name: 't2-parent', tierId });
+        return group.save();
+      },
+    );
+    const globalGroup = await withSystemContext(async () => {
+      const group = await groups.create({ name: 'global-parent', tierId });
+      return group.save();
+    });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
-      await (await variations.create({ name: 't1-var' })).save();
+      await (
+        await variations.create({
+          name: 't1-var',
+          groupId: tenant1Group.id,
+          formatId,
+        })
+      ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
-      await (await variations.create({ name: 't2-var' })).save();
+      await (
+        await variations.create({
+          name: 't2-var',
+          groupId: tenant2Group.id,
+          formatId,
+        })
+      ).save();
     });
     await withSystemContext(async () => {
-      await (await variations.create({ name: 'g-var' })).save();
+      await (
+        await variations.create({
+          name: 'g-var',
+          groupId: globalGroup.id,
+          formatId,
+        })
+      ).save();
     });
 
     expect(

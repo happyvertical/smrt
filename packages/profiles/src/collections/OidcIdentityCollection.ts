@@ -36,14 +36,29 @@ export class OidcIdentityCollection extends SmrtCollection<OidcIdentity> {
     issuer: string,
     subject: string,
   ): Promise<OidcIdentity | null> {
-    const matches = await this.list({
-      where: { issuer, subject },
-      limit: 2,
-    });
-    if (matches.length > 1) {
+    const result = await this.db.query(
+      `SELECT CAST(id AS VARCHAR) AS id,
+              CAST(profile_id AS VARCHAR) AS profile_id
+         FROM oidc_identities
+        WHERE issuer = ? AND subject = ?
+        LIMIT 2`,
+      issuer,
+      subject,
+    );
+    if (result.rows.length > 1) {
       throw new AmbiguousOidcIdentityError(issuer, subject);
     }
-    return matches[0] ?? null;
+    const row = result.rows[0];
+    const id = row?.id;
+    const profileId = row?.profile_id;
+    if (typeof id !== 'string' || typeof profileId !== 'string') return null;
+    const identity = await this.get({ id });
+    if (!identity) return null;
+    // Preserve portable identities at this authentication boundary when
+    // native DuckDB exposes UUID results through internal objects.
+    identity.id = id;
+    identity.profileId = profileId;
+    return identity;
   }
 
   /**

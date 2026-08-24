@@ -35,6 +35,24 @@ export type JobStatus =
 export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 
 /**
+ * Full job projection with a portable string identity.
+ *
+ * Native DuckDB currently exposes UUID result values as internal objects.
+ * Worker claim/recovery state is keyed by string IDs, so both paths must use
+ * this same projection instead of hydrating a raw UUID from `SELECT *`.
+ */
+export const SMRT_JOB_PORTABLE_SELECT_COLUMNS = `
+  CAST(id AS VARCHAR) AS id,
+  slug, context, created_at, updated_at, tenant_id, queue,
+  object_type, object_id, method, args, run_at,
+  priority, status, attempts, max_attempts, timeout,
+  timeout_behavior, started_at, completed_at, last_error,
+  result_pointer, task_id, task_owner_id, task_result,
+  task_input_requests, task_input_responses, retry_strategy,
+  worker_id, worker_heartbeat
+`;
+
+/**
  * Persistent job record stored in the `_smrt_jobs` system table.
  *
  * @remarks
@@ -439,7 +457,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
               updated_at = ?
         WHERE id IN (${candidateSelect})
           AND status = 'pending'
-        RETURNING *`,
+        RETURNING ${SMRT_JOB_PORTABLE_SELECT_COLUMNS}`,
       [options.workerId, nowIso, nowIso, nowIso, ...whereParams, limit],
       // Worker-internal cross-tenant claim; tenant context is restored
       // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).
