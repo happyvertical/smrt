@@ -11,6 +11,9 @@ import { field, SmrtObject, smrt } from '../index.js';
 import { GlobalInterceptors } from '../interceptors.js';
 import { getTestDatabase } from '../testing/database.js';
 
+const FACET_TENANT_A = '00000000-0000-4000-8000-000000000001';
+const FACET_TENANT_B = '00000000-0000-4000-8000-000000000002';
+
 @smrt({
   tenantScoped: { mode: 'optional', autoPopulate: false },
 })
@@ -55,25 +58,25 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
       status: 'open',
       workMode: 'remote',
       skills: ['typescript', 'sql'],
-      tenantId: 'tenant-a',
+      tenantId: FACET_TENANT_A,
     });
     await opportunities.create({
       status: 'open',
       workMode: 'hybrid',
       skills: ['typescript'],
-      tenantId: 'tenant-a',
+      tenantId: FACET_TENANT_A,
     });
     await opportunities.create({
       status: 'closed',
       workMode: 'remote',
       skills: ['sql'],
-      tenantId: 'tenant-b',
+      tenantId: FACET_TENANT_B,
     });
     await opportunities.create({
       status: null,
       workMode: null,
       skills: null,
-      tenantId: 'tenant-a',
+      tenantId: FACET_TENANT_A,
     });
   }
 
@@ -118,7 +121,7 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
       status: '',
       workMode: 'remote',
       skills: null,
-      tenantId: 'tenant-a',
+      tenantId: FACET_TENANT_A,
     });
 
     const queries: Array<{ sql: string; params: unknown[] }> = [];
@@ -201,7 +204,7 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
       beforeList(_className, options) {
         return {
           ...options,
-          where: { ...options.where, tenantId: 'tenant-a' },
+          where: { ...options.where, tenantId: FACET_TENANT_A },
         };
       },
     });
@@ -279,19 +282,19 @@ describe('SmrtCollection database-backed facets and counts (#1904)', () => {
         status: 'open',
         workMode: 'remote',
         skills: null,
-        tenantId: 'tenant-a',
+        tenantId: FACET_TENANT_A,
       });
       await portable.create({
         status: 'closed',
         workMode: 'remote',
         skills: null,
-        tenantId: 'tenant-a',
+        tenantId: FACET_TENANT_A,
       });
       await portable.create({
         status: null,
         workMode: 'remote',
         skills: null,
-        tenantId: 'tenant-a',
+        tenantId: FACET_TENANT_A,
       });
 
       await expect(portable.facets({ fields: ['status'] })).resolves.toEqual([

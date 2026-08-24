@@ -21,7 +21,9 @@ function resetInitializationEvidence(): void {
   initializationOrder = [];
 }
 
-@smrt()
+// Window-query parity is the subject of the DuckDB lane below. Use text keys
+// so native DuckDB UUID result decoding remains outside this fixture.
+@smrt({ idType: 'text' })
 class LatestRelatedParent extends SmrtObject {
   name = '';
 
@@ -51,7 +53,7 @@ class LatestRelatedParent extends SmrtObject {
   }
 }
 
-@smrt()
+@smrt({ idType: 'text' })
 class LatestRelatedEvaluation extends SmrtObject {
   @foreignKey(LatestRelatedParent)
   parentId = '';

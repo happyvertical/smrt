@@ -377,12 +377,14 @@ describe('CommissionAdjustmentService', () => {
     ).toHaveLength(0);
   });
 
-  it('returns an exact persisted replay on DuckDB native UUID columns', async () => {
+  it('returns an exact persisted replay on JSON-on-DuckDB storage', async () => {
     const duckDb = await getTestDatabase({
-      type: 'duckdb',
+      type: 'json',
       url: ':memory:',
-      // This UUID replay test is not a referential-enforcement lane; DuckDB
-      // cannot implement the package's generated ON UPDATE CASCADE actions.
+      // This replay test is not a referential-enforcement or native-type lane;
+      // DuckDB cannot implement the package's generated ON UPDATE CASCADE
+      // actions. Core's #2413 test-database regressions separately prove that
+      // explicit and existing native DuckDB adapters receive UUID DDL.
       omitForeignKeyConstraints: true,
     });
     const duckTenantId = randomUUID();
