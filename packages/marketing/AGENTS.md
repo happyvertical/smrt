@@ -20,7 +20,8 @@ publish-surface changes.
 
 - **Campaign**: optional-tenant umbrella with stable natural key
   `(tenant_id, campaign_key)`, open objective, integer-cent budget, currency,
-  schedule, guarded metadata helpers, and lifecycle
+  schedule, optional native UUID reference to the canonical commerce Customer,
+  guarded metadata helpers, and lifecycle
   `draft → scheduled → active ↔ paused → completed → archived`. Raw saves are
   protected by an authoritative prior-status re-read; use
   `CampaignLifecycleService` for lifecycle writes.
@@ -52,6 +53,11 @@ All generated surfaces are explicit; never omit `api`, `mcp`, or `cli` config.
   pacing prefers campaign rollups and otherwise sums channel snapshots,
   preventing double counting without dropping channel-only periods. Status
   uses a five-percent budget tolerance around schedule-derived expected spend.
+- **CampaignCollection** exposes bounded, tenant-and-Customer-scoped cursor
+  pages ordered by `start_at DESC, id DESC` and bounded batch summaries for
+  total count, active count, and latest start time. Customer scope is validated
+  through runtime relationship metadata; there is no static commerce import or
+  tenant-wide campaign materialization.
 
 ## Svelte
 
@@ -66,6 +72,10 @@ render time.
 
 - Runtime dependencies stay limited to `smrt-core`, `smrt-tenancy`, and
   `smrt-ui`. Never statically import sibling domain packages.
+- `Campaign.customerId` targets `@happyvertical/smrt-commerce:Customer` through
+  `@crossPackageRef`. Saves and customer-scoped reads require exact tenant
+  agreement (including global-to-global only) and fail without revealing
+  whether a Customer is absent or belongs elsewhere.
 - Lead loop-closing is conventional: CRM stores `sourceKind: 'campaign'` and a
   campaign key in `sourceId`; marketing does not import or mutate Lead.
 - Attribution math remains in sales/referrals. Marketing stores performance

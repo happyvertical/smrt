@@ -1,7 +1,13 @@
 /** Campaign identity, budget, schedule, and guarded lifecycle. */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { assertCustomersBelongToTenant } from '../customer-scope.js';
 import {
   CAMPAIGN_STATUSES,
   type CampaignOptions,
@@ -23,6 +29,12 @@ const loadedCampaignStatus = new WeakMap<Campaign, CampaignStatus>();
 @smrt({
   tableName: 'campaigns',
   conflictColumns: ['tenant_id', 'campaign_key'],
+  indexes: [
+    {
+      name: 'campaigns_tenant_id_customer_id_start_at_id_idx',
+      columns: ['tenantId', 'customerId', 'startAt', 'id'],
+    },
+  ],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: { include: ['list', 'get', 'create', 'update'] },
@@ -30,6 +42,13 @@ const loadedCampaignStatus = new WeakMap<Campaign, CampaignStatus>();
 export class Campaign extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
+
+  /** Canonical commerce Customer that owns this campaign, when assigned. */
+  @crossPackageRef('@happyvertical/smrt-commerce:Customer', {
+    nullable: true,
+    validate: true,
+  })
+  customerId: string | null = null;
 
   /** Stable caller-defined key used by CRM/referral systems. */
   @field({ required: true })
@@ -58,6 +77,7 @@ export class Campaign extends SmrtObject {
   constructor(options: CampaignOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.customerId !== undefined) this.customerId = options.customerId;
     if (options.campaignKey !== undefined)
       this.campaignKey = options.campaignKey;
     if (options.name !== undefined) this.name = options.name;
@@ -87,6 +107,14 @@ export class Campaign extends SmrtObject {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertSchedule();
+    if (this.customerId !== null) {
+      await assertCustomersBelongToTenant(
+        this.options,
+        this.tenantId,
+        [this.customerId],
+        'Campaign.save',
+      );
+    }
     const result = (await super.save()) as this;
     loadedCampaignStatus.set(this, this.status);
     return result;

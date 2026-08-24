@@ -1,6 +1,7 @@
 /** Shared model and service contracts for @happyvertical/smrt-marketing. */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type { Campaign } from './models/Campaign.js';
 
 export const CAMPAIGN_STATUSES = [
   'draft',
@@ -39,6 +40,7 @@ export type CampaignChannelStatus = (typeof CAMPAIGN_CHANNEL_STATUSES)[number];
 
 export interface CampaignOptions extends SmrtObjectOptions {
   tenantId?: string | null;
+  customerId?: string | null;
   campaignKey?: string;
   name?: string;
   objective?: string;
@@ -48,6 +50,33 @@ export interface CampaignOptions extends SmrtObjectOptions {
   budgetCents?: number;
   currency?: string;
   metadata?: string;
+}
+
+export interface CampaignCustomerCursorInput {
+  startAt: Date | string | number | null;
+  id: string;
+}
+
+export interface CampaignCustomerCursor {
+  startAt: Date | null;
+  id: string;
+}
+
+export interface ListCampaignsByCustomerOptions {
+  limit?: number;
+  after?: CampaignCustomerCursorInput;
+}
+
+export interface CampaignCustomerPage {
+  items: Campaign[];
+  nextCursor: CampaignCustomerCursor | null;
+}
+
+export interface CampaignCustomerSummary {
+  customerId: string;
+  totalCount: number;
+  activeCount: number;
+  latestStartAt: Date | null;
 }
 
 export interface CampaignChannelOptions extends SmrtObjectOptions {

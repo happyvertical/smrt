@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { CustomerCollection } from '@happyvertical/smrt-commerce';
 import {
   createIsolatedTestDbFromManifest,
   type IsolatedTestDbResult,
@@ -10,6 +11,7 @@ import {
   CampaignCollection,
   CampaignMetricSnapshotCollection,
 } from '../collections/index.js';
+import { CampaignCustomerScopeError } from '../errors.js';
 import { MetricIngestionService } from '../services/MetricIngestionService.js';
 
 const describePostgres = isPostgresAvailable() ? describe : describe.skip;
@@ -18,13 +20,20 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
   let isolated: IsolatedTestDbResult | undefined;
   let db: DatabaseInterface;
   let campaigns: CampaignCollection;
+  let customers: CustomerCollection;
   let snapshots: CampaignMetricSnapshotCollection;
 
   beforeEach(async () => {
     isolated = await createIsolatedTestDbFromManifest({
-      includeObjects: ['Campaign', 'CampaignChannel', 'CampaignMetricSnapshot'],
+      includeObjects: [
+        'Customer',
+        'Campaign',
+        'CampaignChannel',
+        'CampaignMetricSnapshot',
+      ],
     });
     db = isolated.db;
+    customers = await CustomerCollection.create({ db });
     campaigns = await CampaignCollection.create({ db });
     snapshots = await CampaignMetricSnapshotCollection.create({ db });
   });
@@ -94,5 +103,61 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
     expect(replay.created).toBe(false);
     expect(replay.snapshot.id).toBe(first.snapshot.id);
     expect(replay.snapshot.spendCents).toBe(1_000);
+  });
+
+  it('keeps native Customer scope, pagination, and summaries on PostgreSQL', async () => {
+    const tenantA = randomUUID();
+    const tenantB = randomUUID();
+    const customerA = await customers.create({ tenantId: tenantA });
+    const customerB = await customers.create({ tenantId: tenantB });
+    const tiedStart = new Date('2026-08-01T00:00:00.000Z');
+    const created = [];
+    for (let index = 0; index < 3; index += 1) {
+      created.push(
+        await campaigns.create({
+          tenantId: tenantA,
+          customerId: customerA.id,
+          campaignKey: `postgres-customer-${index}`,
+          name: `PostgreSQL customer campaign ${index}`,
+          status: index === 0 ? 'active' : 'draft',
+          startAt: tiedStart,
+        }),
+      );
+    }
+
+    const first = await campaigns.listByCustomer(tenantA, customerA.id ?? '', {
+      limit: 2,
+    });
+    const second = await campaigns.listByCustomer(tenantA, customerA.id ?? '', {
+      limit: 2,
+      after: first.nextCursor ?? undefined,
+    });
+    expect([...first.items, ...second.items].map((row) => row.id)).toEqual(
+      created
+        .map((row) => row.id ?? '')
+        .sort((left, right) => right.localeCompare(left)),
+    );
+    expect(
+      await campaigns.summarizeByCustomers(tenantA, [customerA.id ?? '']),
+    ).toEqual([
+      {
+        customerId: customerA.id,
+        totalCount: 3,
+        activeCount: 1,
+        latestStartAt: tiedStart,
+      },
+    ]);
+    await expect(
+      campaigns.listByCustomer(tenantA, customerB.id ?? ''),
+    ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+
+    const column = await db.query(
+      `SELECT data_type
+       FROM information_schema.columns
+       WHERE table_schema = current_schema()
+         AND table_name = 'campaigns'
+         AND column_name = 'customer_id'`,
+    );
+    expect(column.rows).toEqual([{ data_type: 'uuid' }]);
   });
 });
