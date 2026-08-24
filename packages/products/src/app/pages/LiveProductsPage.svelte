@@ -16,7 +16,7 @@
  * `scripts/check-web-engine-code-split.mjs` assertion proves the split holds.
  */
 
-import Provider from '@happyvertical/smrt-svelte';
+import { Provider } from '@happyvertical/smrt-svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';

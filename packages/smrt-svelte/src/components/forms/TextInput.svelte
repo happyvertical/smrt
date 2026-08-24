@@ -102,6 +102,10 @@ onMount(() => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
+      constraints: { required },
+      validate: () =>
+        (!required || value.trim().length > 0) &&
+        (type !== 'email' || value.length === 0 || isValidEmail),
     };
     formContext.registerField(fieldDef);
   }

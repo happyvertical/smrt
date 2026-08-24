@@ -302,6 +302,9 @@ onMount(() => {
         }
       },
       getValue: () => (value !== null ? { value, unit } : null),
+      constraints: { required, min, max },
+      validate: () =>
+        value === null ? !required : Number.isFinite(value) && isInRange,
     };
     formContext.registerField(fieldDef);
   }

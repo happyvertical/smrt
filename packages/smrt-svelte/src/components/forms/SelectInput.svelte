@@ -77,6 +77,12 @@ onMount(() => {
         }
       },
       getValue: () => value,
+      constraints: { required },
+      options: options.map((option) => ({
+        value: option.value,
+        label: option.label,
+      })),
+      validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);
   }

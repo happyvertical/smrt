@@ -61,6 +61,54 @@ describe('Form WebMCP submit intent', () => {
     });
   });
 
+  it('publishes required and numeric constraints and validates them before submit', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const onsubmit = vi.fn();
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        textRequired: true,
+        ageRequired: true,
+        ageMin: 18,
+        ageMax: 65,
+        onsubmit,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(registered).toHaveLength(1);
+    const schema = registered[0].inputSchema as {
+      required?: string[];
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.required).toEqual(['fullname', 'age']);
+    expect(schema.properties.age).toMatchObject({
+      type: 'number',
+      minimum: 18,
+      maximum: 65,
+    });
+
+    expect(await registered[0].execute({ age: 17 })).toBe('Validation failed');
+    expect(await registered[0].execute({ fullname: 'Ada', age: 66 })).toBe(
+      'Validation failed',
+    );
+    expect(onsubmit).not.toHaveBeenCalled();
+
+    expect(await registered[0].execute({ fullname: 'Ada', age: 36 })).toBe(
+      'Submitted successfully',
+    );
+    expect(onsubmit).toHaveBeenCalledWith({ fullname: 'Ada', age: 36 });
+  });
+
   it('keeps the browser path a no-op without WebMCP', async () => {
     const onsubmit = vi.fn();
     const view = render(FormWithFields, { props: { onsubmit } });

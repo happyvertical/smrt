@@ -233,6 +233,16 @@ onMount(() => {
         }
       },
       getValue: () => value,
+      constraints: { required },
+      validate: () =>
+        !required ||
+        [
+          value.street,
+          value.city,
+          value.province,
+          value.postalCode,
+          value.country,
+        ].every((part) => String(part ?? '').trim().length > 0),
     };
     formContext.registerField(fieldDef);
   }

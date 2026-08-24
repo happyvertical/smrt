@@ -15,6 +15,10 @@ let {
   numberValue = null,
   showAge = true,
   webmcp = false,
+  textRequired = false,
+  ageRequired = false,
+  ageMin = undefined,
+  ageMax = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   method?: 'GET' | 'POST';
@@ -23,13 +27,29 @@ let {
   numberValue?: number | null;
   showAge?: boolean;
   webmcp?: boolean;
+  textRequired?: boolean;
+  ageRequired?: boolean;
+  ageMin?: number;
+  ageMax?: number;
 } = $props();
 </script>
 
 <Form {onsubmit} {method} {action} {webmcp}>
-	<TextInput name="fullname" label="Full name" bind:value={textValue} />
+	<TextInput
+		name="fullname"
+		label="Full name"
+		required={textRequired}
+		bind:value={textValue}
+	/>
 	{#if showAge}
-		<NumberInput name="age" label="Age" bind:value={numberValue} />
+		<NumberInput
+			name="age"
+			label="Age"
+			required={ageRequired}
+			min={ageMin}
+			max={ageMax}
+			bind:value={numberValue}
+		/>
 	{/if}
 	<button type="submit">Submit</button>
 </Form>
