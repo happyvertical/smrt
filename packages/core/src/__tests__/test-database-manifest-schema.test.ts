@@ -1,3 +1,4 @@
+import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
 import { ensureSchema } from '../schema/utils.js';
@@ -100,6 +101,22 @@ describe('getTestDatabase manifest schemas', () => {
             },
           ],
           version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+  }
+
+  function registerNativeUuidThing(): void {
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:NativeUuidThing',
+      {
+        className: 'NativeUuidThing',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'native_uuid_things',
+          idType: 'uuid',
         },
       },
       '@test/pkg',
@@ -361,6 +378,49 @@ describe('getTestDatabase manifest schemas', () => {
           sql.includes('json_indexed_things_slug_context_idx'),
       ),
     ).toBe(false);
+  });
+
+  it('uses native UUID DDL for an explicitly requested DuckDB database', async () => {
+    registerNativeUuidThing();
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      classes: ['NativeUuidThing'],
+      includeSystemTables: false,
+    });
+
+    try {
+      const result = await db.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = 'native_uuid_things' AND column_name = 'id'`,
+      );
+      expect(result.rows[0]?.data_type).toBe('UUID');
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('infers native UUID DDL from an existing DuckDB database', async () => {
+    registerNativeUuidThing();
+    const db = await getDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      // This test exercises getTestDatabase's existing-adapter inference, so
+      // the Vitest wrapper must not prepare the table before that call.
+      __smrtSkipVitestSchemaPreparation: true,
+    } as Parameters<typeof getDatabase>[0]);
+
+    try {
+      await getTestDatabase({
+        db,
+        classes: ['NativeUuidThing'],
+        includeSystemTables: false,
+      });
+      const result = await db.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = 'native_uuid_things' AND column_name = 'id'`,
+      );
+      expect(result.rows[0]?.data_type).toBe('UUID');
+    } finally {
+      await db.close?.();
+    }
   });
 
   it('creates registry schemas in foreign-key dependency order (#2413)', async () => {

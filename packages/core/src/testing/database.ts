@@ -218,23 +218,45 @@ export function resolveTestDatabaseDDLEngine(
   db: DatabaseInterface,
   inferFromDatabase = false,
 ): 'sqlite' | 'json' | 'duckdb' | 'postgres' {
-  if (typeof (db as { exportTable?: unknown }).exportTable === 'function') {
+  // When this helper created the adapter, the requested type is authoritative.
+  // Native DuckDB and JSON-on-DuckDB both expose exportTable(), so capability
+  // inference must not override an explicit native DuckDB request.
+  if (!inferFromDatabase) {
+    return type ?? 'sqlite';
+  }
+
+  const configuredDb = db as DatabaseInterface & {
+    config?: { type?: string; url?: string };
+    type?: string;
+    exportTable?: unknown;
+    inferSchemaFromJSON?: unknown;
+    getTableLoadErrors?: unknown;
+  };
+
+  if (
+    typeof configuredDb.inferSchemaFromJSON === 'function' ||
+    typeof configuredDb.getTableLoadErrors === 'function'
+  ) {
     return 'json';
   }
 
-  if (inferFromDatabase) {
-    const configuredDb = db as DatabaseInterface & {
-      config?: { type?: string; url?: string };
-      type?: string;
-    };
-    return detectEngine(
-      db.url || configuredDb.config?.url || '',
-      configuredDb.type || configuredDb.config?.type,
-    );
+  if (typeof configuredDb.exportTable === 'function') {
+    // The native DuckDB adapter exposes schema evolution capabilities that the
+    // JSON adapter does not. Keep exportTable-only test doubles compatible with
+    // the historical JSON structural marker.
+    if (
+      typeof configuredDb.getTableSchema === 'function' &&
+      typeof configuredDb.alterTable?.addColumn === 'function'
+    ) {
+      return 'duckdb';
+    }
+    return 'json';
   }
 
-  if (type === 'json') return 'json';
-  return type ?? 'sqlite';
+  return detectEngine(
+    db.url || configuredDb.config?.url || '',
+    configuredDb.type || configuredDb.config?.type,
+  );
 }
 
 function omitTestForeignKeyConstraints(

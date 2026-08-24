@@ -159,6 +159,35 @@ describe('deterministic creation planning (#2413)', () => {
     ).toBe('postgres');
   });
 
+  it('keeps explicit native DuckDB separate from JSON-on-DuckDB', () => {
+    expect(
+      resolveTestDatabaseDDLEngine('duckdb', {
+        exportTable: () => undefined,
+      } as never),
+    ).toBe('duckdb');
+    expect(
+      resolveTestDatabaseDDLEngine(
+        undefined,
+        {
+          exportTable: () => undefined,
+          inferSchemaFromJSON: () => undefined,
+        } as never,
+        true,
+      ),
+    ).toBe('json');
+    expect(
+      resolveTestDatabaseDDLEngine(
+        undefined,
+        {
+          exportTable: () => undefined,
+          getTableSchema: () => undefined,
+          alterTable: { addColumn: () => undefined },
+        } as never,
+        true,
+      ),
+    ).toBe('duckdb');
+  });
+
   it('orders an acyclic graph parent-first on every supported engine', () => {
     const parent = schema('parents');
     const child = schema('children', {
