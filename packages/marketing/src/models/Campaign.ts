@@ -5,9 +5,17 @@ import {
   field,
   SmrtObject,
   smrt,
+  ValidationError,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  isSuperAdminBypass,
+  isSystemContext,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import { assertCustomersBelongToTenant } from '../customer-scope.js';
+import { CampaignCustomerScopeError } from '../errors.js';
 import {
   CAMPAIGN_STATUSES,
   type CampaignOptions,
@@ -108,14 +116,32 @@ export class Campaign extends SmrtObject {
     this.assertStatusTransition(prior);
     this.assertSchedule();
     if (this.customerId !== null) {
+      const tenantContext =
+        isSystemContext() || isSuperAdminBypass()
+          ? undefined
+          : getCurrentTenant();
+      const effectiveTenantId =
+        this.tenantId || tenantContext?.tenantId || null;
       await assertCustomersBelongToTenant(
         this.options,
-        this.tenantId,
+        effectiveTenantId,
         [this.customerId],
         'Campaign.save',
       );
     }
-    const result = (await super.save()) as this;
+    let result: this;
+    try {
+      result = (await super.save()) as this;
+    } catch (error) {
+      if (
+        error instanceof ValidationError &&
+        (error.code === 'VALIDATION_CROSS_PACKAGE_REF_MISSING' ||
+          error.code === 'VALIDATION_CROSS_PACKAGE_REF_UNREGISTERED')
+      ) {
+        throw new CampaignCustomerScopeError('Campaign.save');
+      }
+      throw error;
+    }
     loadedCampaignStatus.set(this, this.status);
     return result;
   }

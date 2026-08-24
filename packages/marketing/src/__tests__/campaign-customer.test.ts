@@ -83,6 +83,24 @@ describe('Campaign customer scope', () => {
     });
     expect(globalSaved.tenantId).toBeNull();
 
+    const contextSaved = await withTenant({ tenantId: tenantA }, () =>
+      campaigns.create({
+        customerId: customerA.id,
+        campaignKey: 'context-tenant-campaign',
+        name: 'Context tenant campaign',
+      }),
+    );
+    expect(contextSaved.tenantId).toBe(tenantA);
+    await expect(
+      withTenant({ tenantId: tenantA }, () =>
+        campaigns.create({
+          customerId: globalCustomer.id,
+          campaignKey: 'context-global-campaign',
+          name: 'Rejected context global campaign',
+        }),
+      ),
+    ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+
     for (const input of [
       { tenantId: tenantA, customerId: customerB.id },
       { tenantId: tenantA, customerId: globalCustomer.id },
@@ -219,7 +237,33 @@ describe('Campaign customer scope', () => {
         activeCount: 0,
         latestStartAt: null,
       },
+      {
+        customerId: customerA.id,
+        totalCount: 2,
+        activeCount: 1,
+        latestStartAt: startLatest,
+      },
     ]);
+  });
+
+  it('keeps framework cross-package failures behind the typed scope error', async () => {
+    const tenantId = randomUUID();
+    const customer = await customers.create({ tenantId });
+    const originalGet = db.get.bind(db);
+    vi.spyOn(db, 'get').mockImplementation(async (table, where) => {
+      if (table === 'customers') return null;
+      return originalGet(table, where);
+    });
+
+    const save = campaigns.create({
+      tenantId,
+      customerId: customer.id,
+      campaignKey: 'customer-race',
+      name: 'Customer race',
+    });
+    await expect(save).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+    await expect(save).rejects.not.toThrow(customer.id);
+    await expect(save).rejects.not.toThrow(/no such row exists/);
   });
 
   it('fails closed for cross-tenant lookup and rejects oversized inputs', async () => {

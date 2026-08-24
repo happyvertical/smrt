@@ -137,7 +137,7 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
     const byCustomer = new Map(
       result.rows.map((row) => [String(row.customer_id), row]),
     );
-    return uniqueIds.map((customerId) => {
+    return customerIds.map((customerId) => {
       const row = byCustomer.get(customerId);
       return {
         customerId,
