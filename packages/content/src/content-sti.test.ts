@@ -11,6 +11,7 @@ import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Content } from './content';
+import './content-feed-source';
 import { Article, ContentDocument } from './content-types';
 
 describe('Content STI Support', () => {

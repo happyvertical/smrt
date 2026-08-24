@@ -624,14 +624,29 @@ describe('Content governance', () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
+      classes: [
+        'ContentFeedSource',
+        'Content',
+        'ContentVersion',
+        'ContentReview',
+      ],
     });
 
     try {
       await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
 
       const reviews = await ContentReviewCollection.create({ db });
+      const content = new Content({
+        db,
+        name: 'content-review-parent',
+        title: 'Content review parent',
+        status: 'draft',
+        tenantId: 'tenant-1',
+      });
+      await content.initialize();
+      await content.save();
       const created = await reviews.createFromResult({
-        contentId: 'content-1',
+        contentId: content.id as string,
         kind: 'facts',
         policyKey: 'facts',
         result: {
