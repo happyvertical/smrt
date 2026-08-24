@@ -859,11 +859,12 @@ export class ManifestGenerator {
         if (
           field.type !== 'foreignKey' ||
           !field.related ||
-          field._meta?.constraint === false ||
           field._meta?.__tenancy?.isTenantIdField === true
         ) {
           continue;
         }
+
+        const emitConstraint = field._meta?.constraint !== false;
 
         const columnName = toSnakeCase(fieldName);
         const targetSchema = this.findForeignKeyTargetSchema(
@@ -914,12 +915,14 @@ export class ManifestGenerator {
             ...(!field._meta?.sqlType && targetIdType
               ? { type: targetIdType }
               : {}),
-            foreignKey: {
-              table: targetSchema.tableName,
-              column: targetColumn,
-              onDelete: action,
-              onUpdate: 'CASCADE' as const,
-            },
+            foreignKey: emitConstraint
+              ? {
+                  table: targetSchema.tableName,
+                  column: targetColumn,
+                  onDelete: action,
+                  onUpdate: 'CASCADE' as const,
+                }
+              : undefined,
           };
           if (JSON.stringify(nextColumn) === JSON.stringify(sourceColumn)) {
             continue;

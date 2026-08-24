@@ -395,7 +395,6 @@ function applyContributorForeignKeys(
     const column = tableSchema.columns[columnName];
     if (!column) continue;
     if (
-      field._meta?.constraint === false ||
       field._meta?.__tenancy?.isTenantIdField === true ||
       (
         field as FieldDefinition & {
@@ -408,6 +407,30 @@ function applyContributorForeignKeys(
     }
     const [targetName, declaredTargetColumn] = field.related.split('.');
     const targetBase = ObjectRegistry.getSTIBase(targetName) || targetName;
+    const registeredTarget = ObjectRegistry.getClass(targetBase);
+    const targetColumn =
+      declaredTargetColumn ||
+      Array.from(ObjectRegistry.getFields(targetBase).entries()).find(
+        ([, targetField]) => targetField._meta?.primaryKey === true,
+      )?.[0] ||
+      'id';
+    if (registeredTarget && !field._meta?.sqlType) {
+      const targetColumnName = toSnakeCase(targetColumn);
+      const targetColumnType =
+        registeredTarget.schema?.columns?.[targetColumnName]?.type ||
+        (targetColumnName === 'id'
+          ? registeredTarget.config.idType === 'text'
+            ? 'TEXT'
+            : 'UUID'
+          : undefined);
+      if (targetColumnType) {
+        column.type = targetColumnType;
+      }
+    }
+    if (field._meta?.constraint === false) {
+      column.foreignKey = undefined;
+      continue;
+    }
     // A manifest may carry explicit actions that predate or differ from the
     // runtime decorator defaults. Merging runtime fields must not erase them.
     // The fallback produced from runtime fields, however, must be replaced so
@@ -422,16 +445,10 @@ function applyContributorForeignKeys(
     // until that target is registered. Scanner-produced manifests clear this
     // shape too; only an explicit manifest FK above may survive unloaded
     // runtime classes (the manifest-authority contract from #1120).
-    if (!ObjectRegistry.getClass(targetBase)) {
+    if (!registeredTarget) {
       column.foreignKey = undefined;
       continue;
     }
-    const targetColumn =
-      declaredTargetColumn ||
-      Array.from(ObjectRegistry.getFields(targetBase).entries()).find(
-        ([, targetField]) => targetField._meta?.primaryKey === true,
-      )?.[0] ||
-      'id';
     const targetTable =
       ObjectRegistry.getTableName(targetBase) ||
       classnameToTablename(targetBase);

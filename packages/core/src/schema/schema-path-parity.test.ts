@@ -108,10 +108,14 @@ function buildFixtureManifest(): SmartObjectManifest {
 
   // CTI with an inline-unique column (CTI keeps column-level UNIQUE).
   add(
-    objectDef('ParityAuthor', {
-      name: { type: 'text', required: true },
-      email: { type: 'text', _meta: { unique: true } },
-    }),
+    objectDef(
+      'ParityAuthor',
+      {
+        name: { type: 'text', required: true },
+        email: { type: 'text', _meta: { unique: true } },
+      },
+      { idType: 'text' },
+    ),
   );
 
   // CTI with same-package FK, cross-package ref and an `indexed: true` opt-in.
@@ -852,6 +856,12 @@ describe('schema path parity (#2359)', () => {
       expect(manifestSchemas.get('parity_authors')?.columns.email.unique).toBe(
         true,
       );
+      expect(manifestSchemas.get('parity_authors')?.columns.id.type).toBe(
+        'TEXT',
+      );
+      expect(manifestSchemas.get('parity_posts')?.columns.author_id.type).toBe(
+        'TEXT',
+      );
       expect(
         manifestSchemas.get('parity_posts')?.columns.author_id.foreignKey,
       ).toEqual({
@@ -867,6 +877,9 @@ describe('schema path parity (#2359)', () => {
         manifestSchemas.get('parity_posts')?.columns.archive_author_id
           .referenceKind,
       ).toBe('foreignKey');
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.archive_author_id.type,
+      ).toBe('TEXT');
       expect(
         manifestSchemas.get('parity_posts')?.columns.archive_author_id
           .foreignKey,
