@@ -327,7 +327,7 @@ describe('createIsolatedTestDbFromManifest', () => {
             className: 'Child',
             schema: {
               tableName: 'legacy_filter_children',
-              ddl: 'CREATE TABLE "legacy_filter_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "public"."legacy_filter_parents"("id"));',
+              ddl: 'CREATE TABLE "legacy_filter_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "public"."legacy_filter_parents");',
             },
           },
         },
@@ -342,6 +342,44 @@ describe('createIsolatedTestDbFromManifest', () => {
       ).rejects.toThrow(
         'legacy DDL for "legacy_filter_children" references omitted table "legacy_filter_parents"',
       );
+    });
+
+    it('preserves a no-column-list legacy reference when its parent is included', async () => {
+      const manifestPath = join(testDir, 'included-legacy-foreign-key.json');
+      const manifest = {
+        objects: {
+          Parent: {
+            className: 'Parent',
+            schema: {
+              tableName: 'legacy_included_parents',
+              ddl: 'CREATE TABLE "legacy_included_parents" ("id" TEXT PRIMARY KEY);',
+            },
+          },
+          Child: {
+            className: 'Child',
+            schema: {
+              tableName: 'legacy_included_children',
+              ddl: 'CREATE TABLE "legacy_included_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES legacy_included_parents ON DELETE RESTRICT);',
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['Parent', 'Child'],
+      });
+      try {
+        const foreignKeys = await db.query(
+          'PRAGMA foreign_key_list("legacy_included_children")',
+        );
+        expect(foreignKeys.rows).toEqual([
+          expect.objectContaining({ table: 'legacy_included_parents' }),
+        ]);
+      } finally {
+        await cleanup();
+      }
     });
 
     it('should filter using className even when manifest keys are namespaced (Issue #860)', async () => {

@@ -630,7 +630,7 @@ function extractForeignKeyDependencies(ddl: string): string[] {
   const dependencies: string[] = [];
   const identifier = '(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)';
   const regex = new RegExp(
-    `\\bREFERENCES\\s+((?:${identifier}\\s*\\.\\s*)*${identifier})\\s*\\(`,
+    `\\bREFERENCES\\s+((?:${identifier}\\s*\\.\\s*)*${identifier})(?![A-Za-z0-9_$"]|\\s*\\.)`,
     'gi',
   );
 
