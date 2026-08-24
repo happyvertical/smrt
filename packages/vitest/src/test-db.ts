@@ -1206,6 +1206,16 @@ export async function createIsolatedTestDbFromManifest(
     })),
     adapter,
   );
+  if (adapter === 'postgres') {
+    const unstructuredCyclicTables = plan.cyclicTables.filter(
+      (tableName) => !tableMap.get(tableName)?.table.structured,
+    );
+    if (unstructuredCyclicTables.length > 0) {
+      throw new Error(
+        `Cannot safely create PostgreSQL manifest schema: legacy DDL foreign-key cycle includes ${unstructuredCyclicTables.map((tableName) => `"${tableName}"`).join(', ')}. Regenerate a structured manifest so cyclic constraints can be deferred. No schema changes were applied.`,
+      );
+    }
+  }
   const rendered = plan.schemas.flatMap((definition) => {
     const table = tableMap.get(definition.tableName);
     return table

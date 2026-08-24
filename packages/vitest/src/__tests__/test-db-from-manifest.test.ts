@@ -1081,6 +1081,73 @@ describe('createIsolatedTestDbFromManifest', () => {
         }
       },
     );
+
+    it.skipIf(!process.env.DATABASE_URL)(
+      'refuses a legacy PostgreSQL cycle before applying partial DDL',
+      async () => {
+        const suffix = Date.now().toString(36);
+        const tableA = `vitest_legacy_cycle_a_${suffix}`;
+        const tableB = `vitest_legacy_cycle_b_${suffix}`;
+        const manifestPath = join(testDir, 'postgres-legacy-cycle-test.json');
+        writeFileSync(
+          manifestPath,
+          JSON.stringify({
+            objects: {
+              CycleA: {
+                className: 'CycleA',
+                schema: {
+                  tableName: tableA,
+                  ddl: `CREATE TABLE IF NOT EXISTS "${tableA}" ("id" TEXT PRIMARY KEY, "b_id" TEXT REFERENCES "${tableB}"("id"));`,
+                },
+              },
+              CycleB: {
+                className: 'CycleB',
+                schema: {
+                  tableName: tableB,
+                  ddl: `CREATE TABLE IF NOT EXISTS "${tableB}" ("id" TEXT PRIMARY KEY, "a_id" TEXT REFERENCES "${tableA}"("id"));`,
+                },
+              },
+            },
+          }),
+        );
+
+        await expect(
+          createIsolatedTestDbFromManifest({ manifestPath }),
+        ).rejects.toThrow(
+          /Cannot safely create PostgreSQL manifest schema.*legacy DDL foreign-key cycle.*No schema changes were applied/,
+        );
+
+        const probePath = join(testDir, 'postgres-legacy-cycle-probe.json');
+        writeFileSync(
+          probePath,
+          JSON.stringify({
+            objects: {
+              Probe: {
+                className: 'Probe',
+                schema: {
+                  tableName: `vitest_legacy_cycle_probe_${suffix}`,
+                  columns: {
+                    id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  },
+                },
+              },
+            },
+          }),
+        );
+        const probe = await createIsolatedTestDbFromManifest({
+          manifestPath: probePath,
+        });
+        try {
+          const result = await probe.baseDb.query(
+            `SELECT to_regclass($1) AS table_a, to_regclass($2) AS table_b`,
+            [tableA, tableB],
+          );
+          expect(result.rows).toEqual([{ table_a: null, table_b: null }]);
+        } finally {
+          await probe.cleanup();
+        }
+      },
+    );
   });
 
   describe('transaction isolation', () => {
