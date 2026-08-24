@@ -563,4 +563,75 @@ describe('existing-table orphan safety (#2413)', () => {
     expect(change?.sqlStatements).toBeUndefined();
     expect(change?.advisory?.message).toMatch(/Repair them, then rerun/);
   });
+
+  it('defers the orphan check when the FK column is added in the same PostgreSQL diff', async () => {
+    const mock = postgresMock(false);
+    mock.db.getTableSchema = async () => ({
+      columns: {
+        id: { name: 'id', type: 'text', primaryKey: true },
+      },
+      indexes: [],
+      foreignKeys: [],
+    });
+
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: child });
+    const foreignKey = diff.changes.find(
+      (candidate) => candidate.type === 'add_foreign_key',
+    );
+
+    expect(diff.changes.some((change) => change.type === 'add_column')).toBe(
+      true,
+    );
+    expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(false);
+    expect(foreignKey?.sqlStatements).toEqual([
+      'ALTER TABLE "children" ADD CONSTRAINT "children_parent_id_parents_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") ON DELETE NO ACTION ON UPDATE CASCADE NOT VALID',
+      'ALTER TABLE "children" VALIDATE CONSTRAINT "children_parent_id_parents_id_fkey"',
+    ]);
+  });
+
+  it('normalizes accepted manifest action spellings before live comparison', async () => {
+    const mock = postgresMock(false);
+    mock.db.getTableSchema = async () => ({
+      columns: {
+        id: { name: 'id', type: 'text', primaryKey: true },
+        parent_id: { name: 'parent_id', type: 'text' },
+      },
+      indexes: [],
+      foreignKeys: [
+        {
+          column: 'parent_id',
+          referencesTable: 'parents',
+          referencesColumn: 'id',
+          onDelete: 'SET NULL',
+          onUpdate: 'CASCADE',
+        },
+      ],
+    });
+    const legacyActions = structuredClone(child);
+    legacyActions.foreignKeys[0].onDelete = 'set_null' as ForeignKeyAction;
+    legacyActions.foreignKeys[0].onUpdate = 'cascade' as ForeignKeyAction;
+
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: legacyActions });
+
+    expect(
+      diff.changes.some((change) => change.type === 'add_foreign_key'),
+    ).toBe(false);
+    expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(false);
+  });
+
+  it('rejects invalid manifest actions during live comparison', async () => {
+    const mock = postgresMock(false);
+    const invalid = structuredClone(child);
+    invalid.foreignKeys[0].onDelete = 'surprise' as ForeignKeyAction;
+
+    await expect(
+      new SchemaComparer(mock.db as never, {
+        engineHint: 'postgres',
+      }).compare({ children: invalid }),
+    ).rejects.toThrow(/Invalid foreign-key action/);
+  });
 });

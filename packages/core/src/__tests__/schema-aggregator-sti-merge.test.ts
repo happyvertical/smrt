@@ -139,6 +139,15 @@ describe('SchemaAggregator STI merge', () => {
         .slice(0, cycle.sql.indexOf('-- Deferred foreign-key constraints'))
         .includes('FOREIGN KEY'),
     ).toBe(false);
+    for (const table of cycle.tables.values()) {
+      expect(table.definition.foreignKeys).toEqual([]);
+      expect(
+        Object.values(table.definition.columns).every(
+          (column) => column.foreignKey === undefined,
+        ),
+      ).toBe(true);
+      expect(table.ddl).not.toContain('FOREIGN KEY');
+    }
   });
 
   it('refuses minimal output when legacy cached DDL still references a filtered table', () => {

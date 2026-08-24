@@ -475,6 +475,7 @@ export class SchemaAggregator {
     for (const definition of plan.schemas) {
       const tableName = definition.tableName;
       const table = tables.get(tableName) as AggregatedTable;
+      table.definition = definition;
       const rendered = renderCollectedManifestTable(
         {
           tableName,

@@ -15,7 +15,10 @@ import {
   renderForeignKeyOrphanRepair,
   schemaForeignKeys,
 } from '../schema/foreign-key-ddl.js';
-import { normalizeForeignKeyAction } from '../schema/foreign-key-policy.js';
+import {
+  normalizeForeignKeyAction,
+  requireForeignKeyAction,
+} from '../schema/foreign-key-policy.js';
 import type {
   ColumnAlteration,
   ColumnDefinition,
@@ -572,8 +575,20 @@ export class SchemaComparer {
     const changes: SchemaChange[] = [];
     const liveForeignKeys = dbSchema.foreignKeys || [];
     for (const foreignKey of schemaForeignKeys(manifest)) {
-      const expectedDelete = foreignKey.onDelete || 'NO ACTION';
-      const expectedUpdate = foreignKey.onUpdate || 'NO ACTION';
+      const expectedDelete =
+        foreignKey.onDelete === undefined
+          ? 'NO ACTION'
+          : requireForeignKeyAction(
+              foreignKey.onDelete,
+              `${tableName}.${foreignKey.column} ON DELETE`,
+            );
+      const expectedUpdate =
+        foreignKey.onUpdate === undefined
+          ? 'NO ACTION'
+          : requireForeignKeyAction(
+              foreignKey.onUpdate,
+              `${tableName}.${foreignKey.column} ON UPDATE`,
+            );
       const exact = liveForeignKeys.some(
         (live) =>
           live.column === foreignKey.column &&
@@ -627,7 +642,15 @@ export class SchemaComparer {
         continue;
       }
 
-      if (await this.foreignKeyHasOrphans(tableName, foreignKey)) {
+      // A missing child column is added earlier in this same table diff, so
+      // probing the pre-migration schema would fail and be misclassified as
+      // an orphan. The subsequent NOT VALID + VALIDATE statements remain the
+      // authoritative safety check once the prerequisite column exists.
+      const childColumnExists = Boolean(dbSchema.columns[foreignKey.column]);
+      if (
+        childColumnExists &&
+        (await this.foreignKeyHasOrphans(tableName, foreignKey))
+      ) {
         changes.push({
           type: 'add_foreign_key',
           table: tableName,
