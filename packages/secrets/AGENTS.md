@@ -37,6 +37,10 @@ Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
 - **Expired secrets filtered by default**: pass `includeExpired: true` to list them
 - **TenantKeyCollection.cleanupRetiredKeys()**: hard-deletes after 90 days
 - **Audit logging optional but default**: failures logged to console, not thrown
+- **Audit rows outlive secrets**: `SecretAuditLog.secretId` uses the explicit
+  same-package app-side-only FK option. It retains relationship metadata and an
+  index, but emits no physical constraint because compliance logs are retained
+  for 1-7 years while secrets may be deleted or purged during key-drift repair.
 
 ## Known exceptions to monorepo standards
 
@@ -63,4 +67,5 @@ inline comment pointing back to this section.
   `@happyvertical/smrt-tenancy` at the call site — there are no such cross-
   tenant call sites in this package today, but consumers building compliance
   tooling should adopt that pattern explicitly rather than relying on
-  decorator-implicit filtering.
+  decorator-implicit filtering. Its `secretId` relationship is also deliberately
+  app-side-only so immutable audit history can survive deletion of the secret.

@@ -9,6 +9,7 @@
  * 5. Audit logging
  */
 
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   disableTenancy,
@@ -65,6 +66,22 @@ describe('SecretService', () => {
   afterEach(() => {
     disableTenancy();
     delete process.env.SMRT_SECRET_MASTER_KEY;
+  });
+
+  it('keeps retained secret audit history app-side only', async () => {
+    const fields = await ObjectRegistry.getAllFields('SecretAuditLog');
+    const schema =
+      ObjectRegistry.getAllSchemasAsDefinitions().secret_audit_logs;
+
+    expect(fields.get('secretId')?.type).toBe('foreignKey');
+    expect(fields.get('secretId')?._meta?.constraint).toBe(false);
+    expect(schema.columns.secret_id.referenceKind).toBe('foreignKey');
+    expect(schema.columns.secret_id.foreignKey).toBeUndefined();
+    expect(schema.foreignKeys).toEqual([]);
+    expect(schema.dependencies).not.toContain('secrets');
+    expect(
+      schema.indexes.some((index) => index.columns[0] === 'secret_id'),
+    ).toBe(true);
   });
 
   describe('Basic operations', () => {

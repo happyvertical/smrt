@@ -241,6 +241,17 @@ export function buildCascadePlan(
       }
       if (!targetNames.has(relationship.targetClass)) continue;
 
+      // An explicit app-side-only relationship is archival metadata, not a
+      // referential-integrity rule. Its identifier is deliberately allowed to
+      // outlive the parent, so delete planning must not block, null, or remove
+      // the retained row (#2413).
+      if (
+        relationship.type === 'foreignKey' &&
+        relationship.options?.constraint === false
+      ) {
+        continue;
+      }
+
       const tableName = registry.getTableName(sourceClass);
       if (!tableName) continue;
 

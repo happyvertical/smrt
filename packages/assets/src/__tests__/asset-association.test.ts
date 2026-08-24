@@ -13,8 +13,11 @@
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import '../asset';
+import '../folder';
 import type { AssetAssociation } from '../asset-association';
 import { AssetAssociationCollection } from '../asset-associations';
+import { AssetCollection } from '../assets';
 
 describe('AssetAssociation tenant scoping', () => {
   let db: DatabaseInterface;
@@ -23,6 +26,10 @@ describe('AssetAssociation tenant scoping', () => {
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     collection = await AssetAssociationCollection.create({ db });
+    const assets = await AssetCollection.create({ db });
+    for (const assetId of ['asset-1', 'asset-2', 'asset-3', 'asset-4']) {
+      await assets.create({ id: assetId, name: `Fixture ${assetId}` });
+    }
   });
 
   afterEach(async () => {

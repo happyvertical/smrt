@@ -207,10 +207,11 @@ export interface RelationshipFieldOptions extends FieldOptions {
    * must deliberately survive without a database parent row (for example an
    * immutable audit/event record retained after its parent is pruned).
    *
-   * The field remains a typed `foreignKey` relationship for loading, indexes,
-   * and application-side delete policy, but no physical DDL constraint or
-   * schema dependency is emitted. Ordinary same-package relationships must
-   * leave this enabled (the default).
+   * The field remains a typed `foreignKey` relationship for loading and
+   * indexes, but no physical DDL constraint, schema dependency, or app-side
+   * delete action is emitted. The stored identifier is deliberately preserved
+   * after the parent is deleted. Ordinary same-package relationships must leave
+   * this enabled (the default).
    */
   constraint?: boolean;
 }
@@ -397,8 +398,9 @@ export function field(
  * A named database constraint is emitted on supported engines by default, and
  * the same action is enforced by `SmrtObject.delete()` before the engine sees
  * it. Exceptional archival/audit references that intentionally outlive their
- * parent may declare `{ constraint: false }`; they retain relationship loading,
- * indexing, and application-side policy without emitting physical DDL. The
+ * parent may declare `{ constraint: false }`; they retain relationship loading
+ * and indexing while deliberately preserving the identifier after parent
+ * deletion and omitting physical DDL. The
  * decorator also enables `loadRelated()` and eager `include:` loading:
  *
  * ```typescript

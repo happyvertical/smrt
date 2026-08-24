@@ -217,7 +217,8 @@ immediate `NO ACTION`, matching `SmrtObject.delete()`.
 Same-package archival/audit identifiers that intentionally outlive their
 parent may use `@foreignKey(Target, { constraint: false })`. This explicit
 exception retains relationship loading, indexing, and application-side delete
-policy while omitting only the physical constraint and schema dependency;
+metadata while omitting the physical constraint, schema dependency, and
+app-side cascade/preflight action so the stored identifier survives deletion;
 document the retention reason at the field, and keep ordinary same-package
 relationships constrained.
 

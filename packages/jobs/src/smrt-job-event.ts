@@ -87,8 +87,9 @@ export class SmrtJobEvent extends SmrtObject {
 
   // Job events intentionally outlive completed job rows (30-day event
   // retention vs 7-day completed-job retention). Keep the typed relationship,
-  // index, and application-side policy, but do not install a physical FK that
-  // would make the documented retention sweep impossible (#2375, #2413).
+  // index, and retained job identifier, but do not install a physical FK or
+  // app-side delete action that would make the documented retention sweep
+  // impossible (#2375, #2413).
   @foreignKey('SmrtJob', { required: true, constraint: false })
   jobId: string = '';
 

@@ -93,7 +93,9 @@ describe('events tenant isolation (#1600)', () => {
 
   it('EventParticipantCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const participants = await EventParticipantCollection.create({ db });
+    const events = await EventCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await events.create({ id: 'e1', name: 'tenant-1 parent' });
       await (
         await participants.create({
           eventId: 'e1',
@@ -104,6 +106,7 @@ describe('events tenant isolation (#1600)', () => {
       ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await events.create({ id: 'e2', name: 'tenant-2 parent' });
       await (
         await participants.create({
           eventId: 'e2',
@@ -114,6 +117,7 @@ describe('events tenant isolation (#1600)', () => {
       ).save();
     });
     await withSystemContext(async () => {
+      await events.create({ id: 'eg', name: 'global parent' });
       await (
         await participants.create({
           eventId: 'eg',

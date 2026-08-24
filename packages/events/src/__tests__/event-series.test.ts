@@ -15,6 +15,7 @@ import {
   EventCollection,
   EventSeries,
   EventSeriesCollection,
+  EventTypeCollection,
 } from '../index.js';
 import type { RecurrencePattern } from '../types';
 
@@ -26,6 +27,17 @@ async function makeSeries(name: string, dbUrl = getTestDbUrl(name)) {
   const series = await EventSeriesCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  const types = await EventTypeCollection.create({
+    db: { type: 'sqlite', url: dbUrl },
+  });
+  for (const [id, typeName] of [
+    ['concert', 'Concert'],
+    ['meeting', 'Meeting'],
+    ['type-x', 'Type X'],
+    ['type-y', 'Type Y'],
+  ]) {
+    await types.create({ id, name: typeName });
+  }
   return { dbUrl, series };
 }
 

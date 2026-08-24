@@ -132,6 +132,23 @@ class CascadeNoteCollection extends SmrtCollection<CascadeNote> {
   static readonly _itemClass = CascadeNote;
 }
 
+/** Archival row whose source identifier deliberately survives parent deletion. */
+@smrt({ tableName: 'cascade_2371_audits' })
+class CascadeAudit extends SmrtObject {
+  @foreignKey('CascadeDoc', { constraint: false })
+  docId = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.docId !== undefined) this.docId = options.docId;
+  }
+}
+
+@smrt()
+class CascadeAuditCollection extends SmrtCollection<CascadeAudit> {
+  static readonly _itemClass = CascadeAudit;
+}
+
 /** Explicit opt-in cascade on a child that is not part of any natural key. */
 @smrt({ tableName: 'cascade_2371_sections' })
 class CascadeSection extends SmrtObject {
@@ -578,6 +595,19 @@ describe('delete() referential integrity (#2371)', () => {
   });
 
   describe('onDelete actions', () => {
+    it('preserves app-side-only archival identifiers after parent deletion', async () => {
+      const audits = await collectionOn(CascadeAuditCollection);
+      const doc = await makeDoc('audited');
+      const audit = await audits.create({ docId: doc.id } as any);
+      await audit.save();
+
+      await doc.delete();
+
+      const rows = await audits.list();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.docId).toBe(doc.id);
+    });
+
     it('CASCADE removes children and their own children', async () => {
       const sections = await collectionOn(CascadeSectionCollection);
       const blocks = await collectionOn(CascadeBlockCollection);
@@ -999,6 +1029,15 @@ describe('cascade plan (#2371)', () => {
         (reference) => reference.className === 'CascadeNote',
       ),
     ).toBe(true);
+  });
+
+  it('omits app-side-only archival references from delete planning', () => {
+    const plan = buildCascadePlan(ObjectRegistry, 'CascadeDoc');
+    expect(
+      plan.references.some(
+        (reference) => reference.className === 'CascadeAudit',
+      ),
+    ).toBe(false);
   });
 
   it('records the declared actions it will apply', () => {

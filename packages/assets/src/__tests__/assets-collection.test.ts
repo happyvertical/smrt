@@ -9,6 +9,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Asset } from '../asset';
 import { AssetCollection } from '../assets';
+import { FolderCollection } from '../folders';
 
 describe('AssetCollection', () => {
   let db: DatabaseInterface;
@@ -107,6 +108,8 @@ describe('AssetCollection', () => {
 
     it('getByFolder / getDerivatives filter on their FK', async () => {
       const source = await seed({ name: 'source' });
+      const folders = await FolderCollection.create({ db });
+      await folders.create({ id: 'f1', name: 'Fixture folder' });
       await seed({ folderId: 'f1', name: 'inFolder' });
       await seed({ sourceAssetId: source.id, name: 'derived' });
 

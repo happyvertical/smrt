@@ -13,7 +13,12 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Event, EventCollection } from '../index.js';
+import {
+  Event,
+  EventCollection,
+  EventSeriesCollection,
+  EventTypeCollection,
+} from '../index.js';
 
 function getTestDbUrl(name: string): string {
   return `file:${join(tmpdir(), `${name}-${randomUUID()}.db`)}`;
@@ -215,7 +220,17 @@ describe('Event hierarchy', () => {
 
 describe('EventCollection queries', () => {
   it('filters by series, place, type, status, and parent', async () => {
-    const { events } = await makeEvents('coll-filters');
+    const { dbUrl, events } = await makeEvents('coll-filters');
+    const series = await EventSeriesCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    const types = await EventTypeCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    await series.create({ id: 's1', name: 'Series 1' });
+    await series.create({ id: 's2', name: 'Series 2' });
+    await types.create({ id: 't1', name: 'Type 1' });
+    await types.create({ id: 't2', name: 'Type 2' });
 
     const a = await events.create({
       name: 'A',

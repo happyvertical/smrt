@@ -29,6 +29,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import '../folder';
 import { AssetCollection } from '../assets';
 
 const sorted = (rows: Array<Record<string, any>>, field: string): string[] =>
