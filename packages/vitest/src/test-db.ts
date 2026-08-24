@@ -45,7 +45,10 @@ import {
   ensureSystemTables,
   isSmrtCollectionExtendsName,
 } from '@happyvertical/smrt-core';
-import { planForeignKeyCreation } from '@happyvertical/smrt-core/schema';
+import {
+  foreignKeyConstraintName,
+  planForeignKeyCreation,
+} from '@happyvertical/smrt-core/schema';
 import {
   type CollectedManifestTable,
   collectManifestTables,
@@ -477,7 +480,7 @@ export async function createIsolatedTestDb(
 
 async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
-  postSchemaStatements: readonly string[],
+  postSchemaStatements: readonly PostSchemaStatement[],
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -522,8 +525,33 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // handles schema definitions rather than arbitrary follow-up statements, so
   // execute the planner's deferred constraints explicitly before opening the
   // test transaction.
-  for (const statement of postSchemaStatements) {
-    await baseDb.query(statement);
+  for (const deferred of postSchemaStatements) {
+    if (
+      await postgresConstraintExists(
+        baseDb,
+        deferred.tableName,
+        deferred.constraintName,
+      )
+    ) {
+      continue;
+    }
+    try {
+      await baseDb.query(deferred.statement);
+    } catch (error) {
+      // Parallel test factories may both observe the constraint as absent.
+      // Treat the losing ADD as successful only when the exact table/name is
+      // now present; otherwise preserve the original database failure.
+      if (
+        await postgresConstraintExists(
+          baseDb,
+          deferred.tableName,
+          deferred.constraintName,
+        )
+      ) {
+        continue;
+      }
+      throw error;
+    }
   }
 
   // Transaction handles are passed to SMRT objects as already-initialized
@@ -589,6 +617,35 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   };
 
   return { db, baseDb, config, cleanup };
+}
+
+interface PostSchemaStatement {
+  statement: string;
+  tableName: string;
+  constraintName: string;
+}
+
+async function postgresConstraintExists(
+  db: DatabaseInterfaceWithTransaction,
+  tableName: string,
+  constraintName: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1
+     FROM pg_constraint AS constraint_row
+     JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+     JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+     WHERE table_row.relname = $1
+       AND namespace_row.nspname = current_schema()
+       AND constraint_row.conname = $2
+       AND constraint_row.contype = 'f'
+     LIMIT 1`,
+    [tableName, constraintName],
+  );
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] }).rows ?? []);
+  return rows.length > 0;
 }
 
 // ============================================================================
@@ -1181,6 +1238,10 @@ export async function createIsolatedTestDbFromManifest(
   // 4. Delegate to existing function
   return createIsolatedTestDbWithPostSchemaStatements(
     { schema: sortedDDL, prefix },
-    plan.deferredStatements,
+    plan.deferredConstraints.map(({ table, foreignKey }, index) => ({
+      statement: plan.deferredStatements[index] as string,
+      tableName: table,
+      constraintName: foreignKeyConstraintName(table, foreignKey),
+    })),
   );
 }

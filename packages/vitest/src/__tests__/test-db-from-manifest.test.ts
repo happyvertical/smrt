@@ -1034,11 +1034,16 @@ describe('createIsolatedTestDbFromManifest', () => {
         };
         writeFileSync(manifestPath, JSON.stringify(manifest));
 
-        const { db, cleanup } = await createIsolatedTestDbFromManifest({
-          manifestPath,
-        });
-        try {
-          const constraints = await db.query(
+        const createCycleDb = () =>
+          createIsolatedTestDbFromManifest({ manifestPath });
+        const expectedConstraintTables = [
+          { table_name: 'vitest_cycle_a' },
+          { table_name: 'vitest_cycle_b' },
+        ];
+        const readConstraintTables = async (
+          db: Awaited<ReturnType<typeof createCycleDb>>['db'],
+        ) => {
+          const result = await db.query(
             `SELECT conrelid::regclass::text AS table_name
              FROM pg_constraint
              WHERE contype = 'f'
@@ -1048,12 +1053,31 @@ describe('createIsolatedTestDbFromManifest', () => {
                )
              ORDER BY table_name`,
           );
-          expect(constraints.rows).toEqual([
-            { table_name: 'vitest_cycle_a' },
-            { table_name: 'vitest_cycle_b' },
-          ]);
+          return result.rows;
+        };
+
+        const initial = await createCycleDb();
+        try {
+          expect(await readConstraintTables(initial.db)).toEqual(
+            expectedConstraintTables,
+          );
         } finally {
-          await cleanup();
+          await initial.cleanup();
+        }
+
+        const [repeated, concurrent] = await Promise.all([
+          createCycleDb(),
+          createCycleDb(),
+        ]);
+        try {
+          expect(await readConstraintTables(repeated.db)).toEqual(
+            expectedConstraintTables,
+          );
+          expect(await readConstraintTables(concurrent.db)).toEqual(
+            expectedConstraintTables,
+          );
+        } finally {
+          await Promise.all([repeated.cleanup(), concurrent.cleanup()]);
         }
       },
     );
