@@ -391,6 +391,7 @@ describe('AgreementExecutionService', () => {
       expect(executed?.auditTrailSizeBytes).toBe(AUDIT.byteLength);
       expect(executed?.auditTrailFilename).toBe('audit_trail.pdf');
       expect(executed?.signerEvidence).toContain('signer@example.test');
+      expect(executed?.supersedesExecutedAgreementId).toBeNull();
 
       if (!executed) throw new Error('expected executed agreement');
       executed.signedDocumentSha256 = 'tampered';

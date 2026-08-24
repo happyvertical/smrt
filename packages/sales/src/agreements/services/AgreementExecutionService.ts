@@ -824,7 +824,8 @@ export class AgreementExecutionService {
       acceptedAt,
       effectiveFrom: execution.effectiveFrom ?? acceptedAt,
       effectiveTo: execution.effectiveTo,
-      supersedesExecutedAgreementId: execution.supersedesExecutedAgreementId,
+      supersedesExecutedAgreementId:
+        execution.supersedesExecutedAgreementId || null,
       metadata: execution.metadata,
     });
     await this.ensureExecutedAgreementAssociations(created.agreement);
