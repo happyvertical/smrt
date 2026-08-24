@@ -993,6 +993,70 @@ describe('createIsolatedTestDbFromManifest', () => {
         await cleanup();
       }
     });
+
+    it.skipIf(!process.env.DATABASE_URL)(
+      'defers structured mutual-cycle constraints on PostgreSQL',
+      async () => {
+        const manifestPath = join(testDir, 'postgres-cycle-test.json');
+        const relationship = (table: string) => ({
+          type: 'TEXT' as const,
+          referenceKind: 'foreignKey' as const,
+          foreignKey: {
+            table,
+            column: 'id',
+            onDelete: 'NO ACTION' as const,
+            onUpdate: 'CASCADE' as const,
+          },
+        });
+        const manifest = {
+          objects: {
+            CycleA: {
+              className: 'CycleA',
+              schema: {
+                tableName: 'vitest_cycle_a',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  b_id: relationship('vitest_cycle_b'),
+                },
+              },
+            },
+            CycleB: {
+              className: 'CycleB',
+              schema: {
+                tableName: 'vitest_cycle_b',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  a_id: relationship('vitest_cycle_a'),
+                },
+              },
+            },
+          },
+        };
+        writeFileSync(manifestPath, JSON.stringify(manifest));
+
+        const { db, cleanup } = await createIsolatedTestDbFromManifest({
+          manifestPath,
+        });
+        try {
+          const constraints = await db.query(
+            `SELECT conrelid::regclass::text AS table_name
+             FROM pg_constraint
+             WHERE contype = 'f'
+               AND conrelid IN (
+                 'vitest_cycle_a'::regclass,
+                 'vitest_cycle_b'::regclass
+               )
+             ORDER BY table_name`,
+          );
+          expect(constraints.rows).toEqual([
+            { table_name: 'vitest_cycle_a' },
+            { table_name: 'vitest_cycle_b' },
+          ]);
+        } finally {
+          await cleanup();
+        }
+      },
+    );
   });
 
   describe('transaction isolation', () => {
