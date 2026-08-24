@@ -9,6 +9,7 @@ import {
   migrateReportSavedView,
   normalizeReportSavedView,
   previewReportExport,
+  ReportSurfaceValidationError,
   restoreReportSavedView,
   validateReportExportArtifact,
   validateReportExportExecution,
@@ -332,6 +333,24 @@ describe('report saved views and exports', () => {
       freshness: { asOf: AS_OF },
       snapshot: { asOf: AS_OF, refreshedAt: REFRESHED_AT },
     });
+    expect(() =>
+      verifyReportExportSnapshot(report, {
+        ...snapshot,
+        unexpected: true,
+      } as unknown as typeof snapshot),
+    ).toThrow(ReportSurfaceValidationError);
+    expect(() =>
+      verifyReportExportSnapshot(report, {
+        ...snapshot,
+        freshness: { ...snapshot.freshness, unexpected: true },
+      } as unknown as typeof snapshot),
+    ).toThrow(ReportSurfaceValidationError);
+    expect(() =>
+      verifyReportExportSnapshot(report, {
+        ...snapshot,
+        snapshot: { ...snapshot.snapshot, unexpected: true },
+      } as unknown as typeof snapshot),
+    ).toThrow(ReportSurfaceValidationError);
     expect(
       createReportExportRequest(report, revalidatedOffsetSnapshot, {
         format: 'csv',
@@ -562,5 +581,22 @@ describe('report saved views and exports', () => {
         new Date('2026-08-23T22:30:00.000Z'),
       ),
     ).toThrow(/must match the requested truncation state/);
+    expect(() =>
+      validateReportExportArtifact(
+        report,
+        { ...artifact, unexpected: true } as unknown as typeof artifact,
+        new Date('2026-08-23T22:30:00.000Z'),
+      ),
+    ).toThrow(ReportSurfaceValidationError);
+    expect(() =>
+      validateReportExportArtifact(
+        report,
+        {
+          ...artifact,
+          progress: { ...artifact.progress, unexpected: true },
+        } as unknown as typeof artifact,
+        new Date('2026-08-23T22:30:00.000Z'),
+      ),
+    ).toThrow(ReportSurfaceValidationError);
   });
 });

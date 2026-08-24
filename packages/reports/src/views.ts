@@ -299,6 +299,18 @@ function plainObject(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function exactKeys(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) {
+      fail(`${label} contains an unsupported field: ${key}`);
+    }
+  }
+}
+
 function requiredString(
   value: unknown,
   label: string,
@@ -358,6 +370,7 @@ function normalizeIso(value: unknown, label: string): string {
 
 function normalizeSnapshotBinding(value: unknown): ReportExportSnapshotBinding {
   const input = plainObject(value, 'Report export snapshot binding');
+  exactKeys(input, ['id'], 'Report export snapshot binding');
   return {
     id: requiredString(input.id, 'Report export snapshot binding id'),
   };
@@ -745,6 +758,26 @@ export function verifyReportExportSnapshot(
   descriptor: ReportAdapterDescriptor,
   snapshot: ReportExportSnapshot,
 ): ReportExportSnapshot {
+  const input = plainObject(snapshot, 'Report export snapshot');
+  exactKeys(
+    input,
+    [
+      'version',
+      'resourceId',
+      'reportClassName',
+      'definitionFingerprint',
+      'binding',
+      'request',
+      'queryFingerprint',
+      'projection',
+      'sort',
+      'freshness',
+      'snapshot',
+      'total',
+      'inherits',
+    ],
+    'Report export snapshot',
+  );
   if (snapshot.version !== 1)
     return fail('Report export snapshot version is unsupported');
   if (
@@ -780,23 +813,65 @@ export function verifyReportExportSnapshot(
       { field: descriptor.identityField, direction: 'asc' },
     ];
   if (
-    stable(snapshot.projection) !== stable(expectedProjection) ||
-    stable(snapshot.sort) !== stable(expectedSort)
+    !Array.isArray(snapshot.projection) ||
+    snapshot.projection.some((field) => typeof field !== 'string')
+  ) {
+    return fail('Report export snapshot projection is invalid');
+  }
+  if (
+    snapshot.projection.length !== expectedProjection.length ||
+    snapshot.projection.some(
+      (field, index) => field !== expectedProjection[index],
+    )
   ) {
     return fail('Report export snapshot projection or sort has changed');
   }
+  if (!Array.isArray(snapshot.sort)) {
+    return fail('Report export snapshot sort is invalid');
+  }
+  const sort = snapshot.sort.map((value) => {
+    const sortInput = plainObject(value, 'Report export snapshot sort');
+    exactKeys(sortInput, ['field', 'direction'], 'Report export snapshot sort');
+    return {
+      field: requiredString(
+        sortInput.field,
+        'Report export snapshot sort field',
+      ),
+      direction: requiredString(
+        sortInput.direction,
+        'Report export snapshot sort direction',
+      ),
+    };
+  });
+  if (stable(sort) !== stable(expectedSort)) {
+    return fail('Report export snapshot projection or sort has changed');
+  }
+  const freshness = plainObject(
+    snapshot.freshness,
+    'Report export snapshot freshness',
+  );
+  exactKeys(freshness, ['state', 'asOf'], 'Report export snapshot freshness');
+  const materialization = plainObject(
+    snapshot.snapshot,
+    'Report export snapshot materialization',
+  );
+  exactKeys(
+    materialization,
+    ['asOf', 'refreshedAt', 'stale'],
+    'Report export snapshot materialization',
+  );
+  const total = plainObject(snapshot.total, 'Report export snapshot total');
+  exactKeys(total, ['kind', 'value'], 'Report export snapshot total');
+  const totalValue = total.value;
   const asOf = normalizeIso(
-    snapshot.snapshot.asOf,
+    materialization.asOf,
     'Report export snapshot asOf',
   );
-  if (
-    snapshot.freshness.state !== 'fresh' &&
-    snapshot.freshness.state !== 'stale'
-  ) {
+  if (freshness.state !== 'fresh' && freshness.state !== 'stale') {
     return fail('Report export snapshot freshness state is invalid');
   }
   const freshnessAsOf = normalizeIso(
-    snapshot.freshness.asOf,
+    freshness.asOf,
     'Report export snapshot freshness asOf',
   );
   if (freshnessAsOf !== asOf) {
@@ -804,37 +879,50 @@ export function verifyReportExportSnapshot(
       'Report export snapshot freshness does not match its as-of instant',
     );
   }
-  const refreshedAt = snapshot.snapshot.refreshedAt
+  const refreshedAt = materialization.refreshedAt
     ? normalizeIso(
-        snapshot.snapshot.refreshedAt,
+        materialization.refreshedAt,
         'Report export snapshot refreshedAt',
       )
     : undefined;
-  if (snapshot.snapshot.stale !== (snapshot.freshness.state === 'stale')) {
+  if (materialization.stale !== (freshness.state === 'stale')) {
     return fail('Report export snapshot stale state is invalid');
   }
   if (
-    snapshot.total.kind !== 'exact' ||
-    !Number.isSafeInteger(snapshot.total.value) ||
-    snapshot.total.value < 0
+    total.kind !== 'exact' ||
+    typeof totalValue !== 'number' ||
+    !Number.isSafeInteger(totalValue) ||
+    totalValue < 0
   ) {
     return fail('Report export snapshot row count is invalid');
   }
-  if (stable(snapshot.inherits) !== stable([...INHERITED_REPORT_SCOPE])) {
+  if (
+    !Array.isArray(snapshot.inherits) ||
+    snapshot.inherits.some((value) => typeof value !== 'string') ||
+    snapshot.inherits.length !== INHERITED_REPORT_SCOPE.length ||
+    snapshot.inherits.some(
+      (value, index) => value !== INHERITED_REPORT_SCOPE[index],
+    )
+  ) {
     return fail('Report export snapshot inheritance contract is invalid');
   }
   return {
-    ...snapshot,
+    version: 1,
+    resourceId: descriptor.resourceId,
+    reportClassName: descriptor.reportClassName,
+    definitionFingerprint: reportDefinitionFingerprint(descriptor),
     binding,
     request: normalized,
+    queryFingerprint: createDataQueryFingerprint(normalized, descriptor.schema),
     projection: [...expectedProjection],
-    sort: [...expectedSort],
-    freshness: { ...snapshot.freshness, asOf: freshnessAsOf },
+    sort: expectedSort.map(({ field, direction }) => ({ field, direction })),
+    freshness: { state: freshness.state, asOf: freshnessAsOf },
     snapshot: {
-      ...snapshot.snapshot,
       asOf,
+      stale: materialization.stale,
       ...(refreshedAt === undefined ? {} : { refreshedAt }),
     },
+    total: { kind: 'exact', value: totalValue },
     inherits: [...INHERITED_REPORT_SCOPE],
   };
 }
@@ -1121,8 +1209,14 @@ export function validateReportExportArtifact(
   artifact: ReportExportArtifact,
   now = new Date(),
 ): ReportExportArtifact {
+  const input = plainObject(artifact, 'Report export artifact');
+  exactKeys(
+    input,
+    ['id', 'request', 'progress', 'expiresAt'],
+    'Report export artifact',
+  );
   const request = validateReportExportRequest(descriptor, artifact.request);
-  requiredString(artifact.id, 'Report export artifact id');
+  const id = requiredString(artifact.id, 'Report export artifact id');
   const expiresAt = normalizeIso(
     artifact.expiresAt,
     'Report export artifact expiresAt',
@@ -1132,6 +1226,11 @@ export function validateReportExportArtifact(
   }
   const progress = plainObject(
     artifact.progress,
+    'Report export artifact progress',
+  );
+  exactKeys(
+    progress,
+    ['state', 'rowCount', 'byteCount', 'truncated'],
     'Report export artifact progress',
   );
   const state = progress.state;
@@ -1170,7 +1269,7 @@ export function validateReportExportArtifact(
     );
   }
   return {
-    ...artifact,
+    id,
     request,
     expiresAt,
     progress: { state, rowCount, byteCount, truncated },
