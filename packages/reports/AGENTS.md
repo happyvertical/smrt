@@ -36,9 +36,12 @@ Materialized aggregate report models for SMRT.
   do not become public columns when no principal is available.
 - `tenantScoped`/`tenantField` reflect actual registered tenant metadata. A
   `tenantScope` option only contributes to the stable resource id; it is not
-  authorization. The default query path resolves the registered collection via
-  `ObjectRegistry`, so normal collection tenancy interceptors apply. An injected
-  collection is application-owned and must preserve the same boundary.
+  authorization. Pass the same `adapter` options to
+  `queryReportMaterializedRows()` that were used to build the selected
+  descriptor, so results and background tasks retain that stable resource id.
+  The default query path resolves the registered collection via `ObjectRegistry`,
+  so normal collection tenancy interceptors apply. An injected collection is
+  application-owned and must preserve the same boundary.
 - `refresh` is a declaration, not execution. It describes configured mode,
   triggers, positive-TTL stale-read behavior, and a permissioned/audited action
   with preview/apply phases. The adapter remains read-only, while

@@ -163,6 +163,37 @@ authenticated/delegated principal and detailed server-side error. Hidden field
 request failures also use a stable public error. Tool arguments never contain
 principal or tenant authority.
 
+## Report Data-Surface Tools (issue #2462)
+
+`createReportDataSurfaceTools()` maps server-owned report definitions into the
+generic `data.discover`, `data.inspect`, and `data.query` catalog, and adds
+principal-bound `reports.query`, `reports.refresh`, `reports.drilldown`, and
+`reports.export` tools. It reuses the reports package's materialized-query,
+lifecycle, drilldown, and snapshot contracts rather than reimplementing them.
+Report ids, collections, query seams, browser delivery, background queues, and
+action hosts come only from the configured server catalog; tool arguments never
+carry principal, tenant, or report-constructor authority.
+
+- Generic discovery excludes sensitive and permission-gated report columns.
+- Discovered report fields retain safe `kind`, `filterScope`, and capability
+  metadata, while the surface reports its available actions and lifecycle
+  freshness support. Actions are filtered by the current tool allow-list and
+  effective permissions. This lets agents distinguish dimensions/buckets
+  (`where`) from measures (`having`) without exposing hidden columns or
+  authority.
+- Silent reads do not change browser state; visible reads require a host's exact
+  acknowledged revision; background requests contain no principal or tenant
+  payload.
+- Read results request the tenant-safe report lifecycle whenever an
+  authenticated database is available, so `freshness` and the redacted
+  lifecycle state cover stale and lock-skipped materializations.
+- Refresh and export use app-owned action hosts for live authorization and
+  auditing. Export captures an opaque immutable snapshot and preserves the
+  reports package's preview/confirmation protocol.
+- Drilldown re-reads a single accessible materialized row before it builds the
+  inherited source query, so callers cannot inject row values from another
+  tenant.
+
 ## Agent Orchestration (issue #1892) — invoke-agent + principal delegation
 
 A conversational (orchestrator) agent can invoke worker agents with **principal delegation**. This is *not* a new engine — it is a standard `invoke-agent` tool plus a completion-dispatch convention on top of `executeAsPrincipal` + the DispatchBus.
@@ -190,6 +221,7 @@ const tool = createInvokeAgentTool({
 |------|---------|
 | `src/agent.ts` | Base Agent class — lifecycle, dispatch, interests, config, opt-in learning trait, multi-instance identity |
 | `src/execute-as-principal.ts` | `executeAsPrincipal` / `PrincipalRun` — run agent work as a persona's bound user (#1888) |
+| `src/report-data-surface.ts` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools (#2462) |
 | `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
 | `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
 | `src/learning.ts` | `AgentLearningConfig` + `resolveAgentLearning()` declaration normalisation |
