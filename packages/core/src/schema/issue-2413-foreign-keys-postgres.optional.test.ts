@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MigrationGenerator } from '../migrations/generator.js';
+import { SmrtObject } from '../object.js';
+import { smrt } from '../registry.js';
+import { getTestDatabase } from '../testing/database.js';
 import { generateDDLForEngine } from './ddl/index.js';
 import { foreignKeyConstraintName } from './foreign-key-ddl.js';
 import { SchemaManager } from './schema-manager.js';
@@ -15,6 +18,10 @@ const cycleLeft = `i2413_cycle_left_${suffix}`;
 const cycleRight = `i2413_cycle_right_${suffix}`;
 const managerLeft = `I2413_Manager_Left_${suffix}`;
 const managerRight = `I2413_Manager_Right_${suffix}`;
+const helperTable = 'i2413_existing_db_helper';
+
+@smrt({ tableName: 'i2413_existing_db_helper' })
+class I2413ExistingDatabaseHelper extends SmrtObject {}
 
 function schema(
   tableName: string,
@@ -79,6 +86,7 @@ describe.skipIf(!pgUrl)('database foreign keys on PostgreSQL (#2413)', () => {
     await db.query(`DROP TABLE IF EXISTS "${cycleRight}" CASCADE`);
     await db.query(`DROP TABLE IF EXISTS "${managerLeft}" CASCADE`);
     await db.query(`DROP TABLE IF EXISTS "${managerRight}" CASCADE`);
+    await db.query(`DROP TABLE IF EXISTS "${helperTable}" CASCADE`);
     await db.query(`DROP TABLE IF EXISTS "${children}"`);
     await db.query(`DROP TABLE IF EXISTS "${parents}"`);
     await db.close?.();
@@ -109,6 +117,20 @@ describe.skipIf(!pgUrl)('database foreign keys on PostgreSQL (#2413)', () => {
     expect(result.rows?.[0]?.conname).toBe(
       foreignKeyConstraintName(children, foreignKey),
     );
+  });
+
+  it('infers PostgreSQL DDL when getTestDatabase receives only an existing db', async () => {
+    await getTestDatabase({
+      db,
+      classes: [I2413ExistingDatabaseHelper.name],
+      includeSystemTables: false,
+    });
+
+    const result = await db.query(
+      `SELECT data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = 'id'`,
+      [helperTable],
+    );
+    expect(result.rows?.[0]?.data_type).toBe('uuid');
   });
 
   it('applies and rolls back a mutual cycle with deferred constraints', async () => {

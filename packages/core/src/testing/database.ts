@@ -214,16 +214,27 @@ export interface TestDatabaseOptions {
 
 /** Resolve the DDL dialect used when preparing an existing test database. */
 export function resolveTestDatabaseDDLEngine(
-  type: NonNullable<TestDatabaseOptions['type']>,
+  type: TestDatabaseOptions['type'],
   db: DatabaseInterface,
+  inferFromDatabase = false,
 ): 'sqlite' | 'json' | 'duckdb' | 'postgres' {
-  if (
-    type === 'json' ||
-    typeof (db as { exportTable?: unknown }).exportTable === 'function'
-  ) {
+  if (typeof (db as { exportTable?: unknown }).exportTable === 'function') {
     return 'json';
   }
-  return type;
+
+  if (inferFromDatabase) {
+    const configuredDb = db as DatabaseInterface & {
+      config?: { type?: string; url?: string };
+      type?: string;
+    };
+    return detectEngine(
+      db.url || configuredDb.config?.url || '',
+      configuredDb.type || configuredDb.config?.type,
+    );
+  }
+
+  if (type === 'json') return 'json';
+  return type ?? 'sqlite';
 }
 
 function omitTestForeignKeyConstraints(
@@ -329,7 +340,7 @@ export async function getTestDatabase(
   options: TestDatabaseOptions = {},
 ): Promise<DatabaseInterface> {
   const {
-    type = 'sqlite',
+    type,
     url = ':memory:',
     db: existingDb,
     classes,
@@ -341,7 +352,7 @@ export async function getTestDatabase(
   const db =
     existingDb ??
     (await getDatabase({
-      type,
+      type: type ?? 'sqlite',
       url,
       __smrtSkipVitestSchemaPreparation: true,
     } as TestDatabaseConnectionOptions));
@@ -363,7 +374,11 @@ export async function getTestDatabase(
 
   // Use the same schema generation as production
   const schemaGenerator = new SchemaGenerator();
-  const ddlEngine = resolveTestDatabaseDDLEngine(type, db);
+  const ddlEngine = resolveTestDatabaseDDLEngine(
+    type,
+    db,
+    existingDb !== undefined,
+  );
 
   // Collect every table before executing DDL so dependency ordering and cycle
   // handling are identical to production migration/schema paths (#2413).

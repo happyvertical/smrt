@@ -149,11 +149,13 @@ describe('same-package foreign-key policy (#2413)', () => {
 });
 
 describe('deterministic creation planning (#2413)', () => {
-  it('preserves PostgreSQL DDL when preparing an existing test database', () => {
+  it('infers PostgreSQL DDL from an existing test database without a type override', () => {
     expect(
-      resolveTestDatabaseDDLEngine('postgres', {
-        query: async () => [],
-      } as never),
+      resolveTestDatabaseDDLEngine(
+        undefined,
+        { url: 'postgresql://localhost/smrt_test' } as never,
+        true,
+      ),
     ).toBe('postgres');
   });
 
