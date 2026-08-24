@@ -234,15 +234,16 @@ onMount(() => {
       },
       getValue: () => value,
       constraints: { required },
+      webMcpSchema: {
+        type: 'object',
+        properties: Object.fromEntries(
+          fields.map((field) => [field, { type: 'string' }]),
+        ),
+        required: [...fields],
+      },
       validate: () =>
         !required ||
-        [
-          value.street,
-          value.city,
-          value.province,
-          value.postalCode,
-          value.country,
-        ].every((part) => String(part ?? '').trim().length > 0),
+        fields.every((field) => String(value[field] ?? '').trim().length > 0),
     };
     formContext.registerField(fieldDef);
   }

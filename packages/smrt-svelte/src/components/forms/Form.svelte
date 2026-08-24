@@ -196,60 +196,64 @@ const formContext: SMRTFormContext = {
 
 function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
   let schema: Record<string, unknown>;
-  switch (field.type) {
-    case 'measurement':
-      schema = {
-        type: 'object',
-        properties: {
-          value: {
-            type: 'number',
-            ...(field.constraints?.min !== undefined
-              ? { minimum: Number(field.constraints.min) }
-              : {}),
-            ...(field.constraints?.max !== undefined
-              ? { maximum: Number(field.constraints.max) }
-              : {}),
+  if (field.webMcpSchema) {
+    schema = { ...field.webMcpSchema };
+  } else {
+    switch (field.type) {
+      case 'measurement':
+        schema = {
+          type: 'object',
+          properties: {
+            value: {
+              type: 'number',
+              ...(field.constraints?.min !== undefined
+                ? { minimum: Number(field.constraints.min) }
+                : {}),
+              ...(field.constraints?.max !== undefined
+                ? { maximum: Number(field.constraints.max) }
+                : {}),
+            },
+            unit: {
+              type: 'string',
+              enum: ['ft', 'in', 'm', 'cm', 'mm', 'yd'],
+            },
           },
-          unit: {
-            type: 'string',
-            enum: ['ft', 'in', 'm', 'cm', 'mm', 'yd'],
+          required: ['value', 'unit'],
+        };
+        break;
+      case 'daterange':
+        schema = {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string' },
+            endDate: { type: 'string' },
           },
-        },
-        required: ['value', 'unit'],
-      };
-      break;
-    case 'daterange':
-      schema = {
-        type: 'object',
-        properties: {
-          startDate: { type: 'string' },
-          endDate: { type: 'string' },
-        },
-        required: ['startDate', 'endDate'],
-      };
-      break;
-    case 'address':
-      schema = {
-        type: 'object',
-        properties: {
-          street: { type: 'string' },
-          city: { type: 'string' },
-          province: { type: 'string' },
-          postalCode: { type: 'string' },
-          country: { type: 'string' },
-        },
-        required: ['street', 'city', 'province', 'postalCode', 'country'],
-      };
-      break;
-    case 'number':
-    case 'money':
-      schema = { type: 'number' };
-      break;
-    case 'checkbox':
-      schema = { type: 'boolean' };
-      break;
-    default:
-      schema = { type: 'string' };
+          required: ['startDate', 'endDate'],
+        };
+        break;
+      case 'address':
+        schema = {
+          type: 'object',
+          properties: {
+            street: { type: 'string' },
+            city: { type: 'string' },
+            province: { type: 'string' },
+            postalCode: { type: 'string' },
+            country: { type: 'string' },
+          },
+          required: ['street', 'city', 'province', 'postalCode', 'country'],
+        };
+        break;
+      case 'number':
+      case 'money':
+        schema = { type: 'number' };
+        break;
+      case 'checkbox':
+        schema = { type: 'boolean' };
+        break;
+      default:
+        schema = { type: 'string' };
+    }
   }
 
   if (field.label) schema.title = field.label;

@@ -177,6 +177,58 @@ describe('Form WebMCP submit intent', () => {
         country: 'CA',
       },
     };
+    expect(
+      await registered[0].execute({
+        ...values,
+        address: {},
+      }),
+    ).toBe('Validation failed');
+    expect(onsubmit).not.toHaveBeenCalled();
+
+    expect(await registered[0].execute(values)).toBe('Submitted successfully');
+    expect(onsubmit).toHaveBeenCalledWith(values);
+  });
+
+  it('limits the address schema and payload to configured fields', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const onsubmit = vi.fn();
+    render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        addressFields: ['city', 'country'],
+        onsubmit,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(registered).toHaveLength(1);
+    const schema = registered[0].inputSchema as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.properties.address).toMatchObject({
+      type: 'object',
+      properties: {
+        city: { type: 'string' },
+        country: { type: 'string' },
+      },
+      required: ['city', 'country'],
+    });
+    expect(schema.properties.address.properties).not.toHaveProperty('street');
+
+    const values = {
+      measurement: { value: 1.5, unit: 'm' },
+      dates: { startDate: '2026-01-01', endDate: '2026-01-02' },
+      address: { city: 'Edmonton', country: 'CA' },
+    };
     expect(await registered[0].execute(values)).toBe('Submitted successfully');
     expect(onsubmit).toHaveBeenCalledWith(values);
   });
