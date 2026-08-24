@@ -15,6 +15,7 @@ Materialized aggregate report models for SMRT.
 | scheduler | Cron schedule runner, durable refresh job enqueueing, and `onChange` interceptor registration |
 | adapter | Transport-neutral report descriptor, canonical materialized-row reads, and stable `id` row identity |
 | lifecycle | Tenant-safe freshness, run, lock, failure, and manual refresh preview/apply surfaces |
+| views | Policy-revalidated saved views, snapshot-bound exports, bounded job handoff, and artifact metadata validation |
 
 ## Adapter contract
 
@@ -46,6 +47,19 @@ Materialized aggregate report models for SMRT.
   audit, and queueing through an application action host. Only a registered
   `SmrtReportCollection` may synchronously refresh stale reads, when its TTL is
   positive and the report is not manual.
+- `views` accepts no authority. Persisted views must be normalized again through
+  the current descriptor before restoring them, so changed column policy or a
+  changed report definition fails closed. Treat unversioned persisted layouts as
+  legacy v0 and migrate them to v1 before normalization; unknown versions must
+  fail rather than being inferred. Export snapshots retain the canonical
+  query fingerprint, projection, sort, as-of/freshness state, exact row count,
+  and the fixed principal/tenant/report-definition/field-policy inheritance
+  contract. A snapshot needs an application-host-issued opaque binding and an
+  explicit offset-page read plan: workers advance it from offset zero instead
+  of reusing a visible page. Preview, apply, worker, and artifact-serving
+  boundaries must call the validators, including the host's immutable-snapshot
+  assertion; application hosts own authorization, audit records, durable
+  storage, download tokens, and queue execution.
 
 ## Conventions
 

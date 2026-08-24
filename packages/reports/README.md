@@ -221,6 +221,44 @@ report-refresh job is queued. Only a registered `SmrtReportCollection` can
 synchronously refresh a stale read, and only when its TTL policy is positive and
 not manual.
 
+### Saved views and snapshot exports
+
+`normalizeReportSavedView()` and `restoreReportSavedView()` provide the
+serializable view boundary. A storage host owns the saved view's tenant and
+owner; on every restore it must pass the stored payload through the current
+descriptor. That reapplies field, projection, sorting, grouping, and definition
+policy, so a stale view cannot reveal a field that is no longer allowed.
+`migrateReportSavedView()` upgrades the original unversioned (or explicit v0)
+layout to v1 before that current-policy validation; unsupported future versions
+fail clearly rather than being guessed.
+
+Build an export from a completed materialized-row read with
+`createReportExportSnapshot()`, supplying an opaque binding from the
+application's immutable materialization-snapshot host, then call
+`createReportExportRequest()`. The snapshot fixes the canonical query
+fingerprint, normalized projection and sort, exact row count, `asOf`,
+`refreshedAt`, stale state, and definition fingerprint. Every request also
+contains a deterministic offset-page read plan; a renderer begins at offset zero
+and advances by its validated page size until the exact bounded row count is
+reached. Use `createReportExportPageRequest()` for each page; it preserves the
+frozen query semantics while replacing only visible pagination.
+
+Every request is bounded by rows, bytes, and deadline; exports over the
+foreground row limit become an authority-free background handoff. Use
+`previewReportExport()` and `applyReportExport()` with the same application
+action host for human and agent callers. The host authorizes and audits the
+fixed `reports.export` action; exports containing personal, sensitive, or secret
+columns require explicit confirmation.
+
+Preview, apply, and every worker call `validateReportExportExecution()`, which
+requires the host to prove that the opaque binding still resolves to the exact
+immutable materialization snapshot under its current principal, tenant, report
+definition, and field policy. If it cannot, the operation fails rather than
+relabelling newer rows with an old `asOf`. Artifact metadata has no URL or
+download token; before serving it, call `validateReportExportArtifact()` to
+reject expiry, definition drift, and out-of-bounds progress, then apply the
+host's current authorization and snapshot validation again.
+
 ## Development
 
 ```bash
