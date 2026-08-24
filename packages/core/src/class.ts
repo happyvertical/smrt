@@ -1122,6 +1122,33 @@ export class SmrtClass {
   }
 
   /**
+   * Temporarily bind this initialized instance to another database interface.
+   *
+   * This is intended for transaction-scoped work where a caller must ensure
+   * that every nested SMRT read and write uses the transaction database passed
+   * to its callback. The original database is restored whether the callback
+   * succeeds or throws. Do not use the same instance concurrently while it is
+   * temporarily bound.
+   */
+  async withDatabase<T>(
+    db: DatabaseInterface,
+    operation: (bound: this) => Promise<T>,
+  ): Promise<T> {
+    // Read through the public getter so an uninitialized instance fails with
+    // the normal, actionable SmrtClass error before any state is mutated.
+    const previousDb = this.db;
+    const previousOptionDb = this.options.db;
+    this._db = db;
+    this.options.db = db;
+    try {
+      return await operation(this);
+    } finally {
+      this._db = previousDb;
+      this.options.db = previousOptionDb;
+    }
+  }
+
+  /**
    * Gets the AI client instance
    */
   get ai() {

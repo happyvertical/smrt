@@ -1,6 +1,15 @@
 import { resolveListLimit, SmrtCollection } from '@happyvertical/smrt-core';
-import { assertTenantReadAllowed } from '@happyvertical/smrt-tenancy';
-import { assertCustomersBelongToTenant } from '../customer-scope.js';
+import {
+  assertTenantReadAllowed,
+  getCurrentTenant,
+  isSuperAdminBypass,
+  TenantIsolationError,
+} from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  assertCustomersBelongToTenant,
+  normalizeUuid,
+} from '../customer-scope.js';
 import { Campaign } from '../models/Campaign.js';
 import type {
   CampaignCustomerCursor,
@@ -10,9 +19,6 @@ import type {
   CampaignStatus,
   ListCampaignsByCustomerOptions,
 } from '../types.js';
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 export const MAX_CAMPAIGN_CUSTOMER_PAGE_SIZE = 100;
 export const MAX_CAMPAIGN_CUSTOMER_BATCH_SIZE = 100;
@@ -43,13 +49,15 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
    * Null start times follow all scheduled rows on every supported database.
    */
   async listByCustomer(
-    tenantId: string,
+    tenantId: string | null,
     customerId: string,
     options: ListCampaignsByCustomerOptions = {},
   ): Promise<CampaignCustomerPage> {
-    assertUuid(tenantId, 'tenantId');
-    assertUuid(customerId, 'customerId');
-    assertTenantReadAllowed(tenantId, 'CampaignCollection.listByCustomer');
+    const normalizedTenantId = normalizeTenantScope(
+      tenantId,
+      'CampaignCollection.listByCustomer',
+    );
+    const normalizedCustomerId = normalizeUuid(customerId, 'customerId');
     const limit = resolveListLimit(options.limit, {
       defaultValue: 50,
       maxValue: Number.MAX_SAFE_INTEGER,
@@ -64,11 +72,28 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
       throw new Error('Campaign customer page limit must be at least 1.');
     }
     const cursor = normalizeCursor(options.after);
+    return this.inCustomerReadTransaction(async (bound) =>
+      bound.listByCustomerInTransaction(
+        normalizedTenantId,
+        normalizedCustomerId,
+        limit,
+        cursor,
+      ),
+    );
+  }
+
+  private async listByCustomerInTransaction(
+    tenantId: string | null,
+    customerId: string,
+    limit: number,
+    cursor: CampaignCustomerCursor | null,
+  ): Promise<CampaignCustomerPage> {
     await assertCustomersBelongToTenant(
       this.options,
       tenantId,
       [customerId],
       'CampaignCollection.listByCustomer',
+      'share',
     );
     const items =
       cursor?.startAt === null
@@ -89,11 +114,10 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
    * aggregate query. Every requested customer receives a row, including zeros.
    */
   async summarizeByCustomers(
-    tenantId: string,
+    tenantId: string | null,
     customerIds: string[],
   ): Promise<CampaignCustomerSummary[]> {
-    assertUuid(tenantId, 'tenantId');
-    assertTenantReadAllowed(
+    const normalizedTenantId = normalizeTenantScope(
       tenantId,
       'CampaignCollection.summarizeByCustomers',
     );
@@ -107,37 +131,57 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
         `Campaign customer summary accepts at most ${MAX_CAMPAIGN_CUSTOMER_BATCH_SIZE} customerIds.`,
       );
     }
-    const uniqueIds = [...new Set(customerIds)];
-    for (const customerId of uniqueIds) assertUuid(customerId, 'customerId');
+    const normalizedCustomerIds = customerIds.map((customerId) =>
+      normalizeUuid(customerId, 'customerId'),
+    );
+    const uniqueIds = [...new Set(normalizedCustomerIds)];
     if (uniqueIds.length === 0) return [];
 
+    return this.inCustomerReadTransaction(async (bound) =>
+      bound.summarizeByCustomersInTransaction(
+        normalizedTenantId,
+        normalizedCustomerIds,
+        uniqueIds,
+      ),
+    );
+  }
+
+  private async summarizeByCustomersInTransaction(
+    tenantId: string | null,
+    requestedCustomerIds: string[],
+    uniqueIds: string[],
+  ): Promise<CampaignCustomerSummary[]> {
     await assertCustomersBelongToTenant(
       this.options,
       tenantId,
       uniqueIds,
       'CampaignCollection.summarizeByCustomers',
+      'share',
     );
     const db = requireDatabase(this.options);
     const placeholders = uniqueIds.map(() => '?').join(', ');
+    const tenantPredicate =
+      tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+    const tenantParams = tenantId === null ? [] : [tenantId];
     const result = await db.query(
       `SELECT customer_id,
               COUNT(*) AS total_count,
               SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS active_count,
               MAX(start_at) AS latest_start_at
        FROM ${this.tableName}
-       WHERE tenant_id = ? AND customer_id IN (${placeholders})
+       WHERE ${tenantPredicate} AND customer_id IN (${placeholders})
        GROUP BY customer_id
        ORDER BY customer_id ASC
        LIMIT ?`,
       'active',
-      tenantId,
+      ...tenantParams,
       ...uniqueIds,
       uniqueIds.length,
     );
     const byCustomer = new Map(
-      result.rows.map((row) => [String(row.customer_id), row]),
+      result.rows.map((row) => [String(row.customer_id).toLowerCase(), row]),
     );
-    return customerIds.map((customerId) => {
+    return requestedCustomerIds.map((customerId) => {
       const row = byCustomer.get(customerId);
       return {
         customerId,
@@ -152,8 +196,26 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
     });
   }
 
+  private async inCustomerReadTransaction<T>(
+    operation: (bound: CampaignCollection) => Promise<T>,
+  ): Promise<T> {
+    const db = this.db as DatabaseInterface;
+    if (typeof db.transaction !== 'function') {
+      throw new Error(
+        'Campaign customer reads require a database adapter with transaction support.',
+      );
+    }
+    return db.transaction(async (transactionDb) => {
+      const bound = await CampaignCollection.create({
+        ...this.options,
+        db: transactionDb,
+      });
+      return operation(bound);
+    });
+  }
+
   private async listScheduledLane(
-    tenantId: string,
+    tenantId: string | null,
     customerId: string,
     limit: number,
     cursor: CampaignCustomerCursor | null,
@@ -181,7 +243,7 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
   }
 
   private async listNullStartLane(
-    tenantId: string,
+    tenantId: string | null,
     customerId: string,
     limit: number,
     cursor: CampaignCustomerCursor | null,
@@ -216,15 +278,12 @@ function requireDatabase(options: { db?: unknown }): QueryDatabase {
   return db as QueryDatabase;
 }
 
-function assertUuid(value: string, label: string): void {
-  if (!UUID_RE.test(value)) {
-    throw new Error(`${label} must be a canonical UUID.`);
-  }
-}
-
 function coerceDate(value: unknown): Date | null {
   if (value == null) return null;
-  const date = value instanceof Date ? value : new Date(String(value));
+  const date =
+    value instanceof Date
+      ? value
+      : new Date(typeof value === 'number' ? value : String(value));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -240,11 +299,11 @@ function normalizeCursor(
   cursor: CampaignCustomerCursorInput | undefined,
 ): CampaignCustomerCursor | null {
   if (!cursor) return null;
-  assertUuid(cursor.id, 'campaign customer cursor id');
-  if (cursor.startAt === null) return { id: cursor.id, startAt: null };
+  const id = normalizeUuid(cursor.id, 'campaign customer cursor id');
+  if (cursor.startAt === null) return { id, startAt: null };
   const startAt = coerceDate(cursor.startAt);
   if (!startAt) throw new Error('campaign customer cursor startAt is invalid.');
-  return { id: cursor.id, startAt };
+  return { id, startAt };
 }
 
 function cursorFromCampaign(
@@ -252,6 +311,25 @@ function cursorFromCampaign(
 ): CampaignCustomerCursor | null {
   if (!campaign?.id) return null;
   return { id: campaign.id, startAt: campaign.startAt };
+}
+
+function normalizeTenantScope(
+  tenantId: string | null,
+  label: string,
+): string | null {
+  if (tenantId !== null) {
+    const normalized = normalizeUuid(tenantId, 'tenantId');
+    assertTenantReadAllowed(normalized, label);
+    return normalized;
+  }
+  const tenantContext = getCurrentTenant();
+  if (tenantContext && !isSuperAdminBypass()) {
+    throw new TenantIsolationError(
+      `Tenant isolation violation in ${label}: tenant context cannot read global Campaign rows.`,
+      { tenantId: tenantContext.tenantId, attemptedTenantId: 'global' },
+    );
+  }
+  return null;
 }
 
 export default CampaignCollection;

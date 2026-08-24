@@ -6,7 +6,7 @@ import {
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CampaignCollection,
   CampaignMetricSnapshotCollection,
@@ -39,6 +39,7 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await isolated?.cleanup();
     isolated = undefined;
   });
@@ -110,6 +111,23 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
     const tenantB = randomUUID();
     const customerA = await customers.create({ tenantId: tenantA });
     const customerB = await customers.create({ tenantId: tenantB });
+    const transactionSql: string[] = [];
+    const originalTransaction = db.transaction?.bind(db);
+    expect(originalTransaction).toBeTypeOf('function');
+    vi.spyOn(db, 'transaction').mockImplementation(async (operation) =>
+      originalTransaction?.(async (tx) => {
+        const query = vi.spyOn(tx, 'query');
+        try {
+          return await operation(tx);
+        } finally {
+          transactionSql.push(
+            ...query.mock.calls
+              .map(([sql]) => sql)
+              .filter((sql): sql is string => typeof sql === 'string'),
+          );
+        }
+      }),
+    );
     const tiedStart = new Date('2026-08-01T00:00:00.000Z');
     const created = [];
     for (let index = 0; index < 3; index += 1) {
@@ -147,6 +165,16 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
         latestStartAt: tiedStart,
       },
     ]);
+    expect(
+      transactionSql.some(
+        (sql) => sql.includes('FROM customers') && sql.endsWith('FOR UPDATE'),
+      ),
+    ).toBe(true);
+    expect(
+      transactionSql.some(
+        (sql) => sql.includes('FROM customers') && sql.endsWith('FOR SHARE'),
+      ),
+    ).toBe(true);
     await expect(
       campaigns.listByCustomer(tenantA, customerB.id ?? ''),
     ).rejects.toBeInstanceOf(CampaignCustomerScopeError);

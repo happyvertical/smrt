@@ -68,6 +68,7 @@ describe('Campaign customer scope', () => {
     const customerA = await customers.create({ tenantId: tenantA });
     const customerB = await customers.create({ tenantId: tenantB });
     const globalCustomer = await customers.create({});
+    const emptyGlobalCustomer = await customers.create({});
 
     const saved = await campaigns.create({
       tenantId: tenantA,
@@ -82,6 +83,35 @@ describe('Campaign customer scope', () => {
       name: 'Global campaign',
     });
     expect(globalSaved.tenantId).toBeNull();
+    expect(
+      (await campaigns.listByCustomer(null, globalCustomer.id ?? '')).items.map(
+        (campaign) => campaign.id,
+      ),
+    ).toEqual([globalSaved.id]);
+    expect(
+      await campaigns.summarizeByCustomers(null, [
+        globalCustomer.id ?? '',
+        emptyGlobalCustomer.id ?? '',
+      ]),
+    ).toEqual([
+      {
+        customerId: globalCustomer.id,
+        totalCount: 1,
+        activeCount: 0,
+        latestStartAt: null,
+      },
+      {
+        customerId: emptyGlobalCustomer.id,
+        totalCount: 0,
+        activeCount: 0,
+        latestStartAt: null,
+      },
+    ]);
+    await expect(
+      withTenant({ tenantId: tenantA }, () =>
+        campaigns.listByCustomer(null, globalCustomer.id ?? ''),
+      ),
+    ).rejects.toBeInstanceOf(TenantIsolationError);
 
     const contextSaved = await withTenant({ tenantId: tenantA }, () =>
       campaigns.create({
@@ -115,6 +145,106 @@ describe('Campaign customer scope', () => {
         }),
       ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
     }
+    await expect(
+      campaigns.create({
+        tenantId: tenantA,
+        customerId: 'not-a-uuid',
+        campaignKey: 'invalid-customer-id',
+        name: 'Invalid Customer id',
+      }),
+    ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+    await expect(
+      campaigns.create({
+        tenantId: 'not-a-uuid',
+        customerId: customerA.id,
+        campaignKey: 'invalid-tenant-id',
+        name: 'Invalid tenant id',
+      }),
+    ).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+  });
+
+  it('validates and persists a Campaign on the same transaction database', async () => {
+    const tenantId = randomUUID();
+    const customer = await customers.create({ tenantId });
+    const rootGet = vi.spyOn(db, 'get');
+    const rootQuery = vi.spyOn(db, 'query');
+    const rootUpsert = vi.spyOn(db, 'upsert');
+    const originalTransaction = db.transaction?.bind(db);
+    expect(originalTransaction).toBeTypeOf('function');
+    let transactionDb: DatabaseInterface | undefined;
+    let transactionGet: ReturnType<typeof vi.spyOn> | undefined;
+    let transactionQuery: ReturnType<typeof vi.spyOn> | undefined;
+    let transactionUpsert: ReturnType<typeof vi.spyOn> | undefined;
+    const transaction = vi
+      .spyOn(db, 'transaction')
+      .mockImplementation(async (operation) =>
+        originalTransaction?.(async (tx) => {
+          transactionDb = tx;
+          transactionGet = vi.spyOn(tx, 'get');
+          transactionQuery = vi.spyOn(tx, 'query');
+          transactionUpsert = vi.spyOn(tx, 'upsert');
+          return operation(tx);
+        }),
+      );
+
+    const saved = await campaigns.create({
+      tenantId,
+      customerId: customer.id,
+      campaignKey: 'atomic-customer-scope',
+      name: 'Atomic customer scope',
+    });
+
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(transactionDb).toBeDefined();
+    expect(transactionDb).not.toBe(db);
+    expect(
+      transactionGet?.mock.calls.some(([table]) => table === 'campaigns'),
+    ).toBe(true);
+    expect(
+      transactionQuery?.mock.calls.some(
+        ([sql]) =>
+          typeof sql === 'string' &&
+          sql.includes('FROM customers') &&
+          sql.includes('WHERE id IN'),
+      ),
+    ).toBe(true);
+    expect(
+      transactionUpsert?.mock.calls.some(([table]) => table === 'campaigns'),
+    ).toBe(true);
+    expect(rootGet).not.toHaveBeenCalled();
+    expect(rootQuery).not.toHaveBeenCalled();
+    expect(rootUpsert).not.toHaveBeenCalled();
+    expect(saved.db).toBe(db);
+    expect(saved.options.db).toBe(db);
+  });
+
+  it('preserves unassociated saves while failing closed without transactions', async () => {
+    const noTransactionDb = new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === 'transaction') return undefined;
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const unassociatedCampaigns = await CampaignCollection.create({
+      db: noTransactionDb,
+    });
+    const saved = await unassociatedCampaigns.create({
+      campaignKey: 'unassociated-no-transaction',
+      name: 'Unassociated without transaction',
+    });
+    expect(saved.id).toBeDefined();
+
+    const tenantId = randomUUID();
+    const customer = await customers.create({ tenantId });
+    await expect(
+      unassociatedCampaigns.create({
+        tenantId,
+        customerId: customer.id,
+        campaignKey: 'associated-no-transaction',
+        name: 'Associated without transaction',
+      }),
+    ).rejects.toThrow(/requires a database adapter with transaction support/);
   });
 
   it('paginates equal and null start times without duplicates', async () => {
@@ -176,6 +306,26 @@ describe('Campaign customer scope', () => {
       nullStart.id,
     ]);
     expect(new Set(seen.map((campaign) => campaign.id)).size).toBe(7);
+
+    const numericFirst = await campaigns.listByCustomer(
+      tenantId.toUpperCase(),
+      (customer.id ?? '').toUpperCase(),
+      { limit: 1 },
+    );
+    const numericCursor = numericFirst.nextCursor;
+    expect(numericCursor?.startAt).toBeInstanceOf(Date);
+    const numericSecond = await campaigns.listByCustomer(
+      tenantId.toUpperCase(),
+      (customer.id ?? '').toUpperCase(),
+      {
+        limit: 1,
+        after: {
+          id: (numericCursor?.id ?? '').toUpperCase(),
+          startAt: numericCursor?.startAt?.getTime() ?? Number.NaN,
+        },
+      },
+    );
+    expect(numericSecond.items[0]?.id).toBe(expectedTiedIds[1]);
   });
 
   it('resolves multi-Customer summaries in two bounded queries', async () => {
@@ -209,15 +359,36 @@ describe('Campaign customer scope', () => {
       startAt: startEarly,
     });
 
-    const query = vi.spyOn(db, 'query');
-    query.mockClear();
+    const originalTransaction = db.transaction?.bind(db);
+    expect(originalTransaction).toBeTypeOf('function');
+    let transactionDb: DatabaseInterface | undefined;
+    let transactionQuery: ReturnType<typeof vi.spyOn> | undefined;
+    const transaction = vi
+      .spyOn(db, 'transaction')
+      .mockImplementation(async (operation) =>
+        originalTransaction?.(async (tx) => {
+          transactionDb = tx;
+          transactionQuery = vi.spyOn(tx, 'query');
+          return operation(tx);
+        }),
+      );
     const summaries = await campaigns.summarizeByCustomers(tenantId, [
       customerA.id ?? '',
       customerB.id ?? '',
       emptyCustomer.id ?? '',
       customerA.id ?? '',
     ]);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(transaction).toHaveBeenCalledOnce();
+    expect(transactionDb).not.toBe(db);
+    const transactionSql =
+      transactionQuery?.mock.calls.map(([sql]) => String(sql)) ?? [];
+    expect(transactionSql).toHaveLength(6);
+    expect(
+      transactionSql.filter(
+        (sql) =>
+          sql.includes('FROM customers') || sql.includes('FROM campaigns'),
+      ),
+    ).toHaveLength(2);
     expect(summaries).toEqual([
       {
         customerId: customerA.id,
@@ -249,11 +420,18 @@ describe('Campaign customer scope', () => {
   it('keeps framework cross-package failures behind the typed scope error', async () => {
     const tenantId = randomUUID();
     const customer = await customers.create({ tenantId });
-    const originalGet = db.get.bind(db);
-    vi.spyOn(db, 'get').mockImplementation(async (table, where) => {
-      if (table === 'customers') return null;
-      return originalGet(table, where);
-    });
+    const originalTransaction = db.transaction?.bind(db);
+    expect(originalTransaction).toBeTypeOf('function');
+    vi.spyOn(db, 'transaction').mockImplementation(async (operation) =>
+      originalTransaction?.(async (tx) => {
+        const originalGet = tx.get.bind(tx);
+        vi.spyOn(tx, 'get').mockImplementation(async (table, where) => {
+          if (table === 'customers') return null;
+          return originalGet(table, where);
+        });
+        return operation(tx);
+      }),
+    );
 
     const save = campaigns.create({
       tenantId,

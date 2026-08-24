@@ -65,7 +65,9 @@ console.log(await pacing.getCampaignPacing(campaign.id));
 `Campaign.customerId` is the native UUID relationship to the canonical
 `@happyvertical/smrt-commerce:Customer`. A campaign and its Customer must have
 exactly the same tenant, and customer-scoped reads require that tenant
-explicitly. Missing and cross-tenant Customers fail with
+explicitly (`null` selects the global/global scope). Associated Campaign saves
+validate and persist in one transaction; customer-scoped reads validate and
+query in one transaction. Missing and cross-tenant Customers fail with
 `CampaignCustomerScopeError` without disclosing which condition occurred.
 
 ```ts

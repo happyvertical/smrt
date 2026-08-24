@@ -14,7 +14,10 @@ import {
   TenantScoped,
   tenantId,
 } from '@happyvertical/smrt-tenancy';
-import { assertCustomersBelongToTenant } from '../customer-scope.js';
+import {
+  assertCustomersBelongToTenant,
+  normalizeUuid,
+} from '../customer-scope.js';
 import { CampaignCustomerScopeError } from '../errors.js';
 import {
   CAMPAIGN_STATUSES,
@@ -112,21 +115,44 @@ export class Campaign extends SmrtObject {
   }
 
   override async save(): Promise<this> {
+    if (this.customerId === null) return this.saveLifecycle();
+
+    const db = this.db;
+    if (typeof db.transaction !== 'function') {
+      throw new Error(
+        'Campaign.save requires a database adapter with transaction support.',
+      );
+    }
+    return db.transaction(async (transactionDb) =>
+      this.withDatabase(transactionDb, async (bound) => bound.saveLifecycle()),
+    );
+  }
+
+  private async saveLifecycle(): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
     this.assertSchedule();
     if (this.customerId !== null) {
+      try {
+        this.customerId = normalizeUuid(this.customerId, 'customerId');
+        if (this.tenantId !== null) {
+          this.tenantId = normalizeUuid(this.tenantId, 'tenantId');
+        }
+      } catch {
+        throw new CampaignCustomerScopeError('Campaign.save');
+      }
       const tenantContext =
         isSystemContext() || isSuperAdminBypass()
           ? undefined
           : getCurrentTenant();
       const effectiveTenantId =
-        this.tenantId || tenantContext?.tenantId || null;
+        this.tenantId ?? tenantContext?.tenantId ?? null;
       await assertCustomersBelongToTenant(
         this.options,
         effectiveTenantId,
         [this.customerId],
         'Campaign.save',
+        'update',
       );
     }
     let result: this;

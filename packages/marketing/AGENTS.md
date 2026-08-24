@@ -75,7 +75,10 @@ render time.
 - `Campaign.customerId` targets `@happyvertical/smrt-commerce:Customer` through
   `@crossPackageRef`. Saves and customer-scoped reads require exact tenant
   agreement (including global-to-global only) and fail without revealing
-  whether a Customer is absent or belongs elsewhere.
+  whether a Customer is absent or belongs elsewhere. Associated saves validate
+  and persist through one transaction-bound Campaign instance; scoped reads
+  validate and query through one fresh transaction-bound collection. PostgreSQL
+  locks the validated Customer rows for the duration of each operation.
 - Lead loop-closing is conventional: CRM stores `sourceKind: 'campaign'` and a
   campaign key in `sourceId`; marketing does not import or mutate Lead.
 - Attribution math remains in sales/referrals. Marketing stores performance
