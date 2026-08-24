@@ -18,6 +18,7 @@ import {
   type SMRTFormContext,
   setFormContext,
 } from '../../state/form-context.js';
+import { useWebMcpTool } from '../../web/webmcp.svelte.js';
 import type { LLMModelId, STTAdapterType } from './types.js';
 
 const { t } = useI18n();
@@ -36,7 +37,11 @@ export interface Props {
   /** LLM model for extraction (or 'none' for regex-only) */
   llmModel?: LLMModelId;
   /** Called when form is submitted (if provided, prevents native submission) */
-  onsubmit?: (data: Record<string, unknown>) => void;
+  onsubmit?: (data: Record<string, unknown>) => void | Promise<void>;
+  /** Expose this form's submit intent to WebMCP. */
+  webmcp?: boolean | { name?: string; description?: string };
+  /** Collection/model identity used when naming the generated intent. */
+  collection?: string;
   /** HTTP method for native form submission (default: GET) */
   method?: 'GET' | 'POST';
   /** Form action URL for native form submission */
@@ -58,6 +63,8 @@ const {
   sttAdapter = 'whisper-wasm',
   llmModel = 'none',
   onsubmit,
+  webmcp,
+  collection,
   method,
   action,
   formId,
@@ -187,8 +194,107 @@ const formContext: SMRTFormContext = {
   },
 };
 
+function webMcpFieldType(type: FieldDefinition['type']): string {
+  switch (type) {
+    case 'number':
+    case 'money':
+    case 'measurement':
+      return 'number';
+    case 'checkbox':
+      return 'boolean';
+    case 'daterange':
+      return 'array';
+    default:
+      return 'string';
+  }
+}
+
+function formInputSchema(): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+
+  for (const field of fields.values()) {
+    properties[field.name] = {
+      type: webMcpFieldType(field.type),
+      ...(field.label ? { title: field.label } : {}),
+      ...(field.description ? { description: field.description } : {}),
+      ...(field.options
+        ? { enum: field.options.map((option) => option.value) }
+        : {}),
+      ...(field.constraints?.min !== undefined
+        ? { minimum: Number(field.constraints.min) }
+        : {}),
+      ...(field.constraints?.max !== undefined
+        ? { maximum: Number(field.constraints.max) }
+        : {}),
+      ...(field.constraints?.minLength !== undefined
+        ? { minLength: field.constraints.minLength }
+        : {}),
+      ...(field.constraints?.maxLength !== undefined
+        ? { maxLength: field.constraints.maxLength }
+        : {}),
+      ...(field.constraints?.pattern
+        ? { pattern: field.constraints.pattern }
+        : {}),
+    };
+    if (field.constraints?.required) required.push(field.name);
+  }
+
+  return {
+    type: 'object',
+    properties,
+    ...(required.length > 0 ? { required } : {}),
+  };
+}
+
 // Provide context to children
 setFormContext(formContext);
+
+async function submitForWebMcp(args: Record<string, unknown>): Promise<string> {
+  // Stage tool arguments through the same field setters used by native input
+  // controls, then run the shared validation and submit path.
+  for (const [name, value] of Object.entries(args)) {
+    fields.get(name)?.setValue(value);
+  }
+
+  const data: Record<string, unknown> = {};
+  let valid = true;
+  for (const [name, field] of fields) {
+    data[name] = field.getValue();
+    if (
+      field.constraints?.required &&
+      (data[name] === '' || data[name] == null)
+    ) {
+      valid = false;
+    }
+    if (field.validate) {
+      try {
+        valid = field.validate() && valid;
+      } catch {
+        valid = false;
+      }
+    }
+  }
+  if (!valid) return 'Validation failed';
+  if (!onsubmit) return 'No submit handler configured';
+
+  await onsubmit(data);
+  return 'Submitted successfully';
+}
+
+useWebMcpTool(() => {
+  if (!webmcp) return null;
+  const options = typeof webmcp === 'object' ? webmcp : {};
+  return {
+    name: options.name ?? `${collection ?? resolvedFormId}_submit`,
+    description:
+      options.description ??
+      `Submit the ${collection ?? name ?? resolvedFormId} form after validating its fields`,
+    inputSchema: formInputSchema(),
+    annotations: { readOnlyHint: false },
+    execute: submitForWebMcp,
+  };
+});
 
 // Clean up extracted values based on field type
 function cleanValue(value: unknown, fieldType: string): unknown {
@@ -608,11 +714,9 @@ function handleSubmit(e: Event) {
   // This allows native form submission for SvelteKit form actions
   if (onsubmit) {
     e.preventDefault();
-    const data: Record<string, unknown> = {};
-    for (const [name, field] of fields) {
-      data[name] = field.getValue();
-    }
-    onsubmit(data);
+    void submitForWebMcp({}).catch((error) => {
+      logger.error('Form submit failed', { error });
+    });
   }
   // Otherwise, let native form submission happen (e.g., for SvelteKit use:enhance)
 }

@@ -4,6 +4,11 @@ import {
   type I18nSnapshot,
   setI18nContext,
 } from '@happyvertical/smrt-ui/i18n';
+import {
+  type RegisterWebMcpToolsOptions,
+  type SmrtWebClient,
+  type SmrtWebCollectionDefinition,
+} from '@happyvertical/smrt-web';
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
 import { logger } from './internal/logger.js';
@@ -79,9 +84,24 @@ interface Props {
    */
   i18n?: I18nSnapshot;
   /**
+   * Opt in to the generated collection tools for this browser surface.
+   * WebMCP is feature-detected by smrt-web, so this is safe during SSR and on
+   * browsers that do not expose `document.modelContext`.
+   */
+  webmcp?: boolean | WebMcpProviderConfig;
+  /**
    * Children to render
    */
   children: Snippet;
+}
+
+export interface WebMcpProviderConfig {
+  definitions?: SmrtWebCollectionDefinition[];
+  client?: SmrtWebClient;
+  basePath?: string;
+  fetchFn?: typeof fetch;
+  scope?: string;
+  filter?: RegisterWebMcpToolsOptions['filter'];
 }
 
 const {
@@ -95,6 +115,7 @@ const {
   onModeChange,
   onAILoadingChange,
   i18n,
+  webmcp,
   children,
 }: Props = $props();
 
@@ -126,6 +147,34 @@ $effect(() => {
       autoEnableSmrt,
     },
   });
+});
+
+// Keep generated data-plane tools scoped to this Provider. The registrar
+// feature-detects WebMCP itself; effects do not run during SSR.
+$effect(() => {
+  if (typeof window === 'undefined' || !webmcp) return;
+
+  const config = typeof webmcp === 'object' ? webmcp : {};
+  let cancelled = false;
+  let dispose = () => {};
+
+  // Keep the data-plane engine out of applications that do not opt in. The
+  // dynamic import also means SSR never evaluates browser-only engine code.
+  void import('@happyvertical/smrt-web').then(({ registerWebMcpTools }) => {
+    if (cancelled) return;
+    dispose = registerWebMcpTools(config.definitions ?? [], {
+      ...(config.client ? { client: config.client } : {}),
+      ...(config.basePath ? { basePath: config.basePath } : {}),
+      ...(config.fetchFn ? { fetchFn: config.fetchFn } : {}),
+      ...(config.scope ? { scope: config.scope } : {}),
+      ...(config.filter ? { filter: config.filter } : {}),
+    });
+  });
+
+  return () => {
+    cancelled = true;
+    dispose();
+  };
 });
 
 $effect(() => {

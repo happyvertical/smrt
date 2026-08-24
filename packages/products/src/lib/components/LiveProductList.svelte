@@ -17,8 +17,9 @@
  * entry bundle and breaks the code-split (ratified condition ① of #1761).
  */
 
+import { useWebMcpTool } from '@happyvertical/smrt-svelte';
+import { Form, TextInput } from '@happyvertical/smrt-svelte/forms';
 import { liveCollection } from '@happyvertical/smrt-svelte/web';
-import { Form, Input } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
@@ -52,8 +53,31 @@ const products = createProductCollection(definition, { basePath });
 const view = liveCollection<ProductData>(products);
 
 let newName = $state('');
+let filterQuery = $state('');
 let submitting = $state(false);
 let lastError = $state<string | null>(null);
+
+// Bespoke, client-only intent: this is the one place the reference store owns
+// live UI state, so it needs one small hand-written tool. CRUD tools come from
+// the Provider's `webmcp` opt-in and the submit tool comes from `<Form>`.
+useWebMcpTool(() => ({
+  name: 'filter_products',
+  description: 'Filter the products currently loaded in this browser surface',
+  inputSchema: {
+    type: 'object',
+    properties: { query: { type: 'string' } },
+  },
+  annotations: { readOnlyHint: true },
+  execute: (args) => {
+    filterQuery = typeof args.query === 'string' ? args.query : filterQuery;
+    const query = filterQuery.trim().toLowerCase();
+    return JSON.stringify(
+      view.rows.filter(
+        (row) => !query || row.name?.toLowerCase().includes(query),
+      ),
+    );
+  },
+}));
 
 async function addProduct() {
   const name = newName.trim();
@@ -85,19 +109,17 @@ async function addProduct() {
   </header>
 
   <Form
-    onsubmit={(e: Event) => {
-      e.preventDefault();
-      addProduct();
-    }}
+    collection="products"
+    webmcp={{ name: 'create_product', description: 'Create a product from this form' }}
+    onsubmit={() => addProduct()}
     class="live-products__form"
   >
-    <Input
-      type="text"
+    <TextInput
+      name="name"
       bind:value={newName}
       placeholder={t(M['products.live_list.name_placeholder'])}
       aria-label={t(M['products.live_list.name_placeholder'])}
       disabled={submitting}
-      class="live-products__name"
     />
     <Button type="submit" variant="primary" disabled={submitting || !newName.trim()}>
       {submitting ? t(M['products.live_list.adding']) : t(M['products.live_list.add'])}

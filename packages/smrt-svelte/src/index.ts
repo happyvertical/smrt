@@ -1,3 +1,5 @@
+/// <reference path="./web/webmcp.d.ts" />
+
 /**
  * @happyvertical/smrt-svelte
  *
@@ -24,3 +26,5 @@ export * from './hooks/index.js';
 export { default as Provider } from './Provider.svelte';
 // State management
 export * from './state/index.js';
+// Opt-in browser WebMCP lifecycle primitive.
+export { useWebMcpTool, type WebMcpToolSpec } from './web/webmcp.svelte.js';

@@ -16,6 +16,7 @@
  * `scripts/check-web-engine-code-split.mjs` assertion proves the split holds.
  */
 
+import Provider from '@happyvertical/smrt-svelte';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
@@ -53,8 +54,9 @@ onMount(async () => {
 });
 </script>
 
-<AppLayout>
-  {#snippet children()}
+<Provider webmcp={{ definitions: definition ? [definition] : [] }}>
+  <AppLayout>
+    {#snippet children()}
     <div class="live-products-page">
       <div class="page-header">
         <h1>{t(M['products.live_page.title'])}</h1>
@@ -73,8 +75,9 @@ onMount(async () => {
         </p>
       {/if}
     </div>
-  {/snippet}
-</AppLayout>
+    {/snippet}
+  </AppLayout>
+</Provider>
 
 <style>
   .live-products-page {
