@@ -45,6 +45,32 @@ async function withSocialTestDb<T>(
   }
 }
 
+async function seedSocialAccount(
+  db: DatabaseInterface,
+  id = 'account-1',
+): Promise<SocialAccount> {
+  const accounts = await SocialAccountCollection.create({ db });
+  return accounts.create({
+    id,
+    name: `Test account ${id}`,
+    platform: 'x',
+    status: 'disconnected',
+  });
+}
+
+async function seedSocialPost(
+  db: DatabaseInterface,
+  id = 'post-1',
+): Promise<SocialPost> {
+  const account = await seedSocialAccount(db);
+  const posts = await SocialPostCollection.create({ db });
+  return posts.create({
+    id,
+    socialAccountId: account.id!,
+    status: 'draft',
+  });
+}
+
 describe('smrt-social models', () => {
   afterEach(() => {
     disableTenancy();
@@ -185,9 +211,10 @@ describe('smrt-social models', () => {
 
   it('does not stamp dry-run or staged posts as published', async () => {
     await withSocialTestDb(async (db) => {
+      const account = await seedSocialAccount(db);
       const posts = await SocialPostCollection.create({ db });
       const post = await posts.create({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         postType: 'link',
         status: 'publishing',
       });
@@ -206,10 +233,11 @@ describe('smrt-social models', () => {
 
   it('preserves an existing published timestamp when a later staged write succeeds', async () => {
     await withSocialTestDb(async (db) => {
+      const account = await seedSocialAccount(db);
       const posts = await SocialPostCollection.create({ db });
       const publishedAt = new Date('2026-05-07T12:00:00Z');
       const post = await posts.create({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         postType: 'link',
         status: 'publishing',
         publishedAt,
@@ -365,24 +393,25 @@ describe('smrt-social models', () => {
 
   it('finds only posts that are due for publish', async () => {
     await withSocialTestDb(async (db) => {
+      const account = await seedSocialAccount(db);
       const posts = await SocialPostCollection.create({ db });
       const now = new Date('2026-05-08T12:00:00Z');
       const approved = await posts.create({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         status: 'approved',
       });
       const scheduledDue = await posts.create({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         status: 'scheduled',
         scheduledAt: new Date('2026-05-08T11:00:00Z'),
       });
       await posts.create({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         status: 'scheduled',
         scheduledAt: new Date('2026-05-08T13:00:00Z'),
       });
       await posts.create({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         status: 'draft',
       });
 
@@ -397,14 +426,15 @@ describe('smrt-social models', () => {
 
   it('creates drafts and records failure plus analytics lifecycle updates', async () => {
     await withSocialTestDb(async (db) => {
+      const account = await seedSocialAccount(db);
       const posts = await SocialPostCollection.create({ db });
       const syncedAt = new Date('2026-05-08T12:30:00Z');
       const draft = await posts.createDraft({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         linkUrl: 'https://bentleyalberta.com/story',
       });
       const scheduled = await posts.createDraft({
-        socialAccountId: 'account-1',
+        socialAccountId: account.id!,
         mediaUrl: 'https://assets.example/video.mp4',
         scheduledAt: new Date('2026-05-08T13:00:00Z'),
       });
@@ -460,11 +490,12 @@ describe('smrt-social models', () => {
 
   it('records analytics snapshots and exposes the latest snapshot for a post', async () => {
     await withSocialTestDb(async (db) => {
+      const post = await seedSocialPost(db);
       const snapshots = await SocialPostAnalyticsSnapshotCollection.create({
         db,
       });
       await snapshots.recordSnapshot({
-        socialPostId: 'post-1',
+        socialPostId: post.id!,
         platform: 'x',
         metrics: {
           views: 10,
@@ -473,7 +504,7 @@ describe('smrt-social models', () => {
         capturedAt: new Date('2026-05-08T11:00:00Z'),
       });
       const latest = await snapshots.recordSnapshot({
-        socialPostId: 'post-1',
+        socialPostId: post.id!,
         platform: 'x',
         metrics: { views: 12 },
         raw: { public_metrics: { impression_count: 12 } },
@@ -481,7 +512,7 @@ describe('smrt-social models', () => {
       });
 
       await expect(
-        snapshots.findLatestForPost('post-1'),
+        snapshots.findLatestForPost(post.id!),
       ).resolves.toMatchObject({
         id: latest.id,
         platform: 'x',

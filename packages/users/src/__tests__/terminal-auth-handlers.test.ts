@@ -11,6 +11,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import {
   createBearerSessionDeleteHandler,
@@ -61,7 +62,7 @@ describe('terminal-auth SvelteKit handlers', () => {
     sessionTtlSeconds: number;
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbPath = join(
       tmpdir(),
       `smrt-terminal-handlers-${Date.now()}-${Math.random().toString(16).slice(2)}.db`,
@@ -72,6 +73,12 @@ describe('terminal-auth SvelteKit handlers', () => {
       requestTtlSeconds: 60,
       sessionTtlSeconds: 3600,
     };
+    const tenants = await TenantCollection.create({ db: options.db });
+    const tenant = await tenants.create({
+      id: 'tenant-1',
+      name: 'Terminal Handler Tenant',
+    });
+    await tenant.save();
   });
 
   afterEach(() => {

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsersCliAuthApproveLimitCollection } from '../collections/CliAuthApproveLimitCollection.js';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
+import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { UsersCliAuthRequest } from '../models/CliAuthRequest.js';
 import {
@@ -36,6 +37,10 @@ describe('TerminalAuthService', () => {
     );
     const options = { db: { type: 'sqlite' as const, url: dbPath } };
 
+    users = await UserCollection.create(options);
+    const tenants = await TenantCollection.create(options);
+    const tenant = await tenants.create({ id: 'tenant-1', name: 'CLI Tenant' });
+    await tenant.save();
     service = await TerminalAuthService.create({
       ...options,
       userCodePrefix: 'WG',
@@ -43,7 +48,6 @@ describe('TerminalAuthService', () => {
       sessionTtlSeconds: 3600,
       verificationPath: '/terminal-login',
     });
-    users = await UserCollection.create(options);
     requests = await UsersCliAuthRequestCollection.create(options);
     sessions = await SessionCollection.create(options);
   });

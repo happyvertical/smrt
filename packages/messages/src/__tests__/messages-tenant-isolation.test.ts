@@ -59,10 +59,42 @@ import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { EmailFolder } from '../models/EmailFolder';
 import { Message } from '../models/Message';
+import { prepareMessageParents } from './fk-fixtures.js';
 
 const names = (
   rows: Array<{ subject?: string; name?: string; filename?: string }>,
 ) => rows.map((r) => r.subject ?? r.name ?? r.filename ?? '').sort();
+
+async function seedTenantAccounts(db: DatabaseInterface) {
+  const accounts = await AccountCollection.create({ db });
+  await withTenant({ tenantId: 'tenant-1' }, async () => {
+    await (
+      await accounts.create({
+        id: 'a1',
+        name: 'tenant-1 parent',
+        providerType: 'test',
+      })
+    ).save();
+  });
+  await withTenant({ tenantId: 'tenant-2' }, async () => {
+    await (
+      await accounts.create({
+        id: 'a2',
+        name: 'tenant-2 parent',
+        providerType: 'test',
+      })
+    ).save();
+  });
+  await withSystemContext(async () => {
+    await (
+      await accounts.create({
+        id: 'ag',
+        name: 'global parent',
+        providerType: 'test',
+      })
+    ).save();
+  });
+}
 
 // ===========================================================================
 // EmailCollection (STI child of Message — shares the `messages` table)
@@ -75,9 +107,11 @@ describe('EmailCollection tenant isolation (#1596)', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db);
     emails = await EmailCollection.create({ db });
     messages = await MessageCollection.create({ db });
     enableTenancy(); // default rawQueryPolicy: 'throw'
+    await seedTenantAccounts(db);
   });
 
   afterEach(async () => {
@@ -195,6 +229,7 @@ describe('EmailAccountCollection tenant isolation (#1596)', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db);
     accounts = await EmailAccountCollection.create({ db });
     baseAccounts = await AccountCollection.create({ db });
     enableTenancy();
@@ -300,6 +335,7 @@ describe('Base messages collections tenant isolation (#1596)', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db);
     enableTenancy();
   });
 
@@ -311,6 +347,7 @@ describe('Base messages collections tenant isolation (#1596)', () => {
   });
 
   it('MessageCollection.findGlobal/findWithGlobals do not throw and return all subtypes for the tenant + globals', async () => {
+    await seedTenantAccounts(db);
     const messages = await MessageCollection.create({ db });
     const emails = await EmailCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
@@ -388,7 +425,24 @@ describe('Base messages collections tenant isolation (#1596)', () => {
   });
 
   it('AttachmentCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
+    await seedTenantAccounts(db);
     const attachments = await AttachmentCollection.create({ db });
+    const messages = await MessageCollection.create({ db });
+    await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await (
+        await messages.create({ id: 'm1', accountId: 'a1', subject: 't1' })
+      ).save();
+    });
+    await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await (
+        await messages.create({ id: 'm2', accountId: 'a2', subject: 't2' })
+      ).save();
+    });
+    await withSystemContext(async () => {
+      await (
+        await messages.create({ id: 'mg', accountId: 'ag', subject: 'global' })
+      ).save();
+    });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
       await (
         await attachments.create({ messageId: 'm1', filename: 't1-att' })
@@ -422,6 +476,7 @@ describe('Base messages collections tenant isolation (#1596)', () => {
   });
 
   it('EmailFolderCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
+    await seedTenantAccounts(db);
     const folders = await EmailFolderCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
       await (
