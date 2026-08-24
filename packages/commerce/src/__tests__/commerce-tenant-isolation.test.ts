@@ -469,16 +469,18 @@ describe('commerce tenant isolation (#1600)', () => {
   it('PayoutCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const payments = await PaymentCollection.create({ db });
     const payouts = await PayoutCollection.create({ db });
+    const vendors = await VendorCollection.create({ db });
     // Payout.save() requires a resolvable source Payment (cap enforcement) and
     // grossAmount <= the payment's funded amount. Seed a Payment per context,
     // then a zero-amount Payout that references it.
-    const seed = async (tag: string): Promise<void> => {
+    const seed = async (tag: string, vendorId: string): Promise<void> => {
+      await (await vendors.create({ id: vendorId, name: tag })).save();
       const payment = await payments.create({ amount: 10 });
       await payment.save();
       await (
         await payouts.create({
           paymentId: payment.id ?? '',
-          vendorId: 'vendor-1',
+          vendorId,
           grossAmount: 0,
           operatorFee: 0,
           supplierNet: 0,
@@ -486,9 +488,13 @@ describe('commerce tenant isolation (#1600)', () => {
         })
       ).save();
     };
-    await withTenant({ tenantId: 'tenant-1' }, () => seed('t1-payout'));
-    await withTenant({ tenantId: 'tenant-2' }, () => seed('t2-payout'));
-    await withSystemContext(() => seed('g-payout'));
+    await withTenant({ tenantId: 'tenant-1' }, () =>
+      seed('t1-payout', 'vendor-1'),
+    );
+    await withTenant({ tenantId: 'tenant-2' }, () =>
+      seed('t2-payout', 'vendor-2'),
+    );
+    await withSystemContext(() => seed('g-payout', 'vendor-g'));
 
     expect(
       sorted(

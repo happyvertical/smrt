@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { LicenseSale } from '../models/Contract.js';
 import { ContractStatus, ContractType } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 describe('LicenseSale STI subtype', () => {
   let dbPath: string;
@@ -31,6 +32,18 @@ describe('LicenseSale STI subtype', () => {
     dbPath = join(tmpdir(), `smrt-license-sale-${Date.now()}.db`);
     contracts = await ContractCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      customerIds: [
+        'cust-1',
+        'cust-immut',
+        'c-new-issued',
+        'c-1',
+        'c-draft',
+        'c-revoke',
+        'c-shared',
+      ],
     });
   });
 
@@ -46,6 +59,17 @@ describe('LicenseSale STI subtype', () => {
 
   it('exposes a LICENSE_SALE enum value', () => {
     expect(ContractType.LICENSE_SALE).toBe('license_sale');
+  });
+
+  it('persists omitted optional contract relationships as null', async () => {
+    const contract = await contracts.create({ reference: 'nullable-fks' });
+    await contract.save();
+
+    expect(contract.customerId).toBeNull();
+    expect(contract.vendorId).toBeNull();
+    const loaded = await contracts.get({ id: contract.id });
+    expect(loaded?.customerId).toBeNull();
+    expect(loaded?.vendorId).toBeNull();
   });
 
   it('stamps the right _meta_type and contractType', async () => {

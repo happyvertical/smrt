@@ -27,6 +27,7 @@ import {
   type PaymentOption,
   PaymentStatus,
 } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 /**
  * Create a genuinely-COMPLETED Payment row whose native amount matches the
@@ -107,6 +108,9 @@ describe('PaymentIntent', () => {
       db: { type: 'sqlite', url: dbPath },
     });
     payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -419,6 +423,9 @@ describe('PaymentIntentCollection — idempotency', () => {
       db: { type: 'sqlite', url: dbPath },
     });
     payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
       db: { type: 'sqlite', url: dbPath },
     });
   });

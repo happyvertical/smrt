@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PaymentInstrumentCollection } from '../collections/PaymentInstrumentCollection.js';
 import type { PaymentInstrument } from '../models/PaymentInstrument.js';
 import { PaymentInstrumentStatus } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 describe('PaymentInstrument', () => {
   let dbPath: string;
@@ -27,6 +28,10 @@ describe('PaymentInstrument', () => {
     dbPath = join(tmpdir(), `smrt-payment-instrument-${Date.now()}.db`);
     instruments = await PaymentInstrumentCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      customerIds: ['cust-1'],
     });
   });
 

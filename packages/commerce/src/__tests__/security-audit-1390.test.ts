@@ -59,6 +59,7 @@ import {
   PaymentStatus,
   PayoutStatus,
 } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 function tmpDb(tag: string): string {
   return join(
@@ -143,6 +144,9 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
       db: { type: 'sqlite', url: dbPath },
     });
     payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -445,6 +449,9 @@ describe('PaymentIntent PAID requires a verified Payment (#1390)', () => {
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+    });
   });
 
   afterEach(() => {
@@ -608,6 +615,9 @@ describe('PaymentAllocation integrity guard (#1390)', () => {
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+    });
     invoices = await InvoiceCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
@@ -705,6 +715,10 @@ describe('Payout non-negativity guard (#1390)', () => {
     });
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      vendorIds: ['vendor-neg', 'vendor-ok'],
     });
   });
 
@@ -891,6 +905,9 @@ describe('Payment COMPLETED settlement guard (#1390 round 2)', () => {
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+    });
   });
 
   afterEach(() => {
@@ -1005,6 +1022,9 @@ describe('PaymentIntent repoint / issued guard (#1390 round 2)', () => {
       db: { type: 'sqlite', url: dbPath },
     });
     payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -1183,6 +1203,10 @@ describe('Payout state-machine + cap guard (#1390 round 2)', () => {
     });
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      vendorIds: ['vendor-skip', 'vendor-sent', 'vendor-over', 'vendor-ok'],
     });
   });
 
@@ -1538,6 +1562,10 @@ describe('Authoritative prior-status load defeats WeakMap poisoning (#1390 round
     payouts = await PayoutCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      vendorIds: ['vendor-poison'],
+    });
   });
 
   afterEach(() => {
@@ -1634,6 +1662,10 @@ describe('Payout CONFIRMED requires txref and a SENT predecessor (#1390 round 4)
     payouts = await PayoutCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      vendorIds: ['vendor-c', 'vendor-missing'],
+    });
   });
 
   afterEach(() => {
@@ -1727,6 +1759,9 @@ describe('Payment settled-amount freeze after COMPLETED (#1390 round 6)', () => 
   beforeEach(async () => {
     dbPath = tmpDb('payment-freeze');
     payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
       db: { type: 'sqlite', url: dbPath },
     });
   });

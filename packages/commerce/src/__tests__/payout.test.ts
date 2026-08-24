@@ -21,6 +21,7 @@ import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { PayoutCollection } from '../collections/PayoutCollection.js';
 import type { Payout } from '../models/Payout.js';
 import { PayoutStatus } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 describe('Payout', () => {
   let dbPath: string;
@@ -34,6 +35,31 @@ describe('Payout', () => {
     });
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      customerIds: ['customer-1', 'customer-tenant', 'customer-fiat'],
+      contractIds: ['contract-1', 'contract-tenant', 'contract-fiat'],
+      vendorIds: [
+        'vendor-1',
+        'vendor-tenant',
+        'vendor-fiat',
+        'vendor-x',
+        'vendor-skip',
+        'vendor-fail',
+        'vendor-reset',
+        'vendor-no-reset',
+        'vendor-bad-math',
+        'vendor-exact',
+        'vendor-off-by-one',
+        'vendor-major-units',
+        'vendor-date-strings',
+        'vendor-default',
+        'v-1',
+        'v-2',
+        'v-q',
+        'v-sum',
+      ],
     });
   });
 
@@ -397,6 +423,10 @@ describe('PayoutCollection — queries', () => {
     });
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      vendorIds: ['vendor-default', 'v-1', 'v-2', 'v-q', 'v-sum'],
     });
   });
 

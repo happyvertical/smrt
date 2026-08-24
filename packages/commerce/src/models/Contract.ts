@@ -117,13 +117,13 @@ export class Contract extends SmrtObject {
    * Customer ID (for sales contracts: Estimate, Order, Agreement)
    */
   @foreignKey(Customer)
-  customerId: string = '';
+  customerId: string | null = null;
 
   /**
    * Vendor ID (for purchase contracts: PurchaseOrder)
    */
   @foreignKey(Vendor)
-  vendorId: string = '';
+  vendorId: string | null = null;
 
   /**
    * Subtotal before tax, in **integer minor units** (cents, satoshis).

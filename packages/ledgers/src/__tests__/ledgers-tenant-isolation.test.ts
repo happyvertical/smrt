@@ -144,19 +144,42 @@ describe('ledgers tenant isolation (#1600)', () => {
 
   it('JournalEntryCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const entries = await JournalEntryCollection.create({ db });
+    const journals = await JournalCollection.create({ db });
+    const accounts = await AccountCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await journals.create({ id: 'j1', number: 'JNL-E1' });
+      await accounts.create({ id: 'a1', number: 'E1000', name: 't1-parent' });
       await (
-        await entries.create({ journalId: 'j1', debit: 10, memo: 't1-entry' })
+        await entries.create({
+          journalId: 'j1',
+          accountId: 'a1',
+          debit: 10,
+          memo: 't1-entry',
+        })
       ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await journals.create({ id: 'j2', number: 'JNL-E2' });
+      await accounts.create({ id: 'a2', number: 'E2000', name: 't2-parent' });
       await (
-        await entries.create({ journalId: 'j2', debit: 20, memo: 't2-entry' })
+        await entries.create({
+          journalId: 'j2',
+          accountId: 'a2',
+          debit: 20,
+          memo: 't2-entry',
+        })
       ).save();
     });
     await withSystemContext(async () => {
+      await journals.create({ id: 'jg', number: 'JNL-EG' });
+      await accounts.create({ id: 'ag', number: 'E9000', name: 'g-parent' });
       await (
-        await entries.create({ journalId: 'jg', debit: 30, memo: 'g-entry' })
+        await entries.create({
+          journalId: 'jg',
+          accountId: 'ag',
+          debit: 30,
+          memo: 'g-entry',
+        })
       ).save();
     });
 
