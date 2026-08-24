@@ -22,6 +22,172 @@ describe('SchemaAggregator STI merge', () => {
     }
   });
 
+  it('plans manifest tables parent-first and defers PostgreSQL cycles (#2413)', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'schema-aggregator-fk-'));
+    tempDirs.push(tempDir);
+
+    const manifestPath = writeManifest(tempDir, 'fk.manifest.json', {
+      packageName: '@test/fk',
+      version: '1.0.0',
+      objects: {
+        Child: {
+          className: 'Child',
+          schema: {
+            tableName: 'a_children',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              parent_id: {
+                type: 'TEXT',
+                foreignKey: {
+                  table: 'z_parents',
+                  column: 'id',
+                  onDelete: 'NO ACTION',
+                  onUpdate: 'CASCADE',
+                },
+              },
+            },
+            indexes: [],
+          },
+        },
+        Parent: {
+          className: 'Parent',
+          schema: {
+            tableName: 'z_parents',
+            columns: { id: { type: 'TEXT', primaryKey: true } },
+            indexes: [],
+          },
+        },
+      },
+    });
+
+    const result = new SchemaAggregator().aggregate({
+      packages: ['@test/fk'],
+      localPaths: { '@test/fk': manifestPath },
+    });
+    expect(result.sql.indexOf('-- Table: z_parents')).toBeLessThan(
+      result.sql.indexOf('-- Table: a_children'),
+    );
+
+    const minimal = new SchemaAggregator().aggregate({
+      packages: ['@test/fk'],
+      localPaths: { '@test/fk': manifestPath },
+      minimal: true,
+      minimalSkipTables: ['z_parents'],
+    });
+    expect(minimal.sql).toContain('-- Table: a_children');
+    expect(minimal.sql).not.toContain('-- Table: z_parents');
+    expect(minimal.sql).not.toContain('FOREIGN KEY');
+    expect(minimal.sql).not.toContain('REFERENCES "z_parents"');
+    const minimalChild = minimal.tables.get('a_children');
+    expect(minimalChild?.definition.foreignKeys).toEqual([]);
+    expect(minimalChild?.definition.columns.parent_id?.foreignKey).toBe(
+      undefined,
+    );
+    expect(minimalChild?.ddl).not.toContain('FOREIGN KEY');
+
+    const cyclicPath = writeManifest(tempDir, 'cycle.manifest.json', {
+      packageName: '@test/cycle',
+      version: '1.0.0',
+      objects: {
+        Left: {
+          className: 'Left',
+          schema: {
+            tableName: 'left_nodes',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              right_id: {
+                type: 'TEXT',
+                foreignKey: {
+                  table: 'right_nodes',
+                  column: 'id',
+                  onDelete: 'NO ACTION',
+                  onUpdate: 'CASCADE',
+                },
+              },
+            },
+            indexes: [],
+          },
+        },
+        Right: {
+          className: 'Right',
+          schema: {
+            tableName: 'right_nodes',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              left_id: {
+                type: 'TEXT',
+                foreignKey: {
+                  table: 'left_nodes',
+                  column: 'id',
+                  onDelete: 'NO ACTION',
+                  onUpdate: 'CASCADE',
+                },
+              },
+            },
+            indexes: [],
+          },
+        },
+      },
+    });
+    const cycle = new SchemaAggregator().aggregate({
+      packages: ['@test/cycle'],
+      localPaths: { '@test/cycle': cyclicPath },
+    });
+    expect(cycle.sql.match(/ALTER TABLE .* ADD CONSTRAINT/g)).toHaveLength(2);
+    expect(
+      cycle.sql
+        .slice(0, cycle.sql.indexOf('-- Deferred foreign-key constraints'))
+        .includes('FOREIGN KEY'),
+    ).toBe(false);
+  });
+
+  it('refuses minimal output when legacy cached DDL still references a filtered table', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'schema-aggregator-legacy-fk-'));
+    tempDirs.push(tempDir);
+    const manifestPath = writeManifest(tempDir, 'legacy-fk.manifest.json', {
+      packageName: '@test/legacy-fk',
+      version: '1.0.0',
+      objects: {
+        ChildBase: {
+          className: 'ChildBase',
+          schema: {
+            tableName: 'legacy_children',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              parent_id: { type: 'TEXT' },
+            },
+            indexes: [],
+          },
+        },
+        ChildLegacyContributor: {
+          className: 'ChildLegacyContributor',
+          schema: {
+            tableName: 'legacy_children',
+            ddl: 'CREATE TABLE legacy_children (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES "public"."legacy_parents", sibling TEXT);',
+            indexes: [],
+          },
+        },
+        Parent: {
+          className: 'Parent',
+          schema: {
+            tableName: 'legacy_parents',
+            columns: { id: { type: 'TEXT', primaryKey: true } },
+            indexes: [],
+          },
+        },
+      },
+    });
+
+    expect(() =>
+      new SchemaAggregator().aggregate({
+        packages: ['@test/legacy-fk'],
+        localPaths: { '@test/legacy-fk': manifestPath },
+        minimal: true,
+        minimalSkipTables: ['legacy_parents'],
+      }),
+    ).toThrow(/legacy cached DDL.*references filtered table/);
+  });
+
   it('merges STI child columns across package manifests for shared tables', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'schema-aggregator-sti-'));
     tempDirs.push(tempDir);

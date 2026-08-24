@@ -138,6 +138,10 @@ describe('SmrtCollection.list({ select })', () => {
           type: adapterConfig.type,
           url: dbUrl,
           classes: ['ProjectionAccount', 'ProjectionOpportunity'],
+          // Projection behavior is the subject here. DuckDB cannot enforce
+          // SMRT's generated ON UPDATE CASCADE FK action (#2413).
+          omitForeignKeyConstraints:
+            adapterConfig.type === 'duckdb' || adapterConfig.type === 'json',
         });
         accounts = await ProjectionAccountCollection.create({ db });
         opportunities = await ProjectionOpportunityCollection.create({ db });

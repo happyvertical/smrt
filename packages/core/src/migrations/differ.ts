@@ -8,6 +8,14 @@
 import { createLogger } from '@happyvertical/logger';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import {
+  foreignKeyConstraintName,
+  renderForeignKeyConstraint,
+  renderForeignKeyOrphanDetector,
+  renderForeignKeyOrphanRepair,
+  schemaForeignKeys,
+} from '../schema/foreign-key-ddl.js';
+import { normalizeForeignKeyAction } from '../schema/foreign-key-policy.js';
 import type {
   ColumnAlteration,
   ColumnDefinition,
@@ -549,8 +557,127 @@ export class SchemaComparer {
       dbIndexPredicates,
     );
     changes.push(...indexChanges);
+    changes.push(
+      ...(await this.compareForeignKeys(tableName, manifest, dbSchema)),
+    );
 
     return changes;
+  }
+
+  private async compareForeignKeys(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+  ): Promise<SchemaChange[]> {
+    const changes: SchemaChange[] = [];
+    const liveForeignKeys = dbSchema.foreignKeys || [];
+    for (const foreignKey of schemaForeignKeys(manifest)) {
+      const expectedDelete = foreignKey.onDelete || 'NO ACTION';
+      const expectedUpdate = foreignKey.onUpdate || 'NO ACTION';
+      const exact = liveForeignKeys.some(
+        (live) =>
+          live.column === foreignKey.column &&
+          live.referencesTable === foreignKey.referencesTable &&
+          live.referencesColumn === foreignKey.referencesColumn &&
+          (normalizeForeignKeyAction(live.onDelete) || 'NO ACTION') ===
+            expectedDelete &&
+          (normalizeForeignKeyAction(live.onUpdate) || 'NO ACTION') ===
+            expectedUpdate,
+      );
+      if (exact) continue;
+
+      const detectorSql = renderForeignKeyOrphanDetector(tableName, foreignKey);
+      const repairSql = renderForeignKeyOrphanRepair(tableName, foreignKey);
+      const sameColumn = liveForeignKeys.some(
+        (live) => live.column === foreignKey.column,
+      );
+      if (sameColumn) {
+        changes.push({
+          type: 'add_foreign_key',
+          table: tableName,
+          name: foreignKeyConstraintName(tableName, foreignKey),
+          foreignKey,
+          advisory: {
+            severity: 'warning',
+            message:
+              `Foreign key ${tableName}.${foreignKey.column} exists with a different target or action. ` +
+              'Drop the old constraint deliberately, repair any orphan rows, then rerun the migration.',
+            suggestedSql: [detectorSql, repairSql],
+          },
+        });
+        continue;
+      }
+
+      if (this.engine !== 'postgres') {
+        const engineReason =
+          this.engine === 'sqlite'
+            ? 'SQLite requires a table rebuild to add a foreign key to an existing table.'
+            : 'DuckDB does not support ALTER TABLE ADD CONSTRAINT.';
+        changes.push({
+          type: 'add_foreign_key',
+          table: tableName,
+          name: foreignKeyConstraintName(tableName, foreignKey),
+          foreignKey,
+          advisory: {
+            severity: 'warning',
+            message: `${engineReason} Run the orphan detector, repair rows, and rebuild the table with the generated constraint.`,
+            suggestedSql: [detectorSql, repairSql],
+          },
+        });
+        continue;
+      }
+
+      if (await this.foreignKeyHasOrphans(tableName, foreignKey)) {
+        changes.push({
+          type: 'add_foreign_key',
+          table: tableName,
+          name: foreignKeyConstraintName(tableName, foreignKey),
+          foreignKey,
+          advisory: {
+            severity: 'warning',
+            message:
+              `Cannot add foreign key ${tableName}.${foreignKey.column}: existing rows do not match ` +
+              `${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then rerun.`,
+            suggestedSql: [detectorSql, repairSql],
+          },
+        });
+        continue;
+      }
+
+      const constraintName = foreignKeyConstraintName(tableName, foreignKey);
+      changes.push({
+        type: 'add_foreign_key',
+        table: tableName,
+        name: constraintName,
+        foreignKey,
+        sqlStatements: [
+          `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD ${renderForeignKeyConstraint(tableName, foreignKey)} NOT VALID`,
+          `ALTER TABLE ${this.quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${this.quoteIdentifier(constraintName)}`,
+        ],
+      });
+    }
+    return changes;
+  }
+
+  private async foreignKeyHasOrphans(
+    tableName: string,
+    foreignKey: import('../schema/types.js').ForeignKeyDefinition,
+  ): Promise<boolean> {
+    try {
+      const result = await this.db.query(
+        renderForeignKeyOrphanDetector(tableName, foreignKey, {
+          limitOne: true,
+        }),
+      );
+      const rows = Array.isArray(result) ? result : result.rows || [];
+      return rows.length > 0;
+    } catch (error) {
+      logger.debug(
+        `[SchemaComparer] Foreign-key orphan probe unavailable for ${tableName}.${foreignKey.column}; refusing automatic constraint addition`,
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+      return true;
+    }
   }
 
   /**

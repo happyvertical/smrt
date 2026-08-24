@@ -354,11 +354,14 @@ describe('R10: generated @oneToMany child accessors', () => {
     const leaf = new R10MultiLeaf({ name: 'Leaf', db });
     await leaf.initialize();
     await leaf.save();
+    const other = new R10MultiLeaf({ name: 'Other', db });
+    await other.initialize();
+    await other.save();
 
     // Points at the leaf via the leaf-targeting FK (exact self).
     const viaLeaf = new R10MultiChild({
       leafRef: leaf.id,
-      baseRef: 'unrelated',
+      baseRef: other.id,
       tag: 'viaLeaf',
       db,
     });
@@ -368,7 +371,7 @@ describe('R10: generated @oneToMany child accessors', () => {
     // Points at the leaf via the base-targeting FK (ancestor) — must be ignored.
     const viaBase = new R10MultiChild({
       baseRef: leaf.id,
-      leafRef: 'unrelated',
+      leafRef: other.id,
       tag: 'viaBase',
       db,
     });

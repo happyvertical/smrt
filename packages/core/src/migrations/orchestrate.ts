@@ -14,6 +14,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
 import {
   generateSchemaDiff,
@@ -299,11 +300,13 @@ function collectStatementsFromDiff(
     detectEngine(resolveDatabaseUrl(db), engineHint),
   );
   const statements: string[] = [];
-  for (const schema of diff.added_tables) {
+  const tablePlan = planForeignKeyCreation(diff.added_tables, strategy.engine);
+  for (const schema of tablePlan.schemas) {
     statements.push(strategy.generateCreateTable(schema));
     statements.push(...strategy.generateIndexes(schema));
     statements.push(...strategy.generateTriggers(schema));
   }
+  statements.push(...tablePlan.deferredStatements);
   statements.push(...getSQLFromDiff(diff));
   // Drop empty and comment-only entries. SQLite type-widening upgrades
   // surface as `-- SQLite: Type upgrade for X requires table recreation`

@@ -1,11 +1,9 @@
 /**
  * Referential integrity on delete (#2371).
  *
- * SMRT emits no DB-level `FOREIGN KEY` constraints, so before this change
- * `delete()` removed the object's own row and left everything that pointed at
- * it behind: junction rows, polymorphic association rows, `_smrt_embeddings`
- * (which kept ranking the deleted id in `semanticSearch`) and `_smrt_contexts`.
- * `@foreignKey(..., { onDelete })` was metadata nobody read.
+ * SMRT now enforces the same same-package delete policy in generated database
+ * constraints and in `delete()`. Before #2371, `delete()` removed the object's
+ * own row and left framework-owned references behind.
  *
  * Everything here runs against real SQLite through the real model layer — the
  * point of the issue was that the framework never issued the statements, so a
@@ -115,8 +113,8 @@ class CascadeDocTagCollection extends SmrtCollection<CascadeDocTag> {
 
 /**
  * Ordinary child keyed by `(slug, context)`: `doc_id` is NOT part of the
- * natural key and declares no `onDelete`, so it keeps the pre-#2371 behaviour
- * and is left alone. Deleting a customer must not silently delete its orders.
+ * natural key and declares no `onDelete`, so it resolves to NO ACTION.
+ * Deleting a customer must be refused while orders still reference it.
  */
 @smrt({ tableName: 'cascade_2371_notes' })
 class CascadeNote extends SmrtObject {
@@ -619,7 +617,9 @@ describe('delete() referential integrity (#2371)', () => {
       await lock.save();
 
       await expect(vault.delete()).rejects.toThrow(DatabaseError);
-      await expect(vault.delete()).rejects.toThrow(/RESTRICT/);
+      await expect(vault.delete()).rejects.toThrow(
+        /declares onDelete: 'RESTRICT'/,
+      );
 
       expect(await db.count('cascade_2371_vaults', { id: vault.id })).toBe(1);
     });
@@ -644,18 +644,21 @@ describe('delete() referential integrity (#2371)', () => {
       expect(await db.count('cascade_2371_vaults')).toBe(1);
     });
 
-    it('leaves an undeclared, non-key reference untouched', async () => {
+    it('NO ACTION refuses an undeclared, non-key reference', async () => {
       const notes = await collectionOn(CascadeNoteCollection);
       const doc = await makeDoc('noted');
 
       const note = await notes.create({ docId: doc.id } as any);
       await note.save();
 
-      await doc.delete();
+      await expect(doc.delete()).rejects.toThrow(
+        /resolves to onDelete: 'NO ACTION'/,
+      );
 
       const rows = await db.list('cascade_2371_notes', {});
       expect(rows).toHaveLength(1);
       expect(rows[0]?.doc_id).toBe(doc.id);
+      expect(await db.count('cascade_2371_docs', { id: doc.id })).toBe(1);
     });
   });
 
@@ -989,13 +992,13 @@ describe('cascade plan (#2371)', () => {
     expect(normalizeOnDelete(undefined)).toBeUndefined();
   });
 
-  it('drops references that resolve to NO ACTION', () => {
+  it('records references that resolve to NO ACTION for app-side preflight', () => {
     const plan = buildCascadePlan(ObjectRegistry, 'CascadeDoc');
     expect(
       plan.references.some(
         (reference) => reference.className === 'CascadeNote',
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('records the declared actions it will apply', () => {

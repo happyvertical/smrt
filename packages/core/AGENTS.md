@@ -207,12 +207,27 @@ bootstrap prevents missing-table probes from poisoning that transaction.
 Production DDL comes from the **manifest** paths
 (`generateSTISchemaFromManifest`/`generateCTISchemaFromManifest`, selected in
 `src/scanner/manifest-generator.ts` → registered `schema` → `db:migrate`). The
-**registry** paths feed `getTestDatabase()` and emit foreign-key indexes
-production never gets: the suite runs on a richer schema than it ships.
+**registry** paths feed `getTestDatabase()`. Manifest and registry schemas must
+agree on same-package foreign keys as well as columns and indexes:
+`@foreignKey` emits a named physical constraint, while `@crossPackageRef` and
+`@tenantId` remain indexed runtime relationships without physical constraints.
+Natural-key references default to `CASCADE`; ordinary references default to
+immediate `NO ACTION`, matching `SmrtObject.delete()`.
 
 - Change column/index emission on every shipping path, proven by the path-parity
   test `src/schema/schema-path-parity.test.ts` (#2359; index rules in the module doc). A "same as migrations" comment is a claim to check.
 - Every new query predicate ships with its index, or a reason it doesn't.
+- Creation is dependency-planned on every entry point. PostgreSQL defers mutual
+  cycle constraints until both tables exist; SQLite keeps cycles inline;
+  DuckDB refuses unsupported cycles/actions rather than silently omitting them.
+  In particular, generated same-package constraints retain the compatibility
+  default `ON UPDATE CASCADE`; DuckDB/JSON cannot enforce that action and must
+  return an actionable refusal instead of stripping the clause.
+  PostgreSQL deferred adds are idempotent and probe the exact child/parent
+  columns for orphans before `NOT VALID` + validation. Rollback drops children
+  before parents, removes deferred PostgreSQL cycle constraints first, and
+  defers SQLite checks while dropping populated cycles. Schema aggregation that
+  deliberately filters a parent also removes the retained child's physical FK.
 - Numeric types, uuid casts, conflict targets, timestamps, migrations: run the
   `test:postgres` lane — SQLite affinity accepts what PostgreSQL rejects.
 - Read `dist/manifest.json`/regenerated schemas for what a decorator produced;

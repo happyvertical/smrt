@@ -27,7 +27,10 @@ import {
 } from '../registry/collection-resolution.js';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine } from '../schema/ddl/index.js';
+import { schemaForeignKeys } from '../schema/foreign-key-ddl.js';
+import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import { SchemaGenerator } from '../schema/generator.js';
+import type { SchemaDefinition } from '../schema/types.js';
 import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
 import { getSystemTableDDL } from '../system/schema.js';
 
@@ -198,6 +201,35 @@ export interface TestDatabaseOptions {
    * System tables include _smrt_contexts, _smrt_migrations, etc.
    */
   includeSystemTables?: boolean;
+
+  /**
+   * Explicitly omit physical FK constraints for adapter/query tests whose
+   * subject is unrelated to referential enforcement. Defaults to `false`.
+   * This is required (and deliberately noisy at the call site) when a DuckDB
+   * fixture uses generated `ON UPDATE CASCADE`, which DuckDB cannot enforce.
+   */
+  omitForeignKeyConstraints?: boolean;
+}
+
+function omitTestForeignKeyConstraints(
+  schema: SchemaDefinition,
+): SchemaDefinition {
+  const foreignKeyTargets = new Set(
+    schemaForeignKeys(schema).map((foreignKey) => foreignKey.referencesTable),
+  );
+  return {
+    ...schema,
+    columns: Object.fromEntries(
+      Object.entries(schema.columns).map(([name, column]) => [
+        name,
+        column.foreignKey ? { ...column, foreignKey: undefined } : column,
+      ]),
+    ),
+    foreignKeys: [],
+    dependencies: schema.dependencies.filter(
+      (dependency) => !foreignKeyTargets.has(dependency),
+    ),
+  };
 }
 
 function resolveRequestedSchemaClassName(className: string): string {
@@ -287,6 +319,7 @@ export async function getTestDatabase(
     db: existingDb,
     classes,
     includeSystemTables = true,
+    omitForeignKeyConstraints = false,
   } = options;
 
   // Use existing database or create new one
@@ -323,8 +356,13 @@ export async function getTestDatabase(
         ? 'duckdb'
         : 'sqlite';
 
-  // Track created tables to avoid duplicates (STI base classes)
-  const createdTables = new Set<string>();
+  // Collect every table before executing DDL so dependency ordering and cycle
+  // handling are identical to production migration/schema paths (#2413).
+  const schemas = new Map<
+    string,
+    { schema: SchemaDefinition; className: string }
+  >();
+  const authoritativeSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
 
   for (const className of classNames) {
     // R11: the registration carries idType (native uuid vs text); read it
@@ -339,7 +377,7 @@ export async function getTestDatabase(
     }
 
     const tableName = ObjectRegistry.getTableName(className);
-    if (!tableName || createdTables.has(tableName)) {
+    if (!tableName || schemas.has(tableName)) {
       continue;
     }
 
@@ -376,17 +414,80 @@ export async function getTestDatabase(
             runtimeSchemaConfig,
           );
 
-    // Generate DDL using generateSQL() - the single source of truth
+    // Manifest registrations can carry explicit FK actions that differ from
+    // decorator defaults. The deterministic merged table schema preserves
+    // those authoritative actions while still backfilling runtime-only fields.
+    const authoritativeSchema = authoritativeSchemas[tableName];
+    const effectiveColumns = authoritativeSchema
+      ? Object.fromEntries(
+          Object.entries(schema.columns).map(([name, column]) => {
+            const manifestColumn = authoritativeSchema.columns[name];
+            return [
+              name,
+              manifestColumn
+                ? { ...column, foreignKey: manifestColumn.foreignKey }
+                : column,
+            ];
+          }),
+        )
+      : schema.columns;
+    const effectiveForeignKeys = schemaForeignKeys({
+      columns: effectiveColumns,
+      foreignKeys: [],
+    });
+    const effectiveSchema: SchemaDefinition = {
+      ...schema,
+      columns: effectiveColumns,
+      foreignKeys: effectiveForeignKeys,
+      dependencies: effectiveForeignKeys
+        .map((foreignKey) => foreignKey.referencesTable)
+        .filter((dependency) => dependency !== tableName),
+    };
+
+    schemas.set(tableName, {
+      schema: omitForeignKeyConstraints
+        ? omitTestForeignKeyConstraints(effectiveSchema)
+        : effectiveSchema,
+      className,
+    });
+  }
+
+  // Explicitly requested test classes still need their registered parents.
+  // Add the authoritative dependency closure so a child-only request cannot
+  // emit a physical reference to a table this helper never creates.
+  const addDependencies = (schema: SchemaDefinition): void => {
+    for (const foreignKey of schemaForeignKeys(schema)) {
+      if (schemas.has(foreignKey.referencesTable)) continue;
+      const dependency = authoritativeSchemas[foreignKey.referencesTable];
+      if (!dependency) continue;
+      const effectiveDependency = omitForeignKeyConstraints
+        ? omitTestForeignKeyConstraints(dependency)
+        : dependency;
+      schemas.set(dependency.tableName, {
+        schema: effectiveDependency,
+        className: dependency.tableName,
+      });
+      addDependencies(effectiveDependency);
+    }
+  };
+  for (const { schema } of [...schemas.values()]) addDependencies(schema);
+
+  const tablePlan = planForeignKeyCreation(
+    [...schemas.values()].map(({ schema }) => schema),
+    ddlEngine,
+  );
+  const ddlStrategy = (await import('../schema/ddl/index.js')).getDDLStrategy(
+    ddlEngine,
+  );
+
+  for (const schema of tablePlan.schemas) {
+    const className = schemas.get(schema.tableName)?.className ?? 'unknown';
     const ddl = schemaGenerator.generateSQL(schema, ddlEngine);
 
     try {
       await db.query(ddl);
-      createdTables.add(tableName);
 
       // Create indexes (use DDL strategy so jsonPath / where / etc. render)
-      const ddlStrategy = (
-        await import('../schema/ddl/index.js')
-      ).getDDLStrategy(ddlEngine);
       const indexStatements = ddlStrategy.generateIndexes(schema);
       for (const indexSQL of indexStatements) {
         try {
@@ -402,7 +503,18 @@ export async function getTestDatabase(
     } catch (error) {
       // Provide helpful error message for table creation failures
       throw new Error(
-        `[getTestDatabase] Failed to create table '${tableName}' for class '${className}': ${error instanceof Error ? error.message : String(error)}`,
+        `[getTestDatabase] Failed to create table '${schema.tableName}' for class '${className}': ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+
+  for (const statement of tablePlan.deferredStatements) {
+    try {
+      await db.query(statement);
+    } catch (error) {
+      throw new Error(
+        `[getTestDatabase] Failed to add deferred foreign-key constraint: ${error instanceof Error ? error.message : String(error)} (SQL: ${statement})`,
         { cause: error },
       );
     }

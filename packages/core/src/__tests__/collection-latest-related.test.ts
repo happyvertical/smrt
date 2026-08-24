@@ -542,6 +542,9 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     const duckDb = await getTestDatabase({
       type: 'duckdb',
       url: ':memory:',
+      // Window-query parity is the subject; DuckDB cannot enforce SMRT's
+      // generated ON UPDATE CASCADE FK action (#2413).
+      omitForeignKeyConstraints: true,
     });
     try {
       const duckParents = await LatestRelatedParentCollection.create({
@@ -594,6 +597,9 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
       type: 'json',
       url: jsonPath,
       classes: ['LatestRelatedParent', 'LatestRelatedEvaluation'],
+      // Window-query parity is the subject; JSON-on-DuckDB has the same FK
+      // action limitation as native DuckDB (#2413).
+      omitForeignKeyConstraints: true,
     });
     try {
       const jsonParents = await LatestRelatedParentCollection.create({

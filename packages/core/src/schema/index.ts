@@ -5,6 +5,19 @@
 export { SchemaCodeGenerator } from './code-generator.js';
 // Re-export DDL strategies for per-engine schema generation
 export * from './ddl/index.js';
+export {
+  foreignKeyConstraintName,
+  renderForeignKeyConstraint,
+  schemaForeignKeys,
+} from './foreign-key-ddl.js';
+export {
+  type ForeignKeyCreationPlan,
+  planForeignKeyCreation,
+} from './foreign-key-planner.js';
+export {
+  normalizeForeignKeyAction,
+  resolveForeignKeyDeleteAction,
+} from './foreign-key-policy.js';
 export { SchemaGenerator } from './generator.js';
 // Live-schema parity check (#2368)
 export {

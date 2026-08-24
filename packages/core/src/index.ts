@@ -263,6 +263,7 @@ export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
 export * from './runtime/index';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
+export { planForeignKeyCreation } from './schema/foreign-key-planner';
 // Live-schema parity check (#2368) — compares a live database to the shape
 // the model layer assumes, including hand-DDL `_smrt_*` system tables.
 export {

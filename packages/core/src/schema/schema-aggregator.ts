@@ -38,11 +38,35 @@ import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import type { DatabaseEngine } from './ddl/types.js';
+import { planForeignKeyCreation } from './foreign-key-planner.js';
 import {
+  type CollectedManifestTable,
   collectManifestTables,
   type ManifestColumnLike,
   renderCollectedManifestTable,
 } from './manifest-schema.js';
+
+function referencesFilteredTable(
+  ddl: string,
+  filteredTables: ReadonlySet<string>,
+): string | undefined {
+  for (const tableName of filteredTables) {
+    const quoted = tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const sqlQuoted = tableName
+      .replaceAll('"', '""')
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const qualifier = '(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)';
+    if (
+      new RegExp(
+        `\\bREFERENCES\\s+(?:${qualifier}\\s*\\.\\s*)*(?:"${sqlQuoted}"|${quoted})(?![A-Za-z0-9_$"])`,
+        'i',
+      ).test(ddl)
+    ) {
+      return tableName;
+    }
+  }
+  return undefined;
+}
 
 // ============================================================================
 // Types
@@ -76,6 +100,12 @@ export interface AggregatedTable {
    * per column name, matching the rendered DDL.
    */
   columns?: Record<string, ManifestColumnLike>;
+  /** Structured schema retained so combined SQL can use dependency planning. */
+  definition: CollectedManifestTable['definition'];
+  /** Whether every contributing manifest provided structured columns. */
+  structured: boolean;
+  /** Cached DDL retained only for legacy column-less contributors. */
+  legacyDdl: string;
 }
 
 /**
@@ -212,9 +242,9 @@ export class SchemaAggregator {
     );
 
     // 4. Apply minimal filtering if requested
-    if (options.minimal) {
-      this.applyMinimalFilter(tables, options);
-    }
+    const filteredTables = options.minimal
+      ? this.applyMinimalFilter(tables, options)
+      : new Set<string>();
 
     // 5. Count STI tables and total objects
     let stiTables = 0;
@@ -227,7 +257,7 @@ export class SchemaAggregator {
     }
 
     // 6. Generate combined SQL
-    const sql = this.generateSQL(tables, options);
+    const sql = this.generateSQL(tables, options, filteredTables);
 
     return {
       tables,
@@ -350,6 +380,9 @@ export class SchemaAggregator {
         indexes: rendered.indexes,
         sources: table.sources,
         columns: manifestColumns.get(tableName),
+        definition: table.definition,
+        structured: table.structured,
+        legacyDdl: table.legacyDdl,
       });
     }
 
@@ -362,23 +395,27 @@ export class SchemaAggregator {
   private applyMinimalFilter(
     tables: Map<string, AggregatedTable>,
     options: AggregateOptions,
-  ): void {
+  ): Set<string> {
     const skipPatterns =
       options.minimalSkipPatterns || DEFAULT_MINIMAL_SKIP_PATTERNS;
     const skipTables = new Set(options.minimalSkipTables || []);
+    const removed = new Set<string>();
 
     for (const tableName of Array.from(tables.keys())) {
       if (skipTables.has(tableName)) {
         tables.delete(tableName);
+        removed.add(tableName);
         continue;
       }
       for (const pattern of skipPatterns) {
         if (pattern.test(tableName)) {
           tables.delete(tableName);
+          removed.add(tableName);
           break;
         }
       }
     }
+    return removed;
   }
 
   /**
@@ -387,6 +424,7 @@ export class SchemaAggregator {
   private generateSQL(
     tables: Map<string, AggregatedTable>,
     options: AggregateOptions,
+    filteredTables: ReadonlySet<string>,
   ): string {
     const lines: string[] = [
       '-- Combined SMRT Database Schema',
@@ -398,27 +436,79 @@ export class SchemaAggregator {
       lines.push('PRAGMA foreign_keys = ON;', '');
     }
 
-    // Sort tables by name for deterministic output
-    const sortedTables = Array.from(tables.entries()).sort((a, b) =>
-      a[0].localeCompare(b[0]),
+    const engine: DatabaseEngine =
+      options.dialect === 'sqlite' ? 'sqlite' : 'postgres';
+    if (filteredTables.size > 0) {
+      for (const table of tables.values()) {
+        const unsafeLegacyTarget =
+          !table.structured &&
+          referencesFilteredTable(table.legacyDdl, filteredTables);
+        if (unsafeLegacyTarget) {
+          throw new Error(
+            `[SchemaAggregator] Cannot safely generate minimal schema: legacy cached DDL for "${table.tableName}" references filtered table "${unsafeLegacyTarget}". Publish structured columns/foreignKeys for every contributor or keep the referenced table in the aggregate.`,
+          );
+        }
+        table.definition = {
+          ...table.definition,
+          columns: Object.fromEntries(
+            Object.entries(table.definition.columns).map(([name, column]) => [
+              name,
+              column.foreignKey && filteredTables.has(column.foreignKey.table)
+                ? { ...column, foreignKey: undefined }
+                : column,
+            ]),
+          ),
+          foreignKeys: table.definition.foreignKeys.filter(
+            (foreignKey) => !filteredTables.has(foreignKey.referencesTable),
+          ),
+          dependencies: table.definition.dependencies.filter(
+            (dependency) => !filteredTables.has(dependency),
+          ),
+        };
+      }
+    }
+    const plan = planForeignKeyCreation(
+      [...tables.values()].map((table) => table.definition),
+      engine,
     );
 
-    for (const [tableName, table] of sortedTables) {
+    for (const definition of plan.schemas) {
+      const tableName = definition.tableName;
+      const table = tables.get(tableName) as AggregatedTable;
+      const rendered = renderCollectedManifestTable(
+        {
+          tableName,
+          definition,
+          structured: table.structured,
+          legacyDdl: table.legacyDdl,
+          sources: table.sources,
+        },
+        engine,
+      );
+      // Keep the structured result and its cached presentation consistent with
+      // the executable aggregate after minimal filtering and cycle planning.
+      table.ddl = rendered.createTable;
+      table.indexes = rendered.indexes;
       lines.push(`-- Table: ${tableName}`);
       if (table.sources.length > 1) {
         lines.push(`-- STI table, sources: ${table.sources.join(', ')}`);
       } else {
         lines.push(`-- Source: ${table.sources[0]}`);
       }
-      lines.push(table.ddl);
+      lines.push(rendered.createTable);
       lines.push('');
 
-      if (table.indexes.length > 0) {
-        for (const idx of table.indexes) {
+      if (rendered.indexes.length > 0) {
+        for (const idx of rendered.indexes) {
           lines.push(idx);
         }
         lines.push('');
       }
+    }
+
+    if (plan.deferredStatements.length > 0) {
+      lines.push('-- Deferred foreign-key constraints');
+      lines.push(...plan.deferredStatements, '');
     }
 
     return lines.join('\n');

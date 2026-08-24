@@ -445,7 +445,7 @@ describe('SchemaManager addMissingColumns edge cases', () => {
 describe('SchemaManager dependency sorting', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('warns and proceeds when a circular dependency is detected', async () => {
+  it('creates every table in a declared dependency cycle', async () => {
     const created: string[] = [];
     const db = {
       url: 'sqlite::memory:',
@@ -469,10 +469,8 @@ describe('SchemaManager dependency sorting', () => {
     const manager = new SchemaManager(db, { engine: 'sqlite' });
     await manager.ensureTables([a, b]);
 
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Circular dependency detected involving'),
-    );
-    // Both tables still get created despite the cycle.
+    // SQLite accepts cycle constraints inline, so deterministic planning may
+    // choose either member first and still creates both safely.
     expect(created).toContain('a');
     expect(created).toContain('b');
   });
@@ -492,5 +490,174 @@ describe('SchemaManager dependency sorting', () => {
 
     const manager = new SchemaManager(db, { engine: 'sqlite' });
     await expect(manager.ensureTables([schema])).resolves.toBeUndefined();
+  });
+
+  it('adds PostgreSQL cycle constraints safely and remains idempotent', async () => {
+    const tables = new Set<string>();
+    const constraints = new Set<string>();
+    const query = vi.fn(async (sql: string, params?: unknown[]) => {
+      const create = sql.match(/^CREATE TABLE IF NOT EXISTS "([^"]+)"/);
+      if (create) tables.add(create[1]);
+      if (sql.includes('FROM pg_constraint')) {
+        return {
+          rows: constraints.has(String(params?.[1]))
+            ? [{ convalidated: true }]
+            : [],
+        };
+      }
+      if (sql.includes(' AS orphan_key ')) return { rows: [] };
+      const add = sql.match(/ADD CONSTRAINT "([^"]+)"/);
+      if (add) constraints.add(add[1]);
+      return { rows: [] };
+    });
+    const db = {
+      url: 'postgres://localhost/test',
+      query,
+      tableExists: vi.fn(async (name: string) => tables.has(name)),
+    } as any;
+    const left: SchemaDefinition = {
+      ...fullSchema('cycle_left'),
+      columns: {
+        ...fullSchema('cycle_left').columns,
+        right_id: {
+          type: 'TEXT',
+          foreignKey: {
+            table: 'cycle_right',
+            column: 'id',
+            onDelete: 'NO ACTION',
+            onUpdate: 'CASCADE',
+          },
+        },
+      },
+      dependencies: ['cycle_right'],
+    };
+    const right: SchemaDefinition = {
+      ...fullSchema('cycle_right'),
+      columns: {
+        ...fullSchema('cycle_right').columns,
+        left_id: {
+          type: 'TEXT',
+          foreignKey: {
+            table: 'cycle_left',
+            column: 'id',
+            onDelete: 'NO ACTION',
+            onUpdate: 'CASCADE',
+          },
+        },
+      },
+      dependencies: ['cycle_left'],
+    };
+
+    const manager = new SchemaManager(db, { engine: 'postgres' });
+    await manager.ensureTables([left, right]);
+    await manager.ensureTables([left, right]);
+
+    expect(constraints.size).toBe(2);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(' ADD CONSTRAINT '),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('retries validation without re-adding an existing NOT VALID cycle constraint', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('FROM pg_constraint')) {
+        return { rows: [{ convalidated: false }] };
+      }
+      if (sql.includes(' AS orphan_key ')) return { rows: [] };
+      return { rows: [] };
+    });
+    const left: SchemaDefinition = {
+      ...fullSchema('pending_left'),
+      columns: {
+        ...fullSchema('pending_left').columns,
+        right_id: {
+          type: 'TEXT',
+          foreignKey: { table: 'pending_right', column: 'id' },
+        },
+      },
+      dependencies: ['pending_right'],
+    };
+    const right: SchemaDefinition = {
+      ...fullSchema('pending_right'),
+      columns: {
+        ...fullSchema('pending_right').columns,
+        left_id: {
+          type: 'TEXT',
+          foreignKey: { table: 'pending_left', column: 'id' },
+        },
+      },
+      dependencies: ['pending_left'],
+    };
+
+    await new SchemaManager(
+      {
+        url: 'postgres://localhost/test',
+        query,
+        tableExists: vi.fn(async () => true),
+      } as any,
+      { engine: 'postgres' },
+    ).ensureTables([left, right]);
+
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(' ADD CONSTRAINT '),
+      ),
+    ).toHaveLength(0);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(' VALIDATE CONSTRAINT '),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('refuses a deferred PostgreSQL cycle constraint when existing rows are orphaned', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('information_schema.columns')) {
+        return { rows: [{ column_name: 'id' }, { column_name: 'right_id' }] };
+      }
+      if (sql.includes('FROM pg_constraint')) return { rows: [] };
+      if (sql.includes(' AS orphan_key ')) {
+        return { rows: [{ orphan_key: 'missing' }] };
+      }
+      return { rows: [] };
+    });
+    const db = {
+      url: 'postgres://localhost/test',
+      query,
+      tableExists: vi.fn(async () => true),
+    } as any;
+    const left: SchemaDefinition = {
+      ...fullSchema('orphan_left'),
+      columns: {
+        ...fullSchema('orphan_left').columns,
+        right_id: {
+          type: 'TEXT',
+          foreignKey: { table: 'orphan_right', column: 'id' },
+        },
+      },
+      dependencies: ['orphan_right'],
+    };
+    const right: SchemaDefinition = {
+      ...fullSchema('orphan_right'),
+      columns: {
+        ...fullSchema('orphan_right').columns,
+        left_id: {
+          type: 'TEXT',
+          foreignKey: { table: 'orphan_left', column: 'id' },
+        },
+      },
+      dependencies: ['orphan_left'],
+    };
+
+    await expect(
+      new SchemaManager(db, { engine: 'postgres' }).ensureTables([left, right]),
+    ).rejects.toThrow(/existing rows do not match.*Repair them/);
+    expect(
+      query.mock.calls.some(([sql]) =>
+        String(sql).includes(' ADD CONSTRAINT '),
+      ),
+    ).toBe(false);
   });
 });

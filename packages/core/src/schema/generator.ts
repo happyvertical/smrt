@@ -22,6 +22,7 @@ import {
 } from './conflict-target.js';
 import { getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
+import { resolveForeignKeyDeleteAction } from './foreign-key-policy.js';
 import {
   assertIdentifierFits,
   enforceIdentifierLimits,
@@ -93,7 +94,9 @@ type SchemaGeneratorConfig = {
     getConfig?(className: string): { idType?: 'uuid' | 'text' };
     getDescendants(baseClassName: string): string[];
     getAllFields(className: string): Promise<Map<string, RegistryField>>;
+    getFields?(className: string): Map<string, RegistryField>;
     getSTIBase?(className: string): string | null;
+    getTableName?(className: string): string | undefined;
   };
 };
 
@@ -232,6 +235,56 @@ export class SchemaGenerator {
           type: targetIdType,
         };
       }
+    }
+  }
+
+  private applyRegistryForeignKeys(
+    columns: Record<string, ColumnDefinition>,
+    fields: Map<string, RegistryField>,
+    conflictColumns: readonly string[],
+    registry: SchemaGeneratorConfig['registry'] | undefined,
+  ): void {
+    const conflictSet = new Set(conflictColumns);
+    for (const [fieldName, field] of fields.entries()) {
+      if (field.type !== 'foreignKey' || !field.related) continue;
+      const columnName = this.toSnakeCase(fieldName);
+      const column = columns[columnName];
+      if (!column) continue;
+
+      const isTenantIdField =
+        field.__tenancy?.isTenantIdField === true ||
+        field._meta?.__tenancy?.isTenantIdField === true;
+      if (isTenantIdField) {
+        column.foreignKey = undefined;
+        continue;
+      }
+
+      const [targetName, declaredTargetColumn] = field.related.split('.');
+      const targetBase = registry?.getSTIBase?.(targetName) || targetName;
+      const registeredTargetTable = registry?.getTableName?.(targetBase);
+      if (registry && !registeredTargetTable) {
+        column.foreignKey = undefined;
+        continue;
+      }
+      const targetColumn =
+        declaredTargetColumn ||
+        Array.from(registry?.getFields?.(targetBase)?.entries() || []).find(
+          ([, targetField]) => targetField._meta?.primaryKey === true,
+        )?.[0] ||
+        'id';
+      const targetTable =
+        registeredTargetTable || this.classNameToTableName(targetBase);
+      const { action } = resolveForeignKeyDeleteAction({
+        declared: field._meta?.onDelete,
+        isConflictColumn: conflictSet.has(columnName),
+        isTenantIdField,
+      });
+      column.foreignKey = {
+        table: targetTable,
+        column: this.toSnakeCase(targetColumn),
+        onDelete: action,
+        onUpdate: 'CASCADE',
+      };
     }
   }
 
@@ -1086,7 +1139,10 @@ export class SchemaGenerator {
       // or with an explicit field option, not by silently changing schema semantics
 
       // Handle foreign keys
-      if (field.type === 'foreignKey') {
+      if (
+        field.type === 'foreignKey' &&
+        field._meta?.__tenancy?.isTenantIdField !== true
+      ) {
         // Type cast to access relationship-specific properties
         const relatedName = field.related; // Top-level property
         const onDeleteAction = field._meta?.onDelete;
@@ -1141,6 +1197,14 @@ export class SchemaGenerator {
       config?.registry,
     );
 
+    const resolvedConflict = this.resolveConflictTarget('cti', columns, config);
+    this.applyRegistryForeignKeys(
+      columns,
+      fields,
+      resolvedConflict.conflictColumns,
+      config?.registry,
+    );
+
     // Generate indexes. No `<table>_id_idx`: the primary key is already a
     // unique index on every engine, and the second B-tree over the same
     // random UUIDs cost writes on 238/238 tables for nothing (#2359, A5).
@@ -1150,11 +1214,7 @@ export class SchemaGenerator {
     if (!hasCustomPK) {
       // Tenant-scoped tables key on `(tenant_id, slug, context)` under the
       // stable `<table>_slug_context_idx` name (#2360).
-      const { conflictColumns, tenantColumn } = this.resolveConflictTarget(
-        'cti',
-        columns,
-        config,
-      );
+      const { conflictColumns, tenantColumn } = resolvedConflict;
       if (!this.conflictColumnsArePrimaryKey(conflictColumns, columns)) {
         indexes.push({
           name: conflictIndexName(tableName, conflictColumns, tenantColumn),
@@ -1205,7 +1265,9 @@ export class SchemaGenerator {
       indexes,
       triggers: [],
       foreignKeys: this.extractForeignKeys(columns),
-      dependencies: [],
+      dependencies: this.extractForeignKeys(columns)
+        .map((foreignKey) => foreignKey.referencesTable)
+        .filter((dependency) => dependency !== tableName),
       version: createHash('sha256')
         .update(JSON.stringify(columns))
         .digest('hex')
@@ -1419,7 +1481,10 @@ export class SchemaGenerator {
         }
 
         // Handle foreign keys
-        if (field.type === 'foreignKey') {
+        if (
+          field.type === 'foreignKey' &&
+          field._meta?.__tenancy?.isTenantIdField !== true
+        ) {
           const relatedName = field.related; // Top-level property
           const onDeleteAction = field._meta?.onDelete;
 
@@ -1462,11 +1527,18 @@ export class SchemaGenerator {
       };
     }
 
+    const resolvedConflict = this.resolveConflictTarget('sti', columns, config);
     for (const className of allClassNames) {
       const classFields = await ObjectRegistry.getAllFields(className);
       this.reconcileRegistryForeignKeyColumnTypes(
         columns,
         classFields,
+        ObjectRegistry,
+      );
+      this.applyRegistryForeignKeys(
+        columns,
+        classFields,
+        resolvedConflict.conflictColumns,
         ObjectRegistry,
       );
     }
@@ -1553,7 +1625,9 @@ export class SchemaGenerator {
       indexes,
       triggers: [],
       foreignKeys: this.extractForeignKeys(columns),
-      dependencies: [],
+      dependencies: this.extractForeignKeys(columns)
+        .map((foreignKey) => foreignKey.referencesTable)
+        .filter((dependency) => dependency !== tableName),
       version: createHash('sha256')
         .update(JSON.stringify({ columns, baseClassName, descendants }))
         .digest('hex')
@@ -1812,8 +1886,14 @@ export class SchemaGenerator {
         jsonPath: idx.jsonPath,
       })),
       triggers: [],
-      foreignKeys: [],
-      dependencies: [],
+      foreignKeys: this.extractForeignKeys(
+        this.convertManifestColumnsToSchemaColumns(columns),
+      ),
+      dependencies: this.extractForeignKeys(
+        this.convertManifestColumnsToSchemaColumns(columns),
+      )
+        .map((foreignKey) => foreignKey.referencesTable)
+        .filter((dependency) => dependency !== tableName),
       version: '',
       packageName: '',
     };
@@ -2013,8 +2093,14 @@ export class SchemaGenerator {
         jsonPath: idx.jsonPath,
       })),
       triggers: [],
-      foreignKeys: [],
-      dependencies: [],
+      foreignKeys: this.extractForeignKeys(
+        this.convertManifestColumnsToSchemaColumns(columns),
+      ),
+      dependencies: this.extractForeignKeys(
+        this.convertManifestColumnsToSchemaColumns(columns),
+      )
+        .map((foreignKey) => foreignKey.referencesTable)
+        .filter((dependency) => dependency !== tableName),
       version: '',
       packageName: '',
     };
@@ -2124,6 +2210,7 @@ export class SchemaGenerator {
         notNull: col.notNull,
         unique: col.unique,
         defaultValue: col.default,
+        foreignKey: col.foreignKey ? { ...col.foreignKey } : undefined,
       };
     }
 

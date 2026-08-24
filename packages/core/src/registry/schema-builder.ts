@@ -9,6 +9,14 @@ import type { FieldDefinition } from '../scanner/types.js';
 import { conflictIndexName } from '../schema/conflict-target.js';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import {
+  renderForeignKeyConstraint,
+  schemaForeignKeys,
+} from '../schema/foreign-key-ddl.js';
+import {
+  requireForeignKeyAction,
+  resolveForeignKeyDeleteAction,
+} from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
@@ -376,6 +384,70 @@ interface MergedTableSchema {
   conflictColumns: string[];
 }
 
+function applyContributorForeignKeys(
+  tableSchema: MergedTableSchema,
+  contributor: TableContributor,
+): void {
+  const conflictColumns = new Set(tableSchema.conflictColumns);
+  for (const [fieldName, field] of contributor.registered.fields) {
+    if (field.type !== 'foreignKey' || !field.related) continue;
+    const columnName = toSnakeCase(fieldName);
+    const column = tableSchema.columns[columnName];
+    if (!column) continue;
+    if (
+      field._meta?.__tenancy?.isTenantIdField === true ||
+      (
+        field as FieldDefinition & {
+          __tenancy?: { isTenantIdField?: boolean };
+        }
+      ).__tenancy?.isTenantIdField === true
+    ) {
+      column.foreignKey = undefined;
+      continue;
+    }
+    const [targetName, declaredTargetColumn] = field.related.split('.');
+    const targetBase = ObjectRegistry.getSTIBase(targetName) || targetName;
+    // A manifest may carry explicit actions that predate or differ from the
+    // runtime decorator defaults. Merging runtime fields must not erase them.
+    // The fallback produced from runtime fields, however, must be replaced so
+    // conflict columns receive the same default CASCADE as app-side cleanup.
+    const manifestForeignKey =
+      contributor.registered.schema?.columns?.[columnName]?.foreignKey;
+    if (manifestForeignKey) {
+      column.foreignKey = manifestForeignKey;
+      continue;
+    }
+    // A decorator-only runtime field has no authoritative physical target
+    // until that target is registered. Scanner-produced manifests clear this
+    // shape too; only an explicit manifest FK above may survive unloaded
+    // runtime classes (the manifest-authority contract from #1120).
+    if (!ObjectRegistry.getClass(targetBase)) {
+      column.foreignKey = undefined;
+      continue;
+    }
+    const targetColumn =
+      declaredTargetColumn ||
+      Array.from(ObjectRegistry.getFields(targetBase).entries()).find(
+        ([, targetField]) => targetField._meta?.primaryKey === true,
+      )?.[0] ||
+      'id';
+    const targetTable =
+      ObjectRegistry.getTableName(targetBase) ||
+      classnameToTablename(targetBase);
+    const { action } = resolveForeignKeyDeleteAction({
+      declared: field._meta?.onDelete,
+      isConflictColumn: conflictColumns.has(columnName),
+      isTenantIdField: false,
+    });
+    column.foreignKey = {
+      table: targetTable,
+      column: toSnakeCase(targetColumn),
+      onDelete: action,
+      onUpdate: 'CASCADE',
+    };
+  }
+}
+
 /**
  * Resolve the physical table a registered class writes to.
  *
@@ -567,6 +639,8 @@ function buildMergedTableSchemas(): Record<string, MergedTableSchema> {
         }
       }
 
+      applyContributorForeignKeys(tableSchema, contributor);
+
       // Merge indexes, keeping the first definition of each name.
       const schemaIndexes = registered.schema?.indexes;
       if (schemaIndexes && schemaIndexes.length > 0) {
@@ -637,6 +711,10 @@ export function getAllSchemas(
       version: '',
       dependencies: [],
     };
+    mergedSchema.foreignKeys = schemaForeignKeys(mergedSchema);
+    mergedSchema.dependencies = mergedSchema.foreignKeys
+      .map((foreignKey) => foreignKey.referencesTable)
+      .filter((dependency) => dependency !== tableName);
 
     // Generate DDL from merged columns (or use original DDL if columns are empty)
     let ddl: string;
@@ -722,6 +800,10 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       tableSchema.columns,
       tableSchema.isSTI,
     );
+    const foreignKeys = schemaForeignKeys({
+      columns: tableSchema.columns,
+      foreignKeys: [],
+    });
 
     schemas[tableName] = {
       tableName,
@@ -734,9 +816,11 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
         tableSchema.conflictColumns,
       ),
       triggers: [],
-      foreignKeys: [],
+      foreignKeys,
       version: '',
-      dependencies: [],
+      dependencies: foreignKeys
+        .map((foreignKey) => foreignKey.referencesTable)
+        .filter((dependency) => dependency !== tableName),
     };
   }
 
@@ -796,6 +880,9 @@ export function generateDDLFromColumns(
     }
 
     columnLines.push(parts.join(' '));
+  }
+  for (const foreignKey of schemaForeignKeys({ columns, foreignKeys: [] })) {
+    columnLines.push(`  ${renderForeignKeyConstraint(tableName, foreignKey)}`);
   }
 
   sql += columnLines.join(',\n');
@@ -935,7 +1022,16 @@ export function fieldsToColumns(
     }
 
     // Handle foreign keys
-    if (fieldDef.type === 'foreignKey' && fieldDef.related) {
+    if (
+      fieldDef.type === 'foreignKey' &&
+      fieldDef.related &&
+      fieldDef._meta?.__tenancy?.isTenantIdField !== true &&
+      !(
+        fieldDef as FieldDefinition & {
+          __tenancy?: { isTenantIdField?: boolean };
+        }
+      ).__tenancy?.isTenantIdField
+    ) {
       const [table, columnName = 'id'] = fieldDef.related.split('.');
       const fieldMeta = fieldDef._meta as
         | {
@@ -946,8 +1042,18 @@ export function fieldsToColumns(
       column.foreignKey = {
         table: classnameToTablename(table),
         column: columnName,
-        onDelete: fieldMeta?.onDelete ?? 'CASCADE',
-        onUpdate: fieldMeta?.onUpdate ?? 'CASCADE',
+        onDelete: resolveForeignKeyDeleteAction({
+          declared: fieldMeta?.onDelete,
+          isConflictColumn: false,
+          isTenantIdField: false,
+        }).action,
+        onUpdate:
+          fieldMeta?.onUpdate === undefined
+            ? 'CASCADE'
+            : requireForeignKeyAction(
+                fieldMeta.onUpdate,
+                `${fieldName} ON UPDATE`,
+              ),
       };
     }
 

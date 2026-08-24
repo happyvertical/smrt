@@ -170,9 +170,12 @@ describe.skipIf(!pgUrl)('delete() cascade on PostgreSQL (#2371)', () => {
   });
 
   beforeEach(async () => {
-    for (const table of ALL_TABLES) {
-      await db.query(`TRUNCATE "${table}"`);
-    }
+    // PostgreSQL requires every table participating in an FK relationship to
+    // appear in the same TRUNCATE statement, even when referencing tables were
+    // already emptied by earlier statements.
+    await db.query(
+      `TRUNCATE ${ALL_TABLES.map((table) => `"${table}"`).join(', ')}`,
+    );
     docs = await PgCascadeDocCollection.create({ db });
   });
 
