@@ -304,6 +304,19 @@ describe('Campaign customer scope', () => {
     expect(scheduled.status).toBe('scheduled');
   });
 
+  it('allows a new initialized Campaign to choose its first persisted status', async () => {
+    const campaign = new marketing.Campaign({
+      db,
+      campaignKey: 'new-initialized-status',
+      name: 'New initialized status',
+    });
+    await campaign.initialize();
+    expect(campaign.isPersisted).toBe(false);
+    campaign.status = 'active';
+
+    await expect(campaign.save()).resolves.toMatchObject({ status: 'active' });
+  });
+
   it('rejects Campaign IDs owned by a different tenant or global lane', async () => {
     const tenantA = randomUUID();
     const tenantB = randomUUID();

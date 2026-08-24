@@ -120,7 +120,7 @@ export class Campaign extends SmrtObject {
     await super.initialize();
     this.startAt = Campaign.coerceDate(this.startAt);
     this.endAt = Campaign.coerceDate(this.endAt);
-    loadedCampaignStatus.set(this, this.status);
+    if (this.isPersisted) loadedCampaignStatus.set(this, this.status);
     return this;
   }
 
