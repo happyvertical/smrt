@@ -274,6 +274,51 @@ describe('partitionSchemaChanges', () => {
       },
     ]);
   });
+
+  it('separates executable PostgreSQL foreign keys from manual engine repairs', () => {
+    const executable = {
+      type: 'add_foreign_key' as const,
+      table: 'children',
+      name: 'children_parent_id_parents_id_fkey',
+      sqlStatements: [
+        'ALTER TABLE "children" ADD CONSTRAINT "children_parent_id_parents_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") NOT VALID',
+        'ALTER TABLE "children" VALIDATE CONSTRAINT "children_parent_id_parents_id_fkey"',
+      ],
+    };
+    const manual = {
+      type: 'add_foreign_key' as const,
+      table: 'orphans',
+      name: 'orphans_parent_id_parents_id_fkey',
+      advisory: {
+        severity: 'warning' as const,
+        message: 'Repair existing orphan rows, then rerun.',
+        suggestedSql: ['SELECT parent_id FROM orphans'],
+      },
+    };
+
+    const result = partitionSchemaChanges(
+      [executable, manual],
+      (table) => `${table}:Class`,
+    );
+
+    expect(result.migrations).toEqual([
+      expect.objectContaining({
+        type: 'add_foreign_key',
+        tableName: 'children',
+        sqlStatements: executable.sqlStatements,
+      }),
+    ]);
+    expect(result.manualInterventions).toEqual([
+      expect.objectContaining({
+        type: 'add_foreign_key',
+        tableName: 'orphans',
+        advisory: manual.advisory,
+      }),
+    ]);
+    expect(getSyntheticMigrationNameForChange(executable)).toMatch(
+      /^add_foreign_key_children_[a-f0-9]{8}$/,
+    );
+  });
 });
 
 describe('shouldFailDbMigrate', () => {

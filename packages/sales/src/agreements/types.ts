@@ -126,7 +126,7 @@ export interface ExecutedAgreementOptions extends SmrtObjectOptions {
   acceptedAt?: Date | string | number;
   effectiveFrom?: Date | string | number | null;
   effectiveTo?: Date | string | number | null;
-  supersedesExecutedAgreementId?: string;
+  supersedesExecutedAgreementId?: string | null;
   metadata?: string;
 }
 

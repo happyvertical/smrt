@@ -17,12 +17,19 @@ import { Blacklist } from '../models/Blacklist';
 import { EmailAttachment } from '../models/EmailAttachment';
 import { EmailFolder } from '../models/EmailFolder';
 import { Whitelist } from '../models/Whitelist';
+import { prepareMessageParents } from './fk-fixtures.js';
 
 let db: DatabaseInterface;
 const TEST_TENANT_ID = 'test-messaging-tenant';
 
 beforeEach(async () => {
   db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  await prepareMessageParents(db, [
+    'acct-1',
+    'acct-stats',
+    'acct-sub',
+    'acct-sys',
+  ]);
 });
 
 afterEach(async () => {

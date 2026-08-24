@@ -2829,8 +2829,8 @@ export class SmrtObject extends SmrtClass {
    *
    * ## Referential cleanup (#2371)
    *
-   * SMRT emits no DB-level `FOREIGN KEY` constraints, so step 3 enforces
-   * referential integrity in the application layer instead:
+   * Step 3 enforces the same referential policy as generated same-package
+   * database constraints:
    *
    * - `_smrt_embeddings` and `_smrt_contexts` rows owned by this object are
    *   removed, so a deleted object can no longer win a `semanticSearch` slot
@@ -2841,8 +2841,8 @@ export class SmrtObject extends SmrtClass {
    *   resolved according to their declared `onDelete` — `'CASCADE'`,
    *   `'SET NULL'` or `'RESTRICT'`. Without a declaration, a column that is
    *   part of the referencing class's `conflictColumns` (junction and
-   *   association rows) defaults to `CASCADE`; every other column is left
-   *   untouched, as before.
+   *   association rows) defaults to `CASCADE`; every other same-package
+   *   column defaults to immediate `NO ACTION`.
    *
    * Cascaded rows are removed with set-based statements: their own hooks and
    * interceptors do **not** run and no change-feed tombstone is written for

@@ -110,7 +110,8 @@ export class ProfileCollection extends SmrtCollection<Profile> {
     await this.ensureEmailKeysReady();
     const result = await withSystemContext(() =>
       db.query(
-        `SELECT id, tenant_id, _meta_type, email, email_key
+        `SELECT CAST(id AS VARCHAR) AS id,
+                tenant_id, _meta_type, email, email_key
          FROM profiles
          WHERE id = ?
          LIMIT 1`,
@@ -279,7 +280,8 @@ export class ProfileCollection extends SmrtCollection<Profile> {
     await this.ensureEmailKeysReady();
     const result = await withSystemContext(async () => {
       return db.query(
-        `SELECT id, tenant_id, _meta_type, email, email_key
+        `SELECT CAST(id AS VARCHAR) AS id,
+                tenant_id, _meta_type, email, email_key
          FROM profiles
          WHERE email_key = ?
          ORDER BY created_at ASC, id ASC
@@ -389,6 +391,9 @@ export class ProfileCollection extends SmrtCollection<Profile> {
         `Profile ${profileId} could not be hydrated.`,
       );
     }
+    // Preserve the portable identity used for this lookup when native DuckDB
+    // exposes UUID result values through its internal object representation.
+    profile.id = profileId;
     return profile;
   }
 

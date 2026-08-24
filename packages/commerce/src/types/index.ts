@@ -386,8 +386,8 @@ export interface ContractOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   contractType?: ContractType;
   status?: ContractStatus;
-  customerId?: string;
-  vendorId?: string;
+  customerId?: string | null;
+  vendorId?: string | null;
   subtotal?: number;
   taxAmount?: number;
   totalAmount?: number;
@@ -530,8 +530,8 @@ export interface FulfillmentLineItemOptions extends SmrtObjectOptions {
  */
 export interface PaymentOptions extends SmrtObjectOptions {
   tenantId?: string | null;
-  contractId?: string;
-  customerId?: string;
+  contractId?: string | null;
+  customerId?: string | null;
   amount?: number;
   currency?: string;
   method?: PaymentMethod;

@@ -88,7 +88,7 @@ describe('MigrationGenerator branch coverage', () => {
       );
     });
 
-    it('does not emit inline FK constraints on the delegated path (orchestrator parity)', () => {
+    it('emits inline FK constraints on the delegated path (orchestrator parity)', () => {
       // The DDL strategy (and thus the delegated generateCreateTable) does not
       // emit FOREIGN KEY constraints — SMRT manages relationships via
       // cross-package refs and avoids circular DDL FKs (#1333). This matches
@@ -98,7 +98,10 @@ describe('MigrationGenerator branch coverage', () => {
         added_tables: [
           {
             tableName: 'links',
-            columns: { id: { type: 'TEXT', primaryKey: true } },
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              target_id: { type: 'TEXT' },
+            },
             indexes: [],
             triggers: [],
             foreignKeys: [
@@ -123,7 +126,9 @@ describe('MigrationGenerator branch coverage', () => {
 
       const up = migration.up.join('\n');
       expect(up).toContain('CREATE TABLE IF NOT EXISTS "links"');
-      expect(up).not.toContain('FOREIGN KEY');
+      expect(up).toContain(
+        'CONSTRAINT "links_target_id_targets_id_fkey" FOREIGN KEY ("target_id") REFERENCES "targets" ("id")',
+      );
     });
   });
 
@@ -337,6 +342,41 @@ describe('MigrationGenerator branch coverage', () => {
         '-- WARNING: Orphan column items.old_code (TEXT NOT NULL)',
       );
       expect(migration.down).toHaveLength(0);
+    });
+
+    it('records advisory-only foreign-key repair guidance in the migration', () => {
+      const migration = new MigrationGenerator({
+        engine: 'postgres',
+      }).generateFromDiff(
+        {
+          has_changes: true,
+          added_tables: [],
+          dropped_tables: [],
+          changes: [
+            {
+              type: 'add_foreign_key',
+              table: 'children',
+              name: 'children_parent_id_parents_id_fkey',
+              advisory: {
+                severity: 'warning',
+                message: 'Existing orphan rows block this constraint.',
+                suggestedSql: [
+                  'SELECT parent_id FROM children WHERE parent_id IS NOT NULL',
+                ],
+              },
+            },
+          ],
+        },
+        { name: '0003_foreign_key_advisory' },
+      );
+
+      expect(migration.up.join('\n')).toContain(
+        '-- WARNING: Foreign-key constraint children.children_parent_id_parents_id_fkey',
+      );
+      expect(migration.up.join('\n')).toContain(
+        '-- Existing orphan rows block this constraint.',
+      );
+      expect(migration.up.join('\n')).toContain('-- suggested: SELECT');
     });
 
     it('ignores unknown change types without emitting SQL', () => {

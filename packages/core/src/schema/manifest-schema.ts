@@ -137,14 +137,30 @@ export function manifestIndexesToDefinitions(
 export function manifestSchemaToDefinition(
   schema: ManifestSchemaLike,
 ): SchemaDefinition {
+  const columns = manifestColumnsToDefinitions(schema.columns);
+  const foreignKeys = Object.entries(columns).flatMap(([column, definition]) =>
+    definition.foreignKey
+      ? [
+          {
+            column,
+            referencesTable: definition.foreignKey.table,
+            referencesColumn: definition.foreignKey.column,
+            onDelete: definition.foreignKey.onDelete,
+            onUpdate: definition.foreignKey.onUpdate,
+          },
+        ]
+      : [],
+  );
   return {
     tableName: schema.tableName,
     ddl: schema.ddl,
-    columns: manifestColumnsToDefinitions(schema.columns),
+    columns,
     indexes: manifestIndexesToDefinitions(schema.indexes),
     triggers: [],
-    foreignKeys: [],
-    dependencies: [],
+    foreignKeys,
+    dependencies: foreignKeys
+      .map((foreignKey) => foreignKey.referencesTable)
+      .filter((dependency) => dependency !== schema.tableName),
     version: schema.version ?? '',
   };
 }
@@ -198,6 +214,22 @@ export function mergeSchemaDefinitionInto(
       target.indexes.push(index);
     }
   }
+  const foreignKeyKeys = new Set(
+    target.foreignKeys.map(
+      (foreignKey) =>
+        `${foreignKey.column}\0${foreignKey.referencesTable}\0${foreignKey.referencesColumn}`,
+    ),
+  );
+  for (const foreignKey of incoming.foreignKeys) {
+    const key = `${foreignKey.column}\0${foreignKey.referencesTable}\0${foreignKey.referencesColumn}`;
+    if (!foreignKeyKeys.has(key)) {
+      foreignKeyKeys.add(key);
+      target.foreignKeys.push(foreignKey);
+    }
+  }
+  target.dependencies = Array.from(
+    new Set([...target.dependencies, ...incoming.dependencies]),
+  ).sort();
 }
 
 /**

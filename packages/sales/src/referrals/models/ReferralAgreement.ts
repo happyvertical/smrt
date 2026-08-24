@@ -121,11 +121,11 @@ export class ReferralAgreement extends SmrtObject {
 
   /** Current provider workflow while this version is being signed. */
   @foreignKey('AgreementExecution')
-  executionId: string = '';
+  executionId: string | null = null;
 
   /** Immutable executed evidence required before this version can activate. */
   @foreignKey('ExecutedAgreement')
-  executedAgreementId: string = '';
+  executedAgreementId: string | null = null;
 
   /**
    * Free-form JSON object stored as a string. Use

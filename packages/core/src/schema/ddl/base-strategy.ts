@@ -7,6 +7,10 @@
 
 import { createLogger } from '@happyvertical/logger';
 import {
+  renderForeignKeyConstraint,
+  schemaForeignKeys,
+} from '../foreign-key-ddl.js';
+import {
   formatDefaultValue as formatDefaultValueShared,
   isSafeIdentifier,
   isSafeIdentifierPath,
@@ -75,6 +79,10 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     if (this.requiresInlineUnique() && indexes.length > 0) {
       const uniqueConstraints = this.generateInlineUniqueConstraints(indexes);
       columnDefs.push(...uniqueConstraints);
+    }
+
+    for (const foreignKey of schemaForeignKeys(schema)) {
+      columnDefs.push(renderForeignKeyConstraint(tableName, foreignKey));
     }
 
     sql += columnDefs.map((def) => `  ${def}`).join(',\n');

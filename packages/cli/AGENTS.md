@@ -43,6 +43,18 @@ migrations are manifest-driven through registered objects and project manifests.
 
 ## `db:migrate` on PostgreSQL
 
+New tables are created in deterministic foreign-key dependency order. Mutual
+cycles are created without the cyclic clauses first, then receive named
+constraints after both tables exist. When a same-package constraint is missing
+on an existing table, `db:migrate` probes the exact child/parent columns for
+orphans before `ADD ... NOT VALID` and `VALIDATE CONSTRAINT`; orphaned data or a
+failed probe stays manual with detector/repair SQL.
+
+`db:migrate --dry-run` and deprecated `db:setup --dry-run` print the same
+engine-specific dependency plan used for execution, including exact table DDL
+and deferred PostgreSQL cycle constraints; cached per-class DDL is not a valid
+preview.
+
 `db:migrate` always bounds a PostgreSQL batch with `SET LOCAL lock_timeout` and
 `SET LOCAL statement_timeout` inside its transaction, from
 `migrations.postgres.lockTimeout` / `.statementTimeout` (defaults `30s` / `60s`;
@@ -104,6 +116,13 @@ not from the schema definition.
   `statementTimeout` settings as ordinary schema migration.
 
 ## `db:migrate` on SQLite: type changes rebuild the table
+
+SQLite can enforce generated same-package constraints on new tables, including
+cycles, but adding one to an existing table requires an explicit rebuild.
+DuckDB reports unsupported constraint shapes or `ALTER ADD CONSTRAINT` as
+manual/refused work, never as a successful no-op. Generated same-package
+constraints retain `ON UPDATE CASCADE`, which DuckDB/JSON cannot enforce, so
+those engines report an actionable refusal rather than silently stripping it.
 
 SQLite has no `ALTER COLUMN ... TYPE`, so a type-bucket change (the common one
 being a numeric default edited `0` → `0.0`) is applied as the documented table

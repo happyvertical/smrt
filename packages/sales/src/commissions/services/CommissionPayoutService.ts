@@ -753,12 +753,14 @@ export class CommissionPayoutService {
 
     const membersByPayout = new Map<string, Commission[]>();
     for (const commission of members) {
+      if (!commission.payoutId) continue;
       const bucket = membersByPayout.get(commission.payoutId);
       if (bucket) bucket.push(commission);
       else membersByPayout.set(commission.payoutId, [commission]);
     }
     const adjustmentsByPayout = new Map<string, CommissionAdjustment[]>();
     for (const adjustment of memberAdjustments) {
+      if (!adjustment.payoutId) continue;
       const bucket = adjustmentsByPayout.get(adjustment.payoutId);
       if (bucket) bucket.push(adjustment);
       else adjustmentsByPayout.set(adjustment.payoutId, [adjustment]);

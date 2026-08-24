@@ -134,7 +134,7 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
 
   private async loadGlobalBySlug(slug: string): Promise<ProfileType | null> {
     const result = await this.db.query(
-      `SELECT id
+      `SELECT CAST(id AS VARCHAR) AS id
        FROM profile_types
        WHERE slug = ?
          AND context = ''
@@ -144,6 +144,12 @@ export class ProfileTypeCollection extends SmrtCollection<ProfileType> {
       slug,
     );
     const id = result.rows[0]?.id;
-    return typeof id === 'string' ? this.get({ id }) : null;
+    if (typeof id !== 'string') return null;
+    const profileType = await this.get({ id });
+    // @happyvertical/sql 0.88 exposes native DuckDB UUID result values as an
+    // internal object. The cast above is the portable identity boundary for
+    // this lookup; retain it on the hydrated object used by provisioning.
+    if (profileType) profileType.id = id;
+    return profileType;
   }
 }

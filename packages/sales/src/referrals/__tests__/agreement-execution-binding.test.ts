@@ -125,8 +125,8 @@ describe('ReferralAgreementExecutionService', () => {
         clearingDays: 45,
         effectiveFrom: new Date('2026-09-01T00:00:00Z'),
       });
-      expect(v2.executionId).toBe('');
-      expect(v2.executedAgreementId).toBe('');
+      expect(v2.executionId).toBeNull();
+      expect(v2.executedAgreementId).toBeNull();
       const sentV2 = await service.requestSignature(requestInput(v2.id ?? ''));
       const executedV2 = await createExecuted(
         sentV2.executionId,

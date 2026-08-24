@@ -32,12 +32,18 @@ export interface ColumnDefinition {
   foreignKey?: {
     table: string;
     column: string;
-    onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
-    onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
+    onDelete?: ForeignKeyAction;
+    onUpdate?: ForeignKeyAction;
   };
   check?: string; // CHECK constraint
   description?: string;
 }
+
+export type ForeignKeyAction =
+  | 'CASCADE'
+  | 'SET NULL'
+  | 'RESTRICT'
+  | 'NO ACTION';
 
 export interface IndexDefinition {
   name: string;
@@ -110,8 +116,8 @@ export interface ForeignKeyDefinition {
   column: string;
   referencesTable: string;
   referencesColumn: string;
-  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
-  onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
+  onDelete?: ForeignKeyAction;
+  onUpdate?: ForeignKeyAction;
 }
 
 export interface SchemaDefinition {
@@ -334,6 +340,7 @@ export interface SchemaChange {
     | 'alter_column'
     | 'orphan_column'
     | 'add_index'
+    | 'add_foreign_key'
     | 'drop_index'
     | 'orphan_index'
     | 'type_mismatch'
@@ -346,6 +353,8 @@ export interface SchemaChange {
   column?: ColumnDefinition;
   /** Index definition (for add_index) */
   index?: IndexDefinition;
+  /** Foreign-key definition (for add_foreign_key). */
+  foreignKey?: ForeignKeyDefinition;
   /**
    * For type mismatches/upgrades: expected vs actual type. For
    * `alter_column`: the expected vs actual constraint rendering (e.g.

@@ -1,3 +1,4 @@
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { createProfileFromOidc } from '../auth/index.js';
@@ -5,7 +6,6 @@ import {
   coordinateOidcProvisioning,
   isOidcAbortedTransactionError,
 } from '../auth/oidcProvisioningCoordinator';
-import { ProfileTypeCollection } from '../collections/ProfileTypeCollection.js';
 import { backfillProfileEmailKeys } from '../migrations/backfillProfileEmailKeys.js';
 
 type DatabaseInterface = Awaited<ReturnType<typeof getDatabase>>;
@@ -155,7 +155,18 @@ describe('coordinateOidcProvisioning shared-connection ordering', () => {
       type: 'duckdb',
       url: ':memory:',
     })) as DatabaseInterface;
-    await ProfileTypeCollection.create({ db });
+    await getTestDatabase({
+      db,
+      classes: [
+        'ProfileType',
+        'Profile',
+        'OidcIdentity',
+        'OidcProfileEmailReservation',
+      ],
+      // This scenario validates statement serialization on one DuckDB handle,
+      // not referential enforcement. DuckDB cannot preserve ON UPDATE CASCADE.
+      omitForeignKeyConstraints: true,
+    });
     await backfillProfileEmailKeys(db);
 
     let inFlight = 0;

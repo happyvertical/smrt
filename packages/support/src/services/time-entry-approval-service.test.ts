@@ -14,6 +14,10 @@ import type { ServiceTimeEntry } from '../models/service-time-entry.js';
 import type { SupportCase } from '../models/support-case.js';
 import type { SupportPlan } from '../models/support-plan.js';
 import {
+  type SupportSpecialist,
+  SupportSpecialistCollection,
+} from '../models/support-specialist.js';
+import {
   APPROVE_TIME_ENTRY_PERMISSION,
   supportPrincipalFromPermissions,
 } from '../permissions.js';
@@ -52,6 +56,7 @@ describe('TimeEntryApprovalService', () => {
   let caseService: SupportCaseService;
   let entryService: ServiceTimeEntryService;
   let approvalService: TimeEntryApprovalService;
+  let specialists: SupportSpecialistCollection;
 
   beforeEach(async () => {
     ctx = await createIsolatedTestDbFromManifest({
@@ -66,6 +71,7 @@ describe('TimeEntryApprovalService', () => {
       db: ctx.db,
       caseService,
     });
+    specialists = await SupportSpecialistCollection.create({ db: ctx.db });
   });
 
   afterEach(async () => {
@@ -110,6 +116,16 @@ describe('TimeEntryApprovalService', () => {
       ...overrides,
     });
     return entryService.submit(entry, { byProfileId: 'profile-worker-1' });
+  }
+
+  async function specialistFor(
+    tenantId: string | null = null,
+  ): Promise<SupportSpecialist> {
+    return specialists.create({
+      tenantId,
+      profileId: 'profile-worker-1',
+      displayName: 'Worker One',
+    });
   }
 
   describe('approval paths (FR-36)', () => {
@@ -288,8 +304,9 @@ describe('TimeEntryApprovalService', () => {
 
   describe('compensation derivation (Support Compensation Plan side)', () => {
     it('prefers the specialist-specific plan over the tenant default', async () => {
+      const specialist = await specialistFor();
       await approvalService.compensationPlans.create({
-        specialistId: 'spec-1',
+        specialistId: specialist.id,
         name: 'Specific',
         hourlyRate: 4500,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
@@ -307,7 +324,7 @@ describe('TimeEntryApprovalService', () => {
       );
       const supportCase = await caseUnder(plan);
       const entry = await submittedEntry(supportCase.id ?? '', {
-        specialistId: 'spec-1',
+        specialistId: specialist.id,
         durationSeconds: 7200,
       });
 
@@ -336,6 +353,7 @@ describe('TimeEntryApprovalService', () => {
     });
 
     it("never prices work with another tenant's default plan", async () => {
+      const specialist = await specialistFor('tenant-1');
       // A foreign tenant's default plan exists and is newer/richer.
       await approvalService.compensationPlans.create({
         tenantId: 'tenant-other',
@@ -358,7 +376,7 @@ describe('TimeEntryApprovalService', () => {
       );
       const supportCase = await caseUnder(plan, { tenantId: 'tenant-1' });
       const entry = await submittedEntry(supportCase.id ?? '', {
-        specialistId: 'spec-1',
+        specialistId: specialist.id,
         durationSeconds: 3600,
       });
 
@@ -374,8 +392,9 @@ describe('TimeEntryApprovalService', () => {
     });
 
     it('falls back to the tenant default when the specific plan has expired', async () => {
+      const specialist = await specialistFor();
       await approvalService.compensationPlans.create({
-        specialistId: 'spec-1',
+        specialistId: specialist.id,
         name: 'Expired specific',
         hourlyRate: 4500,
         effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
@@ -392,7 +411,7 @@ describe('TimeEntryApprovalService', () => {
       const supportCase = await caseUnder(plan);
       // Work instant (endedAt 2026-07-01) is past the specific plan's window.
       const entry = await submittedEntry(supportCase.id ?? '', {
-        specialistId: 'spec-1',
+        specialistId: specialist.id,
         durationSeconds: 7200,
       });
 
@@ -751,8 +770,9 @@ describe('TimeEntryApprovalService', () => {
   });
 
   it('records a case event carrying the charge amount and never the compensation', async () => {
+    const specialist = await specialistFor();
     await approvalService.compensationPlans.create({
-      specialistId: 'spec-1',
+      specialistId: specialist.id,
       name: 'Comp',
       hourlyRate: 4500,
     });
@@ -762,7 +782,7 @@ describe('TimeEntryApprovalService', () => {
     );
     const supportCase = await caseUnder(plan);
     const entry = await submittedEntry(supportCase.id ?? '', {
-      specialistId: 'spec-1',
+      specialistId: specialist.id,
     });
 
     const { charge, compensation, path } = await approvalService.approve(

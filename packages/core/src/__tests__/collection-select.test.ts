@@ -15,7 +15,9 @@ type Equal<Left, Right> =
     ? true
     : false;
 
-@smrt()
+// Projection SQL is the subject of this cross-adapter fixture. Keep its keys
+// text-shaped so native DuckDB UUID result decoding is not part of the lane.
+@smrt({ idType: 'text' })
 class ProjectionAccount extends SmrtObject {
   name: string = '';
 }
@@ -24,7 +26,7 @@ class ProjectionAccountCollection extends SmrtCollection<ProjectionAccount> {
   static readonly _itemClass = ProjectionAccount;
 }
 
-@smrt()
+@smrt({ idType: 'text' })
 class ProjectionOpportunity extends SmrtObject {
   title: string = '';
   status: string = '';
@@ -138,6 +140,10 @@ describe('SmrtCollection.list({ select })', () => {
           type: adapterConfig.type,
           url: dbUrl,
           classes: ['ProjectionAccount', 'ProjectionOpportunity'],
+          // Projection behavior is the subject here. DuckDB cannot enforce
+          // SMRT's generated ON UPDATE CASCADE FK action (#2413).
+          omitForeignKeyConstraints:
+            adapterConfig.type === 'duckdb' || adapterConfig.type === 'json',
         });
         accounts = await ProjectionAccountCollection.create({ db });
         opportunities = await ProjectionOpportunityCollection.create({ db });

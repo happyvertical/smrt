@@ -2242,13 +2242,11 @@ export class ObjectRegistry {
    * Foreign-key cycles (e.g. smrt-chat's ChatMessage.threadId -> ChatThread
    * and ChatThread.rootMessageId -> ChatMessage) are BROKEN rather than
    * treated as a fatal error: when a back-edge is encountered the recursion
-   * stops there, so every class still appears in the returned order. SMRT does
-   * not emit real DB `FOREIGN KEY` constraints in its generated CREATE TABLE
-   * DDL, so a table can be created before its cyclic reference target exists —
-   * the reference is satisfied once both tables are present. This mirrors the
-   * standard RDBMS approach (create tables first, wire cyclic references
-   * afterward) and matches SchemaManager.sortByDependencies, which already
-   * tolerates cycles. See issue #1333.
+   * stops there, so every class still appears in the returned order. The schema
+   * creation planner then handles physical constraints per engine: SQLite
+   * keeps cyclic constraints inline, PostgreSQL defers them until both tables
+   * exist, and DuckDB refuses unsupported cycles with actionable guidance.
+   * See issues #1333 and #2413.
    *
    * @returns Array of class names in initialization order. Every registered
    *   class appears exactly once; cycle back-edges are dropped from the
@@ -2310,7 +2308,7 @@ export class ObjectRegistry {
         `[ObjectRegistry] Foreign-key cycle(s) detected and broken for ordering: ${[
           ...cycleMembers,
         ].join(', ')}. Tables are created without strict cyclic ordering; ` +
-          'SMRT does not emit DB-level FOREIGN KEY constraints, so this is safe.',
+          'the schema creation planner will apply engine-specific cycle handling.',
       );
     }
 

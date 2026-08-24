@@ -1,8 +1,9 @@
 /**
  * App-side referential integrity for `SmrtObject.delete()` (#2371).
  *
- * SMRT emits **no** DB-level `FOREIGN KEY` constraints on any engine, so the
- * database will never clean up after a deleted row. Before this module,
+ * Same-package `@foreignKey` fields now emit database constraints where the
+ * engine can enforce the declared policy. Cross-package references and older
+ * schemas still rely on this application-side path. Before this module,
  * `delete()` removed the object's own row and nothing else: junction rows,
  * polymorphic association rows, `_smrt_embeddings` and `_smrt_contexts` entries
  * were all left pointing at an id that no longer resolved, and
@@ -39,14 +40,15 @@
  * |---|---|
  * | Column is part of the referencing class's `conflictColumns`, and is not a `@tenantId()` field | `CASCADE` |
  * | Polymorphic `(metaType, metaId)` association row | `CASCADE` |
- * | Anything else, including every `@tenantId()` field | `NO ACTION` (legacy behaviour — the row is left alone) |
+ * | Ordinary same-package reference | `NO ACTION` (deletion is refused while references remain) |
+ * | Every `@tenantId()` field | Excluded: tenant scope is not an ownership edge |
  *
  * The natural-key rule is what makes junction rows work without any
  * per-package annotation: a junction declares
  * `@smrt({ conflictColumns: ['content_id', 'asset_id', 'relationship'] })`, so
  * `content_id` identifies the row and the row cannot outlive the content it
  * links. An ordinary child (`Order.customerId`) is keyed by `(slug, context)`,
- * so it keeps today's behaviour unless it opts in with
+ * so it defaults to immediate `NO ACTION` unless it opts in with
  * `@foreignKey(Customer, { onDelete: 'CASCADE' })`.
  *
  * `@tenantId()` fields are excluded from the natural-key rule even though
@@ -73,6 +75,11 @@ import { ConfigurationError, DatabaseError } from './errors.js';
 // Type-only: erased at runtime, so it cannot re-enter the
 // `registry → object → cascade` import cycle.
 import type { ObjectRegistry } from './registry.js';
+import {
+  normalizeForeignKeyAction,
+  resolveForeignKeyDeleteAction,
+} from './schema/foreign-key-policy.js';
+import type { ForeignKeyAction } from './schema/types.js';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk.js';
 import { toSnakeCase } from './utils/naming.js';
 
@@ -81,11 +88,11 @@ const logger = createLogger({ level: 'info' });
 /**
  * Referential action applied to rows pointing at a deleted object.
  *
- * Same vocabulary as SQL's `ON DELETE`, enforced by the framework instead of
- * the engine. `NO ACTION` means "leave the rows alone" — SMRT emits no
- * constraint, so nothing raises.
+ * Same vocabulary as SQL's `ON DELETE`, enforced by the framework before the
+ * engine. `NO ACTION` is preflighted like an immediate restrictive action so
+ * application-side and database-side enforcement agree.
  */
-export type OnDeleteAction = 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+export type OnDeleteAction = ForeignKeyAction;
 
 /** Table holding framework-managed per-object memory entries. */
 const CONTEXTS_TABLE = '_smrt_contexts';
@@ -117,8 +124,8 @@ export interface CascadeReference {
   fieldName: string;
   /** Column (snake_case) holding the reference. */
   column: string;
-  /** Resolved action, never `NO ACTION` (those are dropped from the plan). */
-  action: Exclude<OnDeleteAction, 'NO ACTION'>;
+  /** Resolved action. `NO ACTION` is preflighted like an immediate RESTRICT. */
+  action: OnDeleteAction;
   /** `true` when the action was declared rather than derived from the key. */
   declared: boolean;
 }
@@ -162,13 +169,6 @@ export type CascadeRegistryView = Pick<
   | 'getDescendants'
 >;
 
-const CASCADE_ACTIONS = new Set<OnDeleteAction>([
-  'CASCADE',
-  'SET NULL',
-  'RESTRICT',
-  'NO ACTION',
-]);
-
 /**
  * Normalize a declared `onDelete` value.
  *
@@ -177,11 +177,7 @@ const CASCADE_ACTIONS = new Set<OnDeleteAction>([
  * an unset or unrecognized value so the caller can fall back to the default.
  */
 export function normalizeOnDelete(value: unknown): OnDeleteAction | undefined {
-  if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().toUpperCase().replace(/_/g, ' ');
-  return CASCADE_ACTIONS.has(normalized as OnDeleteAction)
-    ? (normalized as OnDeleteAction)
-    : undefined;
+  return normalizeForeignKeyAction(value);
 }
 
 function isPolymorphicAssociationClass(fields: Map<string, unknown>): boolean {
@@ -245,12 +241,21 @@ export function buildCascadePlan(
       }
       if (!targetNames.has(relationship.targetClass)) continue;
 
+      // An explicit app-side-only relationship is archival metadata, not a
+      // referential-integrity rule. Its identifier is deliberately allowed to
+      // outlive the parent, so delete planning must not block, null, or remove
+      // the retained row (#2413).
+      if (
+        relationship.type === 'foreignKey' &&
+        relationship.options?.constraint === false
+      ) {
+        continue;
+      }
+
       const tableName = registry.getTableName(sourceClass);
       if (!tableName) continue;
 
       const column = toSnakeCase(relationship.fieldName);
-      const declaredAction = normalizeOnDelete(relationship.options?.onDelete);
-
       if (!conflictColumns) {
         conflictColumns = new Set(registry.getConflictColumns(sourceClass));
       }
@@ -268,14 +273,13 @@ export function buildCascadePlan(
       // is deliberate until tenant-delete cascade is an explicit decision.
       const isTenantIdField =
         relationship.options?.__tenancy?.isTenantIdField === true;
+      if (isTenantIdField) continue;
 
-      const action =
-        declaredAction ??
-        (!isTenantIdField && conflictColumns.has(column)
-          ? 'CASCADE'
-          : 'NO ACTION');
-
-      if (action === 'NO ACTION') continue;
+      const { action, declared } = resolveForeignKeyDeleteAction({
+        declared: relationship.options?.onDelete,
+        isConflictColumn: conflictColumns.has(column),
+        isTenantIdField: false,
+      });
 
       if (
         action === 'SET NULL' &&
@@ -296,7 +300,7 @@ export function buildCascadePlan(
         fieldName: relationship.fieldName,
         column,
         action,
-        declared: declaredAction !== undefined,
+        declared,
       });
     }
   }
@@ -552,9 +556,12 @@ async function resolveReferences(
 
   const plan = buildCascadePlan(ctx.registry, className);
 
-  // RESTRICT first: refuse before anything has been mutated.
+  // SQL NO ACTION is immediate on every supported SMRT migration path, so the
+  // app-side belt preflights it exactly like RESTRICT before any mutation.
   for (const reference of plan.references) {
-    if (reference.action !== 'RESTRICT') continue;
+    if (reference.action !== 'RESTRICT' && reference.action !== 'NO ACTION') {
+      continue;
+    }
     let remaining = 0;
     for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
       remaining += await tolerateMissingTable(
@@ -564,14 +571,15 @@ async function resolveReferences(
             idPredicate(reference.column, batch),
           ),
         0,
-        { table: reference.tableName, action: 'RESTRICT check' },
+        { table: reference.tableName, action: `${reference.action} check` },
       );
       if (remaining > 0) break;
     }
     if (remaining > 0) {
       throw DatabaseError.constraintViolation(
-        `${reference.className}.${reference.fieldName} declares ` +
-          `onDelete: 'RESTRICT' and ${remaining} row(s) still reference this ` +
+        `${reference.className}.${reference.fieldName} ` +
+          `${reference.declared ? 'declares' : 'resolves to'} onDelete: ` +
+          `'${reference.action}' and ${remaining} row(s) still reference this ` +
           `${className}`,
         reference.column,
       );

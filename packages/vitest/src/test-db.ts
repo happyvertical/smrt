@@ -46,6 +46,10 @@ import {
   isSmrtCollectionExtendsName,
 } from '@happyvertical/smrt-core';
 import {
+  foreignKeyConstraintName,
+  planForeignKeyCreation,
+} from '@happyvertical/smrt-core/schema';
+import {
   type CollectedManifestTable,
   collectManifestTables,
   type ManifestSchemaLike,
@@ -471,6 +475,13 @@ export interface IsolatedTestDbResult {
 export async function createIsolatedTestDb(
   options: IsolatedTestDbOptions = {},
 ): Promise<IsolatedTestDbResult> {
+  return createIsolatedTestDbWithPostSchemaStatements(options, []);
+}
+
+async function createIsolatedTestDbWithPostSchemaStatements(
+  options: IsolatedTestDbOptions,
+  postSchemaStatements: readonly PostSchemaStatement[],
+): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
   // Dynamically import getDatabase to avoid circular dependencies
@@ -507,6 +518,40 @@ export async function createIsolatedTestDb(
   // Sync schema if provided (must be done before transaction for DDL)
   if (schema && config.type !== 'sqlite') {
     await syncSchema({ db: baseDb, schema });
+  }
+
+  // PostgreSQL cycle planning removes cyclic constraints from CREATE TABLE
+  // and adds them only after every table exists. syncSchema intentionally
+  // handles schema definitions rather than arbitrary follow-up statements, so
+  // execute the planner's deferred constraints explicitly before opening the
+  // test transaction.
+  for (const deferred of postSchemaStatements) {
+    if (
+      await postgresConstraintExists(
+        baseDb,
+        deferred.tableName,
+        deferred.constraintName,
+      )
+    ) {
+      continue;
+    }
+    try {
+      await baseDb.query(deferred.statement);
+    } catch (error) {
+      // Parallel test factories may both observe the constraint as absent.
+      // Treat the losing ADD as successful only when the exact table/name is
+      // now present; otherwise preserve the original database failure.
+      if (
+        await postgresConstraintExists(
+          baseDb,
+          deferred.tableName,
+          deferred.constraintName,
+        )
+      ) {
+        continue;
+      }
+      throw error;
+    }
   }
 
   // Transaction handles are passed to SMRT objects as already-initialized
@@ -574,6 +619,35 @@ export async function createIsolatedTestDb(
   return { db, baseDb, config, cleanup };
 }
 
+interface PostSchemaStatement {
+  statement: string;
+  tableName: string;
+  constraintName: string;
+}
+
+async function postgresConstraintExists(
+  db: DatabaseInterfaceWithTransaction,
+  tableName: string,
+  constraintName: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `SELECT 1
+     FROM pg_constraint AS constraint_row
+     JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+     JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+     WHERE table_row.relname = $1
+       AND namespace_row.nspname = current_schema()
+       AND constraint_row.conname = $2
+       AND constraint_row.contype = 'f'
+     LIMIT 1`,
+    [tableName, constraintName],
+  );
+  const rows = Array.isArray(result)
+    ? result
+    : ((result as { rows?: unknown[] }).rows ?? []);
+  return rows.length > 0;
+}
+
 // ============================================================================
 // Manifest-based Test Database Helpers
 // ============================================================================
@@ -628,11 +702,22 @@ interface TableInfo {
  */
 function extractForeignKeyDependencies(ddl: string): string[] {
   const dependencies: string[] = [];
-  // Match REFERENCES "tablename"( or REFERENCES tablename(
-  const regex = /REFERENCES\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*\(/gi;
+  const identifier = '(?:"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_$]*)';
+  const regex = new RegExp(
+    `\\bREFERENCES\\s+((?:${identifier}\\s*\\.\\s*)*${identifier})(?![A-Za-z0-9_$"]|\\s*\\.)`,
+    'gi',
+  );
 
   for (const match of ddl.matchAll(regex)) {
-    const tableName = match[1];
+    const qualifiedTarget = match[1] ?? '';
+    const parts = Array.from(
+      qualifiedTarget.matchAll(/"((?:[^"]|"")*)"|([A-Za-z_][A-Za-z0-9_$]*)/g),
+    );
+    const finalIdentifier = parts.at(-1);
+    const tableName = finalIdentifier?.[1]
+      ? finalIdentifier[1].replaceAll('""', '"')
+      : finalIdentifier?.[2];
+    if (!tableName) continue;
     if (!dependencies.includes(tableName)) {
       dependencies.push(tableName);
     }
@@ -962,77 +1047,43 @@ function extractTablesFromManifest(
     entries.push({ schema: objectDef.schema, source: key });
   }
 
-  return Array.from(collectManifestTables(entries).values()).map((table) => ({
-    tableName: table.tableName,
-    table,
-    dependencies: collectTableDependencies(table),
-  }));
-}
+  const collected = Array.from(collectManifestTables(entries).values());
+  const includedTables = new Set(collected.map((table) => table.tableName));
 
-/**
- * Sort tables by foreign key dependencies using topological sort (Kahn's algorithm)
- *
- * Ensures referenced tables are created before tables that reference them
- */
-function sortByDependencies(tables: TableInfo[]): string[] {
-  const tableNames = new Set(tables.map((t) => t.tableName));
-  const inDegree = new Map<string, number>();
-  const graph = new Map<string, string[]>();
-
-  // Initialize
-  for (const table of tables) {
-    inDegree.set(table.tableName, 0);
-    graph.set(table.tableName, []);
-  }
-
-  // Build graph - only count dependencies that are in our table set
-  for (const table of tables) {
-    for (const dep of table.dependencies) {
-      if (tableNames.has(dep) && dep !== table.tableName) {
-        inDegree.set(table.tableName, (inDegree.get(table.tableName) || 0) + 1);
-        const edges = graph.get(dep) || [];
-        edges.push(table.tableName);
-        graph.set(dep, edges);
-      }
+  return collected.map((table) => {
+    const missingDependencies = collectTableDependencies(table).filter(
+      (dependency) => !includedTables.has(dependency),
+    );
+    if (missingDependencies.length > 0 && !table.structured) {
+      throw new Error(
+        `Cannot safely create filtered manifest schema: legacy DDL for "${table.tableName}" references omitted table "${missingDependencies[0]}". Include the referenced object or regenerate a structured manifest.`,
+      );
     }
-  }
 
-  // Find all nodes with no incoming edges
-  const queue: string[] = [];
-  for (const [table, degree] of inDegree) {
-    if (degree === 0) {
-      queue.push(table);
-    }
-  }
-
-  // Process queue
-  const sorted: string[] = [];
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (current === undefined) break;
-    sorted.push(current);
-
-    const neighbors = graph.get(current) || [];
-    for (const neighbor of neighbors) {
-      const newDegree = (inDegree.get(neighbor) ?? 0) - 1;
-      inDegree.set(neighbor, newDegree);
-      if (newDegree === 0) {
-        queue.push(neighbor);
-      }
-    }
-  }
-
-  // Handle any remaining tables (circular dependencies)
-  // Use Set for O(1) lookups instead of O(n) Array.includes()
-  const sortedSet = new Set(sorted);
-  for (const table of tables) {
-    if (!sortedSet.has(table.tableName)) {
-      sorted.push(table.tableName);
-      sortedSet.add(table.tableName);
-    }
-  }
-
-  return sorted;
+    const definition = {
+      ...table.definition,
+      columns: Object.fromEntries(
+        Object.entries(table.definition.columns).map(([name, column]) => [
+          name,
+          column.foreignKey && !includedTables.has(column.foreignKey.table)
+            ? { ...column, foreignKey: undefined }
+            : column,
+        ]),
+      ),
+      foreignKeys: table.definition.foreignKeys.filter((foreignKey) =>
+        includedTables.has(foreignKey.referencesTable),
+      ),
+      dependencies: table.definition.dependencies.filter((dependency) =>
+        includedTables.has(dependency),
+      ),
+    };
+    const filteredTable = { ...table, definition };
+    return {
+      tableName: filteredTable.tableName,
+      table: filteredTable,
+      dependencies: collectTableDependencies(filteredTable),
+    };
+  });
 }
 
 /**
@@ -1144,13 +1195,32 @@ export async function createIsolatedTestDbFromManifest(
     );
   }
 
-  // 3. Sort by FK dependencies and render through the engine DDL strategy
-  // Use Map for O(1) lookups instead of O(n) Array.find()
+  // 3. Use the same dependency/cycle planner as every other schema path.
+  // Legacy contributors expose dependencies only through cached DDL, so carry
+  // the already-parsed TableInfo dependencies into the structured plan input.
   const tableMap = new Map(tables.map((t) => [t.tableName, t] as const));
-  const sortedTableNames = sortByDependencies(tables);
-  const rendered = sortedTableNames.flatMap((name) => {
-    const table = tableMap.get(name);
-    return table ? [renderCollectedManifestTable(table.table, adapter)] : [];
+  const plan = planForeignKeyCreation(
+    tables.map((table) => ({
+      ...table.table.definition,
+      dependencies: table.dependencies,
+    })),
+    adapter,
+  );
+  if (adapter === 'postgres') {
+    const unstructuredCyclicTables = plan.cyclicTables.filter(
+      (tableName) => !tableMap.get(tableName)?.table.structured,
+    );
+    if (unstructuredCyclicTables.length > 0) {
+      throw new Error(
+        `Cannot safely create PostgreSQL manifest schema: legacy DDL foreign-key cycle includes ${unstructuredCyclicTables.map((tableName) => `"${tableName}"`).join(', ')}. Regenerate a structured manifest so cyclic constraints can be deferred. No schema changes were applied.`,
+      );
+    }
+  }
+  const rendered = plan.schemas.flatMap((definition) => {
+    const table = tableMap.get(definition.tableName);
+    return table
+      ? [renderCollectedManifestTable({ ...table.table, definition }, adapter)]
+      : [];
   });
 
   // CREATE TABLE statements first
@@ -1171,10 +1241,17 @@ export async function createIsolatedTestDbFromManifest(
     .join('\n');
 
   // Combine table DDL and index DDL
-  const sortedDDL = createIndexDDL
-    ? `${createTableDDL}\n\n${createIndexDDL}`
-    : createTableDDL;
+  const sortedDDL = [createTableDDL, createIndexDDL]
+    .filter(Boolean)
+    .join('\n\n');
 
   // 4. Delegate to existing function
-  return createIsolatedTestDb({ schema: sortedDDL, prefix });
+  return createIsolatedTestDbWithPostSchemaStatements(
+    { schema: sortedDDL, prefix },
+    plan.deferredConstraints.map(({ table, foreignKey }, index) => ({
+      statement: plan.deferredStatements[index] as string,
+      tableName: table,
+      constraintName: foreignKeyConstraintName(table, foreignKey),
+    })),
+  );
 }

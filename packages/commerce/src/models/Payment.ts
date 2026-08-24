@@ -145,13 +145,13 @@ export class Payment extends SmrtObject {
    * Contract this payment is for
    */
   @foreignKey('Contract')
-  contractId: string = '';
+  contractId: string | null = null;
 
   /**
    * Customer who made the payment
    */
   @foreignKey('Customer')
-  customerId: string = '';
+  customerId: string | null = null;
 
   /**
    * Payment amount, in **integer minor units** (cents, satoshis).

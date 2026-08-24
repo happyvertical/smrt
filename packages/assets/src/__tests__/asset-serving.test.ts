@@ -11,6 +11,7 @@ import { join as pathJoin } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import '../folder';
 import { type AssetRuntime, createAssetRuntime } from '../asset-runtime';
 import {
   AssetServeError,

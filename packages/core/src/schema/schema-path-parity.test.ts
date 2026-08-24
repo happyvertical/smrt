@@ -26,7 +26,8 @@
  * This suite is the guard: for a representative set of classes it runs the
  * SAME manifest through the manifest paths, through the registry paths (after
  * `ObjectRegistry.registerFromManifest`) and through
- * `getAllSchemasAsDefinitions()`, and asserts identical column and index sets.
+ * `getAllSchemasAsDefinitions()`, and asserts identical column, foreign-key,
+ * dependency, and index sets.
  * Any generator change must keep the three legs equal — extend the fixture
  * rather than special-casing a path.
  *
@@ -42,8 +43,8 @@
  *   unconsumed vite virtual module and is not held to parity (assessment A8);
  * - custom primary keys (`@field({ primaryKey: true })`) are handled by the
  *   registry CTI path only (assessment A4, #2360);
- * - column metadata that only one family carries (`foreignKey`,
- *   `description`) is not compared; column NAME, TYPE and `referenceKind` are.
+ * - descriptive column metadata is not compared; physical foreign-key metadata
+ *   is part of the parity contract.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -107,10 +108,14 @@ function buildFixtureManifest(): SmartObjectManifest {
 
   // CTI with an inline-unique column (CTI keeps column-level UNIQUE).
   add(
-    objectDef('ParityAuthor', {
-      name: { type: 'text', required: true },
-      email: { type: 'text', _meta: { unique: true } },
-    }),
+    objectDef(
+      'ParityAuthor',
+      {
+        name: { type: 'text', required: true },
+        email: { type: 'text', _meta: { unique: true } },
+      },
+      { idType: 'text' },
+    ),
   );
 
   // CTI with same-package FK, cross-package ref and an `indexed: true` opt-in.
@@ -118,6 +123,11 @@ function buildFixtureManifest(): SmartObjectManifest {
     objectDef('ParityPost', {
       body: { type: 'text' },
       authorId: { type: 'foreignKey', related: 'ParityAuthor' },
+      archiveAuthorId: {
+        type: 'foreignKey',
+        related: 'ParityAuthor',
+        _meta: { constraint: false },
+      },
       profileId: {
         type: 'crossPackageRef',
         related: '@happyvertical/smrt-profiles:Profile',
@@ -301,7 +311,13 @@ function buildFixtureManifest(): SmartObjectManifest {
   add(
     objectDef(
       'ParityTicket',
-      { code: { type: 'text', required: true } },
+      {
+        code: {
+          type: 'foreignKey',
+          related: 'ParityAuthor.email',
+          required: true,
+        },
+      },
       {
         tableStrategy: 'sti',
         tenantScoped: { mode: 'required' },
@@ -383,15 +399,31 @@ function buildFixtureManifest(): SmartObjectManifest {
   };
 }
 
-/** Column view compared across paths: name → `type/referenceKind`. */
+/** Column view compared across paths, including physical FK metadata. */
 function columnSet(
-  columns: Record<string, { type: string; referenceKind?: string }>,
+  columns: Record<
+    string,
+    {
+      type: string;
+      referenceKind?: string;
+      foreignKey?: {
+        table: string;
+        column: string;
+        onDelete?: string;
+        onUpdate?: string;
+      };
+    }
+  >,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [name, col] of Object.entries(columns).sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
-    out[name] = `${String(col.type).toUpperCase()}/${col.referenceKind ?? '-'}`;
+    const fk = col.foreignKey
+      ? `${col.foreignKey.table}.${col.foreignKey.column}/${col.foreignKey.onDelete ?? '-'}/${col.foreignKey.onUpdate ?? '-'}`
+      : '-';
+    out[name] =
+      `${String(col.type).toUpperCase()}/${col.referenceKind ?? '-'}/${fk}`;
   }
   return out;
 }
@@ -429,6 +461,7 @@ function manifestSchemaAsDefinition(
           notNull: col.notNull,
           unique: col.unique,
           defaultValue: col.default,
+          foreignKey: col.foreignKey ? { ...col.foreignKey } : undefined,
         },
       ]),
     ),
@@ -440,8 +473,25 @@ function manifestSchemaAsDefinition(
       jsonPath: idx.jsonPath,
     })),
     triggers: [],
-    foreignKeys: [],
-    dependencies: [],
+    foreignKeys: Object.entries(schema.columns).flatMap(
+      ([column, definition]) =>
+        definition.foreignKey
+          ? [
+              {
+                column,
+                referencesTable: definition.foreignKey.table,
+                referencesColumn: definition.foreignKey.column,
+                onDelete: definition.foreignKey.onDelete,
+                onUpdate: definition.foreignKey.onUpdate,
+              },
+            ]
+          : [],
+    ),
+    dependencies: Object.values(schema.columns)
+      .flatMap((definition) =>
+        definition.foreignKey ? [definition.foreignKey.table] : [],
+      )
+      .filter((dependency) => dependency !== schema.tableName),
     version: schema.version,
   };
 }
@@ -755,9 +805,7 @@ describe('schema path parity (#2359)', () => {
       const migrateColumns = columnSet(migrateSchemas[table]?.columns ?? {});
 
       expect(registryColumns).toEqual(manifestColumns);
-      // getAllSchemasAsDefinitions() merges the manifest schema with the
-      // registry's base columns; the NAME set must match exactly.
-      expect(Object.keys(migrateColumns)).toEqual(Object.keys(manifestColumns));
+      expect(migrateColumns).toEqual(manifestColumns);
     });
 
     it('has the same index set on the manifest, registry and migrate paths', () => {
@@ -771,6 +819,20 @@ describe('schema path parity (#2359)', () => {
 
       expect(registryIndexes).toEqual(manifestIndexes);
       expect(migrateIndexes).toEqual(manifestIndexes);
+    });
+
+    it('has the same foreign keys and dependencies on every path', () => {
+      const shape = (schema: SchemaDefinition | undefined) => ({
+        foreignKeys: [...(schema?.foreignKeys ?? [])].sort((a, b) =>
+          `${a.column}.${a.referencesTable}`.localeCompare(
+            `${b.column}.${b.referencesTable}`,
+          ),
+        ),
+        dependencies: [...(schema?.dependencies ?? [])].sort(),
+      });
+      const manifestShape = shape(manifestSchemas.get(table));
+      expect(shape(registrySchemas.get(table))).toEqual(manifestShape);
+      expect(shape(migrateSchemas[table])).toEqual(manifestShape);
     });
   });
 
@@ -790,6 +852,7 @@ describe('schema path parity (#2359)', () => {
 
     it('CTI references: FK + cross-package ref indexed, indexed:true honoured, inline unique kept on the column', () => {
       expect(names('parity_posts')).toEqual([
+        'parity_posts_archive_author_id_idx',
         'parity_posts_author_id_idx',
         'parity_posts_created_at_idx',
         'parity_posts_profile_id_idx',
@@ -799,6 +862,34 @@ describe('schema path parity (#2359)', () => {
       expect(manifestSchemas.get('parity_authors')?.columns.email.unique).toBe(
         true,
       );
+      expect(manifestSchemas.get('parity_authors')?.columns.id.type).toBe(
+        'TEXT',
+      );
+      expect(manifestSchemas.get('parity_posts')?.columns.author_id.type).toBe(
+        'TEXT',
+      );
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.author_id.foreignKey,
+      ).toEqual({
+        table: 'parity_authors',
+        column: 'id',
+        onDelete: 'NO ACTION',
+        onUpdate: 'CASCADE',
+      });
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.profile_id.foreignKey,
+      ).toBeUndefined();
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.archive_author_id
+          .referenceKind,
+      ).toBe('foreignKey');
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.archive_author_id.type,
+      ).toBe('TEXT');
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.archive_author_id
+          .foreignKey,
+      ).toBeUndefined();
     });
 
     it('tenant-scoped + custom conflict key leading with tenant_id: (tenant_id, created_at) instead of a standalone tenant index, slug lookup kept (A7, #2363)', () => {
@@ -813,6 +904,9 @@ describe('schema path parity (#2359)', () => {
       expect(names('parity_scopeds')).not.toContain(
         'parity_scopeds_tenant_id_idx',
       );
+      expect(
+        manifestSchemas.get('parity_scopeds')?.columns.tenant_id.foreignKey,
+      ).toBeUndefined();
       const ordering = idx('parity_scopeds').find(
         (i) => i.name === 'parity_scopeds_tenant_id_created_at_idx',
       );
@@ -858,6 +952,15 @@ describe('schema path parity (#2359)', () => {
         'parity_links_right_id_idx',
         'parity_links_slug_context_idx',
       ]);
+      for (const column of ['left_id', 'right_id']) {
+        expect(
+          manifestSchemas.get('parity_links')?.columns[column].foreignKey
+            ?.onDelete,
+        ).toBe('CASCADE');
+        expect(migrateSchemas.parity_links.columns[column].foreignKey).toEqual(
+          manifestSchemas.get('parity_links')?.columns[column].foreignKey,
+        );
+      }
     });
 
     it('polymorphic-association-shaped conflict key: owner lookup (meta_type, meta_id) indexed despite sitting mid-index (#2364, A3)', () => {
@@ -971,6 +1074,7 @@ describe('schema path parity (#2359)', () => {
 
     it('STI root with custom conflictColumns: honoured on both STI paths, slug lookup kept, child resolves the same key (#2360)', () => {
       expect(names('parity_tickets')).toEqual([
+        'parity_tickets_code_idx',
         'parity_tickets_meta_type_idx',
         'parity_tickets_slug_context_idx',
         'parity_tickets_tenant_id_code_idx',
@@ -994,6 +1098,16 @@ describe('schema path parity (#2359)', () => {
       expect(
         ObjectRegistry.getConflictColumns(`${PKG}:ParityBugTicket`),
       ).toEqual(['tenant_id', 'code']);
+      for (const [leg, schema] of [
+        ['manifest', manifestSchemas.get('parity_tickets')],
+        ['registry', registrySchemas.get('parity_tickets')],
+        ['migrate', migrateSchemas.parity_tickets],
+      ] as const) {
+        expect(
+          schema?.columns.code.foreignKey?.onDelete,
+          `${leg} STI-root natural-key FK inherited by child`,
+        ).toBe('CASCADE');
+      }
     });
 
     it('STI: plain FK/xref indexes, tenant-led default key serves tenant_id, base-declared unique full, descendant-declared unique partial per class, meta JSON-path index', () => {

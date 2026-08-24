@@ -15,6 +15,7 @@ import {
   isQualifiedName,
   migratePostgresSystemTimestamps,
   ObjectRegistry,
+  planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
@@ -861,6 +862,33 @@ export default testManifest;
 
         // 4. Get initialization order (topological sort respecting FK dependencies)
         const initOrder = ObjectRegistry.getInitializationOrder();
+        const engine = resolveDDLPreviewEngine(dbType);
+        const schemas = Object.values(
+          ObjectRegistry.getAllSchemasAsDefinitions(),
+        );
+        const preflightTables = new Set(
+          schemas.map((schema) => schema.tableName),
+        );
+        const missingPreflightTables = [
+          ...new Set(
+            initOrder.flatMap((className) => {
+              const tableName = ObjectRegistry.getTableName(className);
+              return tableName && !preflightTables.has(tableName)
+                ? [tableName]
+                : [];
+            }),
+          ),
+        ].sort();
+        if (missingPreflightTables.length > 0) {
+          throw new Error(
+            `Cannot safely preflight database setup because structured schema definitions are missing for: ${missingPreflightTables.join(', ')}. Rebuild the package manifests before running db:setup.`,
+          );
+        }
+        // Preflight the complete graph before connecting, prompting for a
+        // destructive drop, or otherwise mutating the database. This keeps
+        // execution fail-closed on the same unsupported engine shapes that
+        // dry-run reports.
+        const plan = planForeignKeyCreation(schemas, engine);
 
         if (options.verbose) {
           console.log('📋 Initialization order (respecting dependencies):');
@@ -881,49 +909,21 @@ export default testManifest;
         if (options['dry-run']) {
           console.log('📋 SQL Preview (not executed):\n');
 
-          const { generateSchema } = await import(
-            '@happyvertical/smrt-core/schema/utils'
-          );
-
-          for (const className of initOrder) {
-            const registered = ObjectRegistry.getClass(className);
-            if (!registered) continue;
-
-            const tableStrategy = ObjectRegistry.getTableStrategy(className);
-            const stiBase = ObjectRegistry.getSTIBase(className);
-
-            // R5-canon: `getSTIBase` returns the qualified name; compare
-            // against the qualified form so an STI base isn't
-            // mis-classified as a child.
-            const qualifiedClassName =
-              registered.qualifiedName ?? registered.name ?? className;
-            const isSTIChild =
-              tableStrategy === 'sti' &&
-              !!stiBase &&
-              stiBase !== qualifiedClassName &&
-              stiBase !== className;
-            if (isSTIChild) {
-              console.log(
-                `-- Table: ${className} (Base: ${stiBase}, Strategy: STI)`,
-              );
-              console.log(`-- Shares table with ${stiBase} (STI child)\n`);
-              continue;
+          for (const schema of plan.schemas) {
+            const ddl = generateDDLForEngine(schema, engine);
+            console.log(`-- Table: ${schema.tableName}`);
+            console.log(ddl.createTable);
+            for (const statement of [...ddl.indexes, ...ddl.triggers]) {
+              console.log(statement);
             }
-
-            const schema = await generateSchema(
-              registered.constructor,
-              undefined,
-              { engine: resolveDDLPreviewEngine(dbType) },
-            );
-            if (schema && schema.trim() !== '') {
-              const tableName = ObjectRegistry.getTableName(className);
-              const strategy = tableStrategy === 'sti' ? 'STI' : 'CTI';
-              console.log(
-                `-- Table: ${tableName} (Class: ${className}, Strategy: ${strategy})`,
-              );
-              console.log(schema);
-              console.log();
+            console.log();
+          }
+          if (plan.deferredStatements.length > 0) {
+            console.log('-- Deferred foreign-key constraints');
+            for (const statement of plan.deferredStatements) {
+              console.log(statement);
             }
+            console.log();
           }
 
           console.log('✅ Dry-run complete (no changes made)\n');
@@ -975,18 +975,35 @@ export default testManifest;
 
           // Drop in reverse order (children before parents)
           const dropOrder = [...initOrder].reverse();
+          const dropEngine = resolveDDLPreviewEngine(dbType);
 
-          for (const className of dropOrder) {
-            const tableName = ObjectRegistry.getTableName(className);
-            if (!tableName) continue;
+          if (dropEngine === 'sqlite') {
+            await db.query('PRAGMA foreign_keys = OFF');
+          }
+          try {
+            for (const className of dropOrder) {
+              const tableName = ObjectRegistry.getTableName(className);
+              if (!tableName) continue;
 
-            try {
-              await db.execute`DROP TABLE IF EXISTS ${tableName}`;
-              console.log(`  ✓ Dropped ${tableName}`);
-            } catch (error) {
-              if (options.verbose) {
-                console.log(`  ⚠️  Could not drop ${tableName}: ${error}`);
+              try {
+                const cascade = dropEngine === 'postgres' ? ' CASCADE' : '';
+                await db.query(
+                  `DROP TABLE IF EXISTS ${quoteIdentifier(tableName)}${cascade}`,
+                );
+                console.log(`  ✓ Dropped ${tableName}`);
+              } catch (error) {
+                if (options.verbose) {
+                  console.log(`  ⚠️  Could not drop ${tableName}: ${error}`);
+                }
+                throw new Error(
+                  `Refusing to continue after failing to drop ${tableName}; dependency or foreign-key constraints may still be active.`,
+                  { cause: error },
+                );
               }
+            }
+          } finally {
+            if (dropEngine === 'sqlite') {
+              await db.query('PRAGMA foreign_keys = ON');
             }
           }
 
@@ -996,50 +1013,62 @@ export default testManifest;
         // 8. Create tables
         console.log('🔨 Creating tables...\n');
 
-        const { ensureSchema } = await import(
-          '@happyvertical/smrt-core/schema/utils'
+        const { createSchemaManager } = await import(
+          '@happyvertical/smrt-core/schema'
         );
+
+        const schemaManager = createSchemaManager(db, {
+          engine,
+          skipTriggers:
+            typeof (db as { exportTable?: unknown }).exportTable === 'function',
+        });
+        try {
+          // Execute the exact preflighted schema set as one dependency-aware
+          // unit. Rebuilding schemas per class after --drop could otherwise
+          // discover an unsupported shape only after destructive mutation.
+          await schemaManager.ensureTables(schemas);
+        } catch (error) {
+          console.error(`  ✗ Schema creation failed: ${error}`);
+          if (options.verbose && error instanceof Error && error.stack) {
+            console.error(`\n${error.stack}\n`);
+          }
+          throw new Error(
+            'Refusing to report database setup success after schema creation failed.',
+            { cause: error },
+          );
+        }
 
         let tablesCreated = 0;
         let tablesSkipped = 0;
 
         for (const className of initOrder) {
-          try {
-            const tableStrategy = ObjectRegistry.getTableStrategy(className);
-            const stiBase = ObjectRegistry.getSTIBase(className);
-            // R5-canon: qualified-to-qualified STI-child detection.
-            const registered = ObjectRegistry.getClass(className);
-            const qualifiedClassName =
-              registered?.qualifiedName ?? registered?.name ?? className;
+          const tableStrategy = ObjectRegistry.getTableStrategy(className);
+          const stiBase = ObjectRegistry.getSTIBase(className);
+          // R5-canon: qualified-to-qualified STI-child detection.
+          const registered = ObjectRegistry.getClass(className);
+          const qualifiedClassName =
+            registered?.qualifiedName ?? registered?.name ?? className;
 
-            // Skip STI children (schema already created by base class)
-            if (
-              tableStrategy === 'sti' &&
-              stiBase &&
-              stiBase !== qualifiedClassName &&
-              stiBase !== className
-            ) {
-              tablesSkipped++;
-              if (options.verbose) {
-                console.log(`  ⊙ ${className} (shares table with ${stiBase})`);
-              }
-              continue;
+          // Skip STI children (schema already created by base class)
+          if (
+            tableStrategy === 'sti' &&
+            stiBase &&
+            stiBase !== qualifiedClassName &&
+            stiBase !== className
+          ) {
+            tablesSkipped++;
+            if (options.verbose) {
+              console.log(`  ⊙ ${className} (shares table with ${stiBase})`);
             }
-
-            await ensureSchema(db, className);
-
-            const tableName = ObjectRegistry.getTableName(className);
-            const fields = ObjectRegistry.getFields(className);
-            const fieldCount = fields?.size || 0;
-
-            console.log(`  ✓ ${tableName} (${fieldCount} columns)`);
-            tablesCreated++;
-          } catch (error) {
-            console.error(`  ✗ ${className}: ${error}`);
-            if (options.verbose && error instanceof Error && error.stack) {
-              console.error(`\n${error.stack}\n`);
-            }
+            continue;
           }
+
+          const tableName = ObjectRegistry.getTableName(className);
+          const fields = ObjectRegistry.getFields(className);
+          const fieldCount = fields?.size || 0;
+
+          console.log(`  ✓ ${tableName} (${fieldCount} columns)`);
+          tablesCreated++;
         }
 
         // 9. Report summary
@@ -1651,6 +1680,34 @@ export default testManifest;
           postgresTimestampMigration,
         });
         const diff = await comparer.compare(manifestSchemas);
+        const engine = tracker.getEngine();
+        const tablePlan = planForeignKeyCreation(diff.added_tables, engine);
+        const plannedTableDDL = new Map(
+          tablePlan.schemas.map((schema) => [
+            schema.tableName,
+            generateDDLForEngine(schema, engine),
+          ]),
+        );
+        const deferredForeignKeyMigrations = tablePlan.deferredStatements.map(
+          (statement): MigrationAction => {
+            const parsed = statement.match(
+              /^ALTER TABLE\s+"((?:[^"]|"")+)"\s+ADD\s+CONSTRAINT\s+"((?:[^"]|"")+)"/i,
+            );
+            const unquote = (value: string | undefined, fallback: string) =>
+              value ? value.replace(/""/g, '"') : fallback;
+            const tableName = unquote(parsed?.[1], 'deferred_cycle');
+            const constraintName = unquote(
+              parsed?.[2],
+              'deferred cycle constraint',
+            );
+            return {
+              type: 'add_foreign_key',
+              tableName,
+              className: constraintName,
+              sql: statement,
+            };
+          },
+        );
 
         // Helper to get class name for a table (for reporting)
         const getClassForTable = (tableName: string): string => {
@@ -1665,15 +1722,17 @@ export default testManifest;
         // Preview new tables that don't exist yet. Actual schema changes are
         // applied below in one transaction with the generated migrations.
         if (diff.added_tables.length > 0 && isDryRun) {
-          for (const schema of diff.added_tables) {
+          for (const schema of tablePlan.schemas) {
             const className = getClassForTable(schema.tableName);
 
             const fields = Object.keys(schema.columns).length;
             console.log(
               `  📦 ${schema.tableName} (${className}): Would create table (${fields} columns)`,
             );
-            if (options.verbose && schema.ddl) {
-              console.log(`     ${schema.ddl}`);
+            if (options.verbose) {
+              console.log(
+                `     ${plannedTableDDL.get(schema.tableName)?.createTable}`,
+              );
             }
           }
 
@@ -1697,6 +1756,10 @@ export default testManifest;
             const migrationName = getSyntheticMigrationNameForAction(migration);
             return migrationName ? [migrationName] : [];
           }),
+          ...deferredForeignKeyMigrations.flatMap((migration) => {
+            const migrationName = getSyntheticMigrationNameForAction(migration);
+            return migrationName ? [migrationName] : [];
+          }),
         ]);
 
         console.log();
@@ -1707,6 +1770,15 @@ export default testManifest;
             '⚠️  Schema drift detected that requires manual intervention:\n',
           );
           for (const change of manualInterventions) {
+            if (change.type === 'add_foreign_key') {
+              console.log(
+                `   ${change.tableName}: ${change.advisory?.message ?? change.sql?.replace(/^--\s*/, '') ?? 'foreign-key constraint requires manual repair'}`,
+              );
+              for (const sql of change.advisory?.suggestedSql ?? []) {
+                console.log(`      ${sql}`);
+              }
+              continue;
+            }
             if (!change.mismatch) continue;
 
             const detail =
@@ -1784,6 +1856,9 @@ export default testManifest;
             const indexMigrations = migrations.filter(
               (m) => m.type === 'add_index',
             );
+            const foreignKeyMigrations = migrations.filter(
+              (m) => m.type === 'add_foreign_key',
+            );
             const indexDrops = migrations.filter(
               (m) => m.type === 'drop_index',
             );
@@ -1844,7 +1919,28 @@ export default testManifest;
               console.log();
             }
 
+            if (foreignKeyMigrations.length > 0) {
+              console.log(
+                `  🔗 Foreign-key constraints to add: ${foreignKeyMigrations.length}`,
+              );
+              for (const m of foreignKeyMigrations) {
+                console.log(`     ${m.tableName}`);
+              }
+              console.log();
+            }
+
             console.log('  SQL Statements:\n');
+            for (const schema of tablePlan.schemas) {
+              const ddl = plannedTableDDL.get(schema.tableName);
+              if (!ddl) continue;
+              for (const sql of [
+                ddl.createTable,
+                ...ddl.indexes,
+                ...ddl.triggers,
+              ]) {
+                console.log(`    ${sql}`);
+              }
+            }
             for (const migration of systemTimestampPreview) {
               const terminator = migration.sql.trimEnd().endsWith(';')
                 ? ''
@@ -1856,6 +1952,9 @@ export default testManifest;
               for (const sql of sqlStatements) {
                 console.log(`    ${sql};`);
               }
+            }
+            for (const sql of tablePlan.deferredStatements) {
+              console.log(`    ${sql}`);
             }
             console.log();
           }
@@ -1875,15 +1974,22 @@ export default testManifest;
         let errorCount = 0;
         let stiErrorCount = 0;
 
-        const schemaChangeCount = diff.added_tables.length + migrations.length;
+        const schemaChangeCount =
+          diff.added_tables.length +
+          migrations.length +
+          deferredForeignKeyMigrations.length;
 
         if (applySchemaMigrations && schemaChangeCount > 0) {
           const migrationDefs: MigrationDefinition[] = [];
           const migrationLogs = new Map<string, SchemaMigrationLogInfo>();
-          const engine = tracker.getEngine();
 
-          for (const schema of diff.added_tables) {
-            const ddl = generateDDLForEngine(schema, engine);
+          for (const schema of tablePlan.schemas) {
+            const ddl = plannedTableDDL.get(schema.tableName);
+            if (!ddl) {
+              throw new Error(
+                `Cannot create table ${schema.tableName}: planned DDL is unavailable.`,
+              );
+            }
             const createTableSql = ddl.createTable || schema.ddl;
             if (!createTableSql?.trim()) {
               throw new Error(
@@ -1903,6 +2009,20 @@ export default testManifest;
             });
             migrationLogs.set(migrationName, {
               successMessage: `Created table ${schema.tableName} (${fields} columns)`,
+            });
+          }
+          for (const migration of deferredForeignKeyMigrations) {
+            const migrationName = getSyntheticMigrationNameForAction(migration);
+            if (!migrationName) continue;
+            migrationDefs.push({
+              id: migrationName,
+              description: `Add deferred foreign-key constraint ${migration.className} on ${migration.tableName}`,
+              version: '1.0.0',
+              up: migration.sql ? [migration.sql] : [],
+              down: [],
+            });
+            migrationLogs.set(migrationName, {
+              successMessage: `Added deferred foreign-key constraint ${migration.className} on ${migration.tableName}`,
             });
           }
 
@@ -1939,6 +2059,9 @@ export default testManifest;
             } else if (migration.type === 'drop_index' && migration.indexName) {
               migrationSql = migration.sql || '';
               actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
+            } else if (migration.type === 'add_foreign_key') {
+              migrationSql = migration.sql || '';
+              actionDesc = `Added foreign-key constraint on ${migration.tableName}`;
             } else {
               continue;
             }
@@ -1959,7 +2082,9 @@ export default testManifest;
                         ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
                         : migration.type === 'drop_index'
                           ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                          : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                          : migration.type === 'add_foreign_key'
+                            ? `Add foreign-key constraint on ${migration.tableName}`
+                            : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on

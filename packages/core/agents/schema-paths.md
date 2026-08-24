@@ -648,30 +648,26 @@ upsert conflict target. When reading a PostgreSQL catalog array, cast it
 the array OID returns the raw `{a,b}` literal, and reading that as "no columns"
 silently inverts an index-existence decision.
 
-## Referential integrity lives in `delete()`, not in the DDL
+## Same-package referential integrity uses two matching rails
 
-No schema path emits a `FOREIGN KEY` clause on any engine — grep `schema/ddl/*`,
-`schema-manager.ts` and `differ.ts` for `REFERENCES` and you get nothing. That is
-a deliberate position, not an oversight: emitting constraints changes delete
-semantics for every consumer, requires topological table ordering in both
-migrate paths (neither orders today), and needs a plan for the orphans already in
-production databases. Emitting them is tracked separately.
-
-What `@foreignKey(..., { onDelete })` therefore means is *application* behaviour,
-applied by `SmrtObject.delete()` through `src/cascade.ts` (#2371):
+`@foreignKey(Target)` emits a physical database constraint when the target is
+in the same package and applies the same action through `SmrtObject.delete()`
+in `src/cascade.ts`. A shared delete-action resolver keeps both paths aligned;
+the established generated `ON UPDATE CASCADE` default remains unchanged:
 
 | Reference | Default when `onDelete` is absent |
 |---|---|
 | Column is part of the referencing class's `conflictColumns`, and is not a `@tenantId()` field | `CASCADE` |
 | Polymorphic `(metaType, metaId)` association row | `CASCADE` |
-| Anything else, including every `@tenantId()` field | `NO ACTION` — the row is left alone |
+| Ordinary same-package reference | `NO ACTION` — deletion is refused while references remain |
+| Every `@tenantId()` field | Excluded from physical constraints and delete cascades |
 
 The natural-key rule is what cleans junction rows up without any per-package
 annotation: a junction declares
 `@smrt({ conflictColumns: ['content_id', 'asset_id', 'relationship'] })`, so the
 row is *identified* by the content and cannot outlive it. An ordinary child
-(`Order.customerId`) is keyed by `(slug, context)` and keeps its pre-#2371
-behaviour unless it opts in explicitly.
+(`Order.customerId`) is keyed by `(slug, context)` and therefore defaults to
+immediate `NO ACTION` unless it opts in explicitly.
 
 **`@tenantId()` is excluded even though it lands in `conflictColumns`.**
 #2360 leads every tenant-scoped class's *default* natural key with the
@@ -682,8 +678,26 @@ tenant column scopes ownership; it does not identify the row the way a
 junction's foreign key does. Detected via the `__tenancy.isTenantIdField`
 marker on `FieldMeta` (`smrt-core` reads it structurally so it never depends
 on `smrt-tenancy`). `@tenantId()` exposes no `onDelete` option today, so
-this cannot currently be overridden per field — found in review before this
-landed (originally reachable, untested, and undocumented).
+this cannot currently be overridden per field.
+
+`@crossPackageRef()` remains runtime-only: it registers relationship loading
+and indexes but deliberately emits no physical constraint, avoiding circular
+package DDL. Tenant markers follow the same non-constraint rule because a
+tenant is a scope, not an ownership edge.
+
+Every schema creation entry point uses the same deterministic dependency
+planner. Parents are created before children. SQLite keeps cycle constraints
+inline because it can create them safely. PostgreSQL creates mutually dependent
+tables first and adds their named constraints afterward. DuckDB refuses cycles,
+self-references, `CASCADE`, and `SET NULL` with an actionable error because its
+current ALTER/constraint support cannot enforce those shapes safely.
+
+For existing tables, PostgreSQL checks the exact child table/column against the
+exact referenced table/column before adding a constraint as `NOT VALID` and
+then validating it. If orphans exist (or the probe cannot run), migration stops
+with detector and repair SQL. SQLite requires a deliberate table rebuild;
+DuckDB reports the unsupported ALTER path. Neither engine treats an unsupported
+constraint addition as a successful no-op.
 
 Properties to keep if you touch that module:
 

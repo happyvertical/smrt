@@ -11,6 +11,7 @@ import {
   getAdapterDisplayName,
   getTestAdapter,
   isPostgresAvailable,
+  seedAnalyticsProperties,
 } from './helpers/index.js';
 
 // Check postgres availability at module load (top-level await)
@@ -219,8 +220,24 @@ describe.skipIf(skipTests)(
     beforeEach(async () => {
       const testDb = await createTestDb();
       cleanup = testDb.cleanup;
+      await seedAnalyticsProperties(testDb.db, [
+        'prop-123',
+        'prop-1',
+        'prop-a',
+        'prop-b',
+        'prop-retry',
+        'prop-status',
+        'prop-stats',
+        'prop-count',
+        'prop-trend',
+        'prop-flat',
+        'prop-filter',
+        'prop-tz',
+        'prop-dst',
+        'prop-zero-baseline',
+      ]);
       collection = await AnalyticsEventCollection.create({
-        persistence: testDb.config,
+        db: testDb.db,
       });
     }, ANALYTICS_EVENT_HOOK_TIMEOUT_MS);
 

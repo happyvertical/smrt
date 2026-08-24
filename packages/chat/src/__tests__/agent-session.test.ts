@@ -5,21 +5,25 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AgentSessionCollection } from '../collections/AgentSessionCollection.js';
+import { createChatTestDatabase, seedChatRoom } from './chat-test-db.js';
 
 describe('AgentSession', () => {
   let dbPath: string;
   let sessions: AgentSessionCollection;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-agent-session-test-${Date.now()}.db`);
-    sessions = (await AgentSessionCollection.create({
-      db: { type: 'sqlite', url: dbPath },
-    })) as AgentSessionCollection;
+    db = await createChatTestDatabase(dbPath);
+    await seedChatRoom(db);
+    sessions = await AgentSessionCollection.create({ db });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await db.close?.();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });

@@ -24,6 +24,7 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { generateDDLForEngine } from './ddl/index.js';
 import { SchemaGenerator } from './generator.js';
 import type { SchemaDefinition } from './types.js';
 
@@ -233,6 +234,69 @@ describe('SchemaGenerator.generateSchemaFromRegistry', () => {
     // Reference columns share one naming scheme across every path (#2359).
     expect(schema.indexes.some((i) => i.name === 'docs_owner_id_idx')).toBe(
       true,
+    );
+  });
+
+  it('keeps tenantId indexed/reference-typed without a physical foreign key', () => {
+    const fields = new Map<string, any>([
+      [
+        'tenantId',
+        {
+          type: 'foreignKey',
+          related: '@happyvertical/smrt-users:Tenant',
+          _meta: { __tenancy: { isTenantIdField: true } },
+        },
+      ],
+    ]);
+    const schema = generator.generateSchemaFromRegistry(
+      'ScopedDoc',
+      'scoped_docs',
+      fields,
+    );
+    expect(schema.columns.tenant_id.referenceKind).toBe('tenantId');
+    expect(schema.columns.tenant_id.foreignKey).toBeUndefined();
+    expect(schema.foreignKeys).toEqual([]);
+    expect(
+      schema.indexes.some((index) => index.columns[0] === 'tenant_id'),
+    ).toBe(true);
+  });
+
+  it('keeps crossPackageRef indexed without a physical foreign key', () => {
+    const fields = new Map<string, any>([
+      [
+        'profileId',
+        {
+          type: 'crossPackageRef',
+          related: '@happyvertical/smrt-profiles:Profile',
+        },
+      ],
+    ]);
+    const schema = generator.generateSchemaFromRegistry('Doc', 'docs', fields);
+    expect(schema.columns.profile_id.foreignKey).toBeUndefined();
+    expect(schema.foreignKeys).toEqual([]);
+    expect(generateDDLForEngine(schema, 'postgres').createTable).not.toContain(
+      'FOREIGN KEY',
+    );
+  });
+
+  it('keeps an unresolved same-package reference indexed without a phantom constraint', () => {
+    const fields = new Map<string, any>([
+      ['missingId', { type: 'foreignKey', related: 'MissingModel' }],
+    ]);
+    const schema = generator.generateSchemaFromRegistry('Doc', 'docs', fields, {
+      registry: {
+        getSTIBase: () => undefined,
+        getTableName: () => undefined,
+      } as any,
+    });
+    expect(schema.columns.missing_id.referenceKind).toBe('foreignKey');
+    expect(schema.columns.missing_id.foreignKey).toBeUndefined();
+    expect(schema.foreignKeys).toEqual([]);
+    expect(
+      schema.indexes.some((index) => index.columns[0] === 'missing_id'),
+    ).toBe(true);
+    expect(generateDDLForEngine(schema, 'postgres').createTable).not.toContain(
+      'FOREIGN KEY',
     );
   });
 

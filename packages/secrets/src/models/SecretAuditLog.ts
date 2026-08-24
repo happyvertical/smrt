@@ -108,9 +108,12 @@ export class SecretAuditLog extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * ID of the secret (may be null for deleted secrets)
+   * ID of the secret (may identify a secret that has since been deleted).
+   *
+   * Compliance audit rows intentionally outlive their source secret, so this
+   * remains an app-side relationship without a physical database constraint.
    */
-  @foreignKey('Secret')
+  @foreignKey('Secret', { constraint: false })
   secretId: string | null = null;
 
   /**

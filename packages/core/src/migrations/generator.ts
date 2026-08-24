@@ -8,6 +8,10 @@
 import { createLogger } from '@happyvertical/logger';
 import { getDDLStrategy } from '../schema/ddl/index.js';
 import { materializeManifestDDLForEngine } from '../schema/ddl/materialize-manifest.js';
+import {
+  planForeignKeyCreation,
+  renderDeferredForeignKeyDrop,
+} from '../schema/foreign-key-planner.js';
 import { cachedDdlTableConstraints } from '../schema/manifest-schema.js';
 import type {
   MigrationDefinition,
@@ -108,18 +112,40 @@ export class MigrationGenerator {
   ): GeneratedMigration {
     const upStatements: string[] = [];
     const downStatements: string[] = [];
+    const addedTableDownStatements: string[] = [];
 
     // Handle new tables: CREATE TABLE plus the table's indexes and triggers,
     // exactly as the migration orchestrator emits them (#2358). The differ
     // only produces `add_index` changes for tables that already exist, so
     // there is no double emission against `diff.changes`.
-    for (const schema of diff.added_tables) {
+    const tablePlan = planForeignKeyCreation(diff.added_tables, this.engine);
+    for (const schema of tablePlan.schemas) {
       upStatements.push(this.generateCreateTable(schema));
       upStatements.push(...this.generateTableIndexes(schema));
       upStatements.push(...this.generateTableTriggers(schema));
-      if (this.includeDown || options.includeDown) {
-        downStatements.push(this.generateDropTable(schema.tableName));
+    }
+    upStatements.push(...tablePlan.deferredStatements);
+    if (this.includeDown || options.includeDown) {
+      if (this.engine === 'sqlite' && tablePlan.cyclicTables.length > 0) {
+        // SQLite cannot drop either side of a populated mutual FK cycle with
+        // immediate checks. Defer checks until the transaction commits, after
+        // every member has been removed.
+        addedTableDownStatements.push('PRAGMA defer_foreign_keys = ON');
       }
+      // PostgreSQL mutual cycles are made acyclic first; every table can then
+      // be dropped in the exact reverse of the parent-first creation order.
+      addedTableDownStatements.push(
+        ...[...tablePlan.deferredConstraints]
+          .reverse()
+          .map(({ table, foreignKey }) =>
+            renderDeferredForeignKeyDrop(table, foreignKey),
+          ),
+      );
+      addedTableDownStatements.push(
+        ...[...tablePlan.schemas]
+          .reverse()
+          .map((schema) => this.generateDropTable(schema.tableName)),
+      );
     }
 
     // Handle column and index changes
@@ -130,6 +156,11 @@ export class MigrationGenerator {
         downStatements.push(...down);
       }
     }
+
+    // Changes are applied after table creation, so undo them before removing
+    // the new tables they may reference. The table block is itself already
+    // ordered as deferred-constraint drops followed by child-first drops.
+    downStatements.push(...addedTableDownStatements);
 
     // Handle dropped tables (already in SQL form if present)
     for (const tableName of diff.dropped_tables) {
@@ -400,6 +431,24 @@ ${downStatementsStr}
         if (change.name) {
           down.push(this.generateDropIndex(change.name));
         }
+        break;
+
+      case 'add_foreign_key':
+        if (sqlStatements.length > 0) {
+          up.push(...sqlStatements);
+        } else if (change.advisory) {
+          up.push(
+            `-- ${change.advisory.severity === 'warning' ? 'WARNING' : 'NOTE'}: Foreign-key constraint ${change.table}.${change.name ?? 'unknown'}`,
+          );
+          if (change.advisory.message) {
+            up.push(`-- ${change.advisory.message}`);
+          }
+          for (const suggestion of change.advisory.suggestedSql ?? []) {
+            up.push(`-- suggested: ${suggestion}`);
+          }
+        }
+        // Constraint rollback is intentionally manual: names on older live
+        // databases may not match the deterministic current generator name.
         break;
 
       case 'drop_index':

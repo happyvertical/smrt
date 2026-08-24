@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { PaymentMethod, PaymentStatus } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 describe('Payment backend identity and USD-drift fields', () => {
   let dbPath: string;
@@ -36,6 +37,25 @@ describe('Payment backend identity and USD-drift fields', () => {
     dbPath = join(tmpdir(), `smrt-payment-backend-${Date.now()}.db`);
     payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      customerIds: [
+        'customer-bc-1',
+        'customer-usdc',
+        'customer-btc',
+        'customer-btc-drop',
+        'customer-fiat',
+        'customer-existing',
+      ],
+      contractIds: [
+        'contract-bc-1',
+        'contract-usdc',
+        'contract-btc',
+        'contract-btc-drop',
+        'contract-fiat',
+        'contract-existing',
+      ],
     });
   });
 
@@ -71,6 +91,17 @@ describe('Payment backend identity and USD-drift fields', () => {
     expect(loaded?.nativeCurrency).toBe('');
     expect(loaded?.usdAtQuote).toBe(0);
     expect(loaded?.usdAtConfirmation).toBe(0);
+  });
+
+  it('persists omitted optional payment relationships as null', async () => {
+    const payment = await payments.create({ amount: 100 });
+    await payment.save();
+
+    expect(payment.contractId).toBeNull();
+    expect(payment.customerId).toBeNull();
+    const loaded = await payments.get({ id: payment.id });
+    expect(loaded?.contractId).toBeNull();
+    expect(loaded?.customerId).toBeNull();
   });
 
   it('round-trips a Base-USDC stablecoin payment', async () => {

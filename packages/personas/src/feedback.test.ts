@@ -11,6 +11,7 @@ import { getTestDatabase, type LearningMemory } from '@happyvertical/smrt-core';
 import { disableTenancy } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AgentPersonaCollection } from './agent-persona.js';
 import { Feedback, FeedbackCollection, feedbackSourceFor } from './feedback.js';
 import {
   personaLearningMemory,
@@ -29,7 +30,15 @@ describe('Feedback', () => {
   beforeEach(async () => {
     // Force a known, tenancy-off state for this file (single-fork process).
     disableTenancy();
-    db = await getTestDatabase({ classes: ['Feedback'] });
+    db = await getTestDatabase({ classes: ['AgentPersona', 'Feedback'] });
+    const personas = await AgentPersonaCollection.create({ db });
+    await personas.create({
+      id: 'persona-1',
+      tenantId: 'tenant-a',
+      agentClass: '@happyvertical/smrt-agents:Praeco',
+      name: 'feedback-fixture',
+      runAsUserId: 'user-1',
+    });
   });
 
   afterEach(async () => {

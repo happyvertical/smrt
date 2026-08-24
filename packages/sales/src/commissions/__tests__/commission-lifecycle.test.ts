@@ -10,6 +10,7 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { seedCommissionPayout, seedEarningEvent } from '../../test-fixtures.js';
 import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustmentCollection.js';
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import { EarnerCollection } from '../collections/EarnerCollection.js';
@@ -35,6 +36,11 @@ describe('Commission lifecycle', () => {
       displayName: 'Casey Rep',
       status: 'active',
     });
+    for (const payoutId of ['payout-1', 'payout-42', 'payout-x']) {
+      await seedCommissionPayout(db, earner.id as string, payoutId);
+    }
+    await seedEarningEvent(db, 'evt-a');
+    await seedEarningEvent(db, 'evt-b');
   });
 
   afterEach(async () => {
@@ -56,6 +62,24 @@ describe('Commission lifecycle', () => {
       ...overrides,
     });
   }
+
+  it('persists absent optional foreign keys as null', async () => {
+    const commission = await createCommission({ status: 'paid' });
+    const adjustment = await adjustments.create({
+      commissionId: commission.id as string,
+      earnerId: earner.id as string,
+      adjustmentKind: 'credit',
+      amountCents: 100,
+      currency: 'USD',
+      reason: 'null optional FK regression',
+    });
+
+    const loadedCommission = await commissions.get({ id: commission.id });
+    const loadedAdjustment = await adjustments.get({ id: adjustment.id });
+    expect(loadedCommission?.earningEventId).toBeNull();
+    expect(loadedCommission?.payoutId).toBeNull();
+    expect(loadedAdjustment?.payoutId).toBeNull();
+  });
 
   it('walks the full chain and stamps each timestamp', async () => {
     const commission = await createCommission();

@@ -74,6 +74,7 @@ import {
   type Referrer,
   ReferrerCollection,
 } from '../referrals/index.js';
+import { seedAgreementEvidence } from '../test-fixtures.js';
 
 /** First element or throw — keeps fixture wiring honest. */
 function first<T>(rows: T[]): T {
@@ -208,6 +209,11 @@ describe('epic tracer (#1935): referred Opportunity → explainable payable Comm
 
   beforeAll(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedAgreementEvidence(
+      db,
+      'agreement-execution-tracer-1',
+      'executed-agreement-tracer-1',
+    );
 
     earners = await EarnerCollection.create({ db });
     plans = await CommissionPlanCollection.create({ db });

@@ -25,6 +25,7 @@ export interface MigrationAction {
     | 'add_column'
     | 'drop_column'
     | 'alter_column'
+    | 'add_foreign_key'
     | 'add_index'
     | 'drop_index'
     | 'type_mismatch'
@@ -64,6 +65,7 @@ export interface MigrationAction {
   };
   sql?: string;
   sqlStatements?: string[];
+  advisory?: SchemaChangeAdvisoryLike;
 }
 
 /**
@@ -89,6 +91,7 @@ export interface SchemaChangeLike {
     | 'drop_column'
     | 'alter_column'
     | 'orphan_column'
+    | 'add_foreign_key'
     | 'add_index'
     | 'drop_index'
     | 'orphan_index'
@@ -306,6 +309,13 @@ export function getSyntheticMigrationNameForAction(
         : `add_index_${action.index.name}`;
     }
 
+    case 'add_foreign_key': {
+      const fingerprint = sqlShapeFingerprint(action);
+      return fingerprint
+        ? `add_foreign_key_${action.tableName}_${fingerprint}`
+        : null;
+    }
+
     case 'drop_index': {
       if (!action.indexName) return null;
       const fingerprint = sqlShapeFingerprint(action);
@@ -360,6 +370,13 @@ export function getSyntheticMigrationNameForChange(
       return fingerprint
         ? `add_index_${indexName}_${fingerprint}`
         : `add_index_${indexName}`;
+    }
+
+    case 'add_foreign_key': {
+      const fingerprint = sqlShapeFingerprint(change);
+      return fingerprint
+        ? `add_foreign_key_${change.table}_${fingerprint}`
+        : null;
     }
 
     case 'drop_index': {
@@ -435,6 +452,7 @@ export function classifyFailedMigration(
     !migrationName.startsWith('add_column_') &&
     !migrationName.startsWith('drop_column_') &&
     !migrationName.startsWith('alter_column_') &&
+    !migrationName.startsWith('add_foreign_key_') &&
     !migrationName.startsWith('add_index_') &&
     !migrationName.startsWith('drop_index_') &&
     !migrationName.startsWith('type_upgrade_')
@@ -457,6 +475,7 @@ export function getUnresolvedGeneratedMigrationNames(
       change.type !== 'add_column' &&
       change.type !== 'drop_column' &&
       change.type !== 'alter_column' &&
+      change.type !== 'add_foreign_key' &&
       change.type !== 'add_index' &&
       change.type !== 'drop_index' &&
       change.type !== 'type_upgrade'
@@ -687,6 +706,25 @@ export function partitionSchemaChanges(
             ? { sqlStatements: change.sqlStatements }
             : {}),
         });
+        break;
+      }
+
+      case 'add_foreign_key': {
+        const action: MigrationAction = {
+          type: 'add_foreign_key',
+          tableName: change.table,
+          className,
+          sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
+          advisory: change.advisory,
+        };
+        if (isAdvisoryOnlyChangeLike(change)) {
+          manualInterventions.push(action);
+        } else {
+          migrations.push(action);
+        }
         break;
       }
 

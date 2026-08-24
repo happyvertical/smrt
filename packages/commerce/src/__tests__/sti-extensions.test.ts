@@ -17,6 +17,7 @@ import {
   WholesaleOrder,
 } from '../models/Contract.js';
 import { ContractType, CustomerType } from '../types/index.js';
+import { seedCommerceForeignKeyFixtures } from './foreign-key-fixtures.js';
 
 describe('Contract STI extensions', () => {
   let dbPath: string;
@@ -30,6 +31,11 @@ describe('Contract STI extensions', () => {
     });
     customers = await CustomerCollection.create({
       db: { type: 'sqlite', url: dbPath },
+    });
+    await seedCommerceForeignKeyFixtures({
+      db: { type: 'sqlite', url: dbPath },
+      customerIds: ['cust-guest-123', 'c1', 'c2'],
+      vendorIds: ['factory-1', 'v1'],
     });
   });
 

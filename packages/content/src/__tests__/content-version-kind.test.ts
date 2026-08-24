@@ -4,6 +4,8 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import { syncSchema } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import type { ContentVersionKind } from '../content-governance';
+import '../content-feed-source';
+import { Content } from '../content';
 import { ContentVersionCollection } from '../content-versions';
 import manifest from '../manifest/manifest.json';
 import { serializeContentVersion } from '../serialization';
@@ -36,15 +38,24 @@ describe('ContentVersionKind', () => {
     const db = await getTestDatabase({
       type: 'sqlite',
       url: `file:${path.join(os.tmpdir(), `smrt-content-version-${crypto.randomUUID()}.db`)}`,
+      classes: ['ContentFeedSource', 'Content', 'ContentVersion'],
     });
     try {
       await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
       const versions = await ContentVersionCollection.create({ db });
       const kind: ContentVersionKind = 'auto-generated';
+      const content = new Content({
+        db,
+        name: 'generated-version-parent',
+        title: 'Generated version parent',
+        status: 'draft',
+      });
+      await content.initialize();
+      await content.save();
 
       const created = await versions.create({
         slug: 'generated-version-v1',
-        contentId: crypto.randomUUID(),
+        contentId: content.id as string,
         version: 1,
         kind,
         summary: 'Created by planning-asset ingestion',

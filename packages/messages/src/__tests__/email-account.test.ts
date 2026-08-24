@@ -41,6 +41,7 @@ import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { EmailFolder } from '../models/EmailFolder';
 import { EmailSender } from '../senders/EmailSender';
+import { prepareMessageParents } from './fk-fixtures.js';
 
 // ---------------------------------------------------------------------------
 // Mock email-client factory (mirrors the EmailClient surface EmailAccount uses)
@@ -217,6 +218,7 @@ describe('EmailAccount DB-backed operations', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase();
+    await prepareMessageParents(db);
   });
 
   afterEach(async () => {

@@ -107,14 +107,25 @@ describe('properties tenant isolation (#1600)', () => {
 
   it('ZoneCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const zones = await ZoneCollection.create({ db });
+    const properties = await PropertyCollection.create({ db });
+    const seed = async (
+      propertyId: string,
+      domain: string,
+      zoneName: string,
+    ): Promise<void> => {
+      await (
+        await properties.create({ id: propertyId, name: domain, domain })
+      ).save();
+      await (await zones.create({ propertyId, name: zoneName })).save();
+    };
     await withTenant({ tenantId: 'tenant-1' }, async () => {
-      await (await zones.create({ propertyId: 'p1', name: 't1-zone' })).save();
+      await seed('p1', 't1.example.com', 't1-zone');
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
-      await (await zones.create({ propertyId: 'p2', name: 't2-zone' })).save();
+      await seed('p2', 't2.example.com', 't2-zone');
     });
     await withSystemContext(async () => {
-      await (await zones.create({ propertyId: 'pg', name: 'g-zone' })).save();
+      await seed('pg', 'g.example.com', 'g-zone');
     });
 
     expect(

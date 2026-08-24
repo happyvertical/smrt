@@ -1,5 +1,7 @@
+import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
+import { ensureSchema } from '../schema/utils.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 
@@ -99,6 +101,22 @@ describe('getTestDatabase manifest schemas', () => {
             },
           ],
           version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+  }
+
+  function registerNativeUuidThing(): void {
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:NativeUuidThing',
+      {
+        className: 'NativeUuidThing',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'native_uuid_things',
+          idType: 'uuid',
         },
       },
       '@test/pkg',
@@ -360,6 +378,367 @@ describe('getTestDatabase manifest schemas', () => {
           sql.includes('json_indexed_things_slug_context_idx'),
       ),
     ).toBe(false);
+  });
+
+  it('uses native UUID DDL for an explicitly requested DuckDB database', async () => {
+    registerNativeUuidThing();
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      classes: ['NativeUuidThing'],
+      includeSystemTables: false,
+    });
+
+    try {
+      const result = await db.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = 'native_uuid_things' AND column_name = 'id'`,
+      );
+      expect(result.rows[0]?.data_type).toBe('UUID');
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('infers native UUID DDL from an existing DuckDB database', async () => {
+    registerNativeUuidThing();
+    const db = await getDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      // This test exercises getTestDatabase's existing-adapter inference, so
+      // the Vitest wrapper must not prepare the table before that call.
+      __smrtSkipVitestSchemaPreparation: true,
+    } as Parameters<typeof getDatabase>[0]);
+
+    try {
+      await getTestDatabase({
+        db,
+        classes: ['NativeUuidThing'],
+        includeSystemTables: false,
+      });
+      const result = await db.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = 'native_uuid_things' AND column_name = 'id'`,
+      );
+      expect(result.rows[0]?.data_type).toBe('UUID');
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('creates registry schemas in foreign-key dependency order (#2413)', async () => {
+    const statements: string[] = [];
+    const db = {
+      query: async (sql: string) => {
+        statements.push(sql);
+        return { rows: [] };
+      },
+    };
+
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:RegistryParent',
+      {
+        className: 'RegistryParent',
+        fields: {},
+        methods: {},
+        decoratorConfig: { tableName: 'z_registry_parents' },
+      },
+      '@test/fk',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:RegistryChild',
+      {
+        className: 'RegistryChild',
+        fields: {
+          parentId: {
+            type: 'foreignKey',
+            related: 'RegistryParent',
+          },
+        },
+        methods: {},
+        decoratorConfig: { tableName: 'a_registry_children' },
+      },
+      '@test/fk',
+    );
+
+    await getTestDatabase({
+      db: db as any,
+      classes: ['RegistryChild'],
+      includeSystemTables: false,
+    });
+
+    const parentCreate = statements.findIndex((sql) =>
+      sql.startsWith('CREATE TABLE IF NOT EXISTS "z_registry_parents"'),
+    );
+    const childCreate = statements.findIndex((sql) =>
+      sql.startsWith('CREATE TABLE IF NOT EXISTS "a_registry_children"'),
+    );
+    expect(parentCreate).toBeGreaterThanOrEqual(0);
+    expect(childCreate).toBeGreaterThan(parentCreate);
+    expect(statements[childCreate]).toContain(
+      'REFERENCES "z_registry_parents" ("id")',
+    );
+  });
+
+  it('fails closed when JSON-on-DuckDB cannot enforce a registry FK action (#2413)', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:DuckRegistryParent',
+      {
+        className: 'DuckRegistryParent',
+        fields: {},
+        methods: {},
+        decoratorConfig: { tableName: 'duck_registry_parents' },
+      },
+      '@test/fk',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:DuckRegistryChild',
+      {
+        className: 'DuckRegistryChild',
+        fields: {
+          parentId: {
+            type: 'foreignKey',
+            related: 'DuckRegistryParent',
+          },
+        },
+        methods: {},
+        decoratorConfig: { tableName: 'duck_registry_children' },
+      },
+      '@test/fk',
+    );
+
+    await expect(
+      getTestDatabase({
+        db: {
+          exportTable: () => undefined,
+          query: async () => ({ rows: [] }),
+        } as any,
+        classes: ['DuckRegistryChild', 'DuckRegistryParent'],
+        includeSystemTables: false,
+      }),
+    ).rejects.toThrow(/ON UPDATE CASCADE.*does not support/);
+  });
+
+  it('preserves explicit manifest FK actions in test-database DDL (#2413)', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:ActionParent',
+      {
+        className: 'ActionParent',
+        fields: {},
+        methods: {},
+        decoratorConfig: { tableName: 'action_parents' },
+        schema: {
+          tableName: 'action_parents',
+          ddl: '',
+          columns: { id: { type: 'TEXT', primaryKey: true } },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '2413',
+        },
+      },
+      '@test/fk',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:ActionChild',
+      {
+        className: 'ActionChild',
+        fields: {
+          parentId: { type: 'foreignKey', related: 'ActionParent.id' },
+        },
+        methods: {},
+        decoratorConfig: { tableName: 'action_children' },
+        schema: {
+          tableName: 'action_children',
+          ddl: '',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            parent_id: {
+              type: 'TEXT',
+              foreignKey: {
+                table: 'action_parents',
+                column: 'id',
+                onDelete: 'RESTRICT',
+                onUpdate: 'NO ACTION',
+              },
+            },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: ['action_parents'],
+          version: '2413',
+        },
+      },
+      '@test/fk',
+    );
+    ObjectRegistry.registerFieldDecorator('ActionChild', 'parentId', {
+      type: 'foreignKey',
+      related: 'ActionParent.id',
+      onDelete: 'CASCADE',
+    });
+    const statements: string[] = [];
+    await getTestDatabase({
+      db: {
+        query: async (sql: string) => {
+          statements.push(sql);
+          return { rows: [] };
+        },
+      } as any,
+      classes: ['ActionChild', 'ActionParent'],
+      includeSystemTables: false,
+    });
+
+    const childDDL = statements.find((sql) =>
+      sql.startsWith('CREATE TABLE IF NOT EXISTS "action_children"'),
+    );
+    expect(childDDL).toContain('ON DELETE RESTRICT ON UPDATE NO ACTION');
+    expect(childDDL).not.toContain('ON DELETE CASCADE');
+  });
+
+  it('does not restore a physical FK excluded by the authoritative manifest (#2413)', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:RuntimeOnlyParent',
+      {
+        className: 'RuntimeOnlyParent',
+        fields: {},
+        methods: {},
+        decoratorConfig: { tableName: 'runtime_only_parents' },
+      },
+      '@test/fk',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@test/fk:RuntimeOnlyChild',
+      {
+        className: 'RuntimeOnlyChild',
+        fields: {
+          parentId: {
+            type: 'foreignKey',
+            related: 'RuntimeOnlyParent.id',
+            __tenancy: { isTenantIdField: true },
+            _meta: { __tenancy: { isTenantIdField: true } },
+          },
+        },
+        methods: {},
+        decoratorConfig: { tableName: 'runtime_only_children' },
+        schema: {
+          tableName: 'runtime_only_children',
+          ddl: '',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            parent_id: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '2413',
+        },
+      },
+      '@test/fk',
+    );
+    const statements: string[] = [];
+    await getTestDatabase({
+      db: {
+        query: async (sql: string) => {
+          statements.push(sql);
+          return { rows: [] };
+        },
+      } as any,
+      classes: ['RuntimeOnlyChild'],
+      includeSystemTables: false,
+    });
+
+    expect(statements.join('\n')).not.toContain('FOREIGN KEY');
+    expect(statements.join('\n')).not.toContain('runtime_only_parents');
+  });
+
+  it('plans the registered dependency closure when ensureSchema starts inside a PG cycle (#2413)', async () => {
+    const registerCycle = (
+      className: string,
+      tableName: string,
+      fieldName: string,
+      targetClass: string,
+      targetTable: string,
+    ) =>
+      ObjectRegistry.registerFromManifest(
+        `@test/cycle:${className}`,
+        {
+          className,
+          fields: {
+            [fieldName]: { type: 'foreignKey', related: `${targetClass}.id` },
+          },
+          methods: {},
+          decoratorConfig: { tableName },
+          schema: {
+            tableName,
+            ddl: '',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              [fieldName === 'rightId' ? 'right_id' : 'left_id']: {
+                type: 'TEXT',
+                foreignKey: {
+                  table: targetTable,
+                  column: 'id',
+                  onDelete: 'NO ACTION',
+                  onUpdate: 'CASCADE',
+                },
+              },
+            },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [targetTable],
+            version: '2413',
+          },
+        },
+        '@test/cycle',
+      );
+    registerCycle(
+      'SetupLeft',
+      'setup_left',
+      'rightId',
+      'SetupRight',
+      'setup_right',
+    );
+    registerCycle(
+      'SetupRight',
+      'setup_right',
+      'leftId',
+      'SetupLeft',
+      'setup_left',
+    );
+
+    const tables = new Set<string>();
+    const constraints = new Set<string>();
+    const statements: string[] = [];
+    const db = {
+      url: 'postgres://localhost/test',
+      tableExists: async (name: string) => tables.has(name),
+      query: async (sql: string, params?: unknown[]) => {
+        statements.push(sql);
+        const create = sql.match(/^CREATE TABLE IF NOT EXISTS "([^"]+)"/);
+        if (create) tables.add(create[1]);
+        if (sql.includes('FROM pg_constraint')) {
+          return {
+            rows: constraints.has(String(params?.[1]))
+              ? [{ convalidated: true }]
+              : [],
+          };
+        }
+        if (sql.includes(' AS orphan_key ')) return { rows: [] };
+        const add = sql.match(/ADD CONSTRAINT "([^"]+)"/);
+        if (add) constraints.add(add[1]);
+        return { rows: [] };
+      },
+    };
+
+    await ensureSchema(db as any, 'SetupLeft');
+    expect(tables).toEqual(new Set(['setup_left', 'setup_right']));
+    expect(constraints.size).toBe(2);
+    expect(
+      statements
+        .filter((sql) => sql.startsWith('CREATE TABLE'))
+        .every((sql) => !sql.includes('FOREIGN KEY')),
+    ).toBe(true);
   });
 
   it('maps collection subclasses to their inherited STI item schema before table creation', async () => {

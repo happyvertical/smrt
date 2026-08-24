@@ -11,6 +11,7 @@ const {
   getTableNameMock,
   migrationApplyAllOptions,
   migrationAttempts,
+  planForeignKeyCreationMock,
   MockMigrationTracker,
   MockSchemaComparer,
   trackerOptions,
@@ -60,7 +61,7 @@ const {
     }
 
     async applyAll(
-      definitions: Array<{ id: string }>,
+      definitions: Array<{ id: string; up?: string[] }>,
       options: {
         atomic?: boolean;
         force?: boolean;
@@ -86,7 +87,12 @@ const {
           for (const definition of definitions) {
             migrationAttempts.push(definition.id);
 
-            if (definition.id === 'add_column_contents_second_column') {
+            if (
+              definition.id === 'add_column_contents_second_column' ||
+              definition.up?.some((sql) =>
+                sql.includes('synthetic_deferred_failure'),
+              )
+            ) {
               failedName = definition.id;
               const failed = {
                 success: false,
@@ -149,6 +155,10 @@ const {
     getTableNameMock: vi.fn(),
     migrationApplyAllOptions,
     migrationAttempts,
+    planForeignKeyCreationMock: vi.fn((schemas: unknown[]) => ({
+      schemas,
+      deferredStatements: [],
+    })),
     transactionRolledBack,
     MockMigrationTracker,
     MockSchemaComparer,
@@ -177,6 +187,12 @@ vi.mock('@happyvertical/smrt-core', () => ({
     getTableStrategy: vi.fn(() => 'cti'),
   },
   SchemaComparer: MockSchemaComparer,
+  generateDDLForEngine: vi.fn((schema: { tableName: string }) => ({
+    createTable: `CREATE TABLE "${schema.tableName}" ("id" TEXT PRIMARY KEY)`,
+    indexes: [],
+    triggers: [],
+  })),
+  planForeignKeyCreation: planForeignKeyCreationMock,
   isQualifiedName: vi.fn((value: string) => value.includes(':')),
 }));
 
@@ -205,6 +221,10 @@ describe('db:migrate atomic schema execution', () => {
     committedAppliedMigrations.length = 0;
     trackerOptions.length = 0;
     transactionRolledBack.value = false;
+    planForeignKeyCreationMock.mockImplementation((schemas: unknown[]) => ({
+      schemas,
+      deferredStatements: [],
+    }));
 
     getPackageConfigMock.mockReturnValue({
       database: {
@@ -317,6 +337,46 @@ describe('db:migrate atomic schema execution', () => {
       'add_column_contents_second_column: synthetic failure',
     );
     expect(stderr).toContain('successful steps shown above');
+  }, 15_000);
+
+  it('rolls back new tables when a deferred cycle constraint fails in the same batch', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [
+        { tableName: 'left_nodes', columns: { id: { type: 'TEXT' } } },
+        { tableName: 'right_nodes', columns: { id: { type: 'TEXT' } } },
+      ],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [],
+    });
+    planForeignKeyCreationMock.mockReturnValue({
+      schemas: [
+        { tableName: 'left_nodes', columns: { id: { type: 'TEXT' } } },
+        { tableName: 'right_nodes', columns: { id: { type: 'TEXT' } } },
+      ],
+      deferredStatements: [
+        'ALTER TABLE "left_nodes" ADD CONSTRAINT "left_nodes_right_id_fkey" FOREIGN KEY ("right_id") REFERENCES "right_nodes" ("id"); -- synthetic_deferred_failure',
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], {});
+
+    expect(migrationAttempts.slice(0, 2)).toEqual([
+      'create_table_left_nodes',
+      'create_table_right_nodes',
+    ]);
+    expect(migrationAttempts[2]).toMatch(/^add_foreign_key_left_nodes_/);
+    expect(transactionRolledBack.value).toBe(true);
+    expect(committedAppliedMigrations).toEqual([]);
+    expect(logSpy.mock.calls.flat().join('\n')).toContain(
+      'Applying 3 schema change(s) atomically',
+    );
+    expect(errorSpy.mock.calls.flat().join('\n')).toContain(
+      'atomic schema migration failed',
+    );
   }, 15_000);
 
   it('passes an exact force target into the atomic migration batch', async () => {

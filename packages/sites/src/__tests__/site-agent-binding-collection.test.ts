@@ -13,12 +13,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SiteAgentBindingCollection } from '../collections/SiteAgentBindingCollection';
+import { SiteCollection } from '../collections/SiteCollection';
 
 describe('SiteAgentBindingCollection', () => {
   let dbPath: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-binding-collection-test-${Date.now()}.db`);
+    const sites = await SiteCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    for (const id of ['site-1', 'site-2', 'site-3']) {
+      await sites.create({
+        id,
+        tenantId: 'tenant-1',
+        name: `Test ${id}`,
+        domain: `${id}.example.com`,
+      });
+    }
   });
 
   afterEach(() => {

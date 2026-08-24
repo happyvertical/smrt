@@ -14,10 +14,14 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-// Registers smrt-users' classes (Tenant/Membership) so
-// getTestDatabase can create the tenants table the default hierarchy loader
-// reads under an ambient tenant context.
-import { MembershipCollection } from '../../users/src/index.js';
+// Registers smrt-users' identity classes so getTestDatabase can create the
+// tenant hierarchy and physically constrained membership tables used here.
+import {
+  MembershipCollection,
+  RoleCollection,
+  TenantCollection,
+  UserCollection,
+} from '../../users/src/index.js';
 import { clearFieldPolicyCache } from './cache.js';
 import { FieldPolicyCollection } from './collections/FieldPolicyCollection.js';
 import {
@@ -71,7 +75,7 @@ describe('FieldPolicyCollection.resolveBatch', () => {
     // 'Tenant' backs the default hierarchy loader (smrt-users is installed
     // in this workspace, so resolveBatch walks the real tenant table).
     db = await getTestDatabase({
-      classes: ['FieldPolicy', 'Tenant', 'Membership'],
+      classes: ['FieldPolicy', 'Tenant', 'User', 'Role', 'Membership'],
     });
     policies = await FieldPolicyCollection.create({ db });
     objectRef = fixtureRef();
@@ -395,16 +399,31 @@ describe('FieldPolicyCollection.resolveBatch', () => {
     const otherUserId = randomUUID();
     const foreignTenantId = randomUUID();
     const foreignUserId = randomUUID();
+    const roleId = randomUUID();
+    const foreignRoleId = randomUUID();
+    const tenants = await TenantCollection.create({ db });
+    const users = await UserCollection.create({ db });
+    const roles = await RoleCollection.create({ db });
     const memberships = await MembershipCollection.create({ db });
+    await tenants.create({ id: tenantId, name: 'Managed tenant' });
+    await tenants.create({ id: foreignTenantId, name: 'Foreign tenant' });
+    await users.create({ id: otherUserId, email: 'other@example.test' });
+    await users.create({ id: foreignUserId, email: 'foreign@example.test' });
+    await roles.create({ id: roleId, tenantId, name: 'Member' });
+    await roles.create({
+      id: foreignRoleId,
+      tenantId: foreignTenantId,
+      name: 'Foreign member',
+    });
     await memberships.create({
       userId: otherUserId,
       tenantId,
-      roleId: randomUUID(),
+      roleId,
     });
     await memberships.create({
       userId: foreignUserId,
       tenantId: foreignTenantId,
-      roleId: randomUUID(),
+      roleId: foreignRoleId,
     });
     await withTenant(
       {

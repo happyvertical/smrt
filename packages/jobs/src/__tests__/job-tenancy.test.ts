@@ -43,6 +43,21 @@ describe('job tenancy propagation', () => {
     expect(fields.get('workerHeartbeat')?.type).toBe('datetime');
   });
 
+  it('keeps the retained job-event relationship app-side only', async () => {
+    const fields = await ObjectRegistry.getAllFields('SmrtJobEvent');
+    const schema = ObjectRegistry.getAllSchemasAsDefinitions()._smrt_job_events;
+
+    expect(fields.get('jobId')?.type).toBe('foreignKey');
+    expect(fields.get('jobId')?._meta?.constraint).toBe(false);
+    expect(schema.columns.job_id.referenceKind).toBe('foreignKey');
+    expect(schema.columns.job_id.foreignKey).toBeUndefined();
+    expect(schema.foreignKeys).toEqual([]);
+    expect(schema.dependencies).not.toContain('_smrt_jobs');
+    expect(schema.indexes.some((index) => index.columns[0] === 'job_id')).toBe(
+      true,
+    );
+  });
+
   it('persists core job fields to the _smrt_jobs row', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });

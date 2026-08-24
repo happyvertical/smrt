@@ -16,7 +16,14 @@ import {
   type EngineSpecificDDL,
   getDDLStrategy,
 } from './ddl/index.js';
-import type { SchemaDefinition } from './types.js';
+import {
+  foreignKeyConstraintName,
+  renderForeignKeyConstraint,
+  renderForeignKeyOrphanDetector,
+  renderForeignKeyOrphanRepair,
+} from './foreign-key-ddl.js';
+import { planForeignKeyCreation } from './foreign-key-planner.js';
+import type { ForeignKeyDefinition, SchemaDefinition } from './types.js';
 
 /**
  * Normalize a `db.query` result into an array of rows.
@@ -339,12 +346,62 @@ export class SchemaManager {
    * @param schemas - Array of schema definitions
    */
   async ensureTables(schemas: SchemaDefinition[]): Promise<void> {
-    // Sort by dependencies (topological sort)
-    const sorted = this.sortByDependencies(schemas);
+    const plan = planForeignKeyCreation(schemas, this.engine);
 
-    for (const schema of sorted) {
+    for (const schema of plan.schemas) {
       await this.ensureTable(schema);
     }
+    for (const { table, foreignKey } of plan.deferredConstraints) {
+      await this.ensurePostgresDeferredForeignKey(table, foreignKey);
+    }
+  }
+
+  private async ensurePostgresDeferredForeignKey(
+    tableName: string,
+    foreignKey: ForeignKeyDefinition,
+  ): Promise<void> {
+    const constraintName = foreignKeyConstraintName(tableName, foreignKey);
+    let existing: unknown;
+    try {
+      existing = await this.db.query(
+        `SELECT constraint_row.convalidated FROM pg_constraint AS constraint_row JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace WHERE table_row.relname = $1 AND namespace_row.nspname = current_schema() AND constraint_row.conname = $2 AND constraint_row.contype = 'f' LIMIT 1`,
+        [tableName, constraintName],
+      );
+    } catch (error) {
+      throw new Error(
+        `[SchemaManager] Cannot verify deferred foreign key ${constraintName}; refusing an unsafe duplicate/add attempt: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+    const existingRows = extractRows<{ convalidated?: boolean }>(existing);
+    if (existingRows[0]?.convalidated === true) return;
+
+    const detector = renderForeignKeyOrphanDetector(tableName, foreignKey, {
+      limitOne: true,
+    });
+    let orphanResult: unknown;
+    try {
+      orphanResult = await this.db.query(detector);
+    } catch (error) {
+      throw new Error(
+        `[SchemaManager] Cannot probe ${tableName}.${foreignKey.column} for orphan rows; refusing to add ${constraintName}. Run the detector manually: ${detector}`,
+        { cause: error },
+      );
+    }
+    if (extractRows(orphanResult).length > 0) {
+      throw new Error(
+        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey)}`,
+      );
+    }
+
+    if (existingRows.length === 0) {
+      await this.db.query(
+        `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD ${renderForeignKeyConstraint(tableName, foreignKey)} NOT VALID`,
+      );
+    }
+    await this.db.query(
+      `ALTER TABLE ${this.quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${this.quoteIdentifier(constraintName)}`,
+    );
   }
 
   /**
@@ -367,56 +424,6 @@ export class SchemaManager {
    */
   getEngine(): DatabaseEngine {
     return this.engine;
-  }
-
-  /**
-   * Sort schemas by dependencies (topological sort)
-   *
-   * Ensures tables are created in the correct order based on foreign key dependencies.
-   */
-  private sortByDependencies(schemas: SchemaDefinition[]): SchemaDefinition[] {
-    const byName = new Map<string, SchemaDefinition>();
-    const sorted: SchemaDefinition[] = [];
-    const visited = new Set<string>();
-    const visiting = new Set<string>();
-
-    // Index by table name
-    for (const schema of schemas) {
-      byName.set(schema.tableName, schema);
-    }
-
-    // DFS topological sort
-    const visit = (tableName: string) => {
-      if (visited.has(tableName)) return;
-      if (visiting.has(tableName)) {
-        // Circular dependency - continue anyway (FK might be nullable)
-        this.logger.warn(
-          `[SchemaManager] Circular dependency detected involving ${tableName}`,
-        );
-        return;
-      }
-
-      const schema = byName.get(tableName);
-      if (!schema) return; // External dependency, skip
-
-      visiting.add(tableName);
-
-      // Visit dependencies first
-      for (const dep of schema.dependencies || []) {
-        visit(dep);
-      }
-
-      visiting.delete(tableName);
-      visited.add(tableName);
-      sorted.push(schema);
-    };
-
-    // Visit all schemas
-    for (const schema of schemas) {
-      visit(schema.tableName);
-    }
-
-    return sorted;
   }
 }
 

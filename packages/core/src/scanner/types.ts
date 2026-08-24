@@ -69,7 +69,9 @@ export interface FieldMeta {
   /** Opt-in column/JSON-path indexing flag. */
   indexed?: boolean;
   /** Foreign-key delete action carried in metadata. */
-  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
+  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+  /** Explicitly disables physical DDL while retaining FK relationship metadata. */
+  constraint?: boolean;
   /** Excludes the field from persistence when true. */
   transient?: boolean;
   /** Numeric/length validation bounds and pattern. */
@@ -184,6 +186,8 @@ export interface ManifestColumnDefinition {
   notNull?: boolean;
   unique?: boolean;
   default?: unknown;
+  /** Same-package FK only. Cross-package references never populate this. */
+  foreignKey?: import('../schema/types.js').ColumnDefinition['foreignKey'];
 }
 
 /**

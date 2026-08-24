@@ -260,6 +260,128 @@ describe('createIsolatedTestDbFromManifest', () => {
       ).rejects.toThrow('No objects with schema found matching: NonExistent');
     });
 
+    it('removes a structured foreign key when its parent is filtered out', async () => {
+      const manifestPath = join(testDir, 'filtered-foreign-key.json');
+      const manifest = {
+        objects: {
+          Parent: {
+            className: 'Parent',
+            schema: {
+              tableName: 'filtered_parents',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true, notNull: true },
+              },
+            },
+          },
+          Child: {
+            className: 'Child',
+            schema: {
+              tableName: 'filtered_children',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true, notNull: true },
+                parent_id: {
+                  type: 'TEXT',
+                  referenceKind: 'foreignKey',
+                  foreignKey: {
+                    table: 'filtered_parents',
+                    column: 'id',
+                    onDelete: 'NO ACTION',
+                    onUpdate: 'CASCADE',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['Child'],
+      });
+      try {
+        await expect(db.list('filtered_children', {})).resolves.toEqual([]);
+        await expect(db.list('filtered_parents', {})).rejects.toThrow();
+        const foreignKeys = await db.query(
+          'PRAGMA foreign_key_list("filtered_children")',
+        );
+        expect(foreignKeys.rows).toEqual([]);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('refuses filtered legacy DDL whose referenced parent is omitted', async () => {
+      const manifestPath = join(testDir, 'filtered-legacy-foreign-key.json');
+      const manifest = {
+        objects: {
+          Parent: {
+            className: 'Parent',
+            schema: {
+              tableName: 'legacy_filter_parents',
+              ddl: 'CREATE TABLE "legacy_filter_parents" ("id" TEXT PRIMARY KEY);',
+            },
+          },
+          Child: {
+            className: 'Child',
+            schema: {
+              tableName: 'legacy_filter_children',
+              ddl: 'CREATE TABLE "legacy_filter_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "public"."legacy_filter_parents");',
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      await expect(
+        createIsolatedTestDbFromManifest({
+          manifestPath,
+          includeObjects: ['Child'],
+        }),
+      ).rejects.toThrow(
+        'legacy DDL for "legacy_filter_children" references omitted table "legacy_filter_parents"',
+      );
+    });
+
+    it('preserves a no-column-list legacy reference when its parent is included', async () => {
+      const manifestPath = join(testDir, 'included-legacy-foreign-key.json');
+      const manifest = {
+        objects: {
+          Parent: {
+            className: 'Parent',
+            schema: {
+              tableName: 'legacy_included_parents',
+              ddl: 'CREATE TABLE "legacy_included_parents" ("id" TEXT PRIMARY KEY);',
+            },
+          },
+          Child: {
+            className: 'Child',
+            schema: {
+              tableName: 'legacy_included_children',
+              ddl: 'CREATE TABLE "legacy_included_children" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES legacy_included_parents ON DELETE RESTRICT);',
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['Parent', 'Child'],
+      });
+      try {
+        const foreignKeys = await db.query(
+          'PRAGMA foreign_key_list("legacy_included_children")',
+        );
+        expect(foreignKeys.rows).toEqual([
+          expect.objectContaining({ table: 'legacy_included_parents' }),
+        ]);
+      } finally {
+        await cleanup();
+      }
+    });
+
     it('should filter using className even when manifest keys are namespaced (Issue #860)', async () => {
       const manifestPath = join(testDir, 'namespaced-filter.json');
       const manifest = {
@@ -871,6 +993,161 @@ describe('createIsolatedTestDbFromManifest', () => {
         await cleanup();
       }
     });
+
+    it.skipIf(!process.env.DATABASE_URL)(
+      'defers structured mutual-cycle constraints on PostgreSQL',
+      async () => {
+        const manifestPath = join(testDir, 'postgres-cycle-test.json');
+        const relationship = (table: string) => ({
+          type: 'TEXT' as const,
+          referenceKind: 'foreignKey' as const,
+          foreignKey: {
+            table,
+            column: 'id',
+            onDelete: 'NO ACTION' as const,
+            onUpdate: 'CASCADE' as const,
+          },
+        });
+        const manifest = {
+          objects: {
+            CycleA: {
+              className: 'CycleA',
+              schema: {
+                tableName: 'vitest_cycle_a',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  b_id: relationship('vitest_cycle_b'),
+                },
+              },
+            },
+            CycleB: {
+              className: 'CycleB',
+              schema: {
+                tableName: 'vitest_cycle_b',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  a_id: relationship('vitest_cycle_a'),
+                },
+              },
+            },
+          },
+        };
+        writeFileSync(manifestPath, JSON.stringify(manifest));
+
+        const createCycleDb = () =>
+          createIsolatedTestDbFromManifest({ manifestPath });
+        const expectedConstraintTables = [
+          { table_name: 'vitest_cycle_a' },
+          { table_name: 'vitest_cycle_b' },
+        ];
+        const readConstraintTables = async (
+          db: Awaited<ReturnType<typeof createCycleDb>>['db'],
+        ) => {
+          const result = await db.query(
+            `SELECT conrelid::regclass::text AS table_name
+             FROM pg_constraint
+             WHERE contype = 'f'
+               AND conrelid IN (
+                 'vitest_cycle_a'::regclass,
+                 'vitest_cycle_b'::regclass
+               )
+             ORDER BY table_name`,
+          );
+          return result.rows;
+        };
+
+        const initial = await createCycleDb();
+        try {
+          expect(await readConstraintTables(initial.db)).toEqual(
+            expectedConstraintTables,
+          );
+        } finally {
+          await initial.cleanup();
+        }
+
+        const [repeated, concurrent] = await Promise.all([
+          createCycleDb(),
+          createCycleDb(),
+        ]);
+        try {
+          expect(await readConstraintTables(repeated.db)).toEqual(
+            expectedConstraintTables,
+          );
+          expect(await readConstraintTables(concurrent.db)).toEqual(
+            expectedConstraintTables,
+          );
+        } finally {
+          await Promise.all([repeated.cleanup(), concurrent.cleanup()]);
+        }
+      },
+    );
+
+    it.skipIf(!process.env.DATABASE_URL)(
+      'refuses a legacy PostgreSQL cycle before applying partial DDL',
+      async () => {
+        const suffix = Date.now().toString(36);
+        const tableA = `vitest_legacy_cycle_a_${suffix}`;
+        const tableB = `vitest_legacy_cycle_b_${suffix}`;
+        const manifestPath = join(testDir, 'postgres-legacy-cycle-test.json');
+        writeFileSync(
+          manifestPath,
+          JSON.stringify({
+            objects: {
+              CycleA: {
+                className: 'CycleA',
+                schema: {
+                  tableName: tableA,
+                  ddl: `CREATE TABLE IF NOT EXISTS "${tableA}" ("id" TEXT PRIMARY KEY, "b_id" TEXT REFERENCES "${tableB}"("id"));`,
+                },
+              },
+              CycleB: {
+                className: 'CycleB',
+                schema: {
+                  tableName: tableB,
+                  ddl: `CREATE TABLE IF NOT EXISTS "${tableB}" ("id" TEXT PRIMARY KEY, "a_id" TEXT REFERENCES "${tableA}"("id"));`,
+                },
+              },
+            },
+          }),
+        );
+
+        await expect(
+          createIsolatedTestDbFromManifest({ manifestPath }),
+        ).rejects.toThrow(
+          /Cannot safely create PostgreSQL manifest schema.*legacy DDL foreign-key cycle.*No schema changes were applied/,
+        );
+
+        const probePath = join(testDir, 'postgres-legacy-cycle-probe.json');
+        writeFileSync(
+          probePath,
+          JSON.stringify({
+            objects: {
+              Probe: {
+                className: 'Probe',
+                schema: {
+                  tableName: `vitest_legacy_cycle_probe_${suffix}`,
+                  columns: {
+                    id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  },
+                },
+              },
+            },
+          }),
+        );
+        const probe = await createIsolatedTestDbFromManifest({
+          manifestPath: probePath,
+        });
+        try {
+          const result = await probe.baseDb.query(
+            `SELECT to_regclass($1) AS table_a, to_regclass($2) AS table_b`,
+            [tableA, tableB],
+          );
+          expect(result.rows).toEqual([{ table_a: null, table_b: null }]);
+        } finally {
+          await probe.cleanup();
+        }
+      },
+    );
   });
 
   describe('transaction isolation', () => {

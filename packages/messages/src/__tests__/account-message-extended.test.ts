@@ -36,11 +36,13 @@ import { SlackMessage } from '../models/SlackMessage';
 // registry — the same opt-in production servers perform (#1979). Its dynamic
 // SDK import resolves to the vi.mock above.
 import '../providers/slack';
+import { prepareMessageParents } from './fk-fixtures.js';
 
 let db: DatabaseInterface;
 
 beforeEach(async () => {
   db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+  await prepareMessageParents(db);
 });
 
 afterEach(async () => {

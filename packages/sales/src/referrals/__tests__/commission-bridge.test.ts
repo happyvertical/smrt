@@ -21,6 +21,7 @@ import {
   EarnerCollection,
   EarningEventCollection,
 } from '../../commissions/index.js';
+import { seedAgreementEvidence } from '../../test-fixtures.js';
 import { AttributionPolicyCollection } from '../collections/AttributionPolicyCollection.js';
 import { ReferralAgreementCollection } from '../collections/ReferralAgreementCollection.js';
 import { ReferralCollection } from '../collections/ReferralCollection.js';
@@ -58,6 +59,11 @@ describe('ReferralCommissionService (referrals → commissions bridge)', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedAgreementEvidence(
+      db,
+      'test-agreement-execution',
+      'test-executed-agreement',
+    );
     referrals = await ReferralCollection.create({ db });
     snapshots = await ReferralTermSnapshotCollection.create({ db });
     referrers = await ReferrerCollection.create({ db });

@@ -11,6 +11,7 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { seedCommissionPayout } from '../../test-fixtures.js';
 import { CommissionAdjustmentCollection } from '../collections/CommissionAdjustmentCollection.js';
 import { CommissionCollection } from '../collections/CommissionCollection.js';
 import { CommissionPayoutCollection } from '../collections/CommissionPayoutCollection.js';
@@ -50,6 +51,9 @@ describe('Balances and payout batches', () => {
       payoutThresholdCents: 5000,
       payoutMethod: 'paypal',
     });
+    await seedCommissionPayout(db, earner.id as string, 'already-settled');
+    await seedCommissionPayout(db, earner.id as string, 'some-other-payout');
+    await seedCommissionPayout(db, earner.id as string, 'prior-batch');
   });
 
   afterEach(async () => {

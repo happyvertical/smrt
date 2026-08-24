@@ -8,6 +8,7 @@ import { syncSchema } from '@happyvertical/sql';
 import { makeSlug } from '@happyvertical/utils';
 import { expect, it } from 'vitest';
 import { ContentAssetCollection } from './content-assets';
+import './content-feed-source';
 import { Contents } from './contents';
 
 const TMP_DIR = path.resolve(`${os.tmpdir()}/.have-sdk-tests/contents`);

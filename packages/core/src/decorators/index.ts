@@ -178,8 +178,8 @@ export interface RelationshipFieldOptions extends FieldOptions {
   /**
    * What happens to this row when the referenced object is deleted (#2371).
    *
-   * SMRT emits no DB-level `FOREIGN KEY` constraints, so this is enforced by
-   * `SmrtObject.delete()` in the application layer rather than by the engine:
+   * Same-package references emit this DB-level action and `SmrtObject.delete()`
+   * enforces the same policy in the application layer:
    *
    * - `'CASCADE'` — this row is deleted with the target.
    * - `'SET NULL'` — this column is set to `NULL`. The field must be nullable;
@@ -189,7 +189,8 @@ export interface RelationshipFieldOptions extends FieldOptions {
    *
    * When omitted, a column that is part of this class's `conflictColumns`
    * (junction and association rows, which are *identified* by the reference)
-   * defaults to `CASCADE`; every other column is left untouched on delete.
+   * defaults to `CASCADE`; every other same-package column defaults to
+   * immediate `NO ACTION`.
    * `@tenantId()` fields are the one exception: `smrt-tenancy` leads a
    * tenant-scoped class's default `conflictColumns` with the tenant column,
    * but that column scopes ownership rather than identifying the row, so it
@@ -200,7 +201,19 @@ export interface RelationshipFieldOptions extends FieldOptions {
    * hooks and interceptors do not run and no change-feed entry is written, the
    * same as a database-level `ON DELETE CASCADE`.
    */
-  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT';
+  onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+  /**
+   * Set to `false` only for an app-side relationship whose target identifier
+   * must deliberately survive without a database parent row (for example an
+   * immutable audit/event record retained after its parent is pruned).
+   *
+   * The field remains a typed `foreignKey` relationship for loading and
+   * indexes, but no physical DDL constraint, schema dependency, or app-side
+   * delete action is emitted. The stored identifier is deliberately preserved
+   * after the parent is deleted. Ordinary same-package relationships must leave
+   * this enabled (the default).
+   */
+  constraint?: boolean;
 }
 
 /**
@@ -380,13 +393,15 @@ export function field(
  * or pass `include: ['fieldName']` to `collection.list()` for batch eager loading.
  *
  * Cross-package rule: Use `@foreignKey()` only for same-package references.
- * For cross-package foreign keys, use a plain `string` property instead to avoid
- * circular dependencies between packages.
+ * Use `@crossPackageRef()` for cross-package relationships.
  *
- * **No DDL constraint is emitted.** SMRT generates no `FOREIGN KEY` clause on
- * any engine — the relationship is enforced by the framework, not the database
- * (#2371). What that buys you is `loadRelated()`, eager `include:` loading, and
- * the `onDelete` behaviour applied by `SmrtObject.delete()`:
+ * A named database constraint is emitted on supported engines by default, and
+ * the same action is enforced by `SmrtObject.delete()` before the engine sees
+ * it. Exceptional archival/audit references that intentionally outlive their
+ * parent may declare `{ constraint: false }`; they retain relationship loading
+ * and indexing while deliberately preserving the identifier after parent
+ * deletion and omitting physical DDL. The
+ * decorator also enables `loadRelated()` and eager `include:` loading:
  *
  * ```typescript
  * @foreignKey(Order, { onDelete: 'CASCADE' })   // deleted with the order
@@ -398,7 +413,7 @@ export function field(
  *
  * Without an `onDelete`, a column that is part of this class's
  * `conflictColumns` defaults to `CASCADE` (this is what cleans up junction
- * rows); any other column is left untouched when the target is deleted.
+ * rows); any other column defaults to immediate `NO ACTION`.
  *
  * @param relatedClass - The target class constructor, its name as a string, or a
  *   `() => Target` thunk. A thunk is **invoked at decoration time**, so its
@@ -429,10 +444,11 @@ export function field(
  *   invoiceId: string = '';
  * }
  *
- * // Cross-package: use a plain string instead
+ * // Cross-package: runtime relationship, index, and loading; no physical FK
  * @smrt()
  * class Post extends SmrtObject {
- *   authorId: string = ''; // plain string — no circular dep
+ *   @crossPackageRef('@happyvertical/smrt-users:User')
+ *   authorId: string = '';
  * }
  * ```
  *
@@ -472,8 +488,8 @@ export function foreignKey(
  * Use this for relationships that point to a `SmrtObject` in a *different* package
  * (e.g. `Customer.profileId` pointing at `@happyvertical/smrt-profiles:Profile`).
  *
- * Like `@foreignKey()`, this emits **no** DDL `FOREIGN KEY` constraint — SMRT
- * does not emit them on any engine (#2371). The decorated property is a
+ * Unlike same-package `@foreignKey()`, this emits **no** DDL `FOREIGN KEY`
+ * constraint, keeping package schemas independently installable. The property is a
  * `UUID` column on PostgreSQL/DuckDB and `TEXT` on SQLite, matching the target's
  * id type; pass `{ idType: 'text' }` when the target declares
  * `@smrt({ idType: 'text' })`.
@@ -482,6 +498,8 @@ export function foreignKey(
  * - The relationship is registered with the `ObjectRegistry`, so `loadRelated()`
  *   and `Collection.list({ include })` can resolve it once the target package's
  *   manifest is loaded.
+ * - No physical database constraint is emitted; package schemas remain
+ *   independently installable.
  * - Optional save-time validation (`validate: true`) confirms the referenced
  *   object exists, catching typos and stale IDs before they hit the database.
  * - `onDelete` is honoured by `SmrtObject.delete()` when the target package's

@@ -3,11 +3,10 @@
  *
  * A genuine same-package foreign-key cycle (e.g. smrt-chat's
  * ChatMessage.threadId -> ChatThread and ChatThread.rootMessageId ->
- * ChatMessage) must not abort schema ordering. SMRT does not emit real DB
- * FOREIGN KEY constraints in its CREATE TABLE DDL, so a cycle has no valid
- * strict topological order — the ordering must BREAK the back-edge (standard
- * RDBMS approach: create tables first, wire cyclic references afterward)
- * instead of throwing.
+ * ChatMessage) must not abort registry ordering. A cycle has no valid strict
+ * topological order, so registry ordering breaks the back-edge and the schema
+ * planner then applies engine-specific handling (inline on SQLite, deferred on
+ * PostgreSQL, actionable refusal on DuckDB) instead of throwing here.
  *
  * Two facets are covered:
  *   1. A fresh cyclic pair must produce a usable initialization order that

@@ -7,9 +7,11 @@
  */
 
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import { VoiceProfile } from '@happyvertical/smrt-voice';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CharacterCollection } from '../characters.js';
+import { Performer } from '../performer.js';
 import { VideoCompositionCollection } from '../video-compositions.js';
 import { VideoSequenceCollection } from '../video-sequences.js';
 import { VideoShotCharacterCollection } from '../video-shot-characters.js';
@@ -20,6 +22,12 @@ describe('video collection query helpers', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const voiceProfile = new VoiceProfile({
+      db,
+      name: 'Video collection test voice',
+    });
+    await voiceProfile.initialize();
+    await voiceProfile.save();
   });
 
   afterEach(async () => {
@@ -38,9 +46,12 @@ describe('video collection query helpers', () => {
 
     it('finds shots filtered by sequence and status', async () => {
       const shots = await VideoShotCollection.create({ db });
+      const sequences = await VideoSequenceCollection.create({ db });
+      const sequence = await sequences.create({ title: 'Sequence A' });
+      await sequence.save();
       const inSeq = await shots.create({
         title: 'Shot A',
-        sequenceId: 'seq-1',
+        sequenceId: sequence.id as string,
         shotStatus: 'ready',
       });
       await inSeq.save();
@@ -51,7 +62,7 @@ describe('video collection query helpers', () => {
       });
       await standalone.save();
 
-      const bySeq = await shots.findBySequence('seq-1');
+      const bySeq = await shots.findBySequence(sequence.id as string);
       expect(bySeq.map((s) => s.title)).toEqual(['Shot A']);
 
       const ready = await shots.findByStatus('ready');
@@ -65,16 +76,21 @@ describe('video collection query helpers', () => {
   describe('VideoSequenceCollection', () => {
     it('finds sequences by composition and standalone', async () => {
       const sequences = await VideoSequenceCollection.create({ db });
+      const compositions = await VideoCompositionCollection.create({ db });
       expect(await sequences.findByComposition('comp-1')).toEqual([]);
       expect(await sequences.findStandalone()).toEqual([]);
 
+      const composition = await compositions.create({ title: 'Composition' });
+      await composition.save();
       const inComp = await sequences.create({
         title: 'Intro',
-        compositionId: 'comp-1',
+        compositionId: composition.id as string,
       });
       await inComp.save();
 
-      const byComp = await sequences.findByComposition('comp-1');
+      const byComp = await sequences.findByComposition(
+        composition.id as string,
+      );
       expect(byComp.map((s) => s.title)).toEqual(['Intro']);
     });
   });
@@ -105,19 +121,28 @@ describe('video collection query helpers', () => {
       expect(await links.findByShot('shot-1')).toEqual([]);
       expect(await links.findByCharacter('char-1')).toEqual([]);
 
+      const shots = await VideoShotCollection.create({ db });
+      const shot = await shots.create({ title: 'Linked shot' });
+      await shot.save();
+      const characters = await CharacterCollection.create({ db });
+      const character = await characters.create({ name: 'Linked character' });
+      await character.save();
+
       const link = await links.create({
-        videoShotId: 'shot-1',
-        characterId: 'char-1',
+        videoShotId: shot.id as string,
+        characterId: character.id as string,
         role: 'primary',
       });
       await link.save();
 
       expect(
-        (await links.findByShot('shot-1')).map((l) => l.characterId),
-      ).toEqual(['char-1']);
+        (await links.findByShot(shot.id as string)).map((l) => l.characterId),
+      ).toEqual([character.id]);
       expect(
-        (await links.findByCharacter('char-1')).map((l) => l.videoShotId),
-      ).toEqual(['shot-1']);
+        (await links.findByCharacter(character.id as string)).map(
+          (l) => l.videoShotId,
+        ),
+      ).toEqual([shot.id]);
     });
   });
 
@@ -128,10 +153,18 @@ describe('video collection query helpers', () => {
       expect(await characters.findByPerformer('perf-1')).toEqual([]);
       expect(await characters.findReady()).toEqual([]);
 
+      const performer = new Performer({
+        db,
+        name: 'Anchor performer',
+        tenantId: 'tenant-1',
+      });
+      await performer.initialize();
+      await performer.save();
+
       const ready = await characters.create({
         name: 'Anchor',
         tenantId: 'tenant-1',
-        performerId: 'perf-1',
+        performerId: performer.id as string,
         status: 'ready',
       });
       await ready.save();
@@ -140,7 +173,9 @@ describe('video collection query helpers', () => {
         (await characters.findByTenant('tenant-1')).map((c) => c.name),
       ).toEqual(['Anchor']);
       expect(
-        (await characters.findByPerformer('perf-1')).map((c) => c.name),
+        (await characters.findByPerformer(performer.id as string)).map(
+          (c) => c.name,
+        ),
       ).toEqual(['Anchor']);
       expect((await characters.findReady()).map((c) => c.name)).toEqual([
         'Anchor',

@@ -15,6 +15,7 @@ import {
   CommissionPlanCollection,
   type CommissionPlanComponent,
 } from '../../commissions/index.js';
+import { seedAgreementEvidence } from '../../test-fixtures.js';
 import { AttributionPolicyCollection } from '../collections/AttributionPolicyCollection.js';
 import { ReferralAgreementCollection } from '../collections/ReferralAgreementCollection.js';
 import { ReferralCollection } from '../collections/ReferralCollection.js';
@@ -44,6 +45,11 @@ describe('ReferralQualificationService', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedAgreementEvidence(
+      db,
+      'test-agreement-execution',
+      'test-executed-agreement',
+    );
     referrals = await ReferralCollection.create({ db });
     agreements = await ReferralAgreementCollection.create({ db });
     plans = await CommissionPlanCollection.create({ db });

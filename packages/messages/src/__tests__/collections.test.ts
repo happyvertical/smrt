@@ -36,6 +36,7 @@ import { Attachment } from '../models/Attachment';
 import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { Message } from '../models/Message';
+import { prepareMessageParents, seedMessageParents } from './fk-fixtures.js';
 
 // ---------------------------------------------------------------------------
 // Persistence helper — initialize() then save() is the supported write path.
@@ -59,6 +60,7 @@ describe('MessageCollection', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db, ['acct-A', 'acct-B', 'acct-G', 'acct-T']);
     col = await MessageCollection.create({ db });
   });
 
@@ -267,6 +269,7 @@ describe('EmailCollection', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db, ['acct-A', 'acct-B', 'acct-G', 'acct-T']);
     col = await EmailCollection.create({ db });
   });
 
@@ -555,6 +558,7 @@ describe('EmailAccountCollection', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db);
     col = await EmailAccountCollection.create({ db });
   });
 
@@ -739,6 +743,7 @@ describe('AttachmentCollection', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedMessageParents(db, ['msg-1', 'msg-2', 'msg-G', 'msg-T']);
     col = await AttachmentCollection.create({ db });
   });
 

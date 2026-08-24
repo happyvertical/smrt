@@ -459,6 +459,10 @@ async function provisionOidcProfile(
     if (!profile) {
       throw new Error('The exact OIDC identity has no linked Profile.');
     }
+    // `findBySubject()` normalizes the FK at this authentication boundary;
+    // keep the related object on that portable identity as well for native
+    // DuckDB adapters whose raw UUID values are represented as objects.
+    profile.id = requireOidcProfileId(existingIdentity.profileId);
     if (claims.email) existingIdentity.email = claims.email;
     existingIdentity.lastUsedAt = new Date();
     await existingIdentity.save();
@@ -532,6 +536,9 @@ async function rebindOidcProfileResult<
       'Committed OIDC Profile provisioning result was not found.',
     );
   }
+  profile.id = profileId;
+  oidcIdentity.id = identityId;
+  oidcIdentity.profileId = profileId;
   return { ...result, profile, oidcIdentity };
 }
 

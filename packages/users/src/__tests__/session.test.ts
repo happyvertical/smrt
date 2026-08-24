@@ -325,14 +325,20 @@ describe('SessionCollection', () => {
   it('should set tenant context for session', async () => {
     const user = await users.create({ email: 'tenant@example.com' });
     await user.save();
+    const tenants = await TenantCollection.create({ db: sessions.db });
+    const tenant = await tenants.create({
+      id: 'tenant-123',
+      name: 'Session Tenant',
+    });
+    await tenant.save();
 
     const session = await sessions.createSession({ userId: user.id! });
     expect(session.tenantId).toBeNull();
 
-    await sessions.setSessionTenant(session.id!, 'tenant-123');
+    await sessions.setSessionTenant(session.id!, tenant.id!);
 
     const updated = await sessions.findValidSession(session.id!);
-    expect(updated?.tenantId).toBe('tenant-123');
+    expect(updated?.tenantId).toBe(tenant.id);
   });
 
   it('should manage session data', async () => {

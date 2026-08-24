@@ -11,6 +11,7 @@ import { join as pathJoin } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import '../folder';
 import { Asset } from '../asset';
 import { AssetAssociationCollection } from '../asset-associations';
 import { AssetCapabilitySkippedError } from '../asset-capabilities';

@@ -38,10 +38,14 @@ const h = vi.hoisted(() => {
     trackerInitialize: vi.fn(async () => {}),
     trackerGetEngine: vi.fn(() => 'sqlite'),
     trackerApplyAll: vi.fn(async () => []),
-    ensureSchema: vi.fn(async () => {}),
+    schemaManagerEnsureTables: vi.fn(async () => {}),
     generateSchema: vi.fn(async () => 'CREATE TABLE t ()'),
     schemaComparerOptions: vi.fn(),
     schemaCompare: vi.fn(async () => ({ added_tables: [], changes: [] })),
+    planForeignKeyCreation: vi.fn((schemas: unknown[]) => ({
+      schemas,
+      deferredStatements: [],
+    })),
     migratePostgresSystemTimestamps: vi.fn(async () => {}),
     planPostgresSystemTimestampMigrations: vi.fn(async () => []),
     manifestGenerate: vi.fn(async () => ({
@@ -67,10 +71,11 @@ const {
   generateSummary,
   applyFixes,
   trackerApplyAll,
-  ensureSchema,
+  schemaManagerEnsureTables,
   generateSchema,
   schemaComparerOptions,
   schemaCompare,
+  planForeignKeyCreation,
   migratePostgresSystemTimestamps,
   planPostgresSystemTimestampMigrations,
   trackerInitialize,
@@ -105,6 +110,8 @@ vi.mock('@happyvertical/smrt-core', () => ({
     indexes: [],
     triggers: [],
   })),
+  planForeignKeyCreation: (...args: unknown[]) =>
+    h.planForeignKeyCreation(...args),
   migratePostgresSystemTimestamps: (...args: unknown[]) =>
     h.migratePostgresSystemTimestamps(...args),
   planPostgresSystemTimestampMigrations: (...args: unknown[]) =>
@@ -161,8 +168,13 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
   };
 });
 
+vi.mock('@happyvertical/smrt-core/schema', () => ({
+  createSchemaManager: vi.fn(() => ({
+    ensureTables: (...args: unknown[]) => h.schemaManagerEnsureTables(...args),
+  })),
+}));
+
 vi.mock('@happyvertical/smrt-core/schema/utils', () => ({
-  ensureSchema: (...a: unknown[]) => h.ensureSchema(...a),
   generateSchema: (...a: unknown[]) => h.generateSchema(...a),
 }));
 
@@ -225,12 +237,34 @@ describe('utility command handlers', () => {
     // defaults
     registry.getAllClasses.mockReturnValue(new Map());
     registry.getInitializationOrder.mockReturnValue([]);
-    registry.getAllSchemasAsDefinitions.mockReturnValue([]);
+    registry.getAllSchemasAsDefinitions.mockImplementation(() =>
+      Object.fromEntries(
+        registry
+          .getInitializationOrder()
+          .map((className) => registry.getTableName(className))
+          .filter((tableName): tableName is string => Boolean(tableName))
+          .map((tableName) => [
+            tableName,
+            {
+              tableName,
+              columns: {},
+              indexes: [],
+              dependencies: [],
+              foreignKeys: [],
+            },
+          ]),
+      ),
+    );
     getPackageConfig.mockReturnValue({
       database: { type: 'sqlite', url: './dev.db' },
     });
     getDatabase.mockResolvedValue({ close: vi.fn() });
     schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
+    schemaManagerEnsureTables.mockResolvedValue(undefined);
+    planForeignKeyCreation.mockImplementation((schemas: unknown[]) => ({
+      schemas,
+      deferredStatements: [],
+    }));
     planPostgresSystemTimestampMigrations.mockResolvedValue([]);
     trackerApplyAll.mockResolvedValue([]);
   });
@@ -430,7 +464,7 @@ describe('utility command handlers', () => {
       totalObjects: 1,
     });
     registry.getInitializationOrder.mockReturnValue([]);
-    registry.getAllSchemasAsDefinitions.mockReturnValue([]);
+    registry.getAllSchemasAsDefinitions.mockReturnValue({});
     // a db without getTableSchema/alterTable
     getDatabase.mockResolvedValue({ close: vi.fn() });
 
@@ -454,7 +488,7 @@ describe('utility command handlers', () => {
       name: 'Article',
       qualifiedName: '@app:Article',
     });
-    registry.getAllSchemasAsDefinitions.mockReturnValue([]);
+    registry.getAllSchemasAsDefinitions.mockReturnValue({});
     getDatabase.mockResolvedValue(migratableDb());
   }
 
@@ -574,6 +608,8 @@ describe('utility command handlers', () => {
     expect(out).toContain('Migration Preview');
     expect(out).toContain('Would create table');
     expect(out).toContain('SQL Statements');
+    expect(out).toContain('CREATE TABLE x ()');
+    expect(out).not.toContain('CREATE TABLE widgets (id TEXT)');
     // Dry-run never invokes the tracker.
     expect(trackerApplyAll).not.toHaveBeenCalled();
   });
@@ -658,7 +694,13 @@ describe('utility command handlers', () => {
     registry.getTableStrategy.mockReturnValue('cti');
     registry.getSTIBase.mockReturnValue(null);
     registry.getTableName.mockReturnValue('articles');
-    generateSchema.mockResolvedValue('CREATE TABLE articles (id TEXT)');
+    registry.getAllSchemasAsDefinitions.mockReturnValue({
+      articles: {
+        tableName: 'articles',
+        columns: { id: { type: 'TEXT' } },
+        indexes: [],
+      },
+    });
 
     await utilityCommands['db:setup'].handler([], {
       'dry-run': true,
@@ -667,7 +709,8 @@ describe('utility command handlers', () => {
 
     const out = logged();
     expect(out).toContain('SQL Preview');
-    expect(out).toContain('CREATE TABLE articles');
+    expect(out).toContain('CREATE TABLE x ()');
+    expect(generateSchema).not.toHaveBeenCalled();
     expect(out).toContain('Dry-run complete');
   });
 
@@ -689,12 +732,14 @@ describe('utility command handlers', () => {
     registry.getSTIBase.mockReturnValue(null);
     registry.getTableName.mockReturnValue('articles');
     registry.getFields.mockReturnValue(new Map([['title', {}]]));
-    ensureSchema.mockResolvedValue(undefined);
+    schemaManagerEnsureTables.mockResolvedValue(undefined);
     getDatabase.mockResolvedValue(migratableDb());
 
     await utilityCommands['db:setup'].handler([], { verbose: true });
 
-    expect(ensureSchema).toHaveBeenCalled();
+    expect(schemaManagerEnsureTables).toHaveBeenCalledWith([
+      expect.objectContaining({ tableName: 'articles' }),
+    ]);
     expect(logged()).toContain('Successfully initialized');
     expect(logged()).toContain('articles');
   });
@@ -721,6 +766,117 @@ describe('utility command handlers', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it.each([
+    'duckdb',
+    'json',
+  ])('db:setup preflights unsupported %s constraints before connecting or dropping', async (type) => {
+    getPackageConfig.mockReturnValue({
+      database: { type, url: `./test.${type}` },
+      interactive: true,
+    });
+    autoDiscoverAndLoad.mockResolvedValue({
+      discovered: [{ path: '/p' }],
+      totalObjects: 1,
+    });
+    registry.getInitializationOrder.mockReturnValue(['Article']);
+    registry.getAllSchemasAsDefinitions.mockReturnValue({
+      Article: { tableName: 'articles', columns: {}, indexes: [] },
+    });
+    planForeignKeyCreation.mockImplementation((_schemas, engine) => {
+      throw new Error(`[DDL:${engine}] unsupported foreign key`);
+    });
+
+    await utilityCommands['db:setup'].handler([], { drop: true });
+
+    expect(planForeignKeyCreation).toHaveBeenCalledWith(
+      expect.any(Array),
+      type,
+    );
+    expect(getDatabase).not.toHaveBeenCalled();
+    expect(rlQuestion).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(errored()).toContain(`[DDL:${type}] unsupported foreign key`);
+  });
+
+  it('db:setup executes the exact preflight inputs so SchemaManager preserves deferred cycles', async () => {
+    getPackageConfig.mockReturnValue({
+      database: { type: 'sqlite', url: './dev.db' },
+    });
+    autoDiscoverAndLoad.mockResolvedValue({
+      discovered: [{ path: '/p' }],
+      totalObjects: 1,
+    });
+    registry.getInitializationOrder.mockReturnValue(['Article']);
+    registry.getClass.mockReturnValue({
+      name: 'Article',
+      qualifiedName: '@app:Article',
+      constructor: class {},
+    });
+    registry.getTableStrategy.mockReturnValue('cti');
+    registry.getSTIBase.mockReturnValue(null);
+    registry.getTableName.mockReturnValue('articles');
+    const rawSchema = {
+      tableName: 'articles',
+      columns: {
+        id: { type: 'TEXT' },
+        related_id: {
+          type: 'TEXT',
+          foreignKey: { table: 'related', column: 'id' },
+        },
+      },
+      indexes: [],
+      foreignKeys: [
+        {
+          column: 'related_id',
+          referencesTable: 'related',
+          referencesColumn: 'id',
+        },
+      ],
+      dependencies: ['related'],
+    };
+    const plannedSchema = {
+      ...rawSchema,
+      columns: { id: { type: 'TEXT' }, related_id: { type: 'TEXT' } },
+      foreignKeys: [],
+    };
+    registry.getAllSchemasAsDefinitions.mockReturnValue({
+      Article: rawSchema,
+    });
+    planForeignKeyCreation.mockReturnValue({
+      schemas: [plannedSchema],
+      deferredStatements: [],
+    });
+    getDatabase.mockResolvedValue(migratableDb());
+
+    await utilityCommands['db:setup'].handler([], {});
+
+    expect(schemaManagerEnsureTables).toHaveBeenCalledWith([rawSchema]);
+    expect(logged()).toContain('Successfully initialized');
+  });
+
+  it('db:setup refuses missing structured schemas before connecting or reporting success', async () => {
+    getPackageConfig.mockReturnValue({
+      database: { type: 'sqlite', url: './dev.db' },
+    });
+    autoDiscoverAndLoad.mockResolvedValue({
+      discovered: [{ path: '/p' }],
+      totalObjects: 1,
+    });
+    registry.getInitializationOrder.mockReturnValue(['LegacyArticle']);
+    registry.getTableName.mockReturnValue('legacy_articles');
+    registry.getAllSchemasAsDefinitions.mockReturnValue({});
+
+    await utilityCommands['db:setup'].handler([], {});
+
+    expect(errored()).toContain(
+      'structured schema definitions are missing for: legacy_articles',
+    );
+    expect(getDatabase).not.toHaveBeenCalled();
+    expect(schemaManagerEnsureTables).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+    expect(logged()).not.toContain('Successfully initialized');
+  });
+
   it('db:setup drops tables when --drop is confirmed interactively', async () => {
     getPackageConfig.mockReturnValue({
       database: { type: 'sqlite', url: './dev.db' },
@@ -740,20 +896,86 @@ describe('utility command handlers', () => {
     registry.getSTIBase.mockReturnValue(null);
     registry.getTableName.mockReturnValue('articles');
     registry.getFields.mockReturnValue(new Map([['title', {}]]));
-    ensureSchema.mockResolvedValue(undefined);
+    schemaManagerEnsureTables.mockResolvedValue(undefined);
     rlQuestion.mockResolvedValue('y');
-    // tagged-template execute used by the drop loop
-    const execute = vi.fn(async () => {});
-    getDatabase.mockResolvedValue(migratableDb({ execute }));
+    const query = vi.fn(async () => ({ rows: [] }));
+    getDatabase.mockResolvedValue(migratableDb({ query }));
 
     await utilityCommands['db:setup'].handler([], {
       drop: true,
       verbose: true,
     });
 
-    expect(execute).toHaveBeenCalled();
+    expect(query.mock.calls.map(([sql]) => sql)).toEqual([
+      'PRAGMA foreign_keys = OFF',
+      'DROP TABLE IF EXISTS "articles"',
+      'PRAGMA foreign_keys = ON',
+    ]);
     expect(logged()).toContain('Dropping existing tables');
     expect(logged()).toContain('Successfully initialized');
+  });
+
+  it('db:setup quotes PostgreSQL drop identifiers and uses CASCADE for cyclic constraints', async () => {
+    getPackageConfig.mockReturnValue({
+      database: { type: 'postgres', url: 'postgres://fixture/setup' },
+      interactive: true,
+    });
+    autoDiscoverAndLoad.mockResolvedValue({
+      discovered: [{ path: '/p' }],
+      totalObjects: 1,
+    });
+    registry.getInitializationOrder.mockReturnValue(['Article']);
+    registry.getClass.mockReturnValue({
+      name: 'Article',
+      qualifiedName: '@app:Article',
+      constructor: class {},
+    });
+    registry.getTableStrategy.mockReturnValue('cti');
+    registry.getSTIBase.mockReturnValue(null);
+    registry.getTableName.mockReturnValue('Mixed"Articles');
+    registry.getFields.mockReturnValue(new Map([['title', {}]]));
+    schemaManagerEnsureTables.mockResolvedValue(undefined);
+    rlQuestion.mockResolvedValue('y');
+    const query = vi.fn(async () => ({ rows: [] }));
+    getDatabase.mockResolvedValue(migratableDb({ query }));
+
+    await utilityCommands['db:setup'].handler([], { drop: true });
+
+    expect(query).toHaveBeenCalledWith(
+      'DROP TABLE IF EXISTS "Mixed""Articles" CASCADE',
+    );
+    expect(logged()).toContain('Successfully initialized');
+  });
+
+  it('db:setup fails closed when a requested table cannot be dropped', async () => {
+    getPackageConfig.mockReturnValue({
+      database: { type: 'sqlite', url: './dev.db' },
+      interactive: true,
+    });
+    autoDiscoverAndLoad.mockResolvedValue({
+      discovered: [{ path: '/p' }],
+      totalObjects: 1,
+    });
+    registry.getInitializationOrder.mockReturnValue(['Article']);
+    registry.getTableName.mockReturnValue('articles');
+    rlQuestion.mockResolvedValue('y');
+    getDatabase.mockResolvedValue(
+      migratableDb({
+        query: vi.fn(async (sql: string) => {
+          if (sql.startsWith('DROP TABLE')) return Promise.reject('FK cycle');
+          return { rows: [] };
+        }),
+      }),
+    );
+
+    await utilityCommands['db:setup'].handler([], {
+      drop: true,
+      verbose: true,
+    });
+
+    expect(errored()).toContain('Database setup failed');
+    expect(process.exitCode).toBe(1);
+    expect(logged()).not.toContain('Successfully initialized');
   });
 
   it('db:setup aborts the drop flow when the user declines', async () => {
@@ -798,7 +1020,7 @@ describe('utility command handlers', () => {
     );
     registry.getTableName.mockReturnValue('contents');
     registry.getFields.mockReturnValue(new Map([['title', {}]]));
-    ensureSchema.mockResolvedValue(undefined);
+    schemaManagerEnsureTables.mockResolvedValue(undefined);
     getDatabase.mockResolvedValue(migratableDb());
 
     await utilityCommands['db:setup'].handler([], { verbose: true });
@@ -806,7 +1028,7 @@ describe('utility command handlers', () => {
     expect(logged()).toContain('shares table with');
   });
 
-  it('db:setup surfaces ensureSchema failures per class', async () => {
+  it('db:setup surfaces planned schema-manager failures', async () => {
     getPackageConfig.mockReturnValue({
       database: { type: 'sqlite', url: './dev.db' },
     });
@@ -823,12 +1045,15 @@ describe('utility command handlers', () => {
     registry.getTableStrategy.mockReturnValue('cti');
     registry.getSTIBase.mockReturnValue(null);
     registry.getTableName.mockReturnValue('articles');
-    ensureSchema.mockRejectedValue(new Error('ddl error'));
+    schemaManagerEnsureTables.mockRejectedValue(new Error('ddl error'));
     getDatabase.mockResolvedValue(migratableDb());
 
     await utilityCommands['db:setup'].handler([], { verbose: true });
 
     expect(errored()).toContain('ddl error');
+    expect(errored()).toContain('Database setup failed');
+    expect(process.exitCode).toBe(1);
+    expect(logged()).not.toContain('Successfully initialized');
   });
 
   // ------------------------- db:migrate (extended) ----------------------

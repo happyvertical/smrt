@@ -42,6 +42,20 @@ const sorted = (rows: Array<Record<string, any>>, field: string): string[] =>
 describe('facts tenant isolation (#1600)', () => {
   let db: DatabaseInterface;
 
+  const seedFactParent = async (
+    facts: FactCollection,
+    id: string,
+  ): Promise<void> => {
+    await (
+      await facts.create({
+        id,
+        textRefined: id,
+        type: 'assertion',
+        status: 'active',
+      })
+    ).save();
+  };
+
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     enableTenancy(); // default rawQueryPolicy: 'throw'
@@ -113,7 +127,9 @@ describe('facts tenant isolation (#1600)', () => {
 
   it('FactContentCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const links = await FactContentCollection.create({ db });
+    const facts = await FactCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await seedFactParent(facts, 't1-link');
       await (
         await links.create({
           factId: 't1-link',
@@ -123,6 +139,7 @@ describe('facts tenant isolation (#1600)', () => {
       ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await seedFactParent(facts, 't2-link');
       await (
         await links.create({
           factId: 't2-link',
@@ -132,6 +149,7 @@ describe('facts tenant isolation (#1600)', () => {
       ).save();
     });
     await withSystemContext(async () => {
+      await seedFactParent(facts, 'g-link');
       await (
         await links.create({
           factId: 'g-link',
@@ -170,17 +188,21 @@ describe('facts tenant isolation (#1600)', () => {
 
   it('FactSourceCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const sources = await FactSourceCollection.create({ db });
+    const facts = await FactCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await seedFactParent(facts, 'f1');
       await (
         await sources.create({ factId: 'f1', sourceTitle: 't1-source' })
       ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await seedFactParent(facts, 'f2');
       await (
         await sources.create({ factId: 'f2', sourceTitle: 't2-source' })
       ).save();
     });
     await withSystemContext(async () => {
+      await seedFactParent(facts, 'fg');
       await (
         await sources.create({ factId: 'fg', sourceTitle: 'g-source' })
       ).save();
@@ -215,7 +237,9 @@ describe('facts tenant isolation (#1600)', () => {
 
   it('FactSubjectCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const subjects = await FactSubjectCollection.create({ db });
+    const facts = await FactCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await seedFactParent(facts, 'f1');
       await (
         await subjects.create({
           factId: 'f1',
@@ -225,6 +249,7 @@ describe('facts tenant isolation (#1600)', () => {
       ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await seedFactParent(facts, 'f2');
       await (
         await subjects.create({
           factId: 'f2',
@@ -234,6 +259,7 @@ describe('facts tenant isolation (#1600)', () => {
       ).save();
     });
     await withSystemContext(async () => {
+      await seedFactParent(facts, 'fg');
       await (
         await subjects.create({
           factId: 'fg',
@@ -272,13 +298,17 @@ describe('facts tenant isolation (#1600)', () => {
 
   it('FactTagCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
     const tags = await FactTagCollection.create({ db });
+    const facts = await FactCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await seedFactParent(facts, 'f1');
       await (await tags.create({ factId: 'f1', tagSlug: 't1-tag' })).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await seedFactParent(facts, 'f2');
       await (await tags.create({ factId: 'f2', tagSlug: 't2-tag' })).save();
     });
     await withSystemContext(async () => {
+      await seedFactParent(facts, 'fg');
       await (await tags.create({ factId: 'fg', tagSlug: 'g-tag' })).save();
     });
 

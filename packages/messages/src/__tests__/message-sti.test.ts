@@ -13,12 +13,14 @@ import { Email } from '../models/Email';
 import { Message } from '../models/Message';
 import { SlackMessage } from '../models/SlackMessage';
 import { Tweet } from '../models/Tweet';
+import { prepareMessageParents } from './fk-fixtures.js';
 
 describe('Message STI Support', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db);
   });
 
   afterEach(async () => {

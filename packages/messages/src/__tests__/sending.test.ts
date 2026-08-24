@@ -11,6 +11,7 @@ import { Account } from '../models/Account';
 import { Email } from '../models/Email';
 import { Message } from '../models/Message';
 import type { SendStatus } from '../types';
+import { prepareMessageParents } from './fk-fixtures.js';
 
 // ============================================================================
 // Message Send Fields
@@ -279,6 +280,7 @@ describe('reply/forward persistence (does not overwrite original)', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db, ['acct-1']);
   });
 
   afterEach(async () => {

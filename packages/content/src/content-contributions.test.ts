@@ -650,8 +650,14 @@ describe('content contributions', () => {
     });
     await record.save();
 
+    const contributors = await ContentContributorCollection.create({ db });
+    const contributor = await contributors.findOrCreateByEmail({
+      email: 'referenced-contributor@example.com',
+      name: 'Referenced Contributor',
+      tenantId: 'tenant-1',
+    });
     const contribution = await contributions.create({
-      contributorId: 'contributor-1',
+      contributorId: contributor.id as string,
       contributionTypeKey: record.key,
       status: 'submitted',
       intakeDecision: 'accepted',

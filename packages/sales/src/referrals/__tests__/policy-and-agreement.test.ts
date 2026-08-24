@@ -11,6 +11,7 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { seedAgreementEvidence } from '../../test-fixtures.js';
 import { AttributionPolicyCollection } from '../collections/AttributionPolicyCollection.js';
 import { ReferralAgreementCollection } from '../collections/ReferralAgreementCollection.js';
 import { ReferralProgramCollection } from '../collections/ReferralProgramCollection.js';
@@ -22,6 +23,8 @@ describe('AttributionPolicy versioning', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedAgreementEvidence(db, 'execution-1', 'executed-1');
+    await seedAgreementEvidence(db, 'execution-2', 'executed-2');
     policies = await AttributionPolicyCollection.create({ db });
   });
 
@@ -225,6 +228,8 @@ describe('ReferralAgreement versioning', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedAgreementEvidence(db, 'execution-1', 'executed-1');
+    await seedAgreementEvidence(db, 'execution-2', 'executed-2');
     agreements = await ReferralAgreementCollection.create({ db });
     const referrers = await ReferrerCollection.create({ db });
     const programs = await ReferralProgramCollection.create({ db });
@@ -245,6 +250,19 @@ describe('ReferralAgreement versioning', () => {
     if (db && typeof db.close === 'function') {
       await db.close();
     }
+  });
+
+  it('persists unsigned optional execution references as null', async () => {
+    const draft = await agreements.create({
+      referrerId,
+      programId,
+      version: 1,
+      status: 'draft',
+      commissionPlanKey: 'referral-standard',
+    });
+    const loaded = await agreements.get({ id: draft.id });
+    expect(loaded?.executionId).toBeNull();
+    expect(loaded?.executedAgreementId).toBeNull();
   });
 
   it('requires a commissionPlanKey to activate', async () => {
@@ -347,8 +365,8 @@ describe('ReferralAgreement versioning', () => {
       1,
     );
 
-    expect(v2.executionId).toBe('');
-    expect(v2.executedAgreementId).toBe('');
+    expect(v2.executionId).toBeNull();
+    expect(v2.executedAgreementId).toBeNull();
     v2.bindExecution('execution-2');
     v2.bindExecutedAgreement('executed-2');
     v2.activate();
@@ -441,8 +459,8 @@ describe('ReferralAgreement versioning', () => {
     expect(amendment.commissionPlanVersion).toBe(0);
     expect(amendment.clearingDays).toBe(30);
     expect(amendment.approvalMode).toBe('auto');
-    expect(amendment.executionId).toBe('');
-    expect(amendment.executedAgreementId).toBe('');
+    expect(amendment.executionId).toBeNull();
+    expect(amendment.executedAgreementId).toBeNull();
   });
 
   it('refuses to amend a pair with no versions', async () => {

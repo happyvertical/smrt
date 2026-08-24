@@ -95,11 +95,21 @@ describe('projects tenant isolation (#1600)', () => {
   });
 
   it('IssueCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
+    const repos = await RepositoryCollection.create({ db });
+    await withTenant({ tenantId: 'tenant-1' }, () =>
+      repos.create({ id: 'repo-t1', owner: 'acme', name: 't1-parent' }),
+    );
+    await withTenant({ tenantId: 'tenant-2' }, () =>
+      repos.create({ id: 'repo-t2', owner: 'acme', name: 't2-parent' }),
+    );
+    await withSystemContext(() =>
+      repos.create({ id: 'repo-global', owner: 'acme', name: 'global-parent' }),
+    );
     const issues = await IssueCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
       await (
         await issues.create({
-          repositoryId: 'repo-1',
+          repositoryId: 'repo-t1',
           number: 1,
           title: 't1-issue',
         })
@@ -108,7 +118,7 @@ describe('projects tenant isolation (#1600)', () => {
     await withTenant({ tenantId: 'tenant-2' }, async () => {
       await (
         await issues.create({
-          repositoryId: 'repo-1',
+          repositoryId: 'repo-t2',
           number: 2,
           title: 't2-issue',
         })
@@ -117,7 +127,7 @@ describe('projects tenant isolation (#1600)', () => {
     await withSystemContext(async () => {
       await (
         await issues.create({
-          repositoryId: 'repo-1',
+          repositoryId: 'repo-global',
           number: 3,
           title: 'g-issue',
         })
@@ -152,20 +162,34 @@ describe('projects tenant isolation (#1600)', () => {
   });
 
   it('PullRequestCollection.findGlobal/findWithGlobals do not throw and stay tenant-scoped', async () => {
+    const repos = await RepositoryCollection.create({ db });
+    await withTenant({ tenantId: 'tenant-1' }, () =>
+      repos.create({ id: 'repo-t1', owner: 'acme', name: 't1-parent' }),
+    );
+    await withTenant({ tenantId: 'tenant-2' }, () =>
+      repos.create({ id: 'repo-t2', owner: 'acme', name: 't2-parent' }),
+    );
+    await withSystemContext(() =>
+      repos.create({ id: 'repo-global', owner: 'acme', name: 'global-parent' }),
+    );
     const prs = await PullRequestCollection.create({ db });
     await withTenant({ tenantId: 'tenant-1' }, async () => {
       await (
-        await prs.create({ repositoryId: 'repo-1', number: 1, title: 't1-pr' })
+        await prs.create({ repositoryId: 'repo-t1', number: 1, title: 't1-pr' })
       ).save();
     });
     await withTenant({ tenantId: 'tenant-2' }, async () => {
       await (
-        await prs.create({ repositoryId: 'repo-1', number: 2, title: 't2-pr' })
+        await prs.create({ repositoryId: 'repo-t2', number: 2, title: 't2-pr' })
       ).save();
     });
     await withSystemContext(async () => {
       await (
-        await prs.create({ repositoryId: 'repo-1', number: 3, title: 'g-pr' })
+        await prs.create({
+          repositoryId: 'repo-global',
+          number: 3,
+          title: 'g-pr',
+        })
       ).save();
     });
 
@@ -246,6 +270,13 @@ describe('projects tenant isolation (#1600)', () => {
   // so its tenant-global helpers never surface sibling base Issue rows, while the
   // base IssueCollection legitimately spans both subtypes. (#1600)
   it('PullRequestCollection scopes to its _meta_type — no sibling Issue rows; IssueCollection spans both', async () => {
+    const repos = await RepositoryCollection.create({ db });
+    await withTenant({ tenantId: 'tenant-1' }, () =>
+      repos.create({ id: 'repo-t1', owner: 'acme', name: 't1-parent' }),
+    );
+    await withSystemContext(() =>
+      repos.create({ id: 'repo-global', owner: 'acme', name: 'global-parent' }),
+    );
     const issues = await IssueCollection.create({ db });
     const prs = await PullRequestCollection.create({ db });
 
@@ -254,25 +285,33 @@ describe('projects tenant isolation (#1600)', () => {
     await withTenant({ tenantId: 'tenant-1' }, async () => {
       await (
         await issues.create({
-          repositoryId: 'repo-1',
+          repositoryId: 'repo-t1',
           number: 10,
           title: 't1-issue',
         })
       ).save();
       await (
-        await prs.create({ repositoryId: 'repo-1', number: 11, title: 't1-pr' })
+        await prs.create({
+          repositoryId: 'repo-t1',
+          number: 11,
+          title: 't1-pr',
+        })
       ).save();
     });
     await withSystemContext(async () => {
       await (
         await issues.create({
-          repositoryId: 'repo-1',
+          repositoryId: 'repo-global',
           number: 20,
           title: 'g-issue',
         })
       ).save();
       await (
-        await prs.create({ repositoryId: 'repo-1', number: 21, title: 'g-pr' })
+        await prs.create({
+          repositoryId: 'repo-global',
+          number: 21,
+          title: 'g-pr',
+        })
       ).save();
     });
 

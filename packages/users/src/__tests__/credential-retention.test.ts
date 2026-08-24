@@ -23,6 +23,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { UsersCliAuthRequestCollection } from '../collections/CliAuthRequestCollection.js';
 import { UsersMagicLinkTokenCollection } from '../collections/MagicLinkTokenCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
+import { TenantCollection } from '../collections/TenantCollection.js';
+import { UserCollection } from '../collections/UserCollection.js';
 import {
   CLI_AUTH_RETENTION_TASK,
   MAGIC_LINK_RETENTION_TASK,
@@ -36,6 +38,7 @@ const MINUTE_MS = 60 * 1000;
 
 let dbPath: string;
 let sessions: SessionCollection;
+let users: UserCollection;
 let tokens: UsersMagicLinkTokenCollection;
 let requests: UsersCliAuthRequestCollection;
 let db: DatabaseInterface;
@@ -45,6 +48,8 @@ beforeEach(async () => {
   dbPath = join(tmpdir(), `smrt-credential-retention-${Date.now()}.db`);
   const options = { db: { type: 'sqlite' as const, url: dbPath } };
 
+  users = await UserCollection.create(options);
+  await TenantCollection.create(options);
   sessions = await SessionCollection.create(options);
   tokens = await UsersMagicLinkTokenCollection.create(options);
   requests = await UsersCliAuthRequestCollection.create(options);
@@ -67,6 +72,11 @@ async function seedSession(options: {
   expiresAt: Date;
   status?: SessionStatus;
 }): Promise<void> {
+  const user = await users.create({
+    id: options.userId,
+    email: `${options.userId}@retention.test`,
+  });
+  await user.save();
   const session = await sessions.create({
     userId: options.userId,
     expiresAt: options.expiresAt,

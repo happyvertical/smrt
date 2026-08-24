@@ -5,21 +5,40 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChatMessageCollection } from '../collections/ChatMessageCollection.js';
+import {
+  createChatTestDatabase,
+  seedAgentSession,
+  seedChatMessage,
+  seedChatRoom,
+  seedChatThread,
+} from './chat-test-db.js';
 
 describe('ChatMessage', () => {
   let dbPath: string;
   let messages: ChatMessageCollection;
+  let db: DatabaseInterface;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-chat-msg-test-${Date.now()}.db`);
-    messages = (await ChatMessageCollection.create({
-      db: { type: 'sqlite', url: dbPath },
-    })) as ChatMessageCollection;
+    db = await createChatTestDatabase(dbPath);
+    await seedChatRoom(db);
+    await seedChatRoom(db, 'room-2');
+    await seedChatRoom(db, 'room-shared');
+    await seedChatRoom(db, 'fixture-parent-room');
+    await seedChatMessage(db, 'fixture-parent-message', 'fixture-parent-room');
+    await seedChatThread(db, 'thread-1');
+    await seedChatThread(db, 'thread-2');
+    await seedChatThread(db, 'thread-shared');
+    await seedAgentSession(db, 'session-1');
+    await seedAgentSession(db, 'session-shared');
+    messages = await ChatMessageCollection.create({ db });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await db.close?.();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });

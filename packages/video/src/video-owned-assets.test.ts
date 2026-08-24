@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssetCollection } from '@happyvertical/smrt-assets';
+import { VoiceProfile } from '@happyvertical/smrt-voice';
 import { describe, expect, it } from 'vitest';
 import {
   Character,
@@ -66,6 +67,14 @@ async function ensureLegacyColumn(
 
 async function createAssetFixture(dbUrl: string) {
   const dbConfig = { type: 'sqlite' as const, url: dbUrl };
+  const voiceProfile = new VoiceProfile({
+    db: dbConfig,
+    name: 'Video test voice',
+    tenantId: 'tenant-a',
+  });
+  await voiceProfile.initialize();
+  await voiceProfile.save();
+
   const assets = await AssetCollection.create({ db: dbConfig });
 
   return {

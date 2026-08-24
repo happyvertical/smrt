@@ -15,6 +15,7 @@ import {
   resolveTenantColumn,
 } from '../schema/conflict-target.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
+import { resolveForeignKeyDeleteAction } from '../schema/foreign-key-policy.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type {
   ColumnDefinition,
@@ -832,8 +833,11 @@ export class ManifestGenerator {
       { name: string; obj: SmartObjectDefinition }
     >();
     const changedSchemas = new Set<ManifestSchema>();
+    const objectsByName = new Map<string, SmartObjectDefinition>();
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
+      objectsByName.set(obj.className, obj);
+      objectsByName.set(obj.className.toLowerCase(), obj);
       if (obj.schema?.tableName) {
         schemaByTable.set(obj.schema.tableName, obj.schema);
         const siblings = schemasByTable.get(obj.schema.tableName) ?? [];
@@ -858,10 +862,12 @@ export class ManifestGenerator {
         if (
           field.type !== 'foreignKey' ||
           !field.related ||
-          field._meta?.sqlType
+          field._meta?.__tenancy?.isTenantIdField === true
         ) {
           continue;
         }
+
+        const emitConstraint = field._meta?.constraint !== false;
 
         const columnName = toSnakeCase(fieldName);
         const targetSchema = this.findForeignKeyTargetSchema(
@@ -869,20 +875,64 @@ export class ManifestGenerator {
           manifest,
           schemaByTable,
         );
-        const targetIdType = targetSchema?.columns.id?.type;
-        if (!targetIdType) {
+        if (!targetSchema) {
+          for (const sourceSchema of sourceSchemas) {
+            const sourceColumn = sourceSchema.columns[columnName];
+            if (sourceColumn?.foreignKey) {
+              sourceSchema.columns[columnName] = {
+                ...sourceColumn,
+                foreignKey: undefined,
+              };
+              changedSchemas.add(sourceSchema);
+            }
+          }
           continue;
         }
 
+        const [, declaredTargetColumn] = field.related.split('.');
+        const targetColumn =
+          declaredTargetColumn ||
+          Object.entries(targetSchema.columns).find(
+            ([, definition]) => definition.primaryKey === true,
+          )?.[0] ||
+          'id';
+        const targetIdType = targetSchema.columns[targetColumn]?.type;
+        const conflictOwner =
+          this.findSTIBase(obj, objectsByName, manifest) ?? obj;
+        const conflictColumns = new Set(
+          (conflictOwner.decoratorConfig?.conflictColumns || []).map((column) =>
+            toSnakeCase(column),
+          ),
+        );
+        const { action } = resolveForeignKeyDeleteAction({
+          declared: field._meta?.onDelete,
+          isConflictColumn: conflictColumns.has(columnName),
+          isTenantIdField: false,
+        });
+
         for (const sourceSchema of sourceSchemas) {
           const sourceColumn = sourceSchema.columns[columnName];
-          if (!sourceColumn || sourceColumn.type === targetIdType) {
+          if (!sourceColumn) {
             continue;
           }
-          sourceSchema.columns[columnName] = {
+          const nextColumn = {
             ...sourceColumn,
-            type: targetIdType,
+            ...(!field._meta?.sqlType && targetIdType
+              ? { type: targetIdType }
+              : {}),
+            foreignKey: emitConstraint
+              ? {
+                  table: targetSchema.tableName,
+                  column: targetColumn,
+                  onDelete: action,
+                  onUpdate: 'CASCADE' as const,
+                }
+              : undefined,
           };
+          if (JSON.stringify(nextColumn) === JSON.stringify(sourceColumn)) {
+            continue;
+          }
+          sourceSchema.columns[columnName] = nextColumn;
           changedSchemas.add(sourceSchema);
         }
       }
@@ -952,6 +1002,7 @@ export class ManifestGenerator {
         notNull: column.notNull,
         unique: column.unique,
         defaultValue: column.default,
+        foreignKey: column.foreignKey ? { ...column.foreignKey } : undefined,
       };
     }
 
@@ -966,8 +1017,24 @@ export class ManifestGenerator {
         jsonPath: index.jsonPath,
       })),
       triggers: [],
-      foreignKeys: [],
-      dependencies: [],
+      foreignKeys: Object.entries(columns).flatMap(([column, definition]) =>
+        definition.foreignKey
+          ? [
+              {
+                column,
+                referencesTable: definition.foreignKey.table,
+                referencesColumn: definition.foreignKey.column,
+                onDelete: definition.foreignKey.onDelete,
+                onUpdate: definition.foreignKey.onUpdate,
+              },
+            ]
+          : [],
+      ),
+      dependencies: Object.values(columns)
+        .flatMap((definition) =>
+          definition.foreignKey ? [definition.foreignKey.table] : [],
+        )
+        .filter((dependency) => dependency !== schema.tableName),
       version: schema.version,
       packageName: '',
     };

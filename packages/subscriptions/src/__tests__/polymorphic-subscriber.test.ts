@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
 import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
@@ -472,6 +473,10 @@ describe('polymorphic subscriber — TenantSubscriptionCollection conflict key',
     subs = await TenantSubscriptionCollection.create({
       db: { type: 'sqlite', url: ':memory:' },
     });
+    const plans = await SubscriptionPlanCollection.create({ db: subs.db });
+    for (const id of ['plan-mkt', 'plan-pro', 'plan-operator']) {
+      await plans.create({ id, planKey: id, name: id });
+    }
   });
 
   afterEach(async () => {

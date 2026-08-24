@@ -310,7 +310,7 @@ export interface EarningEventOptions extends SmrtObjectOptions {
 export interface CommissionOptions extends SmrtObjectOptions {
   tenantId?: string | null;
   earnerId?: string;
-  earningEventId?: string;
+  earningEventId?: string | null;
   planKey?: string;
   planVersion?: number;
   componentKey?: string;
@@ -329,7 +329,7 @@ export interface CommissionOptions extends SmrtObjectOptions {
   approvedAt?: Date | string | number | null;
   payableAt?: Date | string | number | null;
   paidAt?: Date | string | number | null;
-  payoutId?: string;
+  payoutId?: string | null;
   sourceKind?: string;
   sourceId?: string;
   calculationTrace?: string;
@@ -347,7 +347,7 @@ export interface CommissionAdjustmentOptions extends SmrtObjectOptions {
   currency?: string;
   reason?: string;
   createdByProfileId?: string;
-  payoutId?: string;
+  payoutId?: string | null;
   metadata?: string;
 }
 

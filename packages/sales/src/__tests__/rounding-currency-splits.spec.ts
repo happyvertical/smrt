@@ -39,6 +39,7 @@ import {
   type Referrer,
   ReferrerCollection,
 } from '../referrals/index.js';
+import { seedAgreementEvidence } from '../test-fixtures.js';
 
 const NOW = new Date('2026-07-01T00:00:00Z');
 const EVENT_AT = new Date('2026-07-02T00:00:00Z');
@@ -77,6 +78,11 @@ describe('rounding, currency, splits, and attribution gates (#1932)', () => {
 
   beforeEach(async () => {
     db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await seedAgreementEvidence(
+      db,
+      'test-agreement-execution',
+      'test-executed-agreement',
+    );
     earners = await EarnerCollection.create({ db });
     plans = await CommissionPlanCollection.create({ db });
     events = await EarningEventCollection.create({ db });

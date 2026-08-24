@@ -16,6 +16,7 @@ import {
   EventCollection,
   EventParticipant,
   EventParticipantCollection,
+  EventTypeCollection,
 } from '../index.js';
 
 function getTestDbUrl(name: string): string {
@@ -30,6 +31,21 @@ async function setup(name: string) {
   const events = await EventCollection.create({
     db: { type: 'sqlite', url: dbUrl },
   });
+  for (const eventId of [
+    'e',
+    'e1',
+    'e2',
+    'event-1',
+    'evt',
+    'g',
+    'g1',
+    'g2',
+    'g3',
+    'game',
+    'game-1',
+  ]) {
+    await events.create({ id: eventId, name: `Fixture ${eventId}` });
+  }
   return { dbUrl, participants, events };
 }
 
@@ -274,6 +290,11 @@ describe('EventParticipantCollection', () => {
     const events = await EventCollection.create({
       db: { type: 'sqlite', url: dbUrl },
     });
+    const types = await EventTypeCollection.create({
+      db: { type: 'sqlite', url: dbUrl },
+    });
+    await types.create({ id: 'type-basketball', name: 'Basketball' });
+    await types.create({ id: 'type-soccer', name: 'Soccer' });
 
     const basketball = await events.create({
       name: 'BBall',

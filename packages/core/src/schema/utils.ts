@@ -14,6 +14,7 @@ import { ObjectRegistry } from '../registry.js';
 import type { FieldDefinition } from '../scanner/types.js';
 import { tableNameFromClass } from '../utils.js';
 import type { DatabaseEngine } from './ddl/types.js';
+import { schemaForeignKeys } from './foreign-key-ddl.js';
 import { SchemaManager } from './schema-manager.js';
 
 export {
@@ -297,9 +298,31 @@ export async function ensureSchema(
     ObjectRegistry.getAllSchemasAsDefinitions()[schemaDefinition.tableName];
   const effectiveSchemaDefinition = mergedSchemaDefinition ?? schemaDefinition;
 
+  // A single requested class can be part of a mutual FK cycle. Build the
+  // complete registered dependency closure and let SchemaManager plan it as
+  // one unit; creating the requested table alone would leave the first
+  // PostgreSQL CREATE referencing a table that does not exist (#2413).
+  const allSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
+  const required = new Map<string, typeof effectiveSchemaDefinition>();
+  const collect = (schema: typeof effectiveSchemaDefinition): void => {
+    if (required.has(schema.tableName)) return;
+    required.set(schema.tableName, schema);
+    const dependencies = new Set([
+      ...schema.dependencies,
+      ...schemaForeignKeys(schema).map(
+        (foreignKey) => foreignKey.referencesTable,
+      ),
+    ]);
+    for (const dependency of dependencies) {
+      const dependencySchema = allSchemas[dependency];
+      if (dependencySchema) collect(dependencySchema);
+    }
+  };
+  collect(effectiveSchemaDefinition);
+
   const schemaManager = new SchemaManager(db, {
     skipTriggers:
       typeof (db as { exportTable?: unknown }).exportTable === 'function',
   });
-  await schemaManager.ensureTable(effectiveSchemaDefinition);
+  await schemaManager.ensureTables([...required.values()]);
 }
