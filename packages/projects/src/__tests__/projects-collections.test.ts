@@ -69,6 +69,20 @@ function fakeRepoClient(over: Record<string, any> = {}): any {
   };
 }
 
+async function seedRepository(
+  db: DatabaseInterface,
+  id: string,
+  tenantId?: string,
+): Promise<void> {
+  const repositories = await RepositoryCollection.create({ db });
+  await repositories.create({
+    id,
+    tenantId,
+    owner: 'fixture',
+    name: id,
+  });
+}
+
 describe('smrt-projects collections', () => {
   let db: DatabaseInterface;
   let savedToken: string | undefined;
@@ -141,6 +155,8 @@ describe('smrt-projects collections', () => {
     });
 
     it('filters issues by repository, state, label, assignee, and number', async () => {
+      await seedRepository(db, 'repo-1');
+      await seedRepository(db, 'repo-2');
       const issues = await IssueCollection.create({ db });
       await (
         await issues.create({
@@ -205,6 +221,7 @@ describe('smrt-projects collections', () => {
     });
 
     it('findWithUnincorporatedFeedback() returns open issues with comments but no synthesis', async () => {
+      await seedRepository(db, 'r');
       const issues = await IssueCollection.create({ db });
       await (
         await issues.create({
@@ -239,12 +256,14 @@ describe('smrt-projects collections', () => {
     });
 
     it('findByTenant() scopes to the given tenant id', async () => {
+      await seedRepository(db, 'r-t1', 't1');
+      await seedRepository(db, 'r-t2', 't2');
       const issues = await IssueCollection.create({ db });
       await (
-        await issues.create({ repositoryId: 'r', number: 1, tenantId: 't1' })
+        await issues.create({ repositoryId: 'r-t1', number: 1, tenantId: 't1' })
       ).save();
       await (
-        await issues.create({ repositoryId: 'r', number: 2, tenantId: 't2' })
+        await issues.create({ repositoryId: 'r-t2', number: 2, tenantId: 't2' })
       ).save();
       expect((await issues.findByTenant('t1')).map((i) => i.number)).toEqual([
         1,
@@ -252,6 +271,7 @@ describe('smrt-projects collections', () => {
     });
 
     it('batchSync() syncs every issue belonging to the repository', async () => {
+      await seedRepository(db, 'repo-1');
       const issues = await IssueCollection.create({ db });
       const repo = new Repository({ db, owner: 'a', name: 'b' });
       (repo as any).id = 'repo-1';
@@ -271,6 +291,7 @@ describe('smrt-projects collections', () => {
     });
 
     it('findNeedingReview() filters open issues through the AI needsReview predicate', async () => {
+      await seedRepository(db, 'r');
       const issues = await IssueCollection.create({ db });
       await (
         await issues.create({ repositoryId: 'r', number: 1, state: 'open' })
@@ -343,6 +364,7 @@ describe('smrt-projects collections', () => {
     });
 
     it('filters PRs by open state, draft, mergeable, branch, number, and change size', async () => {
+      await seedRepository(db, 'r');
       const prs = await PullRequestCollection.create({ db });
       await (
         await prs.create({
@@ -407,17 +429,20 @@ describe('smrt-projects collections', () => {
     });
 
     it('findByTenant() scopes PRs to the tenant', async () => {
+      await seedRepository(db, 'r-t1', 't1');
+      await seedRepository(db, 'r-t2', 't2');
       const prs = await PullRequestCollection.create({ db });
       await (
-        await prs.create({ repositoryId: 'r', number: 1, tenantId: 't1' })
+        await prs.create({ repositoryId: 'r-t1', number: 1, tenantId: 't1' })
       ).save();
       await (
-        await prs.create({ repositoryId: 'r', number: 2, tenantId: 't2' })
+        await prs.create({ repositoryId: 'r-t2', number: 2, tenantId: 't2' })
       ).save();
       expect((await prs.findByTenant('t2')).map((p) => p.number)).toEqual([2]);
     });
 
     it('batchSync() and findAIReadyToMerge() fan out over PRs', async () => {
+      await seedRepository(db, 'repo-1');
       const prs = await PullRequestCollection.create({ db });
       const repo = new Repository({ db, owner: 'a', name: 'b' });
       (repo as any).id = 'repo-1';

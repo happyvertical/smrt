@@ -1,5 +1,4 @@
-import { getTestDatabase } from '@happyvertical/smrt-core';
-import { PricingRuleCollection } from '@happyvertical/smrt-subscriptions';
+import { getTestDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 import { withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,7 +23,6 @@ import {
   type RecordServiceTimeInput,
   ServiceEvidenceService,
 } from '../services/service-evidence-service.js';
-import { SubscriptionServiceCommercialResolver } from '../services/subscription-commercial-resolver.js';
 
 describe('managed application delivery control plane (#1949)', () => {
   let db: DatabaseInterface;
@@ -716,6 +714,25 @@ describe('managed application delivery control plane (#1949)', () => {
   });
 
   it('prices approved service evidence through #1925 Client Charges', async () => {
+    // Load the external package only after the vitest plugin has registered its
+    // manifest. PricingRule has plain inferred fields, so importing its runtime
+    // class during config evaluation would leave this consumer test with only
+    // decorator metadata and an incomplete query/schema contract.
+    const subscriptionManifest = ObjectRegistry.registerPackageManifest(
+      new URL('../../../subscriptions/dist/manifest.json', import.meta.url),
+    );
+    expect(subscriptionManifest.loaded).toBe(true);
+    const [
+      { PricingRuleCollection },
+      { SubscriptionServiceCommercialResolver },
+    ] = await Promise.all([
+      import('@happyvertical/smrt-subscriptions'),
+      import('../services/subscription-commercial-resolver.js'),
+    ]);
+    await getTestDatabase({
+      db,
+      classes: ['PricingRule', 'TenantUsageMetric', 'ClientCharge'],
+    });
     const rules = await PricingRuleCollection.create({ db });
     const rule = await withTenant({ tenantId: 'tenant-1' }, () =>
       rules.create({

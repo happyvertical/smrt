@@ -120,11 +120,15 @@ function projectClient(over: Record<string, any> = {}): any {
  * `getClient()` → mocked SDK factory) — never by reaching into `_client`.
  * Uses TOKEN_KEY, which beforeEach populates in the environment.
  */
-async function seedRepo(database: DatabaseInterface): Promise<Repository> {
+async function seedRepo(
+  database: DatabaseInterface,
+  id?: string,
+): Promise<Repository> {
   const repos = await RepositoryCollection.create({ db: database });
   const repo = await repos.create({
+    id,
     owner: 'acme',
-    name: 'widgets',
+    name: id ?? 'widgets',
     tokenConfigKey: TOKEN_KEY,
   });
   await repo.save();
@@ -347,8 +351,8 @@ describe('smrt-projects models', () => {
     });
 
     it('getRepository() throws when the referenced repository is missing', async () => {
-      const issues = await IssueCollection.create({ db });
-      const issue = await issues.create({
+      const issue = new Issue({
+        db,
         repositoryId: 'no-such-repo',
         number: 1,
       });
@@ -404,6 +408,7 @@ describe('smrt-projects models', () => {
     });
 
     it('incorporateFeedback() returns an unmodified preview when there are no comments', async () => {
+      await seedRepo(db, 'r');
       const issues = await IssueCollection.create({ db });
       const issue = await issues.create({
         repositoryId: 'r',
@@ -450,6 +455,7 @@ describe('smrt-projects models', () => {
     });
 
     it('AI predicates delegate to is()/do()', async () => {
+      await seedRepo(db, 'r');
       const issues = await IssueCollection.create({ db });
       const issue = await issues.create({ repositoryId: 'r', number: 1 });
       vi.spyOn(issue, 'is').mockResolvedValue(true);
@@ -597,6 +603,7 @@ describe('smrt-projects models', () => {
     });
 
     it('isReadyToMerge() short-circuits on draft/mergeability/state before AI', async () => {
+      await seedRepo(db, 'r');
       const prs = await PullRequestCollection.create({ db });
       expect(
         await (
@@ -626,6 +633,7 @@ describe('smrt-projects models', () => {
     });
 
     it('summarize()/suggestReviewers() delegate to do()', async () => {
+      await seedRepo(db, 'r');
       const prs = await PullRequestCollection.create({ db });
       const pr = await prs.create({
         repositoryId: 'r',
