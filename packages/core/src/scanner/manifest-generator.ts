@@ -833,8 +833,11 @@ export class ManifestGenerator {
       { name: string; obj: SmartObjectDefinition }
     >();
     const changedSchemas = new Set<ManifestSchema>();
+    const objectsByName = new Map<string, SmartObjectDefinition>();
 
     for (const [name, obj] of Object.entries(manifest.objects)) {
+      objectsByName.set(obj.className, obj);
+      objectsByName.set(obj.className.toLowerCase(), obj);
       if (obj.schema?.tableName) {
         schemaByTable.set(obj.schema.tableName, obj.schema);
         const siblings = schemasByTable.get(obj.schema.tableName) ?? [];
@@ -894,8 +897,10 @@ export class ManifestGenerator {
           )?.[0] ||
           'id';
         const targetIdType = targetSchema.columns[targetColumn]?.type;
+        const conflictOwner =
+          this.findSTIBase(obj, objectsByName, manifest) ?? obj;
         const conflictColumns = new Set(
-          (obj.decoratorConfig?.conflictColumns || []).map((column) =>
+          (conflictOwner.decoratorConfig?.conflictColumns || []).map((column) =>
             toSnakeCase(column),
           ),
         );

@@ -311,7 +311,13 @@ function buildFixtureManifest(): SmartObjectManifest {
   add(
     objectDef(
       'ParityTicket',
-      { code: { type: 'text', required: true } },
+      {
+        code: {
+          type: 'foreignKey',
+          related: 'ParityAuthor.email',
+          required: true,
+        },
+      },
       {
         tableStrategy: 'sti',
         tenantScoped: { mode: 'required' },
@@ -1068,6 +1074,7 @@ describe('schema path parity (#2359)', () => {
 
     it('STI root with custom conflictColumns: honoured on both STI paths, slug lookup kept, child resolves the same key (#2360)', () => {
       expect(names('parity_tickets')).toEqual([
+        'parity_tickets_code_idx',
         'parity_tickets_meta_type_idx',
         'parity_tickets_slug_context_idx',
         'parity_tickets_tenant_id_code_idx',
@@ -1091,6 +1098,16 @@ describe('schema path parity (#2359)', () => {
       expect(
         ObjectRegistry.getConflictColumns(`${PKG}:ParityBugTicket`),
       ).toEqual(['tenant_id', 'code']);
+      for (const [leg, schema] of [
+        ['manifest', manifestSchemas.get('parity_tickets')],
+        ['registry', registrySchemas.get('parity_tickets')],
+        ['migrate', migrateSchemas.parity_tickets],
+      ] as const) {
+        expect(
+          schema?.columns.code.foreignKey?.onDelete,
+          `${leg} STI-root natural-key FK inherited by child`,
+        ).toBe('CASCADE');
+      }
     });
 
     it('STI: plain FK/xref indexes, tenant-led default key serves tenant_id, base-declared unique full, descendant-declared unique partial per class, meta JSON-path index', () => {
