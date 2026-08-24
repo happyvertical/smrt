@@ -258,8 +258,12 @@ describe('Image Adapter Parity', () => {
 
       beforeEach(async () => {
         dbConfig = adapterConfig.getConfig();
-        // Use getTestDatabase to create schemas automatically
-        db = await getTestDatabase(dbConfig);
+        // This suite exercises storage parity, not FK enforcement. DuckDB
+        // cannot enforce the assets package's generated CASCADE action.
+        db = await getTestDatabase({
+          ...dbConfig,
+          omitForeignKeyConstraints: dbConfig.type === 'json',
+        });
         images = await ImageCollection.create({ db });
         assets = await AssetCollection.create({ db });
       }, ADAPTER_HOOK_TIMEOUT_MS);
