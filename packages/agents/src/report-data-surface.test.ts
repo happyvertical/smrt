@@ -358,6 +358,10 @@ describe('principal-bound report data-surface tools', () => {
       freshnessSource: 'reportLifecycle',
       allowedActions: expect.arrayContaining(['query']),
     });
+    expect(
+      (discovered as Array<{ metadata?: { allowedActions?: string[] } }>)[0]
+        ?.metadata?.allowedActions,
+    ).not.toContain('drilldown');
 
     const result = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
       run,
@@ -599,6 +603,15 @@ describe('principal-bound report data-surface tools', () => {
     const tenantA = fakeRun([REPORT_DRILLDOWN_TOOL_SLUG], 'tenant-a');
     const tenantB = fakeRun([REPORT_DRILLDOWN_TOOL_SLUG], 'tenant-b');
     const reportId = await currentReportId();
+    const discovered = await tools.get(DATA_DISCOVER_TOOL_SLUG)?.execute({
+      run: fakeRun([DATA_DISCOVER_TOOL_SLUG, REPORT_DRILLDOWN_TOOL_SLUG]),
+      args: {},
+      db: undefined,
+    });
+    expect(
+      (discovered as Array<{ metadata?: { allowedActions?: string[] } }>)[0]
+        ?.metadata?.allowedActions,
+    ).toContain('drilldown');
 
     const handoff = await drilldown?.execute({
       run: tenantA,

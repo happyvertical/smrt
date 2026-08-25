@@ -257,12 +257,14 @@ function reportCatalogMetadata(
   definition: ReportDataSurfaceDefinition,
   descriptor: ReportAdapterDescriptor,
   run?: PrincipalRun,
+  auditAvailable = false,
 ): NonNullable<DataSurfaceDefinition['metadata']> {
   const canUse = (tool: string) => run?.isToolAllowed(tool) ?? true;
   const canUseAction = (tool: string, requiredPermission: string) =>
     canUse(tool) && (run?.permissions.includes(requiredPermission) ?? true);
   const canQuery =
     canUse(DATA_QUERY_TOOL_SLUG) || canUse(REPORT_QUERY_TOOL_SLUG);
+  const canDrilldown = auditAvailable && canUse(REPORT_DRILLDOWN_TOOL_SLUG);
   const queryModes = descriptor.queryExecution.modes.filter(
     (mode) =>
       (mode === 'silent' && canQuery) ||
@@ -282,7 +284,7 @@ function reportCatalogMetadata(
     )
       ? [descriptor.refresh.action.id]
       : []),
-    ...(canUse(REPORT_DRILLDOWN_TOOL_SLUG) ? [descriptor.drilldown.id] : []),
+    ...(canDrilldown ? [descriptor.drilldown.id] : []),
     ...(definition.export &&
     canUseAction(REPORT_EXPORT_TOOL_SLUG, 'reports.export')
       ? ['export']
@@ -307,7 +309,7 @@ function reportCatalogMetadata(
           refreshAuditRequired: descriptor.refresh.action.auditRequired,
         }
       : {}),
-    ...(canUse(REPORT_DRILLDOWN_TOOL_SLUG)
+    ...(canDrilldown
       ? { drilldownSourceClass: descriptor.drilldown.sourceClassName }
       : {}),
     ...(definition.export &&
@@ -399,6 +401,7 @@ function aiTool(
 export async function createReportDataSurfaceDefinition(
   definition: ReportDataSurfaceDefinition,
   run?: PrincipalRun,
+  auditAvailable = false,
 ): Promise<DataSurfaceDefinition> {
   const descriptor = await buildReportAdapterDescriptor(
     definition.report,
@@ -410,7 +413,12 @@ export async function createReportDataSurfaceDefinition(
     className: descriptor.reportClassName,
     label: definition.label ?? descriptor.reportClassName,
     ...(definition.description ? { description: definition.description } : {}),
-    metadata: reportCatalogMetadata(definition, descriptor, run),
+    metadata: reportCatalogMetadata(
+      definition,
+      descriptor,
+      run,
+      auditAvailable,
+    ),
     schema: querySchema(descriptor),
     execute: async (_surface, request, context) => {
       const db = reportDatabase(context.run, context.db);
@@ -440,7 +448,11 @@ async function dataSurfaceCatalog(
 ): Promise<readonly DataSurfaceDefinition[]> {
   return Promise.all(
     (await configuredReports(options, run)).map((definition) =>
-      createReportDataSurfaceDefinition(definition, run),
+      createReportDataSurfaceDefinition(
+        definition,
+        run,
+        typeof options.audit === 'function',
+      ),
     ),
   );
 }
