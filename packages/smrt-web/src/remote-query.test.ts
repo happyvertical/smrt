@@ -109,6 +109,30 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('does not apply a cancelled fresh-cache read', async () => {
+    const caller = new AbortController();
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => envelope(received, 'cached'),
+    });
+
+    await query.execute(request);
+    caller.abort();
+    await expect(
+      query.execute(
+        { ...request, requestId: 'request-2' },
+        { signal: caller.signal },
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(query.request?.requestId).toBe('request-1');
+    expect(query.state.result?.requestId).toBe('request-1');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('rebinds an in-flight shared result to each caller request id', async () => {
     let resolveQuery!: (result: ReturnType<typeof envelope>) => void;
     let calls = 0;
@@ -700,6 +724,44 @@ describe('remote query controller', () => {
     await Promise.resolve();
 
     expect(query.state.rows[0]?.name).toBe('explicit');
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('does not surface an older invalid live update after a newer fetch succeeds', async () => {
+    let onResult: ((value: unknown) => void) | undefined;
+    let resolveInvalid!: (value: unknown) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return envelope(received, calls === 1 ? 'initial' : 'explicit');
+      },
+      subscribe: (_received, callback) => {
+        onResult = callback;
+        return { unsubscribe: () => undefined };
+      },
+    });
+    const invalidLive = new Promise<unknown>((resolve) => {
+      resolveInvalid = resolve;
+    });
+
+    await query.execute(request);
+    query.subscribeLive();
+    onResult?.(invalidLive);
+    await query.execute(
+      { ...request, requestId: 'request-2' },
+      { force: true },
+    );
+    resolveInvalid({ invalid: true });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(query.state.rows[0]?.name).toBe('explicit');
+    expect(query.state.error).toBeNull();
     query.dispose();
     await collection.cleanup();
   });

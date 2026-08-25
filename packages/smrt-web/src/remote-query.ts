@@ -243,6 +243,8 @@ export function createSmrtWebQuery<TData extends object>(
   ): Promise<SmrtWebDataQueryResult> => {
     const mode = runOptions.mode ?? 'visible';
     const key = keyFor(candidate);
+    if (runOptions.signal?.aborted || (runOptions.deadlineMs ?? 1) <= 0)
+      throw abortError();
     const entry = cached(key);
     const fresh =
       entry !== undefined && Date.now() - entry.updatedAt < staleTimeMs;
@@ -472,6 +474,9 @@ export function createSmrtWebQuery<TData extends object>(
                 liveFlight,
               );
           })().catch((error) => {
+            const latestSuccessful = latestSuccessfulFlight.get(
+              keyFor(candidate),
+            );
             if (
               !isAbort(error) &&
               active &&
@@ -479,7 +484,8 @@ export function createSmrtWebQuery<TData extends object>(
               currentGeneration === liveGeneration &&
               connection === connectionGeneration &&
               request &&
-              keyFor(request) === keyFor(candidate)
+              keyFor(request) === keyFor(candidate) &&
+              (latestSuccessful === undefined || liveFlight > latestSuccessful)
             )
               publish({ ...state, error });
           });
