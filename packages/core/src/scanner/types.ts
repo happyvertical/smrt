@@ -70,8 +70,10 @@ export interface FieldMeta {
   indexed?: boolean;
   /** Foreign-key delete action carried in metadata. */
   onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
-  /** Explicitly disables physical DDL while retaining FK relationship metadata. */
-  constraint?: boolean;
+  /** Configures physical DDL while retaining FK relationship metadata. */
+  constraint?:
+    | boolean
+    | { engines: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'> };
   /** Excludes the field from persistence when true. */
   transient?: boolean;
   /** Numeric/length validation bounds and pattern. */

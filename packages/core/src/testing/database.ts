@@ -27,7 +27,10 @@ import {
 } from '../registry/collection-resolution.js';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine } from '../schema/ddl/index.js';
-import { schemaForeignKeys } from '../schema/foreign-key-ddl.js';
+import {
+  schemaForeignKeys,
+  schemaForeignKeysForEngine,
+} from '../schema/foreign-key-ddl.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import type { SchemaDefinition } from '../schema/types.js';
@@ -502,7 +505,7 @@ export async function getTestDatabase(
   // Add the authoritative dependency closure so a child-only request cannot
   // emit a physical reference to a table this helper never creates.
   const addDependencies = (schema: SchemaDefinition): void => {
-    for (const foreignKey of schemaForeignKeys(schema)) {
+    for (const foreignKey of schemaForeignKeysForEngine(schema, ddlEngine)) {
       if (schemas.has(foreignKey.referencesTable)) continue;
       const dependency = authoritativeSchemas[foreignKey.referencesTable];
       if (!dependency) continue;

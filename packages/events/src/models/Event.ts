@@ -31,10 +31,21 @@ export class Event extends SmrtHierarchical {
   tenantId: string | null = null;
 
   name: string = '';
-  @foreignKey('EventSeries')
+  @foreignKey('EventSeries', {
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
-  // parentId inherited from SmrtHierarchical (self-reference to parent Event)
-  @foreignKey('EventType')
+  // DuckDB cannot enforce a self-FK; PostgreSQL/SQLite retain the physical
+  // constraint while every engine retains UUID relationship semantics and
+  // application-side delete enforcement.
+  @foreignKey('Event', {
+    nullable: true,
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
+  override parentId: string | null = null;
+  @foreignKey('EventType', {
+    constraint: { engines: ['postgres', 'sqlite'] },
+  })
   typeId = ''; // FK to EventType
   @crossPackageRef('@happyvertical/smrt-places:Place')
   placeId = ''; // FK to Place (from @happyvertical/smrt-places)

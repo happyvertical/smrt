@@ -11,7 +11,7 @@
  * not with separate UNIQUE indexes. This is a known DuckDB limitation.
  */
 
-import { schemaForeignKeys } from '../foreign-key-ddl.js';
+import { schemaForeignKeysForEngine } from '../foreign-key-ddl.js';
 import { isStiSubtypeUniqueIndex, renderIndexTarget } from '../index-utils.js';
 import type { SchemaDefinition, SQLDataType } from '../types.js';
 import { BaseDDLStrategy } from './base-strategy.js';
@@ -21,31 +21,44 @@ export class DuckDBStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'duckdb';
 
   override generateCreateTable(schema: SchemaDefinition): string {
-    const foreignKeys = schemaForeignKeys(schema).map((foreignKey) => {
-      if (foreignKey.referencesTable === schema.tableName) {
-        throw new Error(
-          `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} is self-referential; DuckDB cannot insert self-referencing foreign keys safely.`,
-        );
-      }
-      if (
-        foreignKey.onDelete === 'CASCADE' ||
-        foreignKey.onDelete === 'SET NULL'
-      ) {
-        throw new Error(
-          `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} uses ON DELETE ${foreignKey.onDelete}, which DuckDB does not support. Use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
-        );
-      }
-      if (foreignKey.onUpdate !== undefined) {
-        throw new Error(
-          `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} uses ON UPDATE ${foreignKey.onUpdate}, which DuckDB does not support. DuckDB cannot preserve SMRT's ON UPDATE CASCADE contract; use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
-        );
-      }
-      // DuckDB supports the immediate restrictive behavior but rejects the
-      // SQL action clause. Omitting it is SQL's default NO ACTION; RESTRICT is
-      // equivalent because DuckDB has no deferred constraints.
-      return { ...foreignKey, onDelete: undefined };
-    });
-    return super.generateCreateTable({ ...schema, foreignKeys });
+    const foreignKeys = schemaForeignKeysForEngine(schema, this.engine).map(
+      (foreignKey) => {
+        if (foreignKey.referencesTable === schema.tableName) {
+          throw new Error(
+            `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} is self-referential; DuckDB cannot insert self-referencing foreign keys safely.`,
+          );
+        }
+        if (
+          foreignKey.onDelete === 'CASCADE' ||
+          foreignKey.onDelete === 'SET NULL'
+        ) {
+          throw new Error(
+            `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} uses ON DELETE ${foreignKey.onDelete}, which DuckDB does not support. Use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
+          );
+        }
+        if (foreignKey.onUpdate !== undefined) {
+          throw new Error(
+            `[DDL:duckdb] Foreign key ${schema.tableName}.${foreignKey.column} uses ON UPDATE ${foreignKey.onUpdate}, which DuckDB does not support. DuckDB cannot preserve SMRT's ON UPDATE CASCADE contract; use PostgreSQL/SQLite or keep this relationship app-side only with @crossPackageRef.`,
+          );
+        }
+        // DuckDB supports the immediate restrictive behavior but rejects the
+        // SQL action clause. Omitting it is SQL's default NO ACTION; RESTRICT is
+        // equivalent because DuckDB has no deferred constraints.
+        return { ...foreignKey, onDelete: undefined };
+      },
+    );
+    const enabledColumns = new Set(
+      foreignKeys.map((foreignKey) => foreignKey.column),
+    );
+    const columns = Object.fromEntries(
+      Object.entries(schema.columns).map(([name, definition]) => [
+        name,
+        definition.foreignKey && !enabledColumns.has(name)
+          ? { ...definition, foreignKey: undefined }
+          : definition,
+      ]),
+    );
+    return super.generateCreateTable({ ...schema, columns, foreignKeys });
   }
 
   /**

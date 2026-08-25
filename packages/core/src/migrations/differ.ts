@@ -10,10 +10,12 @@ import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import {
   foreignKeyConstraintName,
+  foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
   schemaForeignKeys,
+  schemaForeignKeysForEngine,
 } from '../schema/foreign-key-ddl.js';
 import {
   normalizeForeignKeyAction,
@@ -574,7 +576,57 @@ export class SchemaComparer {
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
     const liveForeignKeys = dbSchema.foreignKeys || [];
-    for (const foreignKey of schemaForeignKeys(manifest)) {
+    const declaredForeignKeys = schemaForeignKeys(manifest);
+    const enabledForeignKeys = schemaForeignKeysForEngine(
+      manifest,
+      this.engine,
+    );
+    const enabledKeys = new Set(
+      enabledForeignKeys.map(foreignKeyRelationshipKey),
+    );
+    const disabledForeignKeys = declaredForeignKeys.filter(
+      (foreignKey) => !enabledKeys.has(foreignKeyRelationshipKey(foreignKey)),
+    );
+
+    for (const foreignKey of disabledForeignKeys) {
+      const live = liveForeignKeys.find(
+        (candidate) =>
+          foreignKeyRelationshipKey(candidate) ===
+          foreignKeyRelationshipKey(foreignKey),
+      );
+      if (!live) continue;
+
+      const constraintName = foreignKeyConstraintName(tableName, foreignKey);
+      if (this.engine === 'postgres') {
+        changes.push({
+          type: 'drop_foreign_key',
+          table: tableName,
+          name: constraintName,
+          foreignKey,
+          advisory: {
+            severity: 'warning',
+            message:
+              `Cannot safely remove the now-disabled physical foreign key ${tableName}.${foreignKey.column}: ` +
+              '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun the migration.',
+          },
+        });
+      } else {
+        changes.push({
+          type: 'drop_foreign_key',
+          table: tableName,
+          name: constraintName,
+          foreignKey,
+          advisory: {
+            severity: 'warning',
+            message:
+              `${this.engine === 'sqlite' ? 'SQLite' : 'DuckDB'} requires a table rebuild to remove the now-disabled physical foreign key ` +
+              `${tableName}.${foreignKey.column}. Rebuild the table from the current manifest; relationship metadata and application-side enforcement remain active.`,
+          },
+        });
+      }
+    }
+
+    for (const foreignKey of enabledForeignKeys) {
       const expectedDelete =
         foreignKey.onDelete === undefined
           ? 'NO ACTION'

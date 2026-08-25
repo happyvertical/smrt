@@ -34,6 +34,8 @@ export interface ColumnDefinition {
     column: string;
     onDelete?: ForeignKeyAction;
     onUpdate?: ForeignKeyAction;
+    /** Engines on which the physical constraint is emitted. */
+    engines?: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
   };
   check?: string; // CHECK constraint
   description?: string;
@@ -118,6 +120,8 @@ export interface ForeignKeyDefinition {
   referencesColumn: string;
   onDelete?: ForeignKeyAction;
   onUpdate?: ForeignKeyAction;
+  /** Engines on which the physical constraint is emitted. */
+  engines?: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
 }
 
 export interface SchemaDefinition {
@@ -341,6 +345,7 @@ export interface SchemaChange {
     | 'orphan_column'
     | 'add_index'
     | 'add_foreign_key'
+    | 'drop_foreign_key'
     | 'drop_index'
     | 'orphan_index'
     | 'type_mismatch'
@@ -353,7 +358,7 @@ export interface SchemaChange {
   column?: ColumnDefinition;
   /** Index definition (for add_index) */
   index?: IndexDefinition;
-  /** Foreign-key definition (for add_foreign_key). */
+  /** Foreign-key definition (for add_foreign_key/drop_foreign_key). */
   foreignKey?: ForeignKeyDefinition;
   /**
    * For type mismatches/upgrades: expected vs actual type. For

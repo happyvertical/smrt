@@ -222,12 +222,21 @@ app-side cascade/preflight action so the stored identifier survives deletion;
 document the retention reason at the field, and keep ordinary same-package
 relationships constrained.
 
+When a relationship is valid on every engine but a particular database cannot
+faithfully enforce its physical shape, use the public, explicit allowlist
+`@foreignKey(Target, { constraint: { engines: ['postgres', 'sqlite'] } })`.
+Only physical DDL and schema dependency planning are engine-scoped; native UUID
+storage, relationship loading, indexes, and application-side delete enforcement
+remain active on every engine. Empty or unknown allowlists fail closed. Do not
+use this option to hide an otherwise invalid schema.
+
 - Change column/index emission on every shipping path, proven by the path-parity
   test `src/schema/schema-path-parity.test.ts` (#2359; index rules in the module doc). A "same as migrations" comment is a claim to check.
 - Every new query predicate ships with its index, or a reason it doesn't.
 - Creation is dependency-planned on every entry point. PostgreSQL defers mutual
   cycle constraints until both tables exist; SQLite keeps cycles inline;
-  DuckDB refuses unsupported cycles/actions rather than silently omitting them.
+  DuckDB refuses unsupported cycles/actions unless the field has an explicit
+  physical-constraint engine allowlist rather than silently omitting them.
   In particular, generated same-package constraints retain the compatibility
   default `ON UPDATE CASCADE`; DuckDB/JSON cannot enforce that action and must
   return an actionable refusal instead of stripping the clause.

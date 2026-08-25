@@ -253,6 +253,30 @@ describe('ManifestAdapter conversion', () => {
     });
   });
 
+  describe('@foreignKey decorator physical constraints', () => {
+    it('preserves the explicit engine allowlist in field metadata (#2504)', () => {
+      const result = adapter.convertField(
+        field({
+          name: 'parentId',
+          typeAnnotation: 'string | null',
+          decorators: [
+            {
+              name: 'foreignKey',
+              arguments: [
+                "'Event'",
+                "{ nullable: true, constraint: { engines: ['postgres', 'sqlite'] } }",
+              ],
+            },
+          ],
+        }),
+      );
+
+      expect(result?._meta?.constraint).toEqual({
+        engines: ['postgres', 'sqlite'],
+      });
+    });
+  });
+
   describe('convertMethod', () => {
     it('drops private/protected methods', () => {
       expect(

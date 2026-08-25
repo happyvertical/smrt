@@ -16,5 +16,10 @@ Infinite-nesting event hierarchy with series, types, participants, and role/plac
 - **Placement is numeric**: used for both team ordering (0=home, 1=away) and rankings — context-dependent
 - **GroupId not enforced at DB level**: for logical grouping only (e.g., team members in a game)
 - **Optional tenancy** with nullable tenantId
+- **Event physical foreign keys**: `parentId`, `seriesId`, and `typeId` retain
+  PostgreSQL/SQLite constraints. DuckDB/JSON omit only those explicitly scoped
+  physical constraints because DuckDB cannot enforce Event's self-reference or
+  generated `ON UPDATE CASCADE`; UUID fields, indexes, relationship loading,
+  and application-side delete enforcement remain active on every engine.
 - **Metadata stored as JSON string** with get/set/update helpers
 - **Owned asset helpers**: use `Event.getAssets()` / `addAsset()` / `removeAsset()` or the matching `EventCollection` wrappers instead of generic `AssetAssociation`

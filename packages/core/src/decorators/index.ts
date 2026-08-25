@@ -213,7 +213,19 @@ export interface RelationshipFieldOptions extends FieldOptions {
    * after the parent is deleted. Ordinary same-package relationships must leave
    * this enabled (the default).
    */
-  constraint?: boolean;
+  constraint?:
+    | boolean
+    | {
+        /**
+         * Database engines on which SMRT emits the physical constraint.
+         *
+         * Relationship loading, UUID storage, indexes, and application-side
+         * delete enforcement remain active on every engine. Use this narrow
+         * allowlist only when an engine cannot faithfully enforce a supported
+         * relationship shape (for example a DuckDB self-reference).
+         */
+        engines: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
+      };
 }
 
 /**
@@ -442,6 +454,13 @@ export function field(
  *   // Declared later in this module — name string, never evaluated
  *   @foreignKey('Invoice')
  *   invoiceId: string = '';
+ *
+ *   // Physical constraint only where the engine can enforce this shape;
+ *   // relationship loading and app-side delete policy remain cross-engine.
+ *   @foreignKey('Order', {
+ *     constraint: { engines: ['postgres', 'sqlite'] },
+ *   })
+ *   hierarchyParentId: string | null = null;
  * }
  *
  * // Cross-package: runtime relationship, index, and loading; no physical FK

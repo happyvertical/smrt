@@ -237,9 +237,14 @@ export const dbDiffCommand: CLICommand = {
       // Report-only findings (#2369) are printed even when nothing is
       // executable so an orphan NOT NULL column is never hidden behind an
       // "up to date" line.
-      const { advisories } = partitionSchemaChanges(
+      const { advisories, manualInterventions } = partitionSchemaChanges(
         diff.changes as SchemaChangeLike[],
         (tableName) => tableName,
+      );
+      const manualForeignKeyChanges = manualInterventions.filter(
+        (change) =>
+          change.type === 'add_foreign_key' ||
+          change.type === 'drop_foreign_key',
       );
 
       if (!diff.has_changes) {
@@ -258,6 +263,7 @@ export const dbDiffCommand: CLICommand = {
       );
       if (
         executableOrManual.length === 0 &&
+        manualForeignKeyChanges.length === 0 &&
         diff.added_tables.length === 0 &&
         diff.dropped_tables.length === 0
       ) {
@@ -420,6 +426,24 @@ export const dbDiffCommand: CLICommand = {
           );
         }
         console.log('     (Type changes require manual migration)\n');
+      }
+
+      if (manualForeignKeyChanges.length > 0) {
+        console.log(
+          `  ⚠️  Foreign-key drift needing a manual step (${manualForeignKeyChanges.length}):`,
+        );
+        for (const change of manualForeignKeyChanges) {
+          const operation =
+            change.type === 'drop_foreign_key' ? 'remove' : 'add';
+          console.log(`     ! ${change.tableName}: ${operation} constraint`);
+          console.log(
+            `       ${change.advisory?.message ?? 'foreign-key constraint requires manual repair'}`,
+          );
+          for (const sql of change.advisory?.suggestedSql ?? []) {
+            console.log(`       ↳ ${sql}`);
+          }
+        }
+        console.log();
       }
 
       printSchemaAdvisories(advisories, {

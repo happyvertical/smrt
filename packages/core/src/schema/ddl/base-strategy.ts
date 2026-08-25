@@ -8,7 +8,7 @@
 import { createLogger } from '@happyvertical/logger';
 import {
   renderForeignKeyConstraint,
-  schemaForeignKeys,
+  schemaForeignKeysForEngine,
 } from '../foreign-key-ddl.js';
 import {
   formatDefaultValue as formatDefaultValueShared,
@@ -81,7 +81,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       columnDefs.push(...uniqueConstraints);
     }
 
-    for (const foreignKey of schemaForeignKeys(schema)) {
+    for (const foreignKey of schemaForeignKeysForEngine(schema, this.engine)) {
       columnDefs.push(renderForeignKeyConstraint(tableName, foreignKey));
     }
 

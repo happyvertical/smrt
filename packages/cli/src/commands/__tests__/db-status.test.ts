@@ -149,6 +149,32 @@ describe('db:status', () => {
               actual: 'INTEGER',
             },
           },
+          {
+            type: 'add_foreign_key',
+            table: 'contents',
+            name: 'contents_author_id_users_id_fkey',
+            foreignKey: {
+              column: 'author_id',
+              referencesTable: 'users',
+              referencesColumn: 'id',
+            },
+            sqlStatements: ['ALTER TABLE contents ADD CONSTRAINT ...'],
+          },
+          {
+            type: 'drop_foreign_key',
+            table: 'contents',
+            name: 'contents_legacy_id_legacy_id_fkey',
+            foreignKey: {
+              column: 'legacy_id',
+              referencesTable: 'legacy',
+              referencesColumn: 'id',
+            },
+            advisory: {
+              severity: 'warning',
+              message:
+                'Exact live constraint-name introspection is unavailable; remove it deliberately, then rerun.',
+            },
+          },
         ],
       }),
     ).toEqual([
@@ -175,6 +201,18 @@ describe('db:status', () => {
         type: 'type_mismatch',
         recommendation:
           'Manual intervention required: expected TEXT, found INTEGER.',
+      },
+      {
+        name: 'contents.author_id -> users.id',
+        type: 'missing_foreign_key',
+        recommendation:
+          'Run `smrt db:migrate` to add the missing foreign key and reconcile the live schema.',
+      },
+      {
+        name: 'contents.legacy_id -> legacy.id',
+        type: 'disabled_foreign_key',
+        recommendation:
+          'Exact live constraint-name introspection is unavailable; remove it deliberately, then rerun.',
       },
     ]);
   });
@@ -318,6 +356,86 @@ describe('db:status', () => {
       other: [],
     });
     expect(closeMock).toHaveBeenCalledOnce();
+  });
+
+  it('reports advisory foreign-key removal drift in human status', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'drop_foreign_key',
+          table: 'events',
+          name: 'events_parent_id_events_id_fkey',
+          foreignKey: {
+            column: 'parent_id',
+            referencesTable: 'events',
+            referencesColumn: 'id',
+          },
+          advisory: {
+            severity: 'warning',
+            message:
+              '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun.',
+          },
+        },
+      ],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { verbose: true });
+
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+    expect(output).toContain('Drift Detected');
+    expect(output).toContain(
+      'events.parent_id -> events.id: disabled_foreign_key',
+    );
+    expect(output).toContain(
+      'does not expose the live PostgreSQL constraint name',
+    );
+    expect(output).not.toContain('Live schema matches current manifests');
+  });
+
+  it('reports advisory foreign-key removal drift in JSON status', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'drop_foreign_key',
+          table: 'events',
+          name: 'events_parent_id_events_id_fkey',
+          foreignKey: {
+            column: 'parent_id',
+            referencesTable: 'events',
+            referencesColumn: 'id',
+          },
+          advisory: {
+            severity: 'warning',
+            message:
+              '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun.',
+          },
+        },
+      ],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(parsed.drift).toEqual([
+      {
+        name: 'events.parent_id -> events.id',
+        type: 'disabled_foreign_key',
+        recommendation:
+          '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun.',
+      },
+    ]);
   });
 
   it('includes tenant id compatibility precondition failures in JSON status', async () => {

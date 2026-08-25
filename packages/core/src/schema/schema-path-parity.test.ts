@@ -123,6 +123,11 @@ function buildFixtureManifest(): SmartObjectManifest {
     objectDef('ParityPost', {
       body: { type: 'text' },
       authorId: { type: 'foreignKey', related: 'ParityAuthor' },
+      portableAuthorId: {
+        type: 'foreignKey',
+        related: 'ParityAuthor',
+        _meta: { constraint: { engines: ['postgres', 'sqlite'] } },
+      },
       archiveAuthorId: {
         type: 'foreignKey',
         related: 'ParityAuthor',
@@ -411,6 +416,7 @@ function columnSet(
         column: string;
         onDelete?: string;
         onUpdate?: string;
+        engines?: string[];
       };
     }
   >,
@@ -420,7 +426,7 @@ function columnSet(
     a.localeCompare(b),
   )) {
     const fk = col.foreignKey
-      ? `${col.foreignKey.table}.${col.foreignKey.column}/${col.foreignKey.onDelete ?? '-'}/${col.foreignKey.onUpdate ?? '-'}`
+      ? `${col.foreignKey.table}.${col.foreignKey.column}/${col.foreignKey.onDelete ?? '-'}/${col.foreignKey.onUpdate ?? '-'}/${col.foreignKey.engines?.join(',') ?? '-'}`
       : '-';
     out[name] =
       `${String(col.type).toUpperCase()}/${col.referenceKind ?? '-'}/${fk}`;
@@ -483,6 +489,9 @@ function manifestSchemaAsDefinition(
                 referencesColumn: definition.foreignKey.column,
                 onDelete: definition.foreignKey.onDelete,
                 onUpdate: definition.foreignKey.onUpdate,
+                ...(definition.foreignKey.engines
+                  ? { engines: definition.foreignKey.engines }
+                  : {}),
               },
             ]
           : [],
@@ -855,6 +864,7 @@ describe('schema path parity (#2359)', () => {
         'parity_posts_archive_author_id_idx',
         'parity_posts_author_id_idx',
         'parity_posts_created_at_idx',
+        'parity_posts_portable_author_id_idx',
         'parity_posts_profile_id_idx',
         'parity_posts_slug_context_idx',
         'parity_posts_status_idx',
@@ -875,6 +885,16 @@ describe('schema path parity (#2359)', () => {
         column: 'id',
         onDelete: 'NO ACTION',
         onUpdate: 'CASCADE',
+      });
+      expect(
+        manifestSchemas.get('parity_posts')?.columns.portable_author_id
+          .foreignKey,
+      ).toEqual({
+        table: 'parity_authors',
+        column: 'id',
+        onDelete: 'NO ACTION',
+        onUpdate: 'CASCADE',
+        engines: ['postgres', 'sqlite'],
       });
       expect(
         manifestSchemas.get('parity_posts')?.columns.profile_id.foreignKey,

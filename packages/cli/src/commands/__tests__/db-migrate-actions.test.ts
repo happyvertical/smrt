@@ -319,6 +319,42 @@ describe('partitionSchemaChanges', () => {
       /^add_foreign_key_children_[a-f0-9]{8}$/,
     );
   });
+
+  it('keeps disabled foreign-key removals manual when no exact drop SQL exists', () => {
+    const advisory = {
+      severity: 'warning' as const,
+      message:
+        '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop it deliberately, then rerun.',
+    };
+    const result = partitionSchemaChanges(
+      [
+        {
+          type: 'drop_foreign_key',
+          table: 'children',
+          name: 'children_parent_id_parents_id_fkey',
+          advisory,
+        },
+      ],
+      () => 'Child',
+    );
+
+    expect(result.migrations).toEqual([]);
+    expect(result.manualInterventions).toEqual([
+      expect.objectContaining({
+        type: 'drop_foreign_key',
+        tableName: 'children',
+        className: 'Child',
+        advisory,
+      }),
+    ]);
+    expect(
+      getSyntheticMigrationNameForChange({
+        type: 'drop_foreign_key',
+        table: 'children',
+        sql: 'ALTER TABLE "children" DROP CONSTRAINT "legacy_parent_fk"',
+      }),
+    ).toMatch(/^drop_foreign_key_children_[a-f0-9]{8}$/);
+  });
 });
 
 describe('shouldFailDbMigrate', () => {

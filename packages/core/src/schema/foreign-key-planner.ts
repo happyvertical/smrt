@@ -2,7 +2,9 @@ import type { DatabaseEngine } from './ddl/types.js';
 import {
   foreignKeyConstraintName,
   renderForeignKeyConstraint,
+  schemaDependenciesForEngine,
   schemaForeignKeys,
+  schemaForeignKeysForEngine,
 } from './foreign-key-ddl.js';
 import { quoteIdentifier } from './sql-identifiers.js';
 import type { ForeignKeyDefinition, SchemaDefinition } from './types.js';
@@ -112,7 +114,7 @@ export function planForeignKeyCreation(
   const names = [...byName.keys()];
   const dependencies = new Map<string, string[]>();
   for (const [name, schema] of byName) {
-    for (const foreignKey of schemaForeignKeys(schema)) {
+    for (const foreignKey of schemaForeignKeysForEngine(schema, engine)) {
       // Validate externally supplied manifest actions before a dry-run can
       // report an executable plan.
       renderForeignKeyConstraint(name, foreignKey);
@@ -121,12 +123,9 @@ export function planForeignKeyCreation(
       name,
       Array.from(
         new Set(
-          [
-            ...(schema.dependencies ?? []),
-            ...schemaForeignKeys(schema).map(
-              (foreignKey) => foreignKey.referencesTable,
-            ),
-          ].filter((target) => target !== name && byName.has(target)),
+          schemaDependenciesForEngine(schema, engine).filter(
+            (target) => target !== name && byName.has(target),
+          ),
         ),
       ).sort(),
     );
@@ -149,7 +148,7 @@ export function planForeignKeyCreation(
 
   if (engine === 'duckdb' || engine === 'json') {
     for (const [source, schema] of byName) {
-      for (const foreignKey of schemaForeignKeys(schema)) {
+      for (const foreignKey of schemaForeignKeysForEngine(schema, engine)) {
         if (source === foreignKey.referencesTable) {
           throw new Error(
             `[DDL:${engine}] Foreign key ${source}.${foreignKey.column} is self-referential; DuckDB cannot insert self-referencing foreign keys safely.`,
@@ -196,7 +195,7 @@ export function planForeignKeyCreation(
     const schema = byName.get(name) as SchemaDefinition;
     if (engine !== 'postgres') return schema;
     const omitted = new Set<string>();
-    for (const foreignKey of schemaForeignKeys(schema)) {
+    for (const foreignKey of schemaForeignKeysForEngine(schema, engine)) {
       if (isMutualCycle(name, foreignKey.referencesTable)) {
         omitted.add(foreignKey.column);
         deferred.push({ table: name, foreignKey });

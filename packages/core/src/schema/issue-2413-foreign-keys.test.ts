@@ -1,12 +1,14 @@
 import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
-import { SchemaComparer } from '../migrations/differ.js';
+import { getSQLFromDiff, SchemaComparer } from '../migrations/differ.js';
 import { MigrationGenerator } from '../migrations/generator.js';
 import { resolveTestDatabaseDDLEngine } from '../testing/database.js';
 import { generateDDLForEngine } from './ddl/index.js';
 import {
   foreignKeyConstraintName,
+  foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
+  schemaDependenciesForEngine,
   schemaForeignKeys,
 } from './foreign-key-ddl.js';
 import { planForeignKeyCreation } from './foreign-key-planner.js';
@@ -350,6 +352,124 @@ describe('deterministic creation planning (#2413)', () => {
       ),
     ).toThrow(/self-referential/);
   });
+
+  it('honors an explicit physical-constraint engine allowlist without weakening other self-references (#2504)', () => {
+    const portableHierarchy = schema('event_nodes', {
+      column: 'parent_id',
+      table: 'event_nodes',
+    });
+    const parentForeignKey = portableHierarchy.columns.parent_id.foreignKey;
+    if (!parentForeignKey)
+      throw new Error('fixture parent foreign key missing');
+    portableHierarchy.columns.parent_id.foreignKey = {
+      ...parentForeignKey,
+      engines: ['postgres', 'sqlite'],
+    };
+    portableHierarchy.foreignKeys = schemaForeignKeys({
+      columns: portableHierarchy.columns,
+      foreignKeys: [],
+    });
+
+    for (const engine of ['postgres', 'sqlite'] as const) {
+      expect(
+        generateDDLForEngine(portableHierarchy, engine).createTable,
+      ).toContain('FOREIGN KEY ("parent_id")');
+      expect(
+        planForeignKeyCreation([portableHierarchy], engine).schemas[0]
+          .foreignKeys,
+      ).toHaveLength(1);
+    }
+    for (const engine of ['duckdb', 'json'] as const) {
+      expect(
+        generateDDLForEngine(portableHierarchy, engine).createTable,
+      ).not.toContain('FOREIGN KEY ("parent_id")');
+      expect(
+        planForeignKeyCreation([portableHierarchy], engine).schemas[0]
+          .foreignKeys,
+      ).toHaveLength(1);
+    }
+
+    expect(() =>
+      generateDDLForEngine(
+        schema('arbitrary_nodes', {
+          column: 'parent_id',
+          table: 'arbitrary_nodes',
+        }),
+        'duckdb',
+      ),
+    ).toThrow(/self-referential/);
+  });
+
+  it('excludes engine-disabled relationships from dependency planning (#2504)', () => {
+    const child = schema('a_children', {
+      column: 'parent_id',
+      table: 'z_parents',
+    });
+    const childForeignKey = child.columns.parent_id.foreignKey;
+    if (!childForeignKey) throw new Error('fixture foreign key missing');
+    child.columns.parent_id.foreignKey = {
+      ...childForeignKey,
+      engines: ['postgres', 'sqlite'],
+    };
+    child.foreignKeys = schemaForeignKeys({
+      columns: child.columns,
+      foreignKeys: [],
+    });
+    const parent = schema('z_parents');
+
+    expect(
+      planForeignKeyCreation([child, parent], 'postgres').schemas.map(
+        (item) => item.tableName,
+      ),
+    ).toEqual(['z_parents', 'a_children']);
+    expect(
+      planForeignKeyCreation([child, parent], 'duckdb').schemas.map(
+        (item) => item.tableName,
+      ),
+    ).toEqual(['a_children', 'z_parents']);
+  });
+
+  it('matches derived foreign keys by stable relationship semantics instead of object identity (#2504)', () => {
+    const derived = schema('derived_children', {
+      column: 'parent_id',
+      table: 'derived_parents',
+    });
+    derived.foreignKeys = [];
+    const derivedForeignKey = derived.columns.parent_id.foreignKey;
+    if (!derivedForeignKey) throw new Error('fixture foreign key missing');
+    derived.columns.parent_id.foreignKey = {
+      ...derivedForeignKey,
+      engines: ['postgres', 'sqlite'],
+    };
+
+    const first = schemaForeignKeys(derived)[0];
+    const second = schemaForeignKeys(derived)[0];
+    expect(first).not.toBe(second);
+    expect(foreignKeyRelationshipKey(first)).toBe(
+      foreignKeyRelationshipKey(second),
+    );
+    expect(schemaDependenciesForEngine(derived, 'postgres')).toEqual([
+      'derived_parents',
+    ]);
+    expect(schemaDependenciesForEngine(derived, 'duckdb')).toEqual([]);
+  });
+
+  it('fails closed for empty or unknown physical-constraint engine allowlists', () => {
+    const invalid = schema('children', {
+      column: 'parent_id',
+      table: 'parents',
+    });
+
+    invalid.foreignKeys[0].engines = [];
+    expect(() => generateDDLForEngine(invalid, 'duckdb')).toThrow(
+      /invalid physical constraint engine allowlist/,
+    );
+
+    invalid.foreignKeys[0].engines = ['mysql'] as never;
+    expect(() => planForeignKeyCreation([invalid], 'postgres')).toThrow(
+      /invalid physical constraint engine allowlist/,
+    );
+  });
 });
 
 describe('SQLite database enforcement (#2413)', () => {
@@ -507,6 +627,122 @@ describe('existing-table orphan safety (#2413)', () => {
       },
     };
   }
+
+  it('reports a required rebuild for a live constraint disabled on DuckDB (#2504)', async () => {
+    const portableChild = structuredClone(child);
+    portableChild.foreignKeys[0].engines = ['postgres', 'sqlite'];
+    if (!portableChild.columns.parent_id.foreignKey) {
+      throw new Error('fixture foreign key missing');
+    }
+    portableChild.columns.parent_id.foreignKey.engines = ['postgres', 'sqlite'];
+    const mock = postgresMock(false);
+    mock.db.getTableSchema = async () => ({
+      columns: {
+        id: { name: 'id', type: 'text', primaryKey: true },
+        parent_id: { name: 'parent_id', type: 'text' },
+      },
+      indexes: [],
+      foreignKeys: [
+        {
+          column: 'parent_id',
+          referencesTable: 'parents',
+          referencesColumn: 'id',
+          onDelete: 'NO ACTION',
+          onUpdate: 'CASCADE',
+        },
+      ],
+    });
+    const query = mock.db.query;
+    mock.db.query = async (sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        mock.queries.push(sql);
+        return { rows: [{ name: 'children' }] } as never;
+      }
+      return query(sql);
+    };
+
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'duckdb',
+    }).compare({ children: portableChild });
+
+    expect(diff.has_changes).toBe(true);
+    expect(diff.changes).toContainEqual(
+      expect.objectContaining({
+        type: 'drop_foreign_key',
+        table: 'children',
+        advisory: expect.objectContaining({
+          message: expect.stringMatching(/table rebuild/),
+        }),
+      }),
+    );
+    const migration = new MigrationGenerator({ engine: 'duckdb' })
+      .generateFromDiff(diff, { name: 'drop_disabled_duckdb_fk' })
+      .up.join('\n');
+    expect(migration).toContain(
+      '-- WARNING: Foreign-key constraint children.children_parent_id_parents_id_fkey',
+    );
+    expect(migration).toContain('requires a table rebuild');
+    expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(false);
+  });
+
+  it('does not claim a noncanonical live PostgreSQL constraint was removed (#2504)', async () => {
+    const sqliteOnlyChild = structuredClone(child);
+    sqliteOnlyChild.foreignKeys[0].engines = ['sqlite'];
+    if (!sqliteOnlyChild.columns.parent_id.foreignKey) {
+      throw new Error('fixture foreign key missing');
+    }
+    sqliteOnlyChild.columns.parent_id.foreignKey.engines = ['sqlite'];
+    const mock = postgresMock(false);
+    // The live database uses a legacy name such as
+    // `legacy_children_parent_fk`, but @happyvertical/sql currently returns
+    // only this relationship tuple. The differ must not substitute SMRT's
+    // canonical generated name and claim that the legacy constraint was
+    // removed.
+    mock.db.getTableSchema = async () => ({
+      columns: {
+        id: { name: 'id', type: 'text', primaryKey: true },
+        parent_id: { name: 'parent_id', type: 'text' },
+      },
+      indexes: [],
+      foreignKeys: [
+        {
+          column: 'parent_id',
+          referencesTable: 'parents',
+          referencesColumn: 'id',
+          onDelete: 'NO ACTION',
+          onUpdate: 'CASCADE',
+        },
+      ],
+    });
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: sqliteOnlyChild });
+
+    expect(diff.changes).toContainEqual(
+      expect.objectContaining({
+        type: 'drop_foreign_key',
+        table: 'children',
+        advisory: expect.objectContaining({
+          message: expect.stringMatching(
+            /does not expose the live PostgreSQL constraint name/,
+          ),
+        }),
+      }),
+    );
+    const change = diff.changes.find(
+      (candidate) => candidate.type === 'drop_foreign_key',
+    );
+    expect(change?.sql).toBeUndefined();
+    expect(getSQLFromDiff(diff)).not.toContain('DROP CONSTRAINT');
+    const migration = new MigrationGenerator({ engine: 'postgres' })
+      .generateFromDiff(diff, { name: 'manual_disabled_postgres_fk' })
+      .up.join('\n');
+    expect(migration).toContain('-- WARNING: Foreign-key constraint');
+    expect(migration).not.toContain('DROP CONSTRAINT');
+    expect(mock.queries.some((sql) => sql.includes('constraint_name'))).toBe(
+      false,
+    );
+  });
 
   it('probes the exact child/parent target before adding and validating on PostgreSQL', async () => {
     const mock = postgresMock(false);
