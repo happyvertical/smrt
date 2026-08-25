@@ -1,5 +1,5 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, describe, expect, expectTypeOf, it } from 'vitest';
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
   MAX_STI_READ_SCOPE_TYPES,
   SmrtCollection,
@@ -8,7 +8,7 @@ import {
   type SmrtStiReadScope,
 } from '../collection.js';
 import { field, foreignKey, oneToMany } from '../decorators/index.js';
-import { SmrtObject, smrt } from '../index.js';
+import { ObjectRegistry, SmrtObject, smrt } from '../index.js';
 import { GlobalInterceptors } from '../interceptors.js';
 import { getTestDatabase } from '../testing/database.js';
 
@@ -142,6 +142,7 @@ describe.each([
   let db: DatabaseInterface | undefined;
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     GlobalInterceptors.unregister('issue-2513-tenant');
     await db?.close?.();
     db = undefined;
@@ -235,6 +236,22 @@ describe.each([
       return originalQuery(sql, ...params);
     }) as DatabaseInterface['query'];
 
+    // Simulate an external sibling disappearing from the local registry after
+    // allowlist validation but before row hydration. The hydration boundary
+    // must invoke manifest loading before it asks for concrete field metadata.
+    const originalGetClass = ObjectRegistry.getClass.bind(ObjectRegistry);
+    let historicalLookups = 0;
+    vi.spyOn(ObjectRegistry, 'getClass').mockImplementation((name) => {
+      if (name === HISTORICAL_TYPE && ++historicalLookups === 2) {
+        return undefined;
+      }
+      return originalGetClass(name);
+    });
+    const ensureManifestLoaded = vi.spyOn(
+      ObjectRegistry,
+      'ensureManifestLoaded',
+    );
+
     const scoped = await current.list({
       stiScope: allTypesScope,
       orderBy: 'title ASC',
@@ -253,6 +270,7 @@ describe.each([
     expect(scoped[1].attempts).toBe(7);
     expect(scoped[1].occurredAt).toEqual(new Date('2025-01-02T03:04:05.000Z'));
     expect(scoped[1].payload).toEqual({ source: 'legacy', version: 2 });
+    expect(ensureManifestLoaded).toHaveBeenCalledWith(HISTORICAL_TYPE);
     expect(scoped.map((event) => event.title)).toEqual([
       'Current A',
       'Historical A',
@@ -295,6 +313,7 @@ describe.each([
       },
     ]);
 
+    const getAllFields = vi.spyOn(ObjectRegistry, 'getAllFields');
     const latestRelatedPromise = current.listWithLatestRelated({
       stiScope: allTypesScope,
       latestRelated: {
@@ -319,6 +338,12 @@ describe.each([
       'current note',
       'historical note',
     ]);
+    expect(
+      getAllFields.mock.calls.filter(([type]) => type === CURRENT_TYPE),
+    ).toHaveLength(1);
+    expect(
+      getAllFields.mock.calls.filter(([type]) => type === HISTORICAL_TYPE),
+    ).toHaveLength(1);
     expect(await current.count()).toBe(1);
     expect(await current.count({ stiScope: allTypesScope })).toBe(2);
     await expect(

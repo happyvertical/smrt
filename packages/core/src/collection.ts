@@ -2032,12 +2032,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // would violate the collection-wide serial hydration invariant.
     const instances: ModelType[] = [];
     const relatedAliasNames = new Set(relatedFieldAliases.values());
+    const polymorphicFields = new Map<
+      string,
+      Record<string, CollectionFieldDefinition>
+    >();
     for (const row of rows.rows as Record<string, unknown>[]) {
       const parentRow = Object.fromEntries(
         Object.entries(row).filter(([key]) => !relatedAliasNames.has(key)),
       );
       instances.push(
-        await this.hydrateResultRow(parentRow, parentFields, isSTI),
+        await this.hydrateResultRow(
+          parentRow,
+          parentFields,
+          isSTI,
+          polymorphicFields,
+        ),
       );
     }
 
@@ -4295,7 +4304,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const metaType = String(rawMetaType);
     const cached = polymorphicFields.get(metaType);
     if (cached) return cached;
-    if (!ObjectRegistry.getClass(metaType)) return fallbackFields;
+    if (!ObjectRegistry.getClass(metaType)) {
+      await ObjectRegistry.ensureManifestLoaded(metaType);
+    }
 
     const registeredFields = await ObjectRegistry.getAllFields(metaType);
     if (registeredFields.size === 0) return fallbackFields;
