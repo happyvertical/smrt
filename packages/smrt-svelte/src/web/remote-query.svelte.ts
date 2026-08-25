@@ -48,8 +48,12 @@ export function remoteQuery<TData extends object>(
     options,
   );
   let snapshot = $state<SmrtWebQueryState<TData>>(query.state);
+  let activeRequest = $state<SmrtWebDataQueryRequest | undefined>(
+    query.request,
+  );
   const unsubscribe = query.subscribe((next) => {
     snapshot = next;
+    activeRequest = query.request;
   });
   $effect(() => () => {
     unsubscribe();
@@ -81,7 +85,7 @@ export function remoteQuery<TData extends object>(
       return snapshot.lastUpdated;
     },
     get request() {
-      return query.request;
+      return activeRequest;
     },
     execute: (request, runOptions) => query.execute(request, runOptions),
     refresh: (runOptions) => query.refresh(runOptions),

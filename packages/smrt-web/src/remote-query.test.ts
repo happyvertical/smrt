@@ -66,6 +66,49 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('shares equivalent query keys and rebinds a cached result to the current request id', async () => {
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return envelope(received, 'cached');
+      },
+    });
+    const first: SmrtWebDataQueryRequest = {
+      ...request,
+      filter: {
+        kind: 'condition',
+        field: 'name',
+        operator: 'eq',
+        value: 'Ada',
+      },
+    };
+    const equivalent: SmrtWebDataQueryRequest = {
+      mode: 'rows',
+      filter: {
+        value: 'Ada',
+        operator: 'eq',
+        field: 'name',
+        kind: 'condition',
+      },
+      page: { limit: 10, offset: 0, kind: 'offset' },
+      requestId: 'request-2',
+      version: 1,
+    };
+
+    await query.execute(first);
+    const cached = await query.execute(equivalent);
+
+    expect(calls).toBe(1);
+    expect(cached.requestId).toBe('request-2');
+    expect(query.state.result?.requestId).toBe('request-2');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('suppresses an older visible response and never exposes its error', async () => {
     let releaseFirst!: () => void;
     const first = new Promise<void>((resolve) => {
@@ -314,6 +357,41 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('does not let a current visible refresh overwrite a newer live result', async () => {
+    let resolveRefresh!: (result: unknown) => void;
+    let onLive: ((value: unknown) => void) | undefined;
+    let queryCalls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        queryCalls += 1;
+        if (queryCalls === 1) return envelope(received, 'initial');
+        return await new Promise((resolve) => {
+          resolveRefresh = resolve;
+        });
+      },
+      subscribe: (_received, callback) => {
+        onLive = callback;
+        return { unsubscribe: () => undefined };
+      },
+    });
+
+    await query.execute(request);
+    query.subscribeLive();
+    const refresh = query.refresh();
+    await vi.waitFor(() => expect(queryCalls).toBe(2));
+    onLive?.(envelope(request, 'live'));
+    await vi.waitFor(() => expect(query.state.rows[0]?.name).toBe('live'));
+    resolveRefresh(envelope(request, 'stale-refresh'));
+    await refresh;
+
+    expect(query.state.rows[0]?.name).toBe('live');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('does not let a pending flight repopulate cache after dispose', async () => {
     let resolvePending!: (result: unknown) => void;
     let queryCalls = 0;
@@ -456,6 +534,71 @@ describe('remote query controller', () => {
     expect(query.state.stale).toBe(true);
     expect(query.state.error).toBeInstanceOf(TypeError);
     query.dispose();
+    await collection.cleanup();
+  });
+
+  it('does not let a pre-invalidation refresh restore a fresh cache entry', async () => {
+    let resolveRefresh!: (result: unknown) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        if (calls === 1) return envelope(received, 'initial');
+        if (calls === 2) {
+          return await new Promise((resolve) => {
+            resolveRefresh = resolve;
+          });
+        }
+        return envelope(received, 'after-invalidation');
+      },
+    });
+
+    await query.execute(request);
+    const refresh = query.refresh();
+    await vi.waitFor(() => expect(calls).toBe(2));
+    query.invalidate();
+    resolveRefresh(envelope(request, 'stale-refresh'));
+    await refresh;
+
+    expect(query.state.rows[0]?.name).toBe('initial');
+    expect(query.state.stale).toBe(true);
+    await query.execute(request);
+    expect(calls).toBe(3);
+    expect(query.state.rows[0]?.name).toBe('after-invalidation');
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('aborts non-visible work when disposed', async () => {
+    let started = false;
+    let aborted = false;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (_received, options) => {
+        started = true;
+        return await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => {
+              aborted = true;
+              reject(options.signal?.reason);
+            },
+            { once: true },
+          );
+        });
+      },
+    });
+    const pending = query.execute(request, { mode: 'background' });
+    await vi.waitFor(() => expect(started).toBe(true));
+    query.dispose();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(aborted).toBe(true);
     await collection.cleanup();
   });
 

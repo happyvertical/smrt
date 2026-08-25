@@ -70,7 +70,8 @@ hydrating its whole collection. It exposes `rows`, `page`, `total`,
 <script lang="ts">
   import { remoteQuery } from '@happyvertical/smrt-svelte/web';
   const view = remoteQuery(collection, transport);
-  void view.execute(request);
+  // Failures remain available as view.error for reactive rendering.
+  void view.execute(request).catch(() => undefined);
 </script>
 
 {#if view.loading}<p>Loading…</p>{/if}

@@ -74,11 +74,33 @@ interface CacheEntry {
   updatedAt: number;
 }
 
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort()
+        .map((key) => [key, canonicalize(record[key])]),
+    );
+  }
+  return value;
+}
+
 function keyFor(request: SmrtWebDataQueryRequest): string {
   // requestId is correlation metadata, not query identity. Removing it allows
   // refreshes and independently-created equivalent requests to share a result.
   const { requestId: _requestId, ...semantic } = request;
-  return JSON.stringify(semantic);
+  return JSON.stringify(canonicalize(semantic));
+}
+
+function rebindRequestId(
+  result: SmrtWebDataQueryResult,
+  request: SmrtWebDataQueryRequest,
+): SmrtWebDataQueryResult {
+  return result.requestId === request.requestId
+    ? result
+    : { ...result, requestId: request.requestId };
 }
 
 function abortError(): DOMException | Error {
@@ -121,6 +143,7 @@ export function createSmrtWebQuery<TData extends object>(
   const listeners = new Set<(state: SmrtWebQueryState<TData>) => void>();
   let request: SmrtWebDataQueryRequest | undefined;
   let visibleController: AbortController | undefined;
+  const runControllers = new Set<AbortController>();
   let generation = 0;
   let live: SmrtWebQueryLiveSubscription | undefined;
   let liveGeneration = 0;
@@ -147,13 +170,15 @@ export function createSmrtWebQuery<TData extends object>(
     result: SmrtWebDataQueryResult,
     sequence: number,
     updatedAt = Date.now(),
-  ): void => {
-    if (disposed) return;
+  ): boolean => {
+    if (disposed) return false;
     const latest = latestSuccessfulFlight.get(key);
     if (latest === undefined || sequence > latest) {
       latestSuccessfulFlight.set(key, sequence);
       cache.set(key, { result, updatedAt });
+      return true;
     }
+    return false;
   };
   const apply = (
     result: SmrtWebDataQueryResult,
@@ -161,8 +186,11 @@ export function createSmrtWebQuery<TData extends object>(
     updatedAt = Date.now(),
     successSequence?: number,
   ): void => {
-    if (successSequence !== undefined)
-      cacheSuccess(keyFor(candidate), result, successSequence, updatedAt);
+    if (
+      successSequence !== undefined &&
+      !cacheSuccess(keyFor(candidate), result, successSequence, updatedAt)
+    )
+      return;
     publish({
       rows: result.rows as TData[],
       page: pageOf(result),
@@ -180,6 +208,7 @@ export function createSmrtWebQuery<TData extends object>(
     runOptions: SmrtWebQueryRunOptions,
   ): Promise<SmrtWebDataQueryResult> => {
     const controller = new AbortController();
+    runControllers.add(controller);
     const cleanups: Array<() => void> = [];
     const abortFrom = (signal: AbortSignal | undefined): void => {
       if (!signal) return;
@@ -219,6 +248,7 @@ export function createSmrtWebQuery<TData extends object>(
       }
       throw error;
     } finally {
+      runControllers.delete(controller);
       if (timer) clearTimeout(timer);
       for (const cleanup of cleanups) cleanup();
     }
@@ -232,14 +262,16 @@ export function createSmrtWebQuery<TData extends object>(
     const entry = cached(key);
     const fresh =
       entry !== undefined && Date.now() - entry.updatedAt < staleTimeMs;
-    if (mode !== 'visible' && !runOptions.force && fresh) return entry.result;
+    if (mode !== 'visible' && !runOptions.force && fresh)
+      return rebindRequestId(entry.result, candidate);
     if (mode === 'visible' && !runOptions.force && fresh) {
       generation += 1;
       visibleController?.abort(abortError());
       visibleController = undefined;
       request = candidate;
-      apply(entry.result, candidate, entry.updatedAt);
-      return entry.result;
+      const result = rebindRequestId(entry.result, candidate);
+      apply(result, candidate, entry.updatedAt);
+      return result;
     }
     if (mode === 'visible') {
       generation += 1;
@@ -273,7 +305,10 @@ export function createSmrtWebQuery<TData extends object>(
       };
       try {
         const result = await runShared(candidate, key, runOptions);
-        if (current === generation) apply(result, candidate);
+        // A query-scoped live update may have won while this transport was in
+        // flight. Only apply the result when it is still the cache's winner.
+        if (current === generation && cached(key)?.result === result)
+          apply(result, candidate);
         return result;
       } catch (error) {
         if (current === generation) {
@@ -445,14 +480,17 @@ export function createSmrtWebQuery<TData extends object>(
       if (!request) return;
       const key = keyFor(request);
       const entry = cache.get(key);
+      // A response that started before invalidation cannot restore freshness.
+      latestSuccessfulFlight.set(key, ++flightSequence);
       if (entry) cache.set(key, { ...entry, updatedAt: 0 });
-      publish({ ...state, stale: true });
+      publish({ ...state, loading: false, refreshing: false, stale: true });
     },
     dispose() {
       disposed = true;
       generation += 1;
       liveGeneration += 1;
       visibleController?.abort(abortError());
+      for (const controller of runControllers) controller.abort(abortError());
       live?.unsubscribe();
       live = undefined;
       request = undefined;
