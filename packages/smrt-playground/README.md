@@ -35,6 +35,11 @@ That module should:
 
 The shared host discovers these modules and renders them. Package pages do not need to be mounted into the shared playground.
 
+`PlaygroundHost` accepts a qualified entry ID through `selectedEntryId`. When a
+parent changes a non-null controlled selection to `null`, the host restores its
+default module and entry. This keeps reactive route state aligned in both
+directions without remounting the host.
+
 ## Relationship To `smrt playground`
 
 The `smrt playground` CLI commands are the public entry point.

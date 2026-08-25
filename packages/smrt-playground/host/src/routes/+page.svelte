@@ -1,5 +1,6 @@
 <script lang="ts">
 import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+import { page } from '$app/state';
 import { PlaygroundHost } from '@happyvertical/smrt-playground/svelte';
 import { playgroundModules } from 'virtual:smrt-playground/modules';
 </script>
@@ -8,4 +9,5 @@ import { playgroundModules } from 'virtual:smrt-playground/modules';
   title="SMRT Package Playground"
   subtitle="Workspace packages publish their own previews; this host simply discovers and renders them."
   modules={playgroundModules}
+  selectedEntryId={page.url.searchParams.get('entry')}
 />
