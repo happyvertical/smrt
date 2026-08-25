@@ -906,6 +906,92 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('restores the target stale cache snapshot while refreshing it', async () => {
+    const refreshError = new Error('refresh unavailable');
+    let failRefresh = false;
+    const first = {
+      ...request,
+      filter: {
+        kind: 'condition' as const,
+        field: 'name',
+        operator: 'eq' as const,
+        value: 'first',
+      },
+    };
+    const second = {
+      ...request,
+      requestId: 'request-2',
+      filter: {
+        kind: 'condition' as const,
+        field: 'name',
+        operator: 'eq' as const,
+        value: 'second',
+      },
+    };
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(
+      collection,
+      {
+        query: async (received) => {
+          if (failRefresh) throw refreshError;
+          return envelope(
+            received,
+            received.filter === first.filter ? 'first' : 'second',
+          );
+        },
+      },
+      { staleTimeMs: 0 },
+    );
+
+    await query.execute(first);
+    await query.execute(second);
+    failRefresh = true;
+    const refresh = query.execute(first);
+
+    expect(query.state.rows[0]?.name).toBe('first');
+    expect(query.state.result?.requestId).toBe('request-1');
+    expect(query.state.refreshing).toBe(true);
+    await expect(refresh).rejects.toBe(refreshError);
+    expect(query.state.rows[0]?.name).toBe('first');
+    await collection.cleanup();
+  });
+
+  it('reconnects a same-key live query with the latest request id', async () => {
+    const subscribed: SmrtWebDataQueryRequest[] = [];
+    const queried: SmrtWebDataQueryRequest[] = [];
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        queried.push(received);
+        return envelope(received, 'resynced');
+      },
+      subscribe: (received) => {
+        subscribed.push(received);
+        return { unsubscribe: () => undefined };
+      },
+    });
+    const latestRequest = { ...request, requestId: 'request-2' };
+
+    await query.execute(request);
+    const live = query.subscribeLive();
+    await query.execute(latestRequest);
+    live?.reconnect();
+
+    await vi.waitFor(() => expect(subscribed).toHaveLength(2));
+    expect(queried.map(({ requestId }) => requestId)).toEqual([
+      'request-1',
+      'request-2',
+    ]);
+    expect(subscribed[1]?.requestId).toBe('request-2');
+    expect(query.state.result?.requestId).toBe('request-2');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('replaces an active live subscription for a different visible query', async () => {
     const subscriptions: Array<{
       request: SmrtWebDataQueryRequest;

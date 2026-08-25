@@ -301,13 +301,31 @@ export function createSmrtWebQuery<TData extends object>(
         removeCallerAbort = () =>
           signal.removeEventListener('abort', abortCaller);
       }
-      publish({
-        ...state,
-        loading: entry === undefined,
-        refreshing: entry !== undefined,
-        stale: entry !== undefined,
-        error: null,
-      });
+      if (entry) {
+        // A keyed cache entry is a complete snapshot for its query. Do not
+        // carry rows, pagination, or totals over from whichever query was
+        // visible before this stale-while-revalidate request.
+        const cachedResult = rebindRequestId(entry.result, candidate);
+        publish({
+          rows: cachedResult.rows as TData[],
+          page: pageOf(cachedResult),
+          total: cachedResult.total,
+          loading: false,
+          refreshing: true,
+          stale: true,
+          error: null,
+          lastUpdated: entry.updatedAt,
+          result: cachedResult,
+        });
+      } else {
+        publish({
+          ...state,
+          loading: true,
+          refreshing: false,
+          stale: false,
+          error: null,
+        });
+      }
       // A visible run is a successor boundary: it must never adopt an older
       // same-key shared promise whose signal was just aborted above.
       runOptions = {
@@ -486,7 +504,13 @@ export function createSmrtWebQuery<TData extends object>(
       disconnect();
       // Refresh the exact page first, then replace the old subscription. This
       // avoids reconnecting against a stale cursor or cached snapshot.
-      void execute(candidate, { mode: 'visible', force: true })
+      // A same-key visible execution can update only correlation metadata.
+      // Reconnect must retain that most recent request id instead of reviving
+      // the one captured by the original subscription.
+      const reconnectRequest = request;
+      if (!reconnectRequest || keyFor(reconnectRequest) !== keyFor(candidate))
+        return;
+      void execute(reconnectRequest, { mode: 'visible', force: true })
         .catch(() => undefined)
         .finally(() => {
           if (
