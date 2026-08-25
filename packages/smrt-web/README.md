@@ -9,6 +9,12 @@ Use it for browser-side collection state, shared request deduplication, offline
 writes, persisted read caches, and live invalidation. Svelte bindings live in
 [`@happyvertical/smrt-svelte/web`](../smrt-svelte/README.md).
 
+Query-backed surfaces can use `createSmrtWebQuery(collection, transport)` to
+fetch one canonical bounded page. Visible runs update state; `background`,
+`prefetch`, and `silent` runs stay out of visible state. The controller keeps
+stale rows available while refreshing, cancels superseded visible runs, and can
+attach a query-scoped live subscription.
+
 ## Installation
 
 ```bash
@@ -119,6 +125,7 @@ core.
 | Group | Main exports |
 | --- | --- |
 | Collections | `createSmrtCollection`, `createSmrtWebClient`, `newLocalId` |
+| Remote queries | `createSmrtWebQuery`, `SmrtWebQueryTransport` |
 | HTTP | `createDefinitionFetchers`, `unwrapListResult`, `unwrapItemResult` |
 | Offline | `offlineOutbox`, `getOutboxHandle` |
 | Persistence | `persistCollection`, `wipeDurableStore` |

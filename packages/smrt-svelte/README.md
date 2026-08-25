@@ -60,6 +60,24 @@ state.
 
 ## Usage
 
+### Query-backed data surfaces
+
+Use the web binding when a table should render one remote page instead of
+hydrating its whole collection. It exposes `rows`, `page`, `total`,
+`loading`, `refreshing`, `stale`, `error`, `retry`, and `lastUpdated`.
+
+```svelte
+<script lang="ts">
+  import { remoteQuery } from '@happyvertical/smrt-svelte/web';
+  const view = remoteQuery(collection, transport);
+  // Failures remain available as view.error for reactive rendering.
+  void view.execute(request).catch(() => undefined);
+</script>
+
+{#if view.loading}<p>Loading…</p>{/if}
+{#each view.rows as row (row.id)}<div>{row.name}</div>{/each}
+```
+
 ### Provider Setup
 
 ```svelte

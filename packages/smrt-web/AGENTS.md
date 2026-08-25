@@ -41,6 +41,7 @@ module you are editing. This file keeps what holds in every module.
 | `webmcp.ts` | framework-agnostic WebMCP registrar; registers generated collection tools and routes mutations through shared smrt-web cache state | — |
 | `persistence/` + `update-state.ts` | the read-cache rehydrate capability and the framework-free `updateAvailable` primitive (bundle + contract signals) | [agents/version-persistence.md](agents/version-persistence.md) |
 | `data-query.ts` | dependency-free browser mirror and defensive response normalizer for the canonical bounded data-query envelope (#2444) | — |
+| `remote-query.ts` | query-shaped remote pages over a `SmrtWebCollection`, with keyed stale cache, execution modes, cancellation/latest-query-wins, and optional query-scoped live subscriptions (#2445) | — |
 
 ## The engine-absorption boundary (ratified conditions, #1761)
 

@@ -30,6 +30,10 @@ export {
   liveCollection,
 } from './live-collection.svelte.js';
 export {
+  type RemoteQueryBinding,
+  remoteQuery,
+} from './remote-query.svelte.js';
+export {
   type UpdateAvailableView,
   type UseUpdateAvailableOptions,
   useUpdateAvailable,
