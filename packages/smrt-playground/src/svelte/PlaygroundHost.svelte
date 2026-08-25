@@ -20,6 +20,10 @@ export interface Props {
   title?: string;
   subtitle?: string;
   embedded?: boolean;
+  /**
+   * Qualified entry ID controlled by the parent. Clearing a previously
+   * controlled selection restores the playground's default selection.
+   */
   selectedEntryId?: string | null;
   hideEntryList?: boolean;
 }
@@ -45,6 +49,7 @@ let selectedModuleName = $state<string | null>(null);
 let selectedEntryId = $state<string | null>(null);
 let selectedMode = $state<SmrtPlaygroundMode>('mock');
 let isHydrated = $state(false);
+let previousControlledSelectedEntryId: string | null = null;
 const inheritedThemeContext = tryGetThemeContext();
 
 onMount(() => {
@@ -133,6 +138,11 @@ const foundationGroups = $derived.by(() => {
 });
 
 $effect(() => {
+  const controlledSelectionWasCleared =
+    previousControlledSelectedEntryId !== null &&
+    controlledSelectedEntryId === null;
+  previousControlledSelectedEntryId = controlledSelectedEntryId;
+
   const controlledModule = controlledSelectedEntryId
     ? (orderedModules.find((module) =>
         module.entries.some(
@@ -144,6 +154,16 @@ $effect(() => {
   if (!firstModule) {
     selectedModuleName = null;
     selectedEntryId = null;
+    return;
+  }
+
+  if (controlledSelectionWasCleared) {
+    selectedModuleName = firstModule.packageName;
+    selectedEntryId =
+      firstModule.packageName === foundationPackageName || hideEntryList
+        ? (firstModule.entries[0]?.qualifiedId ?? null)
+        : null;
+    selectedMode = firstModule.entries[0]?.availableModes[0] ?? 'mock';
     return;
   }
 

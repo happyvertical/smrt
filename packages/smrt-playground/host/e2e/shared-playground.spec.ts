@@ -16,6 +16,59 @@ function trackPlaygroundErrors(page: Page) {
   return errors;
 }
 
+async function followClientLink(page: Page, href: string) {
+  await page.evaluate((target) => {
+    document.querySelector('[data-testid="client-navigation"]')?.remove();
+    const link = document.createElement('a');
+    link.dataset.testid = 'client-navigation';
+    link.href = target;
+    link.textContent = 'Navigate';
+    document.body.append(link);
+  }, href);
+  await page.locator('[data-testid="client-navigation"]').click();
+}
+
+test('controlled entry follows same-page query navigation in both directions', async ({
+  page,
+}) => {
+  const errors = trackPlaygroundErrors(page);
+  const controlledEntryId =
+    '@happyvertical/smrt-content:content-editor';
+
+  await page.goto('/');
+  await expect(page.locator('[data-hydrated="true"]')).toBeVisible();
+  const mountedHost = await page.locator('[data-hydrated="true"]').elementHandle();
+  expect(mountedHost).not.toBeNull();
+  await expect(page.getByTestId('playground-selected-package')).toHaveText(
+    '@happyvertical/smrt-ui',
+  );
+
+  await followClientLink(
+    page,
+    `/?entry=${encodeURIComponent(controlledEntryId)}`,
+  );
+  await expect(page).toHaveURL(
+    new RegExp(`entry=${encodeURIComponent(controlledEntryId)}`),
+  );
+  await expect(page.getByTestId('playground-preview-title')).toHaveText(
+    'Content Editor',
+  );
+  expect(await mountedHost?.evaluate((element) => element.isConnected)).toBe(
+    true,
+  );
+
+  await followClientLink(page, '/');
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId('playground-selected-package')).toHaveText(
+    '@happyvertical/smrt-ui',
+  );
+  expect(await mountedHost?.evaluate((element) => element.isConnected)).toBe(
+    true,
+  );
+
+  expect(errors).toEqual([]);
+});
+
 test('shared host renders content reference previews and governance modes', async ({
   page,
 }) => {
