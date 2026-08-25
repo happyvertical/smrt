@@ -522,6 +522,47 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('does not surface an obsolete live validation error on a newer request', async () => {
+    let onLive: ((value: unknown) => void) | undefined;
+    let resolveNew!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        if (calls === 1) return envelope(received, 'initial');
+        return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+          resolveNew = resolve;
+        });
+      },
+      subscribe: (_received, callback) => {
+        onLive = callback;
+        return { unsubscribe: () => undefined };
+      },
+    });
+    const nextRequest = {
+      ...request,
+      requestId: 'request-2',
+      page: { kind: 'offset' as const, offset: 10, limit: 10 },
+    };
+
+    await query.execute(request);
+    query.subscribeLive();
+    onLive?.({ invalid: true });
+    const newer = query.execute(nextRequest);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(query.state.error).toBeNull();
+    resolveNew(envelope(nextRequest, 'newer'));
+    await newer;
+    expect(query.state.rows[0]?.name).toBe('newer');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('does not let a pending flight repopulate cache after dispose', async () => {
     let resolvePending!: (result: unknown) => void;
     let queryCalls = 0;

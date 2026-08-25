@@ -385,6 +385,7 @@ export function createSmrtWebQuery<TData extends object>(
     const running = runTransport(candidate, controller).then((result) => {
       // A failed or aborted successor must not suppress an older valid result,
       // but a successful successor must win over any later predecessor.
+      if (controller.signal.aborted) throw abortError();
       cacheSuccess(key, result, flight);
       return result;
     });
@@ -467,7 +468,9 @@ export function createSmrtWebQuery<TData extends object>(
               active &&
               !disposed &&
               currentGeneration === liveGeneration &&
-              connection === connectionGeneration
+              connection === connectionGeneration &&
+              request &&
+              keyFor(request) === keyFor(candidate)
             )
               publish({ ...state, error });
           });
