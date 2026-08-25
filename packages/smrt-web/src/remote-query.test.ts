@@ -732,6 +732,70 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('keeps live updates after rapid visible query changes', async () => {
+    const subscriptions: Array<{
+      request: SmrtWebDataQueryRequest;
+      callback: (value: unknown) => void;
+    }> = [];
+    let calls = 0;
+    let unsubscribed = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received, options) => {
+        calls += 1;
+        if (calls === 2) {
+          return await new Promise<never>((_resolve, reject) => {
+            options?.signal?.addEventListener(
+              'abort',
+              () => reject(options.signal?.reason),
+              { once: true },
+            );
+          });
+        }
+        return envelope(received, calls === 1 ? 'initial' : 'latest');
+      },
+      subscribe: (received, callback) => {
+        subscriptions.push({ request: received, callback });
+        return {
+          unsubscribe: () => {
+            unsubscribed += 1;
+          },
+        };
+      },
+    });
+    const intermediateRequest = {
+      ...request,
+      requestId: 'request-2',
+      page: { kind: 'offset' as const, offset: 10, limit: 10 },
+    };
+    const latestRequest = {
+      ...request,
+      requestId: 'request-3',
+      page: { kind: 'offset' as const, offset: 20, limit: 10 },
+    };
+
+    await query.execute(request);
+    query.subscribeLive();
+    const intermediate = query
+      .execute(intermediateRequest)
+      .catch(() => undefined);
+    await vi.waitFor(() => expect(calls).toBe(2));
+    await query.execute(latestRequest);
+    await intermediate;
+
+    expect(unsubscribed).toBe(1);
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions[1]?.request).toEqual(latestRequest);
+    subscriptions[1]?.callback(envelope(latestRequest, 'latest-live'));
+    await vi.waitFor(() =>
+      expect(query.state.rows[0]?.name).toBe('latest-live'),
+    );
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('does not let a delayed live update overtake a newer explicit fetch', async () => {
     let onResult: ((value: unknown) => void) | undefined;
     let resolveLive!: (result: ReturnType<typeof envelope>) => void;

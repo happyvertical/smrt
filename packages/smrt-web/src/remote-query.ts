@@ -153,6 +153,7 @@ export function createSmrtWebQuery<TData extends object>(
   const runControllers = new Set<AbortController>();
   let generation = 0;
   let live: SmrtWebQueryLiveSubscription | undefined;
+  let liveRequested = false;
   let liveGeneration = 0;
   let disposed = false;
   let state: SmrtWebQueryState<TData> = {
@@ -247,11 +248,13 @@ export function createSmrtWebQuery<TData extends object>(
       throw abortError();
     // A live connection is scoped to the complete semantic query, not merely
     // the controller. Preserve it for a request-id rebinding, but replace it
-    // when visible state moves to a different page, filter, or sort.
-    const previousLive =
-      mode === 'visible' && request && live && keyFor(request) !== key
-        ? live
-        : undefined;
+    // when visible state moves to a different page, filter, or sort. Remember
+    // that live updates were requested while an earlier replacement is still
+    // in flight, so rapid visible changes cannot lose the subscription.
+    const shouldRebindLive =
+      mode === 'visible' &&
+      liveRequested &&
+      (!live || (request !== undefined && keyFor(request) !== key));
     const entry = cached(key);
     const fresh =
       entry !== undefined && Date.now() - entry.updatedAt < staleTimeMs;
@@ -262,10 +265,13 @@ export function createSmrtWebQuery<TData extends object>(
       visibleController?.abort(abortError());
       visibleController = undefined;
       request = candidate;
-      previousLive?.unsubscribe();
+      if (shouldRebindLive) {
+        live?.unsubscribe();
+        liveRequested = true;
+      }
       const result = rebindRequestId(entry.result, candidate);
       apply(result, candidate, entry.updatedAt);
-      if (previousLive && !live) subscribeLive();
+      if (shouldRebindLive && !live) subscribeLive();
       return result;
     }
     if (mode === 'visible') {
@@ -274,7 +280,10 @@ export function createSmrtWebQuery<TData extends object>(
       const invocationController = new AbortController();
       visibleController = invocationController;
       request = candidate;
-      previousLive?.unsubscribe();
+      if (shouldRebindLive) {
+        live?.unsubscribe();
+        liveRequested = true;
+      }
       const current = generation;
       const signal = runOptions.signal;
       let removeCallerAbort: (() => void) | undefined;
@@ -308,7 +317,7 @@ export function createSmrtWebQuery<TData extends object>(
         if (current === generation) {
           if (cached(key)?.result === result) apply(result, candidate);
           else publish({ ...state, loading: false, refreshing: false });
-          if (previousLive && !live) subscribeLive();
+          if (shouldRebindLive && !live) subscribeLive();
         }
         return result;
       } catch (error) {
@@ -510,7 +519,10 @@ export function createSmrtWebQuery<TData extends object>(
       liveGeneration += 1;
       controller?.abort();
       subscription.unsubscribe();
-      if (live === handle) live = undefined;
+      if (live === handle) {
+        live = undefined;
+        liveRequested = false;
+      }
     };
     const reconnect = (): void => {
       if (!active || disposed || currentGeneration !== liveGeneration) return;
@@ -537,6 +549,7 @@ export function createSmrtWebQuery<TData extends object>(
     handle = { unsubscribe, reconnect };
     connect();
     live = handle;
+    liveRequested = true;
     return handle;
   };
   return {
@@ -572,6 +585,7 @@ export function createSmrtWebQuery<TData extends object>(
       for (const controller of runControllers) controller.abort(abortError());
       live?.unsubscribe();
       live = undefined;
+      liveRequested = false;
       request = undefined;
       listeners.clear();
       cache.clear();
