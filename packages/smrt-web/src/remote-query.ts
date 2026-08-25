@@ -245,6 +245,13 @@ export function createSmrtWebQuery<TData extends object>(
     const key = keyFor(candidate);
     if (runOptions.signal?.aborted || (runOptions.deadlineMs ?? 1) <= 0)
       throw abortError();
+    // A live connection is scoped to the complete semantic query, not merely
+    // the controller. Preserve it for a request-id rebinding, but replace it
+    // when visible state moves to a different page, filter, or sort.
+    const previousLive =
+      mode === 'visible' && request && live && keyFor(request) !== key
+        ? live
+        : undefined;
     const entry = cached(key);
     const fresh =
       entry !== undefined && Date.now() - entry.updatedAt < staleTimeMs;
@@ -255,8 +262,10 @@ export function createSmrtWebQuery<TData extends object>(
       visibleController?.abort(abortError());
       visibleController = undefined;
       request = candidate;
+      previousLive?.unsubscribe();
       const result = rebindRequestId(entry.result, candidate);
       apply(result, candidate, entry.updatedAt);
+      if (previousLive && !live) subscribeLive();
       return result;
     }
     if (mode === 'visible') {
@@ -265,6 +274,7 @@ export function createSmrtWebQuery<TData extends object>(
       const invocationController = new AbortController();
       visibleController = invocationController;
       request = candidate;
+      previousLive?.unsubscribe();
       const current = generation;
       const signal = runOptions.signal;
       let removeCallerAbort: (() => void) | undefined;
@@ -298,6 +308,7 @@ export function createSmrtWebQuery<TData extends object>(
         if (current === generation) {
           if (cached(key)?.result === result) apply(result, candidate);
           else publish({ ...state, loading: false, refreshing: false });
+          if (previousLive && !live) subscribeLive();
         }
         return result;
       } catch (error) {

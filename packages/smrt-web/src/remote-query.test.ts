@@ -691,6 +691,47 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('replaces an active live subscription for a different visible query', async () => {
+    const subscriptions: Array<{
+      request: SmrtWebDataQueryRequest;
+      callback: (value: unknown) => void;
+    }> = [];
+    let unsubscribed = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => envelope(received, 'initial'),
+      subscribe: (received, callback) => {
+        subscriptions.push({ request: received, callback });
+        return {
+          unsubscribe: () => {
+            unsubscribed += 1;
+          },
+        };
+      },
+    });
+    const nextRequest = {
+      ...request,
+      requestId: 'request-2',
+      page: { kind: 'offset' as const, offset: 10, limit: 10 },
+    };
+
+    await query.execute(request);
+    query.subscribeLive();
+    await query.execute(nextRequest);
+
+    expect(unsubscribed).toBe(1);
+    expect(subscriptions).toHaveLength(2);
+    expect(subscriptions[1]?.request).toEqual(nextRequest);
+    subscriptions[0]?.callback(envelope(request, 'old-live'));
+    subscriptions[1]?.callback(envelope(nextRequest, 'new-live'));
+
+    await vi.waitFor(() => expect(query.state.rows[0]?.name).toBe('new-live'));
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('does not let a delayed live update overtake a newer explicit fetch', async () => {
     let onResult: ((value: unknown) => void) | undefined;
     let resolveLive!: (result: ReturnType<typeof envelope>) => void;
