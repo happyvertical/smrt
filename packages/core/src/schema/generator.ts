@@ -65,6 +65,13 @@ interface RegistryField {
   _meta?: FieldMeta;
 }
 
+function getForeignKeyConstraintEngines(
+  field: RegistryField,
+): Array<'postgres' | 'sqlite' | 'duckdb' | 'json'> | undefined {
+  const constraint = field._meta?.constraint;
+  return typeof constraint === 'object' ? [...constraint.engines] : undefined;
+}
+
 type SchemaGeneratorConfig = {
   /**
    * The table's resolved conflict target. Registry callers pass
@@ -289,6 +296,9 @@ export class SchemaGenerator {
         column: this.toSnakeCase(targetColumn),
         onDelete: action,
         onUpdate: 'CASCADE',
+        ...(getForeignKeyConstraintEngines(field)
+          ? { engines: getForeignKeyConstraintEngines(field) }
+          : {}),
       };
     }
   }
@@ -988,6 +998,9 @@ export class SchemaGenerator {
           referencesColumn: columnDef.foreignKey.column,
           onDelete: columnDef.foreignKey.onDelete,
           onUpdate: columnDef.foreignKey.onUpdate,
+          ...(columnDef.foreignKey.engines
+            ? { engines: columnDef.foreignKey.engines }
+            : {}),
         });
       }
     }
@@ -1159,6 +1172,9 @@ export class SchemaGenerator {
             column: 'id',
             onDelete: onDeleteAction || 'CASCADE',
             onUpdate: 'CASCADE',
+            ...(getForeignKeyConstraintEngines(field)
+              ? { engines: getForeignKeyConstraintEngines(field) }
+              : {}),
           };
         }
       }
@@ -1501,6 +1517,9 @@ export class SchemaGenerator {
               column: 'id',
               onDelete: onDeleteAction || 'CASCADE',
               onUpdate: 'CASCADE',
+              ...(getForeignKeyConstraintEngines(field)
+                ? { engines: getForeignKeyConstraintEngines(field) }
+                : {}),
             };
           }
         }

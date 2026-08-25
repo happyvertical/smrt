@@ -350,6 +350,99 @@ describe('deterministic creation planning (#2413)', () => {
       ),
     ).toThrow(/self-referential/);
   });
+
+  it('honors an explicit physical-constraint engine allowlist without weakening other self-references (#2504)', () => {
+    const portableHierarchy = schema('event_nodes', {
+      column: 'parent_id',
+      table: 'event_nodes',
+    });
+    const parentForeignKey = portableHierarchy.columns.parent_id.foreignKey;
+    if (!parentForeignKey)
+      throw new Error('fixture parent foreign key missing');
+    portableHierarchy.columns.parent_id.foreignKey = {
+      ...parentForeignKey,
+      engines: ['postgres', 'sqlite'],
+    };
+    portableHierarchy.foreignKeys = schemaForeignKeys({
+      columns: portableHierarchy.columns,
+      foreignKeys: [],
+    });
+
+    for (const engine of ['postgres', 'sqlite'] as const) {
+      expect(
+        generateDDLForEngine(portableHierarchy, engine).createTable,
+      ).toContain('FOREIGN KEY ("parent_id")');
+      expect(
+        planForeignKeyCreation([portableHierarchy], engine).schemas[0]
+          .foreignKeys,
+      ).toHaveLength(1);
+    }
+    for (const engine of ['duckdb', 'json'] as const) {
+      expect(
+        generateDDLForEngine(portableHierarchy, engine).createTable,
+      ).not.toContain('FOREIGN KEY ("parent_id")');
+      expect(
+        planForeignKeyCreation([portableHierarchy], engine).schemas[0]
+          .foreignKeys,
+      ).toHaveLength(1);
+    }
+
+    expect(() =>
+      generateDDLForEngine(
+        schema('arbitrary_nodes', {
+          column: 'parent_id',
+          table: 'arbitrary_nodes',
+        }),
+        'duckdb',
+      ),
+    ).toThrow(/self-referential/);
+  });
+
+  it('excludes engine-disabled relationships from dependency planning (#2504)', () => {
+    const child = schema('a_children', {
+      column: 'parent_id',
+      table: 'z_parents',
+    });
+    const childForeignKey = child.columns.parent_id.foreignKey;
+    if (!childForeignKey) throw new Error('fixture foreign key missing');
+    child.columns.parent_id.foreignKey = {
+      ...childForeignKey,
+      engines: ['postgres', 'sqlite'],
+    };
+    child.foreignKeys = schemaForeignKeys({
+      columns: child.columns,
+      foreignKeys: [],
+    });
+    const parent = schema('z_parents');
+
+    expect(
+      planForeignKeyCreation([child, parent], 'postgres').schemas.map(
+        (item) => item.tableName,
+      ),
+    ).toEqual(['z_parents', 'a_children']);
+    expect(
+      planForeignKeyCreation([child, parent], 'duckdb').schemas.map(
+        (item) => item.tableName,
+      ),
+    ).toEqual(['a_children', 'z_parents']);
+  });
+
+  it('fails closed for empty or unknown physical-constraint engine allowlists', () => {
+    const invalid = schema('children', {
+      column: 'parent_id',
+      table: 'parents',
+    });
+
+    invalid.foreignKeys[0].engines = [];
+    expect(() => generateDDLForEngine(invalid, 'duckdb')).toThrow(
+      /invalid physical constraint engine allowlist/,
+    );
+
+    invalid.foreignKeys[0].engines = ['mysql'] as never;
+    expect(() => planForeignKeyCreation([invalid], 'postgres')).toThrow(
+      /invalid physical constraint engine allowlist/,
+    );
+  });
 });
 
 describe('SQLite database enforcement (#2413)', () => {
@@ -507,6 +600,33 @@ describe('existing-table orphan safety (#2413)', () => {
       },
     };
   }
+
+  it('does not add an engine-disabled constraint to an existing DuckDB table (#2504)', async () => {
+    const portableChild = structuredClone(child);
+    portableChild.foreignKeys[0].engines = ['postgres', 'sqlite'];
+    if (!portableChild.columns.parent_id.foreignKey) {
+      throw new Error('fixture foreign key missing');
+    }
+    portableChild.columns.parent_id.foreignKey.engines = ['postgres', 'sqlite'];
+    const mock = postgresMock(false);
+    const query = mock.db.query;
+    mock.db.query = async (sql: string) => {
+      if (sql.includes('sqlite_master')) {
+        mock.queries.push(sql);
+        return { rows: [{ name: 'children' }] } as never;
+      }
+      return query(sql);
+    };
+
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'duckdb',
+    }).compare({ children: portableChild });
+
+    expect(
+      diff.changes.some((change) => change.type === 'add_foreign_key'),
+    ).toBe(false);
+    expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(false);
+  });
 
   it('probes the exact child/parent target before adding and validating on PostgreSQL', async () => {
     const mock = postgresMock(false);

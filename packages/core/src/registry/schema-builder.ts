@@ -462,6 +462,9 @@ function applyContributorForeignKeys(
       column: toSnakeCase(targetColumn),
       onDelete: action,
       onUpdate: 'CASCADE',
+      ...(typeof field._meta?.constraint === 'object'
+        ? { engines: [...field._meta.constraint.engines] }
+        : {}),
     };
   }
 }
@@ -1083,6 +1086,9 @@ export function fieldsToColumns(
                 fieldMeta.onUpdate,
                 `${fieldName} ON UPDATE`,
               ),
+        ...(typeof fieldDef._meta?.constraint === 'object'
+          ? { engines: [...fieldDef._meta.constraint.engines] }
+          : {}),
       };
     }
 

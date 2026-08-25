@@ -685,6 +685,14 @@ and indexes but deliberately emits no physical constraint, avoiding circular
 package DDL. Tenant markers follow the same non-constraint rule because a
 tenant is a scope, not an ownership edge.
 
+For a same-package relationship whose semantics are portable but whose physical
+constraint shape is not, `@foreignKey(Target, { constraint: { engines: [...] } })`
+is the public exception. The allowlist scopes physical DDL and dependency
+planning only. Relationship metadata, UUID representation, derived indexes, and
+the application delete rail remain canonical on every engine. Empty or unknown
+engine lists fail closed; unannotated unsupported DuckDB cycles and actions keep
+their actionable refusal.
+
 Every schema creation entry point uses the same deterministic dependency
 planner. Parents are created before children. SQLite keeps cycle constraints
 inline because it can create them safely. PostgreSQL creates mutually dependent

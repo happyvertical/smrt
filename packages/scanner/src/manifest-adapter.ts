@@ -72,6 +72,10 @@ type FieldDecoratorOptions = {
   unique?: boolean;
   /** crossPackageRef opt-in save-time validation */
   validate?: boolean;
+  /** Physical foreign-key constraint engine allowlist. */
+  constraint?:
+    | boolean
+    | { engines: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'> };
   /** manyToMany junction table name */
   through?: string;
   /** manyToMany override of the source-side join column */
@@ -895,6 +899,7 @@ export class ManifestAdapter {
         'unique',
         'description',
         'default',
+        'constraint',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

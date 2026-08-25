@@ -34,6 +34,8 @@ export interface ColumnDefinition {
     column: string;
     onDelete?: ForeignKeyAction;
     onUpdate?: ForeignKeyAction;
+    /** Engines on which the physical constraint is emitted. */
+    engines?: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
   };
   check?: string; // CHECK constraint
   description?: string;
@@ -118,6 +120,8 @@ export interface ForeignKeyDefinition {
   referencesColumn: string;
   onDelete?: ForeignKeyAction;
   onUpdate?: ForeignKeyAction;
+  /** Engines on which the physical constraint is emitted. */
+  engines?: Array<'postgres' | 'sqlite' | 'duckdb' | 'json'>;
 }
 
 export interface SchemaDefinition {

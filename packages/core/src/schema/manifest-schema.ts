@@ -147,6 +147,9 @@ export function manifestSchemaToDefinition(
             referencesColumn: definition.foreignKey.column,
             onDelete: definition.foreignKey.onDelete,
             onUpdate: definition.foreignKey.onUpdate,
+            ...(definition.foreignKey.engines
+              ? { engines: definition.foreignKey.engines }
+              : {}),
           },
         ]
       : [],

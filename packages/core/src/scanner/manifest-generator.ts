@@ -926,6 +926,9 @@ export class ManifestGenerator {
                   column: targetColumn,
                   onDelete: action,
                   onUpdate: 'CASCADE' as const,
+                  ...(typeof field._meta?.constraint === 'object'
+                    ? { engines: [...field._meta.constraint.engines] }
+                    : {}),
                 }
               : undefined,
           };
@@ -1026,6 +1029,9 @@ export class ManifestGenerator {
                 referencesColumn: definition.foreignKey.column,
                 onDelete: definition.foreignKey.onDelete,
                 onUpdate: definition.foreignKey.onUpdate,
+                ...(definition.foreignKey.engines
+                  ? { engines: definition.foreignKey.engines }
+                  : {}),
               },
             ]
           : [],

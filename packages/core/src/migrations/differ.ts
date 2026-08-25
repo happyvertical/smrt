@@ -13,7 +13,7 @@ import {
   renderForeignKeyConstraint,
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
-  schemaForeignKeys,
+  schemaForeignKeysForEngine,
 } from '../schema/foreign-key-ddl.js';
 import {
   normalizeForeignKeyAction,
@@ -574,7 +574,10 @@ export class SchemaComparer {
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
     const liveForeignKeys = dbSchema.foreignKeys || [];
-    for (const foreignKey of schemaForeignKeys(manifest)) {
+    for (const foreignKey of schemaForeignKeysForEngine(
+      manifest,
+      this.engine,
+    )) {
       const expectedDelete =
         foreignKey.onDelete === undefined
           ? 'NO ACTION'

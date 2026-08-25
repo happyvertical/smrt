@@ -1,3 +1,4 @@
+import type { DatabaseEngine } from './ddl/types.js';
 import { requireForeignKeyAction } from './foreign-key-policy.js';
 import { shortenIdentifier } from './index-utils.js';
 import { quoteIdentifier } from './sql-identifiers.js';
@@ -83,7 +84,68 @@ export function schemaForeignKeys(
         referencesColumn: definition.foreignKey.column,
         onDelete: definition.foreignKey.onDelete,
         onUpdate: definition.foreignKey.onUpdate,
+        ...(definition.foreignKey.engines
+          ? { engines: definition.foreignKey.engines }
+          : {}),
       },
     ];
   });
+}
+
+/** Return only physical constraints explicitly enabled for an engine. */
+export function schemaForeignKeysForEngine(
+  schema: Pick<SchemaDefinition, 'columns'> &
+    Partial<Pick<SchemaDefinition, 'foreignKeys'>>,
+  engine: DatabaseEngine,
+): ForeignKeyDefinition[] {
+  return schemaForeignKeys(schema).filter((foreignKey) => {
+    if (foreignKey.engines === undefined) return true;
+
+    const validEngines = new Set<DatabaseEngine>([
+      'postgres',
+      'sqlite',
+      'duckdb',
+      'json',
+    ]);
+    if (
+      foreignKey.engines.length === 0 ||
+      foreignKey.engines.some(
+        (declaredEngine) => !validEngines.has(declaredEngine),
+      )
+    ) {
+      throw new Error(
+        `[DDL:${engine}] Foreign key ${foreignKey.column} declares an invalid physical constraint engine allowlist. Use one or more of: postgres, sqlite, duckdb, json.`,
+      );
+    }
+
+    return foreignKey.engines.includes(engine);
+  });
+}
+
+/** Return declared schema dependencies after excluding engine-disabled FKs. */
+export function schemaDependenciesForEngine(
+  schema: Pick<SchemaDefinition, 'columns'> &
+    Partial<Pick<SchemaDefinition, 'dependencies' | 'foreignKeys'>>,
+  engine: DatabaseEngine,
+): string[] {
+  const foreignKeys = schemaForeignKeys(schema);
+  const enabledForeignKeys = schemaForeignKeysForEngine(schema, engine);
+  const enabledTargets = new Set(
+    enabledForeignKeys.map((foreignKey) => foreignKey.referencesTable),
+  );
+  const disabledTargets = new Set(
+    foreignKeys
+      .filter((foreignKey) => !enabledForeignKeys.includes(foreignKey))
+      .map((foreignKey) => foreignKey.referencesTable),
+  );
+
+  return Array.from(
+    new Set([
+      ...(schema.dependencies ?? []).filter(
+        (dependency) =>
+          !disabledTargets.has(dependency) || enabledTargets.has(dependency),
+      ),
+      ...enabledTargets,
+    ]),
+  );
 }
