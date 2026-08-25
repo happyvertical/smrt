@@ -541,7 +541,7 @@ describe('principal-bound report data-surface tools', () => {
     }
   });
 
-  it('requires an exact successful browser acknowledgement and rejects stale acknowledgements', async () => {
+  it('accepts bound post-command browser acknowledgements and rejects stale or malformed acknowledgements', async () => {
     let command: Record<string, unknown> | undefined;
     const visible = {
       send: vi.fn(async (value: Record<string, unknown>) => {
@@ -550,7 +550,7 @@ describe('principal-bound report data-surface tools', () => {
           commandId: value.commandId,
           identity: value.identity,
           ok: true,
-          revision: value.expectedRevision,
+          revision: Number(value.expectedRevision) + 1,
         };
       }),
     };
@@ -565,7 +565,7 @@ describe('principal-bound report data-surface tools', () => {
         version: 1,
         requestId: 'visible-report-query',
         mode: 'rows',
-        projection: ['id'],
+        projection: ['revenue'],
       },
       execution: 'visible',
       expectedRevision: 7,
@@ -575,8 +575,17 @@ describe('principal-bound report data-surface tools', () => {
       args,
       db: undefined,
     });
-    expect(result).toMatchObject({ browser: { ok: true, revision: 7 } });
-    expect(command).toMatchObject({ expectedRevision: 7 });
+    expect(result).toMatchObject({ browser: { ok: true, revision: 8 } });
+    expect(command).toMatchObject({
+      expectedRevision: 7,
+      payload: {
+        request: {
+          projection: ['id', 'revenue'],
+          sort: [{ field: 'id', direction: 'asc' }],
+          page: { kind: 'offset', offset: 0 },
+        },
+      },
+    });
 
     visible.send = vi.fn(async (value: Record<string, unknown>) => ({
       commandId: value.commandId,
@@ -590,6 +599,22 @@ describe('principal-bound report data-surface tools', () => {
         args: {
           ...args,
           request: { ...args.request, requestId: 'stale-visible' },
+        },
+        db: undefined,
+      }),
+    ).rejects.toBeInstanceOf(ReportDataSurfaceVisibleError);
+
+    visible.send = vi.fn(async (value: Record<string, unknown>) => ({
+      commandId: value.commandId,
+      ok: true,
+      revision: 8,
+    }));
+    await expect(
+      tools.get(REPORT_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          ...args,
+          request: { ...args.request, requestId: 'malformed-visible' },
         },
         db: undefined,
       }),

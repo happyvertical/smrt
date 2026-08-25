@@ -181,8 +181,9 @@ carry principal, tenant, or report-constructor authority.
   effective permissions. This lets agents distinguish dimensions/buckets
   (`where`) from measures (`having`) without exposing hidden columns or
   authority.
-- Silent reads do not change browser state; visible reads require a host's exact
-  acknowledged revision; background requests contain no principal or tenant
+- Silent reads do not change browser state; visible reads require a host-bound
+  acknowledgement whose post-command revision is not older than the requested
+  compare-and-swap revision; background requests contain no principal or tenant
   payload.
 - Read results request the tenant-safe report lifecycle whenever an
   authenticated database is available, so `freshness` and the redacted

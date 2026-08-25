@@ -9,7 +9,10 @@
 
 import { randomUUID } from 'node:crypto';
 import type { AITool } from '@happyvertical/ai';
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  normalizeDataQueryRequest,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import {
   type AppliedReportExport,
   type AppliedReportRefresh,
@@ -458,15 +461,29 @@ async function dataSurfaceCatalog(
 }
 
 function commandResultIsBound(
-  ack: ReportDataSurfaceVisibleAck,
+  ack: unknown,
   command: ReportDataSurfaceVisibleCommand,
-): boolean {
+): ack is ReportDataSurfaceVisibleAck {
+  if (typeof ack !== 'object' || ack === null) return false;
+  const value = ack as Record<string, unknown>;
+  if (typeof value.identity !== 'object' || value.identity === null) {
+    return false;
+  }
+  const identity = value.identity as Record<string, unknown>;
   return (
-    ack.commandId === command.commandId &&
-    ack.identity.surfaceId === command.identity.surfaceId &&
-    ack.identity.kind === command.identity.kind &&
-    ack.revision === command.expectedRevision
+    value.commandId === command.commandId &&
+    identity.surfaceId === command.identity.surfaceId &&
+    identity.kind === command.identity.kind &&
+    typeof value.revision === 'number' &&
+    Number.isSafeInteger(value.revision) &&
+    value.revision >= command.expectedRevision
   );
+}
+
+function commandFailureReason(ack: unknown): string | undefined {
+  if (typeof ack !== 'object' || ack === null) return undefined;
+  const reason = (ack as Record<string, unknown>).reason;
+  return typeof reason === 'string' ? reason : undefined;
 }
 
 function lifecycleOptions(
@@ -512,6 +529,10 @@ export function createReportDataSurfaceTools(
         run,
         args.reportId,
       );
+      const request = normalizeDataQueryRequest(
+        args.request,
+        descriptor.schema,
+      );
       let execution: 'silent' | 'background' | 'visible' = 'silent';
       if (args.execution !== undefined) {
         if (
@@ -546,7 +567,7 @@ export function createReportDataSurfaceTools(
         }
         const result = await queryReportMaterializedRows(
           definition.report,
-          args.request,
+          request,
           {
             ...base,
             adapter: definition.adapter,
@@ -566,12 +587,12 @@ export function createReportDataSurfaceTools(
 
       const result =
         execution === 'silent'
-          ? await queryReportMaterializedRows(definition.report, args.request, {
+          ? await queryReportMaterializedRows(definition.report, request, {
               ...base,
               adapter: definition.adapter,
               execution: 'silent',
             })
-          : await queryReportMaterializedRows(definition.report, args.request, {
+          : await queryReportMaterializedRows(definition.report, request, {
               ...base,
               adapter: definition.adapter,
               execution: 'visible',
@@ -602,11 +623,16 @@ export function createReportDataSurfaceTools(
         identity: { surfaceId: descriptor.resourceId, kind: 'report' },
         expectedRevision,
         controlId: 'query',
-        payload: { request: args.request as DataQueryRequest },
+        payload: { request },
       };
       const acknowledged = await definition.visible.send(command, { run });
-      if (!commandResultIsBound(acknowledged, command) || !acknowledged.ok) {
-        throw new ReportDataSurfaceVisibleError(acknowledged.reason);
+      if (
+        !commandResultIsBound(acknowledged, command) ||
+        acknowledged.ok !== true
+      ) {
+        throw new ReportDataSurfaceVisibleError(
+          commandFailureReason(acknowledged),
+        );
       }
       await audit(options, 'query', descriptor.resourceId, run);
       return { ...result, browser: acknowledged };
