@@ -69,6 +69,9 @@ export const DEFAULT_FACET_LIMIT = DEFAULT_LIST_LIMIT;
 /** Hard ceiling for distinct values returned for one facet field. */
 export const MAX_FACET_LIMIT = MAX_LIST_LIMIT;
 
+/** Maximum number of qualified STI discriminators accepted by one read. */
+export const MAX_STI_READ_SCOPE_TYPES = 50;
+
 /**
  * Validate an optional collection-level list bound (#2367).
  *
@@ -366,12 +369,23 @@ export interface SmrtFacetOptions<T extends SmrtObject> {
   fields: readonly (SmrtSelectField<T> | SmrtFacetRequest<T>)[];
   /** The same SMRT WHERE syntax accepted by {@link SmrtCollection.list}. */
   where?: SmrtListWhereClause<T>;
+  /** Explicit sibling discriminator scope for an STI child collection. */
+  stiScope?: SmrtStiReadScope;
 }
 
 /** Exact unfiltered and filtered row counts for a list scope. */
 export interface SmrtCollectionCounts {
   total: number;
   filtered: number;
+}
+
+/**
+ * Explicit, bounded discriminator scope for reads through an STI child
+ * collection. Every entry must be a registered qualified type in the same STI
+ * hierarchy as the collection item.
+ */
+export interface SmrtStiReadScope {
+  types: readonly string[];
 }
 
 export interface SmrtListOptions<ModelType extends SmrtObject> {
@@ -392,6 +406,11 @@ export interface SmrtListOptions<ModelType extends SmrtObject> {
    * Opt-in read-through cache for this call (issue #1498).
    */
   cache?: CollectionCacheConfig | false;
+  /**
+   * Opt in to reading an allowlist of sibling types through an STI child
+   * collection. Omit to retain the child-only discriminator scope.
+   */
+  stiScope?: SmrtStiReadScope;
 }
 
 /**
@@ -561,6 +580,83 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     return (
       registered?.qualifiedName || registered?.name || this._itemClass.name
     );
+  }
+
+  /** Apply and validate this collection's owned STI discriminator predicate. */
+  private applyStiReadScope(
+    where: SmrtListWhereClause<ModelType> | undefined,
+    stiScope: SmrtStiReadScope | undefined,
+  ): SmrtListWhereClause<ModelType> | undefined {
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const isSTI = ObjectRegistry.getTableStrategy(itemQualifiedName) === 'sti';
+    const stiBase = isSTI ? ObjectRegistry.getSTIBase(itemQualifiedName) : null;
+    const isChild = stiBase !== null && stiBase !== itemQualifiedName;
+
+    if (stiScope === undefined) {
+      return isChild
+        ? andWhereCondition(where, { _meta_type: itemQualifiedName })
+        : where;
+    }
+    if (
+      !stiScope ||
+      typeof stiScope !== 'object' ||
+      Array.isArray(stiScope) ||
+      Object.keys(stiScope).some((key) => key !== 'types') ||
+      !Array.isArray(stiScope.types)
+    ) {
+      throw new Error(
+        'Invalid stiScope: expected { types: readonly qualified STI type[] }.',
+      );
+    }
+    if (!isChild) {
+      throw new Error(
+        'Invalid stiScope: explicit discriminator scopes require an STI child collection.',
+      );
+    }
+    if (stiScope.types.length === 0) {
+      throw new Error('Invalid stiScope: types must not be empty.');
+    }
+    if (stiScope.types.length > MAX_STI_READ_SCOPE_TYPES) {
+      throw new Error(
+        `Invalid stiScope: at most ${MAX_STI_READ_SCOPE_TYPES} types are allowed.`,
+      );
+    }
+
+    const seen = new Set<string>();
+    for (const type of stiScope.types) {
+      if (
+        typeof type !== 'string' ||
+        !/^@[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)?:[A-Za-z_$][A-Za-z0-9_$]*$/.test(
+          type,
+        )
+      ) {
+        throw new Error(
+          `Invalid stiScope type: '${String(type)}' must be a qualified SMRT type.`,
+        );
+      }
+      if (seen.has(type)) {
+        throw new Error(`Invalid stiScope: duplicate type '${type}'.`);
+      }
+      seen.add(type);
+
+      const registered = ObjectRegistry.getClass(type);
+      if (!registered || registered.qualifiedName !== type) {
+        throw new Error(`Invalid stiScope: unknown type '${type}'.`);
+      }
+      const typeBase = ObjectRegistry.getSTIBase(type);
+      if (
+        ObjectRegistry.getTableStrategy(type) !== 'sti' ||
+        typeBase !== stiBase
+      ) {
+        throw new Error(
+          `Invalid stiScope: type '${type}' does not share STI root '${stiBase}'.`,
+        );
+      }
+    }
+
+    return andWhereCondition(where, {
+      '_meta_type in': [...stiScope.types],
+    });
   }
 
   /**
@@ -1634,8 +1730,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * ```
    */
   public async listWithLatestRelated(
+    options: Omit<SmrtLatestRelatedListOptions<ModelType>, 'stiScope'> & {
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtLatestRelatedRow<SmrtObject>[]>;
+  public async listWithLatestRelated(
+    options: Omit<SmrtLatestRelatedListOptions<ModelType>, 'stiScope'> & {
+      stiScope?: undefined;
+    },
+  ): Promise<SmrtLatestRelatedRow<ModelType>[]>;
+  public async listWithLatestRelated(
     options: SmrtLatestRelatedListOptions<ModelType>,
-  ): Promise<SmrtLatestRelatedRow<ModelType>[]> {
+  ): Promise<SmrtLatestRelatedRow<SmrtObject>[]>;
+  public async listWithLatestRelated(
+    options: SmrtLatestRelatedListOptions<ModelType>,
+  ): Promise<SmrtLatestRelatedRow<SmrtObject>[]> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
@@ -1652,19 +1761,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         interceptorContext,
       )) ?? (options as InterceptorListOptions);
 
-    let { where, offset, limit, orderBy } =
+    let { where, offset, limit, orderBy, stiScope } =
       interceptedOptions as SmrtListOptions<ModelType>;
     const latestOptions =
       (interceptedOptions as SmrtLatestRelatedListOptions<ModelType>)
         .latestRelated ?? options.latestRelated;
     const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
-    if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
-      if (stiBase && stiBase !== itemQualifiedName) {
-        where = { _meta_type: itemQualifiedName, ...(where || {}) };
-      }
-    }
+    where = this.applyStiReadScope(where, stiScope);
     where = resolveMetaTypeInWhere(where);
 
     const relationship = ObjectRegistry.getRelationships(
@@ -1928,12 +2032,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // would violate the collection-wide serial hydration invariant.
     const instances: ModelType[] = [];
     const relatedAliasNames = new Set(relatedFieldAliases.values());
+    const polymorphicFields = new Map<
+      string,
+      Record<string, CollectionFieldDefinition>
+    >();
     for (const row of rows.rows as Record<string, unknown>[]) {
       const parentRow = Object.fromEntries(
         Object.entries(row).filter(([key]) => !relatedAliasNames.has(key)),
       );
       instances.push(
-        await this.hydrateResultRow(parentRow, parentFields, isSTI),
+        await this.hydrateResultRow(
+          parentRow,
+          parentFields,
+          isSTI,
+          polymorphicFields,
+        ),
       );
     }
 
@@ -2653,19 +2766,51 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to an array of model instances, or plain selected rows when `select` is present
    */
   public async list<const Select extends readonly SmrtSelectField<ModelType>[]>(
-    options: SmrtListOptions<ModelType> & {
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
       select: Select;
       include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  public async list<const Select extends readonly SmrtSelectField<ModelType>[]>(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
     },
   ): Promise<SmrtSelectedRow<ModelType, Select>[]>;
   public async list(
-    options?: Omit<SmrtListOptions<ModelType>, 'select'> & {
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
       select?: undefined;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtObject[]>;
+  public async list(options?: undefined): Promise<ModelType[]>;
+  public async list(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<ModelType[]>;
+  public async list(
+    options:
+      | (Omit<SmrtListOptions<ModelType>, 'select'> & {
+          select?: undefined;
+        })
+      | undefined,
+  ): Promise<SmrtObject[]>;
+  public async list(
+    options: SmrtListOptions<ModelType> | undefined,
+  ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  public async list(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
     },
   ): Promise<ModelType[]>;
   public async list(
     options: SmrtListOptions<ModelType> = {},
-  ): Promise<ModelType[] | Record<string, unknown>[]> {
+  ): Promise<SmrtObject[] | Record<string, unknown>[]> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
@@ -2685,7 +2830,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (options as InterceptorListOptions | undefined) ??
       {};
 
-    let { where, offset, limit, orderBy, select } =
+    let { where, offset, limit, orderBy, select, stiScope } =
       interceptedOptions as SmrtListOptions<ModelType>;
 
     // STI: Child collections should automatically filter by _meta_type.
@@ -2694,14 +2839,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
-    if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
-      if (stiBase && stiBase !== itemQualifiedName) {
-        where = andWhereCondition(where, {
-          _meta_type: itemQualifiedName,
-        });
-      }
-    }
+    where = this.applyStiReadScope(where, stiScope);
 
     // Resolve _meta_type to qualified name if user provided simple class name (Issue #713)
     where = resolveMetaTypeInWhere(where);
@@ -3739,9 +3877,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * @see {@link list} for retrieving the actual records
    */
-  public async count(options: { where?: SmrtListWhereClause<ModelType> } = {}) {
+  public async count(
+    options: {
+      where?: SmrtListWhereClause<ModelType>;
+      stiScope?: SmrtStiReadScope;
+    } = {},
+  ) {
     await this.ensureStorageReady();
-    const itemQualifiedName = this.getResolvedItemQualifiedName();
     const itemClassName = this.getResolvedItemClassName();
 
     // Security (#1540): count() is a list-shaped read, so run the same
@@ -3762,24 +3904,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (options as InterceptorListOptions | undefined) ??
       {};
 
-    let { where } = interceptedOptions;
+    let { where, stiScope } = interceptedOptions as SmrtListOptions<ModelType>;
 
-    // Fix for issue #386: Add _meta_type filter for STI child collections.
-    // R5-canon: qualified-key lookup throughout — pass `itemQualifiedName`
-    // to both `getTableStrategy` and `getSTIBase` so a colliding
-    // simple-name class in another package can't yield the wrong table
-    // strategy / STI base.
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
-    const isSTI = tableStrategy === 'sti';
-
-    if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
-      if (stiBase && stiBase !== itemQualifiedName) {
-        where = andWhereCondition(where, {
-          _meta_type: itemQualifiedName,
-        });
-      }
-    }
+    where = this.applyStiReadScope(where, stiScope);
 
     // Resolve _meta_type to qualified name if user provided simple class name (Issue #713)
     where = resolveMetaTypeInWhere(where);
@@ -3862,18 +3989,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (options as unknown as InterceptorListOptions) ??
       {};
 
-    let { where } =
+    let { where, stiScope } =
       interceptedOptions as unknown as SmrtFacetOptions<ModelType>;
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
-    const isSTI = tableStrategy === 'sti';
-    if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
-      if (stiBase && stiBase !== itemQualifiedName) {
-        where = andWhereCondition(where, {
-          _meta_type: itemQualifiedName,
-        });
-      }
-    }
+    const isSTI = ObjectRegistry.getTableStrategy(itemQualifiedName) === 'sti';
+    where = this.applyStiReadScope(where, stiScope);
     where = resolveMetaTypeInWhere(where);
 
     const { sql: whereSql, values: whereValues } = buildWhere(
@@ -3978,9 +4097,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * count adds the caller's `where` conditions.
    */
   public async counts(
-    options: { where?: SmrtListWhereClause<ModelType> } = {},
+    options: {
+      where?: SmrtListWhereClause<ModelType>;
+      stiScope?: SmrtStiReadScope;
+    } = {},
   ): Promise<SmrtCollectionCounts> {
-    const total = await this.count();
+    const total = await this.count({ stiScope: options.stiScope });
     const filtered = await this.count(options);
     return { total, filtered };
   }
@@ -4109,9 +4231,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     row: Record<string, unknown>,
     fields: Record<string, CollectionFieldDefinition>,
     isSTI: boolean,
+    polymorphicFields = new Map<
+      string,
+      Record<string, CollectionFieldDefinition>
+    >(),
   ): Promise<ModelType> {
+    const hydrationFields = await this.resolveHydrationFields(
+      row,
+      fields,
+      isSTI,
+      polymorphicFields,
+    );
     const formattedData = this.withHydratedCoreFields(
-      formatDataJs(row, fields),
+      formatDataJs(row, hydrationFields),
     );
 
     const metaType = formattedData._meta_type;
@@ -4152,6 +4284,42 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Resolve inherited field metadata for an STI row's concrete discriminator.
+   * The caller-provided collection fields remain the safe fallback for
+   * non-polymorphic, malformed, or not-yet-registered rows.
+   */
+  private async resolveHydrationFields(
+    row: Record<string, unknown>,
+    fallbackFields: Record<string, CollectionFieldDefinition>,
+    isSTI: boolean,
+    polymorphicFields: Map<string, Record<string, CollectionFieldDefinition>>,
+  ): Promise<Record<string, CollectionFieldDefinition>> {
+    if (!isSTI) return fallbackFields;
+
+    const rawMetaType = row._meta_type ?? row._metaType;
+    if (rawMetaType === null || rawMetaType === undefined) {
+      return fallbackFields;
+    }
+
+    const metaType = String(rawMetaType);
+    const cached = polymorphicFields.get(metaType);
+    if (cached) return cached;
+    if (!ObjectRegistry.getClass(metaType)) {
+      await ObjectRegistry.ensureManifestLoaded(metaType);
+    }
+
+    const registeredFields = await ObjectRegistry.getAllFields(metaType);
+    if (registeredFields.size === 0) return fallbackFields;
+
+    const concreteFields: Record<string, CollectionFieldDefinition> = {};
+    for (const [fieldName, field] of registeredFields) {
+      concreteFields[fieldName] = { type: field.type };
+    }
+    polymorphicFields.set(metaType, concreteFields);
+    return concreteFields;
+  }
+
+  /**
    * Hydrate rows in result order.
    *
    * A model's initialize() hook may query through the collection database.
@@ -4166,8 +4334,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     isSTI: boolean,
   ): Promise<ModelType[]> {
     const instances: ModelType[] = [];
+    const polymorphicFields = new Map<
+      string,
+      Record<string, CollectionFieldDefinition>
+    >();
     for (const row of rows) {
-      instances.push(await this.hydrateResultRow(row, fields, isSTI));
+      instances.push(
+        await this.hydrateResultRow(row, fields, isSTI, polymorphicFields),
+      );
     }
     return instances;
   }
