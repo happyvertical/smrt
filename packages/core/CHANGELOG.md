@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.43.3
+
+### Patch Changes
+
+- ### Features
+
+  - publish principal-bound report tools (#2512) (agents)
+  - add bounded STI discriminator read scopes (#2514) (core)
+
+  ### Bug Fixes
+
+  - recover reactive remote query binding (#2515) (smrt-web)
+  - @happyvertical/smrt-config@0.43.3
+  - @happyvertical/smrt-types@0.43.3
+  - @happyvertical/smrt-scanner@0.43.3
+
 ## 0.43.2
 
 ### Patch Changes
