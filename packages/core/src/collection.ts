@@ -2757,9 +2757,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @returns Promise resolving to an array of model instances, or plain selected rows when `select` is present
    */
   public async list<const Select extends readonly SmrtSelectField<ModelType>[]>(
-    options: SmrtListOptions<ModelType> & {
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
       select: Select;
       include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  public async list<const Select extends readonly SmrtSelectField<ModelType>[]>(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
     },
   ): Promise<SmrtSelectedRow<ModelType, Select>[]>;
   public async list(

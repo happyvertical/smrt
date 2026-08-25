@@ -157,9 +157,19 @@ export class SmrtReportCollection<
   override async list<
     const Select extends readonly SmrtSelectField<ModelType>[],
   >(
-    options: SmrtListOptions<ModelType> & {
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
       select: Select;
       include?: never;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<Record<string, unknown>[]>;
+  override async list<
+    const Select extends readonly SmrtSelectField<ModelType>[],
+  >(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select: Select;
+      include?: never;
+      stiScope?: undefined;
     },
   ): Promise<SmrtSelectedRow<ModelType, Select>[]>;
   override async list(

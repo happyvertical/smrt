@@ -95,6 +95,12 @@ function assertPublicReadTypes(current: ScopeCurrentEventCollection): void {
   expectTypeOf(
     current.list({ stiScope: allTypesScope }),
   ).resolves.toEqualTypeOf<SmrtObject[]>();
+  expectTypeOf(
+    current.list({ select: ['title'] as const }),
+  ).resolves.toEqualTypeOf<Array<{ title: string }>>();
+  expectTypeOf(
+    current.list({ select: ['title'] as const, stiScope: allTypesScope }),
+  ).resolves.toEqualTypeOf<Record<string, unknown>[]>();
   expectTypeOf(current.list(publicListOptions)).resolves.toEqualTypeOf<
     SmrtObject[]
   >();
