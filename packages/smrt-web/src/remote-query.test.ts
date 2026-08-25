@@ -736,6 +736,73 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('keeps a cached rebind successful when its automatic live bind fails', async () => {
+    const liveError = new Error('live transport unavailable');
+    let subscriptions = 0;
+    const alternate = {
+      ...request,
+      filter: {
+        kind: 'condition' as const,
+        field: 'name',
+        operator: 'eq' as const,
+        value: 'alternate',
+      },
+    };
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) =>
+        envelope(
+          received,
+          received.filter === alternate.filter ? 'alternate' : 'initial',
+        ),
+      subscribe: () => {
+        subscriptions += 1;
+        if (subscriptions > 1) throw liveError;
+        return { unsubscribe: () => undefined };
+      },
+    });
+
+    await query.execute(alternate, { mode: 'prefetch' });
+    await query.execute(request);
+    query.subscribeLive();
+    await expect(query.execute(alternate)).resolves.toMatchObject({
+      requestId: 'request-1',
+    });
+
+    expect(subscriptions).toBe(2);
+    expect(query.state.rows[0]?.name).toBe('alternate');
+    expect(query.state.error).toBe(liveError);
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('reports a failed reconnect bind without an unhandled rejection', async () => {
+    const liveError = new Error('reconnect unavailable');
+    let failReconnect = false;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => envelope(received, 'refreshed'),
+      subscribe: () => {
+        if (failReconnect) throw liveError;
+        return { unsubscribe: () => undefined };
+      },
+    });
+
+    await query.execute(request);
+    const live = query.subscribeLive();
+    failReconnect = true;
+    live?.reconnect();
+
+    await vi.waitFor(() => expect(query.state.error).toBe(liveError));
+    expect(query.state.rows[0]?.name).toBe('refreshed');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('prefetches into the keyed cache without changing visible state, then refreshes coherently', async () => {
     let value = 'prefetched';
     const collection = createSmrtCollection(definition, {

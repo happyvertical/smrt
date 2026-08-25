@@ -280,7 +280,7 @@ export function createSmrtWebQuery<TData extends object>(
       const result = rebindRequestId(entry.result, candidate);
       apply(result, candidate, entry.updatedAt);
       if (disposed) throw abortError();
-      if (rebindIntent?.active && !live) startLive(rebindIntent);
+      if (rebindIntent?.active && !live) resumeLive(rebindIntent);
       return result;
     }
     if (mode === 'visible') {
@@ -325,7 +325,7 @@ export function createSmrtWebQuery<TData extends object>(
         if (current === generation) {
           if (cached(key)?.result === result) apply(result, candidate);
           else publish({ ...state, loading: false, refreshing: false });
-          if (rebindIntent?.active && !live) startLive(rebindIntent);
+          if (rebindIntent?.active && !live) resumeLive(rebindIntent);
         }
         return result;
       } catch (error) {
@@ -497,7 +497,7 @@ export function createSmrtWebQuery<TData extends object>(
             request &&
             keyFor(request) === keyFor(candidate)
           )
-            startLive(intent);
+            resumeLive(intent);
         });
     };
     handle = { intent, disconnect, unsubscribe, reconnect };
@@ -561,6 +561,21 @@ export function createSmrtWebQuery<TData extends object>(
     live = handle;
     return handle;
   };
+  const clearLiveIntent = (intent: LiveIntent): void => {
+    intent.active = false;
+    if (liveIntent === intent) liveIntent = undefined;
+  };
+  const resumeLive = (intent: LiveIntent): void => {
+    try {
+      startLive(intent);
+    } catch (error) {
+      // An automatic rebind must not turn a successful cache/read result into
+      // a rejected execution, or leave a reconnect's detached promise
+      // unhandled. The caller can start a new live subscription explicitly.
+      clearLiveIntent(intent);
+      if (!disposed) publish({ ...state, error });
+    }
+  };
   const subscribeLive = (): SmrtWebQueryLiveSubscription | undefined => {
     if (disposed || !request || !transport.subscribe) return undefined;
     if (liveIntent) {
@@ -572,8 +587,7 @@ export function createSmrtWebQuery<TData extends object>(
     try {
       return startLive(intent);
     } catch (error) {
-      intent.active = false;
-      if (liveIntent === intent) liveIntent = undefined;
+      clearLiveIntent(intent);
       throw error;
     }
   };
