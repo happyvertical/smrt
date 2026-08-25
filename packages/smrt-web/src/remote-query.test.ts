@@ -778,7 +778,7 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
-  it('reports a failed reconnect bind without an unhandled rejection', async () => {
+  it('reports a failed bind after a successful reconnect resync', async () => {
     const liveError = new Error('reconnect unavailable');
     let failReconnect = false;
     const collection = createSmrtCollection(definition, {
@@ -799,6 +799,37 @@ describe('remote query controller', () => {
 
     await vi.waitFor(() => expect(query.state.error).toBe(liveError));
     expect(query.state.rows[0]?.name).toBe('refreshed');
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('contains a failed reconnect fallback bind after a rejected resync', async () => {
+    const refreshError = new Error('resync unavailable');
+    const liveError = new Error('reconnect unavailable');
+    let failRefresh = false;
+    let failReconnect = false;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        if (failRefresh) throw refreshError;
+        return envelope(received, 'initial');
+      },
+      subscribe: () => {
+        if (failReconnect) throw liveError;
+        return { unsubscribe: () => undefined };
+      },
+    });
+
+    await query.execute(request);
+    const live = query.subscribeLive();
+    failRefresh = true;
+    failReconnect = true;
+    live?.reconnect();
+
+    await vi.waitFor(() => expect(query.state.error).toBe(liveError));
+    expect(query.state.rows[0]?.name).toBe('initial');
     query.dispose();
     await collection.cleanup();
   });
