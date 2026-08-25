@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.43.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve concrete inherited field metadata (#2511) (core)
+  - remove stale MCP session text (#2510) (smrt-workbench)
+  - @happyvertical/smrt-config@0.43.2
+  - @happyvertical/smrt-types@0.43.2
+  - @happyvertical/smrt-scanner@0.43.2
+
 ## 0.43.1
 
 ### Patch Changes

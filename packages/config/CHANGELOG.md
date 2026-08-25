@@ -1,5 +1,11 @@
 # @happyvertical/smrt-config
 
+## 0.43.2
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.43.2
+
 ## 0.43.1
 
 ### Patch Changes
