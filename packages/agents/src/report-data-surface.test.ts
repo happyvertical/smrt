@@ -593,7 +593,8 @@ describe('principal-bound report data-surface tools', () => {
   });
 
   it('only resolves drilldown from the current tenant materialized row', async () => {
-    const tools = toolSet({ reports: [reportDefinition()] });
+    const audit = vi.fn();
+    const tools = toolSet({ reports: [reportDefinition()], audit });
     const drilldown = tools.get(REPORT_DRILLDOWN_TOOL_SLUG);
     const tenantA = fakeRun([REPORT_DRILLDOWN_TOOL_SLUG], 'tenant-a');
     const tenantB = fakeRun([REPORT_DRILLDOWN_TOOL_SLUG], 'tenant-b');
@@ -611,6 +612,12 @@ describe('principal-bound report data-surface tools', () => {
         expect.objectContaining({ id: 'customer_id', value: 'customer-a' }),
       ],
     });
+    expect(audit).toHaveBeenCalledWith({
+      action: 'drilldown',
+      reportId,
+      userId: 'report-user',
+      tenantId: 'tenant-a',
+    });
 
     await expect(
       drilldown?.execute({
@@ -619,6 +626,22 @@ describe('principal-bound report data-surface tools', () => {
         db: undefined,
       }),
     ).rejects.toThrow();
+  });
+
+  it('fails closed when drilldown has no live audit sink', async () => {
+    const tools = toolSet({ reports: [reportDefinition()] });
+    const drilldown = tools.get(REPORT_DRILLDOWN_TOOL_SLUG);
+
+    await expect(
+      drilldown?.execute({
+        run: fakeRun([REPORT_DRILLDOWN_TOOL_SLUG]),
+        args: {
+          reportId: await currentReportId(),
+          rowId: 'tenant-a-row',
+        },
+        db: undefined,
+      }),
+    ).rejects.toThrow('Report drilldown requires a live audit sink');
   });
 
   it('forwards the report-declared refresh permission to the live action host', async () => {

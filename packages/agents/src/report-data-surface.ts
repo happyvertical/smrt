@@ -676,6 +676,11 @@ export function createReportDataSurfaceTools(
     },
     async ({ run, args, db }) => {
       run.assertToolAllowed(REPORT_DRILLDOWN_TOOL_SLUG);
+      if (typeof options.audit !== 'function') {
+        throw new ReportDataSurfaceConfigurationError(
+          'Report drilldown requires a live audit sink',
+        );
+      }
       const { definition, descriptor } = await reportEntry(
         options,
         run,
