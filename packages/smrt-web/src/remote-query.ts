@@ -74,6 +74,13 @@ interface CacheEntry {
   updatedAt: number;
 }
 
+interface SharedFlight {
+  controller: AbortController;
+  promise: Promise<SmrtWebDataQueryResult>;
+  waiters: number;
+  settled: boolean;
+}
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === 'object') {
@@ -137,7 +144,7 @@ export function createSmrtWebQuery<TData extends object>(
 ): SmrtWebQuery<TData> {
   const staleTimeMs = options.staleTimeMs ?? 30_000;
   const cache = new Map<string, CacheEntry>();
-  const inFlight = new Map<string, Promise<SmrtWebDataQueryResult>>();
+  const inFlight = new Map<string, SharedFlight>();
   const latestSuccessfulFlight = new Map<string, number>();
   let flightSequence = 0;
   const listeners = new Set<(state: SmrtWebQueryState<TData>) => void>();
@@ -205,30 +212,9 @@ export function createSmrtWebQuery<TData extends object>(
   };
   const runTransport = async (
     candidate: SmrtWebDataQueryRequest,
-    runOptions: SmrtWebQueryRunOptions,
+    controller: AbortController,
   ): Promise<SmrtWebDataQueryResult> => {
-    const controller = new AbortController();
     runControllers.add(controller);
-    const cleanups: Array<() => void> = [];
-    const abortFrom = (signal: AbortSignal | undefined): void => {
-      if (!signal) return;
-      if (signal.aborted) controller.abort(signal.reason);
-      else {
-        const abort = () => controller.abort(signal.reason);
-        signal.addEventListener('abort', abort, { once: true });
-        cleanups.push(() => signal.removeEventListener('abort', abort));
-      }
-    };
-    abortFrom(runOptions.signal);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    if (runOptions.deadlineMs !== undefined) {
-      if (runOptions.deadlineMs <= 0) controller.abort(abortError());
-      else
-        timer = setTimeout(
-          () => controller.abort(abortError()),
-          runOptions.deadlineMs,
-        );
-    }
     try {
       const result = await executeSmrtWebDataQuery(transport, candidate, {
         signal: controller.signal,
@@ -249,8 +235,6 @@ export function createSmrtWebQuery<TData extends object>(
       throw error;
     } finally {
       runControllers.delete(controller);
-      if (timer) clearTimeout(timer);
-      for (const cleanup of cleanups) cleanup();
     }
   };
   const execute = async (
@@ -339,36 +323,92 @@ export function createSmrtWebQuery<TData extends object>(
     }
     return runShared(candidate, key, runOptions);
   };
+  const waitForFlight = (
+    flight: SharedFlight,
+    key: string,
+    candidate: SmrtWebDataQueryRequest,
+    runOptions: SmrtWebQueryRunOptions,
+  ): Promise<SmrtWebDataQueryResult> => {
+    if (runOptions.signal?.aborted || (runOptions.deadlineMs ?? 1) <= 0)
+      return Promise.reject(abortError());
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = (): void => {
+        if (settled) return;
+        settled = true;
+        flight.waiters -= 1;
+        if (timer) clearTimeout(timer);
+        runOptions.signal?.removeEventListener('abort', cancel);
+      };
+      const cancel = (): void => {
+        if (settled) return;
+        settle();
+        if (flight.waiters === 0 && !flight.settled) {
+          flight.controller.abort(abortError());
+          if (inFlight.get(key) === flight) inFlight.delete(key);
+        }
+        reject(abortError());
+      };
+      const timer =
+        runOptions.deadlineMs === undefined
+          ? undefined
+          : setTimeout(cancel, runOptions.deadlineMs);
+      flight.waiters += 1;
+      runOptions.signal?.addEventListener('abort', cancel, { once: true });
+      flight.promise.then(
+        (result) => {
+          if (settled) return;
+          settle();
+          resolve(rebindRequestId(result, candidate));
+        },
+        (error) => {
+          if (settled) return;
+          settle();
+          reject(error);
+        },
+      );
+    });
+  };
   const runShared = async (
     candidate: SmrtWebDataQueryRequest,
     key: string,
     runOptions: SmrtWebQueryRunOptions,
   ): Promise<SmrtWebDataQueryResult> => {
+    if (runOptions.signal?.aborted || (runOptions.deadlineMs ?? 1) <= 0)
+      throw abortError();
     if (!runOptions.force) {
-      const running = inFlight.get(key);
-      if (running)
-        return running.then((result) => rebindRequestId(result, candidate));
+      const existing = inFlight.get(key);
+      if (existing) return waitForFlight(existing, key, candidate, runOptions);
     }
     const flight = ++flightSequence;
-    const running = runTransport(candidate, runOptions).then((result) => {
+    const controller = new AbortController();
+    const running = runTransport(candidate, controller).then((result) => {
       // A failed or aborted successor must not suppress an older valid result,
       // but a successful successor must win over any later predecessor.
       cacheSuccess(key, result, flight);
       return result;
     });
-    inFlight.set(key, running);
+    const shared: SharedFlight = {
+      controller,
+      promise: running,
+      waiters: 0,
+      settled: false,
+    };
+    inFlight.set(key, shared);
     // A forced successor may replace this map entry while the predecessor is
     // still settling. Only the promise that currently owns the key may delete
     // it, otherwise a third caller can miss the active successor flight.
     void running.then(
       () => {
-        if (inFlight.get(key) === running) inFlight.delete(key);
+        shared.settled = true;
+        if (inFlight.get(key) === shared) inFlight.delete(key);
       },
       () => {
-        if (inFlight.get(key) === running) inFlight.delete(key);
+        shared.settled = true;
+        if (inFlight.get(key) === shared) inFlight.delete(key);
       },
     );
-    return running;
+    return waitForFlight(shared, key, candidate, runOptions);
   };
   const refresh = (
     refreshOptions: Omit<SmrtWebQueryRunOptions, 'mode' | 'force'> = {},

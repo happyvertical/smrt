@@ -139,6 +139,73 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('keeps shared transport alive when its initiating caller cancels', async () => {
+    const caller = new AbortController();
+    let resolveQuery!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+          resolveQuery = resolve;
+          void received;
+        });
+      },
+    });
+
+    const first = query.execute(request, {
+      mode: 'background',
+      signal: caller.signal,
+    });
+    const second = query.execute(
+      { ...request, requestId: 'request-2' },
+      { mode: 'background' },
+    );
+    caller.abort();
+
+    await expect(first).rejects.toMatchObject({ name: 'AbortError' });
+    resolveQuery(envelope(request, 'shared'));
+    await expect(second).resolves.toMatchObject({
+      requestId: 'request-2',
+    });
+    expect(calls).toBe(1);
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('applies a joining caller deadline without cancelling shared transport', async () => {
+    let resolveQuery!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+          resolveQuery = resolve;
+          void received;
+        });
+      },
+    });
+
+    const first = query.execute(request, { mode: 'background' });
+    const joining = query.execute(
+      { ...request, requestId: 'request-2' },
+      { mode: 'background', deadlineMs: 1 },
+    );
+
+    await expect(joining).rejects.toMatchObject({ name: 'AbortError' });
+    resolveQuery(envelope(request, 'shared'));
+    await expect(first).resolves.toMatchObject({ requestId: 'request-1' });
+    expect(calls).toBe(1);
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('releases visible refresh state when a background successor wins the cache', async () => {
     let resolveRefresh!: (result: ReturnType<typeof envelope>) => void;
     let calls = 0;
