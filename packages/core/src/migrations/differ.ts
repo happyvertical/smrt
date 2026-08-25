@@ -603,7 +603,12 @@ export class SchemaComparer {
           table: tableName,
           name: constraintName,
           foreignKey,
-          sql: `ALTER TABLE ${this.quoteIdentifier(tableName)} DROP CONSTRAINT IF EXISTS ${this.quoteIdentifier(constraintName)}`,
+          advisory: {
+            severity: 'warning',
+            message:
+              `Cannot safely remove the now-disabled physical foreign key ${tableName}.${foreignKey.column}: ` +
+              '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun the migration.',
+          },
         });
       } else {
         changes.push({

@@ -685,7 +685,7 @@ describe('existing-table orphan safety (#2413)', () => {
     expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(false);
   });
 
-  it('drops a live constraint disabled on PostgreSQL (#2504)', async () => {
+  it('does not claim a noncanonical live PostgreSQL constraint was removed (#2504)', async () => {
     const sqliteOnlyChild = structuredClone(child);
     sqliteOnlyChild.foreignKeys[0].engines = ['sqlite'];
     if (!sqliteOnlyChild.columns.parent_id.foreignKey) {
@@ -693,6 +693,11 @@ describe('existing-table orphan safety (#2413)', () => {
     }
     sqliteOnlyChild.columns.parent_id.foreignKey.engines = ['sqlite'];
     const mock = postgresMock(false);
+    // The live database uses a legacy name such as
+    // `legacy_children_parent_fk`, but @happyvertical/sql currently returns
+    // only this relationship tuple. The differ must not substitute SMRT's
+    // canonical generated name and claim that the legacy constraint was
+    // removed.
     mock.db.getTableSchema = async () => ({
       columns: {
         id: { name: 'id', type: 'text', primaryKey: true },
@@ -709,7 +714,6 @@ describe('existing-table orphan safety (#2413)', () => {
         },
       ],
     });
-
     const diff = await new SchemaComparer(mock.db as never, {
       engineHint: 'postgres',
     }).compare({ children: sqliteOnlyChild });
@@ -718,18 +722,25 @@ describe('existing-table orphan safety (#2413)', () => {
       expect.objectContaining({
         type: 'drop_foreign_key',
         table: 'children',
-        sql: 'ALTER TABLE "children" DROP CONSTRAINT IF EXISTS "children_parent_id_parents_id_fkey"',
+        advisory: expect.objectContaining({
+          message: expect.stringMatching(
+            /does not expose the live PostgreSQL constraint name/,
+          ),
+        }),
       }),
     );
-    expect(getSQLFromDiff(diff)).toContain(
-      'ALTER TABLE "children" DROP CONSTRAINT IF EXISTS "children_parent_id_parents_id_fkey"',
+    const change = diff.changes.find(
+      (candidate) => candidate.type === 'drop_foreign_key',
     );
-    expect(
-      new MigrationGenerator({ engine: 'postgres' }).generateFromDiff(diff, {
-        name: 'drop_disabled_postgres_fk',
-      }).up,
-    ).toContain(
-      'ALTER TABLE "children" DROP CONSTRAINT IF EXISTS "children_parent_id_parents_id_fkey"',
+    expect(change?.sql).toBeUndefined();
+    expect(getSQLFromDiff(diff)).not.toContain('DROP CONSTRAINT');
+    const migration = new MigrationGenerator({ engine: 'postgres' })
+      .generateFromDiff(diff, { name: 'manual_disabled_postgres_fk' })
+      .up.join('\n');
+    expect(migration).toContain('-- WARNING: Foreign-key constraint');
+    expect(migration).not.toContain('DROP CONSTRAINT');
+    expect(mock.queries.some((sql) => sql.includes('constraint_name'))).toBe(
+      false,
     );
   });
 
