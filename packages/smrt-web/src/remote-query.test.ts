@@ -667,6 +667,43 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('does not let a delayed live update overtake a newer explicit fetch', async () => {
+    let onResult: ((value: unknown) => void) | undefined;
+    let resolveLive!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return envelope(received, calls === 1 ? 'initial' : 'explicit');
+      },
+      subscribe: (_received, callback) => {
+        onResult = callback;
+        return { unsubscribe: () => undefined };
+      },
+    });
+    const pendingLive = new Promise<ReturnType<typeof envelope>>((resolve) => {
+      resolveLive = resolve;
+    });
+
+    await query.execute(request);
+    query.subscribeLive();
+    onResult?.(pendingLive);
+    await query.execute(
+      { ...request, requestId: 'request-2' },
+      { force: true },
+    );
+    resolveLive(envelope(request, 'stale-live'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(query.state.rows[0]?.name).toBe('explicit');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('refetches before fallback reconnect, resubscribes, and ignores old callbacks', async () => {
     const callbacks: Array<(value: unknown) => void> = [];
     let queryCalls = 0;

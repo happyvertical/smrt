@@ -448,6 +448,10 @@ export function createSmrtWebQuery<TData extends object>(
             controller?.signal.aborted
           )
             return;
+          // Claim ordering when the push arrives, before envelope validation
+          // yields. A later explicit fetch must remain newer even if this
+          // callback resumes after it.
+          const liveFlight = ++flightSequence;
           void (async () => {
             const result = await executeSmrtWebDataQuery(
               { query: async () => raw },
@@ -465,7 +469,7 @@ export function createSmrtWebQuery<TData extends object>(
                 rebindRequestId(result, request),
                 request,
                 Date.now(),
-                ++flightSequence,
+                liveFlight,
               );
           })().catch((error) => {
             if (
