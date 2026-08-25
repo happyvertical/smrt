@@ -199,6 +199,28 @@ export {
   resolveAgentLearning,
 } from './learning.js';
 export {
+  createReportDataSurfaceDefinition,
+  createReportDataSurfaceTools,
+  REPORT_DRILLDOWN_FUNCTION_NAME,
+  REPORT_DRILLDOWN_TOOL_SLUG,
+  REPORT_EXPORT_FUNCTION_NAME,
+  REPORT_EXPORT_TOOL_SLUG,
+  REPORT_QUERY_FUNCTION_NAME,
+  REPORT_QUERY_TOOL_SLUG,
+  REPORT_REFRESH_FUNCTION_NAME,
+  REPORT_REFRESH_TOOL_SLUG,
+  type ReportDataSurfaceAuditEntry,
+  ReportDataSurfaceConfigurationError,
+  type ReportDataSurfaceDefinition,
+  type ReportDataSurfaceExportHost,
+  type ReportDataSurfaceRefreshHost,
+  type ReportDataSurfaceToolsOptions,
+  type ReportDataSurfaceVisibleAck,
+  type ReportDataSurfaceVisibleCommand,
+  ReportDataSurfaceVisibleError,
+  type ReportDataSurfaceVisibleHost,
+} from './report-data-surface.js';
+export {
   AgentSchedule,
   AgentScheduleCollection,
   type ScheduleStatus,

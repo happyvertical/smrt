@@ -145,7 +145,11 @@ const result = await queryReportMaterializedRows(
     page: { kind: 'offset', offset: 0, limit: 25 },
     sort: [{ field: 'revenue', direction: 'desc' }],
   },
-  { collection: reports },
+  {
+    collection: reports,
+    // Preserve the resource identity of the descriptor selected above.
+    adapter: { tenantScope: 'current' },
+  },
 );
 const rowKey = reportMaterializedRowKey(result.rows[0]);
 const drilldown = await buildReportDrilldownQuery(MonthlyRevenue, result.rows[0]);
@@ -192,6 +196,9 @@ and `background` delegates a normalized, authority-free task to the application'
 materialized rows. The host retains the authenticated principal, tenant, report
 definition, field policy, database, and eventual job execution; none can be
 supplied in a query request or background task.
+When a consumer selects a descriptor with `ReportAdapterOptions`, pass those
+same options through the query's `adapter` option so returned and background
+task resource ids stay aligned with the selected descriptor.
 `buildReportDrilldownQuery()` carries only the row's declared groups/buckets
 and a fixed inheritance contract for the current principal, tenant, report
 definition, and field policy; an authenticated source adapter must enforce that

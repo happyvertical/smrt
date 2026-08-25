@@ -336,6 +336,11 @@ interface ReportQueryCommonOptions {
   };
   db?: import('@happyvertical/sql').DatabaseInterface;
   /**
+   * Consumer-owned descriptor preferences. They contribute to the stable
+   * resource identity and must match the catalog used to select this report.
+   */
+  adapter?: ReportAdapterOptions;
+  /**
    * Opt in to a tenant-safe lifecycle snapshot alongside this materialized
    * read. It never makes a generic read mutate.
    */
@@ -1368,7 +1373,10 @@ export async function queryReportMaterializedRows(
   input: unknown,
   options: ReportQueryOptions | ReportBackgroundQueryOptions = {},
 ): Promise<ReportDataQueryResult | ReportBackgroundQueryResult> {
-  const descriptor = await buildReportAdapterDescriptor(reportCtor);
+  const descriptor = await buildReportAdapterDescriptor(
+    reportCtor,
+    options.adapter,
+  );
   const request = normalizeDataQueryRequest(input, descriptor.schema);
   // Validate the semantic split even though materialized-row reads execute the
   // complete predicate against one persisted table. It prevents an adapter

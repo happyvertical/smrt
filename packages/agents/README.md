@@ -137,6 +137,24 @@ such as `MessagingSettingsService`.
 | `AsyncQualifierFn` | Async post-filter qualifier type |
 | `QueryFn` | Query function type |
 | `AgentWithInterestsOptions` | Agent options with interests |
+| `createReportDataSurfaceTools` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools |
+| `ReportDataSurfaceToolsOptions` | Server-owned report catalog and application-host seams |
+
+### Report Data-Surface Tools
+
+`createReportDataSurfaceTools()` combines the generic read-only data-surface
+tools with `reports.query`, `reports.refresh`, `reports.drilldown`, and
+`reports.export`. Configure report constructors and all transport/action seams
+on the server. Queries inherit authority exclusively from the live
+`PrincipalRun`; visible commands require an exact browser acknowledgement, and
+refresh/export retain application-owned authorization and audit hosts.
+Discovery preserves each visible report field's kind, WHERE/HAVING filter
+scope, and capabilities, plus the currently available report actions. When an
+authenticated database is present, silent and visible reads return the
+tenant-safe lifecycle-derived freshness state (including stale or
+lock-skipped materializations). Advertised actions are filtered by the live
+principal's tool allow-list and effective permissions; action hosts still
+reauthorize before mutation.
 
 ### Server Export (`@happyvertical/smrt-agents/server`)
 

@@ -41,8 +41,21 @@ export const DATA_QUERY_FUNCTION_NAME = 'data-query';
 export const DEFAULT_DATA_SURFACE_DEADLINE_MS = 5_000;
 export const MAX_DATA_SURFACE_DEADLINE_MS = 30_000;
 
+/** Declarative, non-authoritative metadata that a server-owned catalog may expose. */
+export type DataSurfaceMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ReadonlyArray<string | number | boolean | null>;
+
 export type DataSurfaceFieldMetadata = Readonly<
-  Record<string, string | number | boolean | null>
+  Record<string, DataSurfaceMetadataValue>
+>;
+
+/** Surface-level metadata is descriptive only; it never enters query normalization. */
+export type DataSurfaceMetadata = Readonly<
+  Record<string, DataSurfaceMetadataValue>
 >;
 
 /** A data field plus server-owned visibility policy annotations. */
@@ -67,6 +80,8 @@ export interface DataSurfaceDefinition {
   className?: string;
   label?: string;
   description?: string;
+  /** Safe catalog metadata, returned only after the read gate succeeds. */
+  metadata?: DataSurfaceMetadata;
   schema: DataSurfaceSchema;
   /** Optional surface-specific executor. */
   execute?: DataSurfaceExecutor;
@@ -292,10 +307,14 @@ function visibleSchema(
 }
 
 function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
+  const metadataByFieldId = new Map(
+    surface.schema.fields.map((field) => [field.id, field.metadata]),
+  );
   return {
     id: surface.id,
     label: surface.label ?? surface.id,
     ...(surface.description ? { description: surface.description } : {}),
+    ...(surface.metadata ? { metadata: surface.metadata } : {}),
     collection: surface.collection,
     identityField: schema.identityField,
     fields: schema.fields.map((field) => ({
@@ -305,6 +324,9 @@ function descriptor(surface: DataSurfaceDefinition, schema: DataQuerySchema) {
       sortable: field.sortable === true,
       facetable: field.facetable === true,
       filterOperators: [...(field.filterOperators ?? [])].sort(),
+      ...(metadataByFieldId.get(field.id)
+        ? { metadata: metadataByFieldId.get(field.id) }
+        : {}),
     })),
     supports: schema.supports ?? {},
     limits: {
