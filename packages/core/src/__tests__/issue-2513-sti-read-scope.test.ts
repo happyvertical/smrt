@@ -39,6 +39,18 @@ class ScopeCurrentEvent extends ScopeEvent {
 @smrt()
 class ScopeHistoricalEvent extends ScopeEvent {
   legacyKey: string = '';
+
+  @field({ type: 'boolean' })
+  archived: boolean = false;
+
+  @field({ type: 'integer' })
+  attempts: number = 0;
+
+  @field({ type: 'datetime' })
+  occurredAt: Date = new Date(0);
+
+  @field({ type: 'json' })
+  payload: Record<string, unknown> = {};
 }
 
 @smrt({ tableStrategy: 'sti' })
@@ -161,6 +173,10 @@ describe.each([
       title: 'Historical A',
       status: 'open',
       legacyKey: 'legacy-a',
+      archived: true,
+      attempts: 7,
+      occurredAt: new Date('2025-01-02T03:04:05.000Z'),
+      payload: { source: 'legacy', version: 2 },
       tenantId: TENANT_A,
     });
     await current.create({
@@ -230,6 +246,13 @@ describe.each([
     expect(scoped).toHaveLength(2);
     expect(scoped[0]).toBeInstanceOf(ScopeCurrentEvent);
     expect(scoped[1]).toBeInstanceOf(ScopeHistoricalEvent);
+    if (!(scoped[1] instanceof ScopeHistoricalEvent)) {
+      throw new Error('Expected historical sibling hydration.');
+    }
+    expect(scoped[1].archived).toBe(true);
+    expect(scoped[1].attempts).toBe(7);
+    expect(scoped[1].occurredAt).toEqual(new Date('2025-01-02T03:04:05.000Z'));
+    expect(scoped[1].payload).toEqual({ source: 'legacy', version: 2 });
     expect(scoped.map((event) => event.title)).toEqual([
       'Current A',
       'Historical A',

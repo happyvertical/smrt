@@ -4222,9 +4222,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     row: Record<string, unknown>,
     fields: Record<string, CollectionFieldDefinition>,
     isSTI: boolean,
+    polymorphicFields = new Map<
+      string,
+      Record<string, CollectionFieldDefinition>
+    >(),
   ): Promise<ModelType> {
+    const hydrationFields = await this.resolveHydrationFields(
+      row,
+      fields,
+      isSTI,
+      polymorphicFields,
+    );
     const formattedData = this.withHydratedCoreFields(
-      formatDataJs(row, fields),
+      formatDataJs(row, hydrationFields),
     );
 
     const metaType = formattedData._meta_type;
@@ -4265,6 +4275,40 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Resolve inherited field metadata for an STI row's concrete discriminator.
+   * The caller-provided collection fields remain the safe fallback for
+   * non-polymorphic, malformed, or not-yet-registered rows.
+   */
+  private async resolveHydrationFields(
+    row: Record<string, unknown>,
+    fallbackFields: Record<string, CollectionFieldDefinition>,
+    isSTI: boolean,
+    polymorphicFields: Map<string, Record<string, CollectionFieldDefinition>>,
+  ): Promise<Record<string, CollectionFieldDefinition>> {
+    if (!isSTI) return fallbackFields;
+
+    const rawMetaType = row._meta_type ?? row._metaType;
+    if (rawMetaType === null || rawMetaType === undefined) {
+      return fallbackFields;
+    }
+
+    const metaType = String(rawMetaType);
+    const cached = polymorphicFields.get(metaType);
+    if (cached) return cached;
+    if (!ObjectRegistry.getClass(metaType)) return fallbackFields;
+
+    const registeredFields = await ObjectRegistry.getAllFields(metaType);
+    if (registeredFields.size === 0) return fallbackFields;
+
+    const concreteFields: Record<string, CollectionFieldDefinition> = {};
+    for (const [fieldName, field] of registeredFields) {
+      concreteFields[fieldName] = { type: field.type };
+    }
+    polymorphicFields.set(metaType, concreteFields);
+    return concreteFields;
+  }
+
+  /**
    * Hydrate rows in result order.
    *
    * A model's initialize() hook may query through the collection database.
@@ -4279,8 +4323,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     isSTI: boolean,
   ): Promise<ModelType[]> {
     const instances: ModelType[] = [];
+    const polymorphicFields = new Map<
+      string,
+      Record<string, CollectionFieldDefinition>
+    >();
     for (const row of rows) {
-      instances.push(await this.hydrateResultRow(row, fields, isSTI));
+      instances.push(
+        await this.hydrateResultRow(row, fields, isSTI, polymorphicFields),
+      );
     }
     return instances;
   }
