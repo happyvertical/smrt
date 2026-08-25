@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.43.1
+
+### Patch Changes
+
+- ### Features
+
+  - add saved views and snapshot exports (#2497) (reports)
+
+  ### Bug Fixes
+
+  - reset cleared controlled selection (#2507) (playground)
+  - support hierarchical JSON schemas (#2505) (events)
+  - @happyvertical/smrt-config@0.43.1
+  - @happyvertical/smrt-types@0.43.1
+  - @happyvertical/smrt-scanner@0.43.1
+
 ## 1.0.0
 
 ### Minor Changes
