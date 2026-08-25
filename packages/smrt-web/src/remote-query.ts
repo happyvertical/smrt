@@ -273,6 +273,7 @@ export function createSmrtWebQuery<TData extends object>(
     if (mode === 'visible' && !runOptions.force && fresh) {
       generation += 1;
       visibleController?.abort(abortError());
+      if (disposed) throw abortError();
       visibleController = undefined;
       request = candidate;
       if (rebindIntent) live?.disconnect();
@@ -284,6 +285,7 @@ export function createSmrtWebQuery<TData extends object>(
     if (mode === 'visible') {
       generation += 1;
       visibleController?.abort(abortError());
+      if (disposed) throw abortError();
       const invocationController = new AbortController();
       visibleController = invocationController;
       request = candidate;
@@ -313,6 +315,7 @@ export function createSmrtWebQuery<TData extends object>(
         force: true,
       };
       try {
+        if (disposed) throw abortError();
         const result = await runShared(candidate, key, runOptions);
         // A query-scoped live update or background successor may have won
         // while this transport was in flight. Do not let the older visible

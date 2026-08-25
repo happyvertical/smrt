@@ -624,6 +624,65 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('does not resurrect a query when a superseded run disposes it', async () => {
+    let calls = 0;
+    let query!: ReturnType<typeof createSmrtWebQuery<Row>>;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    query = createSmrtWebQuery(collection, {
+      query: async (_received, options) => {
+        calls += 1;
+        return await new Promise<never>((_resolve, reject) => {
+          options?.signal?.addEventListener(
+            'abort',
+            () => {
+              query.dispose();
+              reject(options.signal?.reason);
+            },
+            { once: true },
+          );
+        });
+      },
+    });
+
+    const first = query.execute(request).catch(() => undefined);
+    await vi.waitFor(() => expect(calls).toBe(1));
+    await expect(
+      query.execute({ ...request, requestId: 'request-2' }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    await first;
+
+    expect(calls).toBe(1);
+    expect(query.request).toBeUndefined();
+    await collection.cleanup();
+  });
+
+  it('does not start transport after a state listener disposes the query', async () => {
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return envelope(received, 'unexpected');
+      },
+    });
+    const unsubscribe = query.subscribe((next) => {
+      if (next.loading) query.dispose();
+    });
+
+    await expect(query.execute(request)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+
+    expect(calls).toBe(0);
+    expect(query.request).toBeUndefined();
+    unsubscribe();
+    await collection.cleanup();
+  });
+
   it('prefetches into the keyed cache without changing visible state, then refreshes coherently', async () => {
     let value = 'prefetched';
     const collection = createSmrtCollection(definition, {
