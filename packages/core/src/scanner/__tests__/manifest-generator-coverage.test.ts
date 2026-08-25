@@ -827,5 +827,66 @@ describe('ManifestGenerator coverage', () => {
       expect(node.fields.parentId.type).toBe('foreignKey');
       expect(node.fields.parentId.related).toBe('Node');
     });
+
+    it('preserves a concrete external STI parentId refinement for a local child (#2504)', () => {
+      writeExternalPackage({
+        [`${EXT_PKG}:SmrtHierarchical`]: {
+          className: 'SmrtHierarchical',
+          collection: '',
+          fields: { parentId: { type: 'text', _meta: {} } },
+          decoratorConfig: {},
+        },
+        [`${EXT_PKG}:Event`]: {
+          className: 'Event',
+          qualifiedName: `${EXT_PKG}:Event`,
+          extends: 'SmrtHierarchical',
+          collection: 'events',
+          fields: {
+            parentId: {
+              type: 'foreignKey',
+              related: 'Event',
+              required: false,
+              _meta: {
+                nullable: true,
+                constraint: { engines: ['postgres', 'sqlite'] },
+              },
+            },
+          },
+          decoratorConfig: { tableStrategy: 'sti', tableName: 'events' },
+        },
+      });
+
+      process.chdir(dir);
+      const gen = new ManifestGenerator();
+      const manifest = gen.generateManifest(
+        [
+          scan([
+            def('Meeting', {
+              extends: 'Event',
+              fields: { agenda: { type: 'text' } },
+            }),
+          ]),
+        ],
+        { smrtDependencies: [EXT_PKG] },
+      );
+
+      const meeting = manifest.objects.meeting;
+      expect(meeting.decoratorConfig).toMatchObject({
+        tableStrategy: 'sti',
+        tableName: 'events',
+      });
+      expect(meeting.fields.parentId).toMatchObject({
+        type: 'foreignKey',
+        related: 'Event',
+        required: false,
+        _meta: {
+          nullable: true,
+          constraint: { engines: ['postgres', 'sqlite'] },
+        },
+      });
+      expect(meeting.schema?.columns.parent_id?.foreignKey).toMatchObject({
+        engines: ['postgres', 'sqlite'],
+      });
+    });
   });
 });

@@ -1561,6 +1561,7 @@ export class ManifestGenerator {
       // merging their columns onto a descendant would generate the wrong
       // schema.
       const mergedFields: Record<string, FieldDefinition> = {};
+      const mergedFieldOwners = new Map<string, string>();
       const mergedMethods: Record<string, MethodDefinition> = {};
 
       for (const ancestorName of inheritanceChain) {
@@ -1573,15 +1574,29 @@ export class ManifestGenerator {
           continue;
         }
 
-        // Merge fields (child fields override parent fields with same name)
+        // Keep the oldest concrete STI declaration, but let a concrete class
+        // replace a framework abstract default. For example, Event refines
+        // SmrtHierarchical.parentId with its relationship target and an
+        // engine-scoped physical constraint. The local child's own fields are
+        // still applied after this loop.
         for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
-          if (!mergedFields[fieldName]) {
+          const existingOwner = mergedFieldOwners.get(fieldName);
+          const replacesFrameworkDefault =
+            existingOwner !== undefined &&
+            FRAMEWORK_ABSTRACT_BASE_NAMES.has(
+              this.simpleClassName(existingOwner),
+            ) &&
+            !FRAMEWORK_ABSTRACT_BASE_NAMES.has(
+              this.simpleClassName(ancestorName),
+            );
+          if (!existingOwner || replacesFrameworkDefault) {
             mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
               ancestorName,
               fieldName,
               fieldDef,
               obj.className,
             );
+            mergedFieldOwners.set(fieldName, ancestorName);
           }
         }
 
