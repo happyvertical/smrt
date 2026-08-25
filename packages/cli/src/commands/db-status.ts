@@ -231,6 +231,11 @@ export function summarizeSchemaDiff(diff: {
       actual: string;
     };
     alteration?: string;
+    foreignKey?: {
+      column: string;
+      referencesTable: string;
+      referencesColumn: string;
+    };
     advisory?: { severity: 'warning' | 'info'; message: string };
     sql?: string;
     sqlStatements?: string[];
@@ -266,6 +271,24 @@ export function summarizeSchemaDiff(diff: {
             'Run `smrt db:migrate` to add the missing index and reconcile the live schema.',
         });
         break;
+
+      case 'add_foreign_key':
+      case 'drop_foreign_key': {
+        const relationship = change.foreignKey
+          ? `${change.table}.${change.foreignKey.column} -> ${change.foreignKey.referencesTable}.${change.foreignKey.referencesColumn}`
+          : `${change.table}.${change.name ?? '(unknown)'}`;
+        const isAddition = change.type === 'add_foreign_key';
+        drift.push({
+          name: relationship,
+          type: isAddition ? 'missing_foreign_key' : 'disabled_foreign_key',
+          recommendation:
+            change.advisory?.message ??
+            (isAddition
+              ? 'Run `smrt db:migrate` to add the missing foreign key and reconcile the live schema.'
+              : 'Run `smrt db:migrate` to remove the disabled foreign key and reconcile the live schema.'),
+        });
+        break;
+      }
 
       case 'type_upgrade':
         switch (classifyTypeUpgradeSql(change.sql)) {
