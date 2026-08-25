@@ -1110,6 +1110,36 @@ describe('utility command handlers', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('db:migrate reports a disabled foreign key whose live name is unavailable', async () => {
+    configureMigrate();
+    schemaCompare.mockResolvedValue({
+      added_tables: [],
+      changes: [
+        {
+          type: 'drop_foreign_key',
+          table: 'children',
+          name: 'children_parent_id_parents_id_fkey',
+          advisory: {
+            severity: 'warning',
+            message:
+              '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun.',
+          },
+        },
+      ],
+    });
+
+    await utilityCommands['db:migrate'].handler([], {});
+
+    const out = logged();
+    expect(out).toContain('requires manual intervention');
+    expect(out).toContain('children');
+    expect(out).toContain(
+      'does not expose the live PostgreSQL constraint name',
+    );
+    expect(out).not.toContain('Successfully applied');
+    expect(process.exitCode).toBe(1);
+  });
+
   it('db:migrate verbose lists STI child tables', async () => {
     configureMigrate();
     registry.getInitializationOrder.mockReturnValue(['Article', 'Page']);

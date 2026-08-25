@@ -1770,7 +1770,10 @@ export default testManifest;
             '⚠️  Schema drift detected that requires manual intervention:\n',
           );
           for (const change of manualInterventions) {
-            if (change.type === 'add_foreign_key') {
+            if (
+              change.type === 'add_foreign_key' ||
+              change.type === 'drop_foreign_key'
+            ) {
               console.log(
                 `   ${change.tableName}: ${change.advisory?.message ?? change.sql?.replace(/^--\s*/, '') ?? 'foreign-key constraint requires manual repair'}`,
               );
@@ -1859,6 +1862,9 @@ export default testManifest;
             const foreignKeyMigrations = migrations.filter(
               (m) => m.type === 'add_foreign_key',
             );
+            const foreignKeyDrops = migrations.filter(
+              (m) => m.type === 'drop_foreign_key',
+            );
             const indexDrops = migrations.filter(
               (m) => m.type === 'drop_index',
             );
@@ -1924,6 +1930,16 @@ export default testManifest;
                 `  🔗 Foreign-key constraints to add: ${foreignKeyMigrations.length}`,
               );
               for (const m of foreignKeyMigrations) {
+                console.log(`     ${m.tableName}`);
+              }
+              console.log();
+            }
+
+            if (foreignKeyDrops.length > 0) {
+              console.log(
+                `  🔗 Foreign-key constraints to drop: ${foreignKeyDrops.length}`,
+              );
+              for (const m of foreignKeyDrops) {
                 console.log(`     ${m.tableName}`);
               }
               console.log();
@@ -2062,6 +2078,9 @@ export default testManifest;
             } else if (migration.type === 'add_foreign_key') {
               migrationSql = migration.sql || '';
               actionDesc = `Added foreign-key constraint on ${migration.tableName}`;
+            } else if (migration.type === 'drop_foreign_key') {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;
             } else {
               continue;
             }
@@ -2084,7 +2103,9 @@ export default testManifest;
                           ? `Drop index ${migration.indexName} on ${migration.tableName}`
                           : migration.type === 'add_foreign_key'
                             ? `Add foreign-key constraint on ${migration.tableName}`
-                            : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                            : migration.type === 'drop_foreign_key'
+                              ? `Drop foreign-key constraint on ${migration.tableName}`
+                              : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               // Auto-migrations don't carry a DOWN script. Atomic execution
               // rolls back the surrounding transaction instead of relying on

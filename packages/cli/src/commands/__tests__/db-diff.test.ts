@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { SchemaComparer } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -271,6 +272,49 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     const out = output();
     expect(out).toContain('Type');
     expect(out).toContain('widgets.status');
+  });
+
+  it('reports disabled foreign-key drift whose live constraint name is unavailable', async () => {
+    declareSchema({
+      children: {
+        tableName: 'children',
+        columns: { id: { type: 'TEXT', primaryKey: true } },
+        indexes: [],
+      },
+    });
+    vi.spyOn(SchemaComparer.prototype, 'compare').mockResolvedValue({
+      has_changes: true,
+      added_tables: [],
+      dropped_tables: [],
+      orphan_tables: [],
+      changes: [
+        {
+          type: 'drop_foreign_key',
+          table: 'children',
+          name: 'children_parent_id_parents_id_fkey',
+          foreignKey: {
+            column: 'parent_id',
+            referencesTable: 'parents',
+            referencesColumn: 'id',
+          },
+          advisory: {
+            severity: 'warning',
+            message:
+              '@happyvertical/sql schema introspection does not expose the live PostgreSQL constraint name. Drop the live constraint deliberately, then rerun.',
+          },
+        },
+      ],
+    } as never);
+
+    await dbDiffCommand.handler([], {});
+
+    const out = output();
+    expect(out).toContain('Foreign-key drift needing a manual step (1)');
+    expect(out).toContain('children: remove constraint');
+    expect(out).toContain(
+      'does not expose the live PostgreSQL constraint name',
+    );
+    expect(out).not.toContain('no migrations needed');
   });
 
   it('lists orphan indexes to drop when --drop-indexes is set', async () => {
