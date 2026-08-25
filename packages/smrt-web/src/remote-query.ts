@@ -346,7 +346,8 @@ export function createSmrtWebQuery<TData extends object>(
   ): Promise<SmrtWebDataQueryResult> => {
     if (!runOptions.force) {
       const running = inFlight.get(key);
-      if (running) return running;
+      if (running)
+        return running.then((result) => rebindRequestId(result, candidate));
     }
     const flight = ++flightSequence;
     const running = runTransport(candidate, runOptions).then((result) => {

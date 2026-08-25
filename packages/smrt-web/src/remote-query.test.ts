@@ -109,6 +109,36 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('rebinds an in-flight shared result to each caller request id', async () => {
+    let resolveQuery!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+          resolveQuery = resolve;
+          void received;
+        });
+      },
+    });
+
+    const first = query.execute(request, { mode: 'background' });
+    const second = query.execute(
+      { ...request, requestId: 'request-2' },
+      { mode: 'background' },
+    );
+    resolveQuery(envelope(request, 'shared'));
+
+    expect(calls).toBe(1);
+    await expect(first).resolves.toMatchObject({ requestId: 'request-1' });
+    await expect(second).resolves.toMatchObject({ requestId: 'request-2' });
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('releases visible refresh state when a background successor wins the cache', async () => {
     let resolveRefresh!: (result: ReturnType<typeof envelope>) => void;
     let calls = 0;
