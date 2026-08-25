@@ -72,9 +72,9 @@ reviewed catalog where every allowed tool is unauthenticated, read-only, and
 global. The server verifies that shape (including the absence of tenant-scoped
 tools and principal-aware policy) and falls back to `private` otherwise.
 
-The route constructs a fresh protocol server for every HTTP request. It does
-not issue or rely on `Mcp-Session-Id`, sticky load-balancer routing, or a held
-SSE connection, so it is safe behind ordinary round-robin deployment. This
+The route constructs a fresh protocol server for every HTTP request. It relies
+on no transport session state, sticky load-balancer routing, or held event
+stream, so it is safe behind ordinary round-robin deployment. This
 mount exposes no subscription capability; subscription requests are refused as
 a JSON-RPC error before any SSE stream opens. Persist stateful workflow
 progress in application objects, then pass their explicit s-m-r-t object id
