@@ -81,6 +81,15 @@ interface SharedFlight {
   settled: boolean;
 }
 
+interface LiveIntent {
+  active: boolean;
+}
+
+interface ManagedLiveSubscription extends SmrtWebQueryLiveSubscription {
+  readonly intent: LiveIntent;
+  disconnect(): void;
+}
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
   if (value && typeof value === 'object') {
@@ -152,8 +161,8 @@ export function createSmrtWebQuery<TData extends object>(
   let visibleController: AbortController | undefined;
   const runControllers = new Set<AbortController>();
   let generation = 0;
-  let live: SmrtWebQueryLiveSubscription | undefined;
-  let liveRequested = false;
+  let live: ManagedLiveSubscription | undefined;
+  let liveIntent: LiveIntent | undefined;
   let liveGeneration = 0;
   let disposed = false;
   let state: SmrtWebQueryState<TData> = {
@@ -247,14 +256,14 @@ export function createSmrtWebQuery<TData extends object>(
     if (runOptions.signal?.aborted || (runOptions.deadlineMs ?? 1) <= 0)
       throw abortError();
     // A live connection is scoped to the complete semantic query, not merely
-    // the controller. Preserve it for a request-id rebinding, but replace it
-    // when visible state moves to a different page, filter, or sort. Remember
-    // that live updates were requested while an earlier replacement is still
-    // in flight, so rapid visible changes cannot lose the subscription.
+    // the controller. Preserve its caller-owned intent through a replacement
+    // so rapid visible changes cannot lose it, while a caller can still cancel
+    // that intent through the original returned subscription handle.
     const shouldRebindLive =
       mode === 'visible' &&
-      liveRequested &&
+      liveIntent?.active &&
       (!live || (request !== undefined && keyFor(request) !== key));
+    const rebindIntent = shouldRebindLive ? liveIntent : undefined;
     const entry = cached(key);
     const fresh =
       entry !== undefined && Date.now() - entry.updatedAt < staleTimeMs;
@@ -265,13 +274,10 @@ export function createSmrtWebQuery<TData extends object>(
       visibleController?.abort(abortError());
       visibleController = undefined;
       request = candidate;
-      if (shouldRebindLive) {
-        live?.unsubscribe();
-        liveRequested = true;
-      }
+      if (rebindIntent) live?.disconnect();
       const result = rebindRequestId(entry.result, candidate);
       apply(result, candidate, entry.updatedAt);
-      if (shouldRebindLive && !live) subscribeLive();
+      if (rebindIntent?.active && !live) startLive(rebindIntent);
       return result;
     }
     if (mode === 'visible') {
@@ -280,10 +286,7 @@ export function createSmrtWebQuery<TData extends object>(
       const invocationController = new AbortController();
       visibleController = invocationController;
       request = candidate;
-      if (shouldRebindLive) {
-        live?.unsubscribe();
-        liveRequested = true;
-      }
+      if (rebindIntent) live?.disconnect();
       const current = generation;
       const signal = runOptions.signal;
       let removeCallerAbort: (() => void) | undefined;
@@ -317,7 +320,7 @@ export function createSmrtWebQuery<TData extends object>(
         if (current === generation) {
           if (cached(key)?.result === result) apply(result, candidate);
           else publish({ ...state, loading: false, refreshing: false });
-          if (shouldRebindLive && !live) subscribeLive();
+          if (rebindIntent?.active && !live) startLive(rebindIntent);
         }
         return result;
       } catch (error) {
@@ -443,114 +446,127 @@ export function createSmrtWebQuery<TData extends object>(
       force: true,
     });
   };
-  const subscribeLive = (): SmrtWebQueryLiveSubscription | undefined => {
-    if (disposed || !request || !transport.subscribe) return undefined;
-    live?.unsubscribe();
+  const startLive = (
+    intent: LiveIntent,
+  ): ManagedLiveSubscription | undefined => {
+    if (disposed || !intent.active || !request || !transport.subscribe)
+      return undefined;
     const candidate = request;
     const currentGeneration = ++liveGeneration;
-    let connectionGeneration = 0;
-    let controller: AbortController | undefined;
+    const controller = new AbortController();
+    let connected = true;
     let subscription: SmrtWebQueryLiveSubscription | { unsubscribe(): void };
-    let active = true;
-    let handle: SmrtWebQueryLiveSubscription;
-    const connect = (): void => {
-      if (!active || disposed || currentGeneration !== liveGeneration) return;
-      controller = new AbortController();
-      const connection = ++connectionGeneration;
-      const subscribe = transport.subscribe;
-      if (!subscribe) return;
-      subscription = subscribe(
-        candidate,
-        (raw) => {
-          if (
-            !active ||
-            disposed ||
-            currentGeneration !== liveGeneration ||
-            connection !== connectionGeneration ||
-            controller?.signal.aborted
-          )
-            return;
-          // Claim ordering when the push arrives, before envelope validation
-          // yields. A later explicit fetch must remain newer even if this
-          // callback resumes after it.
-          const liveFlight = ++flightSequence;
-          void (async () => {
-            const result = await executeSmrtWebDataQuery(
-              { query: async () => raw },
-              candidate,
-            );
-            if (
-              active &&
-              !disposed &&
-              currentGeneration === liveGeneration &&
-              connection === connectionGeneration &&
-              request &&
-              keyFor(request) === keyFor(candidate)
-            )
-              apply(
-                rebindRequestId(result, request),
-                request,
-                Date.now(),
-                liveFlight,
-              );
-          })().catch((error) => {
-            const latestSuccessful = latestSuccessfulFlight.get(
-              keyFor(candidate),
-            );
-            if (
-              !isAbort(error) &&
-              active &&
-              !disposed &&
-              currentGeneration === liveGeneration &&
-              connection === connectionGeneration &&
-              request &&
-              keyFor(request) === keyFor(candidate) &&
-              (latestSuccessful === undefined || liveFlight > latestSuccessful)
-            )
-              publish({ ...state, error });
-          });
-        },
-        { signal: controller.signal },
-      );
+    let handle: ManagedLiveSubscription;
+    const disconnect = (): void => {
+      if (!connected) return;
+      connected = false;
+      controller.abort();
+      subscription.unsubscribe();
+      if (live === handle) live = undefined;
     };
     const unsubscribe = (): void => {
-      if (!active) return;
-      active = false;
-      liveGeneration += 1;
-      controller?.abort();
-      subscription.unsubscribe();
-      if (live === handle) {
-        live = undefined;
-        liveRequested = false;
-      }
+      if (!intent.active) return;
+      intent.active = false;
+      disconnect();
+      if (liveIntent === intent) liveIntent = undefined;
+      if (live?.intent === intent) live.disconnect();
     };
     const reconnect = (): void => {
-      if (!active || disposed || currentGeneration !== liveGeneration) return;
-      // Invalidate callbacks that already entered envelope validation before
-      // aborting this connection; the replacement is installed only after the
-      // background refetch settles.
-      const reconnectGeneration = ++connectionGeneration;
-      controller?.abort();
-      subscription.unsubscribe();
+      if (!intent.active || disposed) return;
+      if (!connected) {
+        if (live?.intent === intent) live.reconnect();
+        return;
+      }
+      if (currentGeneration !== liveGeneration) return;
+      disconnect();
       // Refresh the exact page first, then replace the old subscription. This
       // avoids reconnecting against a stale cursor or cached snapshot.
       void execute(candidate, { mode: 'background', force: true })
         .catch(() => undefined)
         .finally(() => {
           if (
-            active &&
+            intent.active &&
             !disposed &&
-            currentGeneration === liveGeneration &&
-            reconnectGeneration === connectionGeneration
+            liveIntent === intent &&
+            !live &&
+            request &&
+            keyFor(request) === keyFor(candidate)
           )
-            connect();
+            startLive(intent);
         });
     };
-    handle = { unsubscribe, reconnect };
-    connect();
+    handle = { intent, disconnect, unsubscribe, reconnect };
+    subscription = transport.subscribe(
+      candidate,
+      (raw) => {
+        if (
+          !connected ||
+          !intent.active ||
+          disposed ||
+          currentGeneration !== liveGeneration ||
+          controller.signal.aborted
+        )
+          return;
+        // Claim ordering when the push arrives, before envelope validation
+        // yields. A later explicit fetch must remain newer even if this
+        // callback resumes after it.
+        const liveFlight = ++flightSequence;
+        void (async () => {
+          const result = await executeSmrtWebDataQuery(
+            { query: async () => raw },
+            candidate,
+          );
+          if (
+            connected &&
+            intent.active &&
+            !disposed &&
+            currentGeneration === liveGeneration &&
+            request &&
+            keyFor(request) === keyFor(candidate)
+          )
+            apply(
+              rebindRequestId(result, request),
+              request,
+              Date.now(),
+              liveFlight,
+            );
+        })().catch((error) => {
+          const latestSuccessful = latestSuccessfulFlight.get(
+            keyFor(candidate),
+          );
+          if (
+            !isAbort(error) &&
+            connected &&
+            intent.active &&
+            !disposed &&
+            currentGeneration === liveGeneration &&
+            request &&
+            keyFor(request) === keyFor(candidate) &&
+            (latestSuccessful === undefined || liveFlight > latestSuccessful)
+          )
+            publish({ ...state, error });
+        });
+      },
+      { signal: controller.signal },
+    );
     live = handle;
-    liveRequested = true;
     return handle;
+  };
+  const subscribeLive = (): SmrtWebQueryLiveSubscription | undefined => {
+    if (disposed || !request || !transport.subscribe) return undefined;
+    if (liveIntent) {
+      liveIntent.active = false;
+      live?.disconnect();
+    }
+    const intent = { active: true };
+    liveIntent = intent;
+    try {
+      return startLive(intent);
+    } catch (error) {
+      intent.active = false;
+      if (liveIntent === intent) liveIntent = undefined;
+      throw error;
+    }
   };
   return {
     get state() {
@@ -583,9 +599,10 @@ export function createSmrtWebQuery<TData extends object>(
       liveGeneration += 1;
       visibleController?.abort(abortError());
       for (const controller of runControllers) controller.abort(abortError());
-      live?.unsubscribe();
+      if (liveIntent) liveIntent.active = false;
+      live?.disconnect();
       live = undefined;
-      liveRequested = false;
+      liveIntent = undefined;
       request = undefined;
       listeners.clear();
       cache.clear();

@@ -796,6 +796,87 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('lets the original live handle cancel a pending query rebind', async () => {
+    const subscriptions: SmrtWebDataQueryRequest[] = [];
+    let resolveQuery!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    let unsubscribed = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        if (calls === 1) return envelope(received, 'initial');
+        return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+          resolveQuery = resolve;
+        });
+      },
+      subscribe: (received) => {
+        subscriptions.push(received);
+        return {
+          unsubscribe: () => {
+            unsubscribed += 1;
+          },
+        };
+      },
+    });
+    const nextRequest = {
+      ...request,
+      requestId: 'request-2',
+      page: { kind: 'offset' as const, offset: 10, limit: 10 },
+    };
+
+    await query.execute(request);
+    const live = query.subscribeLive();
+    const next = query.execute(nextRequest);
+    await vi.waitFor(() => expect(calls).toBe(2));
+    live?.unsubscribe();
+    resolveQuery(envelope(nextRequest, 'next'));
+    await next;
+
+    expect(unsubscribed).toBe(1);
+    expect(subscriptions).toEqual([request]);
+    query.dispose();
+    await collection.cleanup();
+  });
+
+  it('disconnects a transport only once during repeated reconnects', async () => {
+    const callbacks: Array<(value: unknown) => void> = [];
+    let calls = 0;
+    let unsubscribeCalls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return envelope(received, calls === 1 ? 'initial' : 'reconnected');
+      },
+      subscribe: (_received, callback) => {
+        callbacks.push(callback);
+        let closed = false;
+        return {
+          unsubscribe: () => {
+            if (closed) throw new Error('subscription closed twice');
+            closed = true;
+            unsubscribeCalls += 1;
+          },
+        };
+      },
+    });
+
+    await query.execute(request);
+    const live = query.subscribeLive();
+    live?.reconnect();
+    live?.reconnect();
+    await vi.waitFor(() => expect(callbacks).toHaveLength(2));
+
+    expect(unsubscribeCalls).toBe(1);
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('does not let a delayed live update overtake a newer explicit fetch', async () => {
     let onResult: ((value: unknown) => void) | undefined;
     let resolveLive!: (result: ReturnType<typeof envelope>) => void;
@@ -916,9 +997,7 @@ describe('remote query controller', () => {
 
   it('coalesces overlapping reconnects into one replacement subscription', async () => {
     const callbacks: Array<(value: unknown) => void> = [];
-    const resolveRefreshes: Array<
-      (result: ReturnType<typeof envelope>) => void
-    > = [];
+    let resolveRefresh!: (result: ReturnType<typeof envelope>) => void;
     let queryCalls = 0;
     const collection = createSmrtCollection(definition, {
       fetchers: { list: async () => [], create: async () => ({}) },
@@ -928,7 +1007,7 @@ describe('remote query controller', () => {
         queryCalls += 1;
         if (queryCalls === 1) return envelope(received, 'initial');
         return await new Promise<ReturnType<typeof envelope>>((resolve) => {
-          resolveRefreshes.push(resolve);
+          resolveRefresh = resolve;
         });
       },
       subscribe: (_received, callback) => {
@@ -941,11 +1020,8 @@ describe('remote query controller', () => {
     const live = query.subscribeLive();
     live?.reconnect();
     live?.reconnect();
-    await vi.waitFor(() => expect(queryCalls).toBe(3));
-    resolveRefreshes[0]?.(envelope(request, 'first-reconnect'));
-    await Promise.resolve();
-    expect(callbacks).toHaveLength(1);
-    resolveRefreshes[1]?.(envelope(request, 'second-reconnect'));
+    await vi.waitFor(() => expect(queryCalls).toBe(2));
+    resolveRefresh(envelope(request, 'reconnect'));
     await vi.waitFor(() => expect(callbacks).toHaveLength(2));
 
     callbacks[1]?.(envelope(request, 'reconnected'));
