@@ -451,6 +451,19 @@ ${downStatementsStr}
         // databases may not match the deterministic current generator name.
         break;
 
+      case 'drop_foreign_key':
+        if (sqlStatements.length > 0) {
+          up.push(...sqlStatements);
+        } else if (change.advisory) {
+          up.push(
+            `-- ${change.advisory.severity === 'warning' ? 'WARNING' : 'NOTE'}: Foreign-key constraint ${change.table}.${change.name ?? 'unknown'}`,
+          );
+          up.push(`-- ${change.advisory.message}`);
+        }
+        // Re-adding a removed constraint requires a fresh orphan check and is
+        // therefore intentionally not generated as an automatic rollback.
+        break;
+
       case 'drop_index':
         if (change.name) {
           up.push(this.generateDropIndex(change.name));

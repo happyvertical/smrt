@@ -92,6 +92,20 @@ export function schemaForeignKeys(
   });
 }
 
+/** Stable identity for one physical relationship, independent of allocation. */
+export function foreignKeyRelationshipKey(
+  foreignKey: Pick<
+    ForeignKeyDefinition,
+    'column' | 'referencesColumn' | 'referencesTable'
+  >,
+): string {
+  return JSON.stringify([
+    foreignKey.column,
+    foreignKey.referencesTable,
+    foreignKey.referencesColumn,
+  ]);
+}
+
 /** Return only physical constraints explicitly enabled for an engine. */
 export function schemaForeignKeysForEngine(
   schema: Pick<SchemaDefinition, 'columns'> &
@@ -130,12 +144,17 @@ export function schemaDependenciesForEngine(
 ): string[] {
   const foreignKeys = schemaForeignKeys(schema);
   const enabledForeignKeys = schemaForeignKeysForEngine(schema, engine);
+  const enabledKeys = new Set(
+    enabledForeignKeys.map(foreignKeyRelationshipKey),
+  );
   const enabledTargets = new Set(
     enabledForeignKeys.map((foreignKey) => foreignKey.referencesTable),
   );
   const disabledTargets = new Set(
     foreignKeys
-      .filter((foreignKey) => !enabledForeignKeys.includes(foreignKey))
+      .filter(
+        (foreignKey) => !enabledKeys.has(foreignKeyRelationshipKey(foreignKey)),
+      )
       .map((foreignKey) => foreignKey.referencesTable),
   );
 

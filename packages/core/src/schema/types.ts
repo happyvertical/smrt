@@ -345,6 +345,7 @@ export interface SchemaChange {
     | 'orphan_column'
     | 'add_index'
     | 'add_foreign_key'
+    | 'drop_foreign_key'
     | 'drop_index'
     | 'orphan_index'
     | 'type_mismatch'
@@ -357,7 +358,7 @@ export interface SchemaChange {
   column?: ColumnDefinition;
   /** Index definition (for add_index) */
   index?: IndexDefinition;
-  /** Foreign-key definition (for add_foreign_key). */
+  /** Foreign-key definition (for add_foreign_key/drop_foreign_key). */
   foreignKey?: ForeignKeyDefinition;
   /**
    * For type mismatches/upgrades: expected vs actual type. For
