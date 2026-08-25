@@ -642,6 +642,31 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('rebinds a same-key live update to the current request id', async () => {
+    let onResult: ((value: unknown) => void) | undefined;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => envelope(received, 'initial'),
+      subscribe: (_received, callback) => {
+        onResult = callback;
+        return { unsubscribe: () => undefined };
+      },
+    });
+    const newerRequest = { ...request, requestId: 'request-2' };
+
+    await query.execute(request);
+    query.subscribeLive();
+    await query.execute(newerRequest);
+    onResult?.(envelope(request, 'live'));
+
+    await vi.waitFor(() => expect(query.state.rows[0]?.name).toBe('live'));
+    expect(query.state.result?.requestId).toBe('request-2');
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('refetches before fallback reconnect, resubscribes, and ignores old callbacks', async () => {
     const callbacks: Array<(value: unknown) => void> = [];
     let queryCalls = 0;
@@ -682,6 +707,49 @@ describe('remote query controller', () => {
     callbacks[1]?.(envelope(request, 'late-disposed'));
     await Promise.resolve();
     expect(query.state.rows[0]?.name).toBe('reconnected');
+    await collection.cleanup();
+  });
+
+  it('coalesces overlapping reconnects into one replacement subscription', async () => {
+    const callbacks: Array<(value: unknown) => void> = [];
+    const resolveRefreshes: Array<
+      (result: ReturnType<typeof envelope>) => void
+    > = [];
+    let queryCalls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        queryCalls += 1;
+        if (queryCalls === 1) return envelope(received, 'initial');
+        return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+          resolveRefreshes.push(resolve);
+        });
+      },
+      subscribe: (_received, callback) => {
+        callbacks.push(callback);
+        return { unsubscribe: () => undefined };
+      },
+    });
+
+    await query.execute(request);
+    const live = query.subscribeLive();
+    live?.reconnect();
+    live?.reconnect();
+    await vi.waitFor(() => expect(queryCalls).toBe(3));
+    resolveRefreshes[0]?.(envelope(request, 'first-reconnect'));
+    await Promise.resolve();
+    expect(callbacks).toHaveLength(1);
+    resolveRefreshes[1]?.(envelope(request, 'second-reconnect'));
+    await vi.waitFor(() => expect(callbacks).toHaveLength(2));
+
+    callbacks[1]?.(envelope(request, 'reconnected'));
+    await vi.waitFor(() =>
+      expect(query.state.rows[0]?.name).toBe('reconnected'),
+    );
+    live?.unsubscribe();
+    query.dispose();
     await collection.cleanup();
   });
 

@@ -461,7 +461,12 @@ export function createSmrtWebQuery<TData extends object>(
               request &&
               keyFor(request) === keyFor(candidate)
             )
-              apply(result, candidate, Date.now(), ++flightSequence);
+              apply(
+                rebindRequestId(result, request),
+                request,
+                Date.now(),
+                ++flightSequence,
+              );
           })().catch((error) => {
             if (
               !isAbort(error) &&
@@ -491,7 +496,7 @@ export function createSmrtWebQuery<TData extends object>(
       // Invalidate callbacks that already entered envelope validation before
       // aborting this connection; the replacement is installed only after the
       // background refetch settles.
-      connectionGeneration += 1;
+      const reconnectGeneration = ++connectionGeneration;
       controller?.abort();
       subscription.unsubscribe();
       // Refresh the exact page first, then replace the old subscription. This
@@ -499,7 +504,12 @@ export function createSmrtWebQuery<TData extends object>(
       void execute(candidate, { mode: 'background', force: true })
         .catch(() => undefined)
         .finally(() => {
-          if (active && !disposed && currentGeneration === liveGeneration)
+          if (
+            active &&
+            !disposed &&
+            currentGeneration === liveGeneration &&
+            reconnectGeneration === connectionGeneration
+          )
             connect();
         });
     };
