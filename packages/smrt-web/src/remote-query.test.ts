@@ -683,6 +683,59 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('rejects a fresh-cache read when its state listener disposes the query', async () => {
+    let calls = 0;
+    let disposeOnNextState = false;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        return envelope(received, 'cached');
+      },
+    });
+    const unsubscribe = query.subscribe(() => {
+      if (disposeOnNextState) query.dispose();
+    });
+
+    await query.execute(request);
+    disposeOnNextState = true;
+    await expect(
+      query.execute({ ...request, requestId: 'request-2' }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(calls).toBe(1);
+    expect(query.request).toBeUndefined();
+    unsubscribe();
+    await collection.cleanup();
+  });
+
+  it('cleans up a subscription that disposes the query synchronously', async () => {
+    let unsubscribed = 0;
+    let query!: ReturnType<typeof createSmrtWebQuery<Row>>;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    query = createSmrtWebQuery(collection, {
+      query: async (received) => envelope(received, 'initial'),
+      subscribe: () => {
+        query.dispose();
+        return {
+          unsubscribe: () => {
+            unsubscribed += 1;
+          },
+        };
+      },
+    });
+
+    await query.execute(request);
+    expect(query.subscribeLive()).toBeUndefined();
+    expect(unsubscribed).toBe(1);
+    expect(query.request).toBeUndefined();
+    await collection.cleanup();
+  });
+
   it('prefetches into the keyed cache without changing visible state, then refreshes coherently', async () => {
     let value = 'prefetched';
     const collection = createSmrtCollection(definition, {
@@ -1043,7 +1096,7 @@ describe('remote query controller', () => {
     expect(queryCalls).toBe(2);
     oldCallback?.(envelope(request, 'late-old'));
     await Promise.resolve();
-    expect(query.state.rows[0]?.name).toBe('initial');
+    expect(query.state.rows[0]?.name).toBe('resynced');
     callbacks[1]?.(envelope(request, 'reconnected'));
     await vi.waitFor(() =>
       expect(query.state.rows[0]?.name).toBe('reconnected'),

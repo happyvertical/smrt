@@ -279,6 +279,7 @@ export function createSmrtWebQuery<TData extends object>(
       if (rebindIntent) live?.disconnect();
       const result = rebindRequestId(entry.result, candidate);
       apply(result, candidate, entry.updatedAt);
+      if (disposed) throw abortError();
       if (rebindIntent?.active && !live) startLive(rebindIntent);
       return result;
     }
@@ -485,7 +486,7 @@ export function createSmrtWebQuery<TData extends object>(
       disconnect();
       // Refresh the exact page first, then replace the old subscription. This
       // avoids reconnecting against a stale cursor or cached snapshot.
-      void execute(candidate, { mode: 'background', force: true })
+      void execute(candidate, { mode: 'visible', force: true })
         .catch(() => undefined)
         .finally(() => {
           if (
@@ -553,6 +554,10 @@ export function createSmrtWebQuery<TData extends object>(
       },
       { signal: controller.signal },
     );
+    if (disposed || !intent.active) {
+      disconnect();
+      return undefined;
+    }
     live = handle;
     return handle;
   };
