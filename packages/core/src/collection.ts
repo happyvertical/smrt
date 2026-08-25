@@ -2623,32 +2623,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async get(
     filter: string | SmrtWhereClause<ModelType>,
-    options: {
-      cache?: CollectionCacheConfig | false;
-      stiScope: SmrtStiReadScope;
-    },
-  ): Promise<SmrtObject | null>;
-  public async get(
-    filter: string | SmrtWhereClause<ModelType>,
-    options?: {
-      cache?: CollectionCacheConfig | false;
-      stiScope?: undefined;
-    },
-  ): Promise<ModelType | null>;
-  public async get(
-    filter: string | SmrtWhereClause<ModelType>,
-    options?: {
-      cache?: CollectionCacheConfig | false;
-      stiScope?: SmrtStiReadScope;
-    },
-  ): Promise<SmrtObject | null>;
-  public async get(
-    filter: string | SmrtWhereClause<ModelType>,
-    options: {
-      cache?: CollectionCacheConfig | false;
-      stiScope?: SmrtStiReadScope;
-    } = {},
-  ): Promise<SmrtObject | null> {
+    options: { cache?: CollectionCacheConfig | false } = {},
+  ): Promise<ModelType | null> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
@@ -2682,11 +2658,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
-    const scopedWhere = this.applyStiReadScope(where, options.stiScope);
-    if (Array.isArray(scopedWhere)) {
-      throw new Error('Invalid STI point-read scope.');
+    if (isSTI) {
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase && stiBase !== itemQualifiedName) {
+        where = {
+          _meta_type: itemQualifiedName,
+          ...where,
+        };
+      }
     }
-    where = scopedWhere ?? where;
 
     // convertWhereKeys is now sync (issue #663) - no await needed
     const convertedWhere = this.convertWhereKeys(where);
@@ -2788,20 +2768,29 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       stiScope: SmrtStiReadScope;
     },
   ): Promise<SmrtObject[]>;
+  public async list(options?: undefined): Promise<ModelType[]>;
   public async list(
-    options?: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
       select?: undefined;
       stiScope?: undefined;
     },
   ): Promise<ModelType[]>;
   public async list(
-    options?: Omit<SmrtListOptions<ModelType>, 'select'> & {
-      select?: undefined;
-    },
+    options:
+      | (Omit<SmrtListOptions<ModelType>, 'select'> & {
+          select?: undefined;
+        })
+      | undefined,
   ): Promise<SmrtObject[]>;
   public async list(
-    options?: SmrtListOptions<ModelType>,
+    options: SmrtListOptions<ModelType> | undefined,
   ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  public async list(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<ModelType[]>;
   public async list(
     options: SmrtListOptions<ModelType> = {},
   ): Promise<SmrtObject[] | Record<string, unknown>[]> {

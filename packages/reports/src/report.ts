@@ -1,8 +1,12 @@
 import {
   ObjectRegistry,
   SmrtCollection,
+  type SmrtListOptions,
   SmrtObject,
   type SmrtObjectOptions,
+  type SmrtSelectedRow,
+  type SmrtSelectField,
+  type SmrtStiReadScope,
 } from '@happyvertical/smrt-core';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
@@ -150,9 +154,38 @@ export class SmrtReportCollection<
     });
   }
 
+  override async list<
+    const Select extends readonly SmrtSelectField<ModelType>[],
+  >(
+    options: SmrtListOptions<ModelType> & {
+      select: Select;
+      include?: never;
+    },
+  ): Promise<SmrtSelectedRow<ModelType, Select>[]>;
   override async list(
-    options: Parameters<SmrtCollection<ModelType>['list']>[0] = {},
-  ): Promise<ModelType[]> {
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope: SmrtStiReadScope;
+    },
+  ): Promise<SmrtObject[]>;
+  override async list(options?: undefined): Promise<ModelType[]>;
+  override async list(
+    options: Omit<SmrtListOptions<ModelType>, 'select' | 'stiScope'> & {
+      select?: undefined;
+      stiScope?: undefined;
+    },
+  ): Promise<ModelType[]>;
+  override async list(
+    options:
+      | (Omit<SmrtListOptions<ModelType>, 'select'> & { select?: undefined })
+      | undefined,
+  ): Promise<SmrtObject[]>;
+  override async list(
+    options: SmrtListOptions<ModelType> | undefined,
+  ): Promise<SmrtObject[] | Record<string, unknown>[]>;
+  override async list(
+    options: SmrtListOptions<ModelType> = {},
+  ): Promise<SmrtObject[] | Record<string, unknown>[]> {
     await this.refreshIfStale();
     return super.list(options);
   }

@@ -34,10 +34,13 @@ await impressionEvents.list({
 `stiScope.types` accepts 1–50 unique, qualified, registered types, all sharing
 the child collection's STI root. Empty, simple-name, unknown, duplicate,
 unrelated, and non-child scopes fail at the collection boundary. The option is
-supported by `list()`, `get()`, `count()`, `counts()`, `facets()`, and
+supported by `list()`, `count()`, `counts()`, `facets()`, and
 `listWithLatestRelated()`. These methods retain their normal field validation,
 projection or polymorphic hydration, pagination and cache-key construction;
 normal read and tenant interceptors still run and are ANDed with the allowlist.
+Point reads through `get()` remain child-only; use a bounded
+`list({ where, limit: 1, stiScope })` migration read when sibling hydration is
+required.
 
 For one child per parent, use
 [`latest-related.md`](latest-related.md). It uses a portable ranked CTE,

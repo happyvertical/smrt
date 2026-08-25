@@ -95,9 +95,6 @@ function assertPublicReadTypes(current: ScopeCurrentEventCollection): void {
   expectTypeOf(
     current.list({ stiScope: allTypesScope }),
   ).resolves.toEqualTypeOf<SmrtObject[]>();
-  expectTypeOf(
-    current.get('current-a', { stiScope: allTypesScope }),
-  ).resolves.toEqualTypeOf<SmrtObject | null>();
   expectTypeOf(current.list(publicListOptions)).resolves.toEqualTypeOf<
     SmrtObject[]
   >();
@@ -247,7 +244,7 @@ describe.each([
     ).toHaveLength(1);
   });
 
-  it('preserves child projection, point-read hydration, counts, facets, and tenancy', async () => {
+  it('preserves child projection, polymorphic hydration, counts, facets, and tenancy', async () => {
     const { current, historicalA } = await setup();
 
     await expect(
@@ -269,11 +266,6 @@ describe.each([
       },
     ]);
 
-    const historical = await current.get(
-      { id: historicalA.id },
-      { stiScope: allTypesScope },
-    );
-    expect(historical).toBeInstanceOf(ScopeHistoricalEvent);
     const latestRelatedPromise = current.listWithLatestRelated({
       stiScope: allTypesScope,
       latestRelated: {
