@@ -613,9 +613,14 @@ describe('remote query controller', () => {
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
     expect(query.state.rows[0]?.name).toBe('initial');
 
-    await query.execute(request, { mode: 'background' });
-    expect(queryCalls).toBe(3);
-    query.dispose();
+    await expect(query.execute(request)).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    await expect(
+      query.execute(request, { mode: 'background' }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(query.request).toBeUndefined();
+    expect(queryCalls).toBe(2);
     await collection.cleanup();
   });
 

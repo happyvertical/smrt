@@ -251,6 +251,7 @@ export function createSmrtWebQuery<TData extends object>(
     candidate: SmrtWebDataQueryRequest,
     runOptions: SmrtWebQueryRunOptions = {},
   ): Promise<SmrtWebDataQueryResult> => {
+    if (disposed) throw abortError();
     const mode = runOptions.mode ?? 'visible';
     const key = keyFor(candidate);
     if (runOptions.signal?.aborted || (runOptions.deadlineMs ?? 1) <= 0)
