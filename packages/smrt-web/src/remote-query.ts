@@ -305,10 +305,14 @@ export function createSmrtWebQuery<TData extends object>(
       };
       try {
         const result = await runShared(candidate, key, runOptions);
-        // A query-scoped live update may have won while this transport was in
-        // flight. Only apply the result when it is still the cache's winner.
-        if (current === generation && cached(key)?.result === result)
-          apply(result, candidate);
+        // A query-scoped live update or background successor may have won
+        // while this transport was in flight. Do not let the older visible
+        // result overwrite it, but always release this invocation's busy
+        // state once it has settled.
+        if (current === generation) {
+          if (cached(key)?.result === result) apply(result, candidate);
+          else publish({ ...state, loading: false, refreshing: false });
+        }
         return result;
       } catch (error) {
         if (current === generation) {

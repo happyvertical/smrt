@@ -109,6 +109,39 @@ describe('remote query controller', () => {
     await collection.cleanup();
   });
 
+  it('releases visible refresh state when a background successor wins the cache', async () => {
+    let resolveRefresh!: (result: ReturnType<typeof envelope>) => void;
+    let calls = 0;
+    const collection = createSmrtCollection(definition, {
+      fetchers: { list: async () => [], create: async () => ({}) },
+    });
+    const query = createSmrtWebQuery(collection, {
+      query: async (received) => {
+        calls += 1;
+        if (calls === 1) return envelope(received, 'initial');
+        if (calls === 2) {
+          return await new Promise<ReturnType<typeof envelope>>((resolve) => {
+            resolveRefresh = resolve;
+          });
+        }
+        return envelope(received, 'background');
+      },
+    });
+
+    await query.execute(request);
+    const refresh = query.refresh();
+    await vi.waitFor(() => expect(calls).toBe(2));
+    await query.execute(request, { mode: 'background', force: true });
+    resolveRefresh(envelope(request, 'older-refresh'));
+    await refresh;
+
+    expect(query.state.rows[0]?.name).toBe('initial');
+    expect(query.state.loading).toBe(false);
+    expect(query.state.refreshing).toBe(false);
+    query.dispose();
+    await collection.cleanup();
+  });
+
   it('suppresses an older visible response and never exposes its error', async () => {
     let releaseFirst!: () => void;
     const first = new Promise<void>((resolve) => {
