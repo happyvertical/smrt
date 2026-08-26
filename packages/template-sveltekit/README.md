@@ -123,9 +123,9 @@ pnpm smrt generate-mcp --no-config --no-readme
 WebMCP registration is documented as an opt-in, per-page integration using
 `collectionDefinitions` from `@happyvertical/smrt-virt-web` and
 `registerWebMcpTools()` from `@happyvertical/smrt-web`. Generated model tools
-default to read-only exposure; writes, destructive actions, and custom actions
-execute through generated REST routes only when their effects are explicitly
-allowed.
+default to read-effect exposure, including custom actions declared as reads.
+Write and destructive effects require explicit opt-in, and all custom actions
+execute through their generated REST routes.
 The CLI's manifest-only `objects` and `schema` commands work in this
 source-first template. Local-object CRUD execution through the generic CLI
 additionally requires a compiled JavaScript project entry point.

@@ -25,7 +25,12 @@ describe('practical documentation', () => {
     expect(projectReadme).toContain('pnpm db:migrate');
     expect(projectReadme).toContain('registerWebMcpTools');
     expect(projectReadme).toContain('collectionDefinitions');
-    expect(projectReadme).toContain('Omitted policy exposes `list` and `get`');
+    expect(projectReadme).toContain(
+      'Omitted policy exposes all `read`-effect tools',
+    );
+    expect(projectReadme).toMatch(
+      /custom actions explicitly declared as reads/i,
+    );
     expect(projectReadme).toContain("effects: ['read', 'write']");
     expect(projectReadme).toMatch(/undeclared custom effects fail\s+closed/is);
     expect(projectReadme).not.toMatch(/```bash[^`]*smrt db:setup/s);

@@ -274,10 +274,11 @@ pnpm add @happyvertical/smrt-web@^0.43.3
 ```
 
 `registerWebMcpTools()` feature-detects browser support and uses the current
-authenticated page session. Omitted policy exposes `list` and `get` tools only.
-To advertise mutations on a trusted surface, pass an explicit effect allowlist,
-for example `effects: ['read', 'write']`; include `destructive` only where delete
-and destructive custom actions are intended. Generated custom actions execute
+authenticated page session. Omitted policy exposes all `read`-effect tools:
+intrinsic `list`/`get` plus custom actions explicitly declared as reads. To
+advertise mutations on a trusted surface, pass an explicit effect allowlist, for
+example `effects: ['read', 'write']`; include `destructive` only where delete and
+destructive custom actions are intended. Generated custom actions execute
 through their authenticated REST routes, and undeclared custom effects fail
 closed as destructive.
 
