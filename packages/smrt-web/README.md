@@ -171,12 +171,20 @@ registerWebMcpTools(definitions, {
 `filter` receives legacy collection metadata; `filterTool` receives canonical
 per-tool definitions. When canonical definitions are present, configuring only
 the legacy `filter` fails closed because canonical tools do not carry complete
-collection field metadata.
+collection field metadata. Policy callbacks and fetcher resolvers receive
+isolated value snapshots; key host-side maps by stable values such as
+collection/action or tool name, not definition object identity.
+
+Do not concatenate complete legacy and canonical definition sets for the same
+collections. Their duplicate tool names or collection/action identities reject
+the registration atomically. Prefer the canonical set for complete generated
+coverage, or compose only disjoint legacy and canonical subsets.
 
 WebMCP policy controls which capabilities a page advertises; it is not an
 authorization boundary. Execution still uses the page's authenticated REST
 transport, whose auth, tenancy, writable-field, and sensitive-field guards must
-remain enabled. Returned read data is annotated as untrusted content.
+remain enabled. All application-derived tool results are annotated as untrusted
+content, including mutation responses.
 
 Policy only narrows the actions already exposed by the generated API metadata.
 Legacy descriptors outside their collection's `actions` set reject the whole
@@ -184,7 +192,11 @@ registration, and intrinsic CRUD effects cannot be relabeled by caller data.
 
 Migration note: registrations that previously relied on every descriptor being
 exposed must now pass `effects: ['read', 'write', 'destructive']`. Prefer a
-narrower allowlist for each browser surface.
+narrower allowlist for each browser surface. Integrations that previously keyed
+filter or resolver state by definition object identity must migrate to stable
+name or collection/action keys. If both legacy and canonical definition arrays
+are available, select one complete source or remove overlaps before combining
+them.
 
 ## Development
 

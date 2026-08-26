@@ -285,21 +285,21 @@ describe('registerWebMcpTools', () => {
       destructiveHint: false,
       idempotentHint: true,
       openWorldHint: false,
-      untrustedContentHint: false,
+      untrustedContentHint: true,
     });
     expect(annotations.get('report_delete')).toEqual({
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
-      untrustedContentHint: false,
+      untrustedContentHint: true,
     });
     expect(annotations.get('report_refresh')).toEqual({
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
       openWorldHint: true,
-      untrustedContentHint: false,
+      untrustedContentHint: true,
     });
   });
 
@@ -460,6 +460,40 @@ describe('registerWebMcpTools', () => {
     });
     expect(list).toHaveBeenCalledOnce();
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('normalizes every legacy descriptor before exposing collection metadata to filters', () => {
+    const registry = installModelContext();
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+      toolDescriptors: [
+        {
+          ...(PRODUCT_DEF.toolDescriptors?.[0] as WebToolDescriptor),
+          effect: 'destructive',
+          readOnly: false,
+          idempotent: false,
+          openWorld: true,
+        },
+      ],
+    };
+    const filter = vi.fn((candidate: SmrtWebCollectionDefinition) => {
+      expect(candidate.toolDescriptors?.[0]).toMatchObject({
+        effect: 'read',
+        readOnly: true,
+        idempotent: true,
+        openWorld: false,
+      });
+      return true;
+    });
+
+    registerWebMcpToolsWithPolicy([definition], {
+      filter,
+      resolveFetchers: () => mockFetchers(),
+    });
+
+    expect(filter).toHaveBeenCalledOnce();
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
   });
 
   it('isolates canonical filter mutations from the selected dispatch snapshot', async () => {

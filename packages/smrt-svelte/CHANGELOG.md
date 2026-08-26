@@ -1,5 +1,12 @@
 # @happyvertical/smrt-svelte
 
+## Unreleased
+
+- Provider-managed generated WebMCP tools now share the framework registrar's
+  read-only default, explicit effect policy, namespace, budget, filtering, and
+  failure reporting. These controls are separate from the fixed mounted-UI
+  adapter policy.
+
 ## 0.43.3
 
 ### Patch Changes

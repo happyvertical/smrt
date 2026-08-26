@@ -5,7 +5,10 @@
 - WebMCP registration now defaults to read-only exposure and supports explicit
   effect allowlists, namespaces, tool budgets, atomic duplicate validation, and
   complete safety annotations. Existing callers that intentionally expose
-  mutations must opt into `write` and `destructive` effects.
+  mutations must opt into `write` and `destructive` effects. Policy callbacks
+  now receive isolated value snapshots, all application results are marked
+  untrusted, and complete legacy/canonical sets must not be combined when their
+  tool names or collection/action identities overlap.
 
 ## 0.43.3
 

@@ -108,7 +108,9 @@ is identical to `registerWebMcpTools`; omitted `effects` exposes reads only:
 
 This controls capability exposure, not authorization. Tool execution still
 crosses the authenticated REST boundary and must retain its auth and tenancy
-guards.
+guards. The `effects`, `filter`, and `filterTool` policy applies to generated
+data/model tools only; the fixed mounted-UI adapter has the separate controls
+described below.
 
 ### Mounted UI through WebMCP
 

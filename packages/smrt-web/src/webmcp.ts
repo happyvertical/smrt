@@ -463,10 +463,17 @@ function snapshotLegacyDescriptor(
 function snapshotLegacyDefinition(
   definition: SmrtWebCollectionDefinition,
 ): SmrtWebCollectionDefinition {
-  return snapshotValue({
+  const snapshot = snapshotValue({
     ...definition,
     actions: [...definition.actions],
   });
+  snapshot.toolDescriptors = snapshot.toolDescriptors?.map((descriptor) =>
+    snapshotLegacyDescriptor(
+      descriptor,
+      actionSemantics(descriptor.action, descriptor),
+    ),
+  );
+  return snapshot;
 }
 
 function snapshotCanonicalDefinition(
@@ -512,7 +519,7 @@ function annotationsFor(
     destructiveHint: tool.effect === 'destructive',
     idempotentHint: tool.idempotent,
     openWorldHint: tool.openWorld,
-    untrustedContentHint: tool.effect === 'read',
+    untrustedContentHint: true,
   };
 }
 

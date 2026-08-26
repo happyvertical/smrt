@@ -64,9 +64,10 @@ module you are editing. This file keeps what holds in every module.
 - **WebMCP definition mirror** — `WebMcpToolDefinition` textually mirrors the
   generated `@happyvertical/smrt-virt-web` / physical `@smrt/web` declaration.
   It is transport-complete and does not imply that a list-materialized client
-  collection exists. Keep the mirror dependency-free. Pass canonical tools
-  alongside legacy collection definitions to `registerWebMcpTools`; duplicate
-  names or stable collection/action identities fail atomically before registration.
+  collection exists. Keep the mirror dependency-free. Register canonical tools
+  or legacy collection definitions for overlapping collections; when composing
+  the two forms, keep their names and collection/action identities disjoint.
+  Duplicates fail atomically before registration.
   With no exposure policy, only `read` effects are selected; broader effects
   require explicit opt-in, and undeclared custom actions are destructive.
   Direct mutations invalidate their
@@ -75,7 +76,9 @@ module you are editing. This file keeps what holds in every module.
   `SmrtWebClient`. Legacy `filter` callbacks receive complete collection
   metadata; canonical definitions use `filterTool`. Mixing canonical tools with
   only the legacy filter fails closed rather than fabricating incomplete field
-  metadata for a policy decision.
+  metadata for a policy decision. Filters and fetcher resolvers receive isolated
+  value snapshots, so integrations must key external state by stable values such
+  as collection/action rather than definition object identity.
   Canonical writes validate that shared client handle before registration, and
   string or structured `{ error }` REST envelopes fail before cache
   invalidation. The private `__smrt_options` GET sentinel is reserved only for

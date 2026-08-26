@@ -1,6 +1,7 @@
 import type { WebMcpRegistrationDefinition } from '@happyvertical/smrt-web';
 import { render, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { logger } from './internal/logger.js';
 
 const { registerWebMcpTools } = vi.hoisted(() => ({
   registerWebMcpTools: vi.fn(),
@@ -23,7 +24,10 @@ vi.mock('@happyvertical/smrt-web', async (importOriginal) => {
 import Harness from './__tests__/provider-webmcp-harness.svelte';
 
 describe('Provider WebMCP policy', () => {
-  beforeEach(() => registerWebMcpTools.mockClear());
+  beforeEach(() => {
+    registerWebMcpTools.mockClear();
+    document.modelContext = undefined;
+  });
 
   it('passes the same exposure policy to the framework-agnostic registrar', async () => {
     const filter = vi.fn(() => true);
@@ -147,5 +151,72 @@ describe('Provider WebMCP policy', () => {
       'workspace_report_create',
       'workspace_audit_get',
     ]);
+  });
+
+  it('defaults generated data tools to read-only exposure', async () => {
+    const captured: string[] = [];
+    document.modelContext = {
+      registerTool(tool) {
+        captured.push(tool.name);
+      },
+    };
+    const definitions: WebMcpRegistrationDefinition[] = [
+      {
+        name: 'reports',
+        objectRef: '@test/smrt-svelte:Report',
+        className: 'Report',
+        endpoint: '/reports',
+        idField: 'id',
+        actions: ['list', 'create'],
+        fields: {},
+        toolDescriptors: [
+          {
+            action: 'list',
+            name: 'report_list',
+            description: 'List reports',
+            inputSchema: { type: 'object' },
+            readOnly: true,
+            effect: 'read',
+            idempotent: true,
+            openWorld: false,
+          },
+          {
+            action: 'create',
+            name: 'report_create',
+            description: 'Create a report',
+            inputSchema: { type: 'object' },
+            readOnly: false,
+            effect: 'write',
+            idempotent: false,
+            openWorld: false,
+          },
+        ],
+      },
+    ];
+
+    render(Harness, { props: { webmcp: { definitions } } });
+    await waitFor(() => expect(registerWebMcpTools).toHaveBeenCalledOnce());
+
+    expect(captured).toEqual(['report_list']);
+  });
+
+  it('reports rejected generated data-tool policies without an unhandled rejection', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    document.modelContext = { registerTool: vi.fn() };
+
+    render(Harness, {
+      props: { webmcp: { definitions: [], maxTools: -1 } },
+    });
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'Provider: WebMCP data tool registration rejected',
+        {
+          error: expect.objectContaining({
+            message: 'WebMCP maxTools must be a non-negative safe integer',
+          }),
+        },
+      ),
+    );
   });
 });

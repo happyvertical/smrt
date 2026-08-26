@@ -179,7 +179,7 @@ export interface ToolDescriptor {
   name: string;
   description: string;
   inputSchema: ToolJsonSchema;
-  /** True for non-mutating reads (`list`/`get`) → WebMCP `annotations.readOnlyHint`. */
+  /** True when the declared effect is `read` → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
   /** Capability effect used by browser-tool exposure policy. */
   effect: ToolEffect;
