@@ -155,7 +155,7 @@ class Report extends SmrtObject {}
 
 Opt into broader capabilities explicitly. `namespace` prevents cross-surface
 name collisions, `maxTools` bounds the selected set (default `64`), and
-duplicate names or stable model/action identities reject the entire call before
+duplicate names or stable collection/action identities reject the entire call before
 the first browser registration:
 
 ```ts
@@ -177,6 +177,10 @@ WebMCP policy controls which capabilities a page advertises; it is not an
 authorization boundary. Execution still uses the page's authenticated REST
 transport, whose auth, tenancy, writable-field, and sensitive-field guards must
 remain enabled. Returned read data is annotated as untrusted content.
+
+Policy only narrows the actions already exposed by the generated API metadata.
+Legacy descriptors outside their collection's `actions` set reject the whole
+registration, and intrinsic CRUD effects cannot be relabeled by caller data.
 
 Migration note: registrations that previously relied on every descriptor being
 exposed must now pass `effects: ['read', 'write', 'destructive']`. Prefer a

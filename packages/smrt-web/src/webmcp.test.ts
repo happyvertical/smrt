@@ -320,7 +320,7 @@ describe('registerWebMcpTools', () => {
       registerWebMcpToolsWithPolicy([canonicalTool('get'), duplicateIdentity], {
         resolveToolFetchers: () => mockFetchers(),
       }),
-    ).toThrow('Duplicate WebMCP tool identity: @test/smrt-web:Report#get');
+    ).toThrow('Duplicate WebMCP tool identity: reports#get');
     expect(registry.tools).toEqual([]);
 
     expect(() =>
@@ -363,6 +363,84 @@ describe('registerWebMcpTools', () => {
       status: 401,
       message: expect.stringContaining('unauthorized principal'),
     });
+  });
+
+  it('enforces intrinsic CRUD effects even when input metadata is mislabeled', () => {
+    const registry = installModelContext();
+    const disguisedCanonicalDelete = canonicalTool('delete', {
+      effect: 'read',
+      readOnly: true,
+    });
+    const disguisedLegacyDelete: SmrtWebCollectionDefinition = {
+      ...MUTATION_DEF,
+      toolDescriptors: [
+        {
+          ...MUTATION_DEF.toolDescriptors?.[1],
+          action: 'delete',
+          name: 'product_delete',
+          description: 'Delete a product',
+          inputSchema: { type: 'object' },
+          readOnly: true,
+          effect: 'read',
+        },
+      ],
+    };
+
+    registerWebMcpToolsWithPolicy(
+      [disguisedCanonicalDelete, disguisedLegacyDelete],
+      {
+        resolveFetchers: () => mockFetchers(),
+        resolveToolFetchers: () => mockFetchers(),
+      },
+    );
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('rejects legacy descriptors outside the exposed API action set atomically', () => {
+    const registry = installModelContext();
+    const widened: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+    };
+    expect(() =>
+      registerWebMcpToolsWithPolicy([widened], {
+        ...ALLOW_ALL,
+        resolveFetchers: () => mockFetchers(),
+      }),
+    ).toThrow('product_create exposes action create outside products');
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('snapshots dispatch metadata so callers cannot widen a registered read tool', async () => {
+    const registry = installModelContext();
+    const definition = canonicalTool('list');
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+    registerWebMcpToolsWithPolicy([definition], {
+      resolveToolFetchers: () => ({ list, delete: remove }),
+    });
+
+    definition.action = 'delete';
+    definition.effect = 'destructive';
+    definition.readOnly = false;
+    definition.route = { method: 'DELETE', scope: 'item', path: [] };
+    await registry.tools[0]?.execute({ id: 'victim' });
+
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('rejects invocation through a stale host reference after disposal', () => {
+    const registry = installModelContext();
+    const dispose = registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+      resolveFetchers: () => mockFetchers(),
+    });
+    const staleExecute = registry.tools[0]?.execute;
+    dispose();
+
+    expect(() => staleExecute?.({})).toThrow(
+      'WebMCP tool product_list is no longer registered',
+    );
   });
 
   it('registers one tool per descriptor with the right names', () => {
@@ -598,6 +676,7 @@ describe('registerWebMcpTools', () => {
     }) as unknown as typeof fetch;
     const definition: SmrtWebCollectionDefinition = {
       ...PRODUCT_DEF,
+      actions: [...PRODUCT_DEF.actions, 'preview'],
       toolDescriptors: [
         {
           action: 'publish',
@@ -665,6 +744,7 @@ describe('registerWebMcpTools', () => {
     }) as unknown as typeof fetch;
     const definition: SmrtWebCollectionDefinition = {
       ...PRODUCT_DEF,
+      actions: [...PRODUCT_DEF.actions, 'archive', 'archiveCollection'],
       toolDescriptors: [
         {
           action: 'archive',

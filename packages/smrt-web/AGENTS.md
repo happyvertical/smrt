@@ -66,7 +66,7 @@ module you are editing. This file keeps what holds in every module.
   It is transport-complete and does not imply that a list-materialized client
   collection exists. Keep the mirror dependency-free. Pass canonical tools
   alongside legacy collection definitions to `registerWebMcpTools`; duplicate
-  names or stable model/action identities fail atomically before registration.
+  names or stable collection/action identities fail atomically before registration.
   With no exposure policy, only `read` effects are selected; broader effects
   require explicit opt-in, and undeclared custom actions are destructive.
   Direct mutations invalidate their
