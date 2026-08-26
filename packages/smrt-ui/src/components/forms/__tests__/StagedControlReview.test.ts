@@ -42,6 +42,7 @@ describe('StagedControlReview', () => {
         screen.queryByRole('region', { name: 'Review proposed changes' }),
       ).not.toBeInTheDocument(),
     );
+    expect(field).toHaveFocus();
     await expectNoA11yViolations(container);
   });
 
@@ -98,6 +99,25 @@ describe('StagedControlReview', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Apply' })).toHaveFocus(),
+    );
+  });
+
+  it('returns focus to the affected control after applying the final batch', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole('textbox', { name: 'Display name' }),
+      ).toHaveFocus(),
     );
   });
 

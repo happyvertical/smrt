@@ -857,8 +857,10 @@ export function createControlInteractionRegistry(
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
             let setterSettledAsynchronously = false;
+            let setterOwnedValue: unknown;
             try {
               const setterResult = registration.setValue?.(nextValue);
+              setterOwnedValue = cloneValue(registration.getValue?.());
               setterSettledAsynchronously =
                 setterResult !== null &&
                 typeof setterResult === 'object' &&
@@ -867,7 +869,7 @@ export function createControlInteractionRegistry(
             } catch (error) {
               if (
                 !setterSettledAsynchronously ||
-                valuesEqual(registration.getValue?.(), nextValue)
+                valuesEqual(registration.getValue?.(), setterOwnedValue)
               ) {
                 try {
                   await registration.setValue?.(previousValue);
@@ -940,10 +942,12 @@ export function createControlInteractionRegistry(
             const previousValue = cloneValue(registration.getValue?.());
             let clearDecision: boolean | undefined;
             let clearSettledAsynchronously = false;
+            let clearOwnedValue: unknown;
             try {
               const pendingDecision = registration.clear
                 ? registration.clear()
                 : registration.setValue?.('');
+              clearOwnedValue = cloneValue(registration.getValue?.());
               clearSettledAsynchronously =
                 pendingDecision !== null &&
                 typeof pendingDecision === 'object' &&
@@ -959,6 +963,7 @@ export function createControlInteractionRegistry(
               const currentValue = registration.getValue?.();
               if (
                 !clearSettledAsynchronously ||
+                valuesEqual(currentValue, clearOwnedValue) ||
                 currentValue === '' ||
                 currentValue === null ||
                 currentValue === undefined ||
@@ -986,6 +991,7 @@ export function createControlInteractionRegistry(
             if (rejected) {
               if (
                 !clearSettledAsynchronously ||
+                valuesEqual(clearedValue, clearOwnedValue) ||
                 clearedValue === '' ||
                 clearedValue === null ||
                 clearedValue === undefined ||

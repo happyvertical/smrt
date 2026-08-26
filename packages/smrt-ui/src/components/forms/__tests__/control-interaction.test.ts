@@ -849,6 +849,39 @@ describe('control interaction registry', () => {
     expect(value).toBe('Katherine');
   });
 
+  it('rolls back an asynchronously owned partial setter mutation', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        if (next === 'Grace') {
+          value = 'partial';
+          await Promise.resolve();
+          throw new Error('setter_failed');
+        }
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'setter_failed' });
+    expect(value).toBe('Ada');
+  });
+
   it('rolls back an applied value when live validation throws', async () => {
     let value = 'Ada';
     const registry = createControlInteractionRegistry({
@@ -1100,6 +1133,35 @@ describe('control interaction registry', () => {
     releaseUndo?.();
     expect(await undoing).toMatchObject({ ok: false, reason: 'undo_failed' });
     expect(value).toBe('Katherine');
+  });
+
+  it('rolls back an asynchronously owned partial clear mutation', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      clear: async () => {
+        value = 'partial';
+        await Promise.resolve();
+        return false;
+      },
+    });
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
+    expect(value).toBe('Ada');
   });
 
   it('preserves an intervening human edit instead of applying stale undo history', async () => {

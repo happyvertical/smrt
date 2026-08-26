@@ -201,7 +201,24 @@ function commandFor(
   };
 }
 
-async function restoreReviewFocus(removedIndex: number): Promise<void> {
+function controlFor(snapshot: ControlSnapshot): HTMLElement | undefined {
+  return Array.from(
+    formElement?.querySelectorAll<HTMLElement>('[data-smrt-control]') ?? [],
+  ).find(
+    (control) =>
+      control.dataset.smrtControl === snapshot.identity.controlId &&
+      (control.dataset.smrtSubjectType ?? undefined) ===
+        snapshot.identity.subject?.type &&
+      (control.dataset.smrtSubjectId ?? undefined) ===
+        snapshot.identity.subject?.id,
+  );
+}
+
+async function restoreReviewFocus(
+  removed: ControlSnapshot,
+  removedIndex: number,
+): Promise<void> {
+  const originalControl = controlFor(removed);
   await tick();
   const items = reviewElement?.querySelectorAll<HTMLElement>(
     '[data-staged-review-item]',
@@ -213,7 +230,7 @@ async function restoreReviewFocus(removedIndex: number): Promise<void> {
   const fallback = reviewElement?.querySelector<HTMLButtonElement>(
     '.batch-actions button:not(:disabled)',
   );
-  (nextAction ?? fallback)?.focus();
+  (nextAction ?? fallback ?? originalControl)?.focus();
 }
 
 async function applyOne(
@@ -230,7 +247,7 @@ async function applyOne(
       event,
     );
     status = result.ok ? text.appliedStatus : (result.reason ?? text.invalid);
-    if (result.ok) await restoreReviewFocus(removedIndex);
+    if (result.ok) await restoreReviewFocus(snapshot, removedIndex);
   } catch {
     status = text.invalid;
   }
@@ -249,7 +266,7 @@ async function discardOne(
     event,
   );
   status = result.ok ? text.discardedStatus : (result.reason ?? text.stale);
-  if (result.ok) await restoreReviewFocus(removedIndex);
+  if (result.ok) await restoreReviewFocus(snapshot, removedIndex);
 }
 
 async function applyAll(event: MouseEvent): Promise<void> {
@@ -270,6 +287,7 @@ async function applyAll(event: MouseEvent): Promise<void> {
   status = text.batchStatus
     .replace('{completed}', String(completed))
     .replace('{total}', String(snapshots.length));
+  if (completed > 0 && eligible[0]) await restoreReviewFocus(eligible[0], 0);
 }
 
 async function discardAll(event: MouseEvent): Promise<void> {
@@ -286,6 +304,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
   status = text.batchStatus
     .replace('{completed}', String(completed))
     .replace('{total}', String(snapshots.length));
+  if (completed > 0 && eligible[0]) await restoreReviewFocus(eligible[0], 0);
 }
 </script>
 
