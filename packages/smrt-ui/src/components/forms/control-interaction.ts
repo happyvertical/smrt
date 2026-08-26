@@ -396,14 +396,16 @@ function defaultPolicy(
   localGestureConfirmed: boolean,
 ): ControlPolicyDecision {
   if (!isMutation(command.action)) return { allowed: true };
-  if (snapshot.metadata.sensitivity === 'secret') {
-    return { allowed: false, reason: 'sensitive_control' };
-  }
-  if (snapshot.metadata.writable === false) {
-    return { allowed: false, reason: 'control_not_writable' };
-  }
-  if (snapshot.state.disabled || snapshot.state.readonly) {
-    return { allowed: false, reason: 'control_not_editable' };
+  if (command.action !== 'discard') {
+    if (snapshot.metadata.sensitivity === 'secret') {
+      return { allowed: false, reason: 'sensitive_control' };
+    }
+    if (snapshot.metadata.writable === false) {
+      return { allowed: false, reason: 'control_not_writable' };
+    }
+    if (snapshot.state.disabled || snapshot.state.readonly) {
+      return { allowed: false, reason: 'control_not_editable' };
+    }
   }
   if (context.source === 'agent' && command.action !== 'stage') {
     return { allowed: false, reason: 'human_confirmation_required' };
@@ -727,7 +729,7 @@ export function createControlInteractionRegistry(
         const postPolicyInvariant = defaultPolicy(
           command,
           publicContext,
-          snapshot,
+          snapshotOf(registration),
           publicContext.localGesture === true,
         );
         if (!postPolicyInvariant.allowed) {
@@ -871,6 +873,9 @@ export function createControlInteractionRegistry(
               registration,
               nextValue,
             );
+            if (registrations.get(key) !== registration) {
+              throw new Error('staged_value_stale');
+            }
             if (
               stagedEntry &&
               (staged.get(key) !== stagedEntry ||
@@ -886,6 +891,15 @@ export function createControlInteractionRegistry(
                   : (proposedValidation.validationMessage ??
                       'staged_value_invalid'),
               );
+            }
+            const preMutationInvariant = defaultPolicy(
+              command,
+              publicContext,
+              snapshotOf(registration),
+              publicContext.localGesture === true,
+            );
+            if (!preMutationInvariant.allowed) {
+              throw new Error(preMutationInvariant.reason ?? 'denied');
             }
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];

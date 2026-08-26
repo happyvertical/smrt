@@ -83,12 +83,25 @@ function kindFromType(): ControlKind {
 
 function setControlValue(next: unknown) {
   value =
-    type === 'number' || type === 'range' ? Number(next) : String(next ?? '');
+    type === 'number' || type === 'range'
+      ? next === '' || next === null || next === undefined
+        ? ''
+        : Number(next)
+      : String(next ?? '');
   if (inputEl) emitControlChange(inputEl);
 }
 
 function validateControlValue(next: unknown) {
   if (!inputEl) return true;
+  if (
+    (type === 'number' || type === 'range') &&
+    next !== '' &&
+    next !== null &&
+    next !== undefined &&
+    !Number.isFinite(typeof next === 'number' ? next : Number(next))
+  ) {
+    return { valid: false, message: 'invalid_number' };
+  }
   const candidate = inputEl.cloneNode() as HTMLInputElement;
   candidate.value = String(next ?? '');
   return {

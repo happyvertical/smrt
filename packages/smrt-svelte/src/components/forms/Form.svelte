@@ -165,23 +165,7 @@ function interactionKind(field: FieldDefinition): ControlKind {
 }
 
 function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
-  const controls = formElement
-    ? Array.from(formElement.elements).filter(
-        (
-          control,
-        ): control is
-          | HTMLInputElement
-          | HTMLSelectElement
-          | HTMLTextAreaElement =>
-          (control instanceof HTMLInputElement ||
-            control instanceof HTMLSelectElement ||
-            control instanceof HTMLTextAreaElement) &&
-          control.type !== 'hidden' &&
-          (control.name === field.name ||
-            control.name.startsWith(`${field.name}[`) ||
-            control.name.startsWith(`${field.name}_`)),
-      )
-    : [];
+  const controls = fieldControls(field);
   const domState: ControlRuntimeState = {
     disabled:
       controls.length > 0
@@ -199,6 +183,26 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
     disabled: domState.disabled === true || declaredState.disabled === true,
     readonly: domState.readonly === true || declaredState.readonly === true,
   };
+}
+
+function fieldControls(field: FieldDefinition) {
+  return formElement
+    ? Array.from(formElement.elements).filter(
+        (
+          control,
+        ): control is
+          | HTMLInputElement
+          | HTMLSelectElement
+          | HTMLTextAreaElement =>
+          (control instanceof HTMLInputElement ||
+            control instanceof HTMLSelectElement ||
+            control instanceof HTMLTextAreaElement) &&
+          control.type !== 'hidden' &&
+          (control.name === field.name ||
+            control.name.startsWith(`${field.name}[`) ||
+            control.name.startsWith(`${field.name}_`)),
+      )
+    : [];
 }
 
 function registerInteraction(
@@ -232,7 +236,12 @@ function registerInteraction(
     getValue: field.getValue,
     setValue: field.setValue,
     clear: field.clear ?? (() => field.setValue('')),
-    focus: field.focus,
+    focus:
+      field.focus ??
+      (() =>
+        fieldControls(field)
+          .find((control) => !control.disabled)
+          ?.focus()),
     reveal: field.reveal,
     highlight: field.highlight,
     validate: field.validate,

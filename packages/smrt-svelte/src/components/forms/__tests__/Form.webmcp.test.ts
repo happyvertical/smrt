@@ -69,6 +69,34 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue('');
   });
 
+  it('returns focus to a rich field after applying its final proposal', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const interactionRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: { webmcp: true, showAge: false, interactionRegistry },
+    });
+    await tick();
+    await tick();
+    await registered.at(-1)?.execute({ fullname: 'Ada Lovelace' });
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveFocus(),
+    );
+  });
+
   it('publishes constraints and leaves validation outcomes in the review workflow', async () => {
     const registered: Array<{
       inputSchema: Record<string, unknown>;

@@ -261,6 +261,138 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged).toBeUndefined();
   });
 
+  it('allows a trusted discard after the control becomes disabled', async () => {
+    let disabled = false;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      getState: () => ({ disabled }),
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    disabled = true;
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'discard', identity, revision: 1 },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(identity)?.state.staged).toBeUndefined();
+  });
+
+  it('rechecks disabled state after an asynchronous policy decision', async () => {
+    let disabled = false;
+    let releasePolicy: (() => void) | undefined;
+    let policyStarted: (() => void) | undefined;
+    const policyGate = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: async (command) => {
+        if (command.action === 'apply') {
+          policyStarted?.();
+          await policyGate;
+        }
+        return { allowed: true };
+      },
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      getState: () => ({ disabled }),
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await started;
+    disabled = true;
+    releasePolicy?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'control_not_editable',
+    });
+    expect(value).toBe('Ada');
+  });
+
+  it('rechecks disabled state after asynchronous proposal validation', async () => {
+    let disabled = false;
+    let blockValidation = false;
+    let releaseValidation: (() => void) | undefined;
+    let validationStarted: (() => void) | undefined;
+    const validationGate = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      validationStarted = resolve;
+    });
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      validateValue: async () => {
+        if (blockValidation) {
+          validationStarted?.();
+          await validationGate;
+        }
+        return true;
+      },
+      getState: () => ({ disabled }),
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    blockValidation = true;
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await started;
+    disabled = true;
+    releaseValidation?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'control_not_editable',
+    });
+    expect(value).toBe('Ada');
+  });
+
   it('keeps invalid proposals staged and returns explicit batch results', async () => {
     let first = 'Ada';
     let second = 'Lovelace';

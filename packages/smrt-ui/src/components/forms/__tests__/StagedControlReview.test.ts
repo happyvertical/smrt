@@ -70,6 +70,31 @@ describe('StagedControlReview', () => {
     expect(submitted).not.toHaveBeenCalled();
   });
 
+  it('resets an edited draft when a replacement proposal has a new revision', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const proposal = await screen.findByRole('textbox', {
+      name: 'Edit proposed value for Display name',
+    });
+    await userEvent.clear(proposal);
+    await userEvent.type(proposal, 'Katherine');
+
+    await registry.execute(
+      { action: 'stage', identity, value: 'Hopper' },
+      { source: 'agent' },
+    );
+
+    expect(proposal).toHaveValue('Hopper');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
+      'Hopper',
+    );
+  });
+
   it('moves focus to the next proposal after applying one', async () => {
     const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });
@@ -140,6 +165,24 @@ describe('StagedControlReview', () => {
     await waitFor(() =>
       expect(screen.getByRole('slider', { name: 'Volume' })).toHaveFocus(),
     );
+  });
+
+  it('keeps a nonnumeric optional number proposal invalid and unapplied', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    const numberIdentity = { formId: 'profile', controlId: 'score' };
+
+    expect(
+      await registry.execute(
+        { action: 'stage', identity: numberIdentity, value: 'abc' },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(numberIdentity)?.state.staged).toMatchObject({
+      valid: false,
+      validationMessage: 'invalid_number',
+    });
+    expect(screen.getByRole('spinbutton', { name: 'Score' })).toHaveValue(1);
   });
 
   it('marks competing user edits stale and lets the human discard them', async () => {

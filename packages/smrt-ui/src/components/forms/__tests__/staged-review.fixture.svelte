@@ -16,6 +16,7 @@ let {
 let displayName = $state('Ada');
 let apiToken = $state('token');
 let volume = $state(25);
+let score = $state<string | number>(1);
 </script>
 
 <Form formId="profile" interactionRegistry={registry} aria-label="Profile form">
@@ -26,5 +27,6 @@ let volume = $state(25);
     <Input name="api-token" type="password" bind:value={apiToken} />
   </FormGroup>
   <Slider name="volume" label="Volume" bind:value={volume} />
+  <Input name="score" aria-label="Score" type="number" bind:value={score} />
   <button type="reset">Reset</button>
 </Form>

@@ -63,6 +63,9 @@ const keyOf = (snapshot: ControlSnapshot) =>
     snapshot.identity.subject?.id ?? null,
   ]);
 
+const draftKeyOf = (snapshot: ControlSnapshot) =>
+  JSON.stringify([keyOf(snapshot), snapshot.state.staged?.revision ?? null]);
+
 function formatValue(value: unknown): string {
   if (value === undefined) return '';
   if (typeof value === 'string') return value;
@@ -86,12 +89,12 @@ function refresh(): void {
     .filter((snapshot) => snapshot.state.staged !== undefined);
   const next = { ...untrack(() => drafts) };
   for (const snapshot of nextSnapshots) {
-    const key = keyOf(snapshot);
+    const key = draftKeyOf(snapshot);
     if (!(key in next) && !snapshot.state.staged?.valueRedacted) {
       next[key] = formatValue(snapshot.state.staged?.value);
     }
   }
-  const live = new Set(nextSnapshots.map(keyOf));
+  const live = new Set(nextSnapshots.map(draftKeyOf));
   for (const key of Object.keys(next)) {
     if (!live.has(key)) delete next[key];
   }
@@ -172,7 +175,7 @@ $effect(() => {
 function editedValue(snapshot: ControlSnapshot): unknown {
   const staged = snapshot.state.staged;
   if (!staged || staged.valueRedacted) return staged?.value;
-  const draft = drafts[keyOf(snapshot)] ?? '';
+  const draft = drafts[draftKeyOf(snapshot)] ?? '';
   const original = staged.value;
   if (typeof original === 'number') {
     const number = Number(draft);
@@ -220,6 +223,30 @@ async function restoreReviewFocus(
 ): Promise<void> {
   const originalControl = controlFor(removed);
   await tick();
+  const focusOriginalControl = async () => {
+    const focused = await registry.execute(
+      { action: 'focus', identity: removed.identity },
+      { source: 'user' },
+    );
+    if (!focused.ok) {
+      const focusTarget = originalControl?.matches(
+        'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+        ? originalControl
+        : originalControl?.querySelector<HTMLElement>(
+            'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+          );
+      focusTarget?.focus();
+    }
+  };
+  if (
+    !registry
+      .list(formId)
+      .some((snapshot) => snapshot.state.staged !== undefined)
+  ) {
+    await focusOriginalControl();
+    return;
+  }
   const items = reviewElement?.querySelectorAll<HTMLElement>(
     '[data-staged-review-item]',
   );
@@ -234,20 +261,7 @@ async function restoreReviewFocus(
     (nextAction ?? fallback)?.focus();
     return;
   }
-  const focused = await registry.execute(
-    { action: 'focus', identity: removed.identity },
-    { source: 'user' },
-  );
-  if (!focused.ok) {
-    const focusTarget = originalControl?.matches(
-      'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    )
-      ? originalControl
-      : originalControl?.querySelector<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        );
-    focusTarget?.focus();
-  }
+  await focusOriginalControl();
 }
 
 async function applyOne(
@@ -357,9 +371,9 @@ async function discardAll(event: MouseEvent): Promise<void> {
                 {:else}
                   <input
                     aria-label={`${text.edit} ${label}`}
-                    value={drafts[keyOf(snapshot)] ?? ''}
+                    value={drafts[draftKeyOf(snapshot)] ?? ''}
                     oninput={(event) => {
-                      drafts = { ...drafts, [keyOf(snapshot)]: event.currentTarget.value };
+                      drafts = { ...drafts, [draftKeyOf(snapshot)]: event.currentTarget.value };
                     }}
                     onkeydown={(event) => {
                       if (event.key === 'Enter') event.preventDefault();
