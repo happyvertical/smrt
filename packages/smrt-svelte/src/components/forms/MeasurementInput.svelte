@@ -93,12 +93,13 @@ const formContext = tryGetFormContext();
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Validation
-const isInRange = $derived.by(() => {
-  if (value === null) return true;
-  if (min !== undefined && value < min) return false;
-  if (max !== undefined && value > max) return false;
+function measurementIsInRange(candidate: number | null): boolean {
+  if (candidate === null) return true;
+  if (min !== undefined && candidate < min) return false;
+  if (max !== undefined && candidate > max) return false;
   return true;
-});
+}
+const isInRange = $derived(measurementIsInRange(value));
 const showInvalid = $derived((value !== null && !isInRange) || !!error);
 
 function updateValue(newValue: number | null, newUnit?: MeasurementUnit) {
@@ -305,6 +306,30 @@ onMount(() => {
       unit,
       getState: () => ({ disabled }),
       constraints: { required, min, max },
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return !required;
+        }
+        let proposed: MeasurementValue | null = null;
+        if (
+          typeof candidate === 'object' &&
+          candidate !== null &&
+          'value' in candidate &&
+          'unit' in candidate
+        ) {
+          proposed = candidate as MeasurementValue;
+        } else if (typeof candidate === 'number') {
+          proposed = { value: candidate, unit };
+        } else {
+          proposed = parseSpokenMeasurement(String(candidate));
+        }
+        return (
+          proposed !== null &&
+          Number.isFinite(proposed.value) &&
+          proposed.unit in unitLabels &&
+          measurementIsInRange(proposed.value)
+        );
+      },
       validate: () =>
         value === null ? !required : Number.isFinite(value) && isInRange,
     };

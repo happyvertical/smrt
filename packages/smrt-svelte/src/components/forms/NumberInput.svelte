@@ -55,12 +55,13 @@ const formContext = tryGetFormContext();
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Validation
-const isInRange = $derived.by(() => {
-  if (value === null) return true;
-  if (min !== undefined && value < min) return false;
-  if (max !== undefined && value > max) return false;
+function numberIsInRange(candidate: number | null): boolean {
+  if (candidate === null) return true;
+  if (min !== undefined && candidate < min) return false;
+  if (max !== undefined && candidate > max) return false;
   return true;
-});
+}
+const isInRange = $derived(numberIsInRange(value));
 const showInvalid = $derived(value !== null && !isInRange);
 
 function updateValue(newValue: number | null) {
@@ -177,6 +178,20 @@ onMount(() => {
       getValue: () => value,
       getState: () => ({ disabled }),
       constraints: { required, min, max, step },
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return !required;
+        }
+        const proposed =
+          typeof candidate === 'number'
+            ? candidate
+            : parseSpokenNumber(String(candidate));
+        return (
+          proposed !== null &&
+          Number.isFinite(proposed) &&
+          numberIsInRange(proposed)
+        );
+      },
       validate: () =>
         value === null ? !required : Number.isFinite(value) && isInRange,
     };

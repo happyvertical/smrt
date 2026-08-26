@@ -12,6 +12,8 @@ let {
   structuredRequired = true,
   interactionRegistry = undefined,
   fieldsetDisabled = false,
+  onmeasurementchange = undefined,
+  ondateschange = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -21,6 +23,8 @@ let {
   structuredRequired?: boolean;
   interactionRegistry?: ControlInteractionRegistry;
   fieldsetDisabled?: boolean;
+  onmeasurementchange?: (value: { value: number; unit: string } | null) => void;
+  ondateschange?: (value: { startDate: string; endDate: string }) => void;
 } = $props();
 </script>
 
@@ -30,11 +34,13 @@ let {
 		name="measurement"
 		label="Measurement"
 		required={structuredRequired}
+		onchange={onmeasurementchange}
 	/>
 	<DateRangeInput
 		name="dates"
 		label="Dates"
 		required={structuredRequired}
+		onchange={ondateschange}
 	/>
 	<AddressInput
 		name="address"

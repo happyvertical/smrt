@@ -28,6 +28,7 @@ let {
   ageMin = undefined,
   ageMax = undefined,
   interactionRegistry = undefined,
+  onnumberchange = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   method?: 'GET' | 'POST';
@@ -47,6 +48,7 @@ let {
   ageMin?: number;
   ageMax?: number;
   interactionRegistry?: ControlInteractionRegistry;
+  onnumberchange?: (value: number | null) => void;
 } = $props();
 let lastSubject: { type: string; id: string; label?: string } | undefined;
 let mutableSubject = $state<
@@ -80,6 +82,7 @@ function mutateSubject() {
 			required={ageRequired}
 			min={ageMin}
 			max={ageMax}
+			onchange={onnumberchange}
 			bind:value={numberValue}
 		/>
 	{/if}

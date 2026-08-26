@@ -1386,6 +1386,122 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
+  it('preserves a same-value human edit made during async validation', async () => {
+    let value = 'Ada';
+    let userEditValue = value;
+    let userEditRevision = 0;
+    let releaseValidation: (() => void) | undefined;
+    let validationStarted: (() => void) | undefined;
+    const validationBlocked = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const validationStartedPromise = new Promise<void>((resolve) => {
+      validationStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => ({
+        revision: userEditRevision,
+        value: userEditValue,
+      }),
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+      validate: async () => {
+        validationStarted?.();
+        await validationBlocked;
+        return false;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await validationStartedPromise;
+    value = 'Grace';
+    userEditValue = value;
+    userEditRevision += 1;
+    releaseValidation?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_invalid',
+    });
+    expect(value).toBe('Grace');
+  });
+
+  it('replays a human edit that occurs while async restoration is pending', async () => {
+    let value = 'Ada';
+    let userEditValue = value;
+    let userEditRevision = 0;
+    let releaseRestore: (() => void) | undefined;
+    let restoreStarted: (() => void) | undefined;
+    const restoreBlocked = new Promise<void>((resolve) => {
+      releaseRestore = resolve;
+    });
+    const restoreStartedPromise = new Promise<void>((resolve) => {
+      restoreStarted = resolve;
+    });
+    const restoreValue = vi.fn(async (next: unknown) => {
+      restoreStarted?.();
+      await restoreBlocked;
+      value = String(next);
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => ({
+        revision: userEditRevision,
+        value: userEditValue,
+      }),
+      setValue: (next) => {
+        value = String(next);
+        throw new Error('setter_failed');
+      },
+      restoreValue,
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await restoreStartedPromise;
+    value = 'Katherine';
+    userEditValue = value;
+    userEditRevision += 1;
+    releaseRestore?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'setter_failed',
+    });
+    expect(value).toBe('Katherine');
+    expect(restoreValue).toHaveBeenCalledTimes(2);
+  });
+
   it('does not collide subject identities containing separators', async () => {
     const firstIdentity = {
       ...identity,

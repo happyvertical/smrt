@@ -476,29 +476,38 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   }
 }
 
-function rollbackValue(
+async function restoreRegistrationValue(
   registration: ControlRegistration,
   previousValue: unknown,
   previousUserEdit: ReturnType<
     NonNullable<ControlRegistration['getUserEditSnapshot']>
   > | null,
-): unknown {
-  const currentUserEdit = registration.getUserEditSnapshot?.();
-  return previousUserEdit &&
-    currentUserEdit &&
-    currentUserEdit.revision !== previousUserEdit.revision
-    ? cloneValue(currentUserEdit.value)
-    : previousValue;
-}
-
-async function restoreRegistrationValue(
-  registration: ControlRegistration,
-  value: unknown,
 ): Promise<void> {
-  if (registration.restoreValue) {
-    await registration.restoreValue(value);
-  } else {
-    await registration.setValue?.(value);
+  let observedUserEdit =
+    cloneValue(registration.getUserEditSnapshot?.()) ?? null;
+  let value =
+    previousUserEdit &&
+    observedUserEdit &&
+    observedUserEdit.revision !== previousUserEdit.revision
+      ? cloneValue(observedUserEdit.value)
+      : previousValue;
+  for (;;) {
+    if (registration.restoreValue) {
+      await registration.restoreValue(value);
+    } else {
+      await registration.setValue?.(value);
+    }
+    const latestUserEdit =
+      cloneValue(registration.getUserEditSnapshot?.()) ?? null;
+    if (
+      !observedUserEdit ||
+      !latestUserEdit ||
+      latestUserEdit.revision === observedUserEdit.revision
+    ) {
+      return;
+    }
+    observedUserEdit = latestUserEdit;
+    value = cloneValue(latestUserEdit.value);
   }
 }
 
@@ -912,7 +921,8 @@ export function createControlInteractionRegistry(
               try {
                 await restoreRegistrationValue(
                   registration,
-                  rollbackValue(registration, previousValue, userEditSnapshot),
+                  previousValue,
+                  userEditSnapshot,
                 );
               } catch {
                 // Preserve the original setter failure for the command result.
@@ -949,7 +959,11 @@ export function createControlInteractionRegistry(
               }
               if (valuesEqual(currentValue, appliedValue)) {
                 try {
-                  await restoreRegistrationValue(registration, previousValue);
+                  await restoreRegistrationValue(
+                    registration,
+                    previousValue,
+                    userEditSnapshot,
+                  );
                 } catch {
                   // Preserve the original validation failure for the command result.
                 }
@@ -998,7 +1012,8 @@ export function createControlInteractionRegistry(
               try {
                 await restoreRegistrationValue(
                   registration,
-                  rollbackValue(registration, previousValue, userEditSnapshot),
+                  previousValue,
+                  userEditSnapshot,
                 );
               } catch {
                 // Preserve the original clear failure for the command result.
@@ -1019,7 +1034,8 @@ export function createControlInteractionRegistry(
               try {
                 await restoreRegistrationValue(
                   registration,
-                  rollbackValue(registration, previousValue, userEditSnapshot),
+                  previousValue,
+                  userEditSnapshot,
                 );
               } catch {
                 // The rejected command still retains its proposal for recovery.
@@ -1052,7 +1068,8 @@ export function createControlInteractionRegistry(
               try {
                 await restoreRegistrationValue(
                   registration,
-                  rollbackValue(registration, currentValue, userEditSnapshot),
+                  currentValue,
+                  userEditSnapshot,
                 );
               } catch {
                 // Preserve the original setter failure for the command result.

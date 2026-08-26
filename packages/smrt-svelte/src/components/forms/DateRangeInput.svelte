@@ -68,6 +68,7 @@ let isRecording = $state(false);
 let isParsing = $state(false);
 let parseError = $state<string | null>(null);
 let recordingStartTime = 0;
+let primaryControl = $state<HTMLElement | null>(null);
 
 const MIN_HOLD_TIME = 500;
 const MIN_TRANSCRIPT_LENGTH = 2;
@@ -208,6 +209,22 @@ onMount(() => {
       getValue: () => ({ startDate, endDate }),
       getState: () => ({ disabled }),
       constraints: { required },
+      focus: () => primaryControl?.focus(),
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined) return !required;
+        if (typeof candidate !== 'object') return false;
+        const range = candidate as Partial<DateRangeValue>;
+        if (
+          typeof range.startDate !== 'string' ||
+          typeof range.endDate !== 'string'
+        ) {
+          return false;
+        }
+        return (
+          !required ||
+          (range.startDate.trim().length > 0 && range.endDate.trim().length > 0)
+        );
+      },
       validate: () =>
         !required || (startDate.trim().length > 0 && endDate.trim().length > 0),
     };
@@ -364,6 +381,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
         </div>
 
         <button
+          bind:this={primaryControl}
           id={primaryControlId}
           type="button"
           class="mic-btn"
@@ -396,6 +414,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
         <div class="date-field">
           <label for="{name}_start" class="field-label">Start</label>
           <input
+            bind:this={primaryControl}
             id="{name}_start"
             name="{name}[startDate]"
             type="date"

@@ -7,8 +7,10 @@ import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const appState = vi.hoisted(() => ({ mode: 'default' }));
+
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
-  useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),
+  useAppState: () => ({ state: appState, setMode: vi.fn() }),
 }));
 vi.mock('../../../hooks/useSTT.svelte.js', () => ({
   useSTT: () => ({
@@ -29,6 +31,7 @@ import FormWithStructuredFields from './form-with-structured-fields.fixture.svel
 
 afterEach(() => {
   delete document.modelContext;
+  appState.mode = 'default';
 });
 
 describe('Form WebMCP staged-edit intent', () => {
@@ -94,6 +97,125 @@ describe('Form WebMCP staged-edit intent', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveFocus(),
+    );
+  });
+
+  it('rejects non-finite rich numeric proposals before mutation callbacks run', async () => {
+    const numberChanged = vi.fn();
+    const measurementChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        interactionRegistry: registry,
+        onnumberchange: numberChanged,
+      },
+    });
+    render(FormWithStructuredFields, {
+      props: {
+        interactionRegistry: registry,
+        onmeasurementchange: measurementChanged,
+      },
+    });
+    await tick();
+    const ageIdentity = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'age')?.identity;
+    if (!ageIdentity) throw new Error('age control was not registered');
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: ageIdentity,
+        value: Number.POSITIVE_INFINITY,
+      },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: {
+          formId: 'structured-fields',
+          controlId: 'measurement',
+        },
+        value: { value: Number.POSITIVE_INFINITY, unit: 'ft' },
+      },
+      { source: 'agent' },
+    );
+
+    const results = await executeLocalControlBatch(
+      registry,
+      registry
+        .list()
+        .filter((snapshot) => snapshot.state.staged)
+        .map((snapshot) => ({
+          action: 'apply' as const,
+          identity: snapshot.identity,
+          revision: snapshot.state.staged?.revision,
+        })),
+      new Event('click'),
+    );
+    expect(results.results).toHaveLength(2);
+    expect(results.results.every((result) => !result.ok)).toBe(true);
+    expect(numberChanged).not.toHaveBeenCalled();
+    expect(measurementChanged).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-object date-range proposal without delayed mutation', async () => {
+    const datesChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithStructuredFields, {
+      props: {
+        interactionRegistry: registry,
+        ondateschange: datesChanged,
+      },
+    });
+    await tick();
+    const identity = { formId: 'structured-fields', controlId: 'dates' };
+    await registry.execute(
+      { action: 'stage', identity, value: 'next week' },
+      { source: 'agent' },
+    );
+    const revision = registry.get(identity)?.state.staged?.revision;
+
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [{ action: 'apply', identity, revision }],
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false });
+    await Promise.resolve();
+    expect(datesChanged).not.toHaveBeenCalled();
+  });
+
+  it('returns focus to smrt-mode DateRangeInput after final discard', async () => {
+    appState.mode = 'smrt';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithStructuredFields, {
+      props: { interactionRegistry: registry },
+    });
+    await tick();
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'structured-fields', controlId: 'dates' },
+        value: { startDate: '2026-08-26', endDate: '2026-08-27' },
+      },
+      { source: 'agent' },
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Discard valid changes' }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /date range/i })).toHaveFocus(),
     );
   });
 
