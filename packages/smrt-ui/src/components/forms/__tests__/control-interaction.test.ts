@@ -405,6 +405,49 @@ describe('control interaction registry', () => {
     );
   });
 
+  it('isolates a prepared structured value throughout asynchronous policy', async () => {
+    let releasePolicy: (() => void) | undefined;
+    let policyStarted: (() => void) | undefined;
+    const policyGate = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    const proposal = { label: 'Allowed' };
+    const registry = createControlInteractionRegistry({
+      policy: async (command) => {
+        if (command.action === 'stage') {
+          expect(command.value).toEqual({ label: 'Allowed' });
+          policyStarted?.();
+          await policyGate;
+          expect(command.value).toEqual({ label: 'Allowed' });
+        }
+        return { allowed: true };
+      },
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => null,
+      prepareValue: (value) => value,
+      setValue: () => undefined,
+    });
+
+    const staging = registry.execute(
+      { action: 'stage', identity, value: proposal },
+      { source: 'agent' },
+    );
+    await started;
+    proposal.label = 'Forbidden';
+    releasePolicy?.();
+
+    expect(await staging).toMatchObject({ ok: true });
+    expect(registry.get(identity)?.state.staged?.value).toEqual({
+      label: 'Allowed',
+    });
+  });
+
   it('rechecks disabled state after asynchronous proposal validation', async () => {
     let disabled = false;
     let blockValidation = false;

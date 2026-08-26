@@ -876,9 +876,11 @@ export function createControlInteractionRegistry(
           // control while policy awaits, retry against the new stable base.
           for (let attempt = 0; attempt < 8; attempt += 1) {
             preparedStageBaseValue = cloneValue(registration.getValue?.());
-            preparedStageValue = registration.prepareValue
-              ? registration.prepareValue(command.value)
-              : command.value;
+            preparedStageValue = cloneValue(
+              registration.prepareValue
+                ? registration.prepareValue(command.value)
+                : command.value,
+            );
             snapshot = snapshotOf(registration);
             publicCommand = redactsValue(registration)
               ? cloneValue({ ...command, value: undefined })
