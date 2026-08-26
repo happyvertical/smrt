@@ -146,11 +146,13 @@ export interface ControlRegistration {
   metadata: ControlMetadata;
   getValue?: () => unknown;
   /**
-   * Monotonic revision changed only by direct user edits. Async mutation
-   * rollback preserves a newer user edit when this optional signal changes.
+   * Snapshot changed only by direct user edits. Async mutation rollback
+   * restores a newer user value when this optional signal changes.
    */
-  getUserEditRevision?: () => number;
+  getUserEditSnapshot?: () => { revision: number; value: unknown };
   setValue?: (value: unknown) => void | Promise<void>;
+  /** Restore a value without re-running a fallible async mutation workflow. */
+  restoreValue?: (value: unknown) => void | Promise<void>;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
   clear?: (() => void | Promise<void>) | (() => boolean | Promise<boolean>);
   focus?: () => void | Promise<void>;
@@ -469,6 +471,32 @@ function valuesEqual(left: unknown, right: unknown): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
   } catch {
     return false;
+  }
+}
+
+function rollbackValue(
+  registration: ControlRegistration,
+  previousValue: unknown,
+  previousUserEdit: ReturnType<
+    NonNullable<ControlRegistration['getUserEditSnapshot']>
+  > | null,
+): unknown {
+  const currentUserEdit = registration.getUserEditSnapshot?.();
+  return previousUserEdit &&
+    currentUserEdit &&
+    currentUserEdit.revision !== previousUserEdit.revision
+    ? cloneValue(currentUserEdit.value)
+    : previousValue;
+}
+
+async function restoreRegistrationValue(
+  registration: ControlRegistration,
+  value: unknown,
+): Promise<void> {
+  if (registration.restoreValue) {
+    await registration.restoreValue(value);
+  } else {
+    await registration.setValue?.(value);
   }
 }
 
@@ -861,20 +889,19 @@ export function createControlInteractionRegistry(
             }
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
-            const userEditRevision = registration.getUserEditRevision?.();
+            const userEditSnapshot =
+              cloneValue(registration.getUserEditSnapshot?.()) ?? null;
             try {
               const setterResult = registration.setValue?.(nextValue);
               await setterResult;
             } catch (error) {
-              if (
-                userEditRevision === undefined ||
-                registration.getUserEditRevision?.() === userEditRevision
-              ) {
-                try {
-                  await registration.setValue?.(previousValue);
-                } catch {
-                  // Preserve the original setter failure for the command result.
-                }
+              try {
+                await restoreRegistrationValue(
+                  registration,
+                  rollbackValue(registration, previousValue, userEditSnapshot),
+                );
+              } catch {
+                // Preserve the original setter failure for the command result.
               }
               throw error;
             }
@@ -908,7 +935,7 @@ export function createControlInteractionRegistry(
               }
               if (valuesEqual(currentValue, appliedValue)) {
                 try {
-                  await registration.setValue?.(previousValue);
+                  await restoreRegistrationValue(registration, previousValue);
                 } catch {
                   // Preserve the original validation failure for the command result.
                 }
@@ -940,7 +967,8 @@ export function createControlInteractionRegistry(
           case 'clear': {
             const previousValue = cloneValue(registration.getValue?.());
             let clearDecision: boolean | undefined;
-            const userEditRevision = registration.getUserEditRevision?.();
+            const userEditSnapshot =
+              cloneValue(registration.getUserEditSnapshot?.()) ?? null;
             try {
               const pendingDecision = registration.clear
                 ? registration.clear()
@@ -953,15 +981,13 @@ export function createControlInteractionRegistry(
                     ? false
                     : undefined;
             } catch (error) {
-              if (
-                userEditRevision === undefined ||
-                registration.getUserEditRevision?.() === userEditRevision
-              ) {
-                try {
-                  await registration.setValue?.(previousValue);
-                } catch {
-                  // Preserve the original clear failure for the command result.
-                }
+              try {
+                await restoreRegistrationValue(
+                  registration,
+                  rollbackValue(registration, previousValue, userEditSnapshot),
+                );
+              } catch {
+                // Preserve the original clear failure for the command result.
               }
               throw error;
             }
@@ -976,15 +1002,13 @@ export function createControlInteractionRegistry(
                 previousValue !== false &&
                 !(Array.isArray(previousValue) && previousValue.length === 0));
             if (rejected) {
-              if (
-                userEditRevision === undefined ||
-                registration.getUserEditRevision?.() === userEditRevision
-              ) {
-                try {
-                  await registration.setValue?.(previousValue);
-                } catch {
-                  // The rejected command still retains its proposal for recovery.
-                }
+              try {
+                await restoreRegistrationValue(
+                  registration,
+                  rollbackValue(registration, previousValue, userEditSnapshot),
+                );
+              } catch {
+                // The rejected command still retains its proposal for recovery.
               }
               throw new Error('staged_value_rejected');
             }
@@ -1003,22 +1027,21 @@ export function createControlInteractionRegistry(
             const undoEntry = history.at(-1);
             if (!undoEntry) throw new Error('nothing_to_undo');
             const currentValue = cloneValue(registration.getValue?.());
-            const userEditRevision = registration.getUserEditRevision?.();
+            const userEditSnapshot =
+              cloneValue(registration.getUserEditSnapshot?.()) ?? null;
             if (!valuesEqual(currentValue, undoEntry.appliedValue)) {
               throw new Error('staged_value_stale');
             }
             try {
               await registration.setValue?.(undoEntry.previousValue);
             } catch (error) {
-              if (
-                userEditRevision === undefined ||
-                registration.getUserEditRevision?.() === userEditRevision
-              ) {
-                try {
-                  await registration.setValue?.(currentValue);
-                } catch {
-                  // Preserve the original setter failure for the command result.
-                }
+              try {
+                await restoreRegistrationValue(
+                  registration,
+                  rollbackValue(registration, currentValue, userEditSnapshot),
+                );
+              } catch {
+                // Preserve the original setter failure for the command result.
               }
               throw error;
             }

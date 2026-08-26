@@ -128,8 +128,9 @@ other text pairing clears WCAG AA in both schemes.
   framework falls back to ordered `execute` calls without weakening the private
   one-shot gesture proof on factory-created registries.
   Rejecting async custom setters and clear handlers roll back by default;
-  controls that accept concurrent direct edits expose a monotonic
-  `getUserEditRevision()` so rollback preserves newer human input.
+  controls that accept concurrent direct edits expose a monotonic revision and
+  user value from `getUserEditSnapshot()` so rollback restores newer human input;
+  fallible async setters expose an infallible `restoreValue()` path.
 
 ## Gotchas
 

@@ -119,8 +119,10 @@ Custom controls whose clear operation is intentionally idempotent should return
 `true` from `clear()` to affirm that the unchanged cleared value was accepted.
 Async custom setters and clear handlers are rolled back when they reject. A
 control that permits direct edits while an async mutation is pending can expose
-`getUserEditRevision()` and increment it only for direct user edits so rollback
-never overwrites newer human input.
+`getUserEditSnapshot()` and update its revision and value only for direct user
+edits so rollback restores newer human input even if the handler mutates again
+before rejecting. A fallible async setter should also expose `restoreValue()` as
+an infallible state restoration path that does not repeat the external workflow.
 
 ## DataTable controller
 
