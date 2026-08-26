@@ -1,6 +1,9 @@
 <script lang="ts">
 import Combobox from '../Combobox.svelte';
-import type { ControlInteractionRegistry } from '../control-interaction.js';
+import type {
+  ControlInteractionRegistry,
+  ControlOption,
+} from '../control-interaction.js';
 import Form from '../Form.svelte';
 import Listbox from '../Listbox.svelte';
 import MultiSelect from '../MultiSelect.svelte';
@@ -9,8 +12,17 @@ import TagsInput from '../TagsInput.svelte';
 interface Props {
   registry: ControlInteractionRegistry;
   fieldsetDisabled?: boolean;
+  collisionOptions?: ControlOption[];
+  collisionValues?: Array<string | number>;
+  onCollisionValuesChange?: (values: Array<string | number>) => void;
 }
-let { registry, fieldsetDisabled = false }: Props = $props();
+let {
+  registry,
+  fieldsetDisabled = false,
+  collisionOptions,
+  collisionValues = $bindable([]),
+  onCollisionValuesChange,
+}: Props = $props();
 const countries = [
   { value: 'ca', label: 'Canada' },
   { value: 'us', label: 'United States' },
@@ -28,5 +40,8 @@ let region = $state<string | number>('west');
   <MultiSelect name="channels" label="Channels" options={[{ value: 'email', label: 'Email' }, { value: 'sms', label: 'SMS' }]} bind:values={channels} />
   <TagsInput name="topics" label="Topics" maxTags={2} bind:values={tags} />
   <Listbox name="region" label="Region" options={[{ value: 'west', label: 'West' }, { value: 'east', label: 'East' }]} bind:value={region} />
+  {#if collisionOptions}
+    <MultiSelect name="collision" label="Collision" options={collisionOptions} bind:values={collisionValues} onvalueschange={onCollisionValuesChange} />
+  {/if}
   </fieldset>
 </Form>

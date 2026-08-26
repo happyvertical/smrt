@@ -55,12 +55,56 @@ export function validatesEnabledOptions(
   options: ControlOption[],
   next: unknown,
 ): boolean {
-  if (!Array.isArray(next)) return false;
-  const matched = next.map((candidate) => matchingOption(options, candidate));
-  return (
-    matched.every((option) => option !== undefined && !option.disabled) &&
-    new Set(matched.map((option) => String(option?.value))).size === next.length
-  );
+  return normalizeEnabledOptions(options, next) !== undefined;
+}
+
+export function normalizeEnabledOptions(
+  options: ControlOption[],
+  next: unknown,
+): Array<string | number> | undefined {
+  return normalizeOptionValues(options, next, false, false);
+}
+
+export function normalizeCurrentOptionValues(
+  options: ControlOption[],
+  next: unknown,
+): Array<string | number> {
+  return normalizeOptionValues(options, next, true, true) ?? [];
+}
+
+function normalizeOptionValues(
+  options: ControlOption[],
+  next: unknown,
+  allowDisabled: boolean,
+  skipInvalid: boolean,
+): Array<string | number> | undefined {
+  if (!Array.isArray(next)) return undefined;
+  const matchedIndexes = new Set<number>();
+  const normalized: Array<string | number> = [];
+  for (const candidate of next) {
+    if (typeof candidate !== 'string' && typeof candidate !== 'number')
+      return undefined;
+    let index = options.findIndex((option) =>
+      Object.is(option.value, candidate),
+    );
+    if (index < 0) {
+      index = options.findIndex(
+        (option) => String(option.value) === String(candidate),
+      );
+    }
+    const option = options[index];
+    const invalid =
+      !option ||
+      (!allowDisabled && option.disabled) ||
+      matchedIndexes.has(index);
+    if (invalid) {
+      if (skipInvalid) continue;
+      return undefined;
+    }
+    matchedIndexes.add(index);
+    normalized.push(option.value);
+  }
+  return normalized;
 }
 
 export function numberMatchesStep(

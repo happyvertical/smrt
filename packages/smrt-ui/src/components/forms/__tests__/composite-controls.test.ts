@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import { createControlInteractionRegistry } from '../control-interaction.js';
 import Fixture from './composite-controls.fixture.svelte';
@@ -70,6 +70,89 @@ describe('composite controls', () => {
     }
 
     expect(await screen.findAllByRole('alert')).toHaveLength(invalid.size);
+  });
+
+  it('applies only the deterministic MultiSelect match for colliding values', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const onValuesChange = vi.fn();
+    render(Fixture, {
+      props: {
+        registry,
+        collisionOptions: [
+          { value: 1, label: 'Number one' },
+          { value: '1', label: 'String one' },
+          { value: 2, label: 'Disabled two', disabled: true },
+        ],
+        onCollisionValuesChange: onValuesChange,
+      },
+    });
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'profile', controlId: 'collision' },
+        value: [1],
+      },
+      { source: 'agent' },
+    );
+    expect(
+      registry.get({ formId: 'profile', controlId: 'collision' })?.state.staged
+        ?.valid,
+    ).toBe(true);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply valid changes' }),
+    );
+    expect(onValuesChange).toHaveBeenLastCalledWith([1]);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Collision.*Number one/ }),
+    );
+    expect(screen.getByRole('option', { name: 'Number one' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('option', { name: 'String one' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+
+    for (const value of [[1, 1], [2], ['unknown']]) {
+      await registry.execute(
+        {
+          action: 'stage',
+          identity: { formId: 'profile', controlId: 'collision' },
+          value,
+        },
+        { source: 'agent' },
+      );
+      expect(
+        registry.get({ formId: 'profile', controlId: 'collision' })?.state
+          .staged?.valid,
+      ).toBe(false);
+    }
+  });
+
+  it('normalizes legacy string-bound selections for numeric options', async () => {
+    const registry = createControlInteractionRegistry();
+    const onValuesChange = vi.fn();
+    render(Fixture, {
+      props: {
+        registry,
+        collisionOptions: [{ value: 1, label: 'Number one' }],
+        collisionValues: ['1'],
+        onCollisionValuesChange: onValuesChange,
+      },
+    });
+
+    await userEvent.click(
+      screen.getByRole('button', { name: /Collision.*Number one/ }),
+    );
+    const option = screen.getByRole('option', { name: 'Number one' });
+    expect(option).toHaveAttribute('aria-selected', 'true');
+    await userEvent.click(option);
+    expect(onValuesChange).toHaveBeenLastCalledWith([]);
   });
 
   it('reports effective disabled state from an ancestor fieldset', () => {
