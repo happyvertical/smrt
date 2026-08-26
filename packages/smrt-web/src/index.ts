@@ -552,7 +552,7 @@ export function buildListQuery(params?: Record<string, unknown>): string {
  * failures stay opaque and payload-free.
  */
 export function createDefinitionFetchers(
-  definition: SmrtWebCollectionDefinition<object>,
+  definition: Pick<SmrtWebCollectionDefinition<object>, 'name' | 'endpoint'>,
   basePath = '/api/v1',
   fetchFn: typeof fetch = (...args) => globalThis.fetch(...args),
 ): SmrtCrudFetchers {
@@ -821,6 +821,42 @@ function resolveQueryClient(client?: SmrtWebClient): QueryClient {
     );
   }
   return engine.queryClient;
+}
+
+/** Invalidate cached queries whose final key segment names a collection. */
+function invalidateCollectionQueries(
+  queryClient: QueryClient,
+  collectionNames: ReadonlySet<string>,
+): void {
+  if (collectionNames.size === 0) return;
+  void queryClient.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey;
+      if (!Array.isArray(key) || key.length === 0) return false;
+      const collectionSegment = key[key.length - 1];
+      return (
+        typeof collectionSegment === 'string' &&
+        collectionNames.has(collectionSegment)
+      );
+    },
+  });
+}
+
+/**
+ * Invalidate materialized collection caches through the opaque SMRT client.
+ *
+ * This is the public cache-coherence seam for transports that execute a write
+ * without constructing a {@link SmrtWebCollection} (for example, a tool-only
+ * WebMCP definition). Matching is by collection name across every scope on the
+ * shared client, mirroring settled collection mutations: over-invalidation is
+ * safe, while leaving a related page cache stale is not.
+ */
+export function invalidateSmrtWebCollections(
+  client: SmrtWebClient,
+  collectionNames: readonly string[],
+): void {
+  const queryClient = resolveQueryClient(client);
+  invalidateCollectionQueries(queryClient, new Set(collectionNames));
 }
 
 /**
@@ -1116,17 +1152,7 @@ export function createSmrtCollection<TData extends object>(
    * must not delay the mutation's own settle.
    */
   const invalidateRelated = (): void => {
-    void queryClient.invalidateQueries({
-      predicate: (query) => {
-        const key = query.queryKey;
-        if (!Array.isArray(key) || key.length === 0) return false;
-        const collectionSegment = key[key.length - 1];
-        return (
-          typeof collectionSegment === 'string' &&
-          invalidationTargets.has(collectionSegment)
-        );
-      },
-    });
+    invalidateCollectionQueries(queryClient, invalidationTargets);
   };
 
   // The engine-free context every capability hook receives (#1755). `cacheKey`
