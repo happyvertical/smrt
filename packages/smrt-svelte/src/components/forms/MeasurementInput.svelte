@@ -302,6 +302,7 @@ onMount(() => {
         }
       },
       getValue: () => (value !== null ? { value, unit } : null),
+      unit,
       getState: () => ({ disabled }),
       constraints: { required, min, max },
       validate: () =>

@@ -105,13 +105,18 @@ $effect(() => {
     country = value.country;
 });
 
-function updateValue() {
+function currentValue(): Partial<AddressValue> {
   const newValue: Partial<AddressValue> = {};
   if (fields.includes('street')) newValue.street = street;
   if (fields.includes('city')) newValue.city = city;
   if (fields.includes('province')) newValue.province = province;
   if (fields.includes('postalCode')) newValue.postalCode = postalCode;
   if (fields.includes('country')) newValue.country = country;
+  return newValue;
+}
+
+function updateValue() {
+  const newValue = currentValue();
   value = newValue;
   onchange?.(newValue);
 }
@@ -232,7 +237,7 @@ onMount(() => {
           updateValue();
         }
       },
-      getValue: () => value,
+      getValue: currentValue,
       getState: () => ({ disabled }),
       constraints: { required },
       webMcpSchema: {

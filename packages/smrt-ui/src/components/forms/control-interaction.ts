@@ -402,6 +402,11 @@ interface InternalStagedEntry {
   validationMessage?: string;
 }
 
+interface InternalUndoEntry {
+  previousValue: unknown;
+  appliedValue: unknown;
+}
+
 function cloneValue<T>(value: T): T {
   try {
     return structuredClone(value);
@@ -454,7 +459,7 @@ export function createControlInteractionRegistry(
 ): ControlInteractionRegistry {
   const registrations = new Map<string, ControlRegistration>();
   const staged = new Map<string, InternalStagedEntry>();
-  const undo = new Map<string, unknown[]>();
+  const undo = new Map<string, InternalUndoEntry[]>();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
   const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
@@ -841,7 +846,10 @@ export function createControlInteractionRegistry(
               }
               throw error;
             }
-            history.push(previousValue);
+            history.push({
+              previousValue,
+              appliedValue: cloneValue(nextValue),
+            });
             undo.set(key, history);
             if (!stagedEntry || staged.get(key) === stagedEntry) {
               staged.delete(key);
@@ -883,14 +891,14 @@ export function createControlInteractionRegistry(
             }
             const clearedValue = registration.getValue?.();
             const rejected =
-              (clearDecision === false ||
-                (clearDecision !== true &&
-                  valuesEqual(clearedValue, previousValue))) &&
-              previousValue !== '' &&
-              previousValue !== null &&
-              previousValue !== undefined &&
-              previousValue !== false &&
-              !(Array.isArray(previousValue) && previousValue.length === 0);
+              clearDecision === false ||
+              (clearDecision !== true &&
+                valuesEqual(clearedValue, previousValue) &&
+                previousValue !== '' &&
+                previousValue !== null &&
+                previousValue !== undefined &&
+                previousValue !== false &&
+                !(Array.isArray(previousValue) && previousValue.length === 0));
             if (rejected) {
               if (!valuesEqual(clearedValue, previousValue)) {
                 try {
@@ -902,7 +910,10 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_rejected');
             }
             const history = undo.get(key) ?? [];
-            history.push(previousValue);
+            history.push({
+              previousValue,
+              appliedValue: cloneValue(clearedValue),
+            });
             undo.set(key, history);
             staged.delete(key);
             break;
@@ -910,10 +921,14 @@ export function createControlInteractionRegistry(
           case 'undo': {
             const history = undo.get(key) ?? [];
             if (history.length === 0) throw new Error('nothing_to_undo');
-            const previousValue = history.at(-1);
+            const undoEntry = history.at(-1);
+            if (!undoEntry) throw new Error('nothing_to_undo');
             const currentValue = cloneValue(registration.getValue?.());
+            if (!valuesEqual(currentValue, undoEntry.appliedValue)) {
+              throw new Error('staged_value_stale');
+            }
             try {
-              await registration.setValue?.(previousValue);
+              await registration.setValue?.(undoEntry.previousValue);
             } catch (error) {
               try {
                 await registration.setValue?.(currentValue);
@@ -922,7 +937,9 @@ export function createControlInteractionRegistry(
               }
               throw error;
             }
-            if (!valuesEqual(registration.getValue?.(), previousValue)) {
+            if (
+              !valuesEqual(registration.getValue?.(), undoEntry.previousValue)
+            ) {
               try {
                 await registration.setValue?.(currentValue);
               } catch {

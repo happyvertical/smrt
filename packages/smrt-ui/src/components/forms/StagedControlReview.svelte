@@ -179,6 +179,7 @@ function editedValue(snapshot: ControlSnapshot): unknown {
     return number;
   }
   if (typeof original === 'boolean') return draft === 'true';
+  if (original === null) return JSON.parse(draft);
   if (original !== null && typeof original === 'object')
     return JSON.parse(draft);
   return draft;

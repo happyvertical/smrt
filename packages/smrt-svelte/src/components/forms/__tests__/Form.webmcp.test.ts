@@ -1,3 +1,7 @@
+import {
+  createControlInteractionRegistry,
+  executeLocalControlBatch,
+} from '@happyvertical/smrt-ui/forms';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
@@ -148,6 +152,34 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(screen.getByRole('textbox', { name: 'Full name' })).toBeDisabled();
   });
 
+  it('does not expose fields disabled by an ancestor fieldset', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        fieldsetDisabled: true,
+        showAge: false,
+      },
+    });
+    await tick();
+    await tick();
+
+    const tool = registered.at(-1);
+    expect(tool?.inputSchema).toMatchObject({ properties: {} });
+    expect(await tool?.execute({ fullname: 'Ada Lovelace' })).toBe(
+      'No reviewable changes provided',
+    );
+    expect(screen.getByRole('textbox', { name: 'Full name' })).toBeDisabled();
+  });
+
   it('uses the form subject for rich-field registration and staging', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;
@@ -157,7 +189,7 @@ describe('Form WebMCP staged-edit intent', () => {
         registered.push(tool as (typeof registered)[number]);
       },
     };
-    render(FormWithFields, {
+    const view = render(FormWithFields, {
       props: {
         webmcp: true,
         showAge: false,
@@ -171,6 +203,18 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 1 change for review',
     );
     expect(await screen.findByText(/person:person-1/)).toBeInTheDocument();
+
+    await view.rerender({
+      webmcp: true,
+      showAge: false,
+      formSubject: { type: 'person', id: 'person-2' },
+    });
+    await tick();
+    await tick();
+    expect(await registered.at(-1)?.execute({ fullname: 'Grace' })).toBe(
+      'Staged 1 change for review',
+    );
+    expect(await screen.findByText(/person:person-2/)).toBeInTheDocument();
   });
 
   it('keeps the browser path a no-op without WebMCP', async () => {
@@ -303,8 +347,16 @@ describe('Form WebMCP staged-edit intent', () => {
       },
     };
     const onsubmit = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     render(FormWithStructuredFields, {
-      props: { webmcp: true, structuredRequired: false, onsubmit },
+      props: {
+        webmcp: true,
+        structuredRequired: false,
+        onsubmit,
+        interactionRegistry: registry,
+      },
     });
     await tick();
     await tick();
@@ -326,5 +378,45 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 3 changes for review',
     );
     expect(onsubmit).not.toHaveBeenCalled();
+    const staged = registry
+      .list('structured-fields')
+      .filter((snapshot) => snapshot.state.staged)
+      .map((snapshot) => ({
+        action: 'apply' as const,
+        identity: snapshot.identity,
+        revision: snapshot.state.staged?.revision,
+      }));
+    const applied = await executeLocalControlBatch(
+      registry,
+      staged,
+      new Event('click'),
+    );
+    expect(applied.results).toEqual(
+      staged.map((command) =>
+        expect.objectContaining({
+          ok: true,
+          identity: command.identity,
+        }),
+      ),
+    );
+    expect(registry.list('structured-fields')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          identity: expect.objectContaining({ controlId: 'dates' }),
+          state: expect.objectContaining({
+            value: { startDate: '2026-01-01', endDate: '' },
+          }),
+        }),
+        expect.objectContaining({
+          identity: expect.objectContaining({ controlId: 'address' }),
+          state: expect.objectContaining({
+            value: expect.objectContaining({
+              city: 'Edmonton',
+              country: 'CA',
+            }),
+          }),
+        }),
+      ]),
+    );
   });
 });

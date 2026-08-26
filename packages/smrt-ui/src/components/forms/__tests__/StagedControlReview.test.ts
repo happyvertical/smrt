@@ -102,6 +102,26 @@ describe('StagedControlReview', () => {
     expect(registry.get(identity)?.state.staged).toBeDefined();
   });
 
+  it('does not coerce an unedited null proposal into a string', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: null },
+      { source: 'agent' },
+    );
+
+    expect(
+      screen.getByRole('textbox', {
+        name: 'Edit proposed value for Display name',
+      }),
+    ).toHaveValue('null');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
+      'Ada',
+    );
+    expect(registry.get(identity)?.state.staged?.value).toBeNull();
+  });
+
   it('keeps subject-qualified identities distinct in the review list', async () => {
     const registry = createReviewRegistry();
     let secondValue = 'Ada';

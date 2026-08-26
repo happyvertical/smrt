@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import AddressInput from '../AddressInput.svelte';
 import DateRangeInput from '../DateRangeInput.svelte';
 import Form from '../Form.svelte';
@@ -9,6 +10,7 @@ let {
   webmcp = false,
   addressFields = ['street', 'city', 'province', 'postalCode', 'country'],
   structuredRequired = true,
+  interactionRegistry = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -16,10 +18,11 @@ let {
     'street' | 'city' | 'province' | 'postalCode' | 'country'
   >;
   structuredRequired?: boolean;
+  interactionRegistry?: ControlInteractionRegistry;
 } = $props();
 </script>
 
-<Form {onsubmit} {webmcp}>
+<Form {onsubmit} {webmcp} {interactionRegistry} formId="structured-fields">
 	<MeasurementInput
 		name="measurement"
 		label="Measurement"

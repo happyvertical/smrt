@@ -11,7 +11,7 @@ import {
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -178,7 +178,7 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
   const domState: ControlRuntimeState = {
     disabled:
       controls.length > 0
-        ? controls.every((control) => control.disabled)
+        ? controls.every((control) => control.matches(':disabled'))
         : undefined,
     readonly:
       controls.some(
@@ -481,6 +481,26 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     ) {
       return [];
     }
+    const currentValue = field.getValue();
+    let proposedValue =
+      value !== null &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      currentValue !== null &&
+      typeof currentValue === 'object' &&
+      !Array.isArray(currentValue)
+        ? { ...currentValue, ...value }
+        : value;
+    if (
+      field.type === 'measurement' &&
+      proposedValue !== null &&
+      typeof proposedValue === 'object' &&
+      !Array.isArray(proposedValue) &&
+      !('unit' in proposedValue) &&
+      field.unit
+    ) {
+      proposedValue = { ...proposedValue, unit: field.unit };
+    }
     return [
       {
         action: 'stage' as const,
@@ -489,7 +509,7 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
           controlId: field.controlId ?? field.name,
           subject: field.subject ?? subject,
         },
-        value,
+        value: proposedValue,
       },
     ];
   });

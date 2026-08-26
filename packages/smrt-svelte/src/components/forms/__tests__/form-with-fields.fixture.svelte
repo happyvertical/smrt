@@ -17,6 +17,7 @@ let {
   webmcp = false,
   textRequired = false,
   textDisabled = false,
+  fieldsetDisabled = false,
   formSubject = undefined,
   ageRequired = false,
   ageMin = undefined,
@@ -31,6 +32,7 @@ let {
   webmcp?: boolean;
   textRequired?: boolean;
   textDisabled?: boolean;
+  fieldsetDisabled?: boolean;
   formSubject?: { type: string; id: string; label?: string };
   ageRequired?: boolean;
   ageMin?: number;
@@ -39,6 +41,7 @@ let {
 </script>
 
 <Form {onsubmit} {method} {action} {webmcp} subject={formSubject}>
+	<fieldset disabled={fieldsetDisabled}>
 	<TextInput
 		name="fullname"
 		label="Full name"
@@ -56,5 +59,6 @@ let {
 			bind:value={numberValue}
 		/>
 	{/if}
+	</fieldset>
 	<button type="submit">Submit</button>
 </Form>

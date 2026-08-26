@@ -915,6 +915,69 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged).toBeUndefined();
   });
 
+  it('preserves an intervening human edit instead of applying stale undo history', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    value = 'Katherine';
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'staged_value_stale' });
+    expect(value).toBe('Katherine');
+  });
+
+  it('honors an explicit clear rejection for an already-empty control', async () => {
+    let value = '';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      clear: () => false,
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
   it('does not collide subject identities containing separators', async () => {
     const firstIdentity = {
       ...identity,
