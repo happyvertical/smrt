@@ -94,6 +94,22 @@ export const CONTENT_LIST_COLUMN_IDS = [
 ] as const satisfies readonly ContentListColumnId[];
 
 /**
+ * Structural columns the compact table owns. They carry no query capability and
+ * are never published to a data surface, but the controller still has to know
+ * them: column order is reconciled from its known column ids, so leaving them
+ * out would push selection and actions behind every data column.
+ */
+export const CONTENT_LIST_SELECTION_COLUMN_ID = 'select';
+export const CONTENT_LIST_ACTIONS_COLUMN_ID = 'actions';
+
+/** Every column of the compact table, in render order. */
+export const CONTENT_LIST_TABLE_COLUMN_IDS = [
+  CONTENT_LIST_SELECTION_COLUMN_ID,
+  ...CONTENT_LIST_COLUMN_IDS,
+  CONTENT_LIST_ACTIONS_COLUMN_ID,
+] as const satisfies readonly string[];
+
+/**
  * One resolved list row. Display values are flattened so a column accessor,
  * local search, and local sorting all read the same normalized text.
  */
@@ -512,7 +528,7 @@ export function createContentListController(
   options: ContentListControllerOptions = {},
 ): DataTableController {
   return createDataTableController({
-    columnIds: CONTENT_LIST_COLUMN_IDS,
+    columnIds: CONTENT_LIST_TABLE_COLUMN_IDS,
     hiddenColumnIds: CONTENT_LIST_HIDDEN_COLUMN_IDS,
     // This adapter owns the transform in every presentation, so the renderer
     // must not apply a second, subtly different pass over the same rows.

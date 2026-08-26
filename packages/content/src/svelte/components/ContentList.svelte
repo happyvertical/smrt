@@ -11,7 +11,9 @@ import {
   applyContentListFilter,
   buildContentListColumns,
   buildContentListSurfaceDescriptor,
+  CONTENT_LIST_ACTIONS_COLUMN_ID,
   CONTENT_LIST_ROW_KEY,
+  CONTENT_LIST_SELECTION_COLUMN_ID,
   CONTENT_LIST_STATUS_FILTER_ID,
   CONTENT_LIST_TYPE_FILTER_ID,
   type ContentListDataSurface,
@@ -255,8 +257,28 @@ function cancelDelete() {
   pendingDelete = null;
 }
 
-/** Compact mode renders the shared columns with content-specific cells. */
+/**
+ * Compact mode renders the shared columns with content-specific cells.
+ *
+ * Selection is a content-owned column rather than DataTable's built-in one:
+ * DataTable has no per-row selection predicate, so its header select-all would
+ * address the synthetic id of an unidentified row, which the normalization
+ * effect then strips — leaving the header permanently indeterminate. Owning the
+ * column keeps compact select-all identical to the card presentations.
+ */
 const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
+  {
+    id: CONTENT_LIST_SELECTION_COLUMN_ID,
+    label: t(M['content.content_list.select_all']),
+    role: 'action',
+    align: 'center',
+    width: '3rem',
+    sortable: false,
+    searchable: false,
+    filterable: false,
+    header: selectHeader,
+    cell: selectCell,
+  },
   ...queryColumns.map((column) => {
     if (column.id === 'type') return { ...column, cell: typeCell };
     if (column.id === 'title') return { ...column, cell: titleCell };
@@ -267,7 +289,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     return column;
   }),
   {
-    id: 'actions',
+    id: CONTENT_LIST_ACTIONS_COLUMN_ID,
     label: t(M['content.content_list.actions_column']),
     role: 'action',
     align: 'right',
@@ -278,6 +300,27 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   },
 ]);
 </script>
+
+{#snippet selectHeader()}
+  <Checkbox
+    checked={allPageSelected}
+    indeterminate={somePageSelected}
+    aria-label={t(M['content.content_list.select_all'])}
+    onchange={togglePageSelection}
+  />
+{/snippet}
+
+{#snippet selectCell({ row }: { row: ContentListRow })}
+  <Checkbox
+    checked={isSelected(row)}
+    disabled={!row.identified}
+    aria-label={selectRowLabel(row)}
+    title={row.identified
+      ? undefined
+      : t(M['content.content_list.row_not_selectable'])}
+    onchange={() => toggleRow(row)}
+  />
+{/snippet}
 
 {#snippet typeCell({ row }: { row: ContentListRow })}
   <span class={`type-pill type-pill--${row.type}`}>{row.typeLabel}</span>
@@ -511,7 +554,6 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           columns={tableColumns}
           rowKey={CONTENT_LIST_ROW_KEY}
           {controller}
-          selectable
           sortable
           agentAddressable
           {loading}

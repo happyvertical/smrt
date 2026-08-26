@@ -391,15 +391,54 @@ describe('ContentList selection integrity', () => {
     expect(target.textContent).toContain('1 selected');
   });
 
-  it('normalizes a table selection that reaches a row without a durable id', () => {
+  it('disables the compact row checkbox of a row without a durable id', () => {
     const target = renderList({
       contents: withGhostRow,
       defaultViewMode: 'compact',
     });
 
-    click(checkboxByLabel(target, 'Select Ghost row'));
+    const ghost = checkboxByLabel(target, 'Select Ghost row');
+    expect(ghost.disabled).toBe(true);
+    expect(ghost.getAttribute('title')).toBe(
+      'This content has no stable id and cannot be selected.',
+    );
+
+    click(ghost);
 
     expect(target.textContent).toContain('0 selected');
+  });
+
+  it('toggles only the durable rows from the compact header select-all', () => {
+    const target = renderList({
+      contents: withGhostRow,
+      defaultViewMode: 'compact',
+    });
+    // Whichever header checkbox the table renders, it must address exactly the
+    // durable page rows rather than getting stuck half-selected on the ghost.
+    const selectAll = () => {
+      const checkbox = target.querySelector<HTMLInputElement>(
+        'thead input[type="checkbox"]',
+      );
+      if (!checkbox) throw new Error('No header select-all checkbox');
+      return checkbox;
+    };
+
+    expect(selectAll().getAttribute('aria-label')).toBe(
+      'Select all contents on this page',
+    );
+
+    click(selectAll());
+
+    // The ghost row must not leave the header stuck in an indeterminate state.
+    expect(target.textContent).toContain('1 selected');
+    expect(selectAll().checked).toBe(true);
+    expect(selectAll().indeterminate).toBe(false);
+
+    click(selectAll());
+
+    expect(target.textContent).toContain('0 selected');
+    expect(selectAll().checked).toBe(false);
+    expect(selectAll().indeterminate).toBe(false);
   });
 
   it('normalizes a surface selection that reaches a row without a durable id', async () => {

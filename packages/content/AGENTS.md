@@ -128,11 +128,18 @@ Notes:
 - A `type` prop lock is enforced against live state, not just against the prop:
   a data-surface `set-filters` or `reset` command that drops the type filter is
   re-applied by the lock effect (equality-guarded, so it settles).
-- Selection may only address durable rows. Grid and detailed render a disabled,
-  explained checkbox for `identified: false` rows, page select-all skips them,
-  and a normalization effect re-dispatches `setSelectedRows` without any
-  non-durable id — which covers DataTable's own selection column and
-  data-surface commands in one place.
+- Selection may only address durable rows. All three presentations render a
+  disabled, explained checkbox for `identified: false` rows, page select-all
+  skips them, and a normalization effect re-dispatches `setSelectedRows` without
+  any non-durable id, which covers data-surface commands too.
+- Compact mode renders a content-owned `select` column (header + cell snippets)
+  instead of passing `selectable` to DataTable. DataTable has no per-row
+  selection predicate, so its header select-all addresses the synthetic id of an
+  unidentified row; the normalization effect then strips it and the header stays
+  indeterminate forever. Because column order is reconciled from the
+  controller's known column ids, the structural `select` and `actions` ids are
+  part of `CONTENT_LIST_TABLE_COLUMN_IDS` — omit them and selection renders
+  behind every data column.
 - Only rendered columns are published to a data surface. `description` is a
   hidden, search-only column so search still reaches the deck; the descriptor
   additionally declares the `id` row-key column, which the surface contract
