@@ -110,6 +110,8 @@ consumes the gesture before authorizing a value-changing command.
 Serialized or programmatic `source: 'user', confirmed: true` input is never
 confirmation. Sensitive and secret values, validation details, failures, and
 events remain redacted from every public surface.
+Custom controls whose clear operation is intentionally idempotent should return
+`true` from `clear()` to affirm that the unchanged cleared value was accepted.
 
 ## DataTable controller
 

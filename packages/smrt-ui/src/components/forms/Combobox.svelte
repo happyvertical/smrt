@@ -143,6 +143,7 @@ useControlRegistration(() => {
       value = '';
       query = '';
       onvaluechange?.('');
+      return true;
     },
     focus: () => input.focus(),
     reveal: () => revealControl(root),

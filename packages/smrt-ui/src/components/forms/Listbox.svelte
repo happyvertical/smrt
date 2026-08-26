@@ -76,6 +76,7 @@ useControlRegistration(() => {
     setValue: select,
     clear: () => {
       value = undefined;
+      return true;
     },
     focus: () => optionEls.find((item) => item && !item.disabled)?.focus(),
     reveal: () => revealControl(root),

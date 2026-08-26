@@ -99,7 +99,7 @@ useControlRegistration(() => {
       )
         setValue(candidate);
     },
-    clear: () => setValue(''),
+    clear: () => (setValue(''), true),
     focus: () =>
       element.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus(),
     reveal: () => revealControl(element),

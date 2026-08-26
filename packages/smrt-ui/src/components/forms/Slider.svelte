@@ -95,7 +95,7 @@ useControlRegistration(() => {
     },
     getValue: () => value,
     setValue,
-    clear: () => setValue(min),
+    clear: () => (setValue(min), true),
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) =>

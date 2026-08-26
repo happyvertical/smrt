@@ -130,7 +130,7 @@ $effect(() => {
     },
     getValue: () => value,
     setValue: setControlValue,
-    clear: () => setControlValue(''),
+    clear: () => (setControlValue(''), true),
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),

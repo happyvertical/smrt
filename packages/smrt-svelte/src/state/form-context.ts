@@ -55,7 +55,8 @@ export interface FieldDefinition {
   webMcpSchema?: Record<string, unknown>;
   options?: ControlOption[];
   unit?: string;
-  clear?: () => void;
+  /** Return true to affirm an accepted idempotent clear; false rejects it. */
+  clear?: () => undefined | boolean;
   focus?: () => void;
   reveal?: () => void;
   highlight?: (durationMs?: number) => void;

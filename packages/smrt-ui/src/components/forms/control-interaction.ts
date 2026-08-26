@@ -146,7 +146,8 @@ export interface ControlRegistration {
   metadata: ControlMetadata;
   getValue?: () => unknown;
   setValue?: (value: unknown) => void | Promise<void>;
-  clear?: () => void | Promise<void>;
+  /** Return true to affirm an accepted idempotent clear; false rejects it. */
+  clear?: () => undefined | boolean | Promise<undefined | boolean>;
   focus?: () => void | Promise<void>;
   reveal?: () => void | Promise<void>;
   highlight?: (durationMs?: number) => void | Promise<void>;
@@ -478,7 +479,13 @@ export function createControlInteractionRegistry(
 
   const emit = (event: Omit<ControlInteractionEvent, 'timestamp'>) => {
     const next = { ...event, timestamp: now() };
-    for (const listener of listeners) listener(next);
+    for (const listener of listeners) {
+      try {
+        listener(next);
+      } catch {
+        // Observers cannot change a command's committed result or registry state.
+      }
+    }
   };
 
   const snapshotOf = (registration: ControlRegistration): ControlSnapshot => {
@@ -679,12 +686,20 @@ export function createControlInteractionRegistry(
               };
               const previousEntry = staged.get(key);
               staged.set(key, entry);
-              let validation: Awaited<ReturnType<typeof validateProposedValue>>;
+              let stagedSnapshot: ControlStagedEntry | undefined;
               try {
-                validation = await validateProposedValue(
+                const validation = await validateProposedValue(
                   registration,
                   command.value,
                 );
+                if (
+                  registrations.get(key) !== registration ||
+                  staged.get(key) !== entry
+                ) {
+                  throw new Error('stale_revision');
+                }
+                Object.assign(entry, validation);
+                stagedSnapshot = snapshotOf(registration).state.staged;
               } catch (error) {
                 if (staged.get(key) === entry) {
                   if (
@@ -698,21 +713,14 @@ export function createControlInteractionRegistry(
                 }
                 throw error;
               }
-              if (
-                registrations.get(key) !== registration ||
-                staged.get(key) !== entry
-              ) {
-                throw new Error('stale_revision');
-              }
-              Object.assign(entry, validation);
+              emit({
+                type: 'staged',
+                identity: command.identity,
+                command: publicCommand,
+                context: publicContext,
+                staged: stagedSnapshot,
+              });
             }
-            emit({
-              type: 'staged',
-              identity: command.identity,
-              command: publicCommand,
-              context: publicContext,
-              staged: snapshotOf(registration).state.staged,
-            });
             break;
           case 'apply': {
             const stagedEntry = staged.get(key);
@@ -798,11 +806,14 @@ export function createControlInteractionRegistry(
           }
           case 'clear': {
             const previousValue = cloneValue(registration.getValue?.());
-            if (registration.clear) await registration.clear();
-            else await registration.setValue?.('');
+            const clearDecision = registration.clear
+              ? await registration.clear()
+              : await registration.setValue?.('');
             const clearedValue = registration.getValue?.();
             if (
-              valuesEqual(clearedValue, previousValue) &&
+              (clearDecision === false ||
+                (clearDecision !== true &&
+                  valuesEqual(clearedValue, previousValue))) &&
               previousValue !== '' &&
               previousValue !== null &&
               previousValue !== undefined &&

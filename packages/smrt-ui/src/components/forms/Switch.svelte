@@ -85,7 +85,7 @@ useControlRegistration(() => {
     },
     getValue: () => checked,
     setValue: setChecked,
-    clear: () => setChecked(false),
+    clear: () => (setChecked(false), true),
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) =>

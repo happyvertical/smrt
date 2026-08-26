@@ -98,7 +98,7 @@ useControlRegistration(() => {
     },
     getValue: () => ({ ...value }),
     setValue: setRange,
-    clear: () => setRange({ min, max }),
+    clear: () => (setRange({ min, max }), true),
     focus: () => minEl?.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),

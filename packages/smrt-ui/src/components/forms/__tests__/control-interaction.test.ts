@@ -416,6 +416,64 @@ describe('control interaction registry', () => {
     });
   });
 
+  it('restores the prior proposal when replacement snapshotting throws', async () => {
+    let failNextRead = false;
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => {
+        if (failNextRead) {
+          failNextRead = false;
+          throw new Error('snapshot_failed');
+        }
+        return 'Ada';
+      },
+      setValue: () => undefined,
+      validateValue: (value) => {
+        if (value === 'Katherine') failNextRead = true;
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const replacement = await registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+
+    expect(replacement).toMatchObject({
+      ok: false,
+      reason: 'snapshot_failed',
+    });
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: 'Grace',
+      revision: 1,
+    });
+  });
+
+  it('does not let subscriber failures change committed command results', async () => {
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+    });
+    registry.subscribe(() => {
+      throw new Error('observer_failed');
+    });
+
+    const staged = await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    expect(staged.ok).toBe(true);
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
   it('serializes asynchronous proposals so the newest command wins', async () => {
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
@@ -604,6 +662,32 @@ describe('control interaction registry', () => {
       ),
     ).toMatchObject({ ok: true });
     expect(value).toBe('Ada');
+  });
+
+  it('accepts an explicitly affirmed idempotent clear', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'slider' },
+      getValue: () => 0,
+      setValue: () => undefined,
+      clear: () => true,
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 10 },
+      { source: 'agent' },
+    );
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(identity)?.state.staged).toBeUndefined();
   });
 
   it('does not collide subject identities containing separators', async () => {

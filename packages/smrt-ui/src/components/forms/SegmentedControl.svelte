@@ -59,6 +59,7 @@ useControlRegistration(() => {
     setValue,
     clear: () => {
       value = undefined;
+      return true;
     },
     focus: () =>
       root
