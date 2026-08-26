@@ -334,6 +334,23 @@ describe('registerWebMcpTools', () => {
     expect(registry.tools).toEqual([]);
   });
 
+  it('does not impose an implicit budget on whole-manifest read registration', () => {
+    const registry = installModelContext();
+    const definitions = Array.from({ length: 65 }, (_, index) =>
+      canonicalTool('list', {
+        collection: `reports_${index}`,
+        endpoint: `/reports-${index}`,
+        name: `report_${index}_list`,
+      }),
+    );
+
+    registerWebMcpToolsWithPolicy(definitions, {
+      resolveToolFetchers: () => mockFetchers(),
+    });
+
+    expect(registry.tools).toHaveLength(65);
+  });
+
   it('rejects invalid exposure policy before resolving fetchers', () => {
     const registry = installModelContext();
     const resolveFetchers = vi.fn(() => mockFetchers());

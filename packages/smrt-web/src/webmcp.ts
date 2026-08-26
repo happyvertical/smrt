@@ -292,7 +292,6 @@ export function registerWebMcpTools(
   return dispose;
 }
 
-const DEFAULT_MAX_TOOLS = 64;
 const VALID_EFFECTS: readonly WebMcpToolEffect[] = [
   'read',
   'write',
@@ -314,8 +313,11 @@ function selectProspectiveTools(
     }
   }
   const allowedEffects = new Set(effects);
-  const maxTools = options.maxTools ?? DEFAULT_MAX_TOOLS;
-  if (!Number.isSafeInteger(maxTools) || maxTools < 0) {
+  const maxTools = options.maxTools;
+  if (
+    maxTools !== undefined &&
+    (!Number.isSafeInteger(maxTools) || maxTools < 0)
+  ) {
     throw new Error('WebMCP maxTools must be a non-negative safe integer');
   }
   const namespace = options.namespace;
@@ -492,9 +494,9 @@ function snapshotCanonicalDefinition(
 
 function validateProspectiveTools(
   tools: readonly ProspectiveTool[],
-  maxTools: number,
+  maxTools?: number,
 ): void {
-  if (tools.length > maxTools) {
+  if (maxTools !== undefined && tools.length > maxTools) {
     throw new Error(
       `WebMCP tool budget exceeded: ${tools.length} tools selected, maximum is ${maxTools}`,
     );

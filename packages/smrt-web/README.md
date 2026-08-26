@@ -154,9 +154,10 @@ class Report extends SmrtObject {}
 ```
 
 Opt into broader capabilities explicitly. `namespace` prevents cross-surface
-name collisions, `maxTools` bounds the selected set (default `64`), and
-duplicate names or stable collection/action identities reject the entire call before
-the first browser registration:
+name collisions, an explicit `maxTools` bounds the selected set, and duplicate
+names or stable collection/action identities reject the entire call before the
+first browser registration. No implicit budget is applied to whole-manifest
+read registration:
 
 ```ts
 registerWebMcpTools(definitions, {
@@ -196,7 +197,8 @@ narrower allowlist for each browser surface. Integrations that previously keyed
 filter or resolver state by definition object identity must migrate to stable
 name or collection/action keys. If both legacy and canonical definition arrays
 are available, select one complete source or remove overlaps before combining
-them.
+them. Set `maxTools` explicitly on surfaces that need a hard capability budget;
+overflow rejects the complete registration rather than truncating it.
 
 ## Development
 

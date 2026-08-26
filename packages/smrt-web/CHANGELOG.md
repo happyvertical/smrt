@@ -8,7 +8,8 @@
   mutations must opt into `write` and `destructive` effects. Policy callbacks
   now receive isolated value snapshots, all application results are marked
   untrusted, and complete legacy/canonical sets must not be combined when their
-  tool names or collection/action identities overlap.
+  tool names or collection/action identities overlap. `maxTools` is an explicit
+  opt-in budget; overflow rejects the complete registration atomically.
 
 ## 0.43.3
 
