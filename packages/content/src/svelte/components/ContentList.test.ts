@@ -1,0 +1,405 @@
+// @vitest-environment jsdom
+
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
+import { flushSync, mount, unmount } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ContentData } from '../../mock-smrt-client.js';
+import ContentList from './ContentList.svelte';
+
+const mountedComponents: Array<ReturnType<typeof mount>> = [];
+
+const contents: ContentData[] = [
+  {
+    id: 'content-1',
+    type: 'article',
+    title: 'Council budget explained',
+    description: 'A close read of the tabled budget.',
+    author: 'Ada Lovelace',
+    status: 'published',
+    state: 'active',
+    updatedAt: '2026-02-01T10:00:00.000Z',
+  },
+  {
+    id: 'content-2',
+    type: 'document',
+    title: 'Zoning appendix',
+    description: 'Reference tables.',
+    author: 'Grace Hopper',
+    status: 'draft',
+    state: 'deprecated',
+    updatedAt: '2026-01-20T10:00:00.000Z',
+  },
+];
+
+interface RenderOptions {
+  contents?: ContentData[];
+  [key: string]: unknown;
+}
+
+function renderList(props: RenderOptions = {}) {
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  const component = mount(ContentList, {
+    target,
+    props: {
+      contents,
+      onEdit: vi.fn(),
+      onDelete: vi.fn(),
+      onAdd: vi.fn(),
+      ...props,
+    },
+  });
+  mountedComponents.push(component);
+  flushSync();
+  return target;
+}
+
+function buttonByLabel(target: HTMLElement, label: string): HTMLButtonElement {
+  const button = target.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"]`,
+  );
+  if (!button) throw new Error(`No button labelled ${label}`);
+  return button;
+}
+
+function buttonsByText(target: HTMLElement, text: string): HTMLButtonElement[] {
+  return Array.from(target.querySelectorAll('button')).filter(
+    (button) => button.textContent?.trim() === text,
+  );
+}
+
+function checkboxByLabel(target: HTMLElement, label: string): HTMLInputElement {
+  const checkbox = target.querySelector<HTMLInputElement>(
+    `input[type="checkbox"][aria-label="${label}"]`,
+  );
+  if (!checkbox) throw new Error(`No checkbox labelled ${label}`);
+  return checkbox;
+}
+
+function searchInput(target: HTMLElement): HTMLInputElement {
+  const input = target.querySelector<HTMLInputElement>(
+    'input[placeholder="Search contents..."]',
+  );
+  if (!input) throw new Error('No search input');
+  return input;
+}
+
+function typeText(element: HTMLInputElement, value: string) {
+  element.value = value;
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  flushSync();
+}
+
+function selectOption(element: HTMLSelectElement, value: string) {
+  element.value = value;
+  element.dispatchEvent(new Event('change', { bubbles: true }));
+  flushSync();
+}
+
+function click(element: Element) {
+  (element as HTMLElement).click();
+  flushSync();
+}
+
+function switchTo(target: HTMLElement, label: string) {
+  click(buttonByLabel(target, label));
+}
+
+function rowTitles(target: HTMLElement): string[] {
+  return Array.from(target.querySelectorAll('h3')).map(
+    (heading) => heading.textContent?.trim() ?? '',
+  );
+}
+
+afterEach(() => {
+  while (mountedComponents.length > 0) {
+    const component = mountedComponents.pop();
+    if (component) {
+      unmount(component);
+    }
+  }
+
+  document.body.innerHTML = '';
+  vi.clearAllMocks();
+});
+
+describe('ContentList presentations', () => {
+  it('renders grid cards by default', () => {
+    const target = renderList();
+
+    expect(target.querySelectorAll('.content-card')).toHaveLength(2);
+    expect(rowTitles(target)).toEqual([
+      'Council budget explained',
+      'Zoning appendix',
+    ]);
+  });
+
+  it('renders the detailed rows when seeded with the detailed mode', () => {
+    const target = renderList({ defaultViewMode: 'detailed' });
+
+    expect(target.querySelectorAll('.content-row')).toHaveLength(2);
+    expect(target.querySelector('.content-card')).toBeNull();
+  });
+
+  it('renders the compact mode as a semantic table with column headers', () => {
+    const target = renderList({ defaultViewMode: 'compact' });
+    const table = target.querySelector('table');
+
+    expect(table).toBeTruthy();
+    const headers = Array.from(table?.querySelectorAll('th') ?? []).map(
+      (header) => header.textContent?.trim(),
+    );
+    expect(headers.join(' ')).toContain('Title');
+    expect(headers.join(' ')).toContain('Status');
+    expect(table?.querySelectorAll('tbody tr')).toHaveLength(2);
+  });
+
+  it('keeps the same row identities in every presentation', () => {
+    const target = renderList();
+
+    const gridRows = rowTitles(target);
+    switchTo(target, 'Detailed List');
+    const detailedRows = rowTitles(target);
+    switchTo(target, 'Compact List');
+    const compactRows = Array.from(
+      target.querySelectorAll('tbody tr td:nth-child(3)'),
+    ).map((cell) => cell.textContent?.trim());
+
+    expect(detailedRows).toEqual(gridRows);
+    expect(compactRows).toEqual(gridRows);
+  });
+});
+
+describe('ContentList shared query state', () => {
+  it('filters every presentation from one search term', () => {
+    const target = renderList();
+
+    typeText(searchInput(target), 'zoning');
+
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+
+    switchTo(target, 'Compact List');
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+  });
+
+  it('preserves search, filters, and selection across a mode switch', () => {
+    const target = renderList();
+
+    typeText(searchInput(target), 'council');
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+
+    expect(target.textContent).toContain('1 selected');
+
+    switchTo(target, 'Compact List');
+
+    expect(searchInput(target).value).toBe('council');
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(target.textContent).toContain('1 selected');
+    // The compact table reuses the same row identity and selection wording.
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+
+    switchTo(target, 'Grid View');
+
+    expect(searchInput(target).value).toBe('council');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+  });
+
+  it('filters by type and by status from the toolbar selects', () => {
+    const target = renderList();
+    const [typeSelect, statusSelect] =
+      target.querySelectorAll<HTMLSelectElement>('select');
+
+    selectOption(typeSelect, 'document');
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+
+    selectOption(typeSelect, '');
+    selectOption(statusSelect, 'published');
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+  });
+
+  it('locks the type filter and hides the type select when a type prop is supplied', () => {
+    const target = renderList({ type: 'article' });
+
+    expect(target.querySelectorAll('select')).toHaveLength(1);
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+  });
+
+  it('selects and clears every row on the page from the shared selection bar', () => {
+    const target = renderList();
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    expect(target.textContent).toContain('2 selected');
+
+    click(buttonsByText(target, 'Clear selection')[0]);
+    expect(target.textContent).toContain('0 selected');
+  });
+});
+
+describe('ContentList callbacks', () => {
+  it('confirms before delegating a delete', () => {
+    const onDelete = vi.fn();
+    const target = renderList({ onDelete });
+
+    click(buttonsByText(target, 'Delete')[0]);
+    const dialog = document.querySelector('[role="dialog"]');
+
+    expect(dialog).toBeTruthy();
+    expect(dialog?.textContent).toContain('Council budget explained');
+    expect(onDelete).not.toHaveBeenCalled();
+
+    const confirm = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+      (button) => button.textContent?.trim() === 'Delete',
+    );
+    click(confirm as HTMLButtonElement);
+
+    expect(onDelete).toHaveBeenCalledWith(contents[0]);
+  });
+
+  it('keeps the legacy edit and add callbacks', () => {
+    const onEdit = vi.fn();
+    const onAdd = vi.fn();
+    const target = renderList({ onEdit, onAdd });
+
+    click(buttonsByText(target, 'Edit')[0]);
+    expect(onEdit).toHaveBeenCalledWith(contents[0]);
+
+    click(buttonsByText(target, 'Add Content')[0]);
+    expect(onAdd).toHaveBeenCalled();
+  });
+
+  it('renders a view link only for routable content', () => {
+    const target = renderList({
+      getViewHref: (content: ContentData) =>
+        content.status === 'published' ? `/articles/${content.id}` : null,
+    });
+
+    const viewLinks = Array.from(target.querySelectorAll('a.view-btn'));
+    expect(viewLinks).toHaveLength(1);
+    expect(viewLinks[0].getAttribute('href')).toBe('/articles/content-1');
+  });
+
+  it('degrades an unknown subtype to plain text instead of a dead link', () => {
+    const target = renderList({
+      defaultViewMode: 'compact',
+      contents: [{ id: 'content-9', type: 'unknown', title: 'Odd content' }],
+      getViewHref: () => {
+        throw new Error('unknown content subtype');
+      },
+    });
+
+    expect(target.textContent).toContain('Odd content');
+    expect(target.querySelector('a.title-link')).toBeNull();
+    expect(target.querySelector('tbody strong')?.textContent).toBe(
+      'Odd content',
+    );
+  });
+
+  it('renders the passed controls snippet host actions', () => {
+    const target = renderList();
+    expect(target.querySelector('.search-filters')).toBeTruthy();
+  });
+});
+
+describe('ContentList async states', () => {
+  it('announces a load error with a retry affordance instead of the list', () => {
+    const onRetry = vi.fn();
+    const target = renderList({ error: 'Network unavailable', onRetry });
+
+    const alert = target.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('Network unavailable');
+    expect(target.querySelector('.content-card')).toBeNull();
+
+    click(buttonsByText(target, 'Retry')[0]);
+    expect(onRetry).toHaveBeenCalled();
+  });
+
+  it('announces the initial load and the empty result', () => {
+    const loadingTarget = renderList({ contents: [], loading: true });
+    expect(
+      loadingTarget.querySelector('[role="status"]')?.textContent?.trim(),
+    ).toBe('Loading contents...');
+
+    const emptyTarget = renderList({ contents: [] });
+    expect(emptyTarget.textContent).toContain(
+      'No contents match your filters.',
+    );
+  });
+});
+
+describe('ContentList data surface', () => {
+  it('registers the compact table and drives the shared controller from a command', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    expect(registry.inspect(identity)?.descriptor.rowKey).toBe('id');
+
+    const result = await registry.execute({
+      version: 1,
+      commandId: 'search-zoning',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-search',
+      payload: { search: 'zoning' },
+    });
+    flushSync();
+
+    expect(result.ok).toBe(true);
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(searchInput(target).value).toBe('zoning');
+  });
+});
+
+describe('ContentList accessibility', () => {
+  it('names every icon-only control', () => {
+    const target = renderList({ defaultViewMode: 'compact' });
+
+    for (const button of Array.from(target.querySelectorAll('button'))) {
+      const name =
+        button.getAttribute('aria-label')?.trim() ||
+        button.textContent?.trim() ||
+        '';
+      expect(name).not.toBe('');
+    }
+    for (const link of Array.from(target.querySelectorAll('a'))) {
+      const name =
+        link.getAttribute('aria-label')?.trim() ||
+        link.textContent?.trim() ||
+        '';
+      expect(name).not.toBe('');
+    }
+  });
+
+  it('labels every selection checkbox', () => {
+    const target = renderList();
+
+    const checkboxes = Array.from(
+      target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    );
+    expect(checkboxes.length).toBeGreaterThan(0);
+    for (const checkbox of checkboxes) {
+      expect(checkbox.getAttribute('aria-label')?.trim()).toBeTruthy();
+    }
+  });
+
+  it('groups the view-mode toggles and marks the active one', () => {
+    const target = renderList();
+    const group = target.querySelector('[role="group"]');
+
+    expect(group?.getAttribute('aria-label')).toBe('View mode');
+    expect(
+      buttonByLabel(target, 'Grid View').getAttribute('aria-pressed'),
+    ).toBe('true');
+    expect(
+      buttonByLabel(target, 'Compact List').getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+});

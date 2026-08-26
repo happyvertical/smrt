@@ -86,6 +86,51 @@ Three strategies via ThumbnailGenerator:
 ### Contributions
 `ContentContributionForm`, `ContentContributionInbox`, `ContentContributionPortal`, `ContentContributionTypeManager`, `ContentContributorManager`
 
+## ContentList migration (#2451)
+
+`ContentList` no longer holds bespoke local state. `src/svelte/content-list-controller.ts`
+is the single adapter every presentation reads from, and one shared
+`DataTableController` (from `@happyvertical/smrt-ui/data`) owns search, filters,
+sorting, page, and selection.
+
+| Before | After |
+|--------|-------|
+| local `searchTerm`/`selectedType`/`selectedStatus` runes | controller commands `setSearch` / `setFilters` (stable filter ids `type`, `status`) |
+| `filteredContents` `$derived` per view | `toContentListRows` → `selectContentListRows` → `paginateContentListRows`, computed once for all three modes |
+| bespoke `<table>` markup in compact mode | smrt-ui `DataTable` with the shared columns plus per-column cell snippets |
+| no selection | checkbox selection in every mode via `toggleRowSelection` / `setSelectedRows` |
+| `getViewHref` called inline three times | `resolveContentHref` / `contentListRowActions` (one eligibility source) |
+
+Props are unchanged and still exported as `ContentListProps`: `apiBaseUrl`,
+`contents`, `type` (still locks and hides the type filter), `defaultViewMode`
+(still seeds once), `onEdit`, `onDelete`, `onAdd`, `controls`, `getViewHref`.
+New optional props: `loading`, `error`, `onRetry`, and `dataSurface`
+(`{ registry, descriptor? }`).
+
+Adapter exports (also re-exported from `./svelte`): `createContentListController`,
+`buildContentListColumns`, `buildContentListSurfaceDescriptor`,
+`toContentListRows`, `selectContentListRows`, `paginateContentListRows`,
+`contentListFilters`, `readContentListFilter`, `applyContentListFilter`,
+`contentListRowActions`, `resolveContentHref`, `selectableContentListRowIds`,
+`resolveSelectedContentListRows`, `resolveSelectedContents`, plus the
+`CONTENT_LIST_*` identity constants.
+
+Notes:
+
+- Controller modes are all `local`. #2452 flips them to `manual` for
+  server-backed querying without changing the adapter contract.
+- Only rendered columns are published to a data surface. `description` is a
+  hidden, search-only column so search still reaches the deck; the descriptor
+  additionally declares the `id` row-key column, which the surface contract
+  requires but the table never renders.
+- Rows without a durable `id` (or repeating one) still render, keyed by
+  position, but are marked `identified: false`;
+  `resolveSelectedContentListRows` drops them so a bulk action can never act on
+  an unaddressable row. `ContentData` has no expiry or site field, so the
+  `site` column is derived from `url`/`source`.
+- `dataSurface` registers the compact table only. Agent addressability for the
+  grid and detailed presentations lands with #2456.
+
 ## Dev Server
 
 `npm run dev` starts SvelteKit at `localhost:5173` with 4 pages:
