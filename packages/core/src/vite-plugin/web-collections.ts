@@ -29,6 +29,7 @@ import {
 } from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
+  finalizeMcpJsonSchema,
   isCrudAction,
   type ToolDescriptor,
   type ToolFieldMeta,
@@ -589,7 +590,8 @@ function resolveStiCollectionOwner(
 export function selectWebMcpToolEntries(
   manifest: SmartObjectManifest,
 ): WebMcpToolEntry[] {
-  const sortedObjects = Object.values(manifest.objects).sort((left, right) =>
+  const manifestObjects = Object.values(manifest.objects);
+  const sortedObjects = [...manifestObjects].sort((left, right) =>
     compareText(
       webCollectionObjectRef(manifest, left),
       webCollectionObjectRef(manifest, right),
@@ -657,7 +659,11 @@ export function selectWebMcpToolEntries(
     }
   }
 
-  for (const collectionClass of sortedObjects) {
+  // SvelteKit emits collection-class routes in manifest order and a later
+  // class replaces an earlier handler at the same path. Follow that ownership
+  // rule so the selected parameter/route metadata describes the live handler.
+  // Object actions remain authoritative over collection-class collisions.
+  for (const collectionClass of manifestObjects) {
     if (!isCollectionManifestClass(manifest, collectionClass)) continue;
     const itemObject = resolveCollectionItemObject(manifest, collectionClass);
     if (!itemObject) continue;
@@ -669,7 +675,13 @@ export function selectWebMcpToolEntries(
       ...resolveApiActionSet(collectionClass, manifest),
     ].sort(compareText)) {
       const identity = `${collectionClass.collection}\0${action}`;
-      if (entries.has(identity)) continue;
+      const existing = entries.get(identity);
+      if (
+        existing &&
+        !isCollectionManifestClass(manifest, existing.actionHost)
+      ) {
+        continue;
+      }
       entries.set(identity, {
         collection: collectionClass.collection,
         obj: owner,
@@ -688,6 +700,52 @@ export function selectWebMcpToolEntries(
         webCollectionObjectRef(manifest, right.actionHost),
       ),
   );
+}
+
+function requireRoutePathInputs(
+  descriptor: ToolDescriptor | undefined,
+): ToolDescriptor | undefined {
+  if (!descriptor) return undefined;
+  const route = descriptor.route;
+  if (!route) return descriptor;
+
+  const pathParameters = route.path
+    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+    .map((segment) => segment.slice(1, -1));
+  if (pathParameters.length === 0) return descriptor;
+
+  const schema = descriptor.inputSchema;
+  const properties = {
+    ...((schema.properties as Record<string, unknown> | undefined) ?? {}),
+  };
+  const required = new Set(
+    Array.isArray(schema.required)
+      ? schema.required.filter(
+          (name): name is string => typeof name === 'string',
+        )
+      : [],
+  );
+
+  for (const parameterName of pathParameters) {
+    const inputName =
+      Object.entries(route.parameterAliases ?? {}).find(
+        ([, originalName]) => originalName === parameterName,
+      )?.[0] ?? parameterName;
+    properties[inputName] ??= {
+      type: 'string',
+      description: `Required route parameter: ${parameterName}`,
+    };
+    required.add(inputName);
+  }
+
+  return {
+    ...descriptor,
+    inputSchema: finalizeMcpJsonSchema({
+      ...schema,
+      properties,
+      required: [...required],
+    }),
+  };
 }
 
 /**
@@ -1015,13 +1073,15 @@ export function buildWebMcpToolDefinition(
   manifest: SmartObjectManifest,
   options: { kebabRoutes?: boolean } = {},
 ): WebMcpToolDefinition {
-  const descriptor = buildWebToolDescriptorsForHost({
-    owner: entry.obj,
-    actionHost: entry.actionHost,
-    actions: [entry.action],
-    options,
-    collectionHost: isCollectionManifestClass(manifest, entry.actionHost),
-  })[0];
+  const descriptor = requireRoutePathInputs(
+    buildWebToolDescriptorsForHost({
+      owner: entry.obj,
+      actionHost: entry.actionHost,
+      actions: [entry.action],
+      options,
+      collectionHost: isCollectionManifestClass(manifest, entry.actionHost),
+    })[0],
+  );
   if (!descriptor) {
     throw new Error(
       `[smrt] Failed to build WebMCP descriptor for ${entry.collection}.${entry.action}`,

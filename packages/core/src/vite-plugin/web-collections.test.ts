@@ -580,8 +580,60 @@ describe('canonical WebMCP tool definitions (#2518)', () => {
       },
     });
     expect(definition?.inputSchema).toMatchObject({
-      properties: { actionId: { type: 'string' } },
-      required: ['actionId'],
+      properties: {
+        actionId: { type: 'string' },
+        batchId: { type: 'string' },
+      },
+      required: ['actionId', 'batchId'],
+    });
+  });
+
+  it('matches the last emitted collection-class route owner on a shared action', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      decoratorConfig: { api: false },
+    });
+    const baseCollection = obj({
+      className: 'ProductCollection',
+      collection: 'products',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Product',
+      methods: { search: publicMethod('search') },
+      decoratorConfig: {
+        api: { include: ['search'], routes: { search: { path: 'base' } } },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+    const specializedCollection = obj({
+      className: 'SpecialProductCollection',
+      collection: 'products',
+      extends: 'ProductCollection',
+      methods: { search: publicMethod('search') },
+      decoratorConfig: {
+        api: {
+          include: ['search'],
+          routes: { search: { path: 'specialized' } },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+
+    const forward = buildWebMcpToolDefinitions(
+      manifest(product, baseCollection, specializedCollection),
+    );
+    const reverse = buildWebMcpToolDefinitions(
+      manifest(product, specializedCollection, baseCollection),
+    );
+    expect(forward[0]).toMatchObject({
+      collection: 'products',
+      action: 'search',
+      name: 'product_search',
+      route: { path: ['specialized'] },
+    });
+    expect(reverse[0]).toMatchObject({
+      collection: 'products',
+      action: 'search',
+      name: 'product_search',
+      route: { path: ['base'] },
     });
   });
 
