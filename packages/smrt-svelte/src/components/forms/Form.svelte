@@ -4,6 +4,7 @@ import {
   type ControlInteractionRegistry,
   type ControlKind,
   createControlInteractionRegistry,
+  StagedControlReview,
   setControlInteractionContext,
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -51,6 +52,8 @@ export interface Props {
   formId?: string;
   interactionRegistry?: ControlInteractionRegistry;
   oninteraction?: (event: ControlInteractionEvent) => void;
+  /** Render the built-in human review surface for staged changes. */
+  stagedReview?: boolean;
   id?: string;
   name?: string;
   class?: string;
@@ -71,6 +74,7 @@ const {
   formId,
   interactionRegistry,
   oninteraction,
+  stagedReview = true,
   id,
   name,
   class: className = '',
@@ -96,6 +100,7 @@ const interactionDisposers = new Map<
 >();
 let activeInteractionRegistry: ControlInteractionRegistry | undefined;
 let activeInteractionFormId: string | undefined;
+let formElement = $state<HTMLFormElement | null>(null);
 
 setControlInteractionContext({
   get formId() {
@@ -183,6 +188,7 @@ function registerInteraction(
     reveal: field.reveal,
     highlight: field.highlight,
     validate: field.validate,
+    validateValue: field.validateValue,
     getState: field.getState,
   });
 }
@@ -860,6 +866,21 @@ function handleSubmit(e: Event) {
   // Otherwise, let native form submission happen (e.g., for SvelteKit use:enhance)
 }
 
+function handleReset() {
+  const commands = resolvedInteractionRegistry
+    .list(resolvedFormId)
+    .filter((snapshot) => snapshot.state.staged)
+    .map((snapshot) => ({
+      action: 'discard' as const,
+      identity: snapshot.identity,
+      revision: snapshot.state.staged?.revision,
+    }));
+  void resolvedInteractionRegistry.executeBatch(commands, {
+    source: 'user',
+    confirmed: true,
+  });
+}
+
 export function getFormData(): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const [name, field] of fields) {
@@ -874,11 +895,13 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </script>
 
 <form
+  bind:this={formElement}
   {id}
   {name}
   class="smrt-form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
+  onreset={handleReset}
   {method}
   {action}
 >
@@ -984,6 +1007,13 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   <div class="form-fields">
     {@render children()}
   </div>
+  {#if stagedReview}
+    <StagedControlReview
+      registry={resolvedInteractionRegistry}
+      formId={resolvedFormId}
+      {formElement}
+    />
+  {/if}
 </form>
 
 {#if isFormListening && spokenText}

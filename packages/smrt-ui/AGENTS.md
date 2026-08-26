@@ -112,6 +112,15 @@ other text pairing clears WCAG AA in both schemes.
   interaction registry. Keep chat/voice transports outside this package;
   mutations must retain sensitivity checks and the stage → confirmed apply
   policy.
+- Agent-originated form values remain proposals: the registry records their
+  provenance, timestamp, and revision, while `StagedControlReview` is the shared
+  review/apply surface mounted by both base and rich Forms. Agents can stage but
+  cannot self-confirm; only a local human handler submits confirmed apply or
+  discard commands. Secret controls never accept staging, and sensitive/secret
+  values stay redacted in snapshots, events, policy callbacks, and review UI.
+  Batch execution is ordered best-effort and returns one result per command;
+  review-surface batch actions exclude stale and invalid proposals, which remain
+  visible with per-field feedback.
 
 ## Gotchas
 

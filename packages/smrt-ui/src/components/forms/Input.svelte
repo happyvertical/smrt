@@ -87,6 +87,16 @@ function setControlValue(next: unknown) {
   if (inputEl) emitControlChange(inputEl);
 }
 
+function validateControlValue(next: unknown) {
+  if (!inputEl) return true;
+  const candidate = inputEl.cloneNode() as HTMLInputElement;
+  candidate.value = String(next ?? '');
+  return {
+    valid: candidate.checkValidity(),
+    message: candidate.validationMessage || undefined,
+  };
+}
+
 $effect(() => {
   const context = controlInteraction;
   const element = inputEl;
@@ -125,6 +135,7 @@ $effect(() => {
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: validateControlValue,
     getState: () => ({
       disabled: element.disabled,
       readonly: element.readOnly,

@@ -54,6 +54,12 @@ migration; flips strict per package as it adopts the primitives).
 
 Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and AI capabilities.
 
+The rich `Form` uses smrt-ui's shared staged-edit review contract. Agent
+proposals never mutate field bindings directly: they remain staged until a
+human applies or discards them in the form's local review surface. Keep this
+state machine in smrt-ui; smrt-svelte contributes Provider-backed field
+registration and consumes the shared component rather than duplicating it.
+
 ```svelte
 <script>
   let { data, children } = $props();

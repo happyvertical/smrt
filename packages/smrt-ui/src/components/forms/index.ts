@@ -15,6 +15,7 @@
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Combobox } from './Combobox.svelte';
 export {
+  type ControlBatchResult,
   type ControlCapability,
   type ControlCommand,
   type ControlCommandAction,
@@ -34,7 +35,10 @@ export {
   type ControlRuntimeState,
   type ControlSensitivity,
   type ControlSnapshot,
+  type ControlStagedEntry,
+  type ControlStagedProvenance,
   type ControlSubject,
+  type ControlValueValidationResult,
   createControlInteractionRegistry,
 } from './control-interaction.js';
 export {
@@ -65,7 +69,9 @@ export { default as RangeSlider } from './RangeSlider.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Slider } from './Slider.svelte';
+export { default as StagedControlReview } from './StagedControlReview.svelte';
 export { default as Switch } from './Switch.svelte';
+export type { StagedControlReviewLabels } from './staged-control-review.js';
 export { default as TagsInput } from './TagsInput.svelte';
 export { default as Textarea } from './Textarea.svelte';
 export { default as TimePicker } from './TimePicker.svelte';

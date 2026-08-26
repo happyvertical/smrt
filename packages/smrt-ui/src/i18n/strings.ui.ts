@@ -57,4 +57,27 @@ export const M = defineMessages({
   // chat/ReactionPicker.svelte
   'ui.reaction_picker.label': 'Add reaction',
   'ui.reaction_picker.react_with': 'React with {emoji}',
+
+  // forms/StagedControlReview.svelte
+  'ui.staged_control_review.region': 'Review proposed changes',
+  'ui.staged_control_review.heading': 'Proposed changes',
+  'ui.staged_control_review.description':
+    'Review changes before they update the form.',
+  'ui.staged_control_review.proposed_by': 'Proposed by',
+  'ui.staged_control_review.staged_at': 'staged',
+  'ui.staged_control_review.before': 'Current',
+  'ui.staged_control_review.after': 'Proposed',
+  'ui.staged_control_review.redacted': 'Hidden for privacy',
+  'ui.staged_control_review.stale':
+    'The field changed after this proposal was staged.',
+  'ui.staged_control_review.invalid': 'This proposal is not valid.',
+  'ui.staged_control_review.apply': 'Apply',
+  'ui.staged_control_review.discard': 'Discard',
+  'ui.staged_control_review.apply_all': 'Apply valid changes',
+  'ui.staged_control_review.discard_all': 'Discard valid changes',
+  'ui.staged_control_review.edit': 'Edit proposed value for',
+  'ui.staged_control_review.applied_status': 'Applied proposed change.',
+  'ui.staged_control_review.discarded_status': 'Discarded proposed change.',
+  'ui.staged_control_review.batch_status':
+    'Processed {completed} of {total} proposed changes.',
 });

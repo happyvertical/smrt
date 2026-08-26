@@ -41,6 +41,7 @@ export type ControlCapability =
   | 'validate'
   | 'stage'
   | 'apply'
+  | 'discard'
   | 'clear'
   | 'undo';
 
@@ -104,6 +105,24 @@ export interface ControlRuntimeState {
   validationMessage?: string;
 }
 
+export interface ControlStagedProvenance {
+  source: ControlCommandSource;
+  actorId?: string;
+  sessionId?: string;
+}
+
+/** Reviewable metadata for a proposed value. The value is omitted when redacted. */
+export interface ControlStagedEntry {
+  value?: unknown;
+  valueRedacted: boolean;
+  provenance: ControlStagedProvenance;
+  stagedAt: number;
+  revision: number;
+  stale: boolean;
+  valid?: boolean;
+  validationMessage?: string;
+}
+
 export interface ControlSnapshot {
   identity: ControlIdentity;
   metadata: ControlMetadata;
@@ -112,8 +131,15 @@ export interface ControlSnapshot {
     valueRedacted: boolean;
     stagedValue?: unknown;
     stagedValueRedacted?: boolean;
+    /** Canonical staged-value contract. Legacy stagedValue fields remain additive aliases. */
+    staged?: ControlStagedEntry;
   };
 }
+
+export type ControlValueValidationResult =
+  | boolean
+  | string
+  | { valid: boolean; message?: string };
 
 export interface ControlRegistration {
   identity: ControlIdentity;
@@ -125,6 +151,10 @@ export interface ControlRegistration {
   reveal?: () => void | Promise<void>;
   highlight?: (durationMs?: number) => void | Promise<void>;
   validate?: () => boolean | Promise<boolean>;
+  /** Validate a proposal without mutating the bound value. */
+  validateValue?: (
+    value: unknown,
+  ) => ControlValueValidationResult | Promise<ControlValueValidationResult>;
   getState?: () => ControlRuntimeState;
 }
 
@@ -136,6 +166,7 @@ export type ControlCommandAction =
   | 'validate'
   | 'stage'
   | 'apply'
+  | 'discard'
   | 'clear'
   | 'undo';
 
@@ -146,7 +177,14 @@ export type ControlCommand =
     }
   | { action: 'highlight'; identity: ControlIdentity; durationMs?: number }
   | { action: 'stage'; identity: ControlIdentity; value: unknown }
-  | { action: 'apply'; identity: ControlIdentity; value?: unknown }
+  | {
+      action: 'apply';
+      identity: ControlIdentity;
+      value?: unknown;
+      /** Reject the command when this no longer matches the staged proposal. */
+      revision?: number;
+    }
+  | { action: 'discard'; identity: ControlIdentity; revision?: number }
   | { action: 'clear'; identity: ControlIdentity };
 
 export type ControlCommandSource =
@@ -183,12 +221,18 @@ export interface ControlCommandResult {
   reason?: string;
 }
 
+export interface ControlBatchResult {
+  ok: boolean;
+  results: ControlCommandResult[];
+}
+
 export interface ControlInteractionEvent {
   type: 'registered' | 'unregistered' | 'staged' | 'command';
   identity: ControlIdentity;
   command?: ControlCommand;
   context?: ControlCommandContext;
   result?: ControlCommandResult;
+  staged?: ControlStagedEntry;
   timestamp: number;
 }
 
@@ -201,11 +245,17 @@ export interface ControlInteractionRegistry {
     command: ControlCommand,
     context?: ControlCommandContext,
   ): Promise<ControlCommandResult>;
+  /** Executes in order and always returns an explicit result for every command. */
+  executeBatch(
+    commands: ControlCommand[],
+    context?: ControlCommandContext,
+  ): Promise<ControlBatchResult>;
   subscribe(listener: (event: ControlInteractionEvent) => void): () => void;
 }
 
 export interface CreateControlInteractionRegistryOptions {
   policy?: ControlInteractionPolicy;
+  now?: () => number;
 }
 
 function identityKey(identity: ControlIdentity): string {
@@ -216,7 +266,7 @@ function identityKey(identity: ControlIdentity): string {
 }
 
 function isMutation(action: ControlCommandAction): boolean {
-  return ['stage', 'apply', 'clear', 'undo'].includes(action);
+  return ['stage', 'apply', 'discard', 'clear', 'undo'].includes(action);
 }
 
 function isSecret(registration: ControlRegistration): boolean {
@@ -238,7 +288,7 @@ function capabilitiesOf(
     if (registration.highlight) capabilities.push('highlight');
     if (registration.validate) capabilities.push('validate');
     if (registration.setValue && registration.metadata.writable !== false) {
-      capabilities.push('stage', 'apply', 'undo');
+      capabilities.push('stage', 'apply', 'discard', 'undo');
     }
     if (
       (registration.clear || registration.setValue) &&
@@ -255,7 +305,11 @@ function capabilitiesOf(
 }
 
 function redactsValue(registration: ControlRegistration): boolean {
-  return isSecret(registration) || registration.metadata.readable === false;
+  return (
+    isSecret(registration) ||
+    registration.metadata.sensitivity === 'sensitive' ||
+    registration.metadata.readable === false
+  );
 }
 
 function defaultPolicy(
@@ -273,14 +327,56 @@ function defaultPolicy(
   if (snapshot.state.disabled || snapshot.state.readonly) {
     return { allowed: false, reason: 'control_not_editable' };
   }
-  if (
-    context.source === 'agent' &&
-    command.action !== 'stage' &&
-    !context.confirmed
-  ) {
+  if (context.source === 'agent' && command.action !== 'stage') {
+    return { allowed: false, reason: 'human_confirmation_required' };
+  }
+  if (command.action !== 'stage' && !context.confirmed) {
     return { allowed: false, reason: 'consent_required' };
   }
   return { allowed: true };
+}
+
+interface InternalStagedEntry {
+  value: unknown;
+  baseValue: unknown;
+  provenance: ControlStagedProvenance;
+  stagedAt: number;
+  revision: number;
+  valid?: boolean;
+  validationMessage?: string;
+}
+
+function cloneValue<T>(value: T): T {
+  try {
+    return structuredClone(value);
+  } catch {
+    return value;
+  }
+}
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+async function validateProposedValue(
+  registration: ControlRegistration,
+  value: unknown,
+): Promise<{ valid?: boolean; validationMessage?: string }> {
+  if (!registration.validateValue) return {};
+  const validation = await registration.validateValue(value);
+  if (typeof validation === 'boolean') return { valid: validation };
+  if (typeof validation === 'string') {
+    return { valid: false, validationMessage: validation };
+  }
+  return {
+    valid: validation.valid,
+    validationMessage: validation.message,
+  };
 }
 
 /** Create an isolated registry; apps choose where and how it is exposed. */
@@ -288,19 +384,36 @@ export function createControlInteractionRegistry(
   options: CreateControlInteractionRegistryOptions = {},
 ): ControlInteractionRegistry {
   const registrations = new Map<string, ControlRegistration>();
-  const staged = new Map<string, unknown>();
+  const staged = new Map<string, InternalStagedEntry>();
   const undo = new Map<string, unknown[]>();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
+  const now = options.now ?? Date.now;
+  let stagedRevision = 0;
 
   const emit = (event: Omit<ControlInteractionEvent, 'timestamp'>) => {
-    const next = { ...event, timestamp: Date.now() };
+    const next = { ...event, timestamp: now() };
     for (const listener of listeners) listener(next);
   };
 
   const snapshotOf = (registration: ControlRegistration): ControlSnapshot => {
     const key = identityKey(registration.identity);
     const redacted = redactsValue(registration);
-    const hasStaged = staged.has(key);
+    const stagedEntry = staged.get(key);
+    const stale = stagedEntry
+      ? !valuesEqual(stagedEntry.baseValue, registration.getValue?.())
+      : false;
+    const publicStaged: ControlStagedEntry | undefined = stagedEntry
+      ? {
+          value: redacted ? undefined : cloneValue(stagedEntry.value),
+          valueRedacted: redacted,
+          provenance: { ...stagedEntry.provenance },
+          stagedAt: stagedEntry.stagedAt,
+          revision: stagedEntry.revision,
+          stale,
+          valid: stagedEntry.valid,
+          validationMessage: stagedEntry.validationMessage,
+        }
+      : undefined;
     return {
       identity: { ...registration.identity },
       metadata: {
@@ -317,8 +430,9 @@ export function createControlInteractionRegistry(
         ...registration.getState?.(),
         value: redacted ? undefined : registration.getValue?.(),
         valueRedacted: redacted,
-        stagedValue: hasStaged && !redacted ? staged.get(key) : undefined,
-        stagedValueRedacted: hasStaged ? redacted : undefined,
+        stagedValue: publicStaged?.value,
+        stagedValueRedacted: publicStaged?.valueRedacted,
+        staged: publicStaged,
       },
     };
   };
@@ -375,13 +489,18 @@ export function createControlInteractionRegistry(
       const key = identityKey(command.identity);
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
+      const publicCommand: ControlCommand =
+        redactsValue(registration) &&
+        (command.action === 'stage' || command.action === 'apply')
+          ? { ...command, value: undefined }
+          : command;
 
       const snapshot = snapshotOf(registration);
-      const policyDecision = await (options.policy ?? defaultPolicy)(
-        command,
-        context,
-        snapshot,
-      );
+      const invariantDecision = defaultPolicy(command, context, snapshot);
+      const policyDecision =
+        invariantDecision.allowed && options.policy
+          ? await options.policy(publicCommand, context, snapshot)
+          : invariantDecision;
       if (!policyDecision.allowed) {
         const denied = result(
           command,
@@ -392,7 +511,7 @@ export function createControlInteractionRegistry(
         emit({
           type: 'command',
           identity: command.identity,
-          command,
+          command: publicCommand,
           context,
           result: denied,
         });
@@ -405,7 +524,7 @@ export function createControlInteractionRegistry(
         emit({
           type: 'command',
           identity: command.identity,
-          command,
+          command: publicCommand,
           context,
           result: unsupported,
         });
@@ -429,28 +548,87 @@ export function createControlInteractionRegistry(
             await registration.validate?.();
             break;
           case 'stage':
-            staged.set(key, command.value);
+            stagedRevision += 1;
+            staged.set(key, {
+              value: cloneValue(command.value),
+              baseValue: cloneValue(registration.getValue?.()),
+              provenance: {
+                source: context.source,
+                actorId: context.actorId,
+                sessionId: context.sessionId,
+              },
+              stagedAt: now(),
+              revision: stagedRevision,
+              ...(await validateProposedValue(registration, command.value)),
+            });
             emit({
               type: 'staged',
               identity: command.identity,
-              command,
+              command: publicCommand,
               context,
+              staged: snapshotOf(registration).state.staged,
             });
             break;
           case 'apply': {
+            const stagedEntry = staged.get(key);
+            if (
+              command.revision !== undefined &&
+              stagedEntry?.revision !== command.revision
+            ) {
+              throw new Error('stale_revision');
+            }
+            if (
+              stagedEntry &&
+              !valuesEqual(stagedEntry.baseValue, registration.getValue?.())
+            ) {
+              throw new Error('staged_value_stale');
+            }
             const nextValue =
               'value' in command && command.value !== undefined
                 ? command.value
-                : staged.get(key);
-            if (nextValue === undefined && !staged.has(key)) {
+                : stagedEntry?.value;
+            if (nextValue === undefined && !stagedEntry) {
               throw new Error('no_staged_value');
             }
+            const proposedValidation = await validateProposedValue(
+              registration,
+              nextValue,
+            );
+            if (proposedValidation.valid === false) {
+              if (stagedEntry) Object.assign(stagedEntry, proposedValidation);
+              throw new Error(
+                proposedValidation.validationMessage ?? 'staged_value_invalid',
+              );
+            }
+            const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
-            history.push(registration.getValue?.());
-            undo.set(key, history);
             await registration.setValue?.(nextValue);
+            const valid = await registration.validate?.();
+            if (valid === false) {
+              await registration.setValue?.(previousValue);
+              if (stagedEntry) {
+                stagedEntry.valid = false;
+                stagedEntry.validationMessage =
+                  registration.getState?.().validationMessage ??
+                  'staged_value_invalid';
+              }
+              throw new Error('staged_value_invalid');
+            }
+            history.push(previousValue);
+            undo.set(key, history);
             staged.delete(key);
-            await registration.validate?.();
+            break;
+          }
+          case 'discard': {
+            const stagedEntry = staged.get(key);
+            if (!stagedEntry) throw new Error('no_staged_value');
+            if (
+              command.revision !== undefined &&
+              stagedEntry.revision !== command.revision
+            ) {
+              throw new Error('stale_revision');
+            }
+            staged.delete(key);
             break;
           }
           case 'clear': {
@@ -474,7 +652,7 @@ export function createControlInteractionRegistry(
         emit({
           type: 'command',
           identity: command.identity,
-          command,
+          command: publicCommand,
           context,
           result: completed,
         });
@@ -489,12 +667,23 @@ export function createControlInteractionRegistry(
         emit({
           type: 'command',
           identity: command.identity,
-          command,
+          command: publicCommand,
           context,
           result: failed,
         });
         return failed;
       }
+    },
+
+    async executeBatch(
+      commands,
+      context = { source: 'user', confirmed: true },
+    ) {
+      const results: ControlCommandResult[] = [];
+      for (const command of commands) {
+        results.push(await this.execute(command, context));
+      }
+      return { ok: results.every((entry) => entry.ok), results };
     },
 
     subscribe(listener) {

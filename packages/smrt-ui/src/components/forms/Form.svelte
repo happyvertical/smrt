@@ -25,6 +25,7 @@ import {
   createControlInteractionRegistry,
 } from './control-interaction.js';
 import { setControlInteractionContext } from './control-interaction-context.js';
+import StagedControlReview from './StagedControlReview.svelte';
 
 export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   class?: string;
@@ -35,6 +36,8 @@ export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   interactionRegistry?: ControlInteractionRegistry;
   /** Receives registry lifecycle and command events. */
   oninteraction?: (event: ControlInteractionEvent) => void;
+  /** Render the built-in human review surface for staged changes. */
+  stagedReview?: boolean;
   children: Snippet;
 }
 
@@ -44,9 +47,11 @@ let {
   formId,
   interactionRegistry,
   oninteraction,
+  stagedReview = true,
   id,
   name,
   onsubmit,
+  onreset,
   children,
   ...rest
 }: Props = $props();
@@ -58,6 +63,7 @@ const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
 const resolvedInteractionRegistry = $derived(
   interactionRegistry ?? localInteractionRegistry,
 );
+let formElement = $state<HTMLFormElement | null>(null);
 
 setControlInteractionContext({
   get formId() {
@@ -85,17 +91,42 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   if (preventDefault) event.preventDefault();
   onsubmit?.(event);
 }
+
+function handleReset(event: Event & { currentTarget: HTMLFormElement }) {
+  const commands = resolvedInteractionRegistry
+    .list(resolvedFormId)
+    .filter((snapshot) => snapshot.state.staged)
+    .map((snapshot) => ({
+      action: 'discard' as const,
+      identity: snapshot.identity,
+      revision: snapshot.state.staged?.revision,
+    }));
+  void resolvedInteractionRegistry.executeBatch(commands, {
+    source: 'user',
+    confirmed: true,
+  });
+  onreset?.(event);
+}
 </script>
 
 <form
+  bind:this={formElement}
   id={id}
   name={name}
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
+  onreset={handleReset}
   {...rest}
 >
 	{@render children()}
+  {#if stagedReview}
+    <StagedControlReview
+      registry={resolvedInteractionRegistry}
+      formId={resolvedFormId}
+      {formElement}
+    />
+  {/if}
 </form>
 
 <!--
