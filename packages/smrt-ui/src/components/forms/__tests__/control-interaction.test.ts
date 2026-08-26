@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   type ControlCommand,
+  type ControlCommandContext,
   type ControlIdentity,
   type ControlInteractionRegistry,
   createControlInteractionRegistry,
@@ -1600,6 +1601,68 @@ describe('control interaction registry', () => {
     expect(value).toBe('Ada');
   });
 
+  it.each([
+    { behavior: 'mutates', reason: 'staged_value_rejected' },
+    { behavior: 'mutates and throws', reason: 'undo_failed' },
+  ])('isolates the undo baseline when an object setter $behavior', async ({
+    behavior,
+    reason,
+  }) => {
+    let value = { role: 'viewer' };
+    let rejectUndo = false;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => value,
+      setValue: (candidate) => {
+        const next = candidate as { role: string };
+        if (rejectUndo && next.role === 'viewer') {
+          next.role = 'owner';
+          value = next;
+          if (behavior === 'mutates and throws') {
+            throw new Error('undo_failed');
+          }
+          return;
+        }
+        value = next;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: { role: 'editor' } },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    rejectUndo = true;
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: false, reason });
+    expect(value).toEqual({ role: 'editor' });
+
+    rejectUndo = false;
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toEqual({ role: 'viewer' });
+  });
+
   it('accepts an explicitly affirmed idempotent clear', async () => {
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
@@ -2880,6 +2943,145 @@ describe('control interaction registry', () => {
     });
     expect(wrapperExecute).toHaveBeenCalledOnce();
     expect(value).toBe('Ada');
+  });
+
+  it('revokes a wrapper-retained local context after exact delegation', async () => {
+    let value = 'Ada';
+    let retainedContext: ControlCommandContext | undefined;
+    const baseRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    baseRegistry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await baseRegistry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const wrapperRegistry: ControlInteractionRegistry = {
+      ...baseRegistry,
+      execute: async (
+        command,
+        context = { source: 'user', confirmed: true },
+      ) => {
+        retainedContext = context;
+        return baseRegistry.execute(command, context);
+      },
+    };
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          wrapperRegistry,
+          { action: 'apply', identity, revision: 1 },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    if (!retainedContext) throw new Error('wrapper did not retain context');
+    expect(
+      await baseRegistry.execute(
+        { action: 'clear', identity },
+        retainedContext,
+      ),
+    ).toMatchObject({ ok: false, reason: 'local_gesture_required' });
+    expect(value).toBe('Grace');
+  });
+
+  it('rejects wrapper substitution for a locally authorized command', async () => {
+    let value = 'Ada';
+    const baseRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    baseRegistry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await baseRegistry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const wrapperRegistry: ControlInteractionRegistry = {
+      ...baseRegistry,
+      execute: (_command, context = { source: 'user', confirmed: true }) =>
+        baseRegistry.execute(
+          { action: 'apply', identity, revision: 1 },
+          context,
+        ),
+    };
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          wrapperRegistry,
+          { action: 'discard', identity, revision: 1 },
+          event,
+        ),
+      ),
+    ).toMatchObject({
+      ok: false,
+      action: 'apply',
+      reason: 'local_gesture_required',
+    });
+    expect(value).toBe('Ada');
+    expect(baseRegistry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
+  it('allows only one base delegation from a wrapper invocation', async () => {
+    let value = 'Ada';
+    let secondDelegation: Awaited<
+      ReturnType<ControlInteractionRegistry['execute']>
+    > | null = null;
+    const baseRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    baseRegistry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await baseRegistry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const wrapperRegistry: ControlInteractionRegistry = {
+      ...baseRegistry,
+      execute: async (
+        command,
+        context = { source: 'user', confirmed: true },
+      ) => {
+        const first = await baseRegistry.execute(command, context);
+        secondDelegation = await baseRegistry.execute(command, context);
+        return first;
+      },
+    };
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          wrapperRegistry,
+          { action: 'apply', identity, revision: 1 },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(secondDelegation).toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+    expect(value).toBe('Grace');
   });
 
   it('rejects a trusted legacy-registry event retained beyond its dispatch', async () => {

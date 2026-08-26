@@ -669,7 +669,18 @@ export function createControlInteractionRegistry(
   >();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
-  const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
+  // The context itself is never authority. This private, one-use grant is
+  // object-identity bound to the exact command handed to an adapter, retains a
+  // private immutable snapshot to detect in-place substitution, and is also
+  // bound to the registration generation present during the gesture.
+  const localConfirmationGrants = new WeakMap<
+    ControlCommandContext,
+    {
+      command: ControlCommand;
+      snapshot: ControlCommand;
+      registration: ControlRegistration | undefined;
+    }
+  >();
   const internallyQueuedContexts = new WeakSet<ControlCommandContext>();
   const consumedLocalGestureEvents = new WeakSet<Event>();
   const mutationQueues = new Map<string, Promise<void>>();
@@ -923,6 +934,9 @@ export function createControlInteractionRegistry(
     },
 
     async execute(command, context = { source: 'user', confirmed: true }) {
+      const suppliedCommand = command;
+      const localGrant = localConfirmationGrants.get(context);
+      if (localGrant) localConfirmationGrants.delete(context);
       if (!internallyQueuedContexts.has(context)) {
         try {
           command = cloneValue(command);
@@ -931,16 +945,26 @@ export function createControlInteractionRegistry(
         }
       }
       const key = identityKey(command.identity);
+      const localGestureConfirmed = Boolean(
+        localGrant &&
+          localGrant.command === suppliedCommand &&
+          valuesEqual(localGrant.snapshot, command) &&
+          localGrant.registration === registrations.get(key),
+      );
       if (
         isMutation(command.action) &&
         !internallyQueuedContexts.has(context)
       ) {
         const queuedContext: ControlCommandContext = { ...context };
         internallyQueuedContexts.add(queuedContext);
-        if (locallyConfirmedContexts.has(context)) {
-          locallyConfirmedContexts.add(queuedContext);
-        }
         const commandSnapshot = command;
+        if (localGestureConfirmed) {
+          localConfirmationGrants.set(queuedContext, {
+            command: commandSnapshot,
+            snapshot: cloneValue(commandSnapshot),
+            registration: localGrant?.registration,
+          });
+        }
         return enqueueMutation(key, () =>
           this.execute(commandSnapshot, queuedContext),
         );
@@ -977,7 +1001,7 @@ export function createControlInteractionRegistry(
       const publicContext: ControlCommandContext = {
         source: context.source,
         confirmed: context.confirmed,
-        localGesture: locallyConfirmedContexts.has(context),
+        localGesture: localGestureConfirmed,
         actorId: context.actorId,
         sessionId: context.sessionId,
       };
@@ -1421,6 +1445,7 @@ export function createControlInteractionRegistry(
             const undoEntry = history.at(-1);
             if (!undoEntry) throw new Error('nothing_to_undo');
             const currentValue = cloneValue(registration.getValue?.());
+            const expectedPreviousValue = cloneValue(undoEntry.previousValue);
             const userEditSnapshot = commandUserEditSnapshot;
             if (!valuesEqual(currentValue, undoEntry.appliedValue)) {
               throw new Error('staged_value_stale');
@@ -1431,7 +1456,8 @@ export function createControlInteractionRegistry(
                 registration,
                 currentValue,
                 userEditSnapshot,
-                () => registration.setValue?.(undoEntry.previousValue),
+                () =>
+                  registration.setValue?.(cloneValue(expectedPreviousValue)),
               );
             } catch (error) {
               try {
@@ -1449,7 +1475,7 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_stale');
             }
             if (
-              !valuesEqual(registration.getValue?.(), undoEntry.previousValue)
+              !valuesEqual(registration.getValue?.(), expectedPreviousValue)
             ) {
               try {
                 await restoreMutationValue(currentValue, userEditSnapshot);
@@ -1554,8 +1580,18 @@ export function createControlInteractionRegistry(
         source: 'user',
         confirmed: true,
       };
-      locallyConfirmedContexts.add(context);
-      results.push(await suppliedRegistry.execute(command, context));
+      localConfirmationGrants.set(context, {
+        command,
+        snapshot: cloneValue(command),
+        registration: registrations.get(identityKey(command.identity)),
+      });
+      try {
+        results.push(await suppliedRegistry.execute(command, context));
+      } finally {
+        // Adapters may retain context references, but no authority survives the
+        // terminal delegation/denial for this exact command.
+        localConfirmationGrants.delete(context);
+      }
     }
     return { ok: results.every((entry) => entry.ok), results };
   };
