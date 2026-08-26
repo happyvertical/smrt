@@ -90,7 +90,12 @@ const resolvedInteractionRegistry = $derived(
       : undefined) ??
     localInteractionRegistry,
 );
-const interactionDisposers = new Map<string, () => void>();
+const interactionDisposers = new Map<
+  string,
+  { field: FieldDefinition; dispose: () => void }
+>();
+let activeInteractionRegistry: ControlInteractionRegistry | undefined;
+let activeInteractionFormId: string | undefined;
 
 setControlInteractionContext({
   get formId() {
@@ -150,11 +155,16 @@ function registerInteraction(
   currentFormId: string,
   field: FieldDefinition,
 ): () => void {
+  const identity = {
+    formId: currentFormId,
+    controlId: field.controlId ?? field.name,
+  };
+  if (registry.get(identity)) {
+    logger.warn('Form: duplicate interaction identity rejected', { identity });
+    return () => {};
+  }
   return registry.register({
-    identity: {
-      formId: currentFormId,
-      controlId: field.controlId ?? field.name,
-    },
+    identity,
     metadata: {
       kind: interactionKind(field),
       label: field.label,
@@ -180,19 +190,31 @@ function registerInteraction(
 $effect(() => {
   const registry = resolvedInteractionRegistry;
   const currentFormId = resolvedFormId;
-  const currentFields = Array.from(fields.values());
-  for (const dispose of interactionDisposers.values()) dispose();
-  interactionDisposers.clear();
-  for (const field of currentFields) {
-    interactionDisposers.set(
-      field.name,
-      registerInteraction(registry, currentFormId, field),
-    );
-  }
-  return () => {
-    for (const dispose of interactionDisposers.values()) dispose();
+  const currentFields = new Map(fields);
+  if (
+    activeInteractionRegistry !== registry ||
+    activeInteractionFormId !== currentFormId
+  ) {
+    for (const registration of interactionDisposers.values()) {
+      registration.dispose();
+    }
     interactionDisposers.clear();
-  };
+    activeInteractionRegistry = registry;
+    activeInteractionFormId = currentFormId;
+  }
+  for (const [name, registration] of interactionDisposers) {
+    if (currentFields.get(name) !== registration.field) {
+      registration.dispose();
+      interactionDisposers.delete(name);
+    }
+  }
+  for (const [name, field] of currentFields) {
+    if (interactionDisposers.has(name)) continue;
+    interactionDisposers.set(name, {
+      field,
+      dispose: registerInteraction(registry, currentFormId, field),
+    });
+  }
 });
 
 // Create form context
@@ -794,7 +816,9 @@ onDestroy(() => {
     clearTimeout(silenceTimer);
   }
   stopAudioLevelMonitoring();
-  for (const dispose of interactionDisposers.values()) dispose();
+  for (const registration of interactionDisposers.values()) {
+    registration.dispose();
+  }
   interactionDisposers.clear();
 });
 

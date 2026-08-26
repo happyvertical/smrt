@@ -173,11 +173,15 @@ $effect(() => {
 // not the document-level WebMCP tool set.
 $effect(() => {
   if (typeof window === 'undefined' || !webmcp || !webMcpUiConfig) return;
-  return registerWebMcpUiTools({
-    controlRegistry: resolvedControlRegistry,
-    dataSurfaceRegistry: resolvedDataSurfaceRegistry,
-    ...(webMcpUiConfig.prefix ? { prefix: webMcpUiConfig.prefix } : {}),
-  });
+  try {
+    return registerWebMcpUiTools({
+      controlRegistry: resolvedControlRegistry,
+      dataSurfaceRegistry: resolvedDataSurfaceRegistry,
+      ...(webMcpUiConfig.prefix ? { prefix: webMcpUiConfig.prefix } : {}),
+    });
+  } catch (error) {
+    logger.warn('Provider: WebMCP UI tool registration rejected', { error });
+  }
 });
 
 // Keep generated data-plane tools scoped to this Provider. The registrar

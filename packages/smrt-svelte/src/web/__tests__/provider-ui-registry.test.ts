@@ -102,6 +102,93 @@ describe('Provider WebMCP UI registry context', () => {
     view.unmount();
   });
 
+  it('preserves staged sibling state when another field unmounts', async () => {
+    const providerRegistry = createControlInteractionRegistry();
+    const explicitRegistry = createControlInteractionRegistry();
+    const view = render(Fixture, {
+      props: { providerRegistry, explicitRegistry },
+    });
+    await tick();
+    await providerRegistry.execute({
+      action: 'stage',
+      identity: { formId: 'shared-form', controlId: 'shared-name' },
+      value: 'keep staged',
+    });
+
+    await view.rerender({
+      providerRegistry,
+      explicitRegistry,
+      showSibling: false,
+    });
+    await tick();
+
+    expect(
+      providerRegistry.get({
+        formId: 'shared-form',
+        controlId: 'shared-name',
+      })?.state.stagedValue,
+    ).toBe('keep staged');
+    view.unmount();
+  });
+
+  it('does not clobber an existing shared interaction identity', async () => {
+    const providerRegistry = createControlInteractionRegistry();
+    const unregisterExisting = providerRegistry.register({
+      identity: { formId: 'shared-form', controlId: 'shared-name' },
+      metadata: { kind: 'text', label: 'Existing' },
+      getValue: () => 'existing value',
+    });
+    const view = render(Fixture, {
+      props: {
+        providerRegistry,
+        explicitRegistry: createControlInteractionRegistry(),
+      },
+    });
+    await tick();
+
+    expect(
+      providerRegistry.get({
+        formId: 'shared-form',
+        controlId: 'shared-name',
+      })?.state.value,
+    ).toBe('existing value');
+    view.unmount();
+    expect(
+      providerRegistry.get({
+        formId: 'shared-form',
+        controlId: 'shared-name',
+      })?.state.value,
+    ).toBe('existing value');
+    unregisterExisting();
+  });
+
+  it('contains duplicate Provider prefixes without crashing the app', async () => {
+    const names: string[] = [];
+    document.modelContext = {
+      registerTool(tool) {
+        names.push(tool.name);
+      },
+    };
+    const first = render(Fixture, {
+      props: {
+        providerRegistry: createControlInteractionRegistry(),
+        explicitRegistry: createControlInteractionRegistry(),
+      },
+    });
+    await tick();
+    const second = render(Fixture, {
+      props: {
+        providerRegistry: createControlInteractionRegistry(),
+        explicitRegistry: createControlInteractionRegistry(),
+      },
+    });
+    await tick();
+
+    expect(names).toHaveLength(6);
+    second.unmount();
+    first.unmount();
+  });
+
   it('isolates throwing interaction observers from registry command outcomes', async () => {
     const providerRegistry = createControlInteractionRegistry();
     const view = render(Fixture, {

@@ -35,7 +35,29 @@ const PUBLIC_FAILURE_REASONS = new Set([
   'limit_exceeded',
   'not_found',
 ]);
+const PUBLIC_CONTROL_RESULT_REASONS = new Set([
+  'not_found',
+  'consent_required',
+  'sensitive_control',
+  'control_not_writable',
+  'control_not_editable',
+  'nothing_to_undo',
+  'denied',
+]);
 const documentLocks = new WeakMap<object, Set<string>>();
+
+class PublicToolError extends Error {
+  constructor(
+    readonly reason: string,
+    readonly details?: string,
+  ) {
+    super(reason);
+  }
+}
+
+function publicError(reason: string, details?: string): PublicToolError {
+  return new PublicToolError(reason, details);
+}
 
 export interface RegisterWebMcpUiToolsOptions {
   controlRegistry: ControlInteractionRegistry;
@@ -67,7 +89,7 @@ function requestBytes(value: unknown): number {
 
 function assertRequestSize(value: unknown): void {
   if (requestBytes(value) > DATA_SURFACE_MAX_REQUEST_BYTES) {
-    throw new RangeError('limit_exceeded');
+    throw publicError('limit_exceeded');
   }
 }
 
@@ -85,7 +107,7 @@ function requiredIdentifier(
       return code < 32 || code === 127;
     })
   ) {
-    throw new TypeError(`invalid_identifier:${name}`);
+    throw publicError('invalid_identifier', name);
   }
   return value;
 }
@@ -96,7 +118,7 @@ function optionalIdentifier(value: unknown, name: string): string | undefined {
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError('invalid_request');
+    throw publicError('invalid_request');
   }
   return value as Record<string, unknown>;
 }
@@ -128,7 +150,7 @@ function dataSurfaceIdentity(value: unknown): DataSurfaceIdentity {
   const input = record(value);
   const kind = input.kind;
   if (!['table', 'list', 'report', 'custom'].includes(String(kind))) {
-    throw new TypeError('invalid_request:identity.kind');
+    throw publicError('invalid_request', 'identity.kind');
   }
   const subjectInput = input.subject;
   const subject =
@@ -152,6 +174,10 @@ function dataSurfaceIdentity(value: unknown): DataSurfaceIdentity {
 }
 
 function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
+  const redactText =
+    snapshot.metadata.sensitivity === 'secret' || snapshot.state.valueRedacted;
+  const runtimeState = { ...snapshot.state };
+  delete runtimeState.validationMessage;
   return {
     ...snapshot,
     identity: { ...snapshot.identity },
@@ -163,11 +189,52 @@ function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
       options: snapshot.metadata.options?.map((option) => ({ ...option })),
     },
     state: {
-      ...snapshot.state,
+      ...(redactText ? runtimeState : snapshot.state),
       ...(snapshot.state.valueRedacted ? { value: undefined } : {}),
       ...(snapshot.state.stagedValueRedacted ? { stagedValue: undefined } : {}),
     },
   };
+}
+
+function sanitizeSurfaceValue(
+  value: unknown,
+  hiddenColumnIds: Set<string>,
+  redactRowIds: boolean,
+): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) =>
+        sanitizeSurfaceValue(entry, hiddenColumnIds, redactRowIds),
+      )
+      .filter((entry) => entry !== undefined);
+  }
+  if (!value || typeof value !== 'object') return value;
+  const object = value as Record<string, unknown>;
+  if (
+    typeof object.columnId === 'string' &&
+    hiddenColumnIds.has(object.columnId)
+  ) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    Object.entries(object).flatMap(([key, entry]) => {
+      if (hiddenColumnIds.has(key)) return [];
+      if (
+        redactRowIds &&
+        (key === 'selection' ||
+          key === 'selectedRowIds' ||
+          key === 'expandedRowIds')
+      ) {
+        return [];
+      }
+      const sanitized = sanitizeSurfaceValue(
+        entry,
+        hiddenColumnIds,
+        redactRowIds,
+      );
+      return sanitized === undefined ? [] : [[key, sanitized]];
+    }),
+  );
 }
 
 type VisibleDataSurfaceDescriptor = Omit<DataSurfaceDescriptor, 'rowKey'> & {
@@ -220,10 +287,12 @@ function visibleSnapshot(
       .filter((column) => column.visibility === 'hidden')
       .map((column) => column.id),
   );
-  const state = Object.fromEntries(
-    Object.entries(snapshot.state).filter(([key]) => !hiddenColumnIds.has(key)),
-  );
   const rowKeyHidden = hiddenColumnIds.has(snapshot.descriptor.rowKey);
+  const state = sanitizeSurfaceValue(
+    snapshot.state,
+    hiddenColumnIds,
+    rowKeyHidden,
+  ) as DataSurfaceSnapshot['state'];
   return {
     ...snapshot,
     descriptor: visibleDescriptor(snapshot.descriptor),
@@ -239,11 +308,9 @@ function executeSafely(
     .then(execute)
     .then(success)
     .catch((error: unknown) => {
-      const message =
-        error instanceof Error ? error.message : 'invalid_request';
-      const [reason, details] = message.split(':', 2);
-      return PUBLIC_FAILURE_REASONS.has(reason ?? '')
-        ? failure(reason as string, details)
+      return error instanceof PublicToolError &&
+        PUBLIC_FAILURE_REASONS.has(error.reason)
+        ? failure(error.reason, error.details)
         : failure('execution_failed');
     });
 }
@@ -322,7 +389,7 @@ function tools(
           assertRequestSize(args);
           const input = record(args);
           const snapshot = controlRegistry.get(controlIdentity(input.identity));
-          if (!snapshot) throw new Error('not_found');
+          if (!snapshot) throw publicError('not_found');
           return sanitizeControl(snapshot);
         }),
     ),
@@ -347,16 +414,16 @@ function tools(
           assertRequestSize(args);
           const input = record(args);
           if ('confirmed' in input)
-            throw new TypeError('invalid_request:confirmed');
+            throw publicError('invalid_request', 'confirmed');
           if (!CONTROL_ACTIONS.has(input.action as ControlCommandAction)) {
-            throw new TypeError('invalid_request:action');
+            throw publicError('invalid_request', 'action');
           }
           const action = input.action as ControlCommandAction;
           const identity = controlIdentity(input.identity);
           let command: ControlCommand;
           if (action === 'stage') {
             if (!('value' in input))
-              throw new TypeError('invalid_request:value');
+              throw publicError('invalid_request', 'value');
             command = { action, identity, value: input.value };
           } else if (action === 'apply') {
             command =
@@ -370,7 +437,7 @@ function tools(
                 input.durationMs < 0 ||
                 input.durationMs > 60_000)
             ) {
-              throw new TypeError('invalid_request:durationMs');
+              throw publicError('invalid_request', 'durationMs');
             }
             command = { action, identity, durationMs: input.durationMs };
           } else {
@@ -379,9 +446,18 @@ function tools(
           const result = await controlRegistry.execute(command, {
             source: 'agent',
           });
-          return result.snapshot
-            ? { ...result, snapshot: sanitizeControl(result.snapshot) }
-            : result;
+          const reason = result.reason
+            ? PUBLIC_CONTROL_RESULT_REASONS.has(result.reason)
+              ? result.reason
+              : 'execution_failed'
+            : undefined;
+          return {
+            ...result,
+            ...(reason ? { reason } : { reason: undefined }),
+            ...(result.snapshot
+              ? { snapshot: sanitizeControl(result.snapshot) }
+              : {}),
+          };
         }),
     },
     readTool(
@@ -411,7 +487,7 @@ function tools(
           const snapshot = dataSurfaceRegistry.inspect(
             dataSurfaceIdentity(input.identity),
           );
-          if (!snapshot) throw new Error('not_found');
+          if (!snapshot) throw publicError('not_found');
           return visibleSnapshot(snapshot);
         }),
     ),
@@ -444,13 +520,13 @@ function tools(
           assertRequestSize(args);
           const input = record(args);
           if (input.version !== 1)
-            throw new TypeError('invalid_request:version');
+            throw publicError('invalid_request', 'version');
           if (
             typeof input.expectedRevision !== 'number' ||
             !Number.isSafeInteger(input.expectedRevision) ||
             input.expectedRevision < 0
           ) {
-            throw new TypeError('invalid_request:expectedRevision');
+            throw publicError('invalid_request', 'expectedRevision');
           }
           const command: DataSurfaceVisibleCommand = {
             version: 1,

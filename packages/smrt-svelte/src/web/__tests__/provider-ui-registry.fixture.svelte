@@ -13,12 +13,14 @@ let {
   enableUi = true,
   onSharedInteraction,
   onSiblingInteraction,
+  showSibling = true,
 }: {
   providerRegistry: ControlInteractionRegistry;
   explicitRegistry: ControlInteractionRegistry;
   enableUi?: boolean;
   onSharedInteraction?: (event: ControlInteractionEvent) => void;
   onSiblingInteraction?: (event: ControlInteractionEvent) => void;
+  showSibling?: boolean;
 } = $props();
 </script>
 
@@ -30,9 +32,11 @@ let {
   <Form formId="shared-form" oninteraction={onSharedInteraction}>
     <TextInput name="shared-name" label="Shared name" />
   </Form>
-  <Form formId="sibling-form" oninteraction={onSiblingInteraction}>
-    <TextInput name="sibling-name" label="Sibling name" />
-  </Form>
+  {#if showSibling}
+    <Form formId="sibling-form" oninteraction={onSiblingInteraction}>
+      <TextInput name="sibling-name" label="Sibling name" />
+    </Form>
+  {/if}
   <Form formId="explicit-form" interactionRegistry={explicitRegistry}>
     <TextInput name="explicit-name" label="Explicit name" />
   </Form>

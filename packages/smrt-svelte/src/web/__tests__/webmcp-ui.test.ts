@@ -166,6 +166,13 @@ describe('registerWebMcpUiTools', () => {
       },
       getValue: () => 'never-serialize-this',
       setValue: () => {},
+      getState: () => ({
+        valid: false,
+        validationMessage: 'never-serialize-this is invalid',
+      }),
+      focus: () => {
+        throw new Error('never-serialize-this cannot be focused');
+      },
     });
     registerWebMcpUiTools({
       controlRegistry: controls,
@@ -199,6 +206,39 @@ describe('registerWebMcpUiTools', () => {
     expect(listed.result[0].state.valueRedacted).toBe(true);
     expect(inspected.result.state.valueRedacted).toBe(true);
     expect(executed.result.snapshot.state.valueRedacted).toBe(true);
+    expect(executed.result.snapshot.state).not.toHaveProperty(
+      'validationMessage',
+    );
+    expect(executed.result.reason).toBe('execution_failed');
+  });
+
+  it('does not expose host error messages that mimic public failures', async () => {
+    const browser = modelContext();
+    const controls = createControlInteractionRegistry();
+    controls.register({
+      identity: { formId: 'profile', controlId: 'unstable' },
+      metadata: { kind: 'text', label: 'Unstable' },
+      getValue: () => {
+        throw new Error('not_found: private customer 4711');
+      },
+    });
+    registerWebMcpUiTools({
+      controlRegistry: controls,
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+      document: browser.document,
+    });
+    const inspect = findTool(
+      browser.registered,
+      'smrt_ui_inspect_form_control',
+    );
+
+    const result = await parse(
+      inspect.execute({
+        identity: { formId: 'profile', controlId: 'unstable' },
+      }),
+    );
+    expect(result).toEqual({ ok: false, reason: 'execution_failed' });
+    expect(JSON.stringify(result)).not.toContain('customer 4711');
   });
 
   it('filters hidden columns and preserves surface revision and replay failures', async () => {
@@ -210,7 +250,19 @@ describe('registerWebMcpUiTools', () => {
       descriptor: descriptor(),
       getSnapshot: () => ({
         revision,
-        state: { page, internal: 'never-serialize-this' },
+        state: {
+          page,
+          internal: 'never-serialize-this',
+          table: {
+            version: 3,
+            state: {
+              filters: [
+                { columnId: 'internal', value: 'nested-hidden-filter' },
+              ],
+              sorting: [{ columnId: 'internal', direction: 'asc' }],
+            },
+          },
+        },
       }),
       execute: (_command: DataSurfaceVisibleCommand) => {
         page += 1;
@@ -237,6 +289,7 @@ describe('registerWebMcpUiTools', () => {
     const snapshot = (await parse(inspect.execute({ identity }))).result;
     expect(snapshot.descriptor.query.projectableColumnIds).toEqual(['id']);
     expect(snapshot.state).not.toHaveProperty('internal');
+    expect(JSON.stringify(snapshot)).not.toContain('nested-hidden-filter');
 
     const hiddenRowKeyDescriptor = descriptor();
     hiddenRowKeyDescriptor.rowKey = 'internal';
@@ -245,7 +298,18 @@ describe('registerWebMcpUiTools', () => {
       descriptor: hiddenRowKeyDescriptor,
       getSnapshot: () => ({
         revision: 0,
-        state: {},
+        state: {
+          table: {
+            state: {
+              selection: {
+                scope: 'explicit',
+                rowIds: ['nested-private-row-id'],
+              },
+              selectedRowIds: ['nested-private-row-id'],
+              expandedRowIds: ['nested-private-row-id'],
+            },
+          },
+        },
         selection: { scope: 'explicit-ids', rowIds: ['private-row-id'] },
       }),
     });
@@ -270,6 +334,9 @@ describe('registerWebMcpUiTools', () => {
     );
     expect(hiddenRowKeyInspect.result.selection).toBeNull();
     expect(JSON.stringify(hiddenRowKeyInspect)).not.toContain('private-row-id');
+    expect(JSON.stringify(hiddenRowKeyInspect)).not.toContain(
+      'nested-private-row-id',
+    );
 
     const command = {
       version: 1,
