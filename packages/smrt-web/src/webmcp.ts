@@ -84,7 +84,7 @@ export interface WebMcpExposurePolicy {
   effects?: readonly WebMcpToolEffect[];
   /** Prefix every registered tool name with `<namespace>_`. */
   namespace?: string;
-  /** Maximum tools registered by one call (default 64). */
+  /** Optional maximum tools registered by one call. */
   maxTools?: number;
 }
 
