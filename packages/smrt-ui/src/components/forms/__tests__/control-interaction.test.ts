@@ -1879,6 +1879,62 @@ describe('control interaction registry', () => {
     expect(value).toBe('Katherine');
   });
 
+  it('preserves the first human edit recorded after a replacement registers', async () => {
+    let value = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        setterStarted?.();
+        await setterBlocked;
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    value = 'Katherine';
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    value = 'Margaret';
+    registry.recordUserEdit?.(identity);
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Margaret');
+  });
+
   it('captures a replacement baseline before an already-released setter resumes', async () => {
     let value = 'Ada';
     let releaseSetter: (() => void) | undefined;

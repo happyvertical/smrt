@@ -2,7 +2,11 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
-import { createControlInteractionRegistry } from '../control-interaction.js';
+import {
+  createControlInteractionRegistry,
+  executeLocalControlBatch,
+} from '../control-interaction.js';
+import SelectFixture from './select-interaction.fixture.svelte';
 import Fixture from './staged-review.fixture.svelte';
 
 const identity = { formId: 'profile', controlId: 'display-name' };
@@ -245,6 +249,128 @@ describe('StagedControlReview', () => {
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(field).toHaveValue('Katherine');
+  });
+
+  it('keeps trusted edit tracking when the consumer supplies an input handler', async () => {
+    const registry = createReviewRegistry();
+    const formOnInput = vi.fn();
+    render(Fixture, { props: { registry, formOnInput } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const field = screen.getByRole('textbox', { name: 'Display name' });
+    await userEvent.clear(field);
+    await userEvent.type(field, 'Katherine');
+
+    expect(formOnInput).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(registry.get(identity)?.state.staged?.stale).toBe(true),
+    );
+  });
+
+  it('preserves a staged proposal across same-identity metadata updates', async () => {
+    const registry = createReviewRegistry();
+    const view = render(Fixture, {
+      props: { registry, displayNameLabel: 'Display name' },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    await view.rerender({
+      registry,
+      displayNameLabel: 'Preferred name',
+    });
+
+    await waitFor(() =>
+      expect(registry.get(identity)?.state.staged?.value).toBe('Grace'),
+    );
+    expect(
+      screen.getByRole('textbox', {
+        name: 'Edit proposed value for Preferred name',
+      }),
+    ).toHaveValue('Grace');
+  });
+
+  it('preserves undo history across same-identity metadata updates', async () => {
+    const registry = createReviewRegistry();
+    const view = render(Fixture, {
+      props: { registry, displayNameLabel: 'Display name' },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const revision = registry.get(identity)?.state.staged?.revision;
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [{ action: 'apply', identity, revision }],
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
+      'Grace',
+    );
+
+    await view.rerender({
+      registry,
+      displayNameLabel: 'Preferred name',
+    });
+    expect(screen.getByRole('textbox', { name: 'Preferred name' })).toHaveValue(
+      'Grace',
+    );
+    await waitFor(() =>
+      expect(registry.get(identity)?.metadata.label).toBe('Preferred name'),
+    );
+
+    const undo = await executeLocalControlBatch(
+      registry,
+      [{ action: 'undo', identity }],
+      new Event('click'),
+    );
+    expect(undo.results[0]).toMatchObject({ ok: true });
+    expect(screen.getByRole('textbox', { name: 'Preferred name' })).toHaveValue(
+      'Ada',
+    );
+  });
+
+  it('rejects disabled and undeclared base-select proposals on apply', async () => {
+    const registry = createReviewRegistry();
+    render(SelectFixture, { props: { registry } });
+    const selectIdentity = { formId: 'account', controlId: 'role' };
+
+    for (const candidate of ['admin', 'owner']) {
+      await registry.execute(
+        { action: 'stage', identity: selectIdentity, value: candidate },
+        { source: 'agent' },
+      );
+      expect(registry.get(selectIdentity)?.state.staged).toMatchObject({
+        value: candidate,
+        valid: false,
+      });
+      const batch = await executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'apply',
+            identity: selectIdentity,
+            revision: registry.get(selectIdentity)?.state.staged?.revision,
+          },
+        ],
+        new Event('click'),
+      );
+      expect(batch.results[0]).toMatchObject({
+        ok: false,
+        reason: 'staged_value_invalid',
+      });
+      expect(screen.getByRole('combobox', { name: 'Role' })).toHaveValue(
+        'user',
+      );
+    }
   });
 
   it('lets the human correct an invalid proposal before applying it', async () => {

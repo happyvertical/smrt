@@ -115,7 +115,13 @@ $effect(() => {
   const form = formElement;
   if (!form) return;
   form.addEventListener('click', recordDirectUserEdit);
-  return () => form.removeEventListener('click', recordDirectUserEdit);
+  form.addEventListener('input', recordDirectUserEdit);
+  form.addEventListener('change', recordDirectUserEdit);
+  return () => {
+    form.removeEventListener('click', recordDirectUserEdit);
+    form.removeEventListener('input', recordDirectUserEdit);
+    form.removeEventListener('change', recordDirectUserEdit);
+  };
 });
 </script>
 
@@ -126,8 +132,6 @@ $effect(() => {
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
-  oninput={recordDirectUserEdit}
-  onchange={recordDirectUserEdit}
   {...rest}
 >
 	{@render children()}

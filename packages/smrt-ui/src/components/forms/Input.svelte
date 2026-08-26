@@ -11,6 +11,7 @@ import type {
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
+import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLInputAttributes, 'class' | 'value'> {
   value?: string | number;
@@ -110,19 +111,15 @@ function validateControlValue(next: unknown) {
   };
 }
 
-$effect(() => {
-  const context = controlInteraction;
+useControlRegistration(() => {
   const element = inputEl;
   const controlId = resolvedControlId;
   const options = resolvedInteraction;
-  if (!context || !element || !controlId || options === false) return;
+  if (!element || !controlId || options === false) return false;
 
-  return context.registry.register({
-    identity: {
-      formId: context.formId,
-      controlId,
-      subject: options.subject,
-    },
+  return {
+    controlId,
+    subject: options.subject,
     metadata: {
       kind: kindFromType(),
       label: formGroup?.().label ?? ariaLabel ?? undefined,
@@ -158,7 +155,7 @@ $effect(() => {
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
-  });
+  };
 });
 
 export function focus(): void {

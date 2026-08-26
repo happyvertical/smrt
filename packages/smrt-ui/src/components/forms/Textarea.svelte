@@ -8,6 +8,7 @@ import {
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
+import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLTextareaAttributes, 'class' | 'value'> {
   value?: string;
@@ -60,14 +61,14 @@ function setControlValue(next: unknown) {
   if (textareaEl) emitControlChange(textareaEl);
 }
 
-$effect(() => {
-  const context = controlInteraction;
+useControlRegistration(() => {
   const element = textareaEl;
   const controlId = resolvedControlId;
   const options = resolvedInteraction;
-  if (!context || !element || !controlId || options === false) return;
-  return context.registry.register({
-    identity: { formId: context.formId, controlId, subject: options.subject },
+  if (!element || !controlId || options === false) return false;
+  return {
+    controlId,
+    subject: options.subject,
     metadata: {
       kind: 'textarea',
       label: formGroup?.().label ?? ariaLabel ?? undefined,
@@ -97,7 +98,7 @@ $effect(() => {
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
-  });
+  };
 });
 
 export function focus(): void {

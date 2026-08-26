@@ -9,6 +9,7 @@ import {
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
+import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
   value?: string;
@@ -59,14 +60,24 @@ function setControlValue(next: unknown) {
   if (selectEl) emitControlChange(selectEl);
 }
 
-$effect(() => {
-  const context = controlInteraction;
+function validateControlValue(next: unknown) {
+  const element = selectEl;
+  if (!element) return true;
+  const candidate = String(next ?? '');
+  if (candidate === '' && !required) return true;
+  return Array.from(element.options).some(
+    (option) => option.value === candidate && !option.disabled,
+  );
+}
+
+useControlRegistration(() => {
   const element = selectEl;
   const controlId = resolvedControlId;
   const options = resolvedInteraction;
-  if (!context || !element || !controlId || options === false) return;
-  return context.registry.register({
-    identity: { formId: context.formId, controlId, subject: options.subject },
+  if (!element || !controlId || options === false) return false;
+  return {
+    controlId,
+    subject: options.subject,
     metadata: {
       kind: 'select',
       label: formGroup?.().label ?? ariaLabel ?? undefined,
@@ -91,12 +102,13 @@ $effect(() => {
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: validateControlValue,
     getState: () => ({
       disabled: element.matches(':disabled'),
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
-  });
+  };
 });
 
 export function focus(): void {

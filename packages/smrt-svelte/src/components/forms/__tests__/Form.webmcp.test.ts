@@ -330,6 +330,52 @@ describe('Form WebMCP staged-edit intent', () => {
     });
   });
 
+  it('clears rich checkbox and select fields to their explicit empty values', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        interactionRegistry: registry,
+        showAge: false,
+        showClearFields: true,
+        checkboxValue: true,
+        selectValue: 'second',
+      },
+    });
+    await tick();
+    const enabled = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'enabled');
+    const choice = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'choice');
+    if (!enabled || !choice)
+      throw new Error('clear fields were not registered');
+
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'clear',
+            identity: enabled.identity,
+          },
+          {
+            action: 'clear',
+            identity: choice.identity,
+          },
+        ],
+        new Event('click'),
+      ),
+    ).toMatchObject({
+      ok: true,
+      results: [{ ok: true }, { ok: true }],
+    });
+    expect(registry.get(enabled.identity)?.state.value).toBe(false);
+    expect(registry.get(choice.identity)?.state.value).toBe('');
+  });
+
   it('rejects invalid structured proposals before mutation callbacks run', async () => {
     const addressChanged = vi.fn();
     const datesChanged = vi.fn();

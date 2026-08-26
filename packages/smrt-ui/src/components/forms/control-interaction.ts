@@ -605,7 +605,7 @@ export function createControlInteractionRegistry(
     const currentWithEdits = editAwareRegistration(key, current);
     const baseline = registrationBaselines.get(current) ?? {
       value: previousValue,
-      userEdit: null,
+      userEdit: { revision: 0, value: cloneValue(previousValue) },
     };
     await restoreRegistrationValue(
       currentWithEdits,
@@ -720,12 +720,13 @@ export function createControlInteractionRegistry(
       // `untrack` keeps this read out of a caller's reactive registration effect.
       untrack(() => {
         try {
+          const value = cloneValue(registration.getValue?.());
+          const userEdit = cloneValue(
+            registration.getUserEditSnapshot?.() ?? userEdits.get(key),
+          );
           registrationBaselines.set(registration, {
-            value: cloneValue(registration.getValue?.()),
-            userEdit:
-              cloneValue(
-                registration.getUserEditSnapshot?.() ?? userEdits.get(key),
-              ) ?? null,
+            value,
+            userEdit: userEdit ?? { revision: 0, value: cloneValue(value) },
           });
         } catch {
           // A broken reader is handled by command execution, not registration.

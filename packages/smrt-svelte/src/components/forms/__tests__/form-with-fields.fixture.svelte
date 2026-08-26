@@ -4,9 +4,11 @@
  *  exercised end-to-end (the submit handler reads each registered field's
  *  getValue()). */
 import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
+import CheckboxInput from '../CheckboxInput.svelte';
 import Form from '../Form.svelte';
 import MoneyInput from '../MoneyInput.svelte';
 import NumberInput from '../NumberInput.svelte';
+import SelectInput from '../SelectInput.svelte';
 import TextInput from '../TextInput.svelte';
 
 let {
@@ -17,6 +19,9 @@ let {
   numberValue = null,
   showAge = true,
   showMoney = false,
+  showClearFields = false,
+  checkboxValue = true,
+  selectValue = 'second',
   moneyMin = undefined,
   moneyMax = undefined,
   webmcp = false,
@@ -39,6 +44,9 @@ let {
   numberValue?: number | null;
   showAge?: boolean;
   showMoney?: boolean;
+  showClearFields?: boolean;
+  checkboxValue?: boolean;
+  selectValue?: string;
   moneyMin?: number;
   moneyMax?: number;
   webmcp?: boolean;
@@ -93,6 +101,18 @@ function mutateSubject() {
 	{/if}
 	{#if showMoney}
 			<MoneyInput name="budget" label="Budget" min={moneyMin} max={moneyMax} />
+	{/if}
+	{#if showClearFields}
+		<CheckboxInput name="enabled" label="Enabled" bind:checked={checkboxValue} />
+		<SelectInput
+			name="choice"
+			label="Choice"
+			options={[
+				{ value: 'first', label: 'First' },
+				{ value: 'second', label: 'Second' },
+			]}
+			bind:value={selectValue}
+		/>
 	{/if}
 	</fieldset>
 	{#if mutableSubject}

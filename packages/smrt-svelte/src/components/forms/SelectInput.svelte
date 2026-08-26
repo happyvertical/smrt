@@ -79,6 +79,10 @@ onMount(() => {
         }
       },
       getValue: () => value,
+      clear: () => {
+        updateValue('');
+        return true;
+      },
       getState: () => ({ disabled }),
       get constraints() {
         return { required };
