@@ -61,6 +61,11 @@ module you are editing. This file keeps what holds in every module.
 
 ## Conventions
 
+- **WebMCP definition mirror** — `WebMcpToolDefinition` textually mirrors the
+  generated `@happyvertical/smrt-virt-web` / physical `@smrt/web` declaration.
+  It is transport-complete and does not imply that a list-materialized client
+  collection exists. Keep the mirror dependency-free.
+
 - **No inter-smrt dependencies** — depends only on TanStack packages
   (dependency-DAG guardrails). Definitions and fetchers arrive as arguments.
 - **Data-query mirror** — `data-query.ts` mirrors the portable

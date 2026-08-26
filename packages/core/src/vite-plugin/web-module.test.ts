@@ -74,8 +74,10 @@ export class Category extends SmrtObject {
   label: string = '';
 }
 
+@smrt({ api: { include: ['archiveAll'] } })
 export class WidgetCollection extends SmrtCollection<Widget> {
   static readonly _itemClass = Widget;
+  static async archiveAll(options?: { reason?: string }): Promise<void> {}
 }
 
 // Transitive collection subclass: no type argument of its own — must still
@@ -85,6 +87,11 @@ export class SpecialWidgetCollection extends WidgetCollection {}
 @smrt({ api: false })
 export class HiddenGadget extends SmrtObject {
   label: string = '';
+}
+
+@smrt({ api: { include: ['get'] } })
+export class Lookup extends SmrtObject {
+  key: string = '';
 }
 `,
     );
@@ -158,6 +165,32 @@ export class HiddenGadget extends SmrtObject {
     );
   });
 
+  it('emits canonical tools independently of list materialization', async () => {
+    const code = (await load('\0smrt:web')) as string;
+    const tools = extractWebMcpToolDefinitions(code);
+
+    expect(tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          collection: 'lookups',
+          action: 'get',
+          name: 'lookup_get',
+          route: { method: 'GET', scope: 'item', path: [] },
+        }),
+        expect.objectContaining({
+          collection: 'widgets',
+          action: 'archiveAll',
+          name: 'widget_archiveall',
+          route: expect.objectContaining({
+            method: 'POST',
+            scope: 'collection',
+          }),
+        }),
+      ]),
+    );
+    expect(extractDefinitions(code)).not.toHaveProperty('lookups');
+  });
+
   it('emits the build-time manifestHash constant (#1764)', async () => {
     const code = (await load('\0smrt:web')) as string;
     // The runtime module exports a stable, short base64url shape digest. This is
@@ -222,4 +255,17 @@ function extractDefinitions(code: string): Record<string, unknown> {
     throw new Error('collectionDefinitions literal not found in emitted code');
   }
   return JSON.parse(match[1]) as Record<string, unknown>;
+}
+
+/** Parse the canonical `webMcpToolDefinitions` array literal. */
+function extractWebMcpToolDefinitions(
+  code: string,
+): Array<Record<string, unknown>> {
+  const match = code.match(
+    /export const webMcpToolDefinitions = (\[[\s\S]*?\n\]);/,
+  );
+  if (!match) {
+    throw new Error('webMcpToolDefinitions literal not found in emitted code');
+  }
+  return JSON.parse(match[1]) as Array<Record<string, unknown>>;
 }

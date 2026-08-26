@@ -214,6 +214,10 @@ describe('generateDeclarations', () => {
     expect(webDecl).toContain('objectRef: string;');
     expect(webDecl).toContain('description?: string;');
     expect(webDecl).toContain('ui?: SmrtWebFieldUIHints;');
+    expect(webDecl).toContain('export interface WebMcpToolDefinition');
+    expect(webDecl).toContain(
+      'export const webMcpToolDefinitions: readonly WebMcpToolDefinition[];',
+    );
 
     const sourceFile = ts.createSourceFile(
       'generated-virtual-modules.d.ts',
@@ -232,6 +236,49 @@ describe('generateDeclarations', () => {
         (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
       ),
     ).toEqual([]);
+  });
+
+  it('keeps every WebMCP definition declaration surface in sync', async () => {
+    await generateDeclarations({
+      manifest: buildManifest(),
+      outDir,
+      includeVirtualModules: true,
+      includeObjectTypes: true,
+    });
+
+    const declarationSurfaces = [
+      readFileSync(join(outDir, 'smrt-web.d.ts'), 'utf-8'),
+      readFileSync(
+        new URL('../vite-plugin/index.ts', import.meta.url),
+        'utf-8',
+      ),
+    ];
+    const typeSurfaces = [
+      ...declarationSurfaces,
+      readFileSync(
+        new URL('../../../smrt-web/src/index.ts', import.meta.url),
+        'utf-8',
+      ),
+    ];
+    const sharedMembers = [
+      'collection: string;',
+      'objectRef: string;',
+      'className: string;',
+      'endpoint: string;',
+      'idField: string;',
+      "idType: 'uuid' | 'text';",
+      'relationships: SmrtWebRelationship[];',
+    ];
+
+    for (const surface of declarationSurfaces) {
+      expect(surface).toContain('webMcpToolDefinitions');
+    }
+
+    for (const surface of typeSurfaces) {
+      expect(surface).toContain('interface WebMcpToolDefinition');
+      for (const member of sharedMembers) expect(surface).toContain(member);
+      expect(surface).toMatch(/route: (?:Smrt)?WebToolRouteDescriptor;/);
+    }
   });
 
   it('types canonical collection endpoints from populated models regardless of manifest order', async () => {
