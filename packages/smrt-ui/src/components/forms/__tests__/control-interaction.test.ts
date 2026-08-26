@@ -385,6 +385,30 @@ describe('control interaction registry', () => {
     expect(JSON.stringify(events)).not.toContain('replacement');
   });
 
+  it('redacts sensitive snapshot failures before policy evaluation', async () => {
+    const events: unknown[] = [];
+    const registry = createControlInteractionRegistry();
+    registry.subscribe((event) => events.push(event));
+    registry.register({
+      identity,
+      metadata: { kind: 'text', sensitivity: 'sensitive' },
+      getValue: () => 'private',
+      setValue: () => undefined,
+      getState: () => {
+        throw new Error('private snapshot details');
+      },
+    });
+
+    const outcome = await registry.execute(
+      { action: 'stage', identity, value: 'replacement' },
+      { source: 'agent' },
+    );
+
+    expect(outcome).toMatchObject({ ok: false, reason: 'command_failed' });
+    expect(JSON.stringify(outcome)).not.toContain('private snapshot details');
+    expect(JSON.stringify(events)).not.toContain('private snapshot details');
+  });
+
   it('restores the prior proposal when replacement staging throws', async () => {
     const registry = createControlInteractionRegistry();
     registry.register({
@@ -643,6 +667,71 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
+  it('rolls back a normalized value when apply cannot affirm the proposal', async () => {
+    let value = 1;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'number' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = Number(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: '42' },
+      { source: 'agent' },
+    );
+
+    const applied = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+
+    expect(applied).toMatchObject({
+      ok: false,
+      reason: 'staged_value_rejected',
+    });
+    expect(value).toBe(1);
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: '42',
+      stale: false,
+    });
+  });
+
+  it('rolls back a partial mutation when an applied setter throws', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+        if (next === 'Grace') throw new Error('setter_failed');
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applied = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+
+    expect(applied).toMatchObject({ ok: false, reason: 'setter_failed' });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
   it('keeps staged and undo state when clear or undo is rejected', async () => {
     let value = 'Ada';
     let rejectWrites = false;
@@ -693,6 +782,68 @@ describe('control interaction registry', () => {
       reason: 'staged_value_rejected',
     });
     rejectWrites = false;
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('Ada');
+  });
+
+  it('rolls back partial clear and undo mutations while retaining recovery state', async () => {
+    let value = 'Ada';
+    let rejectClear = true;
+    let rejectUndo = false;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+        if (rejectUndo && next === 'Ada') throw new Error('undo_failed');
+      },
+      clear: () => {
+        value = 'partially-cleared';
+        return !rejectClear;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+
+    rejectClear = false;
+    await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    rejectUndo = true;
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'undo_failed' });
+    expect(value).toBe('Grace');
+
+    rejectUndo = false;
     expect(
       await executeLocalControlCommand(
         registry,

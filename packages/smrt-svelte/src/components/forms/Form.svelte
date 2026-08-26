@@ -3,6 +3,7 @@ import {
   type ControlInteractionEvent,
   type ControlInteractionRegistry,
   type ControlKind,
+  type ControlRuntimeState,
   createControlInteractionRegistry,
   StagedControlReview,
   setControlInteractionContext,
@@ -155,6 +156,40 @@ function interactionKind(field: FieldDefinition): ControlKind {
   }
 }
 
+function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
+  const controls = formElement
+    ? Array.from(formElement.elements).filter(
+        (
+          control,
+        ): control is
+          | HTMLInputElement
+          | HTMLSelectElement
+          | HTMLTextAreaElement =>
+          (control instanceof HTMLInputElement ||
+            control instanceof HTMLSelectElement ||
+            control instanceof HTMLTextAreaElement) &&
+          control.name === field.name,
+      )
+    : [];
+  const domState: ControlRuntimeState = {
+    disabled:
+      controls.length > 0
+        ? controls.every((control) => control.disabled)
+        : undefined,
+    readonly:
+      controls.some(
+        (control) => 'readOnly' in control && control.readOnly === true,
+      ) || undefined,
+  };
+  const declaredState = field.getState?.() ?? {};
+  return {
+    ...domState,
+    ...declaredState,
+    disabled: domState.disabled === true || declaredState.disabled === true,
+    readonly: domState.readonly === true || declaredState.readonly === true,
+  };
+}
+
 function registerInteraction(
   registry: ControlInteractionRegistry,
   currentFormId: string,
@@ -163,6 +198,7 @@ function registerInteraction(
   const identity = {
     formId: currentFormId,
     controlId: field.controlId ?? field.name,
+    subject: field.subject,
   };
   if (registry.get(identity)) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
@@ -189,7 +225,7 @@ function registerInteraction(
     highlight: field.highlight,
     validate: field.validate,
     validateValue: field.validateValue,
-    getState: field.getState,
+    getState: () => fieldRuntimeState(field),
   });
 }
 
@@ -379,7 +415,14 @@ function formInputSchema(): Record<string, unknown> {
   const required: string[] = [];
 
   for (const field of fields.values()) {
-    if (field.sensitivity === 'secret' || field.writable === false) continue;
+    const state = fieldRuntimeState(field);
+    if (
+      field.sensitivity === 'secret' ||
+      field.writable === false ||
+      state.disabled ||
+      state.readonly
+    )
+      continue;
     properties[field.name] = webMcpFieldSchema(field);
     if (field.constraints?.required) required.push(field.name);
   }
@@ -423,7 +466,14 @@ async function submitCurrentForm(): Promise<string> {
 async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
   const commands = Object.entries(args).flatMap(([name, value]) => {
     const field = fields.get(name);
-    if (!field || field.sensitivity === 'secret' || field.writable === false) {
+    const state = field ? fieldRuntimeState(field) : undefined;
+    if (
+      !field ||
+      field.sensitivity === 'secret' ||
+      field.writable === false ||
+      state?.disabled ||
+      state?.readonly
+    ) {
       return [];
     }
     return [
@@ -432,6 +482,7 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
         identity: {
           formId: resolvedFormId,
           controlId: field.controlId ?? field.name,
+          subject: field.subject,
         },
         value,
       },

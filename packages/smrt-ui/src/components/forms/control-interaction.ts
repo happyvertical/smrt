@@ -147,11 +147,7 @@ export interface ControlRegistration {
   getValue?: () => unknown;
   setValue?: (value: unknown) => void | Promise<void>;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
-  clear?:
-    | (() => void)
-    | (() => boolean)
-    | (() => Promise<void>)
-    | (() => Promise<boolean>);
+  clear?: (() => void | Promise<void>) | (() => boolean | Promise<boolean>);
   focus?: () => void | Promise<void>;
   reveal?: () => void | Promise<void>;
   highlight?: (durationMs?: number) => void | Promise<void>;
@@ -624,48 +620,53 @@ export function createControlInteractionRegistry(
         sessionId: context.sessionId,
       };
 
-      const snapshot = snapshotOf(registration);
-      const invariantDecision = defaultPolicy(
-        command,
-        publicContext,
-        snapshot,
-        publicContext.localGesture === true,
-      );
-      const policyDecision =
-        invariantDecision.allowed && options.policy
-          ? await options.policy(publicCommand, publicContext, snapshot)
-          : invariantDecision;
-      if (!policyDecision.allowed) {
-        const denied = result(
-          command,
-          false,
-          registration,
-          policyDecision.reason ?? 'denied',
-        );
-        emit({
-          type: 'command',
-          identity: command.identity,
-          command: publicCommand,
-          context: publicContext,
-          result: denied,
-        });
-        return denied;
-      }
-
-      const capabilities = capabilitiesOf(registration);
-      if (!capabilities.includes(command.action)) {
-        const unsupported = result(command, false, registration, 'unsupported');
-        emit({
-          type: 'command',
-          identity: command.identity,
-          command: publicCommand,
-          context: publicContext,
-          result: unsupported,
-        });
-        return unsupported;
-      }
-
       try {
+        const snapshot = snapshotOf(registration);
+        const invariantDecision = defaultPolicy(
+          command,
+          publicContext,
+          snapshot,
+          publicContext.localGesture === true,
+        );
+        const policyDecision =
+          invariantDecision.allowed && options.policy
+            ? await options.policy(publicCommand, publicContext, snapshot)
+            : invariantDecision;
+        if (!policyDecision.allowed) {
+          const denied = result(
+            command,
+            false,
+            registration,
+            policyDecision.reason ?? 'denied',
+          );
+          emit({
+            type: 'command',
+            identity: command.identity,
+            command: publicCommand,
+            context: publicContext,
+            result: denied,
+          });
+          return denied;
+        }
+
+        const capabilities = capabilitiesOf(registration);
+        if (!capabilities.includes(command.action)) {
+          const unsupported = result(
+            command,
+            false,
+            registration,
+            'unsupported',
+          );
+          emit({
+            type: 'command',
+            identity: command.identity,
+            command: publicCommand,
+            context: publicContext,
+            result: unsupported,
+          });
+          return unsupported;
+        }
+
         switch (command.action) {
           case 'focus':
             await registration.focus?.();
@@ -789,8 +790,25 @@ export function createControlInteractionRegistry(
             }
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
-            await registration.setValue?.(nextValue);
-            if (!valuesEqual(registration.getValue?.(), nextValue)) {
+            try {
+              await registration.setValue?.(nextValue);
+            } catch (error) {
+              try {
+                await registration.setValue?.(previousValue);
+              } catch {
+                // Preserve the original setter failure for the command result.
+              }
+              throw error;
+            }
+            const appliedValue = registration.getValue?.();
+            if (!valuesEqual(appliedValue, nextValue)) {
+              if (!valuesEqual(appliedValue, previousValue)) {
+                try {
+                  await registration.setValue?.(previousValue);
+                } catch {
+                  // The rejected command still retains its proposal for recovery.
+                }
+              }
               throw new Error('staged_value_rejected');
             }
             const valid = await registration.validate?.();
@@ -830,11 +848,27 @@ export function createControlInteractionRegistry(
           }
           case 'clear': {
             const previousValue = cloneValue(registration.getValue?.());
-            const clearDecision = registration.clear
-              ? await registration.clear()
-              : await registration.setValue?.('');
+            let clearDecision: boolean | undefined;
+            try {
+              const decision = registration.clear
+                ? await registration.clear()
+                : await registration.setValue?.('');
+              clearDecision =
+                decision === true
+                  ? true
+                  : decision === false
+                    ? false
+                    : undefined;
+            } catch (error) {
+              try {
+                await registration.setValue?.(previousValue);
+              } catch {
+                // Preserve the original clear failure for the command result.
+              }
+              throw error;
+            }
             const clearedValue = registration.getValue?.();
-            if (
+            const rejected =
               (clearDecision === false ||
                 (clearDecision !== true &&
                   valuesEqual(clearedValue, previousValue))) &&
@@ -842,8 +876,15 @@ export function createControlInteractionRegistry(
               previousValue !== null &&
               previousValue !== undefined &&
               previousValue !== false &&
-              !(Array.isArray(previousValue) && previousValue.length === 0)
-            ) {
+              !(Array.isArray(previousValue) && previousValue.length === 0);
+            if (rejected) {
+              if (!valuesEqual(clearedValue, previousValue)) {
+                try {
+                  await registration.setValue?.(previousValue);
+                } catch {
+                  // The rejected command still retains its proposal for recovery.
+                }
+              }
               throw new Error('staged_value_rejected');
             }
             const history = undo.get(key) ?? [];
@@ -856,8 +897,23 @@ export function createControlInteractionRegistry(
             const history = undo.get(key) ?? [];
             if (history.length === 0) throw new Error('nothing_to_undo');
             const previousValue = history.at(-1);
-            await registration.setValue?.(previousValue);
+            const currentValue = cloneValue(registration.getValue?.());
+            try {
+              await registration.setValue?.(previousValue);
+            } catch (error) {
+              try {
+                await registration.setValue?.(currentValue);
+              } catch {
+                // Preserve the original setter failure for the command result.
+              }
+              throw error;
+            }
             if (!valuesEqual(registration.getValue?.(), previousValue)) {
+              try {
+                await registration.setValue?.(currentValue);
+              } catch {
+                // Keep history intact so a later human gesture can retry recovery.
+              }
               throw new Error('staged_value_rejected');
             }
             history.pop();

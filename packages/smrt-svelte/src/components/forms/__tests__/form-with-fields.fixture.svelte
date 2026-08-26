@@ -16,6 +16,7 @@ let {
   showAge = true,
   webmcp = false,
   textRequired = false,
+  textDisabled = false,
   ageRequired = false,
   ageMin = undefined,
   ageMax = undefined,
@@ -28,6 +29,7 @@ let {
   showAge?: boolean;
   webmcp?: boolean;
   textRequired?: boolean;
+  textDisabled?: boolean;
   ageRequired?: boolean;
   ageMin?: number;
   ageMax?: number;
@@ -38,7 +40,8 @@ let {
 	<TextInput
 		name="fullname"
 		label="Full name"
-		required={textRequired}
+			required={textRequired}
+			disabled={textDisabled}
 		bind:value={textValue}
 	/>
 	{#if showAge}

@@ -9,6 +9,7 @@ import type {
   ControlOption,
   ControlRuntimeState,
   ControlSensitivity,
+  ControlSubject,
   ControlValueValidationResult,
 } from '@happyvertical/smrt-ui/forms';
 import { getContext, setContext } from 'svelte';
@@ -46,6 +47,7 @@ export interface FieldDefinition {
   getValue: () => unknown;
   /** Optional richer interaction metadata and capabilities. */
   controlId?: string;
+  subject?: ControlSubject;
   interactionKind?: ControlKind;
   sensitivity?: ControlSensitivity;
   readable?: boolean;

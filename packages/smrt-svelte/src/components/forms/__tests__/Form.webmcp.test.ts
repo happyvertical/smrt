@@ -112,6 +112,30 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(onsubmit).not.toHaveBeenCalled();
   });
 
+  it('does not expose or stage disabled rich fields', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithFields, {
+      props: { webmcp: true, textDisabled: true, showAge: false },
+    });
+    await tick();
+    await tick();
+
+    const tool = registered.at(-1);
+    expect(tool?.inputSchema).toMatchObject({ properties: {} });
+    expect(await tool?.execute({ fullname: 'Ada Lovelace' })).toBe(
+      'No reviewable changes provided',
+    );
+    expect(screen.getByRole('textbox', { name: 'Full name' })).toBeDisabled();
+  });
+
   it('keeps the browser path a no-op without WebMCP', async () => {
     const onsubmit = vi.fn();
     const view = render(FormWithFields, { props: { onsubmit } });

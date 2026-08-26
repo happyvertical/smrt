@@ -61,6 +61,9 @@ state machine in smrt-ui; smrt-svelte contributes Provider-backed field
 registration and consumes the shared component rather than duplicating it.
 The generated WebMCP form tool proposes registry stages; it never writes or
 submits field values directly.
+Rich `FieldDefinition` registrations may carry a `subject` for record-qualified
+identity. The Form bridge also folds live DOM disabled/read-only state into the
+registry and omits those fields from WebMCP schemas and staging.
 
 ```svelte
 <script>
