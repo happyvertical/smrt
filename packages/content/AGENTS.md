@@ -149,6 +149,19 @@ Notes:
   `resolveSelectedContentListRows` drops them so a bulk action can never act on
   an unaddressable row. `ContentData` has no expiry or site field, so the
   `site` column is derived from `url`/`source`.
+- Column ids are public identifiers and do not always match the model field, so
+  the descriptor's `fieldName` comes from an explicit map
+  (`publish` → `publish_date`, `updated` → `updatedAt`); the derived `site`
+  column advertises no field at all rather than a nonexistent one.
+- Filter values are normalized per column (`type` via `normalizeContentType`,
+  everything else via `normalizeContentToken`) through
+  `normalizeContentListFilterValue`, and a blank value clears the filter — an
+  `equals ''` filter would silently exclude every row.
+- The card presentations render their own page controls (smrt-ui `Pagination`
+  dispatching `setPage`) and their own polite refresh status, because DataTable
+  — which owns both in compact mode — is not mounted there. A page size arriving
+  from a saved view or a surface command would otherwise strand the operator on
+  page one, and a refresh over retained rows would be silent.
 - `dataSurface` registers the compact table only. Agent addressability for the
   grid and detailed presentations lands with #2456.
 - Compact mode stays mounted for empty and loading results — DataTable renders

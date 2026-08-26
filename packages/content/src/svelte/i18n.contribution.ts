@@ -99,6 +99,8 @@ export const M = defineMessages({
   'content.content_list.selection_count': '{count} selected',
   'content.content_list.clear_selection': 'Clear selection',
   'content.content_list.loading': 'Loading contents...',
+  'content.content_list.refreshing': 'Refreshing contents...',
+  'content.content_list.pagination': 'Content pages',
   'content.content_list.error_title': 'Contents could not be loaded',
   'content.content_list.retry': 'Retry',
   'content.content_list.grid_view': 'Grid View',

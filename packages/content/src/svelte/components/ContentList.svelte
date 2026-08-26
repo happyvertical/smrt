@@ -3,7 +3,7 @@ import { DataTable, type DataTableColumn } from '@happyvertical/smrt-ui/data';
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { Checkbox, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { Button } from '@happyvertical/smrt-ui/ui';
+import { Button, Pagination } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
@@ -141,6 +141,19 @@ $effect(() => {
   untrack(() => controller.clampPage(totalRows));
 });
 
+// The card presentations have to render their own page controls: DataTable —
+// and with it the page navigation — is only mounted in compact mode, so a page
+// size set from a saved view or a surface command would otherwise strand the
+// operator on page one.
+const totalPages = $derived(
+  tableState.pageSize
+    ? Math.max(1, Math.ceil(queryRows.length / tableState.pageSize))
+    : 1,
+);
+const showPagination = $derived(Boolean(tableState.pageSize) && totalPages > 1);
+/** Rows are already rendered, so a load is a refresh rather than a first fill. */
+const refreshing = $derived(loading && pageRows.length > 0);
+
 const selectedRowKeys = $derived(
   new Set(tableState.selectedRowIds.map((rowId) => String(rowId))),
 );
@@ -217,6 +230,10 @@ function togglePageSelection() {
 
 function clearSelection() {
   controller.dispatch({ type: 'setSelectedRows', rowIds: [] });
+}
+
+function handlePageChange(page: number) {
+  controller.dispatch({ type: 'setPage', page });
 }
 
 function handleSearch(value: string) {
@@ -544,6 +561,13 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       </div>
     {/if}
 
+    {#if refreshing && viewMode !== 'compact'}
+      <!-- DataTable announces its own refresh; the card views need their own. -->
+      <p class="content-refreshing" role="status" aria-live="polite">
+        {t(M['content.content_list.refreshing'])}
+      </p>
+    {/if}
+
     {#if viewMode === 'compact'}
       <!--
         The compact table stays mounted for empty and loading results: it owns
@@ -721,6 +745,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             </div>
           </div>
         {/each}
+      </div>
+    {/if}
+
+    {#if showPagination && viewMode !== 'compact'}
+      <div class="content-pagination">
+        <Pagination
+          currentPage={tableState.page}
+          {totalPages}
+          onPageChange={handlePageChange}
+          aria-label={t(M['content.content_list.pagination'])}
+        />
       </div>
     {/if}
   {/if}
@@ -1156,6 +1191,18 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     border: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.05));
+  }
+
+  .content-refreshing {
+    margin: 0 0 0.75rem;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+
+  .content-pagination {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.25rem;
   }
 
   .table-empty-state {

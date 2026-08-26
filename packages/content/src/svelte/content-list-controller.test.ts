@@ -167,6 +167,37 @@ describe('content list controller', () => {
     ).toBe('published');
   });
 
+  it('clears a filter instead of matching the empty string for a blank value', () => {
+    const controller = createContentListController({ type: 'article' });
+
+    applyContentListFilter(controller, CONTENT_LIST_TYPE_FILTER_ID, '   ');
+
+    expect(controller.getState().filters).toEqual([]);
+    expect(selectContentListRows(rowsOf(), controller.getState())).toHaveLength(
+      3,
+    );
+  });
+
+  it('normalizes an applied filter exactly as the seeded filter does', () => {
+    const seeded = createContentListController({
+      type: '  Article ',
+      status: ' Published ',
+    });
+    const applied = createContentListController();
+
+    applyContentListFilter(applied, CONTENT_LIST_TYPE_FILTER_ID, '  Article ');
+    applyContentListFilter(
+      applied,
+      CONTENT_LIST_STATUS_FILTER_ID,
+      ' Published ',
+    );
+
+    expect(applied.getState().filters).toEqual(seeded.getState().filters);
+    expect(
+      readContentListFilter(applied.getState(), CONTENT_LIST_TYPE_FILTER_ID),
+    ).toBe('article');
+  });
+
   it('builds declarative filters only for the values that are set', () => {
     expect(contentListFilters({ type: null, status: null })).toEqual([]);
     expect(contentListFilters({ type: 'Document' })).toEqual([
@@ -329,6 +360,24 @@ describe('content list data surface descriptor', () => {
     });
     expect(registry.inspect(descriptor.identity)?.descriptor.rowKey).toBe('id');
     unregister();
+  });
+
+  it('names the real ContentData field behind every published column', () => {
+    const descriptor = buildContentListSurfaceDescriptor();
+    const fieldNames = Object.fromEntries(
+      descriptor.columns.map((column) => [column.id, column.fieldName]),
+    );
+    const [row] = rowsOf();
+
+    expect(fieldNames.publish).toBe('publish_date');
+    expect(fieldNames.updated).toBe('updatedAt');
+    // A published field name must exist on the content the column reads.
+    for (const column of descriptor.columns) {
+      if (!column.fieldName || column.id === descriptor.rowKey) continue;
+      expect(Object.hasOwn(row.content, column.fieldName)).toBe(true);
+    }
+    // `site` is derived from url/source, so it advertises no field at all.
+    expect(fieldNames.site).toBeUndefined();
   });
 
   it('only declares columns the compact table renders', () => {

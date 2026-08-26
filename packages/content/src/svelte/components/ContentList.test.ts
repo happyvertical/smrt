@@ -646,6 +646,62 @@ describe('ContentList empty results', () => {
   });
 });
 
+describe('ContentList paging and refreshing in the card presentations', () => {
+  it('renders page controls that navigate the card rows', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await registry.execute({
+      version: 1,
+      commandId: 'page-size-one',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page-size',
+      payload: { pageSize: 1 },
+    });
+    flushSync();
+
+    switchTo(target, 'Grid View');
+
+    const pages = target.querySelector('nav');
+    expect(pages).toBeTruthy();
+    expect(pages?.getAttribute('aria-label')).toBe('Content pages');
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+
+    const nextPage = Array.from(pages?.querySelectorAll('button') ?? []).find(
+      (button) =>
+        /next|2/i.test(
+          `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`,
+        ),
+    );
+    click(nextPage as HTMLButtonElement);
+
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+  });
+
+  it('announces a refresh while the card rows stay on screen', () => {
+    const target = renderList({ loading: true });
+
+    const status = target.querySelector('[role="status"]');
+    expect(status?.textContent?.trim()).toBe('Refreshing contents...');
+    expect(status?.getAttribute('aria-live')).toBe('polite');
+    expect(target.querySelectorAll('.content-card')).toHaveLength(2);
+  });
+
+  it('keeps the initial-load panel when no rows are available yet', () => {
+    const target = renderList({ contents: [], loading: true });
+
+    expect(target.querySelector('[role="status"]')?.textContent?.trim()).toBe(
+      'Loading contents...',
+    );
+  });
+});
+
 describe('ContentList accessibility', () => {
   it('names every icon-only control', () => {
     const target = renderList({ defaultViewMode: 'compact' });

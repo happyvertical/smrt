@@ -207,6 +207,25 @@ const DEFAULT_COLUMN_LABELS: Record<ContentListColumnId, string> = {
   description: 'Description',
 };
 
+/**
+ * The `ContentData` field each published column reads. Column ids are stable
+ * public identifiers and do not always match the field name, so the mapping is
+ * explicit — advertising a field that does not exist would mislead an adapter
+ * that maps a descriptor onto the model. `site` is derived from `url`/`source`
+ * and therefore names no single field.
+ */
+const CONTENT_LIST_COLUMN_FIELD_NAMES: Partial<
+  Record<ContentListColumnId, string>
+> = {
+  type: 'type',
+  title: 'title',
+  author: 'author',
+  status: 'status',
+  state: 'state',
+  publish: 'publish_date',
+  updated: 'updatedAt',
+};
+
 const DEFAULT_ACTION_LABELS: Record<ContentListActionId, string> = {
   view: 'View',
   edit: 'Edit',
@@ -465,24 +484,43 @@ export function buildContentListColumns(
   ];
 }
 
+/**
+ * One normalizer per filter column, so a filter built by the toolbar, by the
+ * `type` lock, and by a restored view all compare equal.
+ */
+export function normalizeContentListFilterValue(
+  columnId: string,
+  value: string,
+): string {
+  return columnId === CONTENT_LIST_TYPE_FILTER_ID
+    ? normalizeContentType(value)
+    : normalizeContentToken(value);
+}
+
 /** Builds the declarative filter set for the two toolbar filters. */
 export function contentListFilters(values: {
   type?: string | null;
   status?: string | null;
 }): DataTableFilter[] {
   const filters: DataTableFilter[] = [];
-  if (values.type) {
+  if (values.type?.trim()) {
     filters.push({
       columnId: CONTENT_LIST_TYPE_FILTER_ID,
       operator: 'equals',
-      value: normalizeContentType(values.type),
+      value: normalizeContentListFilterValue(
+        CONTENT_LIST_TYPE_FILTER_ID,
+        values.type,
+      ),
     });
   }
-  if (values.status) {
+  if (values.status?.trim()) {
     filters.push({
       columnId: CONTENT_LIST_STATUS_FILTER_ID,
       operator: 'equals',
-      value: normalizeContentToken(values.status),
+      value: normalizeContentListFilterValue(
+        CONTENT_LIST_STATUS_FILTER_ID,
+        values.status,
+      ),
     });
   }
   return filters;
@@ -502,6 +540,9 @@ export function readContentListFilter(
 /**
  * Replaces one filter while preserving the others, so locking the type filter
  * never discards a status the operator chose.
+ *
+ * A blank value clears the filter: normalizing whitespace into an `equals ''`
+ * filter would silently exclude every row instead.
  */
 export function applyContentListFilter(
   controller: DataTableController,
@@ -511,13 +552,14 @@ export function applyContentListFilter(
   const current = controller
     .getState()
     .filters.filter((filter) => filter.columnId !== columnId);
-  const next = value
+  const requested = typeof value === 'string' ? value.trim() : '';
+  const next = requested
     ? [
         ...current,
         {
           columnId,
           operator: 'equals' as const,
-          value: normalizeContentToken(value),
+          value: normalizeContentListFilterValue(columnId, requested),
         },
       ]
     : current;
@@ -739,11 +781,12 @@ function surfaceColumn(
     'project',
   ];
   if (column.searchable !== false) capabilities.push('search');
+  const fieldName = CONTENT_LIST_COLUMN_FIELD_NAMES[id];
   return {
     id,
     label: labels[id] ?? DEFAULT_COLUMN_LABELS[id],
     capabilities,
-    fieldName: id === 'publish' ? 'publish_date' : id,
+    ...(fieldName ? { fieldName } : {}),
     visibility: 'basic',
     order,
     role: column.role === 'status' ? 'status' : 'data',
