@@ -382,12 +382,19 @@ describe('Form WebMCP staged-edit intent', () => {
     const policyStartedPromise = new Promise<void>((resolve) => {
       policyStarted = resolve;
     });
+    const policyValues: unknown[] = [];
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
       policy: async (command) => {
         if (command.action === 'stage') {
-          policyStarted?.();
-          await policyBlocked;
+          policyValues.push(command.value);
+          if (policyValues.length === 1) {
+            policyStarted?.();
+            await policyBlocked;
+          }
+          if (String(command.value).includes('Forbidden')) {
+            return { allowed: false, reason: 'forbidden_content' };
+          }
         }
         return { allowed: true };
       },
@@ -420,6 +427,19 @@ describe('Form WebMCP staged-edit intent', () => {
       value: 'Existing human\nProposed',
       stale: false,
     });
+    expect(policyValues).toEqual([
+      'Existing\nProposed',
+      'Existing human\nProposed',
+    ]);
+
+    expect(await registered.at(-1)?.execute({ notes: 'Forbidden' })).toBe(
+      'Staged 0 changes for review; 1 rejected',
+    );
+    expect(policyValues.at(-1)).toBe('Existing human\nForbidden');
+    expect(
+      registry.list().find((item) => item.identity.controlId === 'notes')?.state
+        .staged?.value,
+    ).toBe('Existing human\nProposed');
   });
 
   it('rejects a non-object date-range proposal without delayed mutation', async () => {

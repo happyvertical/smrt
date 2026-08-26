@@ -838,7 +838,7 @@ export function createControlInteractionRegistry(
           previousUserEdit,
         );
       };
-      const publicCommand: ControlCommand =
+      let publicCommand: ControlCommand =
         redactsValue(registration) &&
         (command.action === 'stage' || command.action === 'apply')
           ? cloneValue({ ...command, value: undefined })
@@ -852,7 +852,9 @@ export function createControlInteractionRegistry(
       };
 
       try {
-        const snapshot = snapshotOf(registration);
+        let snapshot = snapshotOf(registration);
+        let preparedStageValue: unknown;
+        let preparedStageBaseValue: unknown;
         const commandUserEditSnapshot =
           command.action === 'apply' ||
           command.action === 'clear' ||
@@ -860,20 +862,60 @@ export function createControlInteractionRegistry(
             ? (cloneValue(registrationWithEdits.getUserEditSnapshot?.()) ??
               null)
             : null;
-        const invariantDecision = defaultPolicy(
+        let invariantDecision = defaultPolicy(
           command,
           publicContext,
           snapshot,
           publicContext.localGesture === true,
         );
-        const policyDecision =
-          invariantDecision.allowed && options.policy
-            ? await options.policy(
-                cloneValue(publicCommand),
-                cloneValue(publicContext),
-                cloneValue(snapshot),
-              )
-            : invariantDecision;
+        let policyDecision = invariantDecision;
+        if (invariantDecision.allowed && command.action === 'stage') {
+          // A control may resolve a proposal relative to its current value (for
+          // example, append-mode textareas). Custom policy must inspect the
+          // exact resolved value that will be staged. If a human changes the
+          // control while policy awaits, retry against the new stable base.
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            preparedStageBaseValue = cloneValue(registration.getValue?.());
+            preparedStageValue = registration.prepareValue
+              ? registration.prepareValue(command.value)
+              : command.value;
+            snapshot = snapshotOf(registration);
+            publicCommand = redactsValue(registration)
+              ? cloneValue({ ...command, value: undefined })
+              : cloneValue({ ...command, value: preparedStageValue });
+            policyDecision = options.policy
+              ? await options.policy(
+                  cloneValue(publicCommand),
+                  cloneValue(publicContext),
+                  cloneValue(snapshot),
+                )
+              : invariantDecision;
+            if (registrations.get(key) !== registration) {
+              throw new Error('staged_value_stale');
+            }
+            invariantDecision = defaultPolicy(
+              command,
+              publicContext,
+              snapshotOf(registration),
+              publicContext.localGesture === true,
+            );
+            if (!invariantDecision.allowed) {
+              throw new Error(invariantDecision.reason ?? 'denied');
+            }
+            if (
+              valuesEqual(preparedStageBaseValue, registration.getValue?.())
+            ) {
+              break;
+            }
+            if (attempt === 7) throw new Error('staged_value_stale');
+          }
+        } else if (invariantDecision.allowed && options.policy) {
+          policyDecision = await options.policy(
+            cloneValue(publicCommand),
+            cloneValue(publicContext),
+            cloneValue(snapshot),
+          );
+        }
         if (registrations.get(key) !== registration) {
           throw new Error('staged_value_stale');
         }
@@ -944,12 +986,10 @@ export function createControlInteractionRegistry(
             stagedRevision += 1;
             {
               const revision = stagedRevision;
-              const preparedValue = registration.prepareValue
-                ? registration.prepareValue(command.value)
-                : command.value;
+              const preparedValue = preparedStageValue;
               const entry: InternalStagedEntry = {
                 value: cloneValue(preparedValue),
-                baseValue: cloneValue(registration.getValue?.()),
+                baseValue: cloneValue(preparedStageBaseValue),
                 provenance: {
                   source: context.source,
                   actorId: context.actorId,

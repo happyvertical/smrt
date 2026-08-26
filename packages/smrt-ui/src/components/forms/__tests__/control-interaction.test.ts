@@ -340,6 +340,71 @@ describe('control interaction registry', () => {
     expect(value).toBe('Ada');
   });
 
+  it('rechecks prepared stage values after an asynchronous policy decision', async () => {
+    let value = 'Existing';
+    let releasePolicy: (() => void) | undefined;
+    let policyStarted: (() => void) | undefined;
+    const policyGate = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    const policyValues: unknown[] = [];
+    const registry = createControlInteractionRegistry({
+      policy: async (command) => {
+        if (command.action === 'stage') {
+          policyValues.push(command.value);
+          if (policyValues.length === 1) {
+            policyStarted?.();
+            await policyGate;
+          }
+          if (String(command.value).includes('Forbidden')) {
+            return { allowed: false, reason: 'forbidden_content' };
+          }
+        }
+        return { allowed: true };
+      },
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'textarea' },
+      getValue: () => value,
+      prepareValue: (proposal) => `${value}\n${String(proposal)}`,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+
+    const staging = registry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    await started;
+    value = 'Existing human';
+    releasePolicy?.();
+
+    expect(await staging).toMatchObject({ ok: true });
+    expect(policyValues).toEqual([
+      'Existing\nProposed',
+      'Existing human\nProposed',
+    ]);
+    expect(registry.get(identity)?.state.staged?.value).toBe(
+      'Existing human\nProposed',
+    );
+
+    expect(
+      await registry.execute(
+        { action: 'stage', identity, value: 'Forbidden' },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: false, reason: 'forbidden_content' });
+    expect(policyValues.at(-1)).toBe('Existing human\nForbidden');
+    expect(registry.get(identity)?.state.staged?.value).toBe(
+      'Existing human\nProposed',
+    );
+  });
+
   it('rechecks disabled state after asynchronous proposal validation', async () => {
     let disabled = false;
     let blockValidation = false;
