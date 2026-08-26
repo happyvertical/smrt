@@ -1157,8 +1157,11 @@ function buildActionOptionsLoad(
               '  ) as ActionArgs[0];',
             ]
           : [
+              '  const searchParams = new URL(request.url).searchParams;',
               '  const options = Object.fromEntries(',
-              '    new URL(request.url).searchParams.entries(),',
+              '    [...searchParams.entries()].filter(',
+              "      ([key]) => key !== '__smrt_options',",
+              '    ),',
               '  ) as ActionOptions;',
             ]),
         '',
