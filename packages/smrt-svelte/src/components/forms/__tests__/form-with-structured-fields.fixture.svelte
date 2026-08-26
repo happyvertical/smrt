@@ -20,6 +20,8 @@ let {
   minDate = undefined,
   maxDate = undefined,
   dateDisabled = false,
+  measurementName = 'measurement',
+  showCollidingSibling = false,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -37,13 +39,15 @@ let {
   minDate?: string;
   maxDate?: string;
   dateDisabled?: boolean;
+  measurementName?: string;
+  showCollidingSibling?: boolean;
 } = $props();
 </script>
 
 <Form {onsubmit} {webmcp} {interactionRegistry} formId="structured-fields">
 	<fieldset disabled={fieldsetDisabled}>
 	<MeasurementInput
-		name="measurement"
+		name={measurementName}
 		label="Measurement"
 		required={structuredRequired}
 		step={measurementStep}
@@ -67,5 +71,6 @@ let {
 		onchange={onaddresschange}
 		/>
 	</fieldset>
+	{#if showCollidingSibling}<input name="{measurementName}_note" />{/if}
 	<button type="submit">Submit</button>
 </Form>

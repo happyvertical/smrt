@@ -100,6 +100,74 @@ describe('Form WebMCP staged-edit intent', () => {
     );
   });
 
+  it('preserves staged state when an unrelated sibling field mounts', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const view = render(FormWithFields, {
+      props: { webmcp: true, interactionRegistry: registry },
+    });
+    await tick();
+    await tick();
+    expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
+      'Staged 1 change for review',
+    );
+
+    await view.rerender({
+      webmcp: true,
+      interactionRegistry: registry,
+      showMoney: true,
+    });
+    await tick();
+
+    expect(
+      registry
+        .list()
+        .find((snapshot) => snapshot.identity.controlId === 'fullname')?.state
+        .staged?.value,
+    ).toBe('Ada');
+
+    const fullname = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'fullname');
+    if (!fullname) throw new Error('fullname was not registered');
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'apply',
+            identity: fullname.identity,
+            revision: fullname.state.staged?.revision,
+          },
+        ],
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    await view.rerender({
+      webmcp: true,
+      interactionRegistry: registry,
+      showMoney: false,
+    });
+    await tick();
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [{ action: 'undo', identity: fullname.identity }],
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(fullname.identity)?.state.value).toBe('');
+  });
+
   it('rejects invalid rich numeric proposals before mutation callbacks run', async () => {
     const numberChanged = vi.fn();
     const measurementChanged = vi.fn();
@@ -223,6 +291,42 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toMatchObject({ ok: false });
     await Promise.resolve();
     expect(datesChanged).not.toHaveBeenCalled();
+  });
+
+  it('affirms idempotent clears for empty composite fields', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithStructuredFields, {
+      props: {
+        interactionRegistry: registry,
+        structuredRequired: false,
+      },
+    });
+    await tick();
+
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'clear',
+            identity: { formId: 'structured-fields', controlId: 'dates' },
+          },
+          {
+            action: 'clear',
+            identity: {
+              formId: 'structured-fields',
+              controlId: 'measurement',
+            },
+          },
+        ],
+        new Event('click'),
+      ),
+    ).toMatchObject({
+      ok: true,
+      results: [{ ok: true }, { ok: true }],
+    });
   });
 
   it('rejects invalid structured proposals before mutation callbacks run', async () => {
@@ -769,6 +873,43 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toEqual({ city: 'Edmonton', country: 'CA' });
   });
 
+  it('updates configured rich-field schemas after prop changes', async () => {
+    const registered: Array<{ inputSchema: Record<string, unknown> }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const view = render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        addressFields: ['city'],
+        measurementUnits: ['m'],
+      },
+    });
+    await tick();
+    await tick();
+
+    await view.rerender({
+      webmcp: true,
+      addressFields: ['country'],
+      measurementUnits: ['ft'],
+    });
+    await tick();
+    await tick();
+
+    const schema = registered.at(-1)?.inputSchema as {
+      properties: Record<
+        string,
+        { properties: Record<string, { enum?: string[] }> }
+      >;
+    };
+    expect(schema.properties.address.properties).toEqual({
+      country: { type: 'string' },
+    });
+    expect(schema.properties.measurement.properties.unit.enum).toEqual(['ft']);
+  });
+
   it('allows partial payloads for optional structured fields', async () => {
     const registered: Array<{
       inputSchema: Record<string, unknown>;
@@ -875,6 +1016,33 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await tool?.execute({ address: { city: 'Edmonton' } })).toBe(
       'No reviewable changes provided',
     );
+  });
+
+  it('does not let a colliding sibling name mask a disabled rich field', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        fieldsetDisabled: true,
+        measurementName: 'user',
+        showCollidingSibling: true,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
+    expect(
+      await registered.at(-1)?.execute({ user: { value: 2, unit: 'm' } }),
+    ).toBe('No reviewable changes provided');
   });
 
   it('removes a smrt-mode date range when its fieldset becomes disabled', async () => {

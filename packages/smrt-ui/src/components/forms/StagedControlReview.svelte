@@ -178,6 +178,7 @@ function editedValue(snapshot: ControlSnapshot): unknown {
   const draft = drafts[draftKeyOf(snapshot)] ?? '';
   const original = staged.value;
   if (typeof original === 'number') {
+    if (draft.trim().length === 0) throw new Error('invalid_number');
     const number = Number(draft);
     if (!Number.isFinite(number)) throw new Error('invalid_number');
     return number;
@@ -326,6 +327,7 @@ async function discardOne(
 }
 
 async function applyAll(event: MouseEvent): Promise<void> {
+  const total = snapshots.length;
   const eligible = snapshots.filter(
     (snapshot) =>
       !snapshot.state.staged?.stale && snapshot.state.staged?.valid !== false,
@@ -342,11 +344,12 @@ async function applyAll(event: MouseEvent): Promise<void> {
   const completed = batch.results.filter((result) => result.ok).length;
   status = text.batchStatus
     .replace('{completed}', String(completed))
-    .replace('{total}', String(snapshots.length));
+    .replace('{total}', String(total));
   if (completed > 0 && eligible[0]) await restoreReviewFocus(eligible[0], 0);
 }
 
 async function discardAll(event: MouseEvent): Promise<void> {
+  const total = snapshots.length;
   const eligible = snapshots.filter(
     (snapshot) =>
       !snapshot.state.staged?.stale && snapshot.state.staged?.valid !== false,
@@ -359,7 +362,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
   const completed = batch.results.filter((result) => result.ok).length;
   status = text.batchStatus
     .replace('{completed}', String(completed))
-    .replace('{total}', String(snapshots.length));
+    .replace('{total}', String(total));
   if (completed > 0 && eligible[0]) await restoreReviewFocus(eligible[0], 0);
 }
 </script>

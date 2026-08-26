@@ -1770,6 +1770,165 @@ describe('control interaction registry', () => {
     expect(replacementValue).toBe('Katherine');
   });
 
+  it('reconciles a superseded async registration through the shared current model', async () => {
+    let value = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        setterStarted?.();
+        await setterBlocked;
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Ada');
+  });
+
+  it('reconciles a throwing superseded setter through the current registration', async () => {
+    let value = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async () => {
+        setterStarted?.();
+        await setterBlocked;
+        value = 'partial';
+        throw new Error('setter_failed');
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'setter_failed',
+    });
+    expect(value).toBe('Ada');
+  });
+
+  it('uses form-recorded user edits during async policy waits', async () => {
+    let value = 'Ada';
+    let releasePolicy: (() => void) | undefined;
+    let policyStarted: (() => void) | undefined;
+    const policyBlocked = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const policyStartedPromise = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    const clear = vi.fn(() => {
+      value = '';
+      return true;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: async (command) => {
+        if (command.action === 'clear') {
+          policyStarted?.();
+          await policyBlocked;
+        }
+        return { allowed: true };
+      },
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      clear,
+    });
+
+    const clearing = executeLocalControlCommand(
+      registry,
+      { action: 'clear', identity },
+      new Event('click'),
+    );
+    await policyStartedPromise;
+    value = 'Katherine';
+    registry.recordUserEdit?.(identity);
+    releasePolicy?.();
+
+    expect(await clearing).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(clear).not.toHaveBeenCalled();
+    expect(value).toBe('Katherine');
+  });
+
   it('does not commit successful async clear or undo over newer human edits', async () => {
     let value = 'Ada';
     let userEditValue = value;

@@ -308,22 +308,34 @@ onMount(() => {
         }
       },
       getValue: () => (value !== null ? { value, unit } : null),
-      unit,
+      clear: () => {
+        updateValue(null);
+        return true;
+      },
+      get unit() {
+        return unit;
+      },
       getState: () => ({ disabled }),
-      constraints: { required, min, max },
-      webMcpSchema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          value: {
-            type: 'number',
-            ...(min !== undefined ? { minimum: min } : {}),
-            ...(max !== undefined ? { maximum: max } : {}),
-            ...(Number.isFinite(step) && step > 0 ? { multipleOf: step } : {}),
+      get constraints() {
+        return { required, min, max, step };
+      },
+      get webMcpSchema() {
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            value: {
+              type: 'number',
+              ...(min !== undefined ? { minimum: min } : {}),
+              ...(max !== undefined ? { maximum: max } : {}),
+              ...(Number.isFinite(step) && step > 0
+                ? { multipleOf: step }
+                : {}),
+            },
+            unit: { type: 'string', enum: [...units] },
           },
-          unit: { type: 'string', enum: [...units] },
-        },
-        ...(required ? { required: ['value', 'unit'] } : {}),
+          ...(required ? { required: ['value', 'unit'] } : {}),
+        };
       },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined || candidate === '') {

@@ -186,6 +186,8 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
 }
 
 function fieldControls(field: FieldDefinition) {
+  const measurementUnitName =
+    field.type === 'measurement' ? `${field.name}_unit` : undefined;
   return formElement
     ? Array.from(formElement.elements).filter(
         (
@@ -200,10 +202,34 @@ function fieldControls(field: FieldDefinition) {
           control.type !== 'hidden' &&
           (control.name === field.name ||
             control.name.startsWith(`${field.name}[`) ||
-            control.name.startsWith(`${field.name}_`)),
+            control.name === measurementUnitName),
       )
     : [];
 }
+
+function recordDirectUserEdit(event: Event) {
+  if (!event.isTrusted) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const field = Array.from(fields.values()).find((candidate) =>
+    fieldControls(candidate).includes(
+      target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+    ),
+  );
+  if (!field) return;
+  resolvedInteractionRegistry.recordUserEdit?.({
+    formId: resolvedFormId,
+    controlId: field.controlId ?? field.name,
+    subject: resolvedFieldSubject(field),
+  });
+}
+
+$effect(() => {
+  const form = formElement;
+  if (!form) return;
+  form.addEventListener('click', recordDirectUserEdit);
+  return () => form.removeEventListener('click', recordDirectUserEdit);
+});
 
 function registerInteraction(
   registry: ControlInteractionRegistry,
@@ -224,18 +250,38 @@ function registerInteraction(
     identity,
     metadata: {
       kind: interactionKind(field),
-      label: field.label,
-      description: field.description,
-      sensitivity: field.sensitivity ?? 'public',
-      readable: field.readable,
-      writable: field.writable,
-      constraints: field.constraints,
-      options: field.options,
-      unit: field.unit,
+      get label() {
+        return field.label;
+      },
+      get description() {
+        return field.description;
+      },
+      get sensitivity() {
+        return field.sensitivity ?? 'public';
+      },
+      get readable() {
+        return field.readable;
+      },
+      get writable() {
+        return field.writable;
+      },
+      get constraints() {
+        return field.constraints;
+      },
+      get options() {
+        return field.options;
+      },
+      get unit() {
+        return field.unit;
+      },
     },
     getValue: field.getValue,
     setValue: field.setValue,
-    clear: field.clear ?? (() => field.setValue('')),
+    clear:
+      field.clear ??
+      (() => {
+        field.setValue('');
+      }),
     focus:
       field.focus ??
       (() =>
@@ -1089,6 +1135,8 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   class="smrt-form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
+  oninput={recordDirectUserEdit}
+  onchange={recordDirectUserEdit}
   {method}
   {action}
 >

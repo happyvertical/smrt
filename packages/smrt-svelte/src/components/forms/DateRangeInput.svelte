@@ -221,29 +221,37 @@ onMount(() => {
           .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
+      clear: () => {
+        updateValue('', '');
+        return true;
+      },
       getState: () => ({
         disabled: disabled || primaryControl?.matches(':disabled') === true,
       }),
-      constraints: { required },
+      get constraints() {
+        return { required };
+      },
       focus: () => primaryControl?.focus(),
-      webMcpSchema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          startDate: {
-            type: 'string',
-            format: 'date',
-            ...(minDate ? { formatMinimum: minDate } : {}),
-            ...(maxDate ? { formatMaximum: maxDate } : {}),
+      get webMcpSchema() {
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            startDate: {
+              type: 'string',
+              format: 'date',
+              ...(minDate ? { formatMinimum: minDate } : {}),
+              ...(maxDate ? { formatMaximum: maxDate } : {}),
+            },
+            endDate: {
+              type: 'string',
+              format: 'date',
+              ...(minDate ? { formatMinimum: minDate } : {}),
+              ...(maxDate ? { formatMaximum: maxDate } : {}),
+            },
           },
-          endDate: {
-            type: 'string',
-            format: 'date',
-            ...(minDate ? { formatMinimum: minDate } : {}),
-            ...(maxDate ? { formatMaximum: maxDate } : {}),
-          },
-        },
-        ...(required ? { required: ['startDate', 'endDate'] } : {}),
+          ...(required ? { required: ['startDate', 'endDate'] } : {}),
+        };
       },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined) return !required;

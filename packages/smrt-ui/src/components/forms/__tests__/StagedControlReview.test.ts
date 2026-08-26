@@ -185,6 +185,48 @@ describe('StagedControlReview', () => {
     expect(screen.getByRole('spinbutton', { name: 'Score' })).toHaveValue(1);
   });
 
+  it('does not coerce an emptied numeric draft to zero', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    const numberIdentity = { formId: 'profile', controlId: 'score' };
+    await registry.execute(
+      { action: 'stage', identity: numberIdentity, value: 5 },
+      { source: 'agent' },
+    );
+    const proposal = await screen.findByRole('textbox', {
+      name: 'Edit proposed value for Score',
+    });
+    await userEvent.clear(proposal);
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(screen.getByRole('spinbutton', { name: 'Score' })).toHaveValue(1);
+    expect(registry.get(numberIdentity)?.state.staged?.value).toBe(5);
+  });
+
+  it('announces the pre-batch proposal total', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'profile', controlId: 'score' },
+        value: 'abc',
+      },
+      { source: 'agent' },
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    expect(
+      screen.getByText('Processed 1 of 2 proposed changes.'),
+    ).toBeInTheDocument();
+  });
+
   it('marks competing user edits stale and lets the human discard them', async () => {
     const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });

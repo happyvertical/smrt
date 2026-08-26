@@ -249,6 +249,8 @@ export interface ControlInteractionEvent {
 export interface ControlInteractionRegistry {
   register(registration: ControlRegistration): () => void;
   unregister(identity: ControlIdentity): void;
+  /** Record a direct human edit observed by the owning form. */
+  recordUserEdit?(identity: ControlIdentity): void;
   list(formId?: string): ControlSnapshot[];
   get(identity: ControlIdentity): ControlSnapshot | undefined;
   execute(
@@ -562,6 +564,7 @@ export function createControlInteractionRegistry(
   const registrations = new Map<string, ControlRegistration>();
   const staged = new Map<string, InternalStagedEntry>();
   const undo = new Map<string, InternalUndoEntry[]>();
+  const userEdits = new Map<string, { revision: number; value: unknown }>();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
   const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
@@ -569,6 +572,47 @@ export function createControlInteractionRegistry(
   const consumedLocalGestureEvents = new WeakSet<Event>();
   const mutationQueues = new Map<string, Promise<void>>();
   let stagedRevision = 0;
+
+  const editAwareRegistration = (
+    key: string,
+    registration: ControlRegistration,
+  ): ControlRegistration => ({
+    ...registration,
+    getUserEditSnapshot: () =>
+      registration.getUserEditSnapshot?.() ??
+      userEdits.get(key) ?? {
+        revision: 0,
+        value: registration.getValue?.(),
+      },
+  });
+
+  const reconcileSupersededRegistration = async (
+    key: string,
+    registration: ControlRegistration,
+    previousValue: unknown,
+  ): Promise<boolean> => {
+    const current = registrations.get(key);
+    if (!current || current === registration) return false;
+    let oldValue: unknown;
+    let currentValue: unknown;
+    try {
+      oldValue = registration.getValue?.();
+      currentValue = current.getValue?.();
+    } catch {
+      return true;
+    }
+    if (!valuesEqual(oldValue, currentValue)) return true;
+    const currentWithEdits = editAwareRegistration(key, current);
+    const currentUserEdit =
+      current.getUserEditSnapshot?.() ?? userEdits.get(key);
+    const restoreValue = currentUserEdit?.value ?? previousValue;
+    if (currentWithEdits.restoreValue) {
+      await currentWithEdits.restoreValue(cloneValue(restoreValue));
+    } else {
+      await currentWithEdits.setValue?.(cloneValue(restoreValue));
+    }
+    return true;
+  };
 
   const enqueueMutation = <T>(key: string, operation: () => Promise<T>) => {
     const previous = mutationQueues.get(key) ?? Promise.resolve();
@@ -677,6 +721,7 @@ export function createControlInteractionRegistry(
         registrations.delete(key);
         staged.delete(key);
         undo.delete(key);
+        userEdits.delete(key);
         emit({ type: 'unregistered', identity: registration.identity });
       };
     },
@@ -686,7 +731,19 @@ export function createControlInteractionRegistry(
       if (!registrations.delete(key)) return;
       staged.delete(key);
       undo.delete(key);
+      userEdits.delete(key);
       emit({ type: 'unregistered', identity });
+    },
+
+    recordUserEdit(identity) {
+      const key = identityKey(identity);
+      const registration = registrations.get(key);
+      if (!registration) return;
+      const previous = userEdits.get(key);
+      userEdits.set(key, {
+        revision: (previous?.revision ?? 0) + 1,
+        value: cloneValue(registration.getValue?.()),
+      });
     },
 
     list(formId) {
@@ -717,6 +774,28 @@ export function createControlInteractionRegistry(
       }
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
+      const registrationWithEdits = editAwareRegistration(key, registration);
+      const restoreMutationValue = async (
+        previousValue: unknown,
+        previousUserEdit: ReturnType<
+          NonNullable<ControlRegistration['getUserEditSnapshot']>
+        > | null,
+      ) => {
+        if (
+          await reconcileSupersededRegistration(
+            key,
+            registration,
+            previousValue,
+          )
+        ) {
+          return;
+        }
+        await restoreRegistrationValue(
+          registrationWithEdits,
+          previousValue,
+          previousUserEdit,
+        );
+      };
       const publicCommand: ControlCommand =
         redactsValue(registration) &&
         (command.action === 'stage' || command.action === 'apply')
@@ -736,7 +815,8 @@ export function createControlInteractionRegistry(
           command.action === 'apply' ||
           command.action === 'clear' ||
           command.action === 'undo'
-            ? (cloneValue(registration.getUserEditSnapshot?.()) ?? null)
+            ? (cloneValue(registrationWithEdits.getUserEditSnapshot?.()) ??
+              null)
             : null;
         const invariantDecision = defaultPolicy(
           command,
@@ -757,7 +837,7 @@ export function createControlInteractionRegistry(
         }
         if (
           commandUserEditSnapshot &&
-          userEditSuperseded(registration, commandUserEditSnapshot)
+          userEditSuperseded(registrationWithEdits, commandUserEditSnapshot)
         ) {
           throw new Error('staged_value_stale');
         }
@@ -913,7 +993,7 @@ export function createControlInteractionRegistry(
             }
             if (
               commandUserEditSnapshot &&
-              userEditSuperseded(registration, commandUserEditSnapshot)
+              userEditSuperseded(registrationWithEdits, commandUserEditSnapshot)
             ) {
               throw new Error('staged_value_stale');
             }
@@ -950,11 +1030,7 @@ export function createControlInteractionRegistry(
               await setterResult;
             } catch (error) {
               try {
-                await restoreRegistrationValue(
-                  registration,
-                  previousValue,
-                  userEditSnapshot,
-                );
+                await restoreMutationValue(previousValue, userEditSnapshot);
               } catch {
                 // Preserve the original setter failure for the command result.
               }
@@ -962,15 +1038,9 @@ export function createControlInteractionRegistry(
             }
             if (
               registrations.get(key) !== registration ||
-              userEditSuperseded(registration, userEditSnapshot)
+              userEditSuperseded(registrationWithEdits, userEditSnapshot)
             ) {
-              if (registrations.get(key) === registration) {
-                await restoreRegistrationValue(
-                  registration,
-                  previousValue,
-                  userEditSnapshot,
-                );
-              }
+              await restoreMutationValue(previousValue, userEditSnapshot);
               throw new Error('staged_value_stale');
             }
             const appliedValue = cloneValue(registration.getValue?.());
@@ -984,7 +1054,7 @@ export function createControlInteractionRegistry(
               const valid = await registration.validate?.();
               if (
                 registrations.get(key) !== registration ||
-                userEditSuperseded(registration, userEditSnapshot)
+                userEditSuperseded(registrationWithEdits, userEditSnapshot)
               ) {
                 throw new Error('staged_value_stale');
               }
@@ -1009,11 +1079,7 @@ export function createControlInteractionRegistry(
               }
               if (valuesEqual(currentValue, appliedValue)) {
                 try {
-                  await restoreRegistrationValue(
-                    registration,
-                    previousValue,
-                    userEditSnapshot,
-                  );
+                  await restoreMutationValue(previousValue, userEditSnapshot);
                 } catch {
                   // Preserve the original validation failure for the command result.
                 }
@@ -1059,11 +1125,7 @@ export function createControlInteractionRegistry(
                     : undefined;
             } catch (error) {
               try {
-                await restoreRegistrationValue(
-                  registration,
-                  previousValue,
-                  userEditSnapshot,
-                );
+                await restoreMutationValue(previousValue, userEditSnapshot);
               } catch {
                 // Preserve the original clear failure for the command result.
               }
@@ -1071,15 +1133,9 @@ export function createControlInteractionRegistry(
             }
             if (
               registrations.get(key) !== registration ||
-              userEditSuperseded(registration, userEditSnapshot)
+              userEditSuperseded(registrationWithEdits, userEditSnapshot)
             ) {
-              if (registrations.get(key) === registration) {
-                await restoreRegistrationValue(
-                  registration,
-                  previousValue,
-                  userEditSnapshot,
-                );
-              }
+              await restoreMutationValue(previousValue, userEditSnapshot);
               throw new Error('staged_value_stale');
             }
             const clearedValue = registration.getValue?.();
@@ -1094,11 +1150,7 @@ export function createControlInteractionRegistry(
                 !(Array.isArray(previousValue) && previousValue.length === 0));
             if (rejected) {
               try {
-                await restoreRegistrationValue(
-                  registration,
-                  previousValue,
-                  userEditSnapshot,
-                );
+                await restoreMutationValue(previousValue, userEditSnapshot);
               } catch {
                 // The rejected command still retains its proposal for recovery.
               }
@@ -1127,11 +1179,7 @@ export function createControlInteractionRegistry(
               await registration.setValue?.(undoEntry.previousValue);
             } catch (error) {
               try {
-                await restoreRegistrationValue(
-                  registration,
-                  currentValue,
-                  userEditSnapshot,
-                );
+                await restoreMutationValue(currentValue, userEditSnapshot);
               } catch {
                 // Preserve the original setter failure for the command result.
               }
@@ -1139,15 +1187,9 @@ export function createControlInteractionRegistry(
             }
             if (
               registrations.get(key) !== registration ||
-              userEditSuperseded(registration, userEditSnapshot)
+              userEditSuperseded(registrationWithEdits, userEditSnapshot)
             ) {
-              if (registrations.get(key) === registration) {
-                await restoreRegistrationValue(
-                  registration,
-                  currentValue,
-                  userEditSnapshot,
-                );
-              }
+              await restoreMutationValue(currentValue, userEditSnapshot);
               throw new Error('staged_value_stale');
             }
             if (

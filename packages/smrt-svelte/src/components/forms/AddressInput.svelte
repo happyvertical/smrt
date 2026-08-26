@@ -238,15 +238,28 @@ onMount(() => {
         }
       },
       getValue: currentValue,
+      clear: () => {
+        street = '';
+        city = '';
+        province = '';
+        postalCode = '';
+        country = 'CA';
+        updateValue();
+        return true;
+      },
       getState: () => ({ disabled }),
-      constraints: { required },
-      webMcpSchema: {
-        type: 'object',
-        additionalProperties: false,
-        properties: Object.fromEntries(
-          fields.map((field) => [field, { type: 'string' }]),
-        ),
-        ...(required ? { required: [...fields] } : {}),
+      get constraints() {
+        return { required };
+      },
+      get webMcpSchema() {
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties: Object.fromEntries(
+            fields.map((field) => [field, { type: 'string' }]),
+          ),
+          ...(required ? { required: [...fields] } : {}),
+        };
       },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined) return !required;

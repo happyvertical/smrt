@@ -90,6 +90,33 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   if (preventDefault) event.preventDefault();
   onsubmit?.(event);
 }
+
+function recordDirectUserEdit(event: Event) {
+  if (!event.isTrusted) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const control = target.closest<HTMLElement>('[data-smrt-control]');
+  const controlId = control?.dataset.smrtControl;
+  if (!controlId) return;
+  resolvedInteractionRegistry.recordUserEdit?.({
+    formId: resolvedFormId,
+    controlId,
+    subject:
+      control.dataset.smrtSubjectType && control.dataset.smrtSubjectId
+        ? {
+            type: control.dataset.smrtSubjectType,
+            id: control.dataset.smrtSubjectId,
+          }
+        : undefined,
+  });
+}
+
+$effect(() => {
+  const form = formElement;
+  if (!form) return;
+  form.addEventListener('click', recordDirectUserEdit);
+  return () => form.removeEventListener('click', recordDirectUserEdit);
+});
 </script>
 
 <form
@@ -99,6 +126,8 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
+  oninput={recordDirectUserEdit}
+  onchange={recordDirectUserEdit}
   {...rest}
 >
 	{@render children()}
