@@ -67,7 +67,9 @@ describe('Form', () => {
 
   it('uses the shared staged-edit review contract for local human apply', async () => {
     let value = 'Ada';
-    const registry = createControlInteractionRegistry();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     const identity = { formId: 'profile', controlId: 'display-name' };
     registry.register({
       identity,

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type ControlIdentity,
   createControlInteractionRegistry,
+  executeLocalControlBatch,
+  executeLocalControlCommand,
 } from '../control-interaction.js';
 
 const identity: ControlIdentity = {
@@ -38,10 +40,14 @@ describe('control interaction registry', () => {
 
   it('stages with provenance without mutation and only lets a human apply', async () => {
     let value = 'Ada';
+    const events: Array<{ context?: { localGesture?: boolean } }> = [];
     const setValue = vi.fn((next: unknown) => {
       value = String(next);
     });
-    const registry = createControlInteractionRegistry();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.subscribe((event) => events.push(event));
     registry.register({
       identity,
       metadata: { kind: 'text', label: 'Display name' },
@@ -84,12 +90,23 @@ describe('control interaction registry', () => {
       reason: 'human_confirmation_required',
     });
 
-    const applied = await registry.execute(
+    const spoofedHuman = await registry.execute(
       { action: 'apply', identity, revision: 1 },
       { source: 'user', confirmed: true },
     );
+    expect(spoofedHuman).toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+
+    const applied = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
     expect(applied.ok).toBe(true);
     expect(value).toBe('Grace');
+    expect(events.at(-1)?.context?.localGesture).toBe(true);
 
     await registry.execute(
       { action: 'undo', identity },
@@ -98,9 +115,39 @@ describe('control interaction registry', () => {
     expect(value).toBe('Ada');
   });
 
-  it('detects stale revisions and competing direct edits without losing the proposal', async () => {
+  it('rejects synthetic events unless the host explicitly recognizes them', async () => {
     let value = 'Ada';
     const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const result = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+    expect(value).toBe('Ada');
+  });
+
+  it('detects stale revisions and competing direct edits without losing the proposal', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     registry.register({
       identity,
       metadata: { kind: 'text' },
@@ -114,9 +161,10 @@ describe('control interaction registry', () => {
       { action: 'stage', identity, value: 'Grace' },
       { source: 'agent' },
     );
-    const wrongRevision = await registry.execute(
+    const wrongRevision = await executeLocalControlCommand(
+      registry,
       { action: 'apply', identity, revision: 9 },
-      { source: 'user', confirmed: true },
+      new Event('click'),
     );
     expect(wrongRevision).toMatchObject({
       ok: false,
@@ -125,17 +173,19 @@ describe('control interaction registry', () => {
 
     value = 'Katherine';
     expect(registry.get(identity)?.state.staged?.stale).toBe(true);
-    const stale = await registry.execute(
+    const stale = await executeLocalControlCommand(
+      registry,
       { action: 'apply', identity, revision: 1 },
-      { source: 'user', confirmed: true },
+      new Event('click'),
     );
     expect(stale).toMatchObject({ ok: false, reason: 'staged_value_stale' });
     expect(value).toBe('Katherine');
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
 
-    const discarded = await registry.execute(
+    const discarded = await executeLocalControlCommand(
+      registry,
       { action: 'discard', identity, revision: 1 },
-      { source: 'user', confirmed: true },
+      new Event('click'),
     );
     expect(discarded.ok).toBe(true);
     expect(registry.get(identity)?.state.staged).toBeUndefined();
@@ -145,7 +195,9 @@ describe('control interaction registry', () => {
     let first = 'Ada';
     let second = 'Lovelace';
     const secondIdentity = { ...identity, controlId: 'surname' };
-    const registry = createControlInteractionRegistry();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     registry.register({
       identity,
       metadata: { kind: 'text' },
@@ -177,12 +229,13 @@ describe('control interaction registry', () => {
       valid: false,
       validationMessage: 'Use at least three characters',
     });
-    const batch = await registry.executeBatch(
+    const batch = await executeLocalControlBatch(
+      registry,
       [
         { action: 'apply', identity, revision: 1 },
         { action: 'apply', identity: secondIdentity, revision: 2 },
       ],
-      { source: 'user', confirmed: true },
+      new Event('click'),
     );
     expect(batch).toMatchObject({
       ok: false,
@@ -231,6 +284,7 @@ describe('control interaction registry', () => {
         policyCommands.push(command);
         return { allowed: true };
       },
+      isLocalGesture: () => true,
     });
     const events: unknown[] = [];
     registry.subscribe((event) => events.push(event));
@@ -239,6 +293,7 @@ describe('control interaction registry', () => {
       metadata: { kind: 'text', sensitivity: 'sensitive' },
       getValue: () => 'private',
       setValue: () => undefined,
+      validateValue: (value) => `Do not use ${String(value)}`,
     });
     await registry.execute(
       { action: 'stage', identity, value: 'replacement' },
@@ -255,6 +310,13 @@ describe('control interaction registry', () => {
     expect(JSON.stringify(events)).not.toContain('private');
     expect(JSON.stringify(events)).not.toContain('replacement');
     expect(JSON.stringify(policyCommands)).not.toContain('replacement');
+    const invalid = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    expect(invalid.reason).toBe('staged_value_invalid');
+    expect(JSON.stringify(invalid)).not.toContain('replacement');
   });
 
   it('runs focus, reveal, and highlight without coupling to a DOM implementation', async () => {

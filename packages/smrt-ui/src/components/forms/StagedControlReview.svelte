@@ -6,6 +6,10 @@ import type {
   ControlInteractionRegistry,
   ControlSnapshot,
 } from './control-interaction.js';
+import {
+  executeLocalControlBatch,
+  executeLocalControlCommand,
+} from './control-interaction.js';
 import type { StagedControlReviewLabels } from './staged-control-review.js';
 
 const { t } = useI18n();
@@ -14,10 +18,17 @@ export interface Props {
   registry: ControlInteractionRegistry;
   formId: string;
   formElement?: HTMLFormElement | null;
+  summary?: boolean;
   labels?: Partial<StagedControlReviewLabels>;
 }
 
-let { registry, formId, formElement = null, labels }: Props = $props();
+let {
+  registry,
+  formId,
+  formElement = null,
+  summary = true,
+  labels,
+}: Props = $props();
 const text = $derived({
   region: t(M['ui.staged_control_review.region']),
   heading: t(M['ui.staged_control_review.heading']),
@@ -82,6 +93,31 @@ $effect(() => {
 
 $effect(() => {
   if (!formElement) return;
+  const element = formElement;
+  const refreshAfterFieldEdit = () => refresh();
+  const discardAfterReset = (event: Event) => {
+    const commands = registry
+      .list(formId)
+      .filter((snapshot) => snapshot.state.staged)
+      .map((snapshot) => ({
+        action: 'discard' as const,
+        identity: snapshot.identity,
+        revision: snapshot.state.staged?.revision,
+      }));
+    void executeLocalControlBatch(registry, commands, event);
+  };
+  element.addEventListener('input', refreshAfterFieldEdit);
+  element.addEventListener('change', refreshAfterFieldEdit);
+  element.addEventListener('reset', discardAfterReset);
+  return () => {
+    element.removeEventListener('input', refreshAfterFieldEdit);
+    element.removeEventListener('change', refreshAfterFieldEdit);
+    element.removeEventListener('reset', discardAfterReset);
+  };
+});
+
+$effect(() => {
+  if (!formElement) return;
   const stagedIds = new Set(
     snapshots.map((snapshot) => snapshot.identity.controlId),
   );
@@ -131,27 +167,35 @@ function commandFor(
   };
 }
 
-async function applyOne(snapshot: ControlSnapshot): Promise<void> {
+async function applyOne(
+  snapshot: ControlSnapshot,
+  event: MouseEvent,
+): Promise<void> {
   try {
-    const result = await registry.execute(commandFor(snapshot, 'apply'), {
-      source: 'user',
-      confirmed: true,
-    });
+    const result = await executeLocalControlCommand(
+      registry,
+      commandFor(snapshot, 'apply'),
+      event,
+    );
     status = result.ok ? text.appliedStatus : (result.reason ?? text.invalid);
   } catch {
     status = text.invalid;
   }
 }
 
-async function discardOne(snapshot: ControlSnapshot): Promise<void> {
-  const result = await registry.execute(commandFor(snapshot, 'discard'), {
-    source: 'user',
-    confirmed: true,
-  });
+async function discardOne(
+  snapshot: ControlSnapshot,
+  event: MouseEvent,
+): Promise<void> {
+  const result = await executeLocalControlCommand(
+    registry,
+    commandFor(snapshot, 'discard'),
+    event,
+  );
   status = result.ok ? text.discardedStatus : (result.reason ?? text.stale);
 }
 
-async function applyAll(): Promise<void> {
+async function applyAll(event: MouseEvent): Promise<void> {
   const eligible = snapshots.filter(
     (snapshot) =>
       !snapshot.state.staged?.stale && snapshot.state.staged?.valid !== false,
@@ -164,24 +208,22 @@ async function applyAll(): Promise<void> {
       // An invalid edit is reported by omission and remains staged for review.
     }
   }
-  const batch = await registry.executeBatch(commands, {
-    source: 'user',
-    confirmed: true,
-  });
+  const batch = await executeLocalControlBatch(registry, commands, event);
   const completed = batch.results.filter((result) => result.ok).length;
   status = text.batchStatus
     .replace('{completed}', String(completed))
     .replace('{total}', String(snapshots.length));
 }
 
-async function discardAll(): Promise<void> {
+async function discardAll(event: MouseEvent): Promise<void> {
   const eligible = snapshots.filter(
     (snapshot) =>
       !snapshot.state.staged?.stale && snapshot.state.staged?.valid !== false,
   );
-  const batch = await registry.executeBatch(
+  const batch = await executeLocalControlBatch(
+    registry,
     eligible.map((snapshot) => commandFor(snapshot, 'discard')),
-    { source: 'user', confirmed: true },
+    event,
   );
   const completed = batch.results.filter((result) => result.ok).length;
   status = text.batchStatus
@@ -190,7 +232,7 @@ async function discardAll(): Promise<void> {
 }
 </script>
 
-{#if snapshots.length > 0}
+{#if summary && snapshots.length > 0}
   <section class="staged-review" aria-label={text.region}>
     <header>
       <div>
@@ -234,8 +276,8 @@ async function discardAll(): Promise<void> {
           {#if staged?.stale}<p class="problem" role="alert">{text.stale}</p>{/if}
           {#if staged?.valid === false}<p class="problem" role="alert">{staged.validationMessage ?? text.invalid}</p>{/if}
           <div class="item-actions">
-            <button type="button" disabled={staged?.stale || staged?.valid === false} onclick={() => applyOne(snapshot)}>{text.apply}</button>
-            <button type="button" class="secondary" onclick={() => discardOne(snapshot)}>{text.discard}</button>
+            <button type="button" disabled={staged?.stale || staged?.valid === false} onclick={(event) => applyOne(snapshot, event)}>{text.apply}</button>
+            <button type="button" class="secondary" onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
           </div>
         </li>
       {/each}

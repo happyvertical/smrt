@@ -196,8 +196,10 @@ export type ControlCommandSource =
 
 export interface ControlCommandContext {
   source: ControlCommandSource;
-  /** Agent mutations require this explicit consent signal by default. */
+  /** Advisory confirmation for legacy non-review mutations; never proves a local gesture. */
   confirmed?: boolean;
+  /** Output-only audit marker set by the registry after validating a local gesture. */
+  localGesture?: boolean;
   actorId?: string;
   sessionId?: string;
 }
@@ -256,6 +258,49 @@ export interface ControlInteractionRegistry {
 export interface CreateControlInteractionRegistryOptions {
   policy?: ControlInteractionPolicy;
   now?: () => number;
+  /** Host/test hook for recognizing a trusted local DOM gesture. Defaults to Event.isTrusted. */
+  isLocalGesture?: (event: Event) => boolean;
+}
+
+type LocalGestureExecutor = (
+  command: ControlCommand,
+  event: Event,
+) => Promise<ControlCommandResult>;
+
+const localGestureExecutors = new WeakMap<
+  ControlInteractionRegistry,
+  LocalGestureExecutor
+>();
+
+/** @internal Called only by the framework's local DOM event handlers. */
+export function executeLocalControlCommand(
+  registry: ControlInteractionRegistry,
+  command: ControlCommand,
+  event: Event,
+): Promise<ControlCommandResult> {
+  const executor = localGestureExecutors.get(registry);
+  if (!executor) {
+    return Promise.resolve({
+      ok: false,
+      action: command.action,
+      identity: { ...command.identity },
+      reason: 'local_gesture_required',
+    });
+  }
+  return executor(command, event);
+}
+
+/** @internal Ordered best-effort execution from one trusted local gesture. */
+export async function executeLocalControlBatch(
+  registry: ControlInteractionRegistry,
+  commands: ControlCommand[],
+  event: Event,
+): Promise<ControlBatchResult> {
+  const results: ControlCommandResult[] = [];
+  for (const command of commands) {
+    results.push(await executeLocalControlCommand(registry, command, event));
+  }
+  return { ok: results.every((result) => result.ok), results };
 }
 
 function identityKey(identity: ControlIdentity): string {
@@ -316,6 +361,7 @@ function defaultPolicy(
   command: ControlCommand,
   context: ControlCommandContext,
   snapshot: ControlSnapshot,
+  localGestureConfirmed: boolean,
 ): ControlPolicyDecision {
   if (!isMutation(command.action)) return { allowed: true };
   if (snapshot.metadata.sensitivity === 'secret') {
@@ -329,6 +375,12 @@ function defaultPolicy(
   }
   if (context.source === 'agent' && command.action !== 'stage') {
     return { allowed: false, reason: 'human_confirmation_required' };
+  }
+  if (
+    (command.action === 'apply' || command.action === 'discard') &&
+    !localGestureConfirmed
+  ) {
+    return { allowed: false, reason: 'local_gesture_required' };
   }
   if (command.action !== 'stage' && !context.confirmed) {
     return { allowed: false, reason: 'consent_required' };
@@ -388,6 +440,7 @@ export function createControlInteractionRegistry(
   const undo = new Map<string, unknown[]>();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
+  const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
   let stagedRevision = 0;
 
   const emit = (event: Omit<ControlInteractionEvent, 'timestamp'>) => {
@@ -402,6 +455,7 @@ export function createControlInteractionRegistry(
     const stale = stagedEntry
       ? !valuesEqual(stagedEntry.baseValue, registration.getValue?.())
       : false;
+    const runtimeState = registration.getState?.();
     const publicStaged: ControlStagedEntry | undefined = stagedEntry
       ? {
           value: redacted ? undefined : cloneValue(stagedEntry.value),
@@ -411,7 +465,9 @@ export function createControlInteractionRegistry(
           revision: stagedEntry.revision,
           stale,
           valid: stagedEntry.valid,
-          validationMessage: stagedEntry.validationMessage,
+          validationMessage: redacted
+            ? undefined
+            : stagedEntry.validationMessage,
         }
       : undefined;
     return {
@@ -427,7 +483,10 @@ export function createControlInteractionRegistry(
         })),
       },
       state: {
-        ...registration.getState?.(),
+        ...runtimeState,
+        validationMessage: redacted
+          ? undefined
+          : runtimeState?.validationMessage,
         value: redacted ? undefined : registration.getValue?.(),
         valueRedacted: redacted,
         stagedValue: publicStaged?.value,
@@ -450,7 +509,7 @@ export function createControlInteractionRegistry(
     reason,
   });
 
-  return {
+  const registry: ControlInteractionRegistry = {
     register(registration) {
       const key = identityKey(registration.identity);
       registrations.set(key, registration);
@@ -494,12 +553,24 @@ export function createControlInteractionRegistry(
         (command.action === 'stage' || command.action === 'apply')
           ? { ...command, value: undefined }
           : command;
+      const publicContext: ControlCommandContext = {
+        source: context.source,
+        confirmed: context.confirmed,
+        localGesture: locallyConfirmedContexts.has(context),
+        actorId: context.actorId,
+        sessionId: context.sessionId,
+      };
 
       const snapshot = snapshotOf(registration);
-      const invariantDecision = defaultPolicy(command, context, snapshot);
+      const invariantDecision = defaultPolicy(
+        command,
+        publicContext,
+        snapshot,
+        publicContext.localGesture === true,
+      );
       const policyDecision =
         invariantDecision.allowed && options.policy
-          ? await options.policy(publicCommand, context, snapshot)
+          ? await options.policy(publicCommand, publicContext, snapshot)
           : invariantDecision;
       if (!policyDecision.allowed) {
         const denied = result(
@@ -512,7 +583,7 @@ export function createControlInteractionRegistry(
           type: 'command',
           identity: command.identity,
           command: publicCommand,
-          context,
+          context: publicContext,
           result: denied,
         });
         return denied;
@@ -525,7 +596,7 @@ export function createControlInteractionRegistry(
           type: 'command',
           identity: command.identity,
           command: publicCommand,
-          context,
+          context: publicContext,
           result: unsupported,
         });
         return unsupported;
@@ -565,7 +636,7 @@ export function createControlInteractionRegistry(
               type: 'staged',
               identity: command.identity,
               command: publicCommand,
-              context,
+              context: publicContext,
               staged: snapshotOf(registration).state.staged,
             });
             break;
@@ -597,7 +668,10 @@ export function createControlInteractionRegistry(
             if (proposedValidation.valid === false) {
               if (stagedEntry) Object.assign(stagedEntry, proposedValidation);
               throw new Error(
-                proposedValidation.validationMessage ?? 'staged_value_invalid',
+                redactsValue(registration)
+                  ? 'staged_value_invalid'
+                  : (proposedValidation.validationMessage ??
+                      'staged_value_invalid'),
               );
             }
             const previousValue = cloneValue(registration.getValue?.());
@@ -653,7 +727,7 @@ export function createControlInteractionRegistry(
           type: 'command',
           identity: command.identity,
           command: publicCommand,
-          context,
+          context: publicContext,
           result: completed,
         });
         return completed;
@@ -668,7 +742,7 @@ export function createControlInteractionRegistry(
           type: 'command',
           identity: command.identity,
           command: publicCommand,
-          context,
+          context: publicContext,
           result: failed,
         });
         return failed;
@@ -691,4 +765,21 @@ export function createControlInteractionRegistry(
       return () => listeners.delete(listener);
     },
   };
+
+  localGestureExecutors.set(registry, async (command, event) => {
+    const isLocalGesture =
+      options.isLocalGesture ?? ((candidate: Event) => candidate.isTrusted);
+    if (!isLocalGesture(event)) {
+      const registration = registrations.get(identityKey(command.identity));
+      return result(command, false, registration, 'local_gesture_required');
+    }
+    const context: ControlCommandContext = {
+      source: 'user',
+      confirmed: true,
+    };
+    locallyConfirmedContexts.add(context);
+    return registry.execute(command, context);
+  });
+
+  return registry;
 }

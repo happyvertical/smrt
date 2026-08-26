@@ -6,10 +6,12 @@ import { createControlInteractionRegistry } from '../control-interaction.js';
 import Fixture from './staged-review.fixture.svelte';
 
 const identity = { formId: 'profile', controlId: 'display-name' };
+const createReviewRegistry = () =>
+  createControlInteractionRegistry({ isLocalGesture: () => true });
 
 describe('StagedControlReview', () => {
   it('shows an adjacent indicator and applies an edited proposal only after a human click', async () => {
-    const registry = createControlInteractionRegistry();
+    const registry = createReviewRegistry();
     const { container } = render(Fixture, { props: { registry } });
     await registry.execute(
       { action: 'stage', identity, value: 'Grace' },
@@ -44,7 +46,7 @@ describe('StagedControlReview', () => {
   });
 
   it('marks competing user edits stale and lets the human discard them', async () => {
-    const registry = createControlInteractionRegistry();
+    const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });
     await registry.execute(
       { action: 'stage', identity, value: 'Grace' },
@@ -64,7 +66,7 @@ describe('StagedControlReview', () => {
   });
 
   it('keeps an invalid proposal staged with accessible validation feedback', async () => {
-    const registry = createControlInteractionRegistry();
+    const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });
     await registry.execute(
       { action: 'stage', identity, value: '' },
@@ -86,7 +88,7 @@ describe('StagedControlReview', () => {
   });
 
   it('rejects secret staging and discards proposals on form reset and unmount', async () => {
-    const registry = createControlInteractionRegistry();
+    const registry = createReviewRegistry();
     const rendered = render(Fixture, { props: { registry } });
     const secret = await registry.execute(
       {

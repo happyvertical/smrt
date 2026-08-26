@@ -866,21 +866,6 @@ function handleSubmit(e: Event) {
   // Otherwise, let native form submission happen (e.g., for SvelteKit use:enhance)
 }
 
-function handleReset() {
-  const commands = resolvedInteractionRegistry
-    .list(resolvedFormId)
-    .filter((snapshot) => snapshot.state.staged)
-    .map((snapshot) => ({
-      action: 'discard' as const,
-      identity: snapshot.identity,
-      revision: snapshot.state.staged?.revision,
-    }));
-  void resolvedInteractionRegistry.executeBatch(commands, {
-    source: 'user',
-    confirmed: true,
-  });
-}
-
 export function getFormData(): Record<string, unknown> {
   const data: Record<string, unknown> = {};
   for (const [name, field] of fields) {
@@ -901,7 +886,6 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   class="smrt-form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
-  onreset={handleReset}
   {method}
   {action}
 >
@@ -1007,13 +991,12 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   <div class="form-fields">
     {@render children()}
   </div>
-  {#if stagedReview}
-    <StagedControlReview
-      registry={resolvedInteractionRegistry}
-      formId={resolvedFormId}
-      {formElement}
-    />
-  {/if}
+  <StagedControlReview
+    registry={resolvedInteractionRegistry}
+    formId={resolvedFormId}
+    {formElement}
+    summary={stagedReview}
+  />
 </form>
 
 {#if isFormListening && spokenText}

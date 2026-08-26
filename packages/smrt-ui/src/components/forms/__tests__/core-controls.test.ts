@@ -37,7 +37,9 @@ describe('core controls', () => {
   });
 
   it('registers all controls and keeps agent staging separate from human apply', async () => {
-    const registry = createControlInteractionRegistry();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     render(Fixture, { props: { registry } });
     expect(
       registry.list('settings').map((item) => item.identity.controlId),
@@ -69,13 +71,7 @@ describe('core controls', () => {
       { source: 'agent', confirmed: true },
     );
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('30');
-    await registry.execute(
-      {
-        action: 'apply',
-        identity: { formId: 'settings', controlId: 'volume' },
-      },
-      { source: 'user', confirmed: true },
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
   });
 

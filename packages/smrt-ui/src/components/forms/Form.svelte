@@ -51,7 +51,6 @@ let {
   id,
   name,
   onsubmit,
-  onreset,
   children,
   ...rest
 }: Props = $props();
@@ -91,22 +90,6 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   if (preventDefault) event.preventDefault();
   onsubmit?.(event);
 }
-
-function handleReset(event: Event & { currentTarget: HTMLFormElement }) {
-  const commands = resolvedInteractionRegistry
-    .list(resolvedFormId)
-    .filter((snapshot) => snapshot.state.staged)
-    .map((snapshot) => ({
-      action: 'discard' as const,
-      identity: snapshot.identity,
-      revision: snapshot.state.staged?.revision,
-    }));
-  void resolvedInteractionRegistry.executeBatch(commands, {
-    source: 'user',
-    confirmed: true,
-  });
-  onreset?.(event);
-}
 </script>
 
 <form
@@ -116,17 +99,15 @@ function handleReset(event: Event & { currentTarget: HTMLFormElement }) {
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
-  onreset={handleReset}
   {...rest}
 >
 	{@render children()}
-  {#if stagedReview}
-    <StagedControlReview
-      registry={resolvedInteractionRegistry}
-      formId={resolvedFormId}
-      {formElement}
-    />
-  {/if}
+  <StagedControlReview
+    registry={resolvedInteractionRegistry}
+    formId={resolvedFormId}
+    {formElement}
+    summary={stagedReview}
+  />
 </form>
 
 <!--
