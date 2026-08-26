@@ -206,7 +206,10 @@ export {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
   CONTENT_LIST_QUERY_FIELDS,
   CONTENT_LIST_QUERY_IDENTITY_FIELD,
+  CONTENT_LIST_QUERY_MAX_FILTER_NODES,
+  CONTENT_LIST_QUERY_MAX_IN_VALUES,
   CONTENT_LIST_QUERY_MAX_OFFSET,
+  CONTENT_LIST_QUERY_MAX_VALUE_LENGTH,
   CONTENT_LIST_QUERY_PROJECTION,
   CONTENT_LIST_QUERY_SEARCH_FIELDS,
   type ContentListDataQueryRequest,
@@ -219,6 +222,7 @@ export {
   type ContentListQueryFieldType,
   type ContentListQueryFilter,
   type ContentListQueryFilterOperator,
+  type ContentListQueryNotices,
   type ContentListQueryRequestOptions,
   type ContentListQueryScalar,
   type ContentListQuerySource,
@@ -234,6 +238,7 @@ export {
   contentListViewStateToDataQueryRequest,
   createContentListQueryTransport,
   escapeContentListQueryLikeValue,
+  readContentListQueryNotices,
 } from './content-list-query.js';
 // Saved views (#2452): a named, restorable view backed by a narrow store seam.
 export {
@@ -248,6 +253,7 @@ export {
   type ContentListSavedViewStoreOptions,
   createContentListMemorySavedViewStore,
   createContentListSavedViewStore,
+  type RawContentListViewSnapshot,
   restoreContentListSavedView,
   toContentListSavedViewInput,
 } from './content-list-saved-views.js';

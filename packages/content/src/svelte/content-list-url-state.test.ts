@@ -375,3 +375,147 @@ describe('content list projection validation', () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review batch #2452
+// ---------------------------------------------------------------------------
+
+describe('list values containing the separator (#2452)', () => {
+  it('round-trips a value containing a comma as ONE entry', () => {
+    const params = contentListViewStateToSearchParams({
+      filters: [
+        {
+          columnId: 'author',
+          operator: 'in',
+          value: ['Smith, John', 'Ada'],
+        },
+      ],
+    });
+    // Normalized to lower case by the adapter, then escaped on the way out.
+    expect(params.get('author.in')).toBe('smith\\, john,ada');
+
+    const restored = contentListViewStateFromSearchParams(params);
+    expect(restored.filters).toEqual([
+      { columnId: 'author', operator: 'in', value: ['smith, john', 'ada'] },
+    ]);
+  });
+
+  it('round-trips the escape character itself', () => {
+    const params = contentListViewStateToSearchParams({
+      filters: [
+        { columnId: 'author', operator: 'in', value: ['a\\b', 'c,d\\'] },
+      ],
+    });
+    const restored = contentListViewStateFromSearchParams(params);
+    expect(restored.filters?.[0].value).toEqual(['a\\b', 'c,d\\']);
+  });
+
+  it('still splits a plain comma-separated list', () => {
+    const restored = contentListViewStateFromSearchParams(
+      new URLSearchParams('status.in=draft,published'),
+    );
+    expect(restored.filters).toEqual([
+      { columnId: 'status', operator: 'in', value: ['draft', 'published'] },
+    ]);
+  });
+});
+
+describe('foreign parameters survive a rewrite (#2452)', () => {
+  it('keeps a dotted host parameter whose base is not a list column', () => {
+    const merged = mergeContentListViewStateIntoSearchParams(
+      new URLSearchParams(
+        'facet.contains=blue&utm_source=newsletter&evil.gt=1&status=draft',
+      ),
+      { search: 'zoning', filters: [] },
+    );
+    // Host parameters are preserved even when they carry a known operator.
+    expect(merged.get('facet.contains')).toBe('blue');
+    expect(merged.get('utm_source')).toBe('newsletter');
+    expect(merged.get('evil.gt')).toBe('1');
+    // The list's own parameters are replaced, not appended to.
+    expect(merged.get('status')).toBeNull();
+    expect(merged.get('q')).toBe('zoning');
+  });
+
+  it('keeps a foreign dotted parameter for a prefixed instance too', () => {
+    const merged = mergeContentListViewStateIntoSearchParams(
+      new URLSearchParams('a.facet.contains=blue&a.status=draft&a.q=old'),
+      { search: 'new', filters: [] },
+      { prefix: 'a.' },
+    );
+    expect(merged.get('a.facet.contains')).toBe('blue');
+    expect(merged.get('a.status')).toBeNull();
+    expect(merged.get('a.q')).toBe('new');
+  });
+});
+
+describe('applyContentListViewState validates its patch (#2452)', () => {
+  it('cannot apply a filter on an undeclared or withheld column', () => {
+    const controller = createContentListController();
+    applyContentListViewState(controller, {
+      filters: [
+        { columnId: 'tenantId', operator: 'equals', value: 'other-tenant' },
+        { columnId: 'body', operator: 'contains', value: 'secret' },
+        { columnId: 'description', operator: 'contains', value: 'secret' },
+        { columnId: 'status', operator: 'equals', value: 'draft' },
+      ],
+      columnVisibility: [{ columnId: 'description', visible: true }],
+      pageSize: 100_000,
+    } as Partial<DataTableViewState>);
+
+    const state = controller.getState();
+    expect(state.filters).toEqual([
+      { columnId: 'status', operator: 'equals', value: 'draft' },
+    ]);
+    // The controller reconciles visibility across every known column; the
+    // search-only one must still be forced back to hidden.
+    expect(state.columnVisibility).toContainEqual({
+      columnId: 'description',
+      visible: false,
+    });
+    expect(state.pageSize).toBe(CONTENT_LIST_MAX_PAGE_SIZE);
+  });
+
+  it('honours a caller-supplied page-size ceiling', () => {
+    const controller = createContentListController();
+    applyContentListViewState(
+      controller,
+      { pageSize: 500 },
+      {
+        maxPageSize: 25,
+      },
+    );
+    expect(controller.getState().pageSize).toBe(25);
+  });
+
+  it('preserves selection and expansion, which a patch never carries', () => {
+    const controller = createContentListController();
+    controller.dispatch({ type: 'setSelectedRows', rowIds: ['a', 'b'] });
+    applyContentListViewState(controller, { search: 'zoning' });
+    expect(controller.getState().selectedRowIds).toEqual(['a', 'b']);
+    expect(controller.getState().search).toBe('zoning');
+  });
+
+  it('is idempotent over an already-validated patch', () => {
+    const controller = createContentListController();
+    const { state } = sanitizeContentListViewState({
+      search: 'budget',
+      filters: [{ columnId: 'status', operator: 'equals', value: 'DRAFT' }],
+      sorting: [{ columnId: 'title', direction: 'asc' }],
+      page: 3,
+      pageSize: 25,
+    });
+    applyContentListViewState(controller, state);
+    const first = controller.getState();
+    applyContentListViewState(controller, state);
+    expect(controller.getState()).toEqual(first);
+    expect(first.filters).toEqual([
+      {
+        columnId: 'status',
+        operator: 'equals',
+        value: normalizeContentListFilterValue('status', 'DRAFT'),
+      },
+    ]);
+    expect(first.page).toBe(3);
+  });
+});

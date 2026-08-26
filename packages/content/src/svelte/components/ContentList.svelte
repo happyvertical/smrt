@@ -71,11 +71,15 @@ import {
 import {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
   type ContentListQueryDrop,
+  type ContentListQueryDropReason,
+  type ContentListQueryNotices,
+  type ContentListQueryRequestOptions,
   type ContentListQuerySource,
   contentListQueryErrorMessage,
   contentListQueryRowsToContents,
   contentListQueryTotalValue,
   contentListViewStateToDataQueryRequest,
+  readContentListQueryNotices,
 } from '../content-list-query.js';
 import {
   type ContentListSavedView,
@@ -85,8 +89,10 @@ import {
 } from '../content-list-saved-views.js';
 import {
   applyContentListViewState,
+  CONTENT_LIST_MAX_PAGE_SIZE,
   type ContentListStateDrop,
   type ContentListStateDropReason,
+  type ContentListStateValidationOptions,
   mergeContentListViewStateIntoSearchParams,
   readContentListViewStateFromSearchParams,
 } from '../content-list-url-state.js';
@@ -160,24 +166,63 @@ const initialQuery = untrack(() => query);
 // never touches query or selection state.
 // The seed is intentionally the initial `type`; the effect below keeps the
 // locked filter in sync afterwards.
+const initialUrlState = untrack(() => urlState);
+
+/**
+ * The page size a server-backed list runs at.
+ *
+ * `null` (unpaginated) is only expressible locally: the query endpoint always
+ * applies a limit, so an unpaginated server list would render one silent page
+ * with no controls. This value is the seed, the URL layer's notion of the
+ * default (so a link without `size` restores it rather than wiping it), and the
+ * translator's fallback — one number in all three places.
+ */
+const serverPageSize = initialQuery
+  ? (initialQuery.request?.defaultPageSize ??
+    CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE)
+  : null;
+
+/**
+ * One page-size ceiling for every restore path. A host that configures
+ * `maxPageSize` must get it on links AND on saved views, or a stored view is a
+ * way around the limit it set.
+ */
+const maxPageSize =
+  initialUrlState?.options?.maxPageSize ??
+  initialQuery?.request?.maxPageSize ??
+  CONTENT_LIST_MAX_PAGE_SIZE;
+
+/** Validation options shared by the URL and saved-view restore paths. */
+const restoreOptions: ContentListStateValidationOptions = { maxPageSize };
+
+/**
+ * URL options with the server page size filled in as the default, so a link
+ * that omits `size` restores the seed instead of the local `null`, and a link
+ * this list writes omits `size` while the list is at its default.
+ */
+const urlStateOptions: ContentListUrlStateOptions = {
+  ...initialUrlState?.options,
+  maxPageSize,
+  ...(serverPageSize !== null &&
+  initialUrlState?.options?.defaultPageSize === undefined
+    ? { defaultPageSize: serverPageSize }
+    : {}),
+};
+
 const controller = createContentListController({
   type: untrack(() => type),
-  // Local mode keeps the historical unpaginated list. A server query always
-  // carries a page limit, so leaving the controller unpaginated there would
-  // render one page of rows with no page controls and no way off it.
-  ...(initialQuery
-    ? {
-        pageSize:
-          initialQuery.request?.defaultPageSize ??
-          CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
-      }
-    : {}),
+  // Local mode keeps the historical unpaginated list.
+  ...(serverPageSize === null ? {} : { pageSize: serverPageSize }),
 });
 
 /** Everything a restore or a translation refused, surfaced as one notice. */
 let restoreDrops = $state<ContentListDropNotice[]>([]);
 let queryDrops = $state<ContentListQueryDrop[]>([]);
 let dismissedDropKey = $state('');
+let resultNotices = $state<ContentListQueryNotices>({
+  truncated: false,
+  warnings: [],
+});
 
 function toSearchParams(
   input: URLSearchParams | string | null | undefined,
@@ -190,13 +235,12 @@ function toSearchParams(
 // render is already the restored view rather than a flash of the default one.
 // `applyContentListViewState` merges over current state instead of dispatching
 // `setSearch`/`setFilters`, which would reset the restored page.
-const initialUrlState = untrack(() => urlState);
 if (initialUrlState?.params) {
   const reading = readContentListViewStateFromSearchParams(
     toSearchParams(initialUrlState.params),
-    initialUrlState.options,
+    urlStateOptions,
   );
-  applyContentListViewState(controller, reading.state);
+  applyContentListViewState(controller, reading.state, restoreOptions);
   restoreDrops = reading.dropped;
 }
 
@@ -206,7 +250,14 @@ if (initialUrlState?.params) {
  * (as `remoteQuery` does) is disposed when this component is.
  */
 const queryBinding = initialQuery?.bind();
-const queryRequestOptions = initialQuery?.request;
+const queryRequestOptions: ContentListQueryRequestOptions | undefined =
+  initialQuery
+    ? {
+        ...initialQuery.request,
+        maxPageSize,
+        ...(serverPageSize === null ? {} : { defaultPageSize: serverPageSize }),
+      }
+    : undefined;
 const serverBacked = queryBinding !== undefined;
 
 let snapshot = $state(controller.snapshot());
@@ -223,6 +274,25 @@ $effect(() =>
 );
 
 const tableState = $derived(snapshot.state);
+
+// A server query cannot express "unpaginated": the endpoint always applies a
+// limit, so a null page size would show one page of `limit` rows with no page
+// controls and no way to reach the rest. A saved view, a `?size=all` link, or a
+// data-surface `set-page-size` command can all introduce one after mount, so the
+// coercion is enforced against live state — and reported, never silent.
+$effect(() => {
+  if (serverPageSize === null) return;
+  if (tableState.pageSize !== null) return;
+  untrack(() => {
+    controller.dispatch({ type: 'setPageSize', pageSize: serverPageSize });
+    restoreDrops = [
+      ...restoreDrops.filter(
+        (drop) => drop.reason !== 'unpaginated-unsupported',
+      ),
+      { scope: 'pageSize', reason: 'unpaginated-unsupported' },
+    ];
+  });
+});
 
 /** The normalized type the `type` prop locks the list to, if any. */
 const lockedType = $derived(type?.trim() ? normalizeContentType(type) : null);
@@ -358,8 +428,14 @@ $effect(() => {
       queryDrops = translated.dropped;
       // The binding owns cancellation of a superseded run and already reflects
       // a failure in its error state, so a rejection here is not also an
-      // unhandled one.
-      void queryBinding.execute(translated.request).catch(() => undefined);
+      // unhandled one. The resolved envelope carries the server's completeness
+      // flags, which the binding itself does not expose.
+      void queryBinding
+        .execute(translated.request)
+        .then((result) => {
+          resultNotices = readContentListQueryNotices(result);
+        })
+        .catch(() => undefined);
     }
     if (publishedUrlSignature === undefined) {
       // The first pass adopts whatever the restore produced without pushing it
@@ -375,7 +451,7 @@ $effect(() => {
       mergeContentListViewStateIntoSearchParams(
         toSearchParams(binding.params),
         state,
-        binding.options,
+        urlStateOptions,
       ),
       state as DataTableViewState,
     );
@@ -454,16 +530,33 @@ const dropNotices = $derived<ContentListDropNotice[]>([
   ...restoreDrops,
   ...queryDrops,
 ]);
+/**
+ * What the server said about the completeness of the answer.
+ *
+ * A binding may expose the flags directly; `remoteQuery` does not, so the
+ * component falls back to the envelope its own `execute` resolved. Either way
+ * the operator has to be told: the server drops trailing rows to fit its byte
+ * budget, and the next page is computed from `page * limit`, so those rows are
+ * skipped on the following page too.
+ */
+const queryTruncated = $derived(
+  queryBinding?.truncated ?? resultNotices.truncated,
+);
+const queryWarnings = $derived<ReadonlyArray<string>>(
+  queryBinding?.warnings ?? resultNotices.warnings,
+);
 /** Identity of the current set of refusals, so a dismissal is not permanent. */
 const dropNoticeKey = $derived(
-  dropNotices.length > 0 ? JSON.stringify(dropNotices) : '',
+  dropNotices.length > 0 || queryTruncated || queryWarnings.length > 0
+    ? JSON.stringify([dropNotices, queryTruncated, queryWarnings])
+    : '',
 );
 const showDropNotice = $derived(
   dropNoticeKey !== '' && dropNoticeKey !== dismissedDropKey,
 );
 
 const DROP_REASON_MESSAGES: Record<
-  ContentListStateDropReason | 'no-server-field',
+  ContentListStateDropReason | ContentListQueryDropReason,
   string
 > = {
   'unknown-column': M['content.content_list.drop_unknown_column'],
@@ -474,6 +567,7 @@ const DROP_REASON_MESSAGES: Record<
   'unsupported-value': M['content.content_list.drop_unsupported_value'],
   malformed: M['content.content_list.drop_malformed'],
   'out-of-range': M['content.content_list.drop_out_of_range'],
+  'unpaginated-unsupported': M['content.content_list.drop_unpaginated'],
 };
 
 function dropNoticeText(drop: ContentListDropNotice): string {
@@ -526,10 +620,11 @@ function applySavedView(id: string) {
   const view = savedViewList.find((entry) => entry.id === id);
   if (!view) return;
   try {
-    // The same validator the URL path uses: a stored view is untrusted, and a
-    // stale one restores its valid remainder rather than refusing to open.
-    const restoration = restoreContentListSavedView(view);
-    applyContentListViewState(controller, restoration.state);
+    // The same validator, AND the same limits, the URL path uses: a stored view
+    // must not be a way around a `maxPageSize` the host configured for links. A
+    // stale view restores its valid remainder rather than refusing to open.
+    const restoration = restoreContentListSavedView(view, restoreOptions);
+    applyContentListViewState(controller, restoration.state, restoreOptions);
     restoreDrops = restoration.dropped;
   } catch {
     restoreDrops = [{ scope: 'state', reason: 'malformed' }];
@@ -940,6 +1035,12 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       <ul class="state-notice__list">
         {#each dropNotices as drop, index (index)}
           <li>{dropNoticeText(drop)}</li>
+        {/each}
+        {#if queryTruncated}
+          <li>{t(M['content.content_list.result_truncated'])}</li>
+        {/if}
+        {#each queryWarnings as warning, index (index)}
+          <li>{warning}</li>
         {/each}
       </ul>
       <Button

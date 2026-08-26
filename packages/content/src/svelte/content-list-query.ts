@@ -217,6 +217,21 @@ export const CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE = 50;
 export const CONTENT_LIST_QUERY_MAX_OFFSET = 1_000_000;
 
 /**
+ * The request normalizer's input caps, mirrored from
+ * `@happyvertical/smrt-core`. Exceeding any of them fails the *entire* request
+ * with a 400 — which turns the translator's "drop, never fail" contract into an
+ * error panel — so each one is enforced client-side and reported as a drop.
+ *
+ * - `MAX_DATA_QUERY_IN_VALUES` — entries in one `in`/`notIn` list.
+ * - `MAX_DATA_QUERY_FILTERS` — total filter nodes, counting every `all`/`any`
+ *   container as a node exactly the way `normalizeFilter` does.
+ * - the scalar cap — characters in any one filter value, wildcards included.
+ */
+export const CONTENT_LIST_QUERY_MAX_IN_VALUES = 100;
+export const CONTENT_LIST_QUERY_MAX_FILTER_NODES = 50;
+export const CONTENT_LIST_QUERY_MAX_VALUE_LENGTH = 4_096;
+
+/**
  * Operators the server declares per field type, mirroring `filterOperatorsFor`
  * in `content-query.ts`. Sending an operator outside this set fails the *whole*
  * request with a 400, so the translator drops it here instead.
@@ -238,12 +253,15 @@ const SERVER_OPERATORS: Record<
  * `pattern` marks the three operators that become a `like` with wildcards the
  * client adds itself — the server does not add them.
  *
- * Three DataTable operators have no sound server expression and are dropped:
+ * `nullValue` marks the two null predicates. `eq`/`ne` are null-aware end to
+ * end: the protocol's scalar type admits `null`, the request normalizer rejects
+ * a null value only for `gt`/`gte`/`lt`/`lte`/`like`, and the collection query
+ * builder special-cases it — `{ field: null }` becomes `IS NULL` and
+ * `{ 'field !=': null }` becomes `IS NOT NULL`, not a comparison against NULL.
  *
- * - `notContains` would be `not(like)`, and the executor refuses to negate a
- *   `like` (`DATA_QUERY_UNSUPPORTED`) — sending it would fail the whole query.
- * - `isNull` / `isNotNull` have no null-aware operator: `ne null` is never true
- *   in SQL, so it would silently return an empty list rather than "has a value".
+ * `notContains` is the only DataTable operator with no sound server expression:
+ * it would be `not(like)`, and the executor refuses to negate a `like`
+ * (`DATA_QUERY_UNSUPPORTED`), which would fail the whole query.
  */
 const OPERATOR_MAP: Partial<
   Record<
@@ -251,6 +269,7 @@ const OPERATOR_MAP: Partial<
     {
       operator: ContentListQueryFilterOperator;
       pattern?: 'contains' | 'prefix' | 'suffix';
+      nullValue?: true;
     }
   >
 > = {
@@ -265,6 +284,8 @@ const OPERATOR_MAP: Partial<
   gte: { operator: 'gte' },
   lt: { operator: 'lt' },
   lte: { operator: 'lte' },
+  isNull: { operator: 'eq', nullValue: true },
+  isNotNull: { operator: 'ne', nullValue: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -287,7 +308,12 @@ export type ContentListQueryDropReason =
   /** The value cannot be expressed for the server field's declared type. */
   | 'unsupported-value'
   /** The value was clamped to stay inside a protocol or policy bound. */
-  | 'out-of-range';
+  | 'out-of-range'
+  /**
+   * An unpaginated view was requested, which a server query cannot express —
+   * the endpoint always applies a page limit. Coerced to the page size.
+   */
+  | 'unpaginated-unsupported';
 
 /** One discarded piece of a translated query, reported rather than thrown. */
 export interface ContentListQueryDrop {
@@ -348,14 +374,59 @@ export function escapeContentListQueryLikeValue(value: string): string {
   return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
 
+/**
+ * Trims a value so that escaping it and adding wildcards still fits the
+ * protocol's scalar cap.
+ *
+ * Escaping can double a string's length, so a 4096-character search would
+ * otherwise become an 8194-character `like` value and 400 the whole request.
+ * Iteration is by code point, so a surrogate pair is never cut in half.
+ */
+function boundLikeSource(
+  text: string,
+  budget: number,
+): { text: string; truncated: boolean } {
+  let out = '';
+  let used = 0;
+  for (const character of text) {
+    const cost = /[\\%_]/.test(character) ? 2 : 1;
+    if (used + cost > budget) return { text: out, truncated: true };
+    out += character;
+    used += cost;
+  }
+  return { text: out, truncated: false };
+}
+
 function likeValue(
   value: string,
   pattern: 'contains' | 'prefix' | 'suffix',
-): string {
-  const escaped = escapeContentListQueryLikeValue(value);
-  if (pattern === 'prefix') return `${escaped}%`;
-  if (pattern === 'suffix') return `%${escaped}`;
-  return `%${escaped}%`;
+): { value: string; truncated: boolean } {
+  // Two wildcard characters is the worst case (`contains`).
+  const bounded = boundLikeSource(
+    value,
+    CONTENT_LIST_QUERY_MAX_VALUE_LENGTH - 2,
+  );
+  const escaped = escapeContentListQueryLikeValue(bounded.text);
+  const wrapped =
+    pattern === 'prefix'
+      ? `${escaped}%`
+      : pattern === 'suffix'
+        ? `%${escaped}`
+        : `%${escaped}%`;
+  return { value: wrapped, truncated: bounded.truncated };
+}
+
+/** Cuts a plain scalar string to the protocol cap without splitting a pair. */
+function boundScalarText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= CONTENT_LIST_QUERY_MAX_VALUE_LENGTH) {
+    return { text, truncated: false };
+  }
+  const cut = text.slice(0, CONTENT_LIST_QUERY_MAX_VALUE_LENGTH);
+  const last = cut.charCodeAt(cut.length - 1);
+  return {
+    text: last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut,
+    truncated: true,
+  };
 }
 
 function scalarText(value: unknown): string | null {
@@ -375,6 +446,7 @@ function scalarText(value: unknown): string | null {
 function coerceValue(
   field: ContentListQueryField,
   raw: unknown,
+  truncated?: { value: boolean },
 ): ContentListQueryScalar | undefined {
   const text = scalarText(raw);
   if (text === null) return undefined;
@@ -391,7 +463,9 @@ function coerceValue(
     if (text === 'false') return false;
     return undefined;
   }
-  return text;
+  const bounded = boundScalarText(text);
+  if (bounded.truncated && truncated) truncated.value = true;
+  return bounded.text;
 }
 
 function resolveColumn(
@@ -435,14 +509,32 @@ function translateFilter(
     return null;
   }
 
+  // `isNull` / `isNotNull`: a null scalar, which the normalizer accepts for
+  // eq/ne and the query builder lowers to `IS NULL` / `IS NOT NULL`.
+  if (mapping.nullValue) {
+    return {
+      kind: 'condition',
+      field: field.field,
+      operator: mapping.operator,
+      value: null,
+    };
+  }
+
   if (mapping.operator === 'in' || mapping.operator === 'notIn') {
     const entries = Array.isArray(filter.value) ? filter.value : [];
     const values: ContentListQueryScalar[] = [];
+    const truncated = { value: false };
+    let overflowed = false;
     for (const entry of entries) {
-      const coerced = coerceValue(field, entry);
-      if (coerced !== undefined && !values.includes(coerced)) {
-        values.push(coerced);
+      const coerced = coerceValue(field, entry, truncated);
+      if (coerced === undefined || values.includes(coerced)) continue;
+      if (values.length >= CONTENT_LIST_QUERY_MAX_IN_VALUES) {
+        // The normalizer refuses the whole request past this many values, so
+        // narrow the predicate rather than lose the entire list.
+        overflowed = true;
+        break;
       }
+      values.push(coerced);
     }
     if (values.length === 0) {
       dropped.push({
@@ -452,6 +544,22 @@ function translateFilter(
         detail: filter.operator,
       });
       return null;
+    }
+    if (overflowed) {
+      dropped.push({
+        scope: 'filter',
+        reason: 'out-of-range',
+        columnId,
+        detail: String(entries.length),
+      });
+    }
+    if (truncated.value) {
+      dropped.push({
+        scope: 'filter',
+        reason: 'out-of-range',
+        columnId,
+        detail: filter.operator,
+      });
     }
     return {
       kind: 'condition',
@@ -472,15 +580,25 @@ function translateFilter(
       });
       return null;
     }
+    const pattern = likeValue(text, mapping.pattern);
+    if (pattern.truncated) {
+      dropped.push({
+        scope: 'filter',
+        reason: 'out-of-range',
+        columnId,
+        detail: filter.operator,
+      });
+    }
     return {
       kind: 'condition',
       field: field.field,
       operator: 'like',
-      value: likeValue(text, mapping.pattern),
+      value: pattern.value,
     };
   }
 
-  const value = coerceValue(field, filter.value);
+  const truncated = { value: false };
+  const value = coerceValue(field, filter.value, truncated);
   if (value === undefined) {
     dropped.push({
       scope: 'filter',
@@ -489,6 +607,14 @@ function translateFilter(
       detail: filter.operator,
     });
     return null;
+  }
+  if (truncated.value) {
+    dropped.push({
+      scope: 'filter',
+      reason: 'out-of-range',
+      columnId,
+      detail: filter.operator,
+    });
   }
   return {
     kind: 'condition',
@@ -508,15 +634,25 @@ function translateFilter(
 function translateSearch(
   search: string,
   searchFields: readonly string[],
+  dropped: ContentListQueryDrop[],
 ): ContentListQueryFilter | null {
   const trimmed = search.trim();
   if (!trimmed || searchFields.length === 0) return null;
-  const value = likeValue(trimmed, 'contains');
+  const pattern = likeValue(trimmed, 'contains');
+  if (pattern.truncated) {
+    // The URL layer stores a search verbatim, so an over-long `?q=` would
+    // otherwise 400 the whole list instead of searching a shorter term.
+    dropped.push({
+      scope: 'search',
+      reason: 'out-of-range',
+      detail: String(trimmed.length),
+    });
+  }
   const filters: ContentListQueryFilter[] = searchFields.map((field) => ({
     kind: 'condition',
     field,
     operator: 'like',
-    value,
+    value: pattern.value,
   }));
   return filters.length === 1 ? filters[0] : { kind: 'any', filters };
 }
@@ -558,6 +694,19 @@ function translateSorting(
 }
 
 /**
+ * Counts filter nodes exactly the way `normalizeFilter` budgets them: every
+ * node, container or condition, costs one.
+ */
+function countFilterNodes(filter: ContentListQueryFilter): number {
+  if (filter.kind === 'condition') return 1;
+  if (filter.kind === 'not') return 1 + countFilterNodes(filter.filter);
+  return filter.filters.reduce(
+    (total, child) => total + countFilterNodes(child),
+    1,
+  );
+}
+
+/**
  * Translates a content-list view state into a bounded `DataQueryRequest`.
  *
  * Everything unmappable is dropped and reported rather than thrown: a stale
@@ -574,10 +723,16 @@ export function contentListViewStateToDataQueryRequest(
   const dropped: ContentListQueryDrop[] = [];
   const projection = [...(options.projection ?? CONTENT_LIST_QUERY_PROJECTION)];
   const maxPageSize = options.maxPageSize ?? CONTENT_LIST_MAX_PAGE_SIZE;
-  const requestedSize =
-    state.pageSize ??
-    options.defaultPageSize ??
-    CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE;
+  const defaultSize =
+    options.defaultPageSize ?? CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE;
+  if (state.pageSize === null) {
+    // `null` means "unpaginated", which a server query cannot express: the
+    // endpoint always applies a limit. Silently falling back would render one
+    // page of `limit` rows with no page controls and no way to reach the rest,
+    // so the coercion is reported instead. Local mode keeps null semantics.
+    dropped.push({ scope: 'pageSize', reason: 'unpaginated-unsupported' });
+  }
+  const requestedSize = state.pageSize ?? defaultSize;
   let limit = Math.max(1, Math.floor(requestedSize));
   if (limit > maxPageSize) {
     // A restored link or saved view must never turn into a larger row budget
@@ -605,11 +760,33 @@ export function contentListViewStateToDataQueryRequest(
   const search = translateSearch(
     state.search ?? '',
     CONTENT_LIST_QUERY_SEARCH_FIELDS,
+    dropped,
   );
-  if (search) branches.push(search);
+  // The node budget is spent in the caller's own priority order: search first —
+  // it is the operator's most recent, most visible intent — then the
+  // declarative filters. The outer `all` container costs a node too.
+  let nodeBudget = CONTENT_LIST_QUERY_MAX_FILTER_NODES - 1;
+  if (search) {
+    branches.push(search);
+    nodeBudget -= countFilterNodes(search);
+  }
   for (const filter of state.filters ?? []) {
     const translated = translateFilter(filter, dropped);
-    if (translated) branches.push(translated);
+    if (!translated) continue;
+    const cost = countFilterNodes(translated);
+    if (cost > nodeBudget) {
+      // Past this many nodes the normalizer refuses the entire request, so a
+      // narrower query beats an error panel.
+      dropped.push({
+        scope: 'filter',
+        reason: 'out-of-range',
+        columnId: filter.columnId,
+        detail: String(CONTENT_LIST_QUERY_MAX_FILTER_NODES),
+      });
+      continue;
+    }
+    nodeBudget -= cost;
+    branches.push(translated);
   }
 
   const sort = translateSorting(state.sorting ?? [], dropped);
@@ -900,11 +1077,46 @@ export interface ContentListQueryBinding {
   readonly stale: boolean;
   /** The last failure, or a falsy value when the query is healthy. */
   readonly error: unknown;
+  /**
+   * True when the server had to shorten the answer to fit its byte budget.
+   * Optional because `RemoteQueryBinding` does not surface it; when a binding
+   * omits it, `ContentList` reads it off the result its own `execute` resolved.
+   */
+  readonly truncated?: boolean;
+  /** Server-side warnings for the same reason, and for shortened values. */
+  readonly warnings?: ReadonlyArray<string>;
   execute(
     request: ContentListDataQueryRequest,
     options?: { signal?: AbortSignal },
   ): Promise<unknown>;
   retry(): Promise<unknown>;
+}
+
+/**
+ * What the server said about the completeness of an answer.
+ *
+ * `executeContentQuery` drops trailing rows to stay inside `maxResultBytes` and
+ * shortens over-long values, flagging both. That matters to a paging client:
+ * the next page is computed from `page * limit`, so rows the server dropped are
+ * skipped on the following page too. Reporting it is the difference between a
+ * short page and silently missing content.
+ */
+export interface ContentListQueryNotices {
+  truncated: boolean;
+  warnings: string[];
+}
+
+/** Reads the completeness flags off a result envelope, defensively. */
+export function readContentListQueryNotices(
+  result: unknown,
+): ContentListQueryNotices {
+  if (!isRecord(result)) return { truncated: false, warnings: [] };
+  const warnings = Array.isArray(result.warnings)
+    ? result.warnings.filter(
+        (entry): entry is string => typeof entry === 'string',
+      )
+    : [];
+  return { truncated: result.truncated === true, warnings };
 }
 
 /**

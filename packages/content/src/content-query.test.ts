@@ -31,6 +31,9 @@ import {
   buildDataQuerySchemaForClass,
   CONTENT_QUERY_MAX_PAGE_LIMIT,
   type ContentQueryCollection,
+  DATA_QUERY_MAX_JSON_CONTAINER_ITEMS,
+  DATA_QUERY_MAX_JSON_DEPTH,
+  DATA_QUERY_MAX_JSON_STRING_LENGTH,
   DATA_QUERY_MAX_STRING_LENGTH,
   executeContentQuery,
   mergeContentQueryScope,
@@ -358,6 +361,79 @@ describe('executeContentQuery', () => {
     );
     expect(result.truncated).toBe(true);
     expect(result.warnings.join(' ')).toMatch(/shortened over-long values/);
+  });
+
+  it('bounds a nested JSON value instead of failing the whole result', async () => {
+    // `canonicalJson` REJECTS the entire result when a nested string passes the
+    // JSON string limit, so one large metadata blob would otherwise fail an
+    // otherwise valid page.
+    await seed(contents, [
+      {
+        name: 'deep-metadata',
+        metadata: {
+          note: 'n'.repeat(DATA_QUERY_MAX_JSON_STRING_LENGTH + 100),
+          tags: Array.from(
+            { length: DATA_QUERY_MAX_JSON_CONTAINER_ITEMS + 50 },
+            (_, index) => `tag-${index}`,
+          ),
+        },
+      },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    const metadata = result.rows[0].metadata as {
+      note: string;
+      tags: string[];
+    };
+    expect(metadata.note).toHaveLength(DATA_QUERY_MAX_JSON_STRING_LENGTH);
+    expect(metadata.tags).toHaveLength(DATA_QUERY_MAX_JSON_CONTAINER_ITEMS);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/shortened over-long values/);
+  });
+
+  it('bounds over-deep nesting and a non-finite number in a JSON value', async () => {
+    let deep: Record<string, unknown> = { leaf: 'bottom' };
+    for (let level = 0; level < DATA_QUERY_MAX_JSON_DEPTH + 4; level += 1) {
+      deep = { nested: deep };
+    }
+    await seed(contents, [{ name: 'deep-nesting', metadata: deep }]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    // The row survives; only the sub-document past the limit is dropped.
+    expect(result.rows).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    let cursor = result.rows[0].metadata as Record<string, unknown> | null;
+    let depth = 0;
+    while (cursor && typeof cursor === 'object' && 'nested' in cursor) {
+      cursor = cursor.nested as Record<string, unknown> | null;
+      depth += 1;
+    }
+    expect(depth).toBeLessThanOrEqual(DATA_QUERY_MAX_JSON_DEPTH);
+  });
+
+  it('does not apply the scalar cap to a JSON document', async () => {
+    // A json field is validated as a document with much larger limits; capping
+    // it at the scalar length would corrupt a legitimate payload.
+    const note = 'n'.repeat(DATA_QUERY_MAX_STRING_LENGTH + 500);
+    await seed(contents, [{ name: 'json-scalar', metadata: { note } }]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    expect((result.rows[0].metadata as { note: string }).note).toHaveLength(
+      note.length,
+    );
+    expect(result.truncated).toBe(false);
   });
 
   it('truncates a large result to the schema byte budget', async () => {

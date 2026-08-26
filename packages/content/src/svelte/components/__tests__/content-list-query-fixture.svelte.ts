@@ -27,6 +27,12 @@ export interface FakeContentListQuery {
   fail(error: unknown): void;
   /** Toggle the busy flags independently of a request. */
   setBusy(options: { loading?: boolean; refreshing?: boolean }): void;
+  /**
+   * The envelope subsequent `execute` calls resolve with. `RemoteQueryBinding`
+   * does not expose `truncated`/`warnings`, so this is the path the component
+   * actually reads them through.
+   */
+  setEnvelope(envelope: unknown): void;
 }
 
 export function createFakeContentListQuery(): FakeContentListQuery {
@@ -37,6 +43,7 @@ export function createFakeContentListQuery(): FakeContentListQuery {
   let error = $state<unknown>(null);
   const requests: ContentListDataQueryRequest[] = [];
   let retries = 0;
+  let envelope: unknown;
 
   const binding: ContentListQueryBinding = {
     get rows() {
@@ -59,7 +66,7 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     },
     async execute(request) {
       requests.push(request);
-      return undefined;
+      return envelope;
     },
     async retry() {
       retries += 1;
@@ -88,6 +95,9 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     setBusy(options) {
       if (options.loading !== undefined) loading = options.loading;
       if (options.refreshing !== undefined) refreshing = options.refreshing;
+    },
+    setEnvelope(next) {
+      envelope = next;
     },
   };
 }

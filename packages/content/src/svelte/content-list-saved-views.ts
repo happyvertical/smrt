@@ -58,6 +58,19 @@ export const CONTENT_LIST_SAVED_VIEW_SCHEMA_VERSION = 1;
 export const CONTENT_LIST_SAVED_VIEW_STORAGE_PREFIX =
   'smrt:content-list:saved-views';
 
+/**
+ * A stored snapshot exactly as it was persisted: structurally hydrated by
+ * `hydrateDataTableSnapshot`, but **not** validated against this list's column
+ * and operator vocabulary.
+ *
+ * The raw payload is kept on purpose — a stale view has to be able to report
+ * what it referenced (`restoreContentListSavedView` returns those drops), and
+ * sanitizing on read would erase the evidence. Never hand one of these to a
+ * controller directly: go through `restoreContentListSavedView` when the drops
+ * matter, or `applyContentListViewState`, which validates its patch.
+ */
+export type RawContentListViewSnapshot = DataTableSnapshot;
+
 /** A named, restorable content list view. */
 export interface ContentListSavedView {
   /** Stable identity. Survives renames and re-saves. */
@@ -66,8 +79,11 @@ export interface ContentListSavedView {
   name: string;
   /** Envelope version, currently `CONTENT_LIST_SAVED_VIEW_SCHEMA_VERSION`. */
   schemaVersion: number;
-  /** The persisted view payload, normalized on write. */
-  snapshot: DataTableSnapshot;
+  /**
+   * The persisted view payload — structurally normalized on write, and
+   * deliberately NOT column-validated. See {@link RawContentListViewSnapshot}.
+   */
+  snapshot: RawContentListViewSnapshot;
   /** ISO timestamps, for ordering the operator's list. */
   createdAt: string;
   updatedAt: string;
@@ -87,9 +103,14 @@ export interface ContentListSavedViewInput {
  * the signature later would break every consumer.
  */
 export interface ContentListSavedViewStore {
-  /** Every stored view, most recently updated first. Corrupt entries are skipped. */
+  /**
+   * Every stored view, most recently updated first. Corrupt entries are
+   * skipped. Each `snapshot` is a {@link RawContentListViewSnapshot} — hydrated
+   * but unvalidated. Restore it with `restoreContentListSavedView`, or apply it
+   * through `applyContentListViewState`, which validates.
+   */
   list(): Promise<ContentListSavedView[]>;
-  /** One view, or `null` when it is absent or unreadable. */
+  /** One view, or `null` when it is absent or unreadable. Snapshot is raw. */
   get(id: string): Promise<ContentListSavedView | null>;
   /** Creates or replaces a view. Throws `TypeError` on an unusable snapshot. */
   save(input: ContentListSavedViewInput): Promise<ContentListSavedView>;

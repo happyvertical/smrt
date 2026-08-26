@@ -91,6 +91,48 @@ const OPERATOR_SEPARATOR = '.';
 const LIST_SEPARATOR = ',';
 
 /**
+ * Escape character for a list entry that contains the separator.
+ *
+ * Without it, `author in ["Smith, John"]` serializes to `Smith, John` and
+ * restores as two values — a silently *different* query rather than a failed
+ * one. Both the separator and the escape character itself are escaped on write
+ * and unescaped on read, so the round trip is exact.
+ */
+const LIST_ESCAPE = '\\';
+
+function escapeListEntry(value: string): string {
+  return value.replace(/[\\,]/g, (character) => `${LIST_ESCAPE}${character}`);
+}
+
+/** Splits on unescaped separators only, unescaping each entry as it goes. */
+function splitListValue(raw: string): string[] {
+  const entries: string[] = [];
+  let current = '';
+  let escaped = false;
+  for (const character of raw) {
+    if (escaped) {
+      current += character;
+      escaped = false;
+      continue;
+    }
+    if (character === LIST_ESCAPE) {
+      escaped = true;
+      continue;
+    }
+    if (character === LIST_SEPARATOR) {
+      entries.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  // A trailing lone escape is data, not a prefix: keep it rather than losing it.
+  if (escaped) current += LIST_ESCAPE;
+  entries.push(current);
+  return entries;
+}
+
+/**
  * Columns a restored filter or sort rule may address: exactly the columns the
  * surface descriptor publishes with `filter` and `sort` capability.
  */
@@ -655,18 +697,37 @@ export function sanitizeContentListViewState(
 }
 
 /**
- * Merges a validated patch onto a controller's current state.
+ * Merges a patch onto a controller's current state, validating it first.
+ *
+ * INVARIANT: no exported path may apply unvalidated state to a controller.
+ * This function is the only application point the package publishes, and it is
+ * routinely composed with values that came from somewhere untrusted — a query
+ * string, a `localStorage` blob, an agent command. Sanitizing here means the
+ * composition `applyContentListViewState(controller, storedView.snapshot.state)`
+ * is safe even though the store's read path deliberately keeps the raw payload
+ * so a stale view's drops can still be reported (see
+ * `restoreContentListSavedView`). Sanitization is idempotent, so calling this
+ * with an already-validated patch changes nothing.
+ *
+ * Only the *patch* is sanitized, never the merged result: the sanitizer never
+ * emits selection or expansion, so sanitizing the merge would silently clear
+ * the operator's current selection.
  *
  * Restoration is a state replacement rather than a command: it is not a user
  * interaction and must not reset the page the way `setSearch`/`setFilters` do.
  * Aspects the patch omits — selection and expansion above all — are carried
  * over from the controller untouched.
+ *
+ * Use {@link sanitizeContentListViewState} directly when the caller needs to
+ * report what was refused.
  */
 export function applyContentListViewState(
   controller: DataTableController,
   patch: Partial<DataTableViewState>,
+  options: ContentListStateValidationOptions = {},
 ): DataTableTransition {
-  return controller.replaceState({ ...controller.getState(), ...patch });
+  const { state: safe } = sanitizeContentListViewState(patch, options);
+  return controller.replaceState({ ...controller.getState(), ...safe });
 }
 
 function parameterName(name: string, prefix: string): string {
@@ -721,7 +782,12 @@ export function contentListViewStateToSearchParams(
       continue;
     }
     if (Array.isArray(filter.value)) {
-      params.append(name, filter.value.map(String).join(LIST_SEPARATOR));
+      params.append(
+        name,
+        filter.value
+          .map((entry) => escapeListEntry(String(entry)))
+          .join(LIST_SEPARATOR),
+      );
       continue;
     }
     params.append(name, String(filter.value ?? ''));
@@ -772,17 +838,28 @@ export function mergeContentListViewStateIntoSearchParams(
   return next;
 }
 
-/** True when a parameter name belongs to this module's vocabulary. */
+/**
+ * True when a parameter name belongs to this module's vocabulary, and may
+ * therefore be *removed* while rewriting the query string.
+ *
+ * Ownership is decided by the BASE name only. A key such as `facet.contains`
+ * carries a known operator suffix but names no ContentList column, so it is a
+ * host's parameter and must survive — this module promises every parameter it
+ * does not own is preserved, and deleting one silently breaks the host's own
+ * routing on the very first filter change.
+ *
+ * This is deliberately narrower than the recognizer in
+ * {@link readContentListViewStateFromSearchParams}, which reports an
+ * operator-suffixed unknown column so a crafted `evil.contains=` stays visible.
+ * Reporting a refusal and deleting a parameter are different acts.
+ */
 function ownedParameter(key: string, prefix: string): boolean {
   if (prefix && !key.startsWith(prefix)) return false;
   const name = prefix ? key.slice(prefix.length) : key;
   if (RESERVED_PARAMS.has(name)) return true;
   const separator = name.indexOf(OPERATOR_SEPARATOR);
-  if (separator === -1) return LAYOUT_COLUMNS.has(name);
-  return (
-    LAYOUT_COLUMNS.has(name.slice(0, separator)) ||
-    FILTER_OPERATORS.has(name.slice(separator + 1))
-  );
+  const columnId = separator === -1 ? name : name.slice(0, separator);
+  return LAYOUT_COLUMNS.has(columnId);
 }
 
 function parseInteger(raw: string): number | null {
@@ -906,7 +983,7 @@ export function readContentListViewStateFromSearchParams(
       ...(VALUELESS_OPERATORS.has(operator as DataTableFilterOperator)
         ? {}
         : LIST_OPERATORS.has(operator as DataTableFilterOperator)
-          ? { value: value.split(LIST_SEPARATOR) }
+          ? { value: splitListValue(value) }
           : { value }),
     });
   }

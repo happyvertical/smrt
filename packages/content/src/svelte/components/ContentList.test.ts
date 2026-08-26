@@ -1202,3 +1202,219 @@ describe('ContentList saved views (#2452)', () => {
     expect(await store.list()).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review batch #2452
+// ---------------------------------------------------------------------------
+
+function paginationNav(target: HTMLElement): HTMLElement | null {
+  return target.querySelector<HTMLElement>('nav[aria-label="Content pages"]');
+}
+
+describe('ContentList unpaginated state in server mode (#2452)', () => {
+  it('coerces `?size=all` to the page size, pages, and says so', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
+      urlState: { params: 'size=all' },
+    });
+
+    // The request is bounded, not silently defaulted behind the operator's back.
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 2,
+    });
+
+    query.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 5);
+    flushSync();
+
+    // Page controls render, so the other three rows are reachable.
+    expect(paginationNav(target)).toBeTruthy();
+    const notice = target.querySelector('.state-notice');
+    expect(notice?.textContent).toContain(
+      'an unpaginated list is not available from the server',
+    );
+
+    // And paging actually issues the next offset.
+    const nextPage = Array.from(
+      paginationNav(target)?.querySelectorAll('button') ?? [],
+    ).find((button) =>
+      /next|2/i.test(
+        `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`,
+      ),
+    );
+    click(nextPage as HTMLButtonElement);
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 2,
+      limit: 2,
+    });
+  });
+
+  it('keeps the server page-size seed when a link omits `size`', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
+      urlState: { params: 'q=zoning' },
+    });
+
+    expect(searchInput(target).value).toBe('zoning');
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 2,
+    });
+
+    query.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 5);
+    flushSync();
+
+    expect(paginationNav(target)).toBeTruthy();
+    // Nothing was refused, so the operator is not told anything.
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('omits `size` from a published link while at the default', () => {
+    const onChange = vi.fn();
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
+      urlState: { params: '', onChange },
+    });
+
+    typeText(searchInput(target), 'zoning');
+
+    const params = onChange.mock.calls.at(-1)?.[0] as URLSearchParams;
+    expect(params.get('q')).toBe('zoning');
+    expect(params.get('size')).toBeNull();
+  });
+
+  it('still allows an unpaginated local list', () => {
+    const target = renderList({ urlState: { params: 'size=all' } });
+
+    expect(rowTitles(target)).toHaveLength(2);
+    expect(paginationNav(target)).toBeNull();
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+});
+
+describe('ContentList server completeness reporting (#2452)', () => {
+  it('tells the operator when the server truncated the answer', async () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+
+    query.setEnvelope({
+      truncated: true,
+      warnings: [
+        'Content query result was truncated to fit its maximum result bytes.',
+      ],
+    });
+    // Any query-affecting change issues a fresh execute.
+    typeText(searchInput(target), 'budget');
+    await settle();
+
+    const notice = target.querySelector('.state-notice');
+    expect(notice?.textContent).toContain(
+      'The server shortened this answer to fit its size limit',
+    );
+    expect(notice?.textContent).toContain('maximum result bytes');
+  });
+
+  it('prefers a binding that exposes the flags itself', () => {
+    const query = createFakeContentListQuery();
+    const binding = {
+      ...query.binding,
+      get rows() {
+        return query.binding.rows;
+      },
+      get total() {
+        return query.binding.total;
+      },
+      get loading() {
+        return query.binding.loading;
+      },
+      get refreshing() {
+        return query.binding.refreshing;
+      },
+      get stale() {
+        return query.binding.stale;
+      },
+      get error() {
+        return query.binding.error;
+      },
+      truncated: true,
+      warnings: ['Content query shortened over-long values in: description.'],
+    };
+    const target = renderList({ query: { bind: () => binding } });
+
+    const notice = target.querySelector('.state-notice');
+    expect(notice?.textContent).toContain('shortened over-long values');
+  });
+
+  it('says nothing when the answer was complete', async () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.setEnvelope({ truncated: false, warnings: [] });
+    typeText(searchInput(target), 'budget');
+    await settle();
+
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+});
+
+describe('ContentList restore limits (#2452)', () => {
+  it('holds a saved view to the host maxPageSize, like a link', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:max-page-size',
+    });
+    await store.save({
+      name: 'Huge',
+      snapshot: {
+        version: 3,
+        modes: {
+          filtering: 'manual',
+          sorting: 'manual',
+          pagination: 'manual',
+        },
+        state: {
+          search: '',
+          filters: [],
+          sorting: [],
+          page: 1,
+          pageSize: 100_000,
+          columnOrder: [],
+          columnVisibility: [],
+          columnWidths: [],
+          columnPinning: [],
+          selection: { scope: 'explicit', rowIds: [] },
+          selectedRowIds: [],
+          expandedRowIds: [],
+        },
+      } as never,
+    });
+
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      savedViews: store,
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { options: { maxPageSize: 25 } },
+    });
+    await settle();
+
+    const [saved] = await store.list();
+    const select = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Saved views"]',
+    );
+    if (!select) throw new Error('No saved-view select');
+    selectOption(select, saved.id);
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 25,
+    });
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'that value was outside the allowed range',
+    );
+  });
+});

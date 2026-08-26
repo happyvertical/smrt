@@ -161,9 +161,25 @@ Selection normalization also changes shape in server mode: `rows` is only the
 current page, so membership cannot be the durability test (it would clear the
 selection on every page change). Only the adapter's synthetic ids are stripped.
 
-A server query always carries a page limit, so supplying `query` seeds the
-controller's `pageSize` (from `query.request.defaultPageSize`, default 50).
-Local mode keeps the historical unpaginated list.
+### Server mode cannot be unpaginated
+
+`pageSize: null` means "show everything", and the query endpoint has no way to
+express that — it always applies a limit. Left alone, a null page size renders
+one page of `limit` rows with no page controls and no way to reach the rest, so
+in server mode it is **coerced and reported**:
+
+- supplying `query` seeds the controller's `pageSize` from
+  `query.request.defaultPageSize` (default 50);
+- that same number is handed to the URL layer as its `defaultPageSize`, so a
+  link that omits `size` restores the seed instead of overwriting it with the
+  local `null`, and a link this list writes omits `size` while at the default;
+- a null arriving later — `?size=all`, a saved view, a data-surface
+  `set-page-size` — is coerced by an effect against live state, and the
+  translator reports the same coercion for a direct caller.
+
+Both report a `pageSize` / `unpaginated-unsupported` drop in the notice. Local
+mode keeps the historical unpaginated list unchanged; the coercion is
+server-mode-only.
 
 ### Search, and what the protocol cannot express
 
@@ -178,14 +194,26 @@ operator's own `%`/`_` escaped with a backslash.
 That fails closed (empty result) rather than open (every row); a portable fix
 needs an `ESCAPE` clause at the collection/SQL boundary.
 
+`isNull` / `isNotNull` map to a **null-valued `eq` / `ne`**. That is null-aware
+end to end and is not a comparison against NULL: the protocol scalar type admits
+`null`, the request normalizer rejects a null value only for
+`gt`/`gte`/`lt`/`lte`/`like`, and `buildWhere` lowers `{ field: null }` to
+`IS NULL` and `{ 'field !=': null }` to `IS NOT NULL`.
+
 Dropped rather than sent, because sending them would fail the *whole* request:
 
-- `notContains` — the executor refuses to negate a `like`.
-- `isNull` / `isNotNull` — there is no null-aware operator, and `ne null` is
-  never true in SQL.
+- `notContains` — the executor refuses to negate a `like`. The only operator
+  with no server expression.
 - `contains` / `startsWith` / `endsWith` on a datetime column — `like` is
   string-only in the request normalizer.
 - an unparseable datetime value — the normalizer requires an RFC 3339 instant.
+
+The translator also enforces the normalizer's **input caps**, because exceeding
+one 400s the entire list rather than degrading it. Each is capped and reported:
+at most 100 `in`/`notIn` values, at most 50 filter nodes (counting every
+`all`/`any` container, so search costs 4 and the outer `all` 1), and at most
+4096 characters per filter value — measured *after* escaping, since escaping can
+double a string's length.
 
 Server filters compare **exactly**; local mode compares case-insensitively. The
 adapter already lowercases `type` / `status` / `state` filter values, which is
@@ -208,8 +236,22 @@ never from the request body.
 - `metadata` path filtering is unavailable: JSON columns get no filter operators.
 - There is no ETag or version slot in the canonical envelope; `queryFingerprint`
   and `freshness.asOf` serve that role.
-- A restored page size is clamped to `CONTENT_LIST_MAX_PAGE_SIZE` (200), which
-  matches the schema's `maxPageLimit`, and the clamp is reported.
+- A restored page size is clamped to `maxPageSize` (default
+  `CONTENT_LIST_MAX_PAGE_SIZE`, 200, matching the schema's `maxPageLimit`), and
+  the clamp is reported. The ceiling is resolved once and applied to **both**
+  restore paths — a saved view is not a way around a limit a host set for links.
+- The server bounds its own answer: it shortens over-long values and drops
+  trailing rows to fit `maxResultBytes`, flagging `truncated` with a warning.
+  That matters to a paging client, because the next page is computed from
+  `page * limit`, so dropped rows are skipped on the following page too.
+  `ContentList` reads those flags — from the binding when it exposes them, and
+  otherwise off the envelope its own `execute` resolved — and renders them in
+  the same notice as the drops.
+- A `json` field (`metadata`, `tags`) is validated as a document, not a scalar,
+  and `canonicalJson` rejects the WHOLE result when a nested string, container,
+  depth, or number passes its limits. `executeContentQuery` therefore bounds a
+  JSON document itself (65536-character strings, 1000-item containers, depth 16,
+  finite numbers, no cycles), flagging `truncated` rather than failing the page.
 
 ### URL state and saved views
 
@@ -220,6 +262,30 @@ state)` with foreign parameters preserved, so a SvelteKit host calls
 `URLSearchParams`. Restoration goes through `applyContentListViewState`, which
 merges over current state rather than dispatching `setSearch`/`setFilters` —
 those would reset the restored page.
+
+**INVARIANT: no exported path may apply unvalidated state to a controller.**
+`applyContentListViewState` sanitizes its patch, because it is the one
+application point the package publishes and it is routinely composed with
+untrusted values. That is what makes
+`applyContentListViewState(controller, store.snapshot.state)` safe even though
+the store's read path deliberately returns a raw
+{@link RawContentListViewSnapshot} — keeping the raw payload is what lets
+`restoreContentListSavedView` still report a stale view's drops. Sanitization is
+idempotent, so ContentList's own already-validated patches are unaffected. Only
+the patch is sanitized, never the merged result: the sanitizer never emits
+selection, so sanitizing the merge would clear the operator's selection.
+
+Two URL-serialization rules the round trip depends on:
+
+- an `in`/`notIn` entry containing the list separator is escaped with a
+  backslash on write and unescaped on read, so `author in ["Smith, John"]`
+  restores as one value rather than two — a silently *different* query;
+- a parameter is owned (and therefore removable while rewriting) by its **base
+  name** only. A host's `facet.contains=` carries a known operator suffix but
+  names no ContentList column, so it survives. That is narrower than the
+  recognizer in `readContentListViewStateFromSearchParams`, which still reports
+  an operator-suffixed unknown column so a crafted `evil.contains=` stays
+  visible: reporting a refusal and deleting a parameter are different acts.
 
 The `type` prop lock still wins after a restore: the lock effect enforces
 against live state, so a restored `?type=document` is replaced by the locked

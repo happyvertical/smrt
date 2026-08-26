@@ -86,6 +86,16 @@ export const CONTENT_QUERY_EXCLUDED_FIELD_IDS: readonly string[] = ['body'];
 export const DATA_QUERY_MAX_STRING_LENGTH = 4_096;
 
 /**
+ * The protocol's limits for a `json` field, mirrored from
+ * `canonicalJson` in `@happyvertical/smrt-core`. Exceeding any of them makes
+ * the whole result invalid rather than the one value, so the adapter bounds a
+ * JSON document itself (see `boundJsonValue`).
+ */
+export const DATA_QUERY_MAX_JSON_STRING_LENGTH = 65_536;
+export const DATA_QUERY_MAX_JSON_CONTAINER_ITEMS = 1_000;
+export const DATA_QUERY_MAX_JSON_DEPTH = 16;
+
+/**
  * Bytes held back from the row budget for the envelope itself (request id,
  * fingerprint, page, total, freshness, warnings). The normalizer re-checks the
  * complete serialized envelope against `maxResultBytes`, so the row budget must
@@ -576,11 +586,127 @@ interface TruncationLog {
  * Cut an over-long string to the protocol's scalar cap without leaving a lone
  * surrogate behind.
  */
-function capString(value: string): string {
-  if (value.length <= DATA_QUERY_MAX_STRING_LENGTH) return value;
-  const cut = value.slice(0, DATA_QUERY_MAX_STRING_LENGTH);
+function capString(
+  value: string,
+  limit = DATA_QUERY_MAX_STRING_LENGTH,
+): string {
+  if (value.length <= limit) return value;
+  const cut = value.slice(0, limit);
   const last = cut.charCodeAt(cut.length - 1);
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
+}
+
+/**
+ * Bound one JSON document the same way {@link capString} bounds a scalar.
+ *
+ * `normalizeDataQueryResult` validates a `json` field with `canonicalJson`,
+ * which *rejects the whole result* — not just the offending value — when a
+ * nested string exceeds {@link DATA_QUERY_MAX_JSON_STRING_LENGTH}, a container
+ * exceeds {@link DATA_QUERY_MAX_JSON_CONTAINER_ITEMS}, nesting passes
+ * {@link DATA_QUERY_MAX_JSON_DEPTH}, a number is non-finite, a value is not a
+ * plain JSON type, or the document contains a cycle. One row with a large
+ * `metadata` blob would therefore fail an otherwise valid page.
+ *
+ * Every one of those is bounded here instead, and the field is flagged so the
+ * caller sees `truncated` plus a warning naming it.
+ */
+function boundJsonValue(
+  value: unknown,
+  descriptor: DataQueryFieldDescriptor,
+  truncation: TruncationLog | undefined,
+  depth = 0,
+  ancestors = new Set<object>(),
+): unknown {
+  const flag = (): void => {
+    truncation?.fields.add(descriptor.id);
+  };
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value.length > DATA_QUERY_MAX_JSON_STRING_LENGTH) {
+      flag();
+      return capString(value, DATA_QUERY_MAX_JSON_STRING_LENGTH);
+    }
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      flag();
+      return null;
+    }
+    return value;
+  }
+  if (typeof value === 'bigint') {
+    const safe =
+      value <= BigInt(Number.MAX_SAFE_INTEGER) &&
+      value >= BigInt(Number.MIN_SAFE_INTEGER);
+    if (!safe) {
+      flag();
+      return null;
+    }
+    return Number(value);
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  // Deeper than the validator accepts: keep the row, drop the sub-document.
+  if (depth >= DATA_QUERY_MAX_JSON_DEPTH) {
+    flag();
+    return null;
+  }
+  if (Array.isArray(value)) {
+    if (ancestors.has(value)) {
+      flag();
+      return null;
+    }
+    ancestors.add(value);
+    try {
+      let entries = value;
+      if (entries.length > DATA_QUERY_MAX_JSON_CONTAINER_ITEMS) {
+        flag();
+        entries = entries.slice(0, DATA_QUERY_MAX_JSON_CONTAINER_ITEMS);
+      }
+      return entries.map((entry) =>
+        boundJsonValue(entry, descriptor, truncation, depth + 1, ancestors),
+      );
+    } finally {
+      ancestors.delete(value);
+    }
+  }
+  if (!isPlainRecord(value)) {
+    // A class instance, function, or symbol would fail `plainObject` outright.
+    flag();
+    return null;
+  }
+  if (ancestors.has(value)) {
+    flag();
+    return null;
+  }
+  ancestors.add(value);
+  try {
+    let keys = Object.keys(value);
+    if (keys.length > DATA_QUERY_MAX_JSON_CONTAINER_ITEMS) {
+      flag();
+      keys = keys.slice(0, DATA_QUERY_MAX_JSON_CONTAINER_ITEMS);
+    }
+    const bounded: Record<string, unknown> = {};
+    for (const key of keys) {
+      if (key.length > DATA_QUERY_MAX_JSON_STRING_LENGTH) {
+        flag();
+        continue;
+      }
+      bounded[key] = boundJsonValue(
+        value[key],
+        descriptor,
+        truncation,
+        depth + 1,
+        ancestors,
+      );
+    }
+    return bounded;
+  } finally {
+    ancestors.delete(value);
+  }
 }
 
 function toDeclaredValue(
@@ -591,6 +717,11 @@ function toDeclaredValue(
   if (value === undefined) return null;
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  // A json field is validated as a document, not a scalar: it has its own,
+  // larger limits, and the scalar cap would corrupt a serialized payload.
+  if (descriptor.type === 'json') {
+    return boundJsonValue(value, descriptor, truncation);
   }
   if (
     typeof value === 'string' &&

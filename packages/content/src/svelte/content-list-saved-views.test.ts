@@ -9,7 +9,10 @@ import {
   restoreContentListSavedView,
   toContentListSavedViewInput,
 } from './content-list-saved-views.js';
-import { applyContentListViewState } from './content-list-url-state.js';
+import {
+  applyContentListViewState,
+  CONTENT_LIST_MAX_PAGE_SIZE,
+} from './content-list-url-state.js';
 
 const STORAGE_KEY = 'test:content-list:saved-views';
 
@@ -335,5 +338,101 @@ describe('restoring a saved view', () => {
       { columnId: 'updated', direction: 'desc' },
     ]);
     expect(target.getState().pageSize).toBe(25);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch #2452: the exported store/apply composition must be safe
+// ---------------------------------------------------------------------------
+
+describe('a tampered stored blob cannot reach a controller (#2452)', () => {
+  /** What someone with a console can write straight into `localStorage`. */
+  const tamperedBlob = JSON.stringify([
+    {
+      id: 'tampered',
+      name: 'Tampered',
+      schemaVersion: CONTENT_LIST_SAVED_VIEW_SCHEMA_VERSION,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      snapshot: {
+        version: 3,
+        modes: {
+          filtering: 'manual',
+          sorting: 'manual',
+          pagination: 'manual',
+        },
+        state: {
+          search: '',
+          filters: [
+            { columnId: 'tenantId', operator: 'equals', value: 'other-tenant' },
+            { columnId: 'body', operator: 'contains', value: 'secret' },
+            { columnId: 'description', operator: 'contains', value: 'secret' },
+            { columnId: 'status', operator: 'equals', value: 'draft' },
+          ],
+          sorting: [{ columnId: 'tenantId', direction: 'asc' }],
+          page: 1,
+          pageSize: 100_000,
+          columnOrder: [],
+          columnVisibility: [{ columnId: 'description', visible: true }],
+          columnWidths: [],
+          columnPinning: [],
+          selection: { scope: 'explicit', rowIds: [] },
+          selectedRowIds: [],
+          expandedRowIds: [],
+        },
+      },
+    },
+  ]);
+
+  function tamperedStore() {
+    const storage = createTestStorage();
+    storage.entries.set(STORAGE_KEY, tamperedBlob);
+    return createContentListSavedViewStore({
+      storage,
+      storageKey: STORAGE_KEY,
+    });
+  }
+
+  it('keeps the raw payload on read, so the drops stay reportable', async () => {
+    const [view] = await tamperedStore().list();
+    // Deliberately unvalidated — this is what makes a stale view explainable.
+    expect(view.snapshot.state.filters).toHaveLength(4);
+
+    const { dropped } = restoreContentListSavedView(view);
+    expect(dropped.map((drop) => drop.columnId)).toEqual(
+      expect.arrayContaining(['tenantId', 'body', 'description']),
+    );
+  });
+
+  it('is neutralized by applyContentListViewState, the only apply path', async () => {
+    const [view] = await tamperedStore().list();
+    const controller = createContentListController();
+
+    // The dangerous composition: raw store payload straight onto a controller.
+    applyContentListViewState(controller, view.snapshot.state);
+
+    const state = controller.getState();
+    expect(state.filters).toEqual([
+      { columnId: 'status', operator: 'equals', value: 'draft' },
+    ]);
+    expect(state.sorting).toEqual([]);
+    expect(state.pageSize).toBe(CONTENT_LIST_MAX_PAGE_SIZE);
+    expect(state.columnVisibility).toContainEqual({
+      columnId: 'description',
+      visible: false,
+    });
+  });
+
+  it('holds a saved view to a caller-supplied page-size ceiling', async () => {
+    const [view] = await tamperedStore().list();
+    const { state, dropped } = restoreContentListSavedView(view, {
+      maxPageSize: 25,
+    });
+    expect(state.pageSize).toBe(25);
+    expect(dropped).toContainEqual({
+      scope: 'pageSize',
+      reason: 'out-of-range',
+      detail: '100000',
+    });
   });
 });

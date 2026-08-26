@@ -138,6 +138,10 @@ export const M = defineMessages({
   'content.content_list.drop_malformed': 'that entry could not be read',
   'content.content_list.drop_out_of_range':
     'that value was outside the allowed range',
+  'content.content_list.drop_unpaginated':
+    'an unpaginated list is not available from the server; the default page size is in use',
+  'content.content_list.result_truncated':
+    'The server shortened this answer to fit its size limit, so some rows are not shown. Narrow the list or use a smaller page size.',
 
   // ContentList — saved views (#2452)
   'content.content_list.saved_views': 'Saved views',
