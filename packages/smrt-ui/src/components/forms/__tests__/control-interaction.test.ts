@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  type ControlCommand,
   type ControlIdentity,
+  type ControlInteractionRegistry,
   createControlInteractionRegistry,
   executeLocalControlBatch,
   executeLocalControlCommand,
@@ -10,6 +12,29 @@ const identity: ControlIdentity = {
   formId: 'profile',
   controlId: 'display-name',
 };
+
+function localGestureEvent(): Event {
+  const event = new Event('click');
+  Object.defineProperty(event, 'eventPhase', { value: Event.AT_TARGET });
+  return event;
+}
+
+function dispatchLocalGesture<T>(
+  execute: (event: Event) => Promise<T>,
+): Promise<T> {
+  const target = new EventTarget();
+  let pending: Promise<T> | undefined;
+  target.addEventListener(
+    'click',
+    (event) => {
+      pending = execute(event);
+    },
+    { once: true },
+  );
+  target.dispatchEvent(new Event('click'));
+  if (!pending) throw new Error('local gesture handler did not run');
+  return pending;
+}
 
 describe('control interaction registry', () => {
   it('discovers serializable metadata and current state', () => {
@@ -130,7 +155,7 @@ describe('control interaction registry', () => {
       reason: 'local_gesture_required',
     });
 
-    const gesture = new Event('click');
+    const gesture = localGestureEvent();
     const applied = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
@@ -158,7 +183,7 @@ describe('control interaction registry', () => {
     await executeLocalControlCommand(
       registry,
       { action: 'discard', identity, revision: 2 },
-      new Event('click'),
+      localGestureEvent(),
     );
 
     const spoofedClear = await registry.execute(
@@ -180,7 +205,7 @@ describe('control interaction registry', () => {
     await executeLocalControlCommand(
       registry,
       { action: 'undo', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(value).toBe('Ada');
   });
@@ -204,7 +229,7 @@ describe('control interaction registry', () => {
     const result = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(result).toMatchObject({
       ok: false,
@@ -234,7 +259,7 @@ describe('control interaction registry', () => {
     const wrongRevision = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 9 },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(wrongRevision).toMatchObject({
       ok: false,
@@ -246,7 +271,7 @@ describe('control interaction registry', () => {
     const stale = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(stale).toMatchObject({ ok: false, reason: 'staged_value_stale' });
     expect(value).toBe('Katherine');
@@ -255,7 +280,7 @@ describe('control interaction registry', () => {
     const discarded = await executeLocalControlCommand(
       registry,
       { action: 'discard', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(discarded.ok).toBe(true);
     expect(registry.get(identity)?.state.staged).toBeUndefined();
@@ -283,7 +308,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'discard', identity, revision: 1 },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: true });
     expect(registry.get(identity)?.state.staged).toBeUndefined();
@@ -327,7 +352,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await started;
     disabled = true;
@@ -488,7 +513,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await started;
     disabled = true;
@@ -545,7 +570,7 @@ describe('control interaction registry', () => {
         { action: 'apply', identity, revision: 1 },
         { action: 'apply', identity: secondIdentity, revision: 2 },
       ],
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(batch).toMatchObject({
       ok: false,
@@ -587,6 +612,58 @@ describe('control interaction registry', () => {
     expect(value).toBe('token');
   });
 
+  it('hides dynamically forbidden proposals while retaining a trusted discard escape hatch', async () => {
+    let value = 'Ada';
+    const setValue = vi.fn((next: unknown) => {
+      value = String(next);
+    });
+    const metadata: {
+      kind: 'text';
+      sensitivity?: 'public' | 'secret';
+      writable?: boolean;
+    } = { kind: 'text', writable: true };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata,
+      getValue: () => value,
+      setValue,
+    });
+
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    metadata.sensitivity = 'secret';
+    metadata.writable = false;
+
+    const hidden = registry.get(identity);
+    expect(hidden?.state).not.toHaveProperty('staged');
+    expect(hidden?.state).not.toHaveProperty('stagedValue');
+    expect(hidden?.state).not.toHaveProperty('stagedValueRedacted');
+    expect(hidden?.metadata.capabilities).not.toEqual(
+      expect.arrayContaining(['stage', 'apply']),
+    );
+
+    await expect(
+      dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'discard', identity, revision: 1 },
+          event,
+        ),
+      ),
+    ).resolves.toMatchObject({ ok: true, action: 'discard' });
+    expect(setValue).not.toHaveBeenCalled();
+    expect(registry.get(identity)?.state).not.toHaveProperty('staged');
+
+    metadata.sensitivity = 'public';
+    metadata.writable = true;
+    expect(registry.get(identity)?.state).not.toHaveProperty('staged');
+  });
+
   it('redacts sensitive current and staged values in snapshots and events', async () => {
     const policyCommands: unknown[] = [];
     const registry = createControlInteractionRegistry({
@@ -623,7 +700,7 @@ describe('control interaction registry', () => {
     const invalid = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(invalid.reason).toBe('staged_value_invalid');
     expect(JSON.stringify(invalid)).not.toContain('replacement');
@@ -991,7 +1068,7 @@ describe('control interaction registry', () => {
     const apply = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await applyStarted;
     const competingStage = registry.execute(
@@ -1030,7 +1107,7 @@ describe('control interaction registry', () => {
     const applied = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(applied).toMatchObject({
       ok: false,
@@ -1061,7 +1138,7 @@ describe('control interaction registry', () => {
     const applied = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
 
     expect(applied).toMatchObject({ ok: true });
@@ -1091,7 +1168,7 @@ describe('control interaction registry', () => {
     const applied = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
 
     expect(applied).toMatchObject({ ok: false, reason: 'setter_failed' });
@@ -1136,7 +1213,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await vi.waitFor(() => expect(value).toBe('Grace'));
     value = 'Katherine';
@@ -1178,7 +1255,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'apply', identity, revision: 1 },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'setter_failed' });
     expect(value).toBe('Ada');
@@ -1208,7 +1285,7 @@ describe('control interaction registry', () => {
     const applied = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
 
     expect(applied).toMatchObject({
@@ -1248,7 +1325,7 @@ describe('control interaction registry', () => {
     const clear = await executeLocalControlCommand(
       registry,
       { action: 'clear', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(clear).toMatchObject({
       ok: false,
@@ -1260,13 +1337,13 @@ describe('control interaction registry', () => {
     await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     rejectUndo = true;
     const undo = await executeLocalControlCommand(
       registry,
       { action: 'undo', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     expect(undo).toMatchObject({
       ok: false,
@@ -1278,7 +1355,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'undo', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: true });
     expect(value).toBe('Ada');
@@ -1313,7 +1390,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'clear', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
     expect(value).toBe('Ada');
@@ -1324,14 +1401,14 @@ describe('control interaction registry', () => {
     await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     rejectUndo = true;
     expect(
       await executeLocalControlCommand(
         registry,
         { action: 'undo', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'undo_failed' });
     expect(value).toBe('Grace');
@@ -1341,7 +1418,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'undo', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: true });
     expect(value).toBe('Ada');
@@ -1367,7 +1444,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'clear', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: true });
     expect(registry.get(identity)?.state.staged).toBeUndefined();
@@ -1423,7 +1500,7 @@ describe('control interaction registry', () => {
     const clearing = executeLocalControlCommand(
       registry,
       { action: 'clear', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await vi.waitFor(() => expect(value).toBe(''));
     value = 'Katherine';
@@ -1440,13 +1517,13 @@ describe('control interaction registry', () => {
     await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     blockUndo = true;
     const undoing = executeLocalControlCommand(
       registry,
       { action: 'undo', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await vi.waitFor(() => expect(value).toBe('Ada'));
     value = 'Katherine';
@@ -1480,7 +1557,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'clear', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
     expect(value).toBe('Ada');
@@ -1506,7 +1583,7 @@ describe('control interaction registry', () => {
     await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     value = 'Katherine';
 
@@ -1514,7 +1591,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'undo', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_stale' });
     expect(value).toBe('Katherine');
@@ -1543,7 +1620,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'clear', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
@@ -1592,7 +1669,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await validationStartedPromise;
     value = 'Grace';
@@ -1649,7 +1726,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await restoreStartedPromise;
     value = 'Katherine';
@@ -1705,7 +1782,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     value = 'Katherine';
@@ -1723,7 +1800,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'undo', identity },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'nothing_to_undo' });
   });
@@ -1773,7 +1850,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await validationStartedPromise;
     userEditValue = value;
@@ -1838,7 +1915,7 @@ describe('control interaction registry', () => {
     const clearing = executeLocalControlCommand(
       registry,
       { action: 'clear', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await clearStarted;
     userEditValue = value;
@@ -1859,7 +1936,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'apply', identity, revision: 1 },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: true });
     setValue.mockClear();
@@ -1868,7 +1945,7 @@ describe('control interaction registry', () => {
     const undoing = executeLocalControlCommand(
       registry,
       { action: 'undo', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await undoStarted;
     userEditValue = value;
@@ -1913,7 +1990,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     registry.register({
@@ -1963,7 +2040,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     value = 'Katherine';
@@ -2017,7 +2094,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     value = 'Katherine';
@@ -2073,7 +2150,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     value = 'Katherine';
@@ -2128,7 +2205,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     value = 'Katherine';
@@ -2183,7 +2260,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     registry.register({
@@ -2238,7 +2315,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     registry.register({
@@ -2301,7 +2378,7 @@ describe('control interaction registry', () => {
     const applying = executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      localGestureEvent(),
     );
     await setterStartedPromise;
     registry.register({
@@ -2371,7 +2448,7 @@ describe('control interaction registry', () => {
     const clearing = executeLocalControlCommand(
       registry,
       { action: 'clear', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await policyStartedPromise;
     value = 'Katherine';
@@ -2435,7 +2512,7 @@ describe('control interaction registry', () => {
     const clearing = executeLocalControlCommand(
       registry,
       { action: 'clear', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await pending.started;
     value = 'Katherine';
@@ -2457,7 +2534,7 @@ describe('control interaction registry', () => {
       await executeLocalControlCommand(
         registry,
         { action: 'apply', identity, revision: 1 },
-        new Event('click'),
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: true });
 
@@ -2466,7 +2543,7 @@ describe('control interaction registry', () => {
     const undoing = executeLocalControlCommand(
       registry,
       { action: 'undo', identity },
-      new Event('click'),
+      localGestureEvent(),
     );
     await pending.started;
     value = 'Byron';
@@ -2532,5 +2609,454 @@ describe('control interaction registry', () => {
     expect(focus).toHaveBeenCalledOnce();
     expect(reveal).toHaveBeenCalledOnce();
     expect(highlight).toHaveBeenCalledWith(400);
+  });
+
+  it('rejects a recognized factory event retained beyond its dispatch', async () => {
+    let captured: Event | undefined;
+    let value = 'Ada';
+    const target = new EventTarget();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    target.addEventListener('click', (event) => {
+      captured = event;
+    });
+    target.dispatchEvent(new Event('click'));
+
+    if (!captured) throw new Error('event was not captured');
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        captured,
+      ),
+    ).toMatchObject({ ok: false, reason: 'local_gesture_required' });
+    expect(value).toBe('Ada');
+  });
+
+  it('rejects a trusted legacy-registry event retained beyond its dispatch', async () => {
+    let captured: Event | undefined;
+    const execute = vi.fn(async (command: ControlCommand) => ({
+      ok: true,
+      action: command.action,
+      identity: command.identity,
+    }));
+    const legacyRegistry = { execute } as unknown as ControlInteractionRegistry;
+    const target = new EventTarget();
+    const event = new Event('click');
+    target.addEventListener('click', (candidate) => {
+      captured = candidate;
+    });
+    target.dispatchEvent(event);
+
+    if (!captured) throw new Error('event was not captured');
+    const retainedTrustedEvent = {
+      isTrusted: true,
+      eventPhase: captured.eventPhase,
+    } as Event;
+    expect(
+      await executeLocalControlCommand(
+        legacyRegistry,
+        { action: 'clear', identity },
+        retainedTrustedEvent,
+      ),
+    ).toMatchObject({ ok: false, reason: 'local_gesture_required' });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('binds a local gesture to an immutable command snapshot', async () => {
+    let value: unknown = 'Ada';
+    const otherIdentity = { ...identity, controlId: 'other' };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = next;
+      },
+    });
+    const command: ControlCommand = {
+      action: 'apply',
+      identity: { ...identity },
+      value: { profile: { name: 'Grace' } },
+    };
+    const pending = dispatchLocalGesture((event) =>
+      executeLocalControlCommand(registry, command, event),
+    );
+    command.action = 'clear';
+    command.identity = otherIdentity;
+    (command as { value?: unknown }).value = { profile: { name: 'Forged' } };
+
+    expect(await pending).toMatchObject({
+      ok: true,
+      action: 'apply',
+      identity,
+    });
+    expect(value).toEqual({ profile: { name: 'Grace' } });
+  });
+
+  it('snapshots every public batch command before awaiting the first', async () => {
+    let releaseFirst: (() => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      validateValue: async (candidate) => {
+        if ((candidate as { order?: number }).order === 1) {
+          firstStarted?.();
+          await blocked;
+        }
+        return true;
+      },
+    });
+    const commands: ControlCommand[] = [
+      { action: 'stage', identity, value: { order: 1 } },
+      { action: 'stage', identity, value: { order: 2 } },
+    ];
+    const pending = registry.executeBatch?.(commands, { source: 'agent' });
+    await started;
+    (commands[1] as { value: { order: number } }).value.order = 99;
+    releaseFirst?.();
+
+    expect((await pending)?.ok).toBe(true);
+    expect(registry.get(identity)?.state.staged?.value).toEqual({ order: 2 });
+  });
+
+  it('snapshots a public execute command before its queued mutation runs', async () => {
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+    });
+    const command: ControlCommand = {
+      action: 'stage',
+      identity: { ...identity },
+      value: { profile: { name: 'Grace' } },
+    };
+    const pending = registry.execute(command, { source: 'agent' });
+    command.identity.controlId = 'forged';
+    (command.value as { profile: { name: string } }).profile.name = 'Forged';
+
+    expect(await pending).toMatchObject({ ok: true, identity });
+    expect(registry.get(identity)?.state.staged?.value).toEqual({
+      profile: { name: 'Grace' },
+    });
+  });
+
+  it('returns structured failures when public execution cannot clone commands', async () => {
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+    });
+    const command: ControlCommand = {
+      action: 'stage',
+      identity,
+      value: () => undefined,
+    };
+
+    expect(await registry.execute(command, { source: 'agent' })).toMatchObject({
+      ok: false,
+      action: 'stage',
+      identity,
+      reason: 'command_failed',
+    });
+    expect(
+      await registry.executeBatch?.([command], { source: 'agent' }),
+    ).toMatchObject({
+      ok: false,
+      results: [
+        {
+          ok: false,
+          action: 'stage',
+          identity,
+          reason: 'command_failed',
+        },
+      ],
+    });
+    expect(registry.get(identity)?.state.staged).toBeUndefined();
+  });
+
+  it('keeps clone failures structured when command accessors throw', async () => {
+    const registry = createControlInteractionRegistry();
+    const command = {} as ControlCommand;
+    Object.defineProperties(command, {
+      action: {
+        enumerable: true,
+        get() {
+          throw new Error('hostile action');
+        },
+      },
+      identity: {
+        enumerable: true,
+        get() {
+          throw new Error('hostile identity');
+        },
+      },
+    });
+
+    await expect(
+      registry.execute(command, { source: 'agent' }),
+    ).resolves.toEqual({
+      ok: false,
+      action: 'stage',
+      identity: { formId: '', controlId: '' },
+      reason: 'command_failed',
+    });
+  });
+
+  it('fails closed on an uncloneable command without consuming the gesture', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      clear: () => {
+        value = '';
+        return true;
+      },
+    });
+
+    const [failed, cleared] = await dispatchLocalGesture((event) => {
+      const failed = executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, value: () => undefined },
+        event,
+      );
+      const cleared = executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        event,
+      );
+      return Promise.all([failed, cleared]);
+    });
+
+    expect(failed).toMatchObject({ ok: false, reason: 'command_failed' });
+    expect(cleared).toMatchObject({ ok: true });
+    expect(value).toBe('');
+  });
+
+  it.each([
+    { rejects: true, reason: 'clear_failed' },
+    { rejects: false, reason: 'staged_value_stale' },
+  ])('restores the pre-clear replacement baseline when async clear rejects=$rejects', async ({
+    rejects,
+    reason,
+  }) => {
+    let value = 'Ada';
+    let releaseClear: (() => void) | undefined;
+    let clearStarted: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      clearStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      clear: async () => {
+        value = 'partial';
+        clearStarted?.();
+        await blocked;
+        if (rejects) throw new Error('clear_failed');
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const clearing = executeLocalControlCommand(
+      registry,
+      { action: 'clear', identity },
+      localGestureEvent(),
+    );
+    await started;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    releaseClear?.();
+
+    expect(await clearing).toMatchObject({ ok: false, reason });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
+  it('preserves a newer replacement user edit equal to a partial clear value', async () => {
+    let value = 'Ada';
+    let releaseClear: (() => void) | undefined;
+    let clearStarted: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      clearStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => ({ revision: 0, value }),
+      clear: async () => {
+        value = 'partial';
+        clearStarted?.();
+        await blocked;
+        throw new Error('clear_failed');
+      },
+    });
+    const clearing = executeLocalControlCommand(
+      registry,
+      { action: 'clear', identity },
+      localGestureEvent(),
+    );
+    await started;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => ({ revision: 1, value }),
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    releaseClear?.();
+
+    expect(await clearing).toMatchObject({
+      ok: false,
+      reason: 'clear_failed',
+    });
+    expect(value).toBe('partial');
+  });
+
+  it.each([
+    { rejects: true, reason: 'undo_failed' },
+    { rejects: false, reason: 'staged_value_stale' },
+  ])('restores the pre-undo replacement baseline when async undo rejects=$rejects', async ({
+    rejects,
+    reason,
+  }) => {
+    let value = 'Ada';
+    let undoMode = false;
+    let releaseUndo: (() => void) | undefined;
+    let undoStarted: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseUndo = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      undoStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        if (!undoMode) {
+          value = String(next);
+          return;
+        }
+        value = 'partial';
+        undoStarted?.();
+        await blocked;
+        if (rejects) throw new Error('undo_failed');
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    undoMode = true;
+    const undoing = executeLocalControlCommand(
+      registry,
+      { action: 'undo', identity },
+      localGestureEvent(),
+    );
+    await started;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    releaseUndo?.();
+
+    expect(await undoing).toMatchObject({ ok: false, reason });
+    expect(value).toBe('Grace');
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('Ada');
   });
 });

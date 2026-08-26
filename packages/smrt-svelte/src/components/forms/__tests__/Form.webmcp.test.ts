@@ -1,6 +1,7 @@
 import {
   createControlInteractionRegistry,
   executeLocalControlBatch,
+  executeLocalControlCommand,
 } from '@happyvertical/smrt-ui/forms';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -34,6 +35,23 @@ afterEach(() => {
   delete document.modelContext;
   appState.mode = 'default';
 });
+
+function dispatchLocalGesture<T>(
+  execute: (event: Event) => Promise<T>,
+): Promise<T> {
+  const target = new EventTarget();
+  let pending: Promise<T> | undefined;
+  target.addEventListener(
+    'click',
+    (event) => {
+      pending = execute(event);
+    },
+    { once: true },
+  );
+  target.dispatchEvent(new Event('click'));
+  if (!pending) throw new Error('local gesture handler did not run');
+  return pending;
+}
 
 describe('Form WebMCP staged-edit intent', () => {
   it('registers a field-derived tool and stages without mutating or submitting', async () => {
@@ -101,6 +119,125 @@ describe('Form WebMCP staged-edit intent', () => {
     );
   });
 
+  it('publishes rich control identity and staged state on the native field', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        showAge: false,
+        interactionRegistry: registry,
+        formSubject: { type: 'person', id: 'person-1' },
+      },
+    });
+    await tick();
+    const fullname = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'fullname');
+    if (!fullname) throw new Error('fullname was not registered');
+    const input = screen.getByRole('textbox', { name: 'Full name' });
+    expect(input).toHaveAttribute('data-smrt-control', 'fullname');
+    expect(input).toHaveAttribute('data-smrt-form', fullname.identity.formId);
+    expect(input).toHaveAttribute('data-smrt-subject-type', 'person');
+    expect(input).toHaveAttribute('data-smrt-subject-id', 'person-1');
+
+    await registry.execute(
+      { action: 'stage', identity: fullname.identity, value: 'Ada' },
+      { source: 'agent' },
+    );
+    await waitFor(() =>
+      expect(input).toHaveAttribute('data-smrt-staged', 'true'),
+    );
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Discard valid changes' }),
+    );
+    await waitFor(() => expect(input).not.toHaveAttribute('data-smrt-staged'));
+    expect(input).toHaveFocus();
+  });
+
+  it('marks empty required rich scalar proposals invalid before application', async () => {
+    const registry = createControlInteractionRegistry();
+    const textChanged = vi.fn();
+    const checkboxChanged = vi.fn();
+    const selectChanged = vi.fn();
+    const notesChanged = vi.fn();
+    render(FormWithFields, {
+      props: {
+        showAge: false,
+        showClearFields: true,
+        showScalarFields: true,
+        textValue: 'Ada',
+        notesValue: 'Existing',
+        textRequired: true,
+        checkboxRequired: true,
+        selectRequired: true,
+        notesRequired: true,
+        interactionRegistry: registry,
+        ontextchange: textChanged,
+        oncheckboxchange: checkboxChanged,
+        onselectchange: selectChanged,
+        onnoteschange: notesChanged,
+      },
+    });
+    await tick();
+
+    const candidates = new Map<string, unknown>([
+      ['fullname', '   '],
+      ['enabled', false],
+      ['choice', ''],
+      ['notes', '   '],
+    ]);
+    const commands = [];
+    for (const [controlId, value] of candidates) {
+      const snapshot = registry
+        .list()
+        .find((item) => item.identity.controlId === controlId);
+      if (!snapshot) throw new Error(`${controlId} was not registered`);
+      await registry.execute(
+        { action: 'stage', identity: snapshot.identity, value },
+        { source: 'agent' },
+      );
+      expect(registry.get(snapshot.identity)?.state.staged).toMatchObject({
+        valid: false,
+      });
+      commands.push({
+        action: 'apply' as const,
+        identity: snapshot.identity,
+        revision: registry.get(snapshot.identity)?.state.staged?.revision,
+      });
+    }
+
+    const applied = await dispatchLocalGesture((event) =>
+      executeLocalControlBatch(registry, commands, event),
+    );
+    expect(applied.results).toHaveLength(4);
+    expect(applied.results.every((result) => !result.ok)).toBe(true);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    expect(screen.getByRole('textbox', { name: 'Full name*' })).toHaveValue(
+      'Ada',
+    );
+    expect(screen.getByRole('checkbox', { name: 'Enabled*' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Choice*' })).toHaveValue(
+      'second',
+    );
+    expect(screen.getByRole('textbox', { name: 'Notes*' })).toHaveValue(
+      'Existing',
+    );
+    expect(textChanged).not.toHaveBeenCalled();
+    expect(checkboxChanged).not.toHaveBeenCalled();
+    expect(selectChanged).not.toHaveBeenCalled();
+    expect(notesChanged).not.toHaveBeenCalled();
+    expect(
+      commands.every(
+        (command) => registry.get(command.identity)?.state.staged !== undefined,
+      ),
+    ).toBe(true);
+  });
+
   it('preserves staged state when an unrelated sibling field mounts', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;
@@ -121,7 +258,6 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
       'Staged 1 change for review',
     );
-
     await view.rerender({
       webmcp: true,
       interactionRegistry: registry,
@@ -141,16 +277,18 @@ describe('Form WebMCP staged-edit intent', () => {
       .find((snapshot) => snapshot.identity.controlId === 'fullname');
     if (!fullname) throw new Error('fullname was not registered');
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'apply',
-            identity: fullname.identity,
-            revision: fullname.state.staged?.revision,
-          },
-        ],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'apply',
+              identity: fullname.identity,
+              revision: fullname.state.staged?.revision,
+            },
+          ],
+          event,
+        ),
       ),
     ).toMatchObject({ ok: true });
     await view.rerender({
@@ -160,10 +298,12 @@ describe('Form WebMCP staged-edit intent', () => {
     });
     await tick();
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [{ action: 'undo', identity: fullname.identity }],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [{ action: 'undo', identity: fullname.identity }],
+          event,
+        ),
       ),
     ).toMatchObject({ ok: true });
     expect(registry.get(fullname.identity)?.state.value).toBe('');
@@ -199,17 +339,19 @@ describe('Form WebMCP staged-edit intent', () => {
       controlId: 'measurement',
     };
     const applyStaged = () =>
-      executeLocalControlBatch(
-        registry,
-        registry
-          .list()
-          .filter((snapshot) => snapshot.state.staged)
-          .map((snapshot) => ({
-            action: 'apply' as const,
-            identity: snapshot.identity,
-            revision: snapshot.state.staged?.revision,
-          })),
-        new Event('click'),
+      dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          registry
+            .list()
+            .filter((snapshot) => snapshot.state.staged)
+            .map((snapshot) => ({
+              action: 'apply' as const,
+              identity: snapshot.identity,
+              revision: snapshot.state.staged?.revision,
+            })),
+          event,
+        ),
       );
 
     await registry.execute(
@@ -299,16 +441,18 @@ describe('Form WebMCP staged-edit intent', () => {
         .find((item) => item.identity.controlId === controlId);
       expect(snapshot?.state.staged?.valid).toBe(false);
       expect(
-        await executeLocalControlBatch(
-          registry,
-          [
-            {
-              action: 'apply',
-              identity: snapshot?.identity ?? { formId: '', controlId: '' },
-              revision: snapshot?.state.staged?.revision,
-            },
-          ],
-          new Event('click'),
+        await dispatchLocalGesture((event) =>
+          executeLocalControlBatch(
+            registry,
+            [
+              {
+                action: 'apply',
+                identity: snapshot?.identity ?? { formId: '', controlId: '' },
+                revision: snapshot?.state.staged?.revision,
+              },
+            ],
+            event,
+          ),
         ),
       ).toMatchObject({ ok: false });
     }
@@ -347,16 +491,18 @@ describe('Form WebMCP staged-edit intent', () => {
       .find((item) => item.identity.controlId === 'notes');
     expect(notes?.state.staged?.value).toBe('Existing\nProposed');
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'apply',
-            identity: notes?.identity ?? { formId: '', controlId: '' },
-            revision: notes?.state.staged?.revision,
-          },
-        ],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'apply',
+              identity: notes?.identity ?? { formId: '', controlId: '' },
+              revision: notes?.state.staged?.revision,
+            },
+          ],
+          event,
+        ),
       ),
     ).toMatchObject({ ok: true });
     expect(
@@ -462,10 +608,12 @@ describe('Form WebMCP staged-edit intent', () => {
     const revision = registry.get(identity)?.state.staged?.revision;
 
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [{ action: 'apply', identity, revision }],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [{ action: 'apply', identity, revision }],
+          event,
+        ),
       ),
     ).toMatchObject({ ok: false });
     await Promise.resolve();
@@ -485,22 +633,24 @@ describe('Form WebMCP staged-edit intent', () => {
     await tick();
 
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'clear',
-            identity: { formId: 'structured-fields', controlId: 'dates' },
-          },
-          {
-            action: 'clear',
-            identity: {
-              formId: 'structured-fields',
-              controlId: 'measurement',
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'clear',
+              identity: { formId: 'structured-fields', controlId: 'dates' },
             },
-          },
-        ],
-        new Event('click'),
+            {
+              action: 'clear',
+              identity: {
+                formId: 'structured-fields',
+                controlId: 'measurement',
+              },
+            },
+          ],
+          event,
+        ),
       ),
     ).toMatchObject({
       ok: true,
@@ -532,19 +682,21 @@ describe('Form WebMCP staged-edit intent', () => {
       throw new Error('clear fields were not registered');
 
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'clear',
-            identity: enabled.identity,
-          },
-          {
-            action: 'clear',
-            identity: choice.identity,
-          },
-        ],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'clear',
+              identity: enabled.identity,
+            },
+            {
+              action: 'clear',
+              identity: choice.identity,
+            },
+          ],
+          event,
+        ),
       ),
     ).toMatchObject({
       ok: true,
@@ -581,16 +733,18 @@ describe('Form WebMCP staged-edit intent', () => {
         { action: 'stage', identity, value },
         { source: 'agent' },
       );
-      return executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'apply',
-            identity,
-            revision: registry.get(identity)?.state.staged?.revision,
-          },
-        ],
-        new Event('click'),
+      return dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'apply',
+              identity,
+              revision: registry.get(identity)?.state.staged?.revision,
+            },
+          ],
+          event,
+        ),
       );
     };
 
@@ -843,6 +997,9 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
       'Staged 1 change for review',
     );
+    const fullname = screen.getByRole('textbox', { name: 'Full name' });
+    expect(fullname).toHaveAttribute('data-smrt-subject-type', 'person');
+    expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-1');
     expect(await screen.findByText(/person:person-1/)).toBeInTheDocument();
 
     await view.rerender({
@@ -855,6 +1012,7 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await registered.at(-1)?.execute({ fullname: 'Grace' })).toBe(
       'Staged 1 change for review',
     );
+    expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-2');
     expect(await screen.findByText(/person:person-2/)).toBeInTheDocument();
 
     await userEvent.click(
@@ -864,6 +1022,7 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await registered.at(-1)?.execute({ fullname: 'Katherine' })).toBe(
       'Staged 1 change for review',
     );
+    expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-mutated');
     expect(
       await screen.findByText(/person:person-mutated/),
     ).toBeInTheDocument();
@@ -923,16 +1082,18 @@ describe('Form WebMCP staged-edit intent', () => {
       .find((snapshot) => snapshot.identity.controlId === 'budget');
     expect(budget?.state.staged?.value).toBe(1234);
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'apply',
-            identity: budget?.identity ?? { formId: '', controlId: '' },
-            revision: budget?.state.staged?.revision,
-          },
-        ],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'apply',
+              identity: budget?.identity ?? { formId: '', controlId: '' },
+              revision: budget?.state.staged?.revision,
+            },
+          ],
+          event,
+        ),
       ),
     ).toMatchObject({ ok: true });
     expect(
@@ -1017,6 +1178,80 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(onsubmit).not.toHaveBeenCalled();
   });
 
+  it('omits zero-based multipleOf when measurement steps use a minimum offset', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    const registry = createControlInteractionRegistry();
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const view = render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        structuredRequired: false,
+        measurementMin: 1,
+        measurementStep: 2,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    const valueSchema = () => {
+      const tool = registered.at(-1);
+      if (!tool) throw new Error('WebMCP tool was not registered');
+      return (
+        tool.inputSchema as {
+          properties: {
+            measurement: { properties: { value: Record<string, unknown> } };
+          };
+        }
+      ).properties.measurement.properties.value;
+    };
+    expect(valueSchema()).toMatchObject({ type: 'number', minimum: 1 });
+    expect(valueSchema()).not.toHaveProperty('multipleOf');
+
+    expect(
+      await registered.at(-1)?.execute({
+        measurement: { value: 3, unit: 'ft' },
+      }),
+    ).toBe('Staged 1 change for review');
+    const measurement = registry.get({
+      formId: 'structured-fields',
+      controlId: 'measurement',
+    });
+    expect(measurement?.state.staged).toMatchObject({ valid: true });
+
+    await registered.at(-1)?.execute({
+      measurement: { value: 2, unit: 'ft' },
+    });
+    expect(
+      registry.get({
+        formId: 'structured-fields',
+        controlId: 'measurement',
+      })?.state.staged,
+    ).toMatchObject({ valid: false });
+
+    await view.rerender({
+      webmcp: true,
+      structuredRequired: false,
+      measurementMin: 2,
+      measurementStep: 2,
+      interactionRegistry: registry,
+    });
+    await tick();
+    await tick();
+    expect(valueSchema()).toMatchObject({
+      type: 'number',
+      minimum: 2,
+      multipleOf: 2,
+    });
+  });
+
   it('stages through an additive legacy registry without executeBatch', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;
@@ -1026,7 +1261,9 @@ describe('Form WebMCP staged-edit intent', () => {
         registered.push(tool as (typeof registered)[number]);
       },
     };
-    const baseRegistry = createControlInteractionRegistry();
+    const baseRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     const { executeBatch: _executeBatch, ...legacyRegistry } = baseRegistry;
     render(FormWithFields, {
       props: {
@@ -1042,6 +1279,13 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 1 change for review',
     );
     expect(legacyRegistry.list()[0]?.state.staged?.value).toBe('Ada');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue(
+        'Ada',
+      ),
+    );
+    expect(legacyRegistry.list()[0]?.state.staged).toBeUndefined();
   });
 
   it('limits the address schema and payload to configured fields', async () => {
@@ -1228,6 +1472,11 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await registered.at(-1)?.execute({ policy: 'Grace' })).toBe(
       'Staged 1 change for review',
     );
+    const revision = registry.get({
+      formId: 'policy-form',
+      controlId: 'policy',
+    })?.state.staged?.revision;
+    expect(revision).toBeDefined();
 
     await view.rerender({
       webmcp: true,
@@ -1251,6 +1500,36 @@ describe('Form WebMCP staged-edit intent', () => {
       value: undefined,
       valueRedacted: true,
     });
+    expect(snapshot?.state).not.toHaveProperty('staged');
+    expect(snapshot?.state).not.toHaveProperty('stagedValue');
+    expect(
+      screen.queryByRole('region', { name: 'Review proposed changes' }),
+    ).not.toBeInTheDocument();
+    await expect(
+      dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          {
+            action: 'discard',
+            identity: { formId: 'policy-form', controlId: 'policy' },
+            revision,
+          },
+          event,
+        ),
+      ),
+    ).resolves.toMatchObject({ ok: true, action: 'discard' });
+
+    await view.rerender({
+      webmcp: true,
+      interactionRegistry: registry,
+      sensitivity: 'public',
+      writable: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({ formId: 'policy-form', controlId: 'policy' })?.state,
+    ).not.toHaveProperty('staged');
   });
 
   it('allows partial payloads for optional structured fields', async () => {
@@ -1303,10 +1582,8 @@ describe('Form WebMCP staged-edit intent', () => {
         identity: snapshot.identity,
         revision: snapshot.state.staged?.revision,
       }));
-    const applied = await executeLocalControlBatch(
-      registry,
-      staged,
-      new Event('click'),
+    const applied = await dispatchLocalGesture((event) =>
+      executeLocalControlBatch(registry, staged, event),
     );
     expect(applied.results).toEqual(
       staged.map((command) =>

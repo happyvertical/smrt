@@ -13,6 +13,23 @@ const identity = { formId: 'profile', controlId: 'display-name' };
 const createReviewRegistry = () =>
   createControlInteractionRegistry({ isLocalGesture: () => true });
 
+function dispatchLocalGesture<T>(
+  execute: (event: Event) => Promise<T>,
+): Promise<T> {
+  const target = new EventTarget();
+  let pending: Promise<T> | undefined;
+  target.addEventListener(
+    'click',
+    (event) => {
+      pending = execute(event);
+    },
+    { once: true },
+  );
+  target.dispatchEvent(new Event('click'));
+  if (!pending) throw new Error('local gesture handler did not run');
+  return pending;
+}
+
 describe('StagedControlReview', () => {
   it('shows an adjacent indicator and applies an edited proposal only after a human click', async () => {
     const registry = createReviewRegistry();
@@ -46,6 +63,11 @@ describe('StagedControlReview', () => {
         screen.queryByRole('region', { name: 'Review proposed changes' }),
       ).not.toBeInTheDocument(),
     );
+    expect(
+      screen.getByText('Applied proposed change.', {
+        selector: 'p[role="status"]',
+      }),
+    ).toHaveTextContent('Applied proposed change.');
     expect(field).toHaveFocus();
     await expectNoA11yViolations(container);
   });
@@ -249,6 +271,16 @@ describe('StagedControlReview', () => {
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(field).toHaveValue('Katherine');
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('region', { name: 'Review proposed changes' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText('Discarded proposed change.', {
+        selector: 'p[role="status"]',
+      }),
+    ).toHaveTextContent('Discarded proposed change.');
   });
 
   it('keeps trusted edit tracking when the consumer supplies an input handler', async () => {
@@ -306,10 +338,12 @@ describe('StagedControlReview', () => {
     );
     const revision = registry.get(identity)?.state.staged?.revision;
     expect(
-      await executeLocalControlBatch(
-        registry,
-        [{ action: 'apply', identity, revision }],
-        new Event('click'),
+      await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [{ action: 'apply', identity, revision }],
+          event,
+        ),
       ),
     ).toMatchObject({ ok: true });
     expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
@@ -327,10 +361,8 @@ describe('StagedControlReview', () => {
       expect(registry.get(identity)?.metadata.label).toBe('Preferred name'),
     );
 
-    const undo = await executeLocalControlBatch(
-      registry,
-      [{ action: 'undo', identity }],
-      new Event('click'),
+    const undo = await dispatchLocalGesture((event) =>
+      executeLocalControlBatch(registry, [{ action: 'undo', identity }], event),
     );
     expect(undo.results[0]).toMatchObject({ ok: true });
     expect(screen.getByRole('textbox', { name: 'Preferred name' })).toHaveValue(
@@ -393,16 +425,18 @@ describe('StagedControlReview', () => {
         value: candidate,
         valid: false,
       });
-      const batch = await executeLocalControlBatch(
-        registry,
-        [
-          {
-            action: 'apply',
-            identity: selectIdentity,
-            revision: registry.get(selectIdentity)?.state.staged?.revision,
-          },
-        ],
-        new Event('click'),
+      const batch = await dispatchLocalGesture((event) =>
+        executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'apply',
+              identity: selectIdentity,
+              revision: registry.get(selectIdentity)?.state.staged?.revision,
+            },
+          ],
+          event,
+        ),
       );
       expect(batch.results[0]).toMatchObject({
         ok: false,
@@ -412,6 +446,23 @@ describe('StagedControlReview', () => {
         'user',
       );
     }
+  });
+
+  it('rejects an enabled empty option when the base select is required', async () => {
+    const registry = createReviewRegistry();
+    render(SelectFixture, { props: { registry, required: true } });
+    const selectIdentity = { formId: 'account', controlId: 'role' };
+
+    await registry.execute(
+      { action: 'stage', identity: selectIdentity, value: '' },
+      { source: 'agent' },
+    );
+
+    expect(registry.get(selectIdentity)?.state.staged).toMatchObject({
+      value: '',
+      valid: false,
+    });
+    expect(screen.getByRole('combobox', { name: 'Role' })).toHaveValue('user');
   });
 
   it('lets the human correct an invalid proposal before applying it', async () => {

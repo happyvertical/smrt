@@ -68,7 +68,7 @@ function validateControlValue(next: unknown) {
   const element = selectEl;
   if (!element) return true;
   const candidate = String(next ?? '');
-  if (candidate === '' && !required) return true;
+  if (candidate === '') return !required;
   return Array.from(element.options).some(
     (option) => option.value === candidate && !isOptionDisabled(option),
   );

@@ -38,6 +38,7 @@ const PUBLIC_FAILURE_REASONS = new Set([
 const PUBLIC_CONTROL_RESULT_REASONS = new Set([
   'not_found',
   'consent_required',
+  'human_confirmation_required',
   'sensitive_control',
   'control_not_writable',
   'control_not_editable',

@@ -98,6 +98,8 @@ onMount(() => {
       get constraints() {
         return { required };
       },
+      validateValue: (candidate) =>
+        !required || String(candidate ?? '').trim().length > 0,
       validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);

@@ -53,6 +53,7 @@ const text = $derived({
 let snapshots = $state<ControlSnapshot[]>([]);
 let drafts = $state<Record<string, string>>({});
 let status = $state('');
+let reviewActivated = $state(false);
 let reviewElement = $state<HTMLElement | null>(null);
 
 const keyOf = (snapshot: ControlSnapshot) =>
@@ -87,6 +88,7 @@ function refresh(): void {
   const nextSnapshots = registry
     .list(formId)
     .filter((snapshot) => snapshot.state.staged !== undefined);
+  if (nextSnapshots.length > 0) reviewActivated = true;
   const next = { ...untrack(() => drafts) };
   for (const snapshot of nextSnapshots) {
     const key = draftKeyOf(snapshot);
@@ -420,8 +422,11 @@ async function discardAll(event: MouseEvent): Promise<void> {
         </li>
       {/each}
     </ul>
-    <p class="status" role="status" aria-live="polite">{status}</p>
   </section>
+{/if}
+
+{#if summary && reviewActivated}
+  <p class="status visually-hidden" role="status" aria-live="polite" aria-atomic="true">{status}</p>
 {/if}
 
 <style>
@@ -444,7 +449,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
   button:disabled { cursor: not-allowed; opacity: .55; }
   .item-actions { margin-block-start: var(--smrt-spacing-3, .75rem); }
   .problem { margin-block-start: var(--smrt-spacing-2, .5rem); color: var(--smrt-color-error, #b3261e); }
-  .status:empty { display: none; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
   :global([data-smrt-staged='true']) { outline: 3px solid var(--smrt-color-tertiary, #7d5260); outline-offset: 3px; }
   @media (max-width: 40rem) { header, .proposal-heading { align-items: stretch; flex-direction: column; } dl { grid-template-columns: 1fr; } }
 </style>

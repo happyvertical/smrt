@@ -76,6 +76,13 @@ onMount(() => {
       get constraints() {
         return { required };
       },
+      validateValue: (candidate) => {
+        const next =
+          typeof candidate === 'boolean'
+            ? candidate
+            : parseSpokenBoolean(String(candidate ?? ''));
+        return next !== null && (!required || next);
+      },
       validate: () => !required || checked,
     };
     formContext.registerField(fieldDef);

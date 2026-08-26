@@ -79,6 +79,11 @@ onMount(() => {
         }
       },
       getValue: () => value,
+      prepareValue: (candidate) => {
+        const next = String(candidate ?? '');
+        if (next.trim() === '') return next;
+        return matchOption(next, options) ?? next;
+      },
       clear: () => {
         updateValue('');
         return true;
@@ -92,6 +97,11 @@ onMount(() => {
           value: option.value,
           label: option.label,
         }));
+      },
+      validateValue: (candidate) => {
+        const next = String(candidate ?? '');
+        if (next === '') return !required;
+        return options.some((option) => option.value === next);
       },
       validate: () => !required || value.trim().length > 0,
     };

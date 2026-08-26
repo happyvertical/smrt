@@ -241,7 +241,7 @@ export interface ControlBatchResult {
 }
 
 export interface ControlInteractionEvent {
-  type: 'registered' | 'unregistered' | 'staged' | 'command';
+  type: 'registered' | 'unregistered' | 'refreshed' | 'staged' | 'command';
   identity: ControlIdentity;
   command?: ControlCommand;
   context?: ControlCommandContext;
@@ -257,6 +257,8 @@ export interface ControlInteractionRegistry {
   recordUserEdit?(identity: ControlIdentity): void;
   list(formId?: string): ControlSnapshot[];
   get(identity: ControlIdentity): ControlSnapshot | undefined;
+  /** Notify consumers that live registration metadata or runtime state changed. */
+  refresh?(formId?: string): void;
   execute(
     command: ControlCommand,
     context?: ControlCommandContext,
@@ -272,7 +274,7 @@ export interface ControlInteractionRegistry {
 export interface CreateControlInteractionRegistryOptions {
   policy?: ControlInteractionPolicy;
   now?: () => number;
-  /** Host/test hook for recognizing a trusted local DOM gesture. Defaults to Event.isTrusted. */
+  /** Host/test trust hook. Active DOM dispatch is always required independently. */
   isLocalGesture?: (event: Event) => boolean;
 }
 
@@ -285,10 +287,66 @@ const localGestureBatchExecutors = new WeakMap<
   ControlInteractionRegistry,
   LocalGestureBatchExecutor
 >();
+// Intentionally module-private: enumerable so transparent object-spread
+// registry adapters retain the same one-shot local-gesture proof path.
+const localGestureBatchExecutor = Symbol('smrt.localGestureBatchExecutor');
+type LocalGestureExecutorCarrier = {
+  [localGestureBatchExecutor]?: LocalGestureBatchExecutor;
+};
 const consumedFallbackGestureEvents = new WeakMap<
   ControlInteractionRegistry,
   WeakSet<Event>
 >();
+
+function isActivelyDispatching(event: Event): boolean {
+  return event.eventPhase !== 0;
+}
+
+function cloneFailureResult(command: ControlCommand): ControlCommandResult {
+  let action: ControlCommandAction = 'stage';
+  let identity: ControlIdentity = { formId: '', controlId: '' };
+  try {
+    action = command.action;
+  } catch {
+    // A hostile accessor must not turn clone rejection into a thrown error.
+  }
+  try {
+    const source = command.identity;
+    identity = {
+      formId: source.formId,
+      controlId: source.controlId,
+      ...(source.subject
+        ? {
+            subject: {
+              type: source.subject.type,
+              id: source.subject.id,
+              ...(source.subject.label === undefined
+                ? {}
+                : { label: source.subject.label }),
+            },
+          }
+        : {}),
+    };
+  } catch {
+    // Preserve the structured failure shape without retaining caller aliases.
+  }
+  return {
+    ok: false,
+    action,
+    identity,
+    reason: 'command_failed',
+  };
+}
+
+function cloneCommandBatch(
+  commands: ControlCommand[],
+): ControlCommand[] | undefined {
+  try {
+    return cloneValue(commands);
+  } catch {
+    return undefined;
+  }
+}
 
 /** Execute one value-changing command from a local DOM event handler. */
 export function executeLocalControlCommand(
@@ -307,15 +365,28 @@ export async function executeLocalControlBatch(
   commands: ControlCommand[],
   event: Event,
 ): Promise<ControlBatchResult> {
-  const executor = localGestureBatchExecutors.get(registry);
+  const commandSnapshots = cloneCommandBatch(commands);
+  if (!commandSnapshots) {
+    const results = commands.map(cloneFailureResult);
+    return { ok: false, results };
+  }
+  const executor =
+    localGestureBatchExecutors.get(registry) ??
+    (registry as ControlInteractionRegistry & LocalGestureExecutorCarrier)[
+      localGestureBatchExecutor
+    ];
   if (!executor) {
     const consumed =
       consumedFallbackGestureEvents.get(registry) ?? new WeakSet<Event>();
     consumedFallbackGestureEvents.set(registry, consumed);
-    if (!event.isTrusted || consumed.has(event)) {
+    if (
+      !event.isTrusted ||
+      !isActivelyDispatching(event) ||
+      consumed.has(event)
+    ) {
       return {
         ok: false,
-        results: commands.map((command) => ({
+        results: commandSnapshots.map((command) => ({
           ok: false,
           action: command.action,
           identity: cloneValue(command.identity),
@@ -325,7 +396,7 @@ export async function executeLocalControlBatch(
     }
     consumed.add(event);
     const results: ControlCommandResult[] = [];
-    for (const command of commands) {
+    for (const command of commandSnapshots) {
       results.push(
         await registry.execute(command, {
           source: 'user',
@@ -336,7 +407,7 @@ export async function executeLocalControlBatch(
     }
     return { ok: results.every((entry) => entry.ok), results };
   }
-  return executor(commands, event);
+  return executor(commandSnapshots, event);
 }
 
 function identityKey(identity: ControlIdentity): string {
@@ -370,8 +441,11 @@ function capabilitiesOf(
     if (registration.reveal) capabilities.push('reveal');
     if (registration.highlight) capabilities.push('highlight');
     if (registration.validate) capabilities.push('validate');
-    if (registration.setValue && registration.metadata.writable !== false) {
-      capabilities.push('stage', 'apply', 'discard', 'undo');
+    if (registration.setValue) {
+      capabilities.push('discard');
+      if (registration.metadata.writable !== false) {
+        capabilities.push('stage', 'apply', 'undo');
+      }
     }
     if (
       (registration.clear || registration.setValue) &&
@@ -382,7 +456,12 @@ function capabilitiesOf(
   }
   return capabilities.filter((capability) => {
     if (capability === 'read') return !isSecret(registration);
-    if (isMutation(capability)) return !isSecret(registration);
+    if (capability === 'discard') return true;
+    if (isMutation(capability)) {
+      return (
+        !isSecret(registration) && registration.metadata.writable !== false
+      );
+    }
     return true;
   });
 }
@@ -576,7 +655,7 @@ export function createControlInteractionRegistry(
       userEdit: { revision: number; value: unknown } | null;
     }
   >();
-  const activeSetterMutations = new Map<
+  const activeValueMutations = new Map<
     string,
     {
       registration: ControlRegistration;
@@ -640,6 +719,31 @@ export function createControlInteractionRegistry(
     return pending;
   };
 
+  const invokeTrackedValueMutation = async <T>(
+    key: string,
+    registration: ControlRegistration,
+    previousValue: unknown,
+    previousUserEdit: { revision: number; value: unknown } | null,
+    invoke: () => T | Promise<T>,
+  ): Promise<T> => {
+    const activeMutation = {
+      registration,
+      previousValue: cloneValue(previousValue),
+      immediateValue: cloneValue(previousValue),
+      previousUserEdit: cloneValue(previousUserEdit),
+    };
+    try {
+      activeValueMutations.set(key, activeMutation);
+      const pending = invoke();
+      activeMutation.immediateValue = cloneValue(registration.getValue?.());
+      return await pending;
+    } finally {
+      if (activeValueMutations.get(key) === activeMutation) {
+        activeValueMutations.delete(key);
+      }
+    }
+  };
+
   const emit = (event: Omit<ControlInteractionEvent, 'timestamp'>) => {
     const next = { ...event, timestamp: now() };
     for (const listener of listeners) {
@@ -659,20 +763,23 @@ export function createControlInteractionRegistry(
       ? !valuesEqual(stagedEntry.baseValue, registration.getValue?.())
       : false;
     const runtimeState = registration.getState?.();
-    const publicStaged: ControlStagedEntry | undefined = stagedEntry
-      ? {
-          value: redacted ? undefined : cloneValue(stagedEntry.value),
-          valueRedacted: redacted,
-          provenance: { ...stagedEntry.provenance },
-          stagedAt: stagedEntry.stagedAt,
-          revision: stagedEntry.revision,
-          stale,
-          valid: stagedEntry.valid,
-          validationMessage: redacted
-            ? undefined
-            : stagedEntry.validationMessage,
-        }
-      : undefined;
+    const publicStaged: ControlStagedEntry | undefined =
+      stagedEntry &&
+      !isSecret(registration) &&
+      registration.metadata.writable !== false
+        ? {
+            value: redacted ? undefined : cloneValue(stagedEntry.value),
+            valueRedacted: redacted,
+            provenance: { ...stagedEntry.provenance },
+            stagedAt: stagedEntry.stagedAt,
+            revision: stagedEntry.revision,
+            stale,
+            valid: stagedEntry.valid,
+            validationMessage: redacted
+              ? undefined
+              : stagedEntry.validationMessage,
+          }
+        : undefined;
     const rawValue = redacted ? undefined : registration.getValue?.();
     const publicValue = redacted ? undefined : clonePublicValue(rawValue);
     return {
@@ -695,9 +802,13 @@ export function createControlInteractionRegistry(
         value: publicValue,
         valueRedacted:
           redacted || (rawValue !== undefined && publicValue === undefined),
-        stagedValue: publicStaged?.value,
-        stagedValueRedacted: publicStaged?.valueRedacted,
-        staged: publicStaged,
+        ...(publicStaged
+          ? {
+              stagedValue: publicStaged.value,
+              stagedValueRedacted: publicStaged.valueRedacted,
+              staged: publicStaged,
+            }
+          : {}),
       },
     };
   };
@@ -732,7 +843,7 @@ export function createControlInteractionRegistry(
       untrack(() => {
         try {
           const currentValue = cloneValue(registration.getValue?.());
-          const activeMutation = activeSetterMutations.get(key);
+          const activeMutation = activeValueMutations.get(key);
           const userEdit = cloneValue(
             registration.getUserEditSnapshot?.() ?? userEdits.get(key),
           );
@@ -801,7 +912,21 @@ export function createControlInteractionRegistry(
       return registration ? snapshotOf(registration) : undefined;
     },
 
+    refresh(formId) {
+      for (const registration of registrations.values()) {
+        if (formId && registration.identity.formId !== formId) continue;
+        emit({ type: 'refreshed', identity: registration.identity });
+      }
+    },
+
     async execute(command, context = { source: 'user', confirmed: true }) {
+      if (!internallyQueuedContexts.has(context)) {
+        try {
+          command = cloneValue(command);
+        } catch {
+          return cloneFailureResult(command);
+        }
+      }
       const key = identityKey(command.identity);
       if (
         isMutation(command.action) &&
@@ -812,7 +937,10 @@ export function createControlInteractionRegistry(
         if (locallyConfirmedContexts.has(context)) {
           locallyConfirmedContexts.add(queuedContext);
         }
-        return enqueueMutation(key, () => this.execute(command, queuedContext));
+        const commandSnapshot = command;
+        return enqueueMutation(key, () =>
+          this.execute(commandSnapshot, queuedContext),
+        );
       }
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
@@ -1109,19 +1237,14 @@ export function createControlInteractionRegistry(
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
             const userEditSnapshot = commandUserEditSnapshot;
-            const activeSetterMutation = {
-              registration,
-              previousValue: cloneValue(previousValue),
-              immediateValue: cloneValue(previousValue),
-              previousUserEdit: cloneValue(userEditSnapshot),
-            };
             try {
-              activeSetterMutations.set(key, activeSetterMutation);
-              const setterResult = registration.setValue?.(nextValue);
-              activeSetterMutation.immediateValue = cloneValue(
-                registration.getValue?.(),
+              await invokeTrackedValueMutation(
+                key,
+                registration,
+                previousValue,
+                userEditSnapshot,
+                () => registration.setValue?.(nextValue),
               );
-              await setterResult;
             } catch (error) {
               try {
                 await restoreMutationValue(previousValue, userEditSnapshot);
@@ -1129,10 +1252,6 @@ export function createControlInteractionRegistry(
                 // Preserve the original setter failure for the command result.
               }
               throw error;
-            } finally {
-              if (activeSetterMutations.get(key) === activeSetterMutation) {
-                activeSetterMutations.delete(key);
-              }
             }
             if (
               registrations.get(key) !== registration ||
@@ -1211,10 +1330,16 @@ export function createControlInteractionRegistry(
             let clearDecision: boolean | undefined;
             const userEditSnapshot = commandUserEditSnapshot;
             try {
-              const pendingDecision = registration.clear
-                ? registration.clear()
-                : registration.setValue?.('');
-              const decision = await pendingDecision;
+              const decision = await invokeTrackedValueMutation(
+                key,
+                registration,
+                previousValue,
+                userEditSnapshot,
+                () =>
+                  registration.clear
+                    ? registration.clear()
+                    : registration.setValue?.(''),
+              );
               clearDecision =
                 decision === true
                   ? true
@@ -1274,7 +1399,13 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_stale');
             }
             try {
-              await registration.setValue?.(undoEntry.previousValue);
+              await invokeTrackedValueMutation(
+                key,
+                registration,
+                currentValue,
+                userEditSnapshot,
+                () => registration.setValue?.(undoEntry.previousValue),
+              );
             } catch (error) {
               try {
                 await restoreMutationValue(currentValue, userEditSnapshot);
@@ -1340,8 +1471,13 @@ export function createControlInteractionRegistry(
       commands,
       context = { source: 'user', confirmed: true },
     ) {
+      const commandSnapshots = cloneCommandBatch(commands);
+      if (!commandSnapshots) {
+        const results = commands.map(cloneFailureResult);
+        return { ok: false, results };
+      }
       const results: ControlCommandResult[] = [];
-      for (const command of commands) {
+      for (const command of commandSnapshots) {
         results.push(await this.execute(command, context));
       }
       return { ok: results.every((entry) => entry.ok), results };
@@ -1353,10 +1489,17 @@ export function createControlInteractionRegistry(
     },
   };
 
-  localGestureBatchExecutors.set(registry, async (commands, event) => {
+  const localGestureExecutor: LocalGestureBatchExecutor = async (
+    commands,
+    event,
+  ) => {
     const isLocalGesture =
       options.isLocalGesture ?? ((candidate: Event) => candidate.isTrusted);
-    if (!isLocalGesture(event) || consumedLocalGestureEvents.has(event)) {
+    if (
+      !isLocalGesture(event) ||
+      !isActivelyDispatching(event) ||
+      consumedLocalGestureEvents.has(event)
+    ) {
       return {
         ok: false,
         results: commands.map((command) =>
@@ -1380,6 +1523,11 @@ export function createControlInteractionRegistry(
       results.push(await registry.execute(command, context));
     }
     return { ok: results.every((entry) => entry.ok), results };
+  };
+  localGestureBatchExecutors.set(registry, localGestureExecutor);
+  Object.defineProperty(registry, localGestureBatchExecutor, {
+    value: localGestureExecutor,
+    enumerable: true,
   });
 
   return registry;

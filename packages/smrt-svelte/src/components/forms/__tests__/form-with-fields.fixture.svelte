@@ -25,11 +25,14 @@ let {
   showClearFields = false,
   showScalarFields = false,
   checkboxValue = true,
+  checkboxRequired = false,
   selectValue = 'second',
+  selectRequired = false,
   dateValue = '',
   phoneValue = '',
   notesValue = '',
   notesAppendMode = false,
+  notesRequired = false,
   moneyMin = undefined,
   moneyMax = undefined,
   webmcp = false,
@@ -43,6 +46,10 @@ let {
   ageMax = undefined,
   ageStep = undefined,
   interactionRegistry = undefined,
+  ontextchange = undefined,
+  oncheckboxchange = undefined,
+  onselectchange = undefined,
+  onnoteschange = undefined,
   onnumberchange = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
@@ -55,11 +62,14 @@ let {
   showClearFields?: boolean;
   showScalarFields?: boolean;
   checkboxValue?: boolean;
+  checkboxRequired?: boolean;
   selectValue?: string;
+  selectRequired?: boolean;
   dateValue?: string;
   phoneValue?: string;
   notesValue?: string;
   notesAppendMode?: boolean;
+  notesRequired?: boolean;
   moneyMin?: number;
   moneyMax?: number;
   webmcp?: boolean;
@@ -73,6 +83,10 @@ let {
   ageMax?: number;
   ageStep?: number;
   interactionRegistry?: ControlInteractionRegistry;
+  ontextchange?: (value: string) => void;
+  oncheckboxchange?: (value: boolean) => void;
+  onselectchange?: (value: string) => void;
+  onnoteschange?: (value: string) => void;
   onnumberchange?: (value: number | null) => void;
 } = $props();
 let lastSubject: { type: string; id: string; label?: string } | undefined;
@@ -98,6 +112,7 @@ function mutateSubject() {
 		label="Full name"
 			required={textRequired}
 			disabled={textDisabled}
+			onchange={ontextchange}
 		bind:value={textValue}
 	/>
 	{#if showAge}
@@ -116,10 +131,12 @@ function mutateSubject() {
 			<MoneyInput name="budget" label="Budget" min={moneyMin} max={moneyMax} />
 	{/if}
 	{#if showClearFields}
-		<CheckboxInput name="enabled" label="Enabled" bind:checked={checkboxValue} />
+		<CheckboxInput name="enabled" label="Enabled" required={checkboxRequired} onchange={oncheckboxchange} bind:checked={checkboxValue} />
 		<SelectInput
 			name="choice"
 			label="Choice"
+			required={selectRequired}
+			onchange={onselectchange}
 			options={[
 				{ value: 'first', label: 'First' },
 				{ value: 'second', label: 'Second' },
@@ -130,7 +147,7 @@ function mutateSubject() {
 	{#if showScalarFields}
 		<DateTimeInput name="appointment" label="Appointment" includeTime={false} bind:value={dateValue} />
 		<PhoneInput name="phone" label="Phone" bind:value={phoneValue} />
-		<TextareaInput name="notes" label="Notes" appendMode={notesAppendMode} bind:value={notesValue} />
+		<TextareaInput name="notes" label="Notes" required={notesRequired} appendMode={notesAppendMode} onchange={onnoteschange} bind:value={notesValue} />
 	{/if}
 	</fieldset>
 	{#if mutableSubject}

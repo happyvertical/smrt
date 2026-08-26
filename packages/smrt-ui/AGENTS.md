@@ -117,8 +117,10 @@ other text pairing clears WCAG AA in both schemes.
   review/apply surface mounted by both base and rich Forms. Agents can stage but
   cannot self-confirm; only a local human handler submits confirmed apply,
   discard, clear, or undo commands after the registry validates a trusted DOM
-  gesture. Serialized or programmatic `source: 'user', confirmed: true` input is
-  not confirmation.
+  gesture while its event is actively dispatching. Retained events are rejected,
+  and the complete command or batch is snapshotted synchronously before gesture
+  consumption. Serialized or programmatic `source: 'user', confirmed: true`
+  input is not confirmation.
   Secret controls never accept staging, and sensitive/secret
   values stay redacted in snapshots, events, policy callbacks, and review UI.
   Batch execution is ordered best-effort and returns one result per command;

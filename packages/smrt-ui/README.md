@@ -105,11 +105,16 @@ those value-changing actions require a trusted local gesture handled by the
 framework review surface. Secret/read-only controls reject agent mutations.
 Staging remains separate so proposals never change user state before review.
 Custom local review controls can call `executeLocalControlCommand` or
-`executeLocalControlBatch` from their DOM handlers; the registry validates and
-consumes the gesture before authorizing a value-changing command.
+`executeLocalControlBatch` synchronously from their DOM handlers; the registry
+requires the event to still be actively dispatching, snapshots the complete
+command, and consumes the gesture before authorizing a value-changing command.
+Retaining an event for later use is rejected even when it remains trusted.
 Serialized or programmatic `source: 'user', confirmed: true` input is never
 confirmation. Sensitive and secret values, validation details, failures, and
 events remain redacted from every public surface.
+Registries expose optional `refresh(formId)` notification for hosts whose live
+metadata or runtime-state getters change without a registration event; it
+updates subscribers without discarding an internal staged proposal.
 `executeBatch` is an additive optional registry method; Forms fall back to
 ordered `execute` calls for older injected registries. Factory-created
 registries retain the framework's private, one-shot gesture proof, while an

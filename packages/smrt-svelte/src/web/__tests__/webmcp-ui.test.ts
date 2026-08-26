@@ -143,7 +143,7 @@ describe('registerWebMcpUiTools', () => {
     expect(value).toBe('Ada');
     expect(
       (await parse(execute.execute({ action: 'apply', identity }))).result,
-    ).toMatchObject({ ok: false, reason: 'consent_required' });
+    ).toMatchObject({ ok: false, reason: 'human_confirmation_required' });
     expect(value).toBe('Ada');
 
     expect(

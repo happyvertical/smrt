@@ -78,10 +78,12 @@ const isInitializing = $derived(stt.isInitializing);
 const downloadProgress = $derived(stt.downloadProgress);
 
 // Validation
-const isValidEmail = $derived.by(() => {
-  if (type !== 'email' || !value) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-});
+function emailValueIsValid(candidate: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate);
+}
+const isValidEmail = $derived(
+  type !== 'email' || !value || emailValueIsValid(value),
+);
 const showInvalid = $derived(type === 'email' && value && !isValidEmail);
 
 // Helper to update value (works with $bindable)
@@ -111,6 +113,13 @@ onMount(() => {
       getState: () => ({ disabled }),
       get constraints() {
         return { required };
+      },
+      validateValue: (candidate) => {
+        const next = String(candidate ?? '');
+        return (
+          (!required || next.trim().length > 0) &&
+          (type !== 'email' || next.length === 0 || emailValueIsValid(next))
+        );
       },
       validate: () =>
         (!required || value.trim().length > 0) &&

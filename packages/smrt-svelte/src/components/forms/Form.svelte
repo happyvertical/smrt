@@ -207,6 +207,47 @@ function fieldControls(field: FieldDefinition) {
     : [];
 }
 
+function decorateFieldControls(
+  field: FieldDefinition,
+  currentFormId: string,
+  resolvedSubject: ControlSubject | undefined,
+): () => void {
+  const attributes = new Map<string, string | undefined>([
+    ['data-smrt-control', field.controlId ?? field.name],
+    ['data-smrt-form', currentFormId],
+    ['data-smrt-subject-type', resolvedSubject?.type],
+    ['data-smrt-subject-id', resolvedSubject?.id],
+  ]);
+  const controls = fieldControls(field).map((control) => ({
+    control,
+    previous: new Map(
+      Array.from(attributes.keys(), (attribute) => [
+        attribute,
+        control.getAttribute(attribute),
+      ]),
+    ),
+  }));
+  for (const { control } of controls) {
+    for (const [attribute, next] of attributes) {
+      if (next === undefined) control.removeAttribute(attribute);
+      else control.setAttribute(attribute, next);
+    }
+  }
+  return () => {
+    for (const { control, previous } of controls) {
+      for (const [attribute, assigned] of attributes) {
+        if (control.getAttribute(attribute) !== (assigned ?? null)) continue;
+        const original = previous.get(attribute);
+        if (original === null || original === undefined) {
+          control.removeAttribute(attribute);
+        } else {
+          control.setAttribute(attribute, original);
+        }
+      }
+    }
+  };
+}
+
 function recordDirectUserEdit(event: Event) {
   if (!event.isTrusted) return;
   const target = event.target;
@@ -246,55 +287,69 @@ function registerInteraction(
     logger.warn('Form: duplicate interaction identity rejected', { identity });
     return undefined;
   }
-  return registry.register({
-    identity,
-    metadata: {
-      kind: interactionKind(field),
-      get label() {
-        return field.label;
+  const restoreAttributes = decorateFieldControls(
+    field,
+    currentFormId,
+    resolvedSubject,
+  );
+  try {
+    const dispose = registry.register({
+      identity,
+      metadata: {
+        kind: interactionKind(field),
+        get label() {
+          return field.label;
+        },
+        get description() {
+          return field.description;
+        },
+        get sensitivity() {
+          return field.sensitivity ?? 'public';
+        },
+        get readable() {
+          return field.readable;
+        },
+        get writable() {
+          return field.writable;
+        },
+        get constraints() {
+          return field.constraints;
+        },
+        get options() {
+          return field.options;
+        },
+        get unit() {
+          return field.unit;
+        },
       },
-      get description() {
-        return field.description;
-      },
-      get sensitivity() {
-        return field.sensitivity ?? 'public';
-      },
-      get readable() {
-        return field.readable;
-      },
-      get writable() {
-        return field.writable;
-      },
-      get constraints() {
-        return field.constraints;
-      },
-      get options() {
-        return field.options;
-      },
-      get unit() {
-        return field.unit;
-      },
-    },
-    getValue: field.getValue,
-    setValue: field.setValue,
-    prepareValue: field.prepareValue,
-    clear:
-      field.clear ??
-      (() => {
-        field.setValue('');
-      }),
-    focus:
-      field.focus ??
-      (() =>
-        fieldControls(field)
-          .find((control) => !control.disabled)
-          ?.focus()),
-    reveal: field.reveal,
-    highlight: field.highlight,
-    validate: field.validate,
-    validateValue: field.validateValue,
-    getState: () => fieldRuntimeState(field),
-  });
+      getValue: field.getValue,
+      setValue: field.setValue,
+      prepareValue: field.prepareValue,
+      clear:
+        field.clear ??
+        (() => {
+          field.setValue('');
+        }),
+      focus:
+        field.focus ??
+        (() =>
+          fieldControls(field)
+            .find((control) => !control.disabled)
+            ?.focus()),
+      reveal: field.reveal,
+      highlight: field.highlight,
+      validate: field.validate,
+      validateValue: field.validateValue,
+      getState: () => fieldRuntimeState(field),
+    });
+    return () => {
+      dispose();
+      restoreAttributes();
+    };
+  } catch (error) {
+    restoreAttributes();
+    throw error;
+  }
 }
 
 function resolvedFieldSubject(
@@ -376,6 +431,23 @@ $effect(() => {
       dispose,
     });
   }
+});
+
+// Field metadata and DOM-backed runtime state are live getters. Notify review
+// consumers when either changes so hidden staged entries disappear immediately
+// without unregistering the internal proposal needed for trusted discard.
+$effect(() => {
+  const registry = resolvedInteractionRegistry;
+  const currentFormId = resolvedFormId;
+  for (const field of fields.values()) {
+    void field.sensitivity;
+    void field.readable;
+    void field.writable;
+    const state = fieldRuntimeState(field);
+    void state.disabled;
+    void state.readonly;
+  }
+  registry.refresh?.(currentFormId);
 });
 
 // Create form context

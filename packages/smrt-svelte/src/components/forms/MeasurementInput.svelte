@@ -332,7 +332,9 @@ onMount(() => {
               type: 'number',
               ...(min !== undefined ? { minimum: min } : {}),
               ...(max !== undefined ? { maximum: max } : {}),
-              ...(Number.isFinite(step) && step > 0
+              ...(Number.isFinite(step) &&
+              step > 0 &&
+              (min === undefined || measurementMatchesStep(0))
                 ? { multipleOf: step }
                 : {}),
             },
