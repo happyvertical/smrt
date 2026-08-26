@@ -5,10 +5,13 @@
  *  getValue()). */
 import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import CheckboxInput from '../CheckboxInput.svelte';
+import DateTimeInput from '../DateTimeInput.svelte';
 import Form from '../Form.svelte';
 import MoneyInput from '../MoneyInput.svelte';
 import NumberInput from '../NumberInput.svelte';
+import PhoneInput from '../PhoneInput.svelte';
 import SelectInput from '../SelectInput.svelte';
+import TextareaInput from '../TextareaInput.svelte';
 import TextInput from '../TextInput.svelte';
 
 let {
@@ -20,8 +23,13 @@ let {
   showAge = true,
   showMoney = false,
   showClearFields = false,
+  showScalarFields = false,
   checkboxValue = true,
   selectValue = 'second',
+  dateValue = '',
+  phoneValue = '',
+  notesValue = '',
+  notesAppendMode = false,
   moneyMin = undefined,
   moneyMax = undefined,
   webmcp = false,
@@ -45,8 +53,13 @@ let {
   showAge?: boolean;
   showMoney?: boolean;
   showClearFields?: boolean;
+  showScalarFields?: boolean;
   checkboxValue?: boolean;
   selectValue?: string;
+  dateValue?: string;
+  phoneValue?: string;
+  notesValue?: string;
+  notesAppendMode?: boolean;
   moneyMin?: number;
   moneyMax?: number;
   webmcp?: boolean;
@@ -113,6 +126,11 @@ function mutateSubject() {
 			]}
 			bind:value={selectValue}
 		/>
+	{/if}
+	{#if showScalarFields}
+		<DateTimeInput name="appointment" label="Appointment" includeTime={false} bind:value={dateValue} />
+		<PhoneInput name="phone" label="Phone" bind:value={phoneValue} />
+		<TextareaInput name="notes" label="Notes" appendMode={notesAppendMode} bind:value={notesValue} />
 	{/if}
 	</fieldset>
 	{#if mutableSubject}

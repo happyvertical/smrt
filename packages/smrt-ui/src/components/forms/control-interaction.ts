@@ -574,6 +574,14 @@ export function createControlInteractionRegistry(
       userEdit: { revision: number; value: unknown } | null;
     }
   >();
+  const activeSetterMutations = new Map<
+    string,
+    {
+      registration: ControlRegistration;
+      previousValue: unknown;
+      immediateValue: unknown;
+    }
+  >();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
   const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
@@ -720,7 +728,14 @@ export function createControlInteractionRegistry(
       // `untrack` keeps this read out of a caller's reactive registration effect.
       untrack(() => {
         try {
-          const value = cloneValue(registration.getValue?.());
+          const currentValue = cloneValue(registration.getValue?.());
+          const activeMutation = activeSetterMutations.get(key);
+          const value =
+            activeMutation &&
+            registrations.get(key) === activeMutation.registration &&
+            valuesEqual(currentValue, activeMutation.immediateValue)
+              ? cloneValue(activeMutation.previousValue)
+              : currentValue;
           const userEdit = cloneValue(
             registration.getUserEditSnapshot?.() ?? userEdits.get(key),
           );
@@ -1040,8 +1055,17 @@ export function createControlInteractionRegistry(
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
             const userEditSnapshot = commandUserEditSnapshot;
+            const activeSetterMutation = {
+              registration,
+              previousValue: cloneValue(previousValue),
+              immediateValue: cloneValue(previousValue),
+            };
             try {
+              activeSetterMutations.set(key, activeSetterMutation);
               const setterResult = registration.setValue?.(nextValue);
+              activeSetterMutation.immediateValue = cloneValue(
+                registration.getValue?.(),
+              );
               await setterResult;
             } catch (error) {
               try {
@@ -1050,6 +1074,10 @@ export function createControlInteractionRegistry(
                 // Preserve the original setter failure for the command result.
               }
               throw error;
+            } finally {
+              if (activeSetterMutations.get(key) === activeSetterMutation) {
+                activeSetterMutations.delete(key);
+              }
             }
             if (
               registrations.get(key) !== registration ||

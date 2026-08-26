@@ -60,11 +60,13 @@ const isInitializing = $derived(stt.isInitializing);
 const downloadProgress = $derived(stt.downloadProgress);
 
 // Phone validation (basic North American format)
-const isValidPhone = $derived.by(() => {
-  if (!value) return true;
-  const digits = value.replace(/\D/g, '');
-  return digits.length >= 10 && digits.length <= 11;
-});
+function isValidPhoneValue(candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  if (!candidate) return !required;
+  const digits = candidate.replace(/\D/g, '');
+  return digits.length === 10 || (digits.length === 11 && digits[0] === '1');
+}
+const isValidPhone = $derived.by(() => isValidPhoneValue(value));
 const showInvalid = $derived(value && !isValidPhone);
 
 function updateValue(newValue: string) {
@@ -157,7 +159,13 @@ onMount(() => {
       get constraints() {
         return { required };
       },
-      validate: () => !required || value.trim().length > 0,
+      validateValue: (candidate) => {
+        if (typeof candidate !== 'string') return false;
+        if (candidate === '') return !required;
+        const formatted = parseSpokenPhone(candidate);
+        return formatted !== '' && isValidPhoneValue(formatted);
+      },
+      validate: () => isValidPhoneValue(value),
     };
     formContext.registerField(fieldDef);
   }

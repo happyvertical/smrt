@@ -105,6 +105,36 @@ function formatForDisplay(isoValue: string): string {
   }
 }
 
+function isValidDateTimeValue(candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  if (candidate === '') return !required;
+  const match = includeTime
+    ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/.exec(
+        candidate,
+      )
+    : /^(\d{4})-(\d{2})-(\d{2})$/.exec(candidate);
+  if (!match) return false;
+  const [, year, month, day, hour = '0', minute = '0', second = '0'] = match;
+  const date = new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    ),
+  );
+  return (
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() === Number(month) - 1 &&
+    date.getUTCDate() === Number(day) &&
+    date.getUTCHours() === Number(hour) &&
+    date.getUTCMinutes() === Number(minute) &&
+    date.getUTCSeconds() === Number(second)
+  );
+}
+
 // Update display when value changes
 $effect(() => {
   displayValue = formatForDisplay(value);
@@ -130,7 +160,8 @@ onMount(() => {
       get constraints() {
         return { required };
       },
-      validate: () => !required || value.trim().length > 0,
+      validateValue: isValidDateTimeValue,
+      validate: () => isValidDateTimeValue(value),
     };
     formContext.registerField(fieldDef);
   }

@@ -2044,6 +2044,60 @@ describe('control interaction registry', () => {
     expect(value).toBe('Katherine');
   });
 
+  it('does not preserve a synchronous partial setter value as a replacement baseline', async () => {
+    let value = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async () => {
+        value = 'partial';
+        setterStarted?.();
+        await setterBlocked;
+        throw new Error('setter_failed');
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'setter_failed',
+    });
+    expect(value).toBe('Ada');
+  });
+
   it('replays a null human edit made during replacement restoration', async () => {
     let value: string | null = 'Ada';
     let releaseSetter: (() => void) | undefined;

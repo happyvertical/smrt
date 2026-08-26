@@ -264,6 +264,107 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(measurementChanged).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid scalar date and phone proposals', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        showScalarFields: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(
+      await registered.at(-1)?.execute({
+        appointment: '2026-02-30',
+        phone: '123',
+      }),
+    ).toBe('Staged 2 changes for review');
+    for (const controlId of ['appointment', 'phone']) {
+      const snapshot = registry
+        .list()
+        .find((item) => item.identity.controlId === controlId);
+      expect(snapshot?.state.staged?.valid).toBe(false);
+      expect(
+        await executeLocalControlBatch(
+          registry,
+          [
+            {
+              action: 'apply',
+              identity: snapshot?.identity ?? { formId: '', controlId: '' },
+              revision: snapshot?.state.staged?.revision,
+            },
+          ],
+          new Event('click'),
+        ),
+      ).toMatchObject({ ok: false });
+    }
+  });
+
+  it('stages the final appended textarea value before applying it once', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        showScalarFields: true,
+        notesValue: 'Existing',
+        notesAppendMode: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(await registered.at(-1)?.execute({ notes: 'Proposed' })).toBe(
+      'Staged 1 change for review',
+    );
+    const notes = registry
+      .list()
+      .find((item) => item.identity.controlId === 'notes');
+    expect(notes?.state.staged?.value).toBe('Existing\nProposed');
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'apply',
+            identity: notes?.identity ?? { formId: '', controlId: '' },
+            revision: notes?.state.staged?.revision,
+          },
+        ],
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      registry.get(notes?.identity ?? { formId: '', controlId: '' })?.state
+        .value,
+    ).toBe('Existing\nProposed');
+  });
+
   it('rejects a non-object date-range proposal without delayed mutation', async () => {
     const datesChanged = vi.fn();
     const registry = createControlInteractionRegistry({

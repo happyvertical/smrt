@@ -642,6 +642,7 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     ) {
       proposedValue = { ...proposedValue, unit: field.unit };
     }
+    proposedValue = field.prepareValue?.(proposedValue) ?? proposedValue;
     return [
       {
         action: 'stage' as const,
@@ -810,7 +811,7 @@ function applyExtractedValues(values: Record<string, unknown>) {
     const field = fields.get(name);
     if (field && value !== undefined && value !== null) {
       const cleanedValue = cleanValue(value, field.type);
-      field.setValue(cleanedValue);
+      field.setValue(field.prepareValue?.(cleanedValue) ?? cleanedValue);
     }
   }
 }

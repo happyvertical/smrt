@@ -90,6 +90,10 @@ onMount(() => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
+      prepareValue: (candidate) => {
+        const next = String(candidate ?? '');
+        return appendMode && value ? `${value}\n${next}` : next;
+      },
       getState: () => ({ disabled }),
       get constraints() {
         return { required };
