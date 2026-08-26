@@ -14,7 +14,11 @@ let {
   fieldsetDisabled = false,
   onmeasurementchange = undefined,
   ondateschange = undefined,
+  onaddresschange = undefined,
   measurementStep = undefined,
+  measurementUnits = undefined,
+  minDate = undefined,
+  maxDate = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -26,7 +30,11 @@ let {
   fieldsetDisabled?: boolean;
   onmeasurementchange?: (value: { value: number; unit: string } | null) => void;
   ondateschange?: (value: { startDate: string; endDate: string }) => void;
+  onaddresschange?: (value: Partial<Record<string, string>>) => void;
   measurementStep?: number;
+  measurementUnits?: Array<'ft' | 'in' | 'm' | 'cm' | 'mm' | 'yd'>;
+  minDate?: string;
+  maxDate?: string;
 } = $props();
 </script>
 
@@ -37,12 +45,15 @@ let {
 		label="Measurement"
 		required={structuredRequired}
 		step={measurementStep}
+		units={measurementUnits}
 		onchange={onmeasurementchange}
 	/>
 	<DateRangeInput
 		name="dates"
 		label="Dates"
 		required={structuredRequired}
+		{minDate}
+		{maxDate}
 		onchange={ondateschange}
 	/>
 	<AddressInput
@@ -50,6 +61,7 @@ let {
 		label="Address"
 		fields={addressFields}
 		required={structuredRequired}
+		onchange={onaddresschange}
 		/>
 	</fieldset>
 	<button type="submit">Submit</button>

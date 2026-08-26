@@ -1269,7 +1269,7 @@ describe('control interaction registry', () => {
     releaseClear?.();
     expect(await clearing).toMatchObject({
       ok: false,
-      reason: 'staged_value_rejected',
+      reason: 'staged_value_stale',
     });
     expect(value).toBe('Katherine');
 
@@ -1439,7 +1439,7 @@ describe('control interaction registry', () => {
 
     expect(await applying).toMatchObject({
       ok: false,
-      reason: 'staged_value_invalid',
+      reason: 'staged_value_stale',
     });
     expect(value).toBe('Grace');
   });
@@ -1500,6 +1500,215 @@ describe('control interaction registry', () => {
     });
     expect(value).toBe('Katherine');
     expect(restoreValue).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not commit a successful async apply over a newer human edit', async () => {
+    let value = 'Ada';
+    let userEditValue = value;
+    let userEditRevision = 0;
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => ({
+        revision: userEditRevision,
+        value: userEditValue,
+      }),
+      setValue: async (next) => {
+        setterStarted?.();
+        await setterBlocked;
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    value = 'Katherine';
+    userEditValue = value;
+    userEditRevision += 1;
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Katherine');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: false, reason: 'nothing_to_undo' });
+  });
+
+  it('does not commit an async apply after its registration is replaced', async () => {
+    let originalValue = 'Ada';
+    let replacementValue = 'Katherine';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => originalValue,
+      setValue: async (next) => {
+        setterStarted?.();
+        await setterBlocked;
+        originalValue = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => replacementValue,
+      setValue: (next) => {
+        replacementValue = String(next);
+      },
+    });
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(replacementValue).toBe('Katherine');
+  });
+
+  it('does not commit successful async clear or undo over newer human edits', async () => {
+    let value = 'Ada';
+    let userEditValue = value;
+    let userEditRevision = 0;
+    let releaseMutation: (() => void) | undefined;
+    let mutationStarted: (() => void) | undefined;
+    let blockSetter = false;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const waitForMutation = () => {
+      const blocked = new Promise<void>((resolve) => {
+        releaseMutation = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        mutationStarted = resolve;
+      });
+      return { blocked, started };
+    };
+    let pending = waitForMutation();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => ({
+        revision: userEditRevision,
+        value: userEditValue,
+      }),
+      setValue: async (next) => {
+        if (blockSetter) {
+          mutationStarted?.();
+          await pending.blocked;
+        }
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+      clear: async () => {
+        mutationStarted?.();
+        await pending.blocked;
+        value = '';
+        return true;
+      },
+    });
+
+    const clearing = executeLocalControlCommand(
+      registry,
+      { action: 'clear', identity },
+      new Event('click'),
+    );
+    await pending.started;
+    value = 'Katherine';
+    userEditValue = value;
+    userEditRevision += 1;
+    releaseMutation?.();
+    expect(await clearing).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Katherine');
+
+    blockSetter = false;
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+
+    pending = waitForMutation();
+    blockSetter = true;
+    const undoing = executeLocalControlCommand(
+      registry,
+      { action: 'undo', identity },
+      new Event('click'),
+    );
+    await pending.started;
+    value = 'Byron';
+    userEditValue = value;
+    userEditRevision += 1;
+    releaseMutation?.();
+    expect(await undoing).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Byron');
   });
 
   it('does not collide subject identities containing separators', async () => {

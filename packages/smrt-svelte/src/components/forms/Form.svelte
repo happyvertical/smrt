@@ -548,6 +548,7 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
       return [];
     }
     const currentValue = field.getValue();
+    let mergeBaseValue = currentValue;
     let sanitizedValue = value;
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
       const schema = webMcpFieldSchema(field) as {
@@ -555,8 +556,24 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
       };
       const properties = schema.properties;
       if (properties) {
+        const currentObject =
+          currentValue !== null &&
+          typeof currentValue === 'object' &&
+          !Array.isArray(currentValue)
+            ? (currentValue as Record<string, unknown>)
+            : undefined;
+        const projectedCurrent = currentObject
+          ? Object.fromEntries(
+              Object.entries(currentObject).filter(([key]) =>
+                Object.hasOwn(properties, key),
+              ),
+            )
+          : undefined;
+        mergeBaseValue = projectedCurrent;
         sanitizedValue = Object.fromEntries(
-          Object.entries(value).filter(([key]) => key in properties),
+          Object.entries(value).filter(([key]) =>
+            Object.hasOwn(properties, key),
+          ),
         );
       }
     }
@@ -564,10 +581,10 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
       sanitizedValue !== null &&
       typeof sanitizedValue === 'object' &&
       !Array.isArray(sanitizedValue) &&
-      currentValue !== null &&
-      typeof currentValue === 'object' &&
-      !Array.isArray(currentValue)
-        ? { ...currentValue, ...sanitizedValue }
+      mergeBaseValue !== null &&
+      typeof mergeBaseValue === 'object' &&
+      !Array.isArray(mergeBaseValue)
+        ? { ...mergeBaseValue, ...sanitizedValue }
         : sanitizedValue;
     if (
       field.type === 'measurement' &&

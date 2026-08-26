@@ -476,6 +476,20 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   }
 }
 
+function userEditSuperseded(
+  registration: ControlRegistration,
+  previousUserEdit: ReturnType<
+    NonNullable<ControlRegistration['getUserEditSnapshot']>
+  > | null,
+): boolean {
+  if (!previousUserEdit) return false;
+  const currentUserEdit = registration.getUserEditSnapshot?.();
+  return (
+    currentUserEdit !== undefined &&
+    currentUserEdit.revision !== previousUserEdit.revision
+  );
+}
+
 async function restoreRegistrationValue(
   registration: ControlRegistration,
   previousValue: unknown,
@@ -929,6 +943,19 @@ export function createControlInteractionRegistry(
               }
               throw error;
             }
+            if (
+              registrations.get(key) !== registration ||
+              userEditSuperseded(registration, userEditSnapshot)
+            ) {
+              if (registrations.get(key) === registration) {
+                await restoreRegistrationValue(
+                  registration,
+                  previousValue,
+                  userEditSnapshot,
+                );
+              }
+              throw new Error('staged_value_stale');
+            }
             const appliedValue = cloneValue(registration.getValue?.());
             if (
               valuesEqual(appliedValue, previousValue) &&
@@ -938,6 +965,12 @@ export function createControlInteractionRegistry(
             }
             try {
               const valid = await registration.validate?.();
+              if (
+                registrations.get(key) !== registration ||
+                userEditSuperseded(registration, userEditSnapshot)
+              ) {
+                throw new Error('staged_value_stale');
+              }
               if (!valuesEqual(registration.getValue?.(), appliedValue)) {
                 throw new Error('staged_value_stale');
               }
@@ -1020,6 +1053,19 @@ export function createControlInteractionRegistry(
               }
               throw error;
             }
+            if (
+              registrations.get(key) !== registration ||
+              userEditSuperseded(registration, userEditSnapshot)
+            ) {
+              if (registrations.get(key) === registration) {
+                await restoreRegistrationValue(
+                  registration,
+                  previousValue,
+                  userEditSnapshot,
+                );
+              }
+              throw new Error('staged_value_stale');
+            }
             const clearedValue = registration.getValue?.();
             const rejected =
               clearDecision === false ||
@@ -1075,6 +1121,19 @@ export function createControlInteractionRegistry(
                 // Preserve the original setter failure for the command result.
               }
               throw error;
+            }
+            if (
+              registrations.get(key) !== registration ||
+              userEditSuperseded(registration, userEditSnapshot)
+            ) {
+              if (registrations.get(key) === registration) {
+                await restoreRegistrationValue(
+                  registration,
+                  currentValue,
+                  userEditSnapshot,
+                );
+              }
+              throw new Error('staged_value_stale');
             }
             if (
               !valuesEqual(registration.getValue?.(), undoEntry.previousValue)

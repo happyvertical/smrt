@@ -225,6 +225,85 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(datesChanged).not.toHaveBeenCalled();
   });
 
+  it('rejects invalid structured proposals before mutation callbacks run', async () => {
+    const addressChanged = vi.fn();
+    const datesChanged = vi.fn();
+    const measurementChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithStructuredFields, {
+      props: {
+        interactionRegistry: registry,
+        structuredRequired: false,
+        addressFields: ['city'],
+        onaddresschange: addressChanged,
+        ondateschange: datesChanged,
+        onmeasurementchange: measurementChanged,
+        measurementUnits: ['m'],
+        minDate: '2026-08-01',
+        maxDate: '2026-08-31',
+      },
+    });
+    await tick();
+    const apply = async (controlId: string, value: unknown) => {
+      const identity = { formId: 'structured-fields', controlId };
+      await registry.execute(
+        { action: 'stage', identity, value },
+        { source: 'agent' },
+      );
+      return executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'apply',
+            identity,
+            revision: registry.get(identity)?.state.staged?.revision,
+          },
+        ],
+        new Event('click'),
+      );
+    };
+
+    expect(
+      (await apply('address', { city: { nested: true } })).results[0].ok,
+    ).toBe(false);
+    expect(
+      (await apply('address', { city: 'Edmonton', constructor: 'payload' }))
+        .results[0].ok,
+    ).toBe(false);
+    expect(
+      (
+        await apply('dates', {
+          startDate: '2026-08-30',
+          endDate: '2026-08-20',
+        })
+      ).results[0].ok,
+    ).toBe(false);
+    expect(
+      (
+        await apply('dates', {
+          startDate: '2026-02-30',
+          endDate: '2026-08-20',
+        })
+      ).results[0].ok,
+    ).toBe(false);
+    expect(
+      (
+        await apply('dates', {
+          startDate: '2026-07-31',
+          endDate: '2026-08-20',
+        })
+      ).results[0].ok,
+    ).toBe(false);
+    expect(
+      (await apply('measurement', { value: 2, unit: 'ft' })).results[0].ok,
+    ).toBe(false);
+    expect(addressChanged).not.toHaveBeenCalled();
+    expect(datesChanged).not.toHaveBeenCalled();
+    expect(measurementChanged).not.toHaveBeenCalled();
+  });
+
   it('returns focus to smrt-mode DateRangeInput after final discard', async () => {
     appState.mode = 'smrt';
     const registry = createControlInteractionRegistry({
@@ -249,6 +328,38 @@ describe('Form WebMCP staged-edit intent', () => {
 
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /date range/i })).toHaveFocus(),
+    );
+  });
+
+  it('falls back to an enabled form control after discarding a disabled field', async () => {
+    appState.mode = 'smrt';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const view = render(FormWithStructuredFields, {
+      props: { interactionRegistry: registry },
+    });
+    await tick();
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'structured-fields', controlId: 'dates' },
+        value: { startDate: '2026-08-26', endDate: '2026-08-27' },
+      },
+      { source: 'agent' },
+    );
+    await view.rerender({
+      interactionRegistry: registry,
+      fieldsetDisabled: true,
+    });
+    await tick();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Discard valid changes' }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Submit' })).toHaveFocus(),
     );
   });
 
@@ -725,6 +836,7 @@ describe('Form WebMCP staged-edit intent', () => {
   });
 
   it('does not expose structured fields disabled by an ancestor fieldset', async () => {
+    appState.mode = 'smrt';
     const registered: Array<{
       inputSchema: Record<string, unknown>;
       execute: (args: Record<string, unknown>) => Promise<string>;
@@ -745,5 +857,37 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(await tool?.execute({ address: { city: 'Edmonton' } })).toBe(
       'No reviewable changes provided',
     );
+  });
+
+  it('removes a smrt-mode date range when its fieldset becomes disabled', async () => {
+    appState.mode = 'smrt';
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const view = render(FormWithStructuredFields, {
+      props: { webmcp: true },
+    });
+    await tick();
+    await tick();
+    expect(registered.at(-1)?.inputSchema).toMatchObject({
+      properties: { dates: expect.any(Object) },
+    });
+
+    await view.rerender({ webmcp: true, fieldsetDisabled: true });
+    await tick();
+    await tick();
+
+    expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
+    expect(
+      await registered.at(-1)?.execute({
+        dates: { startDate: '2026-08-26', endDate: '2026-08-27' },
+      }),
+    ).toBe('No reviewable changes provided');
   });
 });

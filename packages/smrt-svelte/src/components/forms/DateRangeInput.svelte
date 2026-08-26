@@ -177,6 +177,20 @@ function formatToISO(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function isCanonicalCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 // Register with form context
 onMount(() => {
   if (formContext) {
@@ -207,9 +221,30 @@ onMount(() => {
           .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
-      getState: () => ({ disabled }),
+      getState: () => ({
+        disabled: disabled || primaryControl?.matches(':disabled') === true,
+      }),
       constraints: { required },
       focus: () => primaryControl?.focus(),
+      webMcpSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          startDate: {
+            type: 'string',
+            format: 'date',
+            ...(minDate ? { formatMinimum: minDate } : {}),
+            ...(maxDate ? { formatMaximum: maxDate } : {}),
+          },
+          endDate: {
+            type: 'string',
+            format: 'date',
+            ...(minDate ? { formatMinimum: minDate } : {}),
+            ...(maxDate ? { formatMaximum: maxDate } : {}),
+          },
+        },
+        ...(required ? { required: ['startDate', 'endDate'] } : {}),
+      },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined) return !required;
         if (typeof candidate !== 'object') return false;
@@ -220,10 +255,21 @@ onMount(() => {
         ) {
           return false;
         }
-        return (
-          !required ||
-          (range.startDate.trim().length > 0 && range.endDate.trim().length > 0)
-        );
+        const start = range.startDate;
+        const end = range.endDate;
+        if (required && (!start || !end)) return false;
+        if (
+          (start && !isCanonicalCalendarDate(start)) ||
+          (end && !isCanonicalCalendarDate(end)) ||
+          (start && minDate && start < minDate) ||
+          (start && maxDate && start > maxDate) ||
+          (end && minDate && end < minDate) ||
+          (end && maxDate && end > maxDate) ||
+          (start && end && start > end)
+        ) {
+          return false;
+        }
+        return true;
       },
       validate: () =>
         !required || (startDate.trim().length > 0 && endDate.trim().length > 0),

@@ -311,6 +311,20 @@ onMount(() => {
       unit,
       getState: () => ({ disabled }),
       constraints: { required, min, max },
+      webMcpSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          value: {
+            type: 'number',
+            ...(min !== undefined ? { minimum: min } : {}),
+            ...(max !== undefined ? { maximum: max } : {}),
+            ...(Number.isFinite(step) && step > 0 ? { multipleOf: step } : {}),
+          },
+          unit: { type: 'string', enum: [...units] },
+        },
+        ...(required ? { required: ['value', 'unit'] } : {}),
+      },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined || candidate === '') {
           return !required;
@@ -331,7 +345,7 @@ onMount(() => {
         return (
           proposed !== null &&
           Number.isFinite(proposed.value) &&
-          Object.hasOwn(unitLabels, proposed.unit) &&
+          units.includes(proposed.unit) &&
           measurementIsInRange(proposed.value) &&
           measurementMatchesStep(proposed.value)
         );

@@ -228,16 +228,28 @@ async function restoreReviewFocus(
       { action: 'focus', identity: removed.identity },
       { source: 'user' },
     );
-    if (!focused.ok) {
-      const focusTarget = originalControl?.matches(
+    const registryFocusedOriginal =
+      focused.ok &&
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement !== document.body &&
+      formElement?.contains(document.activeElement) === true &&
+      reviewElement?.contains(document.activeElement) !== true;
+    if (registryFocusedOriginal) return;
+    const directControl =
+      originalControl &&
+      !originalControl.matches(':disabled') &&
+      originalControl.matches(
         'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
       )
         ? originalControl
-        : originalControl?.querySelector<HTMLElement>(
-            'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-          );
-      focusTarget?.focus();
-    }
+        : undefined;
+    const nestedControl = originalControl?.querySelector<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    );
+    const formFallback = formElement?.querySelector<HTMLElement>(
+      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    );
+    (directControl ?? nestedControl ?? formFallback)?.focus();
   };
   if (
     !registry

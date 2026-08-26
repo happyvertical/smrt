@@ -248,6 +248,34 @@ onMount(() => {
         ),
         ...(required ? { required: [...fields] } : {}),
       },
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined) return !required;
+        if (typeof candidate !== 'object' || Array.isArray(candidate)) {
+          return false;
+        }
+        const address = candidate as Record<string, unknown>;
+        if (
+          ![Object.prototype, null].includes(Object.getPrototypeOf(address)) ||
+          !Object.keys(address).every((key) =>
+            fields.includes(key as AddressField),
+          ) ||
+          !fields.every(
+            (field) =>
+              !Object.hasOwn(address, field) ||
+              typeof address[field] === 'string',
+          )
+        ) {
+          return false;
+        }
+        return (
+          !required ||
+          fields.every(
+            (field) =>
+              typeof address[field] === 'string' &&
+              address[field].trim().length > 0,
+          )
+        );
+      },
       validate: () =>
         !required ||
         fields.every((field) => String(value[field] ?? '').trim().length > 0),
