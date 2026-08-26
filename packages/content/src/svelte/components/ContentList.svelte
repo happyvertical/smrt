@@ -301,6 +301,10 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 ]);
 </script>
 
+{#snippet tableEmptyState()}
+  <p class="table-empty-state">{t(M['content.content_list.empty'])}</p>
+{/snippet}
+
 {#snippet selectHeader()}
   <Checkbox
     checked={allPageSelected}
@@ -518,35 +522,34 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         </Button>
       {/if}
     </div>
-  {:else if loading && pageRows.length === 0}
-    <div class="state-panel" role="status">
-      {t(M['content.content_list.loading'])}
-    </div>
-  {:else if pageRows.length === 0}
-    <div class="state-panel empty-state">
-      {t(M['content.content_list.empty'])}
-    </div>
   {:else}
-    <div class="content-selection">
-      {#if viewMode !== 'compact'}
-        <Checkbox
-          checked={allPageSelected}
-          indeterminate={somePageSelected}
-          aria-label={t(M['content.content_list.select_all'])}
-          onchange={togglePageSelection}
-        />
-      {/if}
-      <span class="content-selection__count" aria-live="polite">
-        {t(M['content.content_list.selection_count'], { count: selectedCount })}
-      </span>
-      {#if selectedCount > 0}
-        <Button variant="ghost" size="sm" type="button" class="clear-selection" onclick={clearSelection}>
-          {t(M['content.content_list.clear_selection'])}
-        </Button>
-      {/if}
-    </div>
+    {#if pageRows.length > 0 || selectedCount > 0}
+      <div class="content-selection">
+        {#if viewMode !== 'compact'}
+          <Checkbox
+            checked={allPageSelected}
+            indeterminate={somePageSelected}
+            aria-label={t(M['content.content_list.select_all'])}
+            onchange={togglePageSelection}
+          />
+        {/if}
+        <span class="content-selection__count" aria-live="polite">
+          {t(M['content.content_list.selection_count'], { count: selectedCount })}
+        </span>
+        {#if selectedCount > 0}
+          <Button variant="ghost" size="sm" type="button" class="clear-selection" onclick={clearSelection}>
+            {t(M['content.content_list.clear_selection'])}
+          </Button>
+        {/if}
+      </div>
+    {/if}
 
     {#if viewMode === 'compact'}
+      <!--
+        The compact table stays mounted for empty and loading results: it owns
+        the mounted data surface, so unmounting it on a zero-row query would
+        unregister the surface and leave an agent unable to undo its own search.
+      -->
       <div class="content-table-wrapper">
         <DataTable
           data={pageRows}
@@ -560,7 +563,16 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           caption={t(M['content.content_list.table_caption'])}
           rowLabel={(row: ContentListRow) => row.title}
           dataSurface={surfaceOptions}
+          empty={tableEmptyState}
         />
+      </div>
+    {:else if loading && pageRows.length === 0}
+      <div class="state-panel" role="status">
+        {t(M['content.content_list.loading'])}
+      </div>
+    {:else if pageRows.length === 0}
+      <div class="state-panel empty-state">
+        {t(M['content.content_list.empty'])}
       </div>
     {:else if viewMode === 'detailed'}
       <div class="content-detailed">
@@ -1144,6 +1156,13 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     border: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.05));
+  }
+
+  .table-empty-state {
+    margin: 0;
+    padding: 1.5rem 0;
+    text-align: center;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .title-link {

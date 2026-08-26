@@ -590,6 +590,62 @@ describe('ContentList data surface', () => {
   });
 });
 
+describe('ContentList empty results', () => {
+  it('keeps the compact surface registered and recoverable on a zero-row query', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+
+    const noMatches = await registry.execute({
+      version: 1,
+      commandId: 'search-nothing',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-search',
+      payload: { search: 'no-such-content' },
+    });
+    flushSync();
+
+    expect(noMatches.ok).toBe(true);
+    expect(
+      target.querySelectorAll('tbody tr[class*="row--empty"]'),
+    ).toHaveLength(1);
+    expect(target.querySelector('tbody')?.textContent).toContain(
+      'No contents match your filters.',
+    );
+    // The surface must survive its own zero-result query.
+    expect(registry.inspect(identity)).toBeDefined();
+
+    const recovered = await registry.execute({
+      version: 1,
+      commandId: 'reset-after-empty',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'reset',
+    });
+    flushSync();
+
+    expect(recovered.ok).toBe(true);
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(2);
+  });
+
+  it('still shows the shared empty panel in the card presentations', () => {
+    const target = renderList();
+
+    typeText(searchInput(target), 'no-such-content');
+
+    expect(target.querySelector('.empty-state')?.textContent?.trim()).toBe(
+      'No contents match your filters.',
+    );
+    expect(target.querySelector('table')).toBeNull();
+  });
+});
+
 describe('ContentList accessibility', () => {
   it('names every icon-only control', () => {
     const target = renderList({ defaultViewMode: 'compact' });

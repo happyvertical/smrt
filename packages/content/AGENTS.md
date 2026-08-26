@@ -151,6 +151,13 @@ Notes:
   `site` column is derived from `url`/`source`.
 - `dataSurface` registers the compact table only. Agent addressability for the
   grid and detailed presentations lands with #2456.
+- Compact mode stays mounted for empty and loading results — DataTable renders
+  its own `empty` snippet and loading row — because it owns the mounted surface:
+  swapping it for the shared empty panel unregisters the surface, and an agent
+  whose own search returned nothing then gets `not_found` on the command that
+  would undo it. The shared loading/empty panels are the card presentations'
+  only; the `error` branch still replaces the list in every mode, since a load
+  failure is host-driven rather than surface-driven.
 
 ## Dev Server
 
