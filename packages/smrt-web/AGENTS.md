@@ -74,11 +74,12 @@ module you are editing. This file keeps what holds in every module.
   own and relationship-derived collection names through the public
   `invalidateSmrtWebCollections()` seam when the host supplies its shared
   `SmrtWebClient`. Legacy `filter` callbacks receive complete collection
-  metadata; canonical definitions use `filterTool`. Mixing canonical tools with
-  only the legacy filter fails closed rather than fabricating incomplete field
-  metadata for a policy decision. Filters and fetcher resolvers receive isolated
-  value snapshots, so integrations must key external state by stable values such
-  as collection/action rather than definition object identity.
+  metadata; canonical definitions use `filterTool`. Supplying either filter for
+  definitions of the other kind fails closed rather than ignoring the predicate
+  or fabricating incomplete metadata for a policy decision. Filters and fetcher
+  resolvers receive isolated value snapshots, so integrations must key external
+  state by stable values such as collection/action rather than definition object
+  identity.
   Canonical writes validate that shared client handle before registration, and
   string or structured `{ error }` REST envelopes fail before cache
   invalidation. The private `__smrt_options` GET sentinel is reserved only for

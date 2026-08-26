@@ -167,6 +167,7 @@ export function registerWebMcpTools(
   definitions: readonly WebMcpRegistrationDefinition[],
   options: RegisterWebMcpToolsOptions = {},
 ): () => void {
+  const exposure = validateExposurePolicy(options);
   const ctx = getModelContext();
   if (!ctx) return () => {};
 
@@ -178,6 +179,7 @@ export function registerWebMcpTools(
   const { tools, allowedEffects } = selectProspectiveTools(
     definitions,
     options,
+    exposure,
   );
   if (
     client &&
@@ -303,20 +305,21 @@ const VALID_EFFECTS: readonly WebMcpToolEffect[] = [
 ];
 const NAMESPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
-function selectProspectiveTools(
-  definitions: readonly WebMcpRegistrationDefinition[],
-  options: RegisterWebMcpToolsOptions,
-): {
-  tools: ProspectiveTool[];
+interface ValidatedExposurePolicy {
   allowedEffects: ReadonlySet<WebMcpToolEffect>;
-} {
+  maxTools?: number;
+  namespace?: string;
+}
+
+function validateExposurePolicy(
+  options: WebMcpExposurePolicy,
+): ValidatedExposurePolicy {
   const effects = options.effects ?? ['read'];
   for (const effect of effects) {
     if (!VALID_EFFECTS.includes(effect)) {
       throw new Error(`Invalid WebMCP effect: ${String(effect)}`);
     }
   }
-  const allowedEffects = new Set(effects);
   const maxTools = options.maxTools;
   if (
     maxTools !== undefined &&
@@ -330,6 +333,22 @@ function selectProspectiveTools(
       'WebMCP namespace must start with an alphanumeric character and contain only letters, numbers, underscores, or hyphens',
     );
   }
+  return {
+    allowedEffects: new Set(effects),
+    ...(maxTools !== undefined ? { maxTools } : {}),
+    ...(namespace !== undefined ? { namespace } : {}),
+  };
+}
+
+function selectProspectiveTools(
+  definitions: readonly WebMcpRegistrationDefinition[],
+  options: RegisterWebMcpToolsOptions,
+  exposure: ValidatedExposurePolicy,
+): {
+  tools: ProspectiveTool[];
+  allowedEffects: ReadonlySet<WebMcpToolEffect>;
+} {
+  const { allowedEffects, maxTools, namespace } = exposure;
 
   // Snapshot the complete input graph before invoking any host callback. A
   // filter for an earlier tool may close over and mutate a later caller-owned
@@ -380,6 +399,11 @@ function selectProspectiveTools(
       }
       const semantics = actionSemantics(descriptor.action, descriptor);
       if (!allowedEffects.has(semantics.effect)) continue;
+      if (options.filterTool && !options.filter) {
+        throw new Error(
+          '[smrt-web] legacy WebMCP definitions require filter when filterTool is configured',
+        );
+      }
       const stableDescriptor = snapshotLegacyDescriptor(descriptor, semantics);
       if (
         options.filter &&

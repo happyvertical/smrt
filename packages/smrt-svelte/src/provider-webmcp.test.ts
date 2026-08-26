@@ -120,6 +120,7 @@ describe('Provider WebMCP policy', () => {
       effects: ['read', 'write'] as const,
       namespace: 'workspace',
       maxTools: 4,
+      filter: () => true,
       filterTool: (
         tool: Extract<WebMcpRegistrationDefinition, { collection: string }>,
       ) => tool.collection === 'audits',

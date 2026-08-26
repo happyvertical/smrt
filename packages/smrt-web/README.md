@@ -170,11 +170,12 @@ registerWebMcpTools(definitions, {
 ```
 
 `filter` receives legacy collection metadata; `filterTool` receives canonical
-per-tool definitions. When canonical definitions are present, configuring only
-the legacy `filter` fails closed because canonical tools do not carry complete
-collection field metadata. Policy callbacks and fetcher resolvers receive
-isolated value snapshots; key host-side maps by stable values such as
-collection/action or tool name, not definition object identity.
+per-tool definitions. Configuring only one filter while registering definitions
+for the other filter kind fails closed; canonical tools do not carry complete
+collection field metadata, and legacy descriptors do not satisfy the canonical
+filter contract. Policy callbacks and fetcher resolvers receive isolated value
+snapshots; key host-side maps by stable values such as collection/action or tool
+name, not definition object identity.
 
 Do not concatenate complete legacy and canonical definition sets for the same
 collections. Their duplicate tool names or collection/action identities reject

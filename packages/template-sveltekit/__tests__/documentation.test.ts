@@ -10,6 +10,12 @@ const projectReadme = readFileSync(
   join(__dirname, '..', 'template', 'README.md'),
   'utf8',
 );
+const templateDirectory = join(__dirname, '..', 'template');
+const templatePackage = JSON.parse(
+  readFileSync(join(templateDirectory, 'package.json'), 'utf8'),
+) as { dependencies: Record<string, string> };
+const expectedWebMcpInstallCommand =
+  'pnpm add "@happyvertical/smrt-web@$(node -p "require(\'./package.json\').dependencies[\'@happyvertical/smrt-core\']")"';
 
 describe('practical documentation', () => {
   it.each([
@@ -25,6 +31,14 @@ describe('practical documentation', () => {
     expect(projectReadme).toContain('pnpm db:migrate');
     expect(projectReadme).toContain('registerWebMcpTools');
     expect(projectReadme).toContain('collectionDefinitions');
+    expect(packageReadme).toContain(
+      "dependencies['@happyvertical/smrt-core']",
+    );
+    expect(projectReadme).toContain(
+      "dependencies['@happyvertical/smrt-core']",
+    );
+    expect(packageReadme).not.toMatch(/smrt-web@\^\d+\.\d+\.\d+/);
+    expect(projectReadme).not.toMatch(/smrt-web@\^\d+\.\d+\.\d+/);
     expect(projectReadme).toContain(
       'Omitted policy exposes all `read`-effect tools',
     );
@@ -34,6 +48,22 @@ describe('practical documentation', () => {
     expect(projectReadme).toContain("effects: ['read', 'write']");
     expect(projectReadme).toMatch(/undeclared custom effects fail\s+closed/is);
     expect(projectReadme).not.toMatch(/```bash[^`]*smrt db:setup/s);
+  });
+
+  it.each([
+    ['package', packageReadme],
+    ['generated project', projectReadme],
+  ])('keeps the %s WebMCP install command on the synchronized release line', (
+    _name,
+    readme,
+  ) => {
+    const commands = readme
+      .split('\n')
+      .filter((line) => line.startsWith('pnpm add "@happyvertical/smrt-web@'));
+    expect(commands).toEqual([expectedWebMcpInstallCommand]);
+    expect(templatePackage.dependencies['@happyvertical/smrt-core']).toMatch(
+      /^\^\d+\.\d+\.\d+$/,
+    );
   });
 
   it('uses s-m-r-t in user-facing prose', () => {

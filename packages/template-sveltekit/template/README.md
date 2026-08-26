@@ -253,8 +253,11 @@ WebMCP is opt-in per browser surface. First add the browser runtime, then put
 registration in a dedicated page that actually exposes tools:
 
 ```bash
-pnpm add @happyvertical/smrt-web@^0.43.3
+pnpm add "@happyvertical/smrt-web@$(node -p "require('./package.json').dependencies['@happyvertical/smrt-core']")"
 ```
+
+This derives the version from the generated project's synchronized s-m-r-t release
+pin, so the optional browser runtime stays on the same release line.
 
 ```svelte
 <script lang="ts">

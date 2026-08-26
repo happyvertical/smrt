@@ -16,6 +16,7 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/components/settings/` (`./settings`) | `SettingsCatalog`, `paginateSettingsCatalog`, and the summary-vs-detail scalability contract | [agents/settings.md](agents/settings.md) |
 | `src/components/workspace/` (`./workspace` + `./web`) | the AdminShell family and its principles, the legacy ToolsDock surface, the `./web` activity-feed and `updateAvailable` adapters, and server-side dock gates | [agents/workspace.md](agents/workspace.md) |
 | `src/web/remote-query.svelte.ts` | Svelte 5 binding for query-shaped remote pages: rows, page, totals, loading/refreshing/stale/error, retry, last-updated, and query-scoped live subscriptions (#2445) | — |
+| `src/web/webmcp-provider.ts` | Provider config for generated data/model WebMCP tools: definitions, effect policy, namespace, budget, legacy/canonical filters, and fetcher seams (#2520) | — |
 | `src/web/webmcp-ui.ts` | Fixed, low-cardinality WebMCP adapter over the Provider's mounted form-control and data-surface registries (#2521) | — |
 
 ## The UI split — primitive-adoption contract (#1589)
@@ -65,8 +66,19 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 </Provider>
 ```
 
-With `webmcp` enabled, Provider also owns shared control/data-surface registries
-and registers six fixed `smrt_ui_*` tools. Descendant rich Forms use the shared
+An object `webmcp` config with `definitions` registers generated data/model
+tools through the same registrar as direct smrt-web callers. With no `effects`
+policy, only `read`-effect tools register; `write` and `destructive` require
+explicit opt-in. Use `filter` for legacy collection definitions and `filterTool`
+for canonical definitions; a filter supplied for definitions of the other kind
+fails closed. Namespace, budget, resolver, annotation, and atomic-validation
+behavior must stay identical between Provider and direct registration. The
+authenticated REST route remains the execution authorization boundary.
+
+With the fixed mounted-UI adapter enabled, Provider also owns shared
+control/data-surface registries and registers six fixed `smrt_ui_*` tools. This
+adapter is a separate, consent-gated surface and is not governed by the
+generated-model effect policy. Descendant rich Forms use the shared
 control registry unless their explicit `interactionRegistry` prop overrides it.
 Supply `webmcp.ui.dataSurfaceRegistry` when mounted surface components already
 share an application registry. The adapter resolves registry state at execution

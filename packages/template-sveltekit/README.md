@@ -136,8 +136,11 @@ additionally requires a compiled JavaScript project entry point.
 consumer adds it only when a page imports the live collection or WebMCP runtime:
 
 ```bash
-pnpm add @happyvertical/smrt-web@^0.43.3
+pnpm add "@happyvertical/smrt-web@$(node -p "require('./package.json').dependencies['@happyvertical/smrt-core']")"
 ```
+
+Run this inside the generated project. It keeps `smrt-web` on the same release
+line as the template's synchronized `smrt-core` dependency.
 
 The generated-project README shows the current hydration pattern:
 `createSmrtCollection(getCollectionDefinition('items'), { initialData,

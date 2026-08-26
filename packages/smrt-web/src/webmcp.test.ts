@@ -210,6 +210,21 @@ describe('registerWebMcpTools', () => {
     expect(() => dispose()).not.toThrow(); // inert disposer, no crash
   });
 
+  it('validates exposure policy without WebMCP browser support', () => {
+    clearModelContext();
+    expect(() =>
+      registerWebMcpToolsWithPolicy([], {
+        effects: ['invalid' as 'read'],
+      }),
+    ).toThrow('Invalid WebMCP effect');
+    expect(() =>
+      registerWebMcpToolsWithPolicy([], { namespace: 'unsafe namespace' }),
+    ).toThrow('WebMCP namespace');
+    expect(() => registerWebMcpToolsWithPolicy([], { maxTools: -1 })).toThrow(
+      'WebMCP maxTools',
+    );
+  });
+
   it('exposes only read tools when no effects policy is configured', () => {
     const registry = installModelContext();
     registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
@@ -217,6 +232,16 @@ describe('registerWebMcpTools', () => {
     });
 
     expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
+  });
+
+  it('selects custom actions by their declared effect under the default policy', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([
+      canonicalTool('preview', { effect: 'read' }),
+      canonicalTool('publish', { effect: 'write' }),
+    ]);
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['report_preview']);
   });
 
   it('opts into read, write, and destructive tools explicitly', () => {
@@ -427,6 +452,22 @@ describe('registerWebMcpTools', () => {
       }),
     ).toThrow('product_create exposes action create outside products');
     expect(registry.tools).toEqual([]);
+  });
+
+  it('fails closed when a canonical-only filter is used with legacy tools', () => {
+    const registry = installModelContext();
+    const resolveFetchers = vi.fn(() => mockFetchers());
+    expect(() =>
+      registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+        ...ALLOW_ALL,
+        filterTool: () => false,
+        resolveFetchers,
+      }),
+    ).toThrow(
+      'legacy WebMCP definitions require filter when filterTool is configured',
+    );
+    expect(registry.tools).toEqual([]);
+    expect(resolveFetchers).not.toHaveBeenCalled();
   });
 
   it('snapshots dispatch metadata so callers cannot widen a registered read tool', async () => {
