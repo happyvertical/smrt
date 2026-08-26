@@ -218,20 +218,25 @@ function parseSpokenMoney(text: string): number | null {
 // Register with form context
 onMount(() => {
   if (formContext) {
-    let rangeDesc = '';
-    if (min !== undefined && max !== undefined) {
-      rangeDesc = ` (between $${(min / 100).toFixed(2)} and $${(max / 100).toFixed(2)})`;
-    } else if (min !== undefined) {
-      rangeDesc = ` (minimum $${(min / 100).toFixed(2)})`;
-    } else if (max !== undefined) {
-      rangeDesc = ` (maximum $${(max / 100).toFixed(2)})`;
-    }
-
     const fieldDef: FieldDefinition = {
       name,
       type: 'money',
-      label,
-      description: (description || 'A monetary amount in dollars') + rangeDesc,
+      get label() {
+        return label;
+      },
+      get description() {
+        let rangeDescription = '';
+        if (min !== undefined && max !== undefined) {
+          rangeDescription = ` (between $${(min / 100).toFixed(2)} and $${(max / 100).toFixed(2)})`;
+        } else if (min !== undefined) {
+          rangeDescription = ` (minimum $${(min / 100).toFixed(2)})`;
+        } else if (max !== undefined) {
+          rangeDescription = ` (maximum $${(max / 100).toFixed(2)})`;
+        }
+        return (
+          (description || 'A monetary amount in dollars') + rangeDescription
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined || v === '') {
           updateValue(null);
@@ -253,7 +258,9 @@ onMount(() => {
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required, min, max },
+      get constraints() {
+        return { required, min, max };
+      },
       validateValue: (candidate) =>
         (candidate === null && !required) ||
         (typeof candidate === 'number' &&

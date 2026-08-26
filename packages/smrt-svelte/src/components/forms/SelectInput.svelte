@@ -57,16 +57,18 @@ function updateValue(newValue: string) {
 // Register with form context
 onMount(() => {
   if (formContext) {
-    const optionsDesc = options.map((o) => o.label).join(', ');
-    const fullDescription = description
-      ? `${description}. Options: ${optionsDesc}`
-      : `Options: ${optionsDesc}`;
-
     const fieldDef: FieldDefinition = {
       name,
       type: 'select',
-      label,
-      description: fullDescription,
+      get label() {
+        return label;
+      },
+      get description() {
+        const optionsDescription = options.map((o) => o.label).join(', ');
+        return description
+          ? `${description}. Options: ${optionsDescription}`
+          : `Options: ${optionsDescription}`;
+      },
       setValue: (v: unknown) => {
         const strVal = String(v ?? '');
         const matched = matchOption(strVal, options);
@@ -78,11 +80,15 @@ onMount(() => {
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required },
-      options: options.map((option) => ({
-        value: option.value,
-        label: option.label,
-      })),
+      get constraints() {
+        return { required };
+      },
+      get options() {
+        return options.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }));
+      },
       validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);

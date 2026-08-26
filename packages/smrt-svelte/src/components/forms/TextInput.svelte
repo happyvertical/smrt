@@ -95,15 +95,23 @@ onMount(() => {
   if (formContext) {
     const fieldDef: FieldDefinition = {
       name,
-      type: type === 'email' ? 'email' : 'text',
-      label,
-      description,
+      get type() {
+        return type === 'email' ? 'email' : 'text';
+      },
+      get label() {
+        return label;
+      },
+      get description() {
+        return description;
+      },
       setValue: (v: unknown) => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required },
+      get constraints() {
+        return { required };
+      },
       validate: () =>
         (!required || value.trim().length > 0) &&
         (type !== 'email' || value.length === 0 || isValidEmail),

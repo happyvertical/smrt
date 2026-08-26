@@ -25,6 +25,7 @@ let {
   fieldsetDisabled = false,
   formSubject = undefined,
   ageRequired = false,
+  ageLabel = 'Age',
   ageMin = undefined,
   ageMax = undefined,
   ageStep = undefined,
@@ -46,6 +47,7 @@ let {
   fieldsetDisabled?: boolean;
   formSubject?: { type: string; id: string; label?: string };
   ageRequired?: boolean;
+  ageLabel?: string;
   ageMin?: number;
   ageMax?: number;
   ageStep?: number;
@@ -78,9 +80,9 @@ function mutateSubject() {
 		bind:value={textValue}
 	/>
 	{#if showAge}
-		<NumberInput
-			name="age"
-			label="Age"
+			<NumberInput
+				name="age"
+				label={ageLabel}
 			required={ageRequired}
 			min={ageMin}
 			max={ageMax}

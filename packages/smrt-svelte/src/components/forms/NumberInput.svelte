@@ -151,20 +151,23 @@ function parseSpokenNumber(text: string): number | null {
 // Register with form context
 onMount(() => {
   if (formContext) {
-    let rangeDesc = '';
-    if (min !== undefined && max !== undefined) {
-      rangeDesc = ` (between ${min} and ${max})`;
-    } else if (min !== undefined) {
-      rangeDesc = ` (minimum ${min})`;
-    } else if (max !== undefined) {
-      rangeDesc = ` (maximum ${max})`;
-    }
-
     const fieldDef: FieldDefinition = {
       name,
       type: 'number',
-      label,
-      description: (description || 'A number') + rangeDesc,
+      get label() {
+        return label;
+      },
+      get description() {
+        let rangeDescription = '';
+        if (min !== undefined && max !== undefined) {
+          rangeDescription = ` (between ${min} and ${max})`;
+        } else if (min !== undefined) {
+          rangeDescription = ` (minimum ${min})`;
+        } else if (max !== undefined) {
+          rangeDescription = ` (maximum ${max})`;
+        }
+        return (description || 'A number') + rangeDescription;
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined || v === '') {
           updateValue(null);
@@ -182,7 +185,9 @@ onMount(() => {
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required, min, max, step },
+      get constraints() {
+        return { required, min, max, step };
+      },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined || candidate === '') {
           return !required;

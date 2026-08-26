@@ -27,6 +27,7 @@ vi.mock('../../../hooks/useSTT.svelte.js', () => ({
 }));
 
 import FormWithFields from './form-with-fields.fixture.svelte';
+import FormWithPolicyField from './form-with-policy-field.fixture.svelte';
 import FormWithStructuredFields from './form-with-structured-fields.fixture.svelte';
 
 afterEach(() => {
@@ -940,6 +941,91 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toMatchObject({
       label: 'Weight',
       description: expect.stringContaining('between 100 and 200'),
+    });
+  });
+
+  it('updates ordinary rich-field schemas after prop changes', async () => {
+    const registered: Array<{ inputSchema: Record<string, unknown> }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const view = render(FormWithFields, {
+      props: {
+        webmcp: true,
+        ageLabel: 'Minimum age',
+        ageMax: 65,
+        textRequired: false,
+      },
+    });
+    await tick();
+    await tick();
+
+    await view.rerender({
+      webmcp: true,
+      ageLabel: 'Maximum age',
+      ageMax: 100,
+      textRequired: true,
+    });
+    await tick();
+    await tick();
+
+    const schema = registered.at(-1)?.inputSchema as {
+      required?: string[];
+      properties: Record<string, Record<string, unknown>>;
+    };
+    expect(schema.required).toContain('fullname');
+    expect(schema.properties.age).toMatchObject({
+      title: 'Maximum age',
+      maximum: 100,
+      description: expect.stringContaining('maximum 100'),
+    });
+  });
+
+  it('tightens live field policy without re-registering the field', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const view = render(FormWithPolicyField, {
+      props: { webmcp: true, interactionRegistry: registry },
+    });
+    await tick();
+    await tick();
+    expect(await registered.at(-1)?.execute({ policy: 'Grace' })).toBe(
+      'Staged 1 change for review',
+    );
+
+    await view.rerender({
+      webmcp: true,
+      interactionRegistry: registry,
+      sensitivity: 'secret',
+      writable: false,
+    });
+    await tick();
+    await tick();
+
+    expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
+    const snapshot = registry.get({
+      formId: 'policy-form',
+      controlId: 'policy',
+    });
+    expect(snapshot?.metadata).toMatchObject({
+      sensitivity: 'secret',
+      writable: false,
+    });
+    expect(snapshot?.state).toMatchObject({
+      value: undefined,
+      valueRedacted: true,
     });
   });
 

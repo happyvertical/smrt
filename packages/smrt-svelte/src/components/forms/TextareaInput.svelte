@@ -80,14 +80,20 @@ onMount(() => {
     const fieldDef: FieldDefinition = {
       name,
       type: 'textarea',
-      label,
-      description,
+      get label() {
+        return label;
+      },
+      get description() {
+        return description;
+      },
       setValue: (v: unknown) => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required },
+      get constraints() {
+        return { required };
+      },
       validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);

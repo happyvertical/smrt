@@ -603,6 +603,56 @@ describe('control interaction registry', () => {
     });
   });
 
+  it('restores the prior proposal when registration changes during replacement validation', async () => {
+    let releaseValidation: (() => void) | undefined;
+    let validationStarted: (() => void) | undefined;
+    const validationBlocked = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const validationStartedPromise = new Promise<void>((resolve) => {
+      validationStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      validateValue: async (value) => {
+        if (value === 'Katherine') {
+          validationStarted?.();
+          await validationBlocked;
+        }
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const replacement = registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+    await validationStartedPromise;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+    });
+    releaseValidation?.();
+
+    expect(await replacement).toMatchObject({
+      ok: false,
+      reason: 'stale_revision',
+    });
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: 'Grace',
+      revision: 1,
+    });
+  });
+
   it('restores the prior proposal when replacement snapshotting throws', async () => {
     let failNextRead = false;
     const registry = createControlInteractionRegistry();
@@ -1064,6 +1114,7 @@ describe('control interaction registry', () => {
   it('keeps staged and undo state when clear or undo is rejected', async () => {
     let value = 'Ada';
     let rejectWrites = false;
+    let rejectUndo = false;
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
     });
@@ -1072,7 +1123,10 @@ describe('control interaction registry', () => {
       metadata: { kind: 'text' },
       getValue: () => value,
       setValue: (next) => {
-        if (!rejectWrites) value = String(next);
+        value = rejectUndo ? 'partial' : String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
       },
       clear: () => {
         if (!rejectWrites) value = '';
@@ -1100,7 +1154,7 @@ describe('control interaction registry', () => {
       { action: 'apply', identity, revision: 1 },
       new Event('click'),
     );
-    rejectWrites = true;
+    rejectUndo = true;
     const undo = await executeLocalControlCommand(
       registry,
       { action: 'undo', identity },
@@ -1110,7 +1164,8 @@ describe('control interaction registry', () => {
       ok: false,
       reason: 'staged_value_rejected',
     });
-    rejectWrites = false;
+    expect(value).toBe('Grace');
+    rejectUndo = false;
     expect(
       await executeLocalControlCommand(
         registry,
@@ -1816,6 +1871,60 @@ describe('control interaction registry', () => {
       },
     });
     releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Katherine');
+  });
+
+  it('captures a replacement baseline before an already-released setter resumes', async () => {
+    let value = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        setterStarted?.();
+        await setterBlocked;
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    value = 'Katherine';
+    releaseSetter?.();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      restoreValue: (next) => {
+        value = String(next);
+      },
+    });
 
     expect(await applying).toMatchObject({
       ok: false,

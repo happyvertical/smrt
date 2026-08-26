@@ -116,14 +116,20 @@ onMount(() => {
     const fieldDef: FieldDefinition = {
       name,
       type: 'datetime',
-      label,
-      description: description ?? (includeTime ? 'Date and time' : 'Date'),
+      get label() {
+        return label;
+      },
+      get description() {
+        return description ?? (includeTime ? 'Date and time' : 'Date');
+      },
       setValue: (v: unknown) => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required },
+      get constraints() {
+        return { required };
+      },
       validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);

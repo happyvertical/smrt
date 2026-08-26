@@ -6,6 +6,8 @@
  * adapters translate voice/chat/tutorial requests into commands.
  */
 
+import { untrack } from 'svelte';
+
 export type ControlKind =
   | 'text'
   | 'email'
@@ -713,9 +715,10 @@ export function createControlInteractionRegistry(
   const registry: ControlInteractionRegistry = {
     register(registration) {
       const key = identityKey(registration.identity);
-      // Capture outside the caller's reactive registration effect so reading the
-      // model does not make ordinary value changes re-register the control.
-      queueMicrotask(() => {
+      // Capture synchronously so an already-released superseded setter cannot
+      // overwrite the replacement generation before its baseline is recorded.
+      // `untrack` keeps this read out of a caller's reactive registration effect.
+      untrack(() => {
         try {
           registrationBaselines.set(registration, {
             value: cloneValue(registration.getValue?.()),
@@ -965,10 +968,7 @@ export function createControlInteractionRegistry(
                 return completed;
               } catch (error) {
                 if (staged.get(key) === entry) {
-                  if (
-                    previousEntry &&
-                    registrations.get(key) === registration
-                  ) {
+                  if (previousEntry) {
                     staged.set(key, previousEntry);
                   } else {
                     staged.delete(key);
@@ -1209,6 +1209,11 @@ export function createControlInteractionRegistry(
             if (
               !valuesEqual(registration.getValue?.(), undoEntry.previousValue)
             ) {
+              try {
+                await restoreMutationValue(currentValue, userEditSnapshot);
+              } catch {
+                // Preserve the rejected undo result while retaining its history.
+              }
               throw new Error('staged_value_rejected');
             }
             history.pop();

@@ -51,8 +51,12 @@ onMount(() => {
     const fieldDef: FieldDefinition = {
       name,
       type: 'checkbox',
-      label,
-      description: description || `Yes or no for ${label || name}`,
+      get label() {
+        return label;
+      },
+      get description() {
+        return description || `Yes or no for ${label || name}`;
+      },
       setValue: (v: unknown) => {
         if (typeof v === 'boolean') {
           updateValue(v);
@@ -65,7 +69,9 @@ onMount(() => {
       },
       getValue: () => checked,
       getState: () => ({ disabled }),
-      constraints: { required },
+      get constraints() {
+        return { required };
+      },
       validate: () => !required || checked,
     };
     formContext.registerField(fieldDef);

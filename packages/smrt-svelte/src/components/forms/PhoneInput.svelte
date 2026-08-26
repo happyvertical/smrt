@@ -141,8 +141,12 @@ onMount(() => {
     const fieldDef: FieldDefinition = {
       name,
       type: 'phone',
-      label,
-      description: description || 'Phone number',
+      get label() {
+        return label;
+      },
+      get description() {
+        return description || 'Phone number';
+      },
       setValue: (v: unknown) => {
         const strVal = String(v ?? '');
         const formatted = parseSpokenPhone(strVal);
@@ -150,7 +154,9 @@ onMount(() => {
       },
       getValue: () => value,
       getState: () => ({ disabled }),
-      constraints: { required },
+      get constraints() {
+        return { required };
+      },
       validate: () => !required || value.trim().length > 0,
     };
     formContext.registerField(fieldDef);
