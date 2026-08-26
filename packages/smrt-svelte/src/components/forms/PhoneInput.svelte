@@ -93,7 +93,7 @@ function formatPhoneNumber(input: string): string {
 }
 
 // Parse spoken phone number
-function parseSpokenPhone(text: string): string {
+function extractSpokenPhoneDigits(text: string): string {
   const wordNumbers: Record<string, string> = {
     zero: '0',
     oh: '0',
@@ -132,9 +132,11 @@ function parseSpokenPhone(text: string): string {
   result = result.replace(/\btriple\s*(\d)/gi, '$1$1$1');
 
   // Extract just digits
-  const digits = result.replace(/\D/g, '');
+  return result.replace(/\D/g, '');
+}
 
-  return formatPhoneNumber(digits);
+function parseSpokenPhone(text: string): string {
+  return formatPhoneNumber(extractSpokenPhoneDigits(text));
 }
 
 // Register with form context
@@ -162,8 +164,10 @@ onMount(() => {
       validateValue: (candidate) => {
         if (typeof candidate !== 'string') return false;
         if (candidate === '') return !required;
-        const formatted = parseSpokenPhone(candidate);
-        return formatted !== '' && isValidPhoneValue(formatted);
+        const digits = extractSpokenPhoneDigits(candidate);
+        return (
+          digits.length === 10 || (digits.length === 11 && digits[0] === '1')
+        );
       },
       validate: () => isValidPhoneValue(value),
     };

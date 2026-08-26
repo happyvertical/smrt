@@ -277,6 +277,7 @@ function registerInteraction(
     },
     getValue: field.getValue,
     setValue: field.setValue,
+    prepareValue: field.prepareValue,
     clear:
       field.clear ??
       (() => {
@@ -642,7 +643,6 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     ) {
       proposedValue = { ...proposedValue, unit: field.unit };
     }
-    proposedValue = field.prepareValue?.(proposedValue) ?? proposedValue;
     return [
       {
         action: 'stage' as const,

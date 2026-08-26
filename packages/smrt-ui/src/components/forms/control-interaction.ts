@@ -153,6 +153,8 @@ export interface ControlRegistration {
    */
   getUserEditSnapshot?: () => { revision: number; value: unknown };
   setValue?: (value: unknown) => void | Promise<void>;
+  /** Resolve a staged intent against the current value without mutating it. */
+  prepareValue?: (value: unknown) => unknown;
   /** Restore a value without re-running a fallible async mutation workflow. */
   restoreValue?: (value: unknown) => void | Promise<void>;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
@@ -580,6 +582,7 @@ export function createControlInteractionRegistry(
       registration: ControlRegistration;
       previousValue: unknown;
       immediateValue: unknown;
+      previousUserEdit: { revision: number; value: unknown } | null;
     }
   >();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
@@ -730,15 +733,21 @@ export function createControlInteractionRegistry(
         try {
           const currentValue = cloneValue(registration.getValue?.());
           const activeMutation = activeSetterMutations.get(key);
-          const value =
-            activeMutation &&
-            registrations.get(key) === activeMutation.registration &&
-            valuesEqual(currentValue, activeMutation.immediateValue)
-              ? cloneValue(activeMutation.previousValue)
-              : currentValue;
           const userEdit = cloneValue(
             registration.getUserEditSnapshot?.() ?? userEdits.get(key),
           );
+          const newerUserEdit =
+            activeMutation &&
+            userEdit &&
+            (!activeMutation.previousUserEdit ||
+              userEdit.revision !== activeMutation.previousUserEdit.revision);
+          const value =
+            activeMutation &&
+            registrations.get(key) === activeMutation.registration &&
+            valuesEqual(currentValue, activeMutation.immediateValue) &&
+            !newerUserEdit
+              ? cloneValue(activeMutation.previousValue)
+              : currentValue;
           registrationBaselines.set(registration, {
             value,
             userEdit: userEdit ?? { revision: 0, value: cloneValue(value) },
@@ -935,8 +944,11 @@ export function createControlInteractionRegistry(
             stagedRevision += 1;
             {
               const revision = stagedRevision;
+              const preparedValue = registration.prepareValue
+                ? registration.prepareValue(command.value)
+                : command.value;
               const entry: InternalStagedEntry = {
-                value: cloneValue(command.value),
+                value: cloneValue(preparedValue),
                 baseValue: cloneValue(registration.getValue?.()),
                 provenance: {
                   source: context.source,
@@ -951,7 +963,7 @@ export function createControlInteractionRegistry(
               try {
                 const validation = await validateProposedValue(
                   registration,
-                  command.value,
+                  preparedValue,
                 );
                 if (
                   registrations.get(key) !== registration ||
@@ -1059,6 +1071,7 @@ export function createControlInteractionRegistry(
               registration,
               previousValue: cloneValue(previousValue),
               immediateValue: cloneValue(previousValue),
+              previousUserEdit: cloneValue(userEditSnapshot),
             };
             try {
               activeSetterMutations.set(key, activeSetterMutation);

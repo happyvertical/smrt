@@ -290,7 +290,7 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(
       await registered.at(-1)?.execute({
         appointment: '2026-02-30',
-        phone: '123',
+        phone: '21234567890',
       }),
     ).toBe('Staged 2 changes for review');
     for (const controlId of ['appointment', 'phone']) {
@@ -363,6 +363,63 @@ describe('Form WebMCP staged-edit intent', () => {
       registry.get(notes?.identity ?? { formId: '', controlId: '' })?.state
         .value,
     ).toBe('Existing\nProposed');
+  });
+
+  it('prepares appended textarea proposals after an async policy wait', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    let releasePolicy: (() => void) | undefined;
+    let policyStarted: (() => void) | undefined;
+    const policyBlocked = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const policyStartedPromise = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: async (command) => {
+        if (command.action === 'stage') {
+          policyStarted?.();
+          await policyBlocked;
+        }
+        return { allowed: true };
+      },
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        showScalarFields: true,
+        notesValue: 'Existing',
+        notesAppendMode: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    const staging = registered.at(-1)?.execute({ notes: 'Proposed' });
+    await policyStartedPromise;
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Notes' }),
+      ' human',
+    );
+    releasePolicy?.();
+    expect(await staging).toBe('Staged 1 change for review');
+    const notes = registry
+      .list()
+      .find((item) => item.identity.controlId === 'notes');
+    expect(notes?.state.staged).toMatchObject({
+      value: 'Existing human\nProposed',
+      stale: false,
+    });
   });
 
   it('rejects a non-object date-range proposal without delayed mutation', async () => {
