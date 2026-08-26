@@ -121,7 +121,9 @@ should be discoverable:
 The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
 must coexist in one document; the same prefix cannot be registered twice.
 `ui: false` disables only the fixed UI adapter while leaving generated model
-tools enabled.
+tools enabled. For compatibility, an object config that omits `ui` continues to
+enable only generated model tools; use `webmcp={true}` or provide `ui: {}` to
+enable the mounted-UI adapter.
 
 Form commands always run with `source: 'agent'`. WebMCP input cannot assert
 confirmation: staging is allowed by the registry policy, while apply, clear,

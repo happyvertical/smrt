@@ -130,11 +130,11 @@ const localControlRegistry = createControlInteractionRegistry();
 const localDataSurfaceRegistry = createDataSurfaceRegistry();
 const webMcpConfig = $derived(typeof webmcp === 'object' ? webmcp : undefined);
 const webMcpUiConfig = $derived(
-  webMcpConfig?.ui === false
-    ? undefined
+  webmcp === true
+    ? {}
     : typeof webMcpConfig?.ui === 'object'
       ? webMcpConfig.ui
-      : {},
+      : undefined,
 );
 const resolvedControlRegistry = $derived(
   webMcpUiConfig?.controlRegistry ?? localControlRegistry,

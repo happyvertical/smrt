@@ -230,10 +230,12 @@ describe('registerWebMcpUiTools', () => {
       expectedRevision: 2,
       controlId: 'next-page',
     };
-    expect((await parse(execute.execute(command))).result).toMatchObject({
+    const completed = (await parse(execute.execute(command))).result;
+    expect(completed).toMatchObject({
       ok: true,
       revision: 3,
     });
+    expect(completed.snapshot.descriptor.columns).toHaveLength(1);
     expect((await parse(execute.execute(command))).result).toMatchObject({
       ok: true,
       revision: 3,
@@ -245,10 +247,11 @@ describe('registerWebMcpUiTools', () => {
         )
       ).result,
     ).toMatchObject({ ok: false, reason: 'idempotency_conflict' });
-    expect(
-      (await parse(execute.execute({ ...command, commandId: 'page-2' })))
-        .result,
-    ).toMatchObject({ ok: false, reason: 'stale_revision' });
+    const stale = (
+      await parse(execute.execute({ ...command, commandId: 'page-2' }))
+    ).result;
+    expect(stale).toMatchObject({ ok: false, reason: 'stale_revision' });
+    expect(stale.snapshot.descriptor.columns).toHaveLength(1);
   });
 
   it('rejects invalid and oversized requests with distinct failures', async () => {

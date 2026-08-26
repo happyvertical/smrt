@@ -429,7 +429,10 @@ function tools(
             controlId: requiredIdentifier(input.controlId, 'controlId'),
             ...('payload' in input ? { payload: input.payload as never } : {}),
           };
-          return dataSurfaceRegistry.execute(command);
+          const result = await dataSurfaceRegistry.execute(command);
+          return result.snapshot
+            ? { ...result, snapshot: visibleSnapshot(result.snapshot) }
+            : result;
         }),
     },
   ];
