@@ -145,47 +145,66 @@ function interactionKind(field: FieldDefinition): ControlKind {
   }
 }
 
+function registerInteraction(
+  registry: ControlInteractionRegistry,
+  currentFormId: string,
+  field: FieldDefinition,
+): () => void {
+  return registry.register({
+    identity: {
+      formId: currentFormId,
+      controlId: field.controlId ?? field.name,
+    },
+    metadata: {
+      kind: interactionKind(field),
+      label: field.label,
+      description: field.description,
+      sensitivity: field.sensitivity ?? 'public',
+      readable: field.readable,
+      writable: field.writable,
+      constraints: field.constraints,
+      options: field.options,
+      unit: field.unit,
+    },
+    getValue: field.getValue,
+    setValue: field.setValue,
+    clear: field.clear ?? (() => field.setValue('')),
+    focus: field.focus,
+    reveal: field.reveal,
+    highlight: field.highlight,
+    validate: field.validate,
+    getState: field.getState,
+  });
+}
+
+$effect(() => {
+  const registry = resolvedInteractionRegistry;
+  const currentFormId = resolvedFormId;
+  const currentFields = Array.from(fields.values());
+  for (const dispose of interactionDisposers.values()) dispose();
+  interactionDisposers.clear();
+  for (const field of currentFields) {
+    interactionDisposers.set(
+      field.name,
+      registerInteraction(registry, currentFormId, field),
+    );
+  }
+  return () => {
+    for (const dispose of interactionDisposers.values()) dispose();
+    interactionDisposers.clear();
+  };
+});
+
 // Create form context
 const formContext: SMRTFormContext = {
   get mode() {
     return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
-    interactionDisposers.get(field.name)?.();
     fields.set(field.name, field);
     fields = new Map(fields); // Trigger reactivity
-    interactionDisposers.set(
-      field.name,
-      resolvedInteractionRegistry.register({
-        identity: {
-          formId: resolvedFormId,
-          controlId: field.controlId ?? field.name,
-        },
-        metadata: {
-          kind: interactionKind(field),
-          label: field.label,
-          description: field.description,
-          sensitivity: field.sensitivity ?? 'public',
-          readable: field.readable,
-          writable: field.writable,
-          constraints: field.constraints,
-          options: field.options,
-          unit: field.unit,
-        },
-        getValue: field.getValue,
-        setValue: field.setValue,
-        clear: field.clear ?? (() => field.setValue('')),
-        focus: field.focus,
-        reveal: field.reveal,
-        highlight: field.highlight,
-        validate: field.validate,
-        getState: field.getState,
-      }),
-    );
   },
   unregisterField(name: string) {
-    interactionDisposers.get(name)?.();
-    interactionDisposers.delete(name);
     fields.delete(name);
     fields = new Map(fields);
   },

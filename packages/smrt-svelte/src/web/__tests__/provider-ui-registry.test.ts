@@ -81,6 +81,27 @@ describe('Provider WebMCP UI registry context', () => {
     view.unmount();
   });
 
+  it('moves mounted controls when the Provider registry changes', async () => {
+    const firstRegistry = createControlInteractionRegistry();
+    const secondRegistry = createControlInteractionRegistry();
+    const explicitRegistry = createControlInteractionRegistry();
+    const view = render(Fixture, {
+      props: { providerRegistry: firstRegistry, explicitRegistry },
+    });
+    await tick();
+    expect(firstRegistry.list()).toHaveLength(2);
+
+    await view.rerender({
+      providerRegistry: secondRegistry,
+      explicitRegistry,
+    });
+    await tick();
+
+    expect(firstRegistry.list()).toEqual([]);
+    expect(secondRegistry.list()).toHaveLength(2);
+    view.unmount();
+  });
+
   it('isolates throwing interaction observers from registry command outcomes', async () => {
     const providerRegistry = createControlInteractionRegistry();
     const view = render(Fixture, {
