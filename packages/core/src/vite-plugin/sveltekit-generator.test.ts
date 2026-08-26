@@ -959,10 +959,20 @@ describe('SvelteKit Route Generator', () => {
                 isStatic: true,
                 isPublic: true,
               },
+              searchReserved: {
+                name: 'searchReserved',
+                parameters: [
+                  { name: '__smrt_options', type: 'string' },
+                  { name: 'query', type: 'string' },
+                ],
+                returnType: 'Promise<any>',
+                isStatic: true,
+                isPublic: true,
+              },
             },
             decoratorConfig: {
               api: {
-                include: ['browseFacts', 'searchFacts'],
+                include: ['browseFacts', 'searchFacts', 'searchReserved'],
                 routes: {
                   browseFacts: {
                     scope: 'collection',
@@ -973,6 +983,11 @@ describe('SvelteKit Route Generator', () => {
                     scope: 'collection',
                     method: 'GET',
                     path: 'search-facts',
+                  },
+                  searchReserved: {
+                    scope: 'collection',
+                    method: 'GET',
+                    path: 'search-reserved',
                   },
                 },
               },
@@ -1018,9 +1033,25 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(searchFactsRoute).toBeDefined();
       const searchContent = searchFactsRoute?.[1] as string;
-      expect(searchContent).toContain("([key]) => key !== '__smrt_options',");
+      expect(searchContent).toContain(
+        'new URL(request.url).searchParams.entries(),',
+      );
       expect(searchContent).toContain(
         'await ClassRef.searchFacts(options.query, options.limit)',
+      );
+
+      const reservedRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('documents/search-reserved/+server.ts'),
+        );
+      expect(reservedRoute).toBeDefined();
+      const reservedContent = reservedRoute?.[1] as string;
+      expect(reservedContent).toContain(
+        'new URL(request.url).searchParams.entries(),',
+      );
+      expect(reservedContent).toContain(
+        'await ClassRef.searchReserved(options.__smrt_options, options.query)',
       );
     });
 
@@ -1148,8 +1179,7 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(content).toContain('const pathParams = {');
       expect(content).toContain('profileKey: params.profileKey,');
-      expect(content).toContain("([key]) => key !== '__smrt_options',");
-      expect(content).not.toContain(
+      expect(content).toContain(
         '...Object.fromEntries(new URL(request.url).searchParams.entries()),',
       );
       expect(content).toContain('...pathParams,');

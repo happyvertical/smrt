@@ -849,19 +849,27 @@ export class APIGenerator {
       // write. GET reads the query string instead.
       let options: unknown;
       if (routeMethod === 'GET') {
-        const optionsMarker = url.searchParams.get('__smrt_options');
-        if (optionsMarker === 'undefined') {
-          options = undefined;
-        } else if (optionsMarker === 'null') {
-          options = null;
-        } else if (optionsMarker === 'object') {
-          options = {};
+        const isOptionsBag =
+          metadata.parameters === undefined ||
+          (metadata.parameters.length === 1 &&
+            metadata.parameters[0]?.name === 'options');
+        if (isOptionsBag) {
+          const optionsMarker = url.searchParams.get('__smrt_options');
+          if (optionsMarker === 'undefined') {
+            options = undefined;
+          } else if (optionsMarker === 'null') {
+            options = null;
+          } else if (optionsMarker === 'object') {
+            options = {};
+          } else {
+            const entries = [...url.searchParams.entries()].filter(
+              ([key]) => key !== '__smrt_options',
+            );
+            options =
+              entries.length > 0 ? Object.fromEntries(entries) : undefined;
+          }
         } else {
-          const entries = [...url.searchParams.entries()].filter(
-            ([key]) => key !== '__smrt_options',
-          );
-          options =
-            entries.length > 0 ? Object.fromEntries(entries) : undefined;
+          options = Object.fromEntries(url.searchParams.entries());
         }
       } else {
         let rawBody = '';

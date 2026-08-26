@@ -11,7 +11,10 @@ import {
   createSmrtCollection,
   createSmrtWebClient,
 } from './index.js';
-import { registerWebMcpTools } from './webmcp.js';
+import {
+  type RegisterWebMcpToolsOptions,
+  registerWebMcpTools,
+} from './webmcp.js';
 
 // ---------------------------------------------------------------------------
 // A fake WebMCP registry standing in for Chrome's document.modelContext.
@@ -838,6 +841,69 @@ describe('registerWebMcpTools', () => {
       name: 'SmrtWebRequestError',
       message: expect.stringContaining('refresh denied'),
     } satisfies Partial<SmrtWebRequestError>);
+  });
+
+  it('rejects structured canonical failures before cache invalidation', async () => {
+    const registry = installModelContext();
+    const client = createSmrtWebClient();
+    registerWebMcpTools([canonicalTool('refresh', { readOnly: false })], {
+      client,
+      resolveToolFetchers: () => ({
+        custom: async () => ({
+          error: {
+            ok: false,
+            code: 'REFRESH_DENIED',
+            message: 'refresh denied',
+            status: 403,
+          },
+        }),
+      }),
+    });
+
+    await expect(registry.tools[0]?.execute({})).rejects.toMatchObject({
+      name: 'SmrtWebRequestError',
+      message: expect.stringContaining('refresh denied'),
+      status: 403,
+      code: 'REFRESH_DENIED',
+    } satisfies Partial<SmrtWebRequestError>);
+  });
+
+  it('validates a shared client before registering canonical writes', () => {
+    const registry = installModelContext();
+    const invalidClient = {
+      __smrtWebClient: 'SmrtWebClient',
+      queryClient: {},
+    } as SmrtWebClient;
+    const resolver = vi.fn(() => ({ custom: vi.fn() }));
+
+    expect(() =>
+      registerWebMcpTools([canonicalTool('refresh', { readOnly: false })], {
+        client: invalidClient,
+        resolveToolFetchers: resolver,
+      }),
+    ).toThrow('must be a handle from createSmrtWebClient()');
+    expect(resolver).not.toHaveBeenCalled();
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('closes canonical writes over the client validated at registration', async () => {
+    const registry = installModelContext();
+    const registrationOptions: RegisterWebMcpToolsOptions = {
+      client: createSmrtWebClient(),
+      resolveToolFetchers: () => ({ custom: async () => ({ ok: true }) }),
+    };
+    registerWebMcpTools(
+      [canonicalTool('refresh', { readOnly: false })],
+      registrationOptions,
+    );
+
+    registrationOptions.client = {
+      __smrtWebClient: 'SmrtWebClient',
+    } as SmrtWebClient;
+
+    await expect(registry.tools[0]?.execute({})).resolves.toBe(
+      JSON.stringify({ ok: true }),
+    );
   });
 
   it('atomically aborts earlier tools when registration fails', () => {

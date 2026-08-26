@@ -436,17 +436,12 @@ export function unwrapListResult(
   result: unknown,
   collectionName: string,
 ): Array<Record<string, unknown>> {
+  throwIfSmrtWebError(result, `list(${collectionName})`);
   if (Array.isArray(result)) {
     return result as Array<Record<string, unknown>>;
   }
   if (result && typeof result === 'object') {
     const record = result as Record<string, unknown>;
-    if (typeof record.error === 'string') {
-      throw new SmrtWebRequestError(
-        `[smrt-web] list(${collectionName}) failed: ${record.error}`,
-        result,
-      );
-    }
     if (Array.isArray(record.data)) {
       return record.data as Array<Record<string, unknown>>;
     }
@@ -466,14 +461,9 @@ export function unwrapItemResult(
   result: unknown,
   context: string,
 ): Record<string, unknown> {
+  throwIfSmrtWebError(result, context);
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     const record = result as Record<string, unknown>;
-    if (typeof record.error === 'string') {
-      throw new SmrtWebRequestError(
-        `[smrt-web] ${context} failed: ${record.error}`,
-        result,
-      );
-    }
     if (
       record.data &&
       typeof record.data === 'object' &&
@@ -486,6 +476,50 @@ export function unwrapItemResult(
   throw new SmrtWebRequestError(
     `[smrt-web] ${context} returned an unexpected payload shape`,
     result,
+  );
+}
+
+/** Reject generated REST error envelopes while preserving opaque successes. */
+export function throwIfSmrtWebError(result: unknown, context: string): unknown {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return result;
+  }
+  const error = (result as Record<string, unknown>).error;
+  if (typeof error === 'string') {
+    throw new SmrtWebRequestError(
+      `[smrt-web] ${context} failed: ${error}`,
+      result,
+    );
+  }
+  if (!error || typeof error !== 'object' || Array.isArray(error))
+    return result;
+  const failure = error as Record<string, unknown>;
+  if (
+    failure.ok !== false ||
+    typeof failure.code !== 'string' ||
+    typeof failure.message !== 'string'
+  ) {
+    return result;
+  }
+  const status =
+    typeof failure.status === 'number' &&
+    Number.isInteger(failure.status) &&
+    failure.status >= 400 &&
+    failure.status <= 599
+      ? failure.status
+      : undefined;
+  if (status !== undefined && status >= 500) {
+    throw new SmrtWebRequestError(
+      `[smrt-web] ${context} failed: server error`,
+      undefined,
+      status,
+    );
+  }
+  throw new SmrtWebRequestError(
+    `[smrt-web] ${context} failed: ${failure.message}`,
+    result,
+    status,
+    failure.code,
   );
 }
 
@@ -801,6 +835,8 @@ interface SmrtWebClientEngine extends SmrtWebClient {
   readonly queryClient: QueryClient;
 }
 
+const smrtWebClientHandles = new WeakSet<object>();
+
 /**
  * Create a shared client-cache handle. Pass the returned handle as
  * {@link CreateSmrtCollectionOptions.client} to every collection that should
@@ -811,18 +847,28 @@ export function createSmrtWebClient(): SmrtWebClient {
     __smrtWebClient: 'SmrtWebClient',
     queryClient: new QueryClient(),
   };
+  smrtWebClientHandles.add(engine);
   return engine;
 }
 
 function resolveQueryClient(client?: SmrtWebClient): QueryClient {
   if (!client) return new QueryClient();
   const engine = client as Partial<SmrtWebClientEngine>;
-  if (engine.__smrtWebClient !== 'SmrtWebClient' || !engine.queryClient) {
+  if (
+    !smrtWebClientHandles.has(engine as object) ||
+    engine.__smrtWebClient !== 'SmrtWebClient' ||
+    !engine.queryClient
+  ) {
     throw new SmrtWebRequestError(
       '[smrt-web] options.client must be a handle from createSmrtWebClient()',
     );
   }
   return engine.queryClient;
+}
+
+/** Validate that an opaque cache handle came from {@link createSmrtWebClient}. */
+export function validateSmrtWebClient(client: SmrtWebClient): void {
+  resolveQueryClient(client);
 }
 
 /** Invalidate cached queries whose final key segment names a collection. */
@@ -1462,8 +1508,11 @@ export function createSmrtCollection<TData extends object>(
                 baseUpdatedAt: getBaseUpdatedAt(mutation.original),
               };
               const outcome = await persistMutation(envelope, async () =>
-                // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
-                fetchers.delete!(key),
+                throwIfSmrtWebError(
+                  // biome-ignore lint/style/noNonNullAssertion: guarded by the surrounding ternary
+                  await fetchers.delete!(key),
+                  `delete(${definition.name})`,
+                ),
               );
               mutationResults.set(envelope.key, outcome.result);
               anyHandled = anyHandled || outcome.handled;
@@ -1573,6 +1622,7 @@ export function createSmrtCollection<TData extends object>(
         route === undefined
           ? await fetchers.custom(action, args)
           : await fetchers.custom(action, args, route);
+      throwIfSmrtWebError(result, `${action}(${definition.name})`);
       invalidateRelated();
       return result;
     },

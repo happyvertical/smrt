@@ -73,6 +73,11 @@ module you are editing. This file keeps what holds in every module.
   metadata; canonical definitions use `filterTool`. Mixing canonical tools with
   only the legacy filter fails closed rather than fabricating incomplete field
   metadata for a policy decision.
+  Canonical writes validate that shared client handle before registration, and
+  string or structured `{ error }` REST envelopes fail before cache
+  invalidation. The private `__smrt_options` GET sentinel is reserved only for
+  no-path single-options-bag actions; positional actions preserve a legitimate
+  parameter with that name.
 
 - **No inter-smrt dependencies** — depends only on TanStack packages
   (dependency-DAG guardrails). Definitions and fetchers arrive as arguments.

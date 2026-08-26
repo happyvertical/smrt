@@ -25,10 +25,11 @@ import {
   type SmrtWebClient,
   type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
-  SmrtWebRequestError,
   type SmrtWebTransaction,
+  throwIfSmrtWebError,
   unwrapItemResult,
   unwrapListResult,
+  validateSmrtWebClient,
   type WebMcpToolDefinition,
   type WebToolDescriptor,
 } from './index.js';
@@ -125,6 +126,7 @@ export function registerWebMcpTools(
   if (!ctx) return () => {};
 
   const basePath = options.basePath ?? '/api/v1';
+  const client = options.client;
   // ONE controller deregisters every tool this call registers: WebMCP removes a
   // tool when the signal it was registered with aborts, so the returned disposer
   // simply aborts. Idempotent — a second call is a harmless no-op.
@@ -134,6 +136,7 @@ export function registerWebMcpTools(
     SmrtWebCollection<Record<string, unknown>>
   >();
   const registeredNames = new Set<string>();
+  let clientValidated = false;
   let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
@@ -168,7 +171,7 @@ export function registerWebMcpTools(
         fetchers,
         basePath,
         fetchFn: options.fetchFn,
-        ...(options.client ? { client: options.client } : {}),
+        ...(client ? { client } : {}),
         ...(options.scope ? { scope: options.scope } : {}),
       }) as SmrtWebCollection<Record<string, unknown>>;
       collections.set(definition, collection);
@@ -212,6 +215,10 @@ export function registerWebMcpTools(
       if (options.filterTool && !options.filterTool(definition)) {
         continue;
       }
+      if (!definition.readOnly && client && !clientValidated) {
+        validateSmrtWebClient(client);
+        clientValidated = true;
+      }
       const fetchers = options.resolveToolFetchers
         ? options.resolveToolFetchers(definition)
         : createDefinitionFetchers(
@@ -226,7 +233,7 @@ export function registerWebMcpTools(
           inputSchema: definition.inputSchema,
           annotations: { readOnlyHint: definition.readOnly },
           execute: (args) =>
-            dispatchDirect(fetchers, definition, args ?? {}, options.client),
+            dispatchDirect(fetchers, definition, args ?? {}, client),
         },
         { signal: controller.signal },
       );
@@ -418,7 +425,7 @@ async function dispatchDirect(
       }
       const id = requireId(args, 'delete');
       const deleteResult = await fetchers.delete(id);
-      throwIfToolError(deleteResult, `delete(${definition.collection})`);
+      throwIfSmrtWebError(deleteResult, `delete(${definition.collection})`);
       result = { success: true, id };
       break;
     }
@@ -428,7 +435,7 @@ async function dispatchDirect(
           `${definition.collection} has no custom action fetcher`,
         );
       }
-      result = throwIfToolError(
+      result = throwIfSmrtWebError(
         await fetchers.custom(definition.action, args, definition.route),
         `${definition.action}(${definition.collection})`,
       );
@@ -443,20 +450,6 @@ async function dispatchDirect(
     ]);
   }
   return JSON.stringify(result);
-}
-
-/** Reject the `{ error: string }` envelope without rewriting successful data. */
-function throwIfToolError(result: unknown, context: string): unknown {
-  if (result && typeof result === 'object' && !Array.isArray(result)) {
-    const error = (result as Record<string, unknown>).error;
-    if (typeof error === 'string') {
-      throw new SmrtWebRequestError(
-        `[smrt-web] ${context} failed: ${error}`,
-        result,
-      );
-    }
-  }
-  return result;
 }
 
 /** Await the shared collection mutation lifecycle and return its server value. */

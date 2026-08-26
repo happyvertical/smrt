@@ -1124,13 +1124,8 @@ function buildActionOptionsLoad(
     if (hasPathParams) {
       lines.push(
         `  const pathParams = ${pathParamsObjectLiteral};`,
-        '  const searchParams = new URL(request.url).searchParams;',
         '  const options = {',
-        '    ...Object.fromEntries(',
-        '      [...searchParams.entries()].filter(',
-        "        ([key]) => key !== '__smrt_options',",
-        '      ),',
-        '    ),',
+        '    ...Object.fromEntries(new URL(request.url).searchParams.entries()),',
         '    ...pathParams,',
         `  } as ${isSingleOptionsParameter ? 'ActionArgs[0]' : 'ActionOptions'};`,
         '',
@@ -1157,11 +1152,8 @@ function buildActionOptionsLoad(
               '  ) as ActionArgs[0];',
             ]
           : [
-              '  const searchParams = new URL(request.url).searchParams;',
               '  const options = Object.fromEntries(',
-              '    [...searchParams.entries()].filter(',
-              "      ([key]) => key !== '__smrt_options',",
-              '    ),',
+              '    new URL(request.url).searchParams.entries(),',
               '  ) as ActionOptions;',
             ]),
         '',

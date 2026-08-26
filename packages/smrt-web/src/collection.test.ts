@@ -303,6 +303,42 @@ describe('createSmrtCollection', () => {
     await Promise.all([collection.cleanup(), noUpdate.cleanup()]);
   });
 
+  it('rolls back structured delete failures and rejects failed actions', async () => {
+    const failure = {
+      ok: false,
+      code: 'POLICY_LOCKED',
+      message: 'policy locked',
+      status: 403,
+    };
+    const collection = createSmrtCollection(
+      productDefinition('products-structured-failure'),
+      {
+        fetchers: {
+          list: async () => [{ id: 'p1', name: 'Widget' }],
+          create: async (data) => ({ ...data, id: 'p2' }),
+          delete: async () => ({ error: failure }),
+          custom: async () => ({ error: failure }),
+        },
+      },
+    );
+    await collection.preload();
+
+    const transaction = collection.delete('p1');
+    await expect(transaction.isPersisted.promise).rejects.toMatchObject({
+      name: 'SmrtWebRequestError',
+      status: 403,
+      code: 'POLICY_LOCKED',
+    } satisfies Partial<SmrtWebRequestError>);
+    expect(collection.has('p1')).toBe(true);
+    await expect(collection.action('publish', {})).rejects.toMatchObject({
+      name: 'SmrtWebRequestError',
+      status: 403,
+      code: 'POLICY_LOCKED',
+    } satisfies Partial<SmrtWebRequestError>);
+
+    await collection.cleanup();
+  });
+
   it('accepts a shared client handle without leaking the engine', async () => {
     const scripted = makeScriptedFetchers([{ id: 'p1', name: 'Widget' }]);
     const client = createSmrtWebClient();
@@ -652,6 +688,19 @@ describe('payload normalization', () => {
     expect(() => unwrapListResult({ error: 'nope' }, 'products')).toThrow(
       SmrtWebRequestError,
     );
+    expect(() =>
+      unwrapListResult(
+        {
+          error: {
+            ok: false,
+            code: 'FORBIDDEN',
+            message: 'denied',
+            status: 403,
+          },
+        },
+        'products',
+      ),
+    ).toThrow(SmrtWebRequestError);
   });
 
   it('unwraps item payloads and rejects { error } bodies', () => {
@@ -663,6 +712,19 @@ describe('payload normalization', () => {
     );
     expect(() =>
       unwrapItemResult({ error: 'denied' }, 'create(products)'),
+    ).toThrow(SmrtWebRequestError);
+    expect(() =>
+      unwrapItemResult(
+        {
+          error: {
+            ok: false,
+            code: 'INVALID',
+            message: 'bad input',
+            status: 422,
+          },
+        },
+        'create(products)',
+      ),
     ).toThrow(SmrtWebRequestError);
     expect(() => unwrapItemResult(null, 'create(products)')).toThrow(
       SmrtWebRequestError,
