@@ -138,7 +138,10 @@ useControlRegistration(() => {
     },
     getValue: () => [...values],
     setValue: setValues,
-    clear: () => (setValues([]), true),
+    clear: () => {
+      setValues([]);
+      return true;
+    },
     focus: () => trigger.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),

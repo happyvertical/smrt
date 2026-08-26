@@ -59,7 +59,10 @@ useControlRegistration(() => {
     },
     getValue: () => pressed,
     setValue: setPressed,
-    clear: () => (setPressed(false), true),
+    clear: () => {
+      setPressed(false);
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
