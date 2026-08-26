@@ -140,7 +140,7 @@ $effect(() => {
     validate: () => element.reportValidity(),
     validateValue: validateControlValue,
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       readonly: element.readOnly,
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,

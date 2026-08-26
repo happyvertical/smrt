@@ -102,7 +102,7 @@ useControlRegistration(() => {
       highlightControl(element.closest('label') ?? element, durationMs),
     validate: () => element.reportValidity(),
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       readonly: false,
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,

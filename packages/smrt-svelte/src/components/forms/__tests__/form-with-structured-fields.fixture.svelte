@@ -11,6 +11,7 @@ let {
   addressFields = ['street', 'city', 'province', 'postalCode', 'country'],
   structuredRequired = true,
   interactionRegistry = undefined,
+  fieldsetDisabled = false,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -19,10 +20,12 @@ let {
   >;
   structuredRequired?: boolean;
   interactionRegistry?: ControlInteractionRegistry;
+  fieldsetDisabled?: boolean;
 } = $props();
 </script>
 
 <Form {onsubmit} {webmcp} {interactionRegistry} formId="structured-fields">
+	<fieldset disabled={fieldsetDisabled}>
 	<MeasurementInput
 		name="measurement"
 		label="Measurement"
@@ -38,6 +41,7 @@ let {
 		label="Address"
 		fields={addressFields}
 		required={structuredRequired}
-	/>
+		/>
+	</fieldset>
 	<button type="submit">Submit</button>
 </Form>

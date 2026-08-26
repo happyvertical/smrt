@@ -516,7 +516,7 @@ export function createControlInteractionRegistry(
         }
       : undefined;
     return {
-      identity: { ...registration.identity },
+      identity: cloneValue(registration.identity),
       metadata: {
         ...registration.metadata,
         capabilities: capabilitiesOf(registration),
@@ -532,7 +532,7 @@ export function createControlInteractionRegistry(
         validationMessage: redacted
           ? undefined
           : runtimeState?.validationMessage,
-        value: redacted ? undefined : registration.getValue?.(),
+        value: redacted ? undefined : cloneValue(registration.getValue?.()),
         valueRedacted: redacted,
         stagedValue: publicStaged?.value,
         stagedValueRedacted: publicStaged?.valueRedacted,
@@ -798,27 +798,25 @@ export function createControlInteractionRegistry(
             try {
               await registration.setValue?.(nextValue);
             } catch (error) {
-              try {
-                await registration.setValue?.(previousValue);
-              } catch {
-                // Preserve the original setter failure for the command result.
-              }
-              throw error;
-            }
-            const appliedValue = registration.getValue?.();
-            if (!valuesEqual(appliedValue, nextValue)) {
-              if (!valuesEqual(appliedValue, previousValue)) {
+              if (valuesEqual(registration.getValue?.(), nextValue)) {
                 try {
                   await registration.setValue?.(previousValue);
                 } catch {
-                  // The rejected command still retains its proposal for recovery.
+                  // Preserve the original setter failure for the command result.
                 }
               }
+              throw error;
+            }
+            const appliedValue = cloneValue(registration.getValue?.());
+            if (
+              valuesEqual(appliedValue, previousValue) &&
+              !valuesEqual(nextValue, previousValue)
+            ) {
               throw new Error('staged_value_rejected');
             }
             try {
               const valid = await registration.validate?.();
-              if (!valuesEqual(registration.getValue?.(), nextValue)) {
+              if (!valuesEqual(registration.getValue?.(), appliedValue)) {
                 throw new Error('staged_value_stale');
               }
               if (valid === false) {
@@ -837,7 +835,7 @@ export function createControlInteractionRegistry(
               } catch {
                 // A broken reader is reported without attempting a blind overwrite.
               }
-              if (valuesEqual(currentValue, nextValue)) {
+              if (valuesEqual(currentValue, appliedValue)) {
                 try {
                   await registration.setValue?.(previousValue);
                 } catch {
@@ -848,7 +846,7 @@ export function createControlInteractionRegistry(
             }
             history.push({
               previousValue,
-              appliedValue: cloneValue(nextValue),
+              appliedValue,
             });
             undo.set(key, history);
             if (!stagedEntry || staged.get(key) === stagedEntry) {
@@ -882,10 +880,19 @@ export function createControlInteractionRegistry(
                     ? false
                     : undefined;
             } catch (error) {
-              try {
-                await registration.setValue?.(previousValue);
-              } catch {
-                // Preserve the original clear failure for the command result.
+              const currentValue = registration.getValue?.();
+              if (
+                currentValue === '' ||
+                currentValue === null ||
+                currentValue === undefined ||
+                currentValue === false ||
+                (Array.isArray(currentValue) && currentValue.length === 0)
+              ) {
+                try {
+                  await registration.setValue?.(previousValue);
+                } catch {
+                  // Preserve the original clear failure for the command result.
+                }
               }
               throw error;
             }
@@ -900,7 +907,13 @@ export function createControlInteractionRegistry(
                 previousValue !== false &&
                 !(Array.isArray(previousValue) && previousValue.length === 0));
             if (rejected) {
-              if (!valuesEqual(clearedValue, previousValue)) {
+              if (
+                clearedValue === '' ||
+                clearedValue === null ||
+                clearedValue === undefined ||
+                clearedValue === false ||
+                (Array.isArray(clearedValue) && clearedValue.length === 0)
+              ) {
                 try {
                   await registration.setValue?.(previousValue);
                 } catch {
@@ -930,21 +943,20 @@ export function createControlInteractionRegistry(
             try {
               await registration.setValue?.(undoEntry.previousValue);
             } catch (error) {
-              try {
-                await registration.setValue?.(currentValue);
-              } catch {
-                // Preserve the original setter failure for the command result.
+              if (
+                valuesEqual(registration.getValue?.(), undoEntry.previousValue)
+              ) {
+                try {
+                  await registration.setValue?.(currentValue);
+                } catch {
+                  // Preserve the original setter failure for the command result.
+                }
               }
               throw error;
             }
             if (
               !valuesEqual(registration.getValue?.(), undoEntry.previousValue)
             ) {
-              try {
-                await registration.setValue?.(currentValue);
-              } catch {
-                // Keep history intact so a later human gesture can retry recovery.
-              }
               throw new Error('staged_value_rejected');
             }
             history.pop();

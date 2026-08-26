@@ -101,7 +101,11 @@ const resolvedInteractionRegistry = $derived(
 );
 const interactionDisposers = new Map<
   string,
-  { field: FieldDefinition; dispose: () => void }
+  {
+    field: FieldDefinition;
+    subject: ControlSubject | undefined;
+    dispose: () => void;
+  }
 >();
 let activeInteractionRegistry: ControlInteractionRegistry | undefined;
 let activeInteractionFormId: string | undefined;
@@ -172,7 +176,10 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
           (control instanceof HTMLInputElement ||
             control instanceof HTMLSelectElement ||
             control instanceof HTMLTextAreaElement) &&
-          control.name === field.name,
+          control.type !== 'hidden' &&
+          (control.name === field.name ||
+            control.name.startsWith(`${field.name}[`) ||
+            control.name.startsWith(`${field.name}_`)),
       )
     : [];
   const domState: ControlRuntimeState = {
@@ -198,11 +205,12 @@ function registerInteraction(
   registry: ControlInteractionRegistry,
   currentFormId: string,
   field: FieldDefinition,
+  resolvedSubject: ControlSubject | undefined,
 ): (() => void) | undefined {
   const identity = {
     formId: currentFormId,
     controlId: field.controlId ?? field.name,
-    subject: field.subject ?? subject,
+    subject: resolvedSubject,
   };
   if (registry.get(identity)) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
@@ -233,6 +241,26 @@ function registerInteraction(
   });
 }
 
+function resolvedFieldSubject(
+  field: FieldDefinition,
+): ControlSubject | undefined {
+  const current = field.subject ?? subject;
+  return current
+    ? { type: current.type, id: current.id, label: current.label }
+    : undefined;
+}
+
+function sameSubject(
+  left: ControlSubject | undefined,
+  right: ControlSubject | undefined,
+): boolean {
+  return (
+    left?.type === right?.type &&
+    left?.id === right?.id &&
+    left?.label === right?.label
+  );
+}
+
 let interactionRegistryRevision = $state(0);
 
 $effect(() => {
@@ -261,13 +289,15 @@ $effect(() => {
     activeInteractionFormId = currentFormId;
   }
   for (const [name, registration] of interactionDisposers) {
+    const nextSubject = resolvedFieldSubject(registration.field);
     const identity = {
       formId: currentFormId,
       controlId: registration.field.controlId ?? registration.field.name,
-      subject: registration.field.subject ?? subject,
+      subject: registration.subject,
     };
     if (
       currentFields.get(name) !== registration.field ||
+      !sameSubject(registration.subject, nextSubject) ||
       !registry.get(identity)
     ) {
       registration.dispose();
@@ -276,10 +306,17 @@ $effect(() => {
   }
   for (const [name, field] of currentFields) {
     if (interactionDisposers.has(name)) continue;
-    const dispose = registerInteraction(registry, currentFormId, field);
+    const resolvedSubject = resolvedFieldSubject(field);
+    const dispose = registerInteraction(
+      registry,
+      currentFormId,
+      field,
+      resolvedSubject,
+    );
     if (!dispose) continue;
     interactionDisposers.set(name, {
       field,
+      subject: resolvedSubject,
       dispose,
     });
   }
@@ -381,8 +418,13 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
         };
         break;
       case 'number':
-      case 'money':
         schema = { type: 'number' };
+        break;
+      case 'money':
+        schema = {
+          type: 'integer',
+          description: 'Amount in minor currency units (cents)',
+        };
         break;
       case 'checkbox':
         schema = { type: 'boolean' };
@@ -393,7 +435,12 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
   }
 
   if (field.label) schema.title = field.label;
-  if (field.description) schema.description = field.description;
+  if (field.description) {
+    schema.description =
+      field.type === 'money'
+        ? `${field.description}. WebMCP values use integer minor units (cents).`
+        : field.description;
+  }
   if (field.options) {
     schema.enum = field.options.map((option) => option.value);
   }

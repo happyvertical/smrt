@@ -83,11 +83,7 @@ onMount(() => {
       label,
       description,
       setValue: (v: unknown) => {
-        if (appendMode && value) {
-          updateValue(`${value}\n${String(v ?? '')}`);
-        } else {
-          updateValue(String(v ?? ''));
-        }
+        updateValue(String(v ?? ''));
       },
       getValue: () => value,
       getState: () => ({ disabled }),

@@ -92,7 +92,7 @@ $effect(() => {
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       readonly: element.readOnly,
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,

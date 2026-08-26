@@ -92,7 +92,7 @@ useControlRegistration(() => {
     highlight: (durationMs) => highlightControl(root, durationMs),
     validate: () => input.reportValidity(),
     getState: () => ({
-      disabled: input.disabled,
+      disabled: input.matches(':disabled'),
       valid: input.validity.valid,
       validationMessage: input.validationMessage || undefined,
     }),

@@ -215,6 +215,78 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 1 change for review',
     );
     expect(await screen.findByText(/person:person-2/)).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Mutate subject' }),
+    );
+    await tick();
+    expect(await registered.at(-1)?.execute({ fullname: 'Katherine' })).toBe(
+      'Staged 1 change for review',
+    );
+    expect(
+      await screen.findByText(/person:person-mutated/),
+    ).toBeInTheDocument();
+  });
+
+  it('publishes money in integer minor units and applies cents without rescaling', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        showMoney: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(registered.at(-1)?.inputSchema).toMatchObject({
+      properties: {
+        budget: {
+          type: 'integer',
+          description:
+            'A monetary amount in dollars. WebMCP values use integer minor units (cents).',
+        },
+      },
+    });
+    expect(await registered.at(-1)?.execute({ budget: 1234 })).toBe(
+      'Staged 1 change for review',
+    );
+    const budget = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'budget');
+    expect(budget?.state.staged?.value).toBe(1234);
+    expect(
+      await executeLocalControlBatch(
+        registry,
+        [
+          {
+            action: 'apply',
+            identity: budget?.identity ?? { formId: '', controlId: '' },
+            revision: budget?.state.staged?.revision,
+          },
+        ],
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      registry
+        .list()
+        .find((snapshot) => snapshot.identity.controlId === 'budget')?.state
+        .value,
+    ).toBe(1234);
   });
 
   it('keeps the browser path a no-op without WebMCP', async () => {
@@ -417,6 +489,29 @@ describe('Form WebMCP staged-edit intent', () => {
           }),
         }),
       ]),
+    );
+  });
+
+  it('does not expose structured fields disabled by an ancestor fieldset', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithStructuredFields, {
+      props: { webmcp: true, fieldsetDisabled: true },
+    });
+    await tick();
+    await tick();
+
+    const tool = registered.at(-1);
+    expect(tool?.inputSchema).toMatchObject({ properties: {} });
+    expect(await tool?.execute({ address: { city: 'Edmonton' } })).toBe(
+      'No reviewable changes provided',
     );
   });
 });

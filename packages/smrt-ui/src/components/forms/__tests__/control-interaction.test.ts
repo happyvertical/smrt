@@ -38,6 +38,22 @@ describe('control interaction registry', () => {
     ]);
   });
 
+  it('does not expose mutable aliases through public snapshots', () => {
+    const value = { profile: { name: 'Ada' } };
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => value,
+      setValue: () => undefined,
+    });
+
+    const snapshot = registry.get(identity);
+    if (!snapshot) throw new Error('missing snapshot');
+    (snapshot.state.value as typeof value).profile.name = 'Grace';
+    expect(value.profile.name).toBe('Ada');
+  });
+
   it('stages with provenance without mutation and only lets a human apply', async () => {
     let value = 'Ada';
     const events: Array<{ context?: { localGesture?: boolean } }> = [];
@@ -667,7 +683,7 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
-  it('rolls back a normalized value when apply cannot affirm the proposal', async () => {
+  it('records the actual normalized value accepted by a confirmed apply', async () => {
     let value = 1;
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
@@ -691,15 +707,9 @@ describe('control interaction registry', () => {
       new Event('click'),
     );
 
-    expect(applied).toMatchObject({
-      ok: false,
-      reason: 'staged_value_rejected',
-    });
-    expect(value).toBe(1);
-    expect(registry.get(identity)?.state.staged).toMatchObject({
-      value: '42',
-      stale: false,
-    });
+    expect(applied).toMatchObject({ ok: true });
+    expect(value).toBe(42);
+    expect(registry.get(identity)?.state.staged).toBeUndefined();
   });
 
   it('rolls back a partial mutation when an applied setter throws', async () => {
@@ -730,6 +740,46 @@ describe('control interaction registry', () => {
     expect(applied).toMatchObject({ ok: false, reason: 'setter_failed' });
     expect(value).toBe('Ada');
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
+  it('does not roll back over a human edit that lands during an async apply', async () => {
+    let value = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        value = String(next);
+        await setterBlocked;
+        throw new Error('setter_failed');
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await vi.waitFor(() => expect(value).toBe('Grace'));
+    value = 'Katherine';
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'setter_failed',
+    });
+    expect(value).toBe('Katherine');
   });
 
   it('rolls back an applied value when live validation throws', async () => {
@@ -859,9 +909,10 @@ describe('control interaction registry', () => {
         new Event('click'),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
-    expect(value).toBe('Ada');
+    expect(value).toBe('partially-cleared');
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
 
+    value = 'Ada';
     rejectClear = false;
     await executeLocalControlCommand(
       registry,
@@ -913,6 +964,75 @@ describe('control interaction registry', () => {
       ),
     ).toMatchObject({ ok: true });
     expect(registry.get(identity)?.state.staged).toBeUndefined();
+  });
+
+  it('does not roll back over human edits during asynchronous clear or undo', async () => {
+    let value = 'Ada';
+    let releaseClear: (() => void) | undefined;
+    let releaseUndo: (() => void) | undefined;
+    const clearBlocked = new Promise<void>((resolve) => {
+      releaseClear = resolve;
+    });
+    const undoBlocked = new Promise<void>((resolve) => {
+      releaseUndo = resolve;
+    });
+    let blockUndo = false;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        value = String(next);
+        if (blockUndo && next === 'Ada') {
+          await undoBlocked;
+          throw new Error('undo_failed');
+        }
+      },
+      clear: async () => {
+        value = '';
+        await clearBlocked;
+        return false;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const clearing = executeLocalControlCommand(
+      registry,
+      { action: 'clear', identity },
+      new Event('click'),
+    );
+    await vi.waitFor(() => expect(value).toBe(''));
+    value = 'Katherine';
+    releaseClear?.();
+    expect(await clearing).toMatchObject({
+      ok: false,
+      reason: 'staged_value_rejected',
+    });
+    expect(value).toBe('Katherine');
+
+    value = 'Ada';
+    await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    blockUndo = true;
+    const undoing = executeLocalControlCommand(
+      registry,
+      { action: 'undo', identity },
+      new Event('click'),
+    );
+    await vi.waitFor(() => expect(value).toBe('Ada'));
+    value = 'Katherine';
+    releaseUndo?.();
+    expect(await undoing).toMatchObject({ ok: false, reason: 'undo_failed' });
+    expect(value).toBe('Katherine');
   });
 
   it('preserves an intervening human edit instead of applying stale undo history', async () => {
