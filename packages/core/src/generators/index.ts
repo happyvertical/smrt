@@ -32,6 +32,7 @@ export {
   type ResolveCustomActionMetadataOptions,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
+  type ToolEffect,
 } from './custom-action';
 // Live `_events` SSE route (#1763). The generated SvelteKit route imports
 // `buildChangeEventStream` from the package root, so the stream lifecycle is

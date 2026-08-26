@@ -74,7 +74,14 @@ export class Category extends SmrtObject {
   label: string = '';
 }
 
-@smrt({ api: { include: ['archiveAll'] } })
+@smrt({
+  api: {
+    include: ['archiveAll'],
+    routes: {
+      archiveAll: { effect: 'write', idempotent: true, openWorld: false },
+    },
+  },
+})
 export class WidgetCollection extends SmrtCollection<Widget> {
   static readonly _itemClass = Widget;
   static async archiveAll(options?: { reason?: string }): Promise<void> {}
@@ -151,6 +158,9 @@ export class Lookup extends SmrtObject {
       name: string;
       action: string;
       readOnly: boolean;
+      effect: 'read' | 'write' | 'destructive';
+      idempotent: boolean;
+      openWorld: boolean;
     }>;
     expect(toolDescriptors.map((t) => t.name).sort()).toEqual([
       'widget_create',
@@ -163,6 +173,16 @@ export class Lookup extends SmrtObject {
     expect(toolDescriptors.find((t) => t.action === 'create')?.readOnly).toBe(
       false,
     );
+    expect(toolDescriptors.find((t) => t.action === 'list')).toMatchObject({
+      effect: 'read',
+      idempotent: true,
+      openWorld: false,
+    });
+    expect(toolDescriptors.find((t) => t.action === 'create')).toMatchObject({
+      effect: 'write',
+      idempotent: false,
+      openWorld: false,
+    });
   });
 
   it('emits canonical tools independently of list materialization', async () => {
@@ -175,12 +195,18 @@ export class Lookup extends SmrtObject {
           collection: 'lookups',
           action: 'get',
           name: 'lookup_get',
+          effect: 'read',
+          idempotent: true,
+          openWorld: false,
           route: { method: 'GET', scope: 'item', path: [] },
         }),
         expect.objectContaining({
           collection: 'widgets',
           action: 'archiveAll',
           name: 'widget_archiveall',
+          effect: 'write',
+          idempotent: true,
+          openWorld: false,
           route: expect.objectContaining({
             method: 'POST',
             scope: 'collection',

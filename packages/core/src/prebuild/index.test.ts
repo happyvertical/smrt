@@ -278,6 +278,9 @@ describe('generateDeclarations', () => {
       expect(surface).toContain('interface WebMcpToolDefinition');
       for (const member of sharedMembers) expect(surface).toContain(member);
       expect(surface).toMatch(/route: (?:Smrt)?WebToolRouteDescriptor;/);
+      expect(surface).toMatch(/effect: 'read' \| 'write' \| 'destructive';/);
+      expect(surface).toContain('idempotent: boolean;');
+      expect(surface).toContain('openWorld: boolean;');
     }
   });
 

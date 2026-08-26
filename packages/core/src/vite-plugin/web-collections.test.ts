@@ -336,6 +336,9 @@ describe('buildWebToolDescriptors', () => {
                   scope: 'collection',
                   method: 'PATCH',
                   path: 'publish-now',
+                  effect: 'write',
+                  idempotent: true,
+                  openWorld: false,
                 },
               },
             },
@@ -359,6 +362,12 @@ describe('buildWebToolDescriptors', () => {
       method: 'PATCH',
       scope: 'item',
       path: ['publish-now'],
+    });
+    expect(descriptor).toMatchObject({
+      effect: 'write',
+      readOnly: false,
+      idempotent: true,
+      openWorld: false,
     });
   });
 

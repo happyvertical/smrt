@@ -255,6 +255,12 @@ export interface WebToolDescriptor {
   inputSchema: Record<string, unknown>;
   /** True for non-mutating reads → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
+  /** Capability effect used by WebMCP exposure policy. */
+  effect?: 'read' | 'write' | 'destructive';
+  /** Whether repeating the tool with the same arguments is safe. */
+  idempotent?: boolean;
+  /** Whether the tool may interact outside the SMRT application. */
+  openWorld?: boolean;
   /** Generated custom-route transport metadata. */
   route?: SmrtWebToolRouteDescriptor;
 }
@@ -276,6 +282,10 @@ export interface SmrtWebToolRouteDescriptor {
  * exists.
  */
 export interface WebMcpToolDefinition extends WebToolDescriptor {
+  /** Canonical generated definitions always carry explicit semantics. */
+  effect: 'read' | 'write' | 'destructive';
+  idempotent: boolean;
+  openWorld: boolean;
   /** Stable definition identity is `(collection, action)`. */
   collection: string;
   /** Canonical qualified row-model identity. */

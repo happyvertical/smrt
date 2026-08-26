@@ -1901,6 +1901,9 @@ declare module '@happyvertical/smrt-virt-web' {
     description: string;
     inputSchema: Record<string, unknown>;
     readOnly: boolean;
+    effect: 'read' | 'write' | 'destructive';
+    idempotent: boolean;
+    openWorld: boolean;
     route?: WebToolRouteDescriptor;
   }
 

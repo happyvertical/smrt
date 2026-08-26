@@ -1,6 +1,7 @@
 import {
   buildCustomActionInputSchema,
   type CustomActionMetadata,
+  type ToolEffect,
 } from './custom-action.js';
 
 /**
@@ -180,6 +181,12 @@ export interface ToolDescriptor {
   inputSchema: ToolJsonSchema;
   /** True for non-mutating reads (`list`/`get`) → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
+  /** Capability effect used by browser-tool exposure policy. */
+  effect: ToolEffect;
+  /** Whether repeating this tool with the same arguments is safe. */
+  idempotent: boolean;
+  /** Whether the tool may interact outside the SMRT application. */
+  openWorld: boolean;
   /** Generated custom-route transport metadata, when the action has a route. */
   route?: ToolRouteDescriptor;
 }
@@ -371,6 +378,9 @@ export function buildToolInputSchema(
             scope: 'item',
             idRequired: true,
             isStatic: false,
+            effect: 'destructive',
+            idempotent: false,
+            openWorld: true,
           },
         ),
       );
@@ -415,20 +425,48 @@ export function buildToolDescriptors(opts: {
   const { className, fields, actions } = opts;
   const prefix = (opts.toolPrefix ?? className).toLowerCase();
 
-  return actions.map((action) => ({
-    action,
-    // Custom method names can contain underscores; the runtime splits on the
-    // FIRST underscore only (mcp.ts #1378), so a lowercased join is safe here.
-    name: `${prefix}_${action}`.toLowerCase(),
-    description: describeAction(action, className),
-    inputSchema: buildToolInputSchema(
+  return actions.map((action) => {
+    const customAction = opts.customActions?.[action];
+    const semantics = toolSemantics(action, customAction);
+    return {
       action,
-      fields,
-      opts.customActions?.[action],
-      opts.idType,
-    ),
-    readOnly: action === 'list' || action === 'get',
-  }));
+      // Custom method names can contain underscores; the runtime splits on the
+      // FIRST underscore only (mcp.ts #1378), so a lowercased join is safe here.
+      name: `${prefix}_${action}`.toLowerCase(),
+      description: describeAction(action, className),
+      inputSchema: buildToolInputSchema(
+        action,
+        fields,
+        customAction,
+        opts.idType,
+      ),
+      readOnly: semantics.effect === 'read',
+      ...semantics,
+    };
+  });
+}
+
+function toolSemantics(
+  action: string,
+  customAction?: CustomActionMetadata,
+): Pick<ToolDescriptor, 'effect' | 'idempotent' | 'openWorld'> {
+  switch (action) {
+    case 'list':
+    case 'get':
+      return { effect: 'read', idempotent: true, openWorld: false };
+    case 'create':
+      return { effect: 'write', idempotent: false, openWorld: false };
+    case 'update':
+      return { effect: 'write', idempotent: true, openWorld: false };
+    case 'delete':
+      return { effect: 'destructive', idempotent: true, openWorld: false };
+    default:
+      return {
+        effect: customAction?.effect ?? 'destructive',
+        idempotent: customAction?.idempotent ?? false,
+        openWorld: customAction?.openWorld ?? true,
+      };
+  }
 }
 
 /** True when `action` is one of the fixed CRUD verbs (vs. a custom method). */
