@@ -10,6 +10,7 @@ import {
 import type {
   ControlCommand,
   ControlCommandAction,
+  ControlCommandResult,
   ControlIdentity,
   ControlInteractionRegistry,
   ControlSnapshot,
@@ -175,10 +176,21 @@ function dataSurfaceIdentity(value: unknown): DataSurfaceIdentity {
 }
 
 function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
-  const redactText =
-    snapshot.metadata.sensitivity === 'secret' || snapshot.state.valueRedacted;
-  const runtimeState = { ...snapshot.state };
-  delete runtimeState.validationMessage;
+  const sensitivityRedacted =
+    snapshot.metadata.sensitivity === 'sensitive' ||
+    snapshot.metadata.sensitivity === 'secret';
+  const redactValue = sensitivityRedacted || snapshot.state.valueRedacted;
+  const redactStagedValue =
+    sensitivityRedacted ||
+    snapshot.state.stagedValueRedacted ||
+    snapshot.state.staged?.valueRedacted === true;
+  const staged = snapshot.state.staged
+    ? {
+        ...snapshot.state.staged,
+        ...(redactStagedValue ? { value: undefined, valueRedacted: true } : {}),
+        validationMessage: undefined,
+      }
+    : undefined;
   return {
     ...snapshot,
     identity: { ...snapshot.identity },
@@ -190,14 +202,31 @@ function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
       options: snapshot.metadata.options?.map((option) => ({ ...option })),
     },
     state: {
-      ...(redactText ? runtimeState : snapshot.state),
-      ...(redactText || snapshot.state.valueRedacted
-        ? { value: undefined }
+      ...snapshot.state,
+      ...(redactValue ? { value: undefined, valueRedacted: true } : {}),
+      ...(redactStagedValue
+        ? { stagedValue: undefined, stagedValueRedacted: true }
         : {}),
-      ...(redactText || snapshot.state.stagedValueRedacted
-        ? { stagedValue: undefined }
-        : {}),
+      ...(staged ? { staged } : {}),
+      validationMessage: undefined,
     },
+  };
+}
+
+function sanitizeControlResult(
+  result: ControlCommandResult,
+): ControlCommandResult {
+  const reason = result.reason
+    ? PUBLIC_CONTROL_RESULT_REASONS.has(result.reason)
+      ? result.reason
+      : 'execution_failed'
+    : undefined;
+  return {
+    ok: result.ok,
+    action: result.action,
+    identity: { ...result.identity },
+    ...(reason ? { reason } : {}),
+    ...(result.snapshot ? { snapshot: sanitizeControl(result.snapshot) } : {}),
   };
 }
 
@@ -459,18 +488,7 @@ function tools(
           const result = await controlRegistry.execute(command, {
             source: 'agent',
           });
-          const reason = result.reason
-            ? PUBLIC_CONTROL_RESULT_REASONS.has(result.reason)
-              ? result.reason
-              : 'execution_failed'
-            : undefined;
-          return {
-            ...result,
-            ...(reason ? { reason } : { reason: undefined }),
-            ...(result.snapshot
-              ? { snapshot: sanitizeControl(result.snapshot) }
-              : {}),
-          };
+          return sanitizeControlResult(result);
         }),
     },
     readTool(

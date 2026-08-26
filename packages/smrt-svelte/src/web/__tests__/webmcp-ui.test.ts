@@ -245,41 +245,94 @@ describe('registerWebMcpUiTools', () => {
     expect(JSON.stringify(result)).not.toContain('customer 4711');
   });
 
-  it('redacts secret values from an injected registry even when its flags are inconsistent', async () => {
-    const browser = modelContext();
-    const snapshot = {
-      identity: { formId: 'injected', controlId: 'secret' },
-      metadata: { kind: 'password', sensitivity: 'secret' },
-      state: {
-        value: 'injected-secret-value',
-        valueRedacted: false,
-        stagedValue: 'injected-staged-secret',
-        stagedValueRedacted: false,
-      },
-    } satisfies ControlSnapshot;
-    const controls: ControlInteractionRegistry = {
-      register: () => () => {},
-      unregister: () => {},
-      list: () => [snapshot],
-      get: () => snapshot,
-      execute: async (command) => ({
-        ok: true,
-        action: command.action,
-        identity: command.identity,
-        snapshot,
-      }),
-      subscribe: () => () => {},
-    };
-    registerWebMcpUiTools({
-      controlRegistry: controls,
-      dataSurfaceRegistry: createDataSurfaceRegistry(),
-      document: browser.document,
-    });
+  it('redacts sensitive injected snapshots and result text despite inconsistent flags', async () => {
+    for (const sensitivity of ['secret', 'sensitive'] as const) {
+      const marker = `injected-${sensitivity}-value`;
+      const browser = modelContext();
+      const snapshot = {
+        identity: { formId: 'injected', controlId: sensitivity },
+        metadata: {
+          kind: 'password',
+          sensitivity,
+          capabilities: ['discard'],
+        },
+        state: {
+          value: marker,
+          valueRedacted: false,
+          stagedValue: `${marker}-staged`,
+          stagedValueRedacted: false,
+          validationMessage: `${marker} validation`,
+          staged: {
+            value: `${marker}-nested`,
+            valueRedacted: false,
+            provenance: { source: 'agent' as const },
+            stagedAt: 1,
+            revision: 1,
+            stale: false,
+            validationMessage: `${marker} nested validation`,
+          },
+        },
+      } satisfies ControlSnapshot;
+      const controls: ControlInteractionRegistry = {
+        register: () => () => {},
+        unregister: () => {},
+        list: () => [snapshot],
+        get: () => snapshot,
+        execute: async (command) => ({
+          ok: false,
+          action: command.action,
+          identity: command.identity,
+          reason: `${marker} reason`,
+          validationMessage: `${marker} result validation`,
+          snapshot,
+        }),
+        subscribe: () => () => {},
+      };
+      registerWebMcpUiTools({
+        controlRegistry: controls,
+        dataSurfaceRegistry: createDataSurfaceRegistry(),
+        document: browser.document,
+      });
 
-    const list = await parse(
-      findTool(browser.registered, 'smrt_ui_list_form_controls').execute({}),
-    );
-    expect(JSON.stringify(list)).not.toContain('injected-secret');
+      const identity = { formId: 'injected', controlId: sensitivity };
+      const list = await parse(
+        findTool(browser.registered, 'smrt_ui_list_form_controls').execute({}),
+      );
+      const inspect = await parse(
+        findTool(browser.registered, 'smrt_ui_inspect_form_control').execute({
+          identity,
+        }),
+      );
+      const executed = await parse(
+        findTool(browser.registered, 'smrt_ui_execute_form_control').execute({
+          action: 'focus',
+          identity,
+        }),
+      );
+
+      expect(JSON.stringify([list, inspect, executed])).not.toContain(marker);
+      for (const result of [
+        list.result[0],
+        inspect.result,
+        executed.result.snapshot,
+      ]) {
+        expect(result.metadata.capabilities).toEqual(['discard']);
+        expect(result.state).toMatchObject({
+          valueRedacted: true,
+          stagedValueRedacted: true,
+          staged: {
+            valueRedacted: true,
+          },
+        });
+        expect(result.state).not.toHaveProperty('value');
+        expect(result.state).not.toHaveProperty('stagedValue');
+        expect(result.state).not.toHaveProperty('validationMessage');
+        expect(result.state.staged).not.toHaveProperty('value');
+        expect(result.state.staged).not.toHaveProperty('validationMessage');
+      }
+      expect(executed.result.reason).toBe('execution_failed');
+      expect(executed.result).not.toHaveProperty('validationMessage');
+    }
   });
 
   it('filters hidden columns and preserves surface revision and replay failures', async () => {
