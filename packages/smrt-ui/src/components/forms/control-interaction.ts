@@ -1574,8 +1574,14 @@ export function createControlInteractionRegistry(
       };
     }
     consumedLocalGestureEvents.add(event);
+    // Bind the entire already-snapshotted batch to the registration generations
+    // present at gesture validation time. Earlier awaited commands must not be
+    // able to authorize later commands against newly mounted replacements.
+    const gestureRegistrations = commands.map((command) =>
+      registrations.get(identityKey(command.identity)),
+    );
     const results: ControlCommandResult[] = [];
-    for (const command of commands) {
+    for (const [index, command] of commands.entries()) {
       const context: ControlCommandContext = {
         source: 'user',
         confirmed: true,
@@ -1583,7 +1589,7 @@ export function createControlInteractionRegistry(
       localConfirmationGrants.set(context, {
         command,
         snapshot: cloneValue(command),
-        registration: registrations.get(identityKey(command.identity)),
+        registration: gestureRegistrations[index],
       });
       try {
         results.push(await suppliedRegistry.execute(command, context));

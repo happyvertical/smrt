@@ -3084,6 +3084,76 @@ describe('control interaction registry', () => {
     expect(value).toBe('Grace');
   });
 
+  it('binds every local batch command to its gesture-time registration', async () => {
+    const triggerIdentity = { ...identity, controlId: 'trigger' };
+    const targetIdentity = { ...identity, controlId: 'target' };
+    let triggerValue = 'armed';
+    let originalValue = 'Ada';
+    let replacementValue = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity: targetIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => originalValue,
+      setValue: (next) => {
+        originalValue = String(next);
+      },
+    });
+    registry.register({
+      identity: triggerIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => triggerValue,
+      setValue: (next) => {
+        triggerValue = String(next);
+      },
+      clear: () => {
+        triggerValue = '';
+        registry.register({
+          identity: targetIdentity,
+          metadata: { kind: 'text' },
+          getValue: () => replacementValue,
+          setValue: (next) => {
+            replacementValue = String(next);
+          },
+        });
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity: targetIdentity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const batch = await dispatchLocalGesture((event) =>
+      executeLocalControlBatch(
+        registry,
+        [
+          { action: 'clear', identity: triggerIdentity },
+          { action: 'apply', identity: targetIdentity, revision: 1 },
+        ],
+        event,
+      ),
+    );
+
+    expect(batch).toMatchObject({
+      ok: false,
+      results: [
+        { ok: true, action: 'clear' },
+        {
+          ok: false,
+          action: 'apply',
+          reason: 'local_gesture_required',
+        },
+      ],
+    });
+    expect(triggerValue).toBe('');
+    expect(originalValue).toBe('Ada');
+    expect(replacementValue).toBe('Ada');
+    expect(registry.get(targetIdentity)?.state.value).toBe('Ada');
+  });
+
   it('rejects a trusted legacy-registry event retained beyond its dispatch', async () => {
     let captured: Event | undefined;
     const execute = vi.fn(async (command: ControlCommand) => ({
