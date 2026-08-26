@@ -811,21 +811,35 @@ export function createControlInteractionRegistry(
               }
               throw new Error('staged_value_rejected');
             }
-            const valid = await registration.validate?.();
-            if (!valuesEqual(registration.getValue?.(), nextValue)) {
-              throw new Error('staged_value_stale');
-            }
-            if (valid === false) {
-              if (valuesEqual(registration.getValue?.(), nextValue)) {
-                await registration.setValue?.(previousValue);
+            try {
+              const valid = await registration.validate?.();
+              if (!valuesEqual(registration.getValue?.(), nextValue)) {
+                throw new Error('staged_value_stale');
               }
-              if (stagedEntry) {
-                stagedEntry.valid = false;
-                stagedEntry.validationMessage =
-                  registration.getState?.().validationMessage ??
-                  'staged_value_invalid';
+              if (valid === false) {
+                if (stagedEntry) {
+                  stagedEntry.valid = false;
+                  stagedEntry.validationMessage =
+                    registration.getState?.().validationMessage ??
+                    'staged_value_invalid';
+                }
+                throw new Error('staged_value_invalid');
               }
-              throw new Error('staged_value_invalid');
+            } catch (error) {
+              let currentValue: unknown;
+              try {
+                currentValue = registration.getValue?.();
+              } catch {
+                // A broken reader is reported without attempting a blind overwrite.
+              }
+              if (valuesEqual(currentValue, nextValue)) {
+                try {
+                  await registration.setValue?.(previousValue);
+                } catch {
+                  // Preserve the original validation failure for the command result.
+                }
+              }
+              throw error;
             }
             history.push(previousValue);
             undo.set(key, history);

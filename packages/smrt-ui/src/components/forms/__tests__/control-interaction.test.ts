@@ -732,6 +732,41 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
+  it('rolls back an applied value when live validation throws', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+      validate: () => {
+        throw new Error('live_validation_failed');
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applied = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+
+    expect(applied).toMatchObject({
+      ok: false,
+      reason: 'live_validation_failed',
+    });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
   it('keeps staged and undo state when clear or undo is rejected', async () => {
     let value = 'Ada';
     let rejectWrites = false;
