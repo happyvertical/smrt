@@ -1207,6 +1207,12 @@ describe('ContentList saved views (#2452)', () => {
 // Review batch #2452
 // ---------------------------------------------------------------------------
 
+function requestLimit(request: { page?: unknown } | undefined): number {
+  const page = request?.page as { limit?: number } | undefined;
+  if (typeof page?.limit !== 'number') throw new Error('No offset page');
+  return page.limit;
+}
+
 function paginationNav(target: HTMLElement): HTMLElement | null {
   return target.querySelector<HTMLElement>('nav[aria-label="Content pages"]');
 }
@@ -1415,6 +1421,185 @@ describe('ContentList restore limits (#2452)', () => {
     });
     expect(target.querySelector('.state-notice')?.textContent).toContain(
       'that value was outside the allowed range',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 (#2452)
+// ---------------------------------------------------------------------------
+
+describe('ContentList page-size ceiling (#2452 batch 2)', () => {
+  it('coerces a data-surface set-page-size above the ceiling', async () => {
+    const registry = createDataSurfaceRegistry();
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      query: {
+        bind: () => query.binding,
+        request: { defaultPageSize: 10, maxPageSize: 25 },
+      },
+    });
+    query.resolve([serverRow('a', 'Alpha')], 5_000);
+    flushSync();
+
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await registry.execute({
+      version: 1,
+      commandId: 'huge-page-size',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page-size',
+      payload: { pageSize: 100_000 },
+    });
+    flushSync();
+
+    // The controller and the request agree, and neither exceeds the ceiling.
+    const limit = requestLimit(query.requests.at(-1));
+    expect(limit).toBe(25);
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'that value was outside the allowed range',
+    );
+    // 5000 rows at 25 a page is 200 pages, so page controls must render. The
+    // card presentations own their own nav; compact mode delegates to DataTable.
+    switchTo(target, 'Grid View');
+    expect(paginationNav(target)).toBeTruthy();
+  });
+
+  it('clamps a seed page size above the ceiling', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: {
+        bind: () => query.binding,
+        request: { defaultPageSize: 201 },
+      },
+    });
+    expect((query.requests[0].page as { limit: number }).limit).toBe(200);
+    // The seed itself is clamped, so a mis-configured host does not get a
+    // spurious "outside the allowed range" notice on first paint.
+    expect(target.querySelector('.state-notice')).toBeNull();
+
+    query.resolve([serverRow('a', 'Alpha')], 201);
+    flushSync();
+    // Row 201 is reachable because the UI pages by the same number.
+    expect(paginationNav(target)).toBeTruthy();
+  });
+
+  it('keeps a tighter query ceiling when a looser URL ceiling exists', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      query: {
+        bind: () => query.binding,
+        request: { defaultPageSize: 200, maxPageSize: 25 },
+      },
+      urlState: { options: { maxPageSize: 200 } },
+    });
+    expect((query.requests[0].page as { limit: number }).limit).toBe(25);
+  });
+
+  it('never lets the controller and the request disagree', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: {
+        bind: () => query.binding,
+        request: { defaultPageSize: 500, maxPageSize: 40 },
+      },
+      urlState: { params: 'size=1000' },
+    });
+    query.resolve([serverRow('a', 'Alpha')], 400);
+    flushSync();
+
+    const limit = requestLimit(query.requests.at(-1));
+    const totalPages = Math.ceil(400 / limit);
+    expect(limit).toBe(40);
+    // The rendered page control count matches what the request actually pages by.
+    expect(paginationNav(target)).toBeTruthy();
+    expect(totalPages).toBe(10);
+  });
+});
+
+describe('ContentList capped-offset page alignment (#2452 batch 2)', () => {
+  it('moves the page marker to the page the request reads', async () => {
+    const registry = createDataSurfaceRegistry();
+    const query = createFakeContentListQuery();
+    renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+    });
+    query.resolve([serverRow('a', 'Alpha')], 2_000_000);
+    flushSync();
+
+    // A page whose offset exceeds the protocol maximum of 1,000,000.
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await registry.execute({
+      version: 1,
+      commandId: 'far-page',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 10_000 },
+    });
+    flushSync();
+
+    const page = query.requests.at(-1)?.page as {
+      offset: number;
+      limit: number;
+    };
+    expect(page.offset).toBeLessThanOrEqual(1_000_000);
+    // The page the UI reports is the page the server actually read, not the
+    // one that was asked for and silently capped.
+    const surfaceState = registry.inspect(identity)?.state as {
+      table?: { state?: { page?: number } };
+    };
+    expect(surfaceState?.table?.state?.page).toBe(page.offset / page.limit + 1);
+    expect(surfaceState?.table?.state?.page).toBeLessThan(10_000);
+  });
+});
+
+describe('ContentList retry refreshes the completeness notice (#2452 batch 2)', () => {
+  it('clears a stale truncation notice when the retry comes back complete', async () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+
+    query.setEnvelope({ truncated: true, warnings: ['rows were dropped'] });
+    typeText(searchInput(target), 'budget');
+    await settle();
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'rows were dropped',
+    );
+
+    // The retry answers completely; the notice must not outlive the rows it
+    // described. The query signature is unchanged, so only the retry path can.
+    query.setEnvelope({ truncated: false, warnings: [] });
+    query.fail(new Error('transient'));
+    flushSync();
+    click(buttonsByText(target, 'Retry')[0]);
+    await settle();
+
+    expect(query.retries).toBe(1);
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('raises a notice when a retry comes back truncated', async () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.setEnvelope({ truncated: false, warnings: [] });
+    typeText(searchInput(target), 'budget');
+    await settle();
+    expect(target.querySelector('.state-notice')).toBeNull();
+
+    query.setEnvelope({ truncated: true, warnings: [] });
+    query.fail(new Error('transient'));
+    flushSync();
+    click(buttonsByText(target, 'Retry')[0]);
+    await settle();
+
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'The server shortened this answer',
     );
   });
 });

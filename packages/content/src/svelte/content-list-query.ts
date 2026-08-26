@@ -230,6 +230,23 @@ export const CONTENT_LIST_QUERY_MAX_OFFSET = 1_000_000;
 export const CONTENT_LIST_QUERY_MAX_IN_VALUES = 100;
 export const CONTENT_LIST_QUERY_MAX_FILTER_NODES = 50;
 export const CONTENT_LIST_QUERY_MAX_VALUE_LENGTH = 4_096;
+/** `MAX_DATA_QUERY_REQUEST_BYTES` — the whole serialized request. */
+export const CONTENT_LIST_QUERY_MAX_REQUEST_BYTES = 100_000;
+/** `MAX_DATA_QUERY_FILTERS` also caps the projection array. */
+export const CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS = 50;
+/** `stringValue(object.requestId, …, 128)` — non-empty, at most 128 chars. */
+export const CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH = 128;
+
+/**
+ * The request normalizer's *validity* rules, as distinct from its numeric caps.
+ *
+ * A datetime value is checked against this exact shape (`normalizedInstant`),
+ * so `Date#toISOString()` is not automatically acceptable: a year outside the
+ * four-digit range serializes as `+275760-09-13T00:00:00.000Z` or
+ * `-000001-01-01T00:00:00.000Z`, both of which the server refuses.
+ */
+const RFC_3339_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 /**
  * Operators the server declares per field type, mirroring `filterOperatorsFor`
@@ -327,6 +344,13 @@ export interface ContentListQueryTranslation {
   request: ContentListDataQueryRequest;
   /** Everything the translator refused, for reporting to the operator. */
   dropped: ContentListQueryDrop[];
+  /**
+   * The 1-based page this request actually reads. Equal to `state.page` unless
+   * the offset had to be capped, in which case the caller must move its own
+   * page marker here — otherwise the UI labels the answer with a page the
+   * server never read, and paging from it is meaningless.
+   */
+  effectivePage: number;
 }
 
 export interface ContentListQueryRequestOptions {
@@ -370,6 +394,8 @@ function defaultRequestId(): string {
  * empty result) instead of open (every row), which is the safer of the two; a
  * portable fix needs an `ESCAPE` clause at the collection/SQL boundary.
  */
+const LIKE_METACHARACTER = /[\\%_]/;
+
 export function escapeContentListQueryLikeValue(value: string): string {
   return value.replace(/[\\%_]/g, (character) => `\\${character}`);
 }
@@ -380,7 +406,15 @@ export function escapeContentListQueryLikeValue(value: string): string {
  *
  * Escaping can double a string's length, so a 4096-character search would
  * otherwise become an 8194-character `like` value and 400 the whole request.
- * Iteration is by code point, so a surrogate pair is never cut in half.
+ *
+ * The unit of measure is the one the server uses. `dataQueryScalar` in
+ * `@happyvertical/smrt-core` tests `value.length`, which counts UTF-16 code
+ * units — so an astral character (an emoji, most CJK extension blocks) costs
+ * TWO. Iteration is still by code point so a surrogate pair is never cut in
+ * half, but the *cost* of each code point is its `.length`, not one. Charging
+ * one per code point made a search of 4093 ASCII characters plus one emoji
+ * measure 4094 here and 4097 at the server: a hard 400 and a whole-list error
+ * panel, which is exactly what this bound exists to prevent.
  */
 function boundLikeSource(
   text: string,
@@ -389,7 +423,10 @@ function boundLikeSource(
   let out = '';
   let used = 0;
   for (const character of text) {
-    const cost = /[\\%_]/.test(character) ? 2 : 1;
+    // `character.length` is 1 for a BMP code point and 2 for a surrogate pair;
+    // an escaped metacharacter (always BMP) adds its backslash.
+    const cost =
+      character.length + (LIKE_METACHARACTER.test(character) ? 1 : 0);
     if (used + cost > budget) return { text: out, truncated: true };
     out += character;
     used += cost;
@@ -452,7 +489,12 @@ function coerceValue(
   if (text === null) return undefined;
   if (field.type === 'datetime') {
     const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+    if (Number.isNaN(parsed.getTime())) return undefined;
+    const instant = parsed.toISOString();
+    // Parsing is not the same as being expressible: a year outside the
+    // four-digit range round-trips through `Date` but fails the server's
+    // RFC 3339 shape check, which would 400 the whole list.
+    return RFC_3339_INSTANT.test(instant) ? instant : undefined;
   }
   if (field.type === 'number') {
     const parsed = Number(text);
@@ -694,6 +736,67 @@ function translateSorting(
 }
 
 /**
+ * The one page-size ceiling, resolved from every configured limit.
+ *
+ * Every candidate narrows: a host that sets a server row budget through
+ * `query.request.maxPageSize` must not have it discarded because a looser
+ * `urlState.options.maxPageSize` also exists. The schema's `maxPageLimit`
+ * (mirrored by `CONTENT_LIST_MAX_PAGE_SIZE`) is always one of the candidates,
+ * so the result can never exceed what the endpoint itself enforces.
+ *
+ * Callers pass this ONE value to the controller seed, the URL sanitizer, the
+ * saved-view sanitizer, and the translator, which is what makes it impossible
+ * for the page the UI reports and the page the server returns to disagree.
+ */
+export function resolveContentListMaxPageSize(
+  ...candidates: ReadonlyArray<number | null | undefined>
+): number {
+  const bounds = [...candidates, CONTENT_LIST_MAX_PAGE_SIZE].filter(
+    (value): value is number =>
+      typeof value === 'number' && Number.isFinite(value) && value >= 1,
+  );
+  return Math.max(1, Math.floor(Math.min(...bounds)));
+}
+
+/** Bounds a caller-supplied request id to the normalizer's string rule. */
+function boundRequestId(createRequestId?: () => string): string {
+  const candidate = (createRequestId ?? defaultRequestId)();
+  if (typeof candidate !== 'string' || candidate.length === 0) {
+    return defaultRequestId();
+  }
+  return candidate.length > CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH
+    ? candidate.slice(0, CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH)
+    : candidate;
+}
+
+/**
+ * Bounds a caller-supplied projection. The normalizer caps the array before it
+ * dedupes, and always projects the identity field, so a host that overrides the
+ * projection cannot accidentally make every query a 400.
+ */
+function boundProjection(
+  projection: readonly string[],
+  dropped: ContentListQueryDrop[],
+): string[] {
+  const unique = [
+    ...new Set([CONTENT_LIST_QUERY_IDENTITY_FIELD, ...projection]),
+  ];
+  if (unique.length <= CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS) return unique;
+  dropped.push({
+    scope: 'state',
+    reason: 'out-of-range',
+    detail: String(unique.length),
+  });
+  return unique.slice(0, CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS);
+}
+
+const requestEncoder = new TextEncoder();
+
+function jsonByteLength(value: unknown): number {
+  return requestEncoder.encode(JSON.stringify(value) ?? 'null').byteLength;
+}
+
+/**
  * Counts filter nodes exactly the way `normalizeFilter` budgets them: every
  * node, container or condition, costs one.
  */
@@ -721,10 +824,20 @@ export function contentListViewStateToDataQueryRequest(
   options: ContentListQueryRequestOptions = {},
 ): ContentListQueryTranslation {
   const dropped: ContentListQueryDrop[] = [];
-  const projection = [...(options.projection ?? CONTENT_LIST_QUERY_PROJECTION)];
-  const maxPageSize = options.maxPageSize ?? CONTENT_LIST_MAX_PAGE_SIZE;
-  const defaultSize =
-    options.defaultPageSize ?? CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE;
+  const projection = boundProjection(
+    options.projection ?? CONTENT_LIST_QUERY_PROJECTION,
+    dropped,
+  );
+  const maxPageSize = resolveContentListMaxPageSize(options.maxPageSize);
+  const defaultSize = Math.min(
+    Math.max(
+      1,
+      Math.floor(
+        options.defaultPageSize ?? CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+      ),
+    ),
+    maxPageSize,
+  );
   if (state.pageSize === null) {
     // `null` means "unpaginated", which a server query cannot express: the
     // endpoint always applies a limit. Silently falling back would render one
@@ -745,15 +858,20 @@ export function contentListViewStateToDataQueryRequest(
     limit = maxPageSize;
   }
 
-  const page = Math.max(1, Math.floor(state.page ?? 1));
-  let offset = (page - 1) * limit;
+  const requestedPage = Math.max(1, Math.floor(state.page ?? 1));
+  let effectivePage = requestedPage;
+  let offset = (effectivePage - 1) * limit;
   if (offset > CONTENT_LIST_QUERY_MAX_OFFSET) {
     dropped.push({
       scope: 'page',
       reason: 'out-of-range',
-      detail: String(page),
+      detail: String(requestedPage),
     });
     offset = Math.floor(CONTENT_LIST_QUERY_MAX_OFFSET / limit) * limit;
+    // The caller has to be able to move its own page marker to the page the
+    // request will actually read, or the UI labels this answer with a page
+    // number the server never saw and navigation from it is nonsense.
+    effectivePage = Math.floor(offset / limit) + 1;
   }
 
   const branches: ContentListQueryFilter[] = [];
@@ -790,23 +908,44 @@ export function contentListViewStateToDataQueryRequest(
   }
 
   const sort = translateSorting(state.sorting ?? [], dropped);
-  const request: ContentListDataQueryRequest = {
+  const build = (
+    filters: readonly ContentListQueryFilter[],
+  ): ContentListDataQueryRequest => ({
     version: 1,
-    requestId: (options.createRequestId ?? defaultRequestId)(),
+    requestId: boundRequestId(options.createRequestId),
     mode: 'rows',
     projection,
-    ...(branches.length === 0
+    ...(filters.length === 0
       ? {}
       : {
           filter:
-            branches.length === 1
-              ? branches[0]
-              : { kind: 'all', filters: branches },
+            filters.length === 1
+              ? filters[0]
+              : { kind: 'all', filters: [...filters] },
         }),
     ...(sort.length === 0 ? {} : { sort }),
     page: { kind: 'offset', offset, limit },
-  };
-  return { request, dropped };
+  });
+
+  // The last bound the normalizer applies, and the only one that is a property
+  // of the whole request rather than one part of it: 100 `in` values of 4096
+  // characters each is inside every per-value cap and still five times the
+  // request byte limit. Shed the newest branches until it fits.
+  const kept = [...branches];
+  let request = build(kept);
+  while (
+    kept.length > 0 &&
+    jsonByteLength(request) > CONTENT_LIST_QUERY_MAX_REQUEST_BYTES
+  ) {
+    kept.pop();
+    dropped.push({
+      scope: 'filter',
+      reason: 'out-of-range',
+      detail: String(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES),
+    });
+    request = build(kept);
+  }
+  return { request, dropped, effectivePage };
 }
 
 /**

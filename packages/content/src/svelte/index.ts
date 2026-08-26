@@ -209,6 +209,9 @@ export {
   CONTENT_LIST_QUERY_MAX_FILTER_NODES,
   CONTENT_LIST_QUERY_MAX_IN_VALUES,
   CONTENT_LIST_QUERY_MAX_OFFSET,
+  CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS,
+  CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
+  CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH,
   CONTENT_LIST_QUERY_MAX_VALUE_LENGTH,
   CONTENT_LIST_QUERY_PROJECTION,
   CONTENT_LIST_QUERY_SEARCH_FIELDS,
@@ -239,6 +242,7 @@ export {
   createContentListQueryTransport,
   escapeContentListQueryLikeValue,
   readContentListQueryNotices,
+  resolveContentListMaxPageSize,
 } from './content-list-query.js';
 // Saved views (#2452): a named, restorable view backed by a narrow store seam.
 export {

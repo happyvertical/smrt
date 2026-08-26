@@ -25,6 +25,7 @@ import {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
   CONTENT_LIST_QUERY_FIELDS,
   CONTENT_LIST_QUERY_IDENTITY_FIELD,
+  CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
   CONTENT_LIST_QUERY_PROJECTION,
   CONTENT_LIST_QUERY_SEARCH_FIELDS,
   type ContentListDataQueryRequest,
@@ -39,6 +40,7 @@ import {
   createContentListQueryTransport,
   escapeContentListQueryLikeValue,
   readContentListQueryNotices,
+  resolveContentListMaxPageSize,
 } from './content-list-query';
 import { CONTENT_LIST_MAX_PAGE_SIZE } from './content-list-url-state';
 
@@ -826,5 +828,261 @@ describe('reading the completeness flags off a result', () => {
       truncated: false,
       warnings: [],
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 (#2452)
+// ---------------------------------------------------------------------------
+
+describe('bounding a value in the unit the server measures (finding 1)', () => {
+  /** Exactly what `dataQueryScalar` tests: UTF-16 code units. */
+  const serverLength = (value: string) => value.length;
+
+  it('counts an astral character as TWO, the way core does', () => {
+    // 4093 ASCII + one emoji: 4094 code points, 4095 UTF-16 units. Adding the
+    // two wildcards lands on 4097 server-side unless the emoji costs two.
+    const { request } = translate({ search: `${'x'.repeat(4093)}😀` });
+    for (const condition of conditions(request.filter)) {
+      expect(serverLength(condition.value as string)).toBeLessThanOrEqual(
+        4_096,
+      );
+    }
+  });
+
+  it('bounds a value that is entirely astral characters', () => {
+    const { request, dropped } = translate({ search: '😀'.repeat(4_094) });
+    for (const condition of conditions(request.filter)) {
+      expect(serverLength(condition.value as string)).toBeLessThanOrEqual(
+        4_096,
+      );
+    }
+    expect(dropped).toContainEqual(
+      expect.objectContaining({ scope: 'search', reason: 'out-of-range' }),
+    );
+  });
+
+  it('never splits a surrogate pair', () => {
+    const { request } = translate({ search: '😀'.repeat(4_094) });
+    const value = conditions(request.filter)[0].value as string;
+    // A lone surrogate would survive a round trip through JSON as U+FFFD.
+    expect(JSON.parse(JSON.stringify(value))).toBe(value);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(value)).toBe(false);
+    expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value)).toBe(false);
+  });
+
+  it('still lands exactly on the cap for pure ASCII and metacharacters', () => {
+    const ascii = translate({ search: 'a'.repeat(9_000) });
+    expect(
+      serverLength(conditions(ascii.request.filter)[0].value as string),
+    ).toBe(4_096);
+    const meta = translate({ search: '%'.repeat(9_000) });
+    expect(
+      serverLength(conditions(meta.request.filter)[0].value as string),
+    ).toBe(4_096);
+  });
+
+  it('agrees with the scalar bounder on an astral filter value', () => {
+    const { request } = translate({
+      filters: [
+        { columnId: 'status', operator: 'equals', value: '😀'.repeat(9_000) },
+      ],
+    });
+    expect(
+      serverLength(conditions(request.filter)[0].value as string),
+    ).toBeLessThanOrEqual(4_096);
+  });
+});
+
+describe('one resolved page-size ceiling (findings 3, 4, 5)', () => {
+  it('takes the narrowest configured limit, never the loosest', () => {
+    expect(resolveContentListMaxPageSize(200, 25)).toBe(25);
+    expect(resolveContentListMaxPageSize(25, 200)).toBe(25);
+    expect(resolveContentListMaxPageSize(undefined, 25)).toBe(25);
+    expect(resolveContentListMaxPageSize(25, undefined)).toBe(25);
+  });
+
+  it('can never exceed the schema limit, whatever a host asks for', () => {
+    expect(resolveContentListMaxPageSize(10_000, 5_000)).toBe(
+      CONTENT_LIST_MAX_PAGE_SIZE,
+    );
+    expect(resolveContentListMaxPageSize()).toBe(CONTENT_LIST_MAX_PAGE_SIZE);
+  });
+
+  it('ignores nonsense candidates rather than collapsing to them', () => {
+    expect(resolveContentListMaxPageSize(0, Number.NaN, -5)).toBe(
+      CONTENT_LIST_MAX_PAGE_SIZE,
+    );
+  });
+
+  it('clamps a default page size above the ceiling', () => {
+    const { request } = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'fixed',
+      defaultPageSize: 201,
+    });
+    expect(request.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: CONTENT_LIST_MAX_PAGE_SIZE,
+    });
+  });
+});
+
+describe('the effective page when an offset is capped (finding 7)', () => {
+  it('reports the page the request actually reads', () => {
+    const { request, effectivePage } = contentListViewStateToDataQueryRequest(
+      viewState({ page: 10_000, pageSize: 200 }),
+      { createRequestId: () => 'fixed' },
+    );
+    const page = request.page as { offset: number; limit: number };
+    expect(page.offset).toBeLessThanOrEqual(1_000_000);
+    expect(effectivePage).toBe(page.offset / page.limit + 1);
+    expect(effectivePage).toBeLessThan(10_000);
+  });
+
+  it('reports the requested page unchanged when nothing was capped', () => {
+    const { effectivePage } = contentListViewStateToDataQueryRequest(
+      viewState({ page: 3, pageSize: 25 }),
+      { createRequestId: () => 'fixed' },
+    );
+    expect(effectivePage).toBe(3);
+  });
+});
+
+describe('validity rules beyond the numeric caps (Shape B sweep)', () => {
+  it('drops a date outside the RFC 3339 four-digit year range', () => {
+    // `new Date('+275760-09-13')` parses and `toISOString()` round-trips, but
+    // the server's instant pattern refuses the expanded-year form.
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'updated', operator: 'gte', value: '+275760-09-13' },
+      ],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      reason: 'unsupported-value',
+      columnId: 'updated',
+    });
+  });
+
+  it('drops a negative-year date for the same reason', () => {
+    const { dropped } = translate({
+      filters: [
+        { columnId: 'publish', operator: 'lt', value: '-000001-01-01' },
+      ],
+    });
+    expect(dropped[0]).toMatchObject({ reason: 'unsupported-value' });
+  });
+
+  it('keeps the whole request inside the request byte budget', () => {
+    // 100 values of 4096 characters is inside every per-value cap and five
+    // times the request limit.
+    const values = Array.from({ length: 100 }, (_, index) =>
+      `${index}`.padEnd(4_000, 'v'),
+    );
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'status', operator: 'in', value: values },
+        { columnId: 'author', operator: 'in', value: values },
+        { columnId: 'title', operator: 'in', value: values },
+      ],
+    });
+    expect(
+      new TextEncoder().encode(JSON.stringify(request)).byteLength,
+    ).toBeLessThanOrEqual(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES);
+    expect(
+      dropped.some(
+        (drop) =>
+          drop.reason === 'out-of-range' &&
+          drop.detail === String(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES),
+      ),
+    ).toBe(true);
+  });
+
+  it('bounds a caller-supplied request id to the normalizer rule', () => {
+    const long = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'r'.repeat(500),
+    });
+    expect(long.request.requestId.length).toBe(128);
+
+    const empty = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => '',
+    });
+    expect(empty.request.requestId.length).toBeGreaterThan(0);
+    expect(empty.request.requestId.length).toBeLessThanOrEqual(128);
+  });
+
+  it('bounds and de-duplicates a caller-supplied projection', () => {
+    const { request, dropped } = contentListViewStateToDataQueryRequest(
+      viewState(),
+      {
+        createRequestId: () => 'fixed',
+        projection: Array.from({ length: 80 }, (_, index) => `field-${index}`),
+      },
+    );
+    expect(request.projection?.length).toBe(50);
+    expect(request.projection).toContain(CONTENT_LIST_QUERY_IDENTITY_FIELD);
+    expect(dropped).toContainEqual(
+      expect.objectContaining({ scope: 'state', reason: 'out-of-range' }),
+    );
+
+    const deduped = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'fixed',
+      projection: ['title', 'title', 'id'],
+    });
+    expect(deduped.request.projection).toEqual(['id', 'title']);
+  });
+});
+
+describe('the bounded request survives the real normalizer', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const execute = (state: Partial<DataTableViewState>) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(state), {
+        createRequestId: () => 'bounded-request',
+        projection: ['id', 'title'],
+      }).request,
+    );
+
+  it('accepts a search of 4093 characters plus one emoji', async () => {
+    // Reproduces the reported 400: this is 4095 UTF-16 units before wildcards.
+    await expect(
+      execute({ search: `${'x'.repeat(4093)}😀` }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts an all-astral search', async () => {
+    await expect(
+      execute({ search: '😀'.repeat(4_094) }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts a filter list far past every per-value cap', async () => {
+    const values = Array.from({ length: 400 }, (_, index) =>
+      `${index}`.padEnd(5_000, 'v'),
+    );
+    await expect(
+      execute({
+        search: '😀'.repeat(3_000),
+        filters: [
+          { columnId: 'status', operator: 'in', value: values },
+          { columnId: 'author', operator: 'in', value: values },
+        ],
+      }),
+    ).resolves.toBeDefined();
   });
 });

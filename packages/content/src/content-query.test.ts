@@ -30,7 +30,9 @@ import {
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
   CONTENT_QUERY_MAX_PAGE_LIMIT,
+  CONTENT_QUERY_MAX_RESULT_BYTES,
   type ContentQueryCollection,
+  DATA_QUERY_FORBIDDEN_JSON_KEYS,
   DATA_QUERY_MAX_JSON_CONTAINER_ITEMS,
   DATA_QUERY_MAX_JSON_DEPTH,
   DATA_QUERY_MAX_JSON_STRING_LENGTH,
@@ -319,6 +321,41 @@ describe('executeContentQuery', () => {
     expect(bounded.truncated).toBe(true);
   });
 
+  it('holds facet payloads to the shared result byte budget', async () => {
+    // Two text facets of 200 distinct 4096-character values are inside every
+    // per-value cap and still several times the 1 MB result limit, which would
+    // make the normalizer reject an otherwise valid response.
+    const filler = 'f'.repeat(DATA_QUERY_MAX_STRING_LENGTH);
+    await seed(
+      contents,
+      Array.from({ length: 200 }, (_, index) => ({
+        name: `facet-${String(index).padStart(3, '0')}`,
+        title: `${index}-${filler}`,
+        author: `${index}-${filler}`,
+      })),
+    );
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        mode: 'facets',
+        facets: [
+          { field: 'title', limit: 200 },
+          { field: 'author', limit: 200 },
+        ],
+      }),
+    );
+
+    // The response is valid rather than refused, and says it was cut short.
+    expect(result.truncated).toBe(true);
+    expect(result.facets?.some((facet) => facet.truncated)).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/facets were truncated/);
+    const bytes = new TextEncoder().encode(JSON.stringify(result)).byteLength;
+    expect(bytes).toBeLessThanOrEqual(CONTENT_QUERY_MAX_RESULT_BYTES);
+    // The count still reflects the whole query.
+    expect(result.total).toEqual({ kind: 'exact', value: 200 });
+  });
+
   it('clamps an oversized page limit to the schema maximum', async () => {
     const result = await executeContentQuery(
       collectionOf(contents),
@@ -434,6 +471,54 @@ describe('executeContentQuery', () => {
       note.length,
     );
     expect(result.truncated).toBe(false);
+  });
+
+  it('survives a metadata key the result validator forbids', async () => {
+    // `plainObject` rejects the WHOLE result for one of these keys, and
+    // `JSON.parse` of the stored column creates an own `__proto__` property, so
+    // one row could otherwise 400 every query projecting metadata, forever.
+    await seed(contents, [
+      { name: 'forbidden-keys', title: 'Poisoned' },
+      { name: 'clean', title: 'Clean' },
+    ]);
+    for (const key of [...DATA_QUERY_FORBIDDEN_JSON_KEYS]) {
+      const poisoned = await contents.get({ name: 'forbidden-keys' });
+      if (!poisoned) throw new Error('missing fixture');
+      // Written the way a REST caller or `mirror()` ingestion would.
+      poisoned.metadata = JSON.parse(
+        `{"${key}": {"nested": "value"}, "section": "front"}`,
+      );
+      await poisoned.save();
+
+      const result = await executeContentQuery(
+        collectionOf(contents),
+        request({ projection: ['title', 'metadata'] }),
+      );
+
+      // The page still reads, both rows included.
+      expect(result.rows).toHaveLength(2);
+      const row = result.rows.find((entry) => entry.title === 'Poisoned');
+      expect(row?.metadata).toEqual({ section: 'front' });
+      expect(result.truncated).toBe(true);
+    }
+  });
+
+  it('does not let a forbidden key change the bounded object prototype', async () => {
+    await seed(contents, [{ name: 'proto', title: 'Proto' }]);
+    const item = await contents.get({ name: 'proto' });
+    if (!item) throw new Error('missing fixture');
+    item.metadata = JSON.parse('{"__proto__": {"polluted": true}, "ok": 1}');
+    await item.save();
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    const metadata = result.rows[0].metadata as Record<string, unknown>;
+    expect(metadata).toEqual({ ok: 1 });
+    expect(Object.hasOwn(metadata, '__proto__')).toBe(false);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it('truncates a large result to the schema byte budget', async () => {

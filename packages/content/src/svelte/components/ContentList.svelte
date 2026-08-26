@@ -80,6 +80,7 @@ import {
   contentListQueryTotalValue,
   contentListViewStateToDataQueryRequest,
   readContentListQueryNotices,
+  resolveContentListMaxPageSize,
 } from '../content-list-query.js';
 import {
   type ContentListSavedView,
@@ -89,7 +90,6 @@ import {
 } from '../content-list-saved-views.js';
 import {
   applyContentListViewState,
-  CONTENT_LIST_MAX_PAGE_SIZE,
   type ContentListStateDrop,
   type ContentListStateDropReason,
   type ContentListStateValidationOptions,
@@ -169,28 +169,43 @@ const initialQuery = untrack(() => query);
 const initialUrlState = untrack(() => urlState);
 
 /**
- * The page size a server-backed list runs at.
+ * THE page-size ceiling. Resolved once, from every configured limit, and used
+ * by the controller seed, the URL sanitizer, the saved-view sanitizer and the
+ * translator — so the size the UI pages by and the size the server applies are
+ * the same number by construction rather than by coincidence.
+ *
+ * Every candidate narrows (`Math.min`, inside `resolveContentListMaxPageSize`):
+ * a host that sets `query.request.maxPageSize` as a server row budget must not
+ * have it discarded because a looser `urlState.options.maxPageSize` also exists.
+ */
+const maxPageSize = resolveContentListMaxPageSize(
+  initialUrlState?.options?.maxPageSize,
+  initialQuery?.request?.maxPageSize,
+);
+
+/**
+ * The page size a server-backed list runs at, clamped to that ceiling.
  *
  * `null` (unpaginated) is only expressible locally: the query endpoint always
  * applies a limit, so an unpaginated server list would render one silent page
  * with no controls. This value is the seed, the URL layer's notion of the
  * default (so a link without `size` restores it rather than wiping it), and the
- * translator's fallback — one number in all three places.
+ * translator's fallback — one number in all three places. Clamping the seed
+ * matters on its own: a `defaultPageSize` above the ceiling would seed a page
+ * size the request then silently reduces, and `totalPages` would compute 1.
  */
 const serverPageSize = initialQuery
-  ? (initialQuery.request?.defaultPageSize ??
-    CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE)
+  ? Math.min(
+      Math.max(
+        1,
+        Math.floor(
+          initialQuery.request?.defaultPageSize ??
+            CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+        ),
+      ),
+      maxPageSize,
+    )
   : null;
-
-/**
- * One page-size ceiling for every restore path. A host that configures
- * `maxPageSize` must get it on links AND on saved views, or a stored view is a
- * way around the limit it set.
- */
-const maxPageSize =
-  initialUrlState?.options?.maxPageSize ??
-  initialQuery?.request?.maxPageSize ??
-  CONTENT_LIST_MAX_PAGE_SIZE;
 
 /** Validation options shared by the URL and saved-view restore paths. */
 const restoreOptions: ContentListStateValidationOptions = { maxPageSize };
@@ -275,21 +290,39 @@ $effect(() =>
 
 const tableState = $derived(snapshot.state);
 
-// A server query cannot express "unpaginated": the endpoint always applies a
-// limit, so a null page size would show one page of `limit` rows with no page
-// controls and no way to reach the rest. A saved view, a `?size=all` link, or a
-// data-surface `set-page-size` command can all introduce one after mount, so the
-// coercion is enforced against live state — and reported, never silent.
+// In server mode the controller's page size must be a number the request can
+// actually carry, or `totalPages` and `showPagination` describe a page the
+// server never returned and rows are stranded behind a plausible-looking single
+// page. Two ways in, both enforced against LIVE state because a saved view, a
+// link, and a data-surface `set-page-size` all arrive after mount:
+//
+//   null          → unpaginated, which the endpoint cannot express;
+//   > maxPageSize → the translator clamps the request, so leaving the
+//                   controller above the ceiling makes the two disagree.
+//
+// `setPageSize` also resets the page, which is correct: a different page size
+// means the old page number addresses different rows.
 $effect(() => {
   if (serverPageSize === null) return;
-  if (tableState.pageSize !== null) return;
+  const current = tableState.pageSize;
+  if (current !== null && current <= maxPageSize) return;
+  const next = current === null ? serverPageSize : maxPageSize;
+  const reason: ContentListQueryDropReason =
+    current === null ? 'unpaginated-unsupported' : 'out-of-range';
   untrack(() => {
-    controller.dispatch({ type: 'setPageSize', pageSize: serverPageSize });
+    controller.dispatch({ type: 'setPageSize', pageSize: next });
     restoreDrops = [
       ...restoreDrops.filter(
-        (drop) => drop.reason !== 'unpaginated-unsupported',
+        (drop) =>
+          drop.scope !== 'pageSize' ||
+          (drop.reason !== 'unpaginated-unsupported' &&
+            drop.reason !== 'out-of-range'),
       ),
-      { scope: 'pageSize', reason: 'unpaginated-unsupported' },
+      {
+        scope: 'pageSize',
+        reason,
+        ...(current === null ? {} : { detail: String(current) }),
+      },
     ];
   });
 });
@@ -387,13 +420,30 @@ const isLoading = $derived(loading || (queryBinding?.loading ?? false));
 const refreshing = $derived(
   (queryBinding?.refreshing ?? false) || (isLoading && pageRows.length > 0),
 );
+/**
+ * A retry re-reads the same query, so its answer replaces the rendered rows —
+ * and therefore has to replace the completeness flags that describe them too.
+ * Discarding the envelope here is what left a "rows are missing" notice
+ * standing over a page that came back complete (and the inverse after a
+ * transient error). The signature does not change on a retry, so the query
+ * effect never re-runs and this is the only place that can refresh them.
+ */
+function retryQuery(): void {
+  if (!queryBinding) return;
+  const signature = executedSignature;
+  void queryBinding
+    .retry()
+    .then((result) => {
+      // `retry()` resolves undefined when there is no request to repeat, and a
+      // newer query may have superseded this one while it was in flight.
+      if (result === undefined || executedSignature !== signature) return;
+      resultNotices = readContentListQueryNotices(result);
+    })
+    .catch(() => undefined);
+}
+
 const retryHandler = $derived(
-  onRetry ??
-    (queryBinding
-      ? () => {
-          void queryBinding.retry().catch(() => undefined);
-        }
-      : undefined),
+  onRetry ?? (queryBinding ? retryQuery : undefined),
 );
 
 /**
@@ -426,6 +476,17 @@ $effect(() => {
         queryRequestOptions,
       );
       queryDrops = translated.dropped;
+      if (translated.effectivePage !== state.page) {
+        // The offset had to be capped. Move the controller's page marker to the
+        // page the request actually reads, or the UI labels this answer with a
+        // page number the server never saw. The dispatch re-enters this effect
+        // with the corrected signature, which then executes.
+        controller.dispatch({
+          type: 'setPage',
+          page: translated.effectivePage,
+        });
+        return;
+      }
       // The binding owns cancellation of a superseded run and already reflects
       // a failure in its error state, so a rejection here is not also an
       // unhandled one. The resolved envelope carries the server's completeness
@@ -433,6 +494,8 @@ $effect(() => {
       void queryBinding
         .execute(translated.request)
         .then((result) => {
+          // A newer query may have superseded this one while it was in flight.
+          if (executedSignature !== signature) return;
           resultNotices = readContentListQueryNotices(result);
         })
         .catch(() => undefined);

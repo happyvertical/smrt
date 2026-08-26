@@ -161,15 +161,35 @@ Selection normalization also changes shape in server mode: `rows` is only the
 current page, so membership cannot be the durability test (it would clear the
 selection on every page change). Only the adapter's synthetic ids are stripped.
 
-### Server mode cannot be unpaginated
+### One page-size ceiling, one page size
+
+`maxPageSize` is resolved ONCE, by `resolveContentListMaxPageSize`, as the
+minimum of every configured limit and the schema's `maxPageLimit` — every
+candidate narrows, so a host that sets `query.request.maxPageSize` as a server
+row budget does not lose it to a looser `urlState.options.maxPageSize`. That one
+number is passed to the controller seed, the URL sanitizer, the saved-view
+sanitizer and the translator, which is what makes the size the UI pages by and
+the size the server applies the same number *by construction*.
+
+Two page sizes are unusable in server mode, and BOTH are coerced against live
+state (a saved view, a link, and a data-surface `set-page-size` all arrive after
+mount) and reported:
+
+| Live page size | Coerced to | Why |
+|---|---|---|
+| `null` | the seed | the endpoint always applies a limit |
+| `> maxPageSize` | `maxPageSize` | the translator clamps the request, so leaving the controller higher makes `totalPages` compute 1 and hide the page controls |
+
+The seed itself is clamped to the ceiling too: a `defaultPageSize` above it
+would otherwise seed a page size the request silently reduces.
 
 `pageSize: null` means "show everything", and the query endpoint has no way to
-express that — it always applies a limit. Left alone, a null page size renders
-one page of `limit` rows with no page controls and no way to reach the rest, so
-in server mode it is **coerced and reported**:
+express that. Left alone, a null page size renders one page of `limit` rows with
+no page controls and no way to reach the rest, so in server mode it is
+**coerced and reported**:
 
 - supplying `query` seeds the controller's `pageSize` from
-  `query.request.defaultPageSize` (default 50);
+  `query.request.defaultPageSize` (default 50), clamped to the ceiling;
 - that same number is handed to the URL layer as its `defaultPageSize`, so a
   link that omits `size` restores the seed instead of overwriting it with the
   local `null`, and a link this list writes omits `size` while at the default;
@@ -211,9 +231,23 @@ Dropped rather than sent, because sending them would fail the *whole* request:
 The translator also enforces the normalizer's **input caps**, because exceeding
 one 400s the entire list rather than degrading it. Each is capped and reported:
 at most 100 `in`/`notIn` values, at most 50 filter nodes (counting every
-`all`/`any` container, so search costs 4 and the outer `all` 1), and at most
-4096 characters per filter value — measured *after* escaping, since escaping can
-double a string's length.
+`all`/`any` container, so search costs 4 and the outer `all` 1), at most 50
+projection fields, a request id of at most 128 characters, at most 4096
+characters per filter value, and 100 000 bytes for the whole serialized request
+(100 values of 4096 characters is inside every per-value cap and still five
+times that limit, so the newest filter branches are shed until it fits).
+
+**Measure in the server's unit.** `dataQueryScalar` tests `value.length`, which
+counts UTF-16 code units, so an astral character costs TWO. The bounders iterate
+by code point — never splitting a surrogate pair — but charge `character.length`
+per code point plus one for an escape. Charging one per code point made a search
+of 4093 ASCII characters plus one emoji measure 4094 client-side and 4097
+server-side: a hard 400 and a whole-list error panel.
+
+And mirror the normalizer's **validity rules**, not only its numeric caps. A
+datetime is checked against the server's exact RFC 3339 pattern rather than
+merely round-tripping through `Date`: a year outside the four-digit range
+serializes as `+275760-09-13T00:00:00.000Z` and is refused.
 
 Server filters compare **exactly**; local mode compares case-insensitively. The
 adapter already lowercases `type` / `status` / `state` filter values, which is
@@ -248,10 +282,27 @@ never from the request body.
   otherwise off the envelope its own `execute` resolved — and renders them in
   the same notice as the drops.
 - A `json` field (`metadata`, `tags`) is validated as a document, not a scalar,
-  and `canonicalJson` rejects the WHOLE result when a nested string, container,
-  depth, or number passes its limits. `executeContentQuery` therefore bounds a
-  JSON document itself (65536-character strings, 1000-item containers, depth 16,
-  finite numbers, no cycles), flagging `truncated` rather than failing the page.
+  and `canonicalJson` rejects the WHOLE result when a nested value breaks any of
+  its rules. `executeContentQuery` therefore bounds a JSON document itself —
+  65536-character strings, 1000-item containers, depth 16, finite numbers, no
+  cycles, plain values only — flagging `truncated` rather than failing the page.
+  It also drops the keys `plainObject` forbids (`__proto__`, `constructor`,
+  `prototype`) and builds with a null prototype, because that is the *reachable*
+  rule: `metadata` is the documented extension point, it is writable through the
+  REST API and through `mirror()` ingestion, and `JSON.parse` of the stored
+  column creates an own `__proto__` property — so one row could otherwise make
+  every query projecting metadata return 400 for the whole page, permanently.
+- Facet values are held to the SAME shared byte budget as rows. Two text facets
+  of 200 distinct 4096-character values are inside every per-value cap and still
+  several times the 1 MB result limit; values are dropped and the facet and the
+  result are flagged rather than the response being refused.
+- A capped offset moves the caller's page marker. `?page=10000&size=200` caps the
+  request offset at 1 000 000, and the translation returns the `effectivePage`
+  the request actually reads so the UI cannot label the answer with a page the
+  server never saw.
+- A retry replaces the rendered rows, so it also replaces the completeness
+  flags. `retry()`'s envelope is read through the same path as `execute()`'s;
+  discarding it left a "rows are missing" notice standing over a complete page.
 
 ### URL state and saved views
 

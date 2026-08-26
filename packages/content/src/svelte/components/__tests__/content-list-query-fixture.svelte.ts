@@ -70,7 +70,9 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     },
     async retry() {
       retries += 1;
-      return undefined;
+      // `remoteQuery.retry()` resolves the refreshed envelope, and the
+      // component reads the completeness flags off it.
+      return envelope;
     },
   };
 

@@ -96,6 +96,22 @@ export const DATA_QUERY_MAX_JSON_CONTAINER_ITEMS = 1_000;
 export const DATA_QUERY_MAX_JSON_DEPTH = 16;
 
 /**
+ * Keys `plainObject` refuses outright (`FORBIDDEN_DATA_QUERY`), mirrored from
+ * `@happyvertical/smrt-core`. This is a *validity* rule rather than a size
+ * limit, and it is the reachable one: `metadata` is the documented extension
+ * point, it is writable through the generated REST API and through
+ * `Content.mirror()` ingestion, and `JSON.parse` of the stored column creates
+ * an own `__proto__` property. One row carrying such a key would otherwise make
+ * every query projecting that field return 400 for the whole page, with no way
+ * to page past it.
+ */
+export const DATA_QUERY_FORBIDDEN_JSON_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+/**
  * Bytes held back from the row budget for the envelope itself (request id,
  * fingerprint, page, total, freshness, warnings). The normalizer re-checks the
  * complete serialized envelope against `maxResultBytes`, so the row budget must
@@ -577,6 +593,25 @@ export function mergeContentQueryScope(
   return merged;
 }
 
+/**
+ * The result normalizer's warning rule: at most 100 entries, each a non-empty
+ * string of at most 512 characters. A warning that names a field list derived
+ * from a host-supplied schema could otherwise exceed it and fail the result
+ * this warning exists to explain.
+ */
+export const DATA_QUERY_MAX_WARNINGS = 100;
+export const DATA_QUERY_MAX_WARNING_LENGTH = 512;
+
+/** Appends a warning bounded to what `normalizeDataQueryResult` accepts. */
+function pushWarning(warnings: string[], message: string): void {
+  if (warnings.length >= DATA_QUERY_MAX_WARNINGS) return;
+  const text =
+    message.length > DATA_QUERY_MAX_WARNING_LENGTH
+      ? `${message.slice(0, DATA_QUERY_MAX_WARNING_LENGTH - 1)}\u2026`
+      : message;
+  if (text.length > 0) warnings.push(text);
+}
+
 /** Records values the adapter had to shorten so the caller is told. */
 interface TruncationLog {
   fields: Set<string>;
@@ -689,19 +724,37 @@ function boundJsonValue(
       flag();
       keys = keys.slice(0, DATA_QUERY_MAX_JSON_CONTAINER_ITEMS);
     }
-    const bounded: Record<string, unknown> = {};
+    // A null prototype, so writing a key named `__proto__` stores an own
+    // property instead of invoking the inherited setter — which would silently
+    // drop the key AND change this object's prototype, failing `plainObject`'s
+    // prototype check on the way out. `Object.prototype` and `null` are the two
+    // prototypes the validator accepts.
+    const bounded = Object.create(null) as Record<string, unknown>;
     for (const key of keys) {
       if (key.length > DATA_QUERY_MAX_JSON_STRING_LENGTH) {
         flag();
         continue;
       }
-      bounded[key] = boundJsonValue(
-        value[key],
-        descriptor,
-        truncation,
-        depth + 1,
-        ancestors,
-      );
+      // `plainObject` REJECTS the whole result for one of these keys, and
+      // `JSON.parse` of a stored `metadata` column creates an own `__proto__`
+      // property, so a single row could otherwise brick every query that
+      // projects the field. Dropping the key keeps the row readable.
+      if (DATA_QUERY_FORBIDDEN_JSON_KEYS.has(key)) {
+        flag();
+        continue;
+      }
+      Object.defineProperty(bounded, key, {
+        value: boundJsonValue(
+          value[key],
+          descriptor,
+          truncation,
+          depth + 1,
+          ancestors,
+        ),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return bounded;
   } finally {
@@ -879,12 +932,14 @@ export async function executeContentQuery(
     const rows: DataQueryRow[] = bounded.rows;
     truncated = bounded.truncated || truncation.fields.size > 0;
     if (bounded.truncated) {
-      warnings.push(
+      pushWarning(
+        warnings,
         'Content query result was truncated to fit its maximum result bytes; request fewer fields or a smaller page.',
       );
     }
     if (truncation.fields.size > 0) {
-      warnings.push(
+      pushWarning(
+        warnings,
         `Content query shortened over-long values in: ${[...truncation.fields].sort().join(', ')}.`,
       );
     }
@@ -926,6 +981,16 @@ export async function executeContentQuery(
     });
     const byField = new Map(sourceFacets.map((facet) => [facet.field, facet]));
     const facetTruncation: TruncationLog = { fields: new Set() };
+    // Facet values go through the SAME shared byte budget the rows do: two text
+    // facets of 200 distinct 4096-character values are inside every per-value
+    // cap and still over the 1 MB result limit, which would make the normalizer
+    // reject an otherwise valid response.
+    let facetBudget = Math.max(
+      0,
+      (schema.maxResultBytes ?? CONTENT_QUERY_MAX_RESULT_BYTES) -
+        RESULT_ENVELOPE_RESERVE_BYTES,
+    );
+    let facetBudgetExhausted = false;
     facets = requested.map((facet) => {
       const descriptor = descriptors.get(facet.field);
       if (!descriptor) {
@@ -935,24 +1000,46 @@ export async function executeContentQuery(
         );
       }
       const values = byField.get(facet.field)?.values ?? [];
+      // The envelope around one facet: field name, brackets, and flags.
+      facetBudget -= jsonByteLength(facet.field) + 48;
+      const kept: Array<{
+        value: string | number | boolean | null;
+        count: number;
+      }> = [];
+      let boundedOut = false;
+      for (const entry of values.slice(0, facet.limit)) {
+        const value = toDeclaredValue(
+          entry.value,
+          descriptor,
+          facetTruncation,
+        ) as string | number | boolean | null;
+        const cost = jsonByteLength({ value, count: entry.count }) + 1;
+        if (cost > facetBudget) {
+          boundedOut = true;
+          facetBudgetExhausted = true;
+          break;
+        }
+        facetBudget -= cost;
+        kept.push({ value, count: entry.count });
+      }
       return {
         field: facet.field,
-        values: values.slice(0, facet.limit).map((entry) => ({
-          value: toDeclaredValue(entry.value, descriptor, facetTruncation) as
-            | string
-            | number
-            | boolean
-            | null,
-          count: entry.count,
-        })),
+        values: kept,
         // The collection bounds this grouping query in the database; an exactly
         // full page may have more values, so report conservatively.
-        truncated: values.length >= facet.limit,
+        truncated: boundedOut || values.length >= facet.limit,
       };
     });
     if (facetTruncation.fields.size > 0) {
-      warnings.push(
+      pushWarning(
+        warnings,
         `Content query shortened over-long values in: ${[...facetTruncation.fields].sort().join(', ')}.`,
+      );
+    }
+    if (facetBudgetExhausted) {
+      pushWarning(
+        warnings,
+        'Content query facets were truncated to fit their maximum result bytes; request fewer facets or a smaller facet limit.',
       );
     }
     truncated =
