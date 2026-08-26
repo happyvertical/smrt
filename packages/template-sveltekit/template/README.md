@@ -253,7 +253,7 @@ WebMCP is opt-in per browser surface. First add the browser runtime, then put
 registration in a dedicated page that actually exposes tools:
 
 ```bash
-pnpm add @happyvertical/smrt-web@0.38.25
+pnpm add @happyvertical/smrt-web@^0.43.3
 ```
 
 ```svelte
@@ -274,10 +274,12 @@ pnpm add @happyvertical/smrt-web@0.38.25
 ```
 
 `registerWebMcpTools()` feature-detects browser support and uses the current
-authenticated page session. In 0.38.25, list/get/create/update/delete are wired.
-Generated descriptors for custom actions exist, but custom action execution is
-not yet wired; WebMCP returns a clear result for those actions. Filter to read-only on
-surfaces that should not offer browser mutations.
+authenticated page session. Omitted policy exposes `list` and `get` tools only.
+To advertise mutations on a trusted surface, pass an explicit effect allowlist,
+for example `effects: ['read', 'write']`; include `destructive` only where delete
+and destructive custom actions are intended. Generated custom actions execute
+through their authenticated REST routes, and undeclared custom effects fail
+closed as destructive.
 
 ## 9. Add optional live browser data
 

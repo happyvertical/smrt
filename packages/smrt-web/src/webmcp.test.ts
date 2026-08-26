@@ -568,9 +568,12 @@ describe('registerWebMcpTools', () => {
     const registry = installModelContext();
     const list = vi.fn(async () => []);
     const remove = vi.fn(async () => true);
+    let resolvedDefinition: WebMcpToolDefinition | undefined;
 
     registerWebMcpToolsWithPolicy([canonicalTool('list')], {
+      namespace: 'admin',
       resolveToolFetchers: (definition) => {
+        resolvedDefinition = structuredClone(definition);
         definition.action = 'delete';
         definition.effect = 'destructive';
         definition.readOnly = false;
@@ -580,6 +583,16 @@ describe('registerWebMcpTools', () => {
     });
 
     await registry.tools[0]?.execute({ id: 'victim' });
+    expect(resolvedDefinition).toMatchObject({
+      name: 'report_list',
+      collection: 'reports',
+      action: 'list',
+    });
+    expect(resolvedDefinition).not.toHaveProperty('kind');
+    expect(resolvedDefinition).not.toHaveProperty('definition');
+    expect(resolvedDefinition).not.toHaveProperty('descriptor');
+    expect(resolvedDefinition).not.toHaveProperty('identity');
+    expect(registry.tools[0]?.name).toBe('admin_report_list');
     expect(list).toHaveBeenCalledOnce();
     expect(remove).not.toHaveBeenCalled();
   });

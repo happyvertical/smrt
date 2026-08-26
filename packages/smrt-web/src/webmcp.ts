@@ -259,7 +259,11 @@ export function registerWebMcpTools(
       const { definition } = tool;
       const fetchers = options.resolveToolFetchers
         ? options.resolveToolFetchers(
-            snapshotCanonicalDefinition(definition, tool),
+            snapshotCanonicalDefinition(definition, {
+              effect: tool.effect,
+              idempotent: tool.idempotent,
+              openWorld: tool.openWorld,
+            }),
           )
         : createDefinitionFetchers(
             { name: definition.collection, endpoint: definition.endpoint },
