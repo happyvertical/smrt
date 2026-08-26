@@ -117,6 +117,10 @@ older custom registry remains responsible for its pre-existing execution
 policy and accepts review actions only from a trusted browser event.
 Custom controls whose clear operation is intentionally idempotent should return
 `true` from `clear()` to affirm that the unchanged cleared value was accepted.
+Async custom setters and clear handlers are rolled back when they reject. A
+control that permits direct edits while an async mutation is pending can expose
+`getUserEditRevision()` and increment it only for direct user edits so rollback
+never overwrites newer human input.
 
 ## DataTable controller
 

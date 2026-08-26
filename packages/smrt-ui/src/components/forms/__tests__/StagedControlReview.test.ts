@@ -121,6 +121,27 @@ describe('StagedControlReview', () => {
     );
   });
 
+  it('returns focus through the registry for a composite control wrapper', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'profile', controlId: 'volume' },
+        value: 50,
+      },
+      { source: 'agent' },
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole('slider', { name: 'Volume' })).toHaveFocus(),
+    );
+  });
+
   it('marks competing user edits stale and lets the human discard them', async () => {
     const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });

@@ -811,6 +811,7 @@ describe('control interaction registry', () => {
 
   it('does not roll back over a human edit that lands during an async apply', async () => {
     let value = 'Ada';
+    let userEditRevision = 0;
     let releaseSetter: (() => void) | undefined;
     const setterBlocked = new Promise<void>((resolve) => {
       releaseSetter = resolve;
@@ -822,6 +823,7 @@ describe('control interaction registry', () => {
       identity,
       metadata: { kind: 'text' },
       getValue: () => value,
+      getUserEditRevision: () => userEditRevision,
       setValue: async (next) => {
         value = String(next);
         await setterBlocked;
@@ -840,6 +842,7 @@ describe('control interaction registry', () => {
     );
     await vi.waitFor(() => expect(value).toBe('Grace'));
     value = 'Katherine';
+    userEditRevision += 1;
     releaseSetter?.();
 
     expect(await applying).toMatchObject({
@@ -860,8 +863,8 @@ describe('control interaction registry', () => {
       getValue: () => value,
       setValue: async (next) => {
         if (next === 'Grace') {
-          value = 'partial';
           await Promise.resolve();
+          value = 'partial';
           throw new Error('setter_failed');
         }
         value = String(next);
@@ -1068,6 +1071,7 @@ describe('control interaction registry', () => {
 
   it('does not roll back over human edits during asynchronous clear or undo', async () => {
     let value = 'Ada';
+    let userEditRevision = 0;
     let releaseClear: (() => void) | undefined;
     let releaseUndo: (() => void) | undefined;
     const clearBlocked = new Promise<void>((resolve) => {
@@ -1084,6 +1088,7 @@ describe('control interaction registry', () => {
       identity,
       metadata: { kind: 'text' },
       getValue: () => value,
+      getUserEditRevision: () => userEditRevision,
       setValue: async (next) => {
         value = String(next);
         if (blockUndo && next === 'Ada') {
@@ -1109,6 +1114,7 @@ describe('control interaction registry', () => {
     );
     await vi.waitFor(() => expect(value).toBe(''));
     value = 'Katherine';
+    userEditRevision += 1;
     releaseClear?.();
     expect(await clearing).toMatchObject({
       ok: false,
@@ -1130,6 +1136,7 @@ describe('control interaction registry', () => {
     );
     await vi.waitFor(() => expect(value).toBe('Ada'));
     value = 'Katherine';
+    userEditRevision += 1;
     releaseUndo?.();
     expect(await undoing).toMatchObject({ ok: false, reason: 'undo_failed' });
     expect(value).toBe('Katherine');
@@ -1148,8 +1155,8 @@ describe('control interaction registry', () => {
         value = String(next);
       },
       clear: async () => {
-        value = 'partial';
         await Promise.resolve();
+        value = 'partial';
         return false;
       },
     });

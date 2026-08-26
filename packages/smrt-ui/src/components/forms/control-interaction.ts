@@ -145,6 +145,11 @@ export interface ControlRegistration {
   identity: ControlIdentity;
   metadata: ControlMetadata;
   getValue?: () => unknown;
+  /**
+   * Monotonic revision changed only by direct user edits. Async mutation
+   * rollback preserves a newer user edit when this optional signal changes.
+   */
+  getUserEditRevision?: () => number;
   setValue?: (value: unknown) => void | Promise<void>;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
   clear?: (() => void | Promise<void>) | (() => boolean | Promise<boolean>);
@@ -856,20 +861,14 @@ export function createControlInteractionRegistry(
             }
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
-            let setterSettledAsynchronously = false;
-            let setterOwnedValue: unknown;
+            const userEditRevision = registration.getUserEditRevision?.();
             try {
               const setterResult = registration.setValue?.(nextValue);
-              setterOwnedValue = cloneValue(registration.getValue?.());
-              setterSettledAsynchronously =
-                setterResult !== null &&
-                typeof setterResult === 'object' &&
-                'then' in setterResult;
               await setterResult;
             } catch (error) {
               if (
-                !setterSettledAsynchronously ||
-                valuesEqual(registration.getValue?.(), setterOwnedValue)
+                userEditRevision === undefined ||
+                registration.getUserEditRevision?.() === userEditRevision
               ) {
                 try {
                   await registration.setValue?.(previousValue);
@@ -941,17 +940,11 @@ export function createControlInteractionRegistry(
           case 'clear': {
             const previousValue = cloneValue(registration.getValue?.());
             let clearDecision: boolean | undefined;
-            let clearSettledAsynchronously = false;
-            let clearOwnedValue: unknown;
+            const userEditRevision = registration.getUserEditRevision?.();
             try {
               const pendingDecision = registration.clear
                 ? registration.clear()
                 : registration.setValue?.('');
-              clearOwnedValue = cloneValue(registration.getValue?.());
-              clearSettledAsynchronously =
-                pendingDecision !== null &&
-                typeof pendingDecision === 'object' &&
-                'then' in pendingDecision;
               const decision = await pendingDecision;
               clearDecision =
                 decision === true
@@ -960,15 +953,9 @@ export function createControlInteractionRegistry(
                     ? false
                     : undefined;
             } catch (error) {
-              const currentValue = registration.getValue?.();
               if (
-                !clearSettledAsynchronously ||
-                valuesEqual(currentValue, clearOwnedValue) ||
-                currentValue === '' ||
-                currentValue === null ||
-                currentValue === undefined ||
-                currentValue === false ||
-                (Array.isArray(currentValue) && currentValue.length === 0)
+                userEditRevision === undefined ||
+                registration.getUserEditRevision?.() === userEditRevision
               ) {
                 try {
                   await registration.setValue?.(previousValue);
@@ -990,13 +977,8 @@ export function createControlInteractionRegistry(
                 !(Array.isArray(previousValue) && previousValue.length === 0));
             if (rejected) {
               if (
-                !clearSettledAsynchronously ||
-                valuesEqual(clearedValue, clearOwnedValue) ||
-                clearedValue === '' ||
-                clearedValue === null ||
-                clearedValue === undefined ||
-                clearedValue === false ||
-                (Array.isArray(clearedValue) && clearedValue.length === 0)
+                userEditRevision === undefined ||
+                registration.getUserEditRevision?.() === userEditRevision
               ) {
                 try {
                   await registration.setValue?.(previousValue);
@@ -1021,6 +1003,7 @@ export function createControlInteractionRegistry(
             const undoEntry = history.at(-1);
             if (!undoEntry) throw new Error('nothing_to_undo');
             const currentValue = cloneValue(registration.getValue?.());
+            const userEditRevision = registration.getUserEditRevision?.();
             if (!valuesEqual(currentValue, undoEntry.appliedValue)) {
               throw new Error('staged_value_stale');
             }
@@ -1028,7 +1011,8 @@ export function createControlInteractionRegistry(
               await registration.setValue?.(undoEntry.previousValue);
             } catch (error) {
               if (
-                valuesEqual(registration.getValue?.(), undoEntry.previousValue)
+                userEditRevision === undefined ||
+                registration.getUserEditRevision?.() === userEditRevision
               ) {
                 try {
                   await registration.setValue?.(currentValue);

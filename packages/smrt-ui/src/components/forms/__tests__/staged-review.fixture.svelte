@@ -6,6 +6,7 @@ import type {
 import Form from '../Form.svelte';
 import FormGroup from '../FormGroup.svelte';
 import Input from '../Input.svelte';
+import Slider from '../Slider.svelte';
 
 let {
   registry,
@@ -14,6 +15,7 @@ let {
   $props();
 let displayName = $state('Ada');
 let apiToken = $state('token');
+let volume = $state(25);
 </script>
 
 <Form formId="profile" interactionRegistry={registry} aria-label="Profile form">
@@ -23,5 +25,6 @@ let apiToken = $state('token');
   <FormGroup label="API token" interaction={{ sensitivity: 'secret' }}>
     <Input name="api-token" type="password" bind:value={apiToken} />
   </FormGroup>
+  <Slider name="volume" label="Volume" bind:value={volume} />
   <button type="reset">Reset</button>
 </Form>

@@ -127,6 +127,9 @@ other text pairing clears WCAG AA in both schemes.
   `executeBatch` is additive and optional for injected legacy registries; the
   framework falls back to ordered `execute` calls without weakening the private
   one-shot gesture proof on factory-created registries.
+  Rejecting async custom setters and clear handlers roll back by default;
+  controls that accept concurrent direct edits expose a monotonic
+  `getUserEditRevision()` so rollback preserves newer human input.
 
 ## Gotchas
 

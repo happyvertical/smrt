@@ -230,7 +230,24 @@ async function restoreReviewFocus(
   const fallback = reviewElement?.querySelector<HTMLButtonElement>(
     '.batch-actions button:not(:disabled)',
   );
-  (nextAction ?? fallback ?? originalControl)?.focus();
+  if (nextAction ?? fallback) {
+    (nextAction ?? fallback)?.focus();
+    return;
+  }
+  const focused = await registry.execute(
+    { action: 'focus', identity: removed.identity },
+    { source: 'user' },
+  );
+  if (!focused.ok) {
+    const focusTarget = originalControl?.matches(
+      'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )
+      ? originalControl
+      : originalControl?.querySelector<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        );
+    focusTarget?.focus();
+  }
 }
 
 async function applyOne(
