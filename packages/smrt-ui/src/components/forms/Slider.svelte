@@ -109,7 +109,9 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div class="slider {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div class="slider {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
   {#if label}<div class="slider__header"><label for={resolvedId}>{label}</label><output for={resolvedId}>{formatValue(value)}</output></div>{/if}
   <div class="slider__controls">
     <input bind:this={rangeEl} id={resolvedId} type="range" {name} {min} {max} {step} {disabled} value={value}

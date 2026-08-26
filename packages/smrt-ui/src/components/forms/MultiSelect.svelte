@@ -146,7 +146,9 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="multi-select {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div bind:this={rootEl} class="multi-select {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   <span class="label" id={`${listId}-label`}>{label}</span><button bind:this={triggerEl} id={triggerId} type="button" class="trigger" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${listId}-label ${triggerId}`} onclick={() => open ? closeOptions() : openOptions()} onkeydown={handleTriggerKeydown}>{selectedLabels.length ? selectedLabels.join(', ') : placeholder}</button>
   {#if open}<div id={listId} class="options" role="listbox" tabindex="-1" aria-multiselectable="true" aria-labelledby={`${listId}-label`} onkeydown={handleOptionsKeydown}>{#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" tabindex="-1" aria-selected={values.some((value) => String(value) === String(option.value))} disabled={option.disabled} onclick={() => toggle(option)}><span aria-hidden="true">{values.some((value) => String(value) === String(option.value)) ? '✓' : ''}</span>{option.label}</button>{/each}</div>{/if}
 </div>

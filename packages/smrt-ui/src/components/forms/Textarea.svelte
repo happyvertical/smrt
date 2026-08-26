@@ -122,6 +122,8 @@ export function getElement(): HTMLTextAreaElement | null {
 		class="textarea {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
+		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+		data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
 	{...rest}
 ></textarea>
 

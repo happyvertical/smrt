@@ -385,6 +385,37 @@ describe('control interaction registry', () => {
     expect(JSON.stringify(events)).not.toContain('replacement');
   });
 
+  it('restores the prior proposal when replacement staging throws', async () => {
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      validateValue: (value) => {
+        if (value === 'Katherine') throw new Error('validator_failed');
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const replacement = await registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+    expect(replacement).toMatchObject({
+      ok: false,
+      reason: 'validator_failed',
+    });
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: 'Grace',
+      revision: 1,
+    });
+  });
+
   it('serializes asynchronous proposals so the newest command wins', async () => {
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
@@ -513,6 +544,98 @@ describe('control interaction registry', () => {
     });
     expect(value).toBe('Ada');
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
+  it('keeps staged and undo state when clear or undo is rejected', async () => {
+    let value = 'Ada';
+    let rejectWrites = false;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        if (!rejectWrites) value = String(next);
+      },
+      clear: () => {
+        if (!rejectWrites) value = '';
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    rejectWrites = true;
+    const clear = await executeLocalControlCommand(
+      registry,
+      { action: 'clear', identity },
+      new Event('click'),
+    );
+    expect(clear).toMatchObject({
+      ok: false,
+      reason: 'staged_value_rejected',
+    });
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+
+    rejectWrites = false;
+    await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    rejectWrites = true;
+    const undo = await executeLocalControlCommand(
+      registry,
+      { action: 'undo', identity },
+      new Event('click'),
+    );
+    expect(undo).toMatchObject({
+      ok: false,
+      reason: 'staged_value_rejected',
+    });
+    rejectWrites = false;
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'undo', identity },
+        new Event('click'),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('Ada');
+  });
+
+  it('does not collide subject identities containing separators', async () => {
+    const firstIdentity = {
+      ...identity,
+      subject: { type: 'record:x', id: '1' },
+    };
+    const secondIdentity = {
+      ...identity,
+      subject: { type: 'record', id: 'x:1' },
+    };
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity: firstIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => 'First',
+      setValue: () => undefined,
+    });
+    registry.register({
+      identity: secondIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Second',
+      setValue: () => undefined,
+    });
+    await registry.execute(
+      { action: 'stage', identity: firstIdentity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    expect(registry.list()).toHaveLength(2);
+    expect(registry.get(firstIdentity)?.state.staged?.value).toBe('Grace');
+    expect(registry.get(secondIdentity)?.state.staged).toBeUndefined();
   });
 
   it('runs focus, reveal, and highlight without coupling to a DOM implementation', async () => {

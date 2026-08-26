@@ -113,6 +113,8 @@ useControlRegistration(() => {
   class:checkbox--disabled={disabled}
   data-smrt-control={controlId}
   data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
 >
   <input
     bind:this={inputEl}

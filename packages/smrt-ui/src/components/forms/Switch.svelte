@@ -100,7 +100,9 @@ useControlRegistration(() => {
 });
 </script>
 
-<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
   {#if label && labelPosition === 'left'}<span>{label}</span>{/if}
   <span class="switch__control">
     <input bind:this={inputEl} id={resolvedId} type="checkbox" role="switch" {name} {value} {disabled} {required} checked={checked}

@@ -305,10 +305,12 @@ export async function executeLocalControlBatch(
 }
 
 function identityKey(identity: ControlIdentity): string {
-  const subject = identity.subject
-    ? `${identity.subject.type}:${identity.subject.id}`
-    : '';
-  return `${identity.formId}\u0000${identity.controlId}\u0000${subject}`;
+  return JSON.stringify([
+    identity.formId,
+    identity.controlId,
+    identity.subject?.type ?? null,
+    identity.subject?.id ?? null,
+  ]);
 }
 
 function isMutation(action: ControlCommandAction): boolean {
@@ -675,6 +677,7 @@ export function createControlInteractionRegistry(
                 stagedAt: now(),
                 revision,
               };
+              const previousEntry = staged.get(key);
               staged.set(key, entry);
               let validation: Awaited<ReturnType<typeof validateProposedValue>>;
               try {
@@ -683,7 +686,16 @@ export function createControlInteractionRegistry(
                   command.value,
                 );
               } catch (error) {
-                if (staged.get(key) === entry) staged.delete(key);
+                if (staged.get(key) === entry) {
+                  if (
+                    previousEntry &&
+                    registrations.get(key) === registration
+                  ) {
+                    staged.set(key, previousEntry);
+                  } else {
+                    staged.delete(key);
+                  }
+                }
                 throw error;
               }
               if (
@@ -785,18 +797,35 @@ export function createControlInteractionRegistry(
             break;
           }
           case 'clear': {
-            const history = undo.get(key) ?? [];
-            history.push(registration.getValue?.());
-            undo.set(key, history);
+            const previousValue = cloneValue(registration.getValue?.());
             if (registration.clear) await registration.clear();
             else await registration.setValue?.('');
+            const clearedValue = registration.getValue?.();
+            if (
+              valuesEqual(clearedValue, previousValue) &&
+              previousValue !== '' &&
+              previousValue !== null &&
+              previousValue !== undefined &&
+              previousValue !== false &&
+              !(Array.isArray(previousValue) && previousValue.length === 0)
+            ) {
+              throw new Error('staged_value_rejected');
+            }
+            const history = undo.get(key) ?? [];
+            history.push(previousValue);
+            undo.set(key, history);
             staged.delete(key);
             break;
           }
           case 'undo': {
             const history = undo.get(key) ?? [];
             if (history.length === 0) throw new Error('nothing_to_undo');
-            await registration.setValue?.(history.pop());
+            const previousValue = history.at(-1);
+            await registration.setValue?.(previousValue);
+            if (!valuesEqual(registration.getValue?.(), previousValue)) {
+              throw new Error('staged_value_rejected');
+            }
+            history.pop();
             undo.set(key, history);
             break;
           }

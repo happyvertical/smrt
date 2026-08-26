@@ -107,6 +107,9 @@ Staging remains separate so proposals never change user state before review.
 Custom local review controls can call `executeLocalControlCommand` or
 `executeLocalControlBatch` from their DOM handlers; the registry validates and
 consumes the gesture before authorizing a value-changing command.
+Serialized or programmatic `source: 'user', confirmed: true` input is never
+confirmation. Sensitive and secret values, validation details, failures, and
+events remain redacted from every public surface.
 
 ## DataTable controller
 

@@ -156,7 +156,9 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   <label for={inputId}>{label}</label><input bind:this={inputEl} id={inputId} {name} role="combobox" autocomplete="off" {placeholder} {disabled} {required} value={query}
     aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={() => open = true} oninput={handleInput} onkeydown={handleKeydown} />

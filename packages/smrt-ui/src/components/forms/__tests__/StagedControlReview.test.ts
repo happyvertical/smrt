@@ -104,21 +104,35 @@ describe('StagedControlReview', () => {
 
   it('keeps subject-qualified identities distinct in the review list', async () => {
     const registry = createReviewRegistry();
-    for (const subjectId of ['one', 'two']) {
-      let value = 'Ada';
-      registry.register({
-        identity: {
-          ...identity,
-          subject: { type: 'record', id: subjectId },
-        },
-        metadata: { kind: 'text', label: `Record ${subjectId}` },
-        getValue: () => value,
-        setValue: (next) => {
-          value = String(next);
-        },
-      });
-    }
-    render(Fixture, { props: { registry } });
+    let secondValue = 'Ada';
+    registry.register({
+      identity: {
+        ...identity,
+        subject: { type: 'record', id: 'two' },
+      },
+      metadata: { kind: 'text', label: 'Record two' },
+      getValue: () => secondValue,
+      setValue: (next) => {
+        secondValue = String(next);
+      },
+    });
+    render(Fixture, {
+      props: { registry, subject: { type: 'record', id: 'one' } },
+    });
+    const renderedFirst = screen.getByRole('textbox', {
+      name: 'Display name',
+    });
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { ...identity, subject: { type: 'record', id: 'two' } },
+        value: 'Katherine',
+      },
+      { source: 'agent' },
+    );
+    await waitFor(() =>
+      expect(renderedFirst).not.toHaveAttribute('data-smrt-staged'),
+    );
     await registry.execute(
       {
         action: 'stage',
@@ -127,13 +141,8 @@ describe('StagedControlReview', () => {
       },
       { source: 'agent' },
     );
-    await registry.execute(
-      {
-        action: 'stage',
-        identity: { ...identity, subject: { type: 'record', id: 'two' } },
-        value: 'Katherine',
-      },
-      { source: 'agent' },
+    await waitFor(() =>
+      expect(renderedFirst).toHaveAttribute('data-smrt-staged', 'true'),
     );
 
     expect(screen.getByText('profile/display-name · record:one')).toBeVisible();

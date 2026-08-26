@@ -107,7 +107,9 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="range-slider {className}" class:disabled data-smrt-control={controlId} data-smrt-form={interactionContext?.formId} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'}>
+<div bind:this={rootEl} class="range-slider {className}" class:disabled data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'}>
   {#if label}<div class="range-slider__header"><span>{label}</span><output>{value.min}{unit ?? ''} – {value.max}{unit ?? ''}</output></div>{/if}
   <div class="range-slider__track">
     <input bind:this={minEl} id={minId} type="range" name={name ? `${name}[min]` : undefined} {min} max={value.max} {step} {disabled} value={value.min}

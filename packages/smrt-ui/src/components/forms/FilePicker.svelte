@@ -100,7 +100,10 @@ useControlRegistration(() => {
 });
 </script>
 <label bind:this={rootEl} for={resolvedId} class="file-picker {className}" class:dropzone class:dragging class:disabled
-  data-smrt-control={controlId} data-smrt-form={interactionContext?.formId} ondragenter={(event) => { event.preventDefault(); dragging = true; }}
+  data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
+  ondragenter={(event) => { event.preventDefault(); dragging = true; }}
   ondragover={(event) => event.preventDefault()} ondragleave={() => dragging = false} ondrop={handleDrop}>
   <input bind:this={inputEl} id={resolvedId} type="file" {name} {accept} {multiple} {disabled} {required} onchange={handleChange} {...rest} />
   <span class="label">{label}</span><span class="description">{files.length ? `${files.length} file${files.length === 1 ? '' : 's'} selected` : description}</span>

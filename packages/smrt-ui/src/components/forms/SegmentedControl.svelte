@@ -70,7 +70,9 @@ useControlRegistration(() => {
   };
 });
 </script>
-<div bind:this={rootEl} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" aria-label={label} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div bind:this={rootEl} class="segmented {className}" class:full-width={fullWidth} role="radiogroup" aria-label={label} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#each options as option (option.value)}
     <button type="button" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled}
       tabindex={value === option.value || (value === undefined && option === options[0]) ? 0 : -1}

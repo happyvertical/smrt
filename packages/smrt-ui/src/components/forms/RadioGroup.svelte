@@ -114,7 +114,9 @@ useControlRegistration(() => {
 });
 </script>
 <fieldset bind:this={fieldsetEl} class="radio-group {className}" {disabled}
-  aria-describedby={description ? `${name}-description` : undefined} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+  aria-describedby={description ? `${name}-description` : undefined} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#if label}<legend>{label}{#if required}<span aria-hidden="true"> *</span>{/if}</legend>{/if}
   {#if description}<p id={`${name}-description`} class="description">{description}</p>{/if}
   <div class="options">{@render children()}</div>

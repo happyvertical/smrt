@@ -55,12 +55,12 @@ let drafts = $state<Record<string, string>>({});
 let status = $state('');
 
 const keyOf = (snapshot: ControlSnapshot) =>
-  [
+  JSON.stringify([
     snapshot.identity.formId,
     snapshot.identity.controlId,
-    snapshot.identity.subject?.type ?? '',
-    snapshot.identity.subject?.id ?? '',
-  ].join('\u0000');
+    snapshot.identity.subject?.type ?? null,
+    snapshot.identity.subject?.id ?? null,
+  ]);
 
 function formatValue(value: unknown): string {
   if (value === undefined) return '';
@@ -139,14 +139,25 @@ $effect(() => {
 
 $effect(() => {
   if (!formElement) return;
-  const stagedIds = new Set(
-    snapshots.map((snapshot) => snapshot.identity.controlId),
+  const stagedKeys = new Set(
+    snapshots.map((snapshot) =>
+      JSON.stringify([
+        snapshot.identity.controlId,
+        snapshot.identity.subject?.type ?? null,
+        snapshot.identity.subject?.id ?? null,
+      ]),
+    ),
   );
   const controls = formElement.querySelectorAll<HTMLElement>(
     '[data-smrt-control]',
   );
   for (const control of controls) {
-    if (stagedIds.has(control.dataset.smrtControl ?? '')) {
+    const controlKey = JSON.stringify([
+      control.dataset.smrtControl ?? '',
+      control.dataset.smrtSubjectType ?? null,
+      control.dataset.smrtSubjectId ?? null,
+    ]);
+    if (stagedKeys.has(controlKey)) {
       control.dataset.smrtStaged = 'true';
     } else {
       delete control.dataset.smrtStaged;
