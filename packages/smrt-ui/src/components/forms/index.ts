@@ -40,6 +40,8 @@ export {
   type ControlSubject,
   type ControlValueValidationResult,
   createControlInteractionRegistry,
+  executeLocalControlBatch,
+  executeLocalControlCommand,
 } from './control-interaction.js';
 export {
   type ControlInteractionContextValue,

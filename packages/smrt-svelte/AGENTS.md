@@ -59,6 +59,8 @@ proposals never mutate field bindings directly: they remain staged until a
 human applies or discards them in the form's local review surface. Keep this
 state machine in smrt-ui; smrt-svelte contributes Provider-backed field
 registration and consumes the shared component rather than duplicating it.
+The generated WebMCP form tool proposes registry stages; it never writes or
+submits field values directly.
 
 ```svelte
 <script>

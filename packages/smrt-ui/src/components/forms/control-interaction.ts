@@ -272,7 +272,7 @@ const localGestureBatchExecutors = new WeakMap<
   LocalGestureBatchExecutor
 >();
 
-/** @internal Called only by the framework's local DOM event handlers. */
+/** Execute one value-changing command from a local DOM event handler. */
 export function executeLocalControlCommand(
   registry: ControlInteractionRegistry,
   command: ControlCommand,
@@ -283,7 +283,7 @@ export function executeLocalControlCommand(
   );
 }
 
-/** @internal Ordered best-effort execution from one trusted local gesture. */
+/** Execute an ordered best-effort batch from one local DOM event handler. */
 export async function executeLocalControlBatch(
   registry: ControlInteractionRegistry,
   commands: ControlCommand[],
@@ -378,7 +378,7 @@ function defaultPolicy(
     return { allowed: false, reason: 'human_confirmation_required' };
   }
   if (
-    (command.action === 'apply' || command.action === 'discard') &&
+    ['apply', 'discard', 'clear', 'undo'].includes(command.action) &&
     !localGestureConfirmed
   ) {
     return { allowed: false, reason: 'local_gesture_required' };
@@ -416,6 +416,19 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   }
 }
 
+function redactedFailureReason(reason: string): string {
+  return [
+    'stale_revision',
+    'staged_value_stale',
+    'no_staged_value',
+    'staged_value_invalid',
+    'staged_value_rejected',
+    'nothing_to_undo',
+  ].includes(reason)
+    ? reason
+    : 'command_failed';
+}
+
 async function validateProposedValue(
   registration: ControlRegistration,
   value: unknown,
@@ -442,8 +455,24 @@ export function createControlInteractionRegistry(
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
   const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
+  const internallyQueuedContexts = new WeakSet<ControlCommandContext>();
   const consumedLocalGestureEvents = new WeakSet<Event>();
+  const mutationQueues = new Map<string, Promise<void>>();
   let stagedRevision = 0;
+
+  const enqueueMutation = <T>(key: string, operation: () => Promise<T>) => {
+    const previous = mutationQueues.get(key) ?? Promise.resolve();
+    const pending = previous.catch(() => undefined).then(operation);
+    const settled = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    mutationQueues.set(key, settled);
+    void settled.finally(() => {
+      if (mutationQueues.get(key) === settled) mutationQueues.delete(key);
+    });
+    return pending;
+  };
 
   const emit = (event: Omit<ControlInteractionEvent, 'timestamp'>) => {
     const next = { ...event, timestamp: now() };
@@ -548,6 +577,17 @@ export function createControlInteractionRegistry(
 
     async execute(command, context = { source: 'user', confirmed: true }) {
       const key = identityKey(command.identity);
+      if (
+        isMutation(command.action) &&
+        !internallyQueuedContexts.has(context)
+      ) {
+        const queuedContext: ControlCommandContext = { ...context };
+        internallyQueuedContexts.add(queuedContext);
+        if (locallyConfirmedContexts.has(context)) {
+          locallyConfirmedContexts.add(queuedContext);
+        }
+        return enqueueMutation(key, () => this.execute(command, queuedContext));
+      }
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
       const publicCommand: ControlCommand =
@@ -622,18 +662,38 @@ export function createControlInteractionRegistry(
             break;
           case 'stage':
             stagedRevision += 1;
-            staged.set(key, {
-              value: cloneValue(command.value),
-              baseValue: cloneValue(registration.getValue?.()),
-              provenance: {
-                source: context.source,
-                actorId: context.actorId,
-                sessionId: context.sessionId,
-              },
-              stagedAt: now(),
-              revision: stagedRevision,
-              ...(await validateProposedValue(registration, command.value)),
-            });
+            {
+              const revision = stagedRevision;
+              const entry: InternalStagedEntry = {
+                value: cloneValue(command.value),
+                baseValue: cloneValue(registration.getValue?.()),
+                provenance: {
+                  source: context.source,
+                  actorId: context.actorId,
+                  sessionId: context.sessionId,
+                },
+                stagedAt: now(),
+                revision,
+              };
+              staged.set(key, entry);
+              let validation: Awaited<ReturnType<typeof validateProposedValue>>;
+              try {
+                validation = await validateProposedValue(
+                  registration,
+                  command.value,
+                );
+              } catch (error) {
+                if (staged.get(key) === entry) staged.delete(key);
+                throw error;
+              }
+              if (
+                registrations.get(key) !== registration ||
+                staged.get(key) !== entry
+              ) {
+                throw new Error('stale_revision');
+              }
+              Object.assign(entry, validation);
+            }
             emit({
               type: 'staged',
               identity: command.identity,
@@ -667,6 +727,13 @@ export function createControlInteractionRegistry(
               registration,
               nextValue,
             );
+            if (
+              stagedEntry &&
+              (staged.get(key) !== stagedEntry ||
+                !valuesEqual(stagedEntry.baseValue, registration.getValue?.()))
+            ) {
+              throw new Error('stale_revision');
+            }
             if (proposedValidation.valid === false) {
               if (stagedEntry) Object.assign(stagedEntry, proposedValidation);
               throw new Error(
@@ -679,9 +746,17 @@ export function createControlInteractionRegistry(
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
             await registration.setValue?.(nextValue);
+            if (!valuesEqual(registration.getValue?.(), nextValue)) {
+              throw new Error('staged_value_rejected');
+            }
             const valid = await registration.validate?.();
+            if (!valuesEqual(registration.getValue?.(), nextValue)) {
+              throw new Error('staged_value_stale');
+            }
             if (valid === false) {
-              await registration.setValue?.(previousValue);
+              if (valuesEqual(registration.getValue?.(), nextValue)) {
+                await registration.setValue?.(previousValue);
+              }
               if (stagedEntry) {
                 stagedEntry.valid = false;
                 stagedEntry.validationMessage =
@@ -692,7 +767,9 @@ export function createControlInteractionRegistry(
             }
             history.push(previousValue);
             undo.set(key, history);
-            staged.delete(key);
+            if (!stagedEntry || staged.get(key) === stagedEntry) {
+              staged.delete(key);
+            }
             break;
           }
           case 'discard': {
@@ -734,11 +811,15 @@ export function createControlInteractionRegistry(
         });
         return completed;
       } catch (error) {
+        const errorReason =
+          error instanceof Error ? error.message : 'command_failed';
         const failed = result(
           command,
           false,
           registration,
-          error instanceof Error ? error.message : 'command_failed',
+          redactsValue(registration)
+            ? redactedFailureReason(errorReason)
+            : errorReason,
         );
         emit({
           type: 'command',

@@ -65,7 +65,7 @@ describe('StagedControlReview', () => {
     expect(field).toHaveValue('Katherine');
   });
 
-  it('keeps an invalid proposal staged with accessible validation feedback', async () => {
+  it('lets the human correct an invalid proposal before applying it', async () => {
     const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });
     await registry.execute(
@@ -77,14 +77,70 @@ describe('StagedControlReview', () => {
         'Constraints not satisfied',
       ),
     );
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
-    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
-      'Ada',
+    const field = screen.getByRole('textbox', { name: 'Display name' });
+    expect(field).toHaveValue('Ada');
+    const proposal = screen.getByRole('textbox', {
+      name: 'Edit proposed value for Display name',
+    });
+    await userEvent.type(proposal, 'Grace');
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(field).toHaveValue('Grace'));
+    expect(registry.get(identity)?.state.staged).toBeUndefined();
+  });
+
+  it('keeps invalid entries out of valid-only batch actions', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: '' },
+      { source: 'agent' },
     );
     await userEvent.click(
       screen.getByRole('button', { name: 'Discard valid changes' }),
     );
     expect(registry.get(identity)?.state.staged).toBeDefined();
+  });
+
+  it('keeps subject-qualified identities distinct in the review list', async () => {
+    const registry = createReviewRegistry();
+    for (const subjectId of ['one', 'two']) {
+      let value = 'Ada';
+      registry.register({
+        identity: {
+          ...identity,
+          subject: { type: 'record', id: subjectId },
+        },
+        metadata: { kind: 'text', label: `Record ${subjectId}` },
+        getValue: () => value,
+        setValue: (next) => {
+          value = String(next);
+        },
+      });
+    }
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { ...identity, subject: { type: 'record', id: 'one' } },
+        value: 'Grace',
+      },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { ...identity, subject: { type: 'record', id: 'two' } },
+        value: 'Katherine',
+      },
+      { source: 'agent' },
+    );
+
+    expect(screen.getByText('profile/display-name · record:one')).toBeVisible();
+    expect(screen.getByText('profile/display-name · record:two')).toBeVisible();
+    expect(
+      screen.getAllByRole('textbox', { name: /Edit proposed value/ }),
+    ).toHaveLength(2);
   });
 
   it('rejects secret staging and discards proposals on form reset and unmount', async () => {

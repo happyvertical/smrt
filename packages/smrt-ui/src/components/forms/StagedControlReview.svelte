@@ -55,7 +55,12 @@ let drafts = $state<Record<string, string>>({});
 let status = $state('');
 
 const keyOf = (snapshot: ControlSnapshot) =>
-  `${snapshot.identity.formId}\u0000${snapshot.identity.controlId}`;
+  [
+    snapshot.identity.formId,
+    snapshot.identity.controlId,
+    snapshot.identity.subject?.type ?? '',
+    snapshot.identity.subject?.id ?? '',
+  ].join('\u0000');
 
 function formatValue(value: unknown): string {
   if (value === undefined) return '';
@@ -65,6 +70,13 @@ function formatValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function formatIdentity(snapshot: ControlSnapshot): string {
+  const { formId, controlId, subject } = snapshot.identity;
+  return subject
+    ? `${formId}/${controlId} · ${subject.type}:${subject.id}`
+    : `${formId}/${controlId}`;
 }
 
 function refresh(): void {
@@ -95,7 +107,14 @@ $effect(() => {
   if (!formElement) return;
   const element = formElement;
   const refreshAfterFieldEdit = () => refresh();
-  const discardAfterReset = (event: Event) => {
+  const refreshAfterReset = () => queueMicrotask(refresh);
+  const discardAfterResetGesture = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const resetControl = target.closest<HTMLElement>(
+      'button[type="reset"], input[type="reset"]',
+    );
+    if (!resetControl || !element.contains(resetControl)) return;
     const commands = registry
       .list(formId)
       .filter((snapshot) => snapshot.state.staged)
@@ -108,11 +127,13 @@ $effect(() => {
   };
   element.addEventListener('input', refreshAfterFieldEdit);
   element.addEventListener('change', refreshAfterFieldEdit);
-  element.addEventListener('reset', discardAfterReset);
+  element.addEventListener('reset', refreshAfterReset);
+  element.addEventListener('click', discardAfterResetGesture, true);
   return () => {
     element.removeEventListener('input', refreshAfterFieldEdit);
     element.removeEventListener('change', refreshAfterFieldEdit);
-    element.removeEventListener('reset', discardAfterReset);
+    element.removeEventListener('reset', refreshAfterReset);
+    element.removeEventListener('click', discardAfterResetGesture, true);
   };
 });
 
@@ -251,7 +272,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
         {@const label = snapshot.metadata.label ?? snapshot.identity.controlId}
         <li class:stale={staged?.stale} class:invalid={staged?.valid === false}>
           <div class="proposal-heading">
-            <div><strong>{label}</strong><code>{snapshot.identity.formId}/{snapshot.identity.controlId}</code></div>
+            <div><strong>{label}</strong><code>{formatIdentity(snapshot)}</code></div>
             <span>{text.proposedBy} {staged?.provenance.actorId ?? staged?.provenance.source} · {text.stagedAt} {staged ? new Date(staged.stagedAt).toLocaleString() : ''}</span>
           </div>
           <dl>
@@ -276,7 +297,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
           {#if staged?.stale}<p class="problem" role="alert">{text.stale}</p>{/if}
           {#if staged?.valid === false}<p class="problem" role="alert">{staged.validationMessage ?? text.invalid}</p>{/if}
           <div class="item-actions">
-            <button type="button" disabled={staged?.stale || staged?.valid === false} onclick={(event) => applyOne(snapshot, event)}>{text.apply}</button>
+            <button type="button" disabled={staged?.stale} onclick={(event) => applyOne(snapshot, event)}>{text.apply}</button>
             <button type="button" class="secondary" onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
           </div>
         </li>

@@ -99,10 +99,14 @@ without coupling controls to a transport:
 ```
 
 Controls publish serializable metadata, constraints, options, sensitivity, and
-capabilities. Adapters can focus, reveal, highlight, explain, validate, stage,
-apply, clear, or undo. Agent mutations are denied for secret/read-only controls
-and require explicit confirmation before apply, clear, or undo. Staging is
-separate so the UI can show a proposal before it changes user state.
+capabilities. Adapters can focus, reveal, highlight, explain, validate, and
+stage reviewable proposals. Agents cannot apply, discard, clear, or undo;
+those value-changing actions require a trusted local gesture handled by the
+framework review surface. Secret/read-only controls reject agent mutations.
+Staging remains separate so proposals never change user state before review.
+Custom local review controls can call `executeLocalControlCommand` or
+`executeLocalControlBatch` from their DOM handlers; the registry validates and
+consumes the gesture before authorizing a value-changing command.
 
 ## DataTable controller
 

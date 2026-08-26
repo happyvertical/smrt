@@ -40,7 +40,7 @@ export interface Props {
   llmModel?: LLMModelId;
   /** Called when form is submitted (if provided, prevents native submission) */
   onsubmit?: (data: Record<string, unknown>) => void | Promise<void>;
-  /** Expose this form's submit intent to WebMCP. */
+  /** Let WebMCP propose field changes for local human review. */
   webmcp?: boolean | { name?: string; description?: string };
   /** Collection/model identity used when naming the generated intent. */
   collection?: string;
@@ -379,6 +379,7 @@ function formInputSchema(): Record<string, unknown> {
   const required: string[] = [];
 
   for (const field of fields.values()) {
+    if (field.sensitivity === 'secret' || field.writable === false) continue;
     properties[field.name] = webMcpFieldSchema(field);
     if (field.constraints?.required) required.push(field.name);
   }
@@ -393,13 +394,7 @@ function formInputSchema(): Record<string, unknown> {
 // Provide context to children
 setFormContext(formContext);
 
-async function submitForWebMcp(args: Record<string, unknown>): Promise<string> {
-  // Stage tool arguments through the same field setters used by native input
-  // controls, then run the shared validation and submit path.
-  for (const [name, value] of Object.entries(args)) {
-    fields.get(name)?.setValue(value);
-  }
-
+async function submitCurrentForm(): Promise<string> {
   const data: Record<string, unknown> = {};
   let valid = true;
   for (const [name, field] of fields) {
@@ -425,17 +420,47 @@ async function submitForWebMcp(args: Record<string, unknown>): Promise<string> {
   return 'Submitted successfully';
 }
 
+async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
+  const commands = Object.entries(args).flatMap(([name, value]) => {
+    const field = fields.get(name);
+    if (!field || field.sensitivity === 'secret' || field.writable === false) {
+      return [];
+    }
+    return [
+      {
+        action: 'stage' as const,
+        identity: {
+          formId: resolvedFormId,
+          controlId: field.controlId ?? field.name,
+        },
+        value,
+      },
+    ];
+  });
+  if (commands.length === 0) return 'No reviewable changes provided';
+
+  const batch = await resolvedInteractionRegistry.executeBatch(commands, {
+    source: 'agent',
+    actorId: 'webmcp',
+  });
+  const completed = batch.results.filter((result) => result.ok).length;
+  const rejected = batch.results.length - completed;
+  return rejected === 0
+    ? `Staged ${completed} change${completed === 1 ? '' : 's'} for review`
+    : `Staged ${completed} changes for review; ${rejected} rejected`;
+}
+
 useWebMcpTool(() => {
   if (!webmcp) return null;
   const options = typeof webmcp === 'object' ? webmcp : {};
   return {
-    name: options.name ?? `${collection ?? resolvedFormId}_submit`,
+    name: options.name ?? `${collection ?? resolvedFormId}_stage_changes`,
     description:
       options.description ??
-      `Submit the ${collection ?? name ?? resolvedFormId} form after validating its fields`,
+      `Propose changes to the ${collection ?? name ?? resolvedFormId} form for local human review`,
     inputSchema: formInputSchema(),
     annotations: { readOnlyHint: false },
-    execute: submitForWebMcp,
+    execute: stageForWebMcp,
   };
 });
 
@@ -859,7 +884,7 @@ function handleSubmit(e: Event) {
   // This allows native form submission for SvelteKit form actions
   if (onsubmit) {
     e.preventDefault();
-    void submitForWebMcp({}).catch((error) => {
+    void submitCurrentForm().catch((error) => {
       logger.error('Form submit failed', { error });
     });
   }

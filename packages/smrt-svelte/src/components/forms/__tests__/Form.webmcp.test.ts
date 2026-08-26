@@ -1,4 +1,4 @@
-import { render } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -27,8 +27,8 @@ afterEach(() => {
   delete document.modelContext;
 });
 
-describe('Form WebMCP submit intent', () => {
-  it('registers a field-derived tool and dispatches validation + submit', async () => {
+describe('Form WebMCP staged-edit intent', () => {
+  it('registers a field-derived tool and stages without mutating or submitting', async () => {
     const registered: Array<{
       name: string;
       inputSchema: Record<string, unknown>;
@@ -49,20 +49,23 @@ describe('Form WebMCP submit intent', () => {
       type: 'object',
       properties: { fullname: { type: 'string' }, age: { type: 'number' } },
     });
-    expect(registered[0].name).toContain('submit');
+    expect(registered[0].name).toContain('stage_changes');
 
     const result = await registered[0].execute({
       fullname: 'Ada Lovelace',
       age: 36,
     });
-    expect(result).toBe('Submitted successfully');
-    expect(onsubmit).toHaveBeenCalledWith({
-      fullname: 'Ada Lovelace',
-      age: 36,
-    });
+    expect(result).toBe('Staged 2 changes for review');
+    expect(onsubmit).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('region', { name: 'Review proposed changes' }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue('');
   });
 
-  it('publishes required and numeric constraints and validates them before submit', async () => {
+  it('publishes constraints and leaves validation outcomes in the review workflow', async () => {
     const registered: Array<{
       inputSchema: Record<string, unknown>;
       execute: (args: Record<string, unknown>) => Promise<string>;
@@ -98,16 +101,15 @@ describe('Form WebMCP submit intent', () => {
       maximum: 65,
     });
 
-    expect(await registered[0].execute({ age: 17 })).toBe('Validation failed');
-    expect(await registered[0].execute({ fullname: 'Ada', age: 66 })).toBe(
-      'Validation failed',
+    expect(await registered[0].execute({ age: 17 })).toBe(
+      'Staged 1 change for review',
     );
     expect(onsubmit).not.toHaveBeenCalled();
 
     expect(await registered[0].execute({ fullname: 'Ada', age: 36 })).toBe(
-      'Submitted successfully',
+      'Staged 2 changes for review',
     );
-    expect(onsubmit).toHaveBeenCalledWith({ fullname: 'Ada', age: 36 });
+    expect(onsubmit).not.toHaveBeenCalled();
   });
 
   it('keeps the browser path a no-op without WebMCP', async () => {
@@ -177,16 +179,10 @@ describe('Form WebMCP submit intent', () => {
         country: 'CA',
       },
     };
-    expect(
-      await registered[0].execute({
-        ...values,
-        address: {},
-      }),
-    ).toBe('Validation failed');
+    expect(await registered[0].execute(values)).toBe(
+      'Staged 3 changes for review',
+    );
     expect(onsubmit).not.toHaveBeenCalled();
-
-    expect(await registered[0].execute(values)).toBe('Submitted successfully');
-    expect(onsubmit).toHaveBeenCalledWith(values);
   });
 
   it('limits the address schema and payload to configured fields', async () => {
@@ -229,8 +225,10 @@ describe('Form WebMCP submit intent', () => {
       dates: { startDate: '2026-01-01', endDate: '2026-01-02' },
       address: { city: 'Edmonton', country: 'CA' },
     };
-    expect(await registered[0].execute(values)).toBe('Submitted successfully');
-    expect(onsubmit).toHaveBeenCalledWith(values);
+    expect(await registered[0].execute(values)).toBe(
+      'Staged 3 changes for review',
+    );
+    expect(onsubmit).not.toHaveBeenCalled();
   });
 
   it('allows partial payloads for optional structured fields', async () => {
@@ -264,8 +262,8 @@ describe('Form WebMCP submit intent', () => {
       address: { city: 'Edmonton' },
     };
     expect(await registered[0].execute(partialValues)).toBe(
-      'Submitted successfully',
+      'Staged 3 changes for review',
     );
-    expect(onsubmit).toHaveBeenCalledTimes(1);
+    expect(onsubmit).not.toHaveBeenCalled();
   });
 });

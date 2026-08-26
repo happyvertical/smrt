@@ -115,9 +115,10 @@ other text pairing clears WCAG AA in both schemes.
 - Agent-originated form values remain proposals: the registry records their
   provenance, timestamp, and revision, while `StagedControlReview` is the shared
   review/apply surface mounted by both base and rich Forms. Agents can stage but
-  cannot self-confirm; only a local human handler submits confirmed apply or
-  discard commands after the registry validates a trusted DOM gesture. Serialized
-  or programmatic `source: 'user', confirmed: true` input is not confirmation.
+  cannot self-confirm; only a local human handler submits confirmed apply,
+  discard, clear, or undo commands after the registry validates a trusted DOM
+  gesture. Serialized or programmatic `source: 'user', confirmed: true` input is
+  not confirmation.
   Secret controls never accept staging, and sensitive/secret
   values stay redacted in snapshots, events, policy callbacks, and review UI.
   Batch execution is ordered best-effort and returns one result per command;
