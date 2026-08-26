@@ -131,7 +131,7 @@ describe('Provider WebMCP UI registry context', () => {
     view.unmount();
   });
 
-  it('does not clobber an existing shared interaction identity', async () => {
+  it('retries a shared identity after the existing registration unmounts', async () => {
     const providerRegistry = createControlInteractionRegistry();
     const unregisterExisting = providerRegistry.register({
       identity: { formId: 'shared-form', controlId: 'shared-name' },
@@ -152,14 +152,55 @@ describe('Provider WebMCP UI registry context', () => {
         controlId: 'shared-name',
       })?.state.value,
     ).toBe('existing value');
+    unregisterExisting();
+    await tick();
+    expect(
+      providerRegistry.get({
+        formId: 'shared-form',
+        controlId: 'shared-name',
+      })?.metadata.label,
+    ).toBe('Shared name');
     view.unmount();
     expect(
       providerRegistry.get({
         formId: 'shared-form',
         controlId: 'shared-name',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('recovers after its shared identity is displaced and removed', async () => {
+    const providerRegistry = createControlInteractionRegistry();
+    const view = render(Fixture, {
+      props: {
+        providerRegistry,
+        explicitRegistry: createControlInteractionRegistry(),
+      },
+    });
+    await tick();
+
+    const unregisterReplacement = providerRegistry.register({
+      identity: { formId: 'shared-form', controlId: 'shared-name' },
+      metadata: { kind: 'text', label: 'Replacement' },
+      getValue: () => 'replacement value',
+    });
+    await tick();
+    expect(
+      providerRegistry.get({
+        formId: 'shared-form',
+        controlId: 'shared-name',
       })?.state.value,
-    ).toBe('existing value');
-    unregisterExisting();
+    ).toBe('replacement value');
+
+    unregisterReplacement();
+    await tick();
+    expect(
+      providerRegistry.get({
+        formId: 'shared-form',
+        controlId: 'shared-name',
+      })?.metadata.label,
+    ).toBe('Shared name');
+    view.unmount();
   });
 
   it('contains duplicate Provider prefixes without crashing the app', async () => {

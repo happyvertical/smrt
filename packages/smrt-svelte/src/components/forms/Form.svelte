@@ -154,14 +154,14 @@ function registerInteraction(
   registry: ControlInteractionRegistry,
   currentFormId: string,
   field: FieldDefinition,
-): () => void {
+): (() => void) | undefined {
   const identity = {
     formId: currentFormId,
     controlId: field.controlId ?? field.name,
   };
   if (registry.get(identity)) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
-    return () => {};
+    return undefined;
   }
   return registry.register({
     identity,
@@ -187,10 +187,22 @@ function registerInteraction(
   });
 }
 
+let interactionRegistryRevision = $state(0);
+
+$effect(() => {
+  const registry = resolvedInteractionRegistry;
+  return registry.subscribe((event) => {
+    if (event.type === 'registered' || event.type === 'unregistered') {
+      interactionRegistryRevision += 1;
+    }
+  });
+});
+
 $effect(() => {
   const registry = resolvedInteractionRegistry;
   const currentFormId = resolvedFormId;
   const currentFields = new Map(fields);
+  void interactionRegistryRevision;
   if (
     activeInteractionRegistry !== registry ||
     activeInteractionFormId !== currentFormId
@@ -203,16 +215,25 @@ $effect(() => {
     activeInteractionFormId = currentFormId;
   }
   for (const [name, registration] of interactionDisposers) {
-    if (currentFields.get(name) !== registration.field) {
+    const identity = {
+      formId: currentFormId,
+      controlId: registration.field.controlId ?? registration.field.name,
+    };
+    if (
+      currentFields.get(name) !== registration.field ||
+      !registry.get(identity)
+    ) {
       registration.dispose();
       interactionDisposers.delete(name);
     }
   }
   for (const [name, field] of currentFields) {
     if (interactionDisposers.has(name)) continue;
+    const dispose = registerInteraction(registry, currentFormId, field);
+    if (!dispose) continue;
     interactionDisposers.set(name, {
       field,
-      dispose: registerInteraction(registry, currentFormId, field),
+      dispose,
     });
   }
 });
