@@ -154,6 +154,51 @@ export type ContentStatusFieldsProps = ComponentProps<
 >;
 export type ContentTitleFieldProps = ComponentProps<typeof ContentTitleField>;
 export type ContentListProps = ComponentProps<typeof ContentList>;
+// Shared content-list adapter: columns, rows, filters, and the data surface
+// descriptor every ContentList presentation is built from.
+export {
+  applyContentListFilter,
+  buildContentListColumns,
+  buildContentListSurfaceDescriptor,
+  CONTENT_LIST_ACTIONS_COLUMN_ID,
+  CONTENT_LIST_COLUMN_IDS,
+  CONTENT_LIST_HIDDEN_COLUMN_IDS,
+  CONTENT_LIST_ROW_KEY,
+  CONTENT_LIST_SCHEMA_VERSION,
+  CONTENT_LIST_SELECTION_COLUMN_ID,
+  CONTENT_LIST_STATUS_FILTER_ID,
+  CONTENT_LIST_SURFACE_ID,
+  CONTENT_LIST_TABLE_COLUMN_IDS,
+  CONTENT_LIST_TYPE_FILTER_ID,
+  CONTENT_LIST_VISIBLE_COLUMN_IDS,
+  type ContentListActionId,
+  type ContentListActionOptions,
+  type ContentListColumnId,
+  type ContentListColumnLabels,
+  type ContentListControllerOptions,
+  type ContentListDataSurface,
+  type ContentListRow,
+  type ContentListSurfaceDescriptorOptions,
+  type ContentListViewMode,
+  contentListFilters,
+  contentListRowActions,
+  contentStateVariant,
+  contentStatusVariant,
+  contentTypeLabel,
+  createContentListController,
+  formatContentListDate,
+  isContentListFilterExactly,
+  normalizeContentToken,
+  normalizeContentType,
+  paginateContentListRows,
+  readContentListFilter,
+  resolveContentHref,
+  resolveSelectedContentListRows,
+  resolveSelectedContents,
+  selectableContentListRowIds,
+  selectContentListRows,
+  toContentListRows,
+} from './content-list-controller.js';
 export type ContentContributionFormProps = ComponentProps<
   typeof ContentContributionForm
 >;
