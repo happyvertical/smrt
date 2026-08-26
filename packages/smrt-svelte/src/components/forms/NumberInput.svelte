@@ -61,6 +61,11 @@ function numberIsInRange(candidate: number | null): boolean {
   if (max !== undefined && candidate > max) return false;
   return true;
 }
+function numberMatchesStep(candidate: number): boolean {
+  if (!Number.isFinite(step) || step <= 0) return true;
+  const offset = (candidate - (min ?? 0)) / step;
+  return Math.abs(offset - Math.round(offset)) <= 1e-9;
+}
 const isInRange = $derived(numberIsInRange(value));
 const showInvalid = $derived(value !== null && !isInRange);
 
@@ -189,7 +194,8 @@ onMount(() => {
         return (
           proposed !== null &&
           Number.isFinite(proposed) &&
-          numberIsInRange(proposed)
+          numberIsInRange(proposed) &&
+          numberMatchesStep(proposed)
         );
       },
       validate: () =>

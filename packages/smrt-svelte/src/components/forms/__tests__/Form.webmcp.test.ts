@@ -100,7 +100,7 @@ describe('Form WebMCP staged-edit intent', () => {
     );
   });
 
-  it('rejects non-finite rich numeric proposals before mutation callbacks run', async () => {
+  it('rejects invalid rich numeric proposals before mutation callbacks run', async () => {
     const numberChanged = vi.fn();
     const measurementChanged = vi.fn();
     const registry = createControlInteractionRegistry({
@@ -110,12 +110,14 @@ describe('Form WebMCP staged-edit intent', () => {
       props: {
         interactionRegistry: registry,
         onnumberchange: numberChanged,
+        ageStep: 2,
       },
     });
     render(FormWithStructuredFields, {
       props: {
         interactionRegistry: registry,
         onmeasurementchange: measurementChanged,
+        measurementStep: 2,
       },
     });
     await tick();
@@ -123,6 +125,23 @@ describe('Form WebMCP staged-edit intent', () => {
       .list()
       .find((snapshot) => snapshot.identity.controlId === 'age')?.identity;
     if (!ageIdentity) throw new Error('age control was not registered');
+    const measurementIdentity = {
+      formId: 'structured-fields',
+      controlId: 'measurement',
+    };
+    const applyStaged = () =>
+      executeLocalControlBatch(
+        registry,
+        registry
+          .list()
+          .filter((snapshot) => snapshot.state.staged)
+          .map((snapshot) => ({
+            action: 'apply' as const,
+            identity: snapshot.identity,
+            revision: snapshot.state.staged?.revision,
+          })),
+        new Event('click'),
+      );
 
     await registry.execute(
       {
@@ -135,29 +154,43 @@ describe('Form WebMCP staged-edit intent', () => {
     await registry.execute(
       {
         action: 'stage',
-        identity: {
-          formId: 'structured-fields',
-          controlId: 'measurement',
-        },
+        identity: measurementIdentity,
         value: { value: Number.POSITIVE_INFINITY, unit: 'ft' },
       },
       { source: 'agent' },
     );
 
-    const results = await executeLocalControlBatch(
-      registry,
-      registry
-        .list()
-        .filter((snapshot) => snapshot.state.staged)
-        .map((snapshot) => ({
-          action: 'apply' as const,
-          identity: snapshot.identity,
-          revision: snapshot.state.staged?.revision,
-        })),
-      new Event('click'),
-    );
+    const results = await applyStaged();
     expect(results.results).toHaveLength(2);
     expect(results.results.every((result) => !result.ok)).toBe(true);
+
+    await registry.execute(
+      { action: 'stage', identity: ageIdentity, value: 3 },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: measurementIdentity,
+        value: { value: 3, unit: 'ft' },
+      },
+      { source: 'agent' },
+    );
+    expect((await applyStaged()).results.every((result) => !result.ok)).toBe(
+      true,
+    );
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: measurementIdentity,
+        value: { value: 2, unit: 'constructor' },
+      },
+      { source: 'agent' },
+    );
+    expect((await applyStaged()).results.every((result) => !result.ok)).toBe(
+      true,
+    );
     expect(numberChanged).not.toHaveBeenCalled();
     expect(measurementChanged).not.toHaveBeenCalled();
   });

@@ -27,6 +27,7 @@ let {
   ageRequired = false,
   ageMin = undefined,
   ageMax = undefined,
+  ageStep = undefined,
   interactionRegistry = undefined,
   onnumberchange = undefined,
 }: {
@@ -47,6 +48,7 @@ let {
   ageRequired?: boolean;
   ageMin?: number;
   ageMax?: number;
+  ageStep?: number;
   interactionRegistry?: ControlInteractionRegistry;
   onnumberchange?: (value: number | null) => void;
 } = $props();
@@ -82,6 +84,7 @@ function mutateSubject() {
 			required={ageRequired}
 			min={ageMin}
 			max={ageMax}
+			step={ageStep}
 			onchange={onnumberchange}
 			bind:value={numberValue}
 		/>

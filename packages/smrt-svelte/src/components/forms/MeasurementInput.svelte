@@ -99,6 +99,11 @@ function measurementIsInRange(candidate: number | null): boolean {
   if (max !== undefined && candidate > max) return false;
   return true;
 }
+function measurementMatchesStep(candidate: number): boolean {
+  if (!Number.isFinite(step) || step <= 0) return true;
+  const offset = (candidate - (min ?? 0)) / step;
+  return Math.abs(offset - Math.round(offset)) <= 1e-9;
+}
 const isInRange = $derived(measurementIsInRange(value));
 const showInvalid = $derived((value !== null && !isInRange) || !!error);
 
@@ -326,8 +331,9 @@ onMount(() => {
         return (
           proposed !== null &&
           Number.isFinite(proposed.value) &&
-          proposed.unit in unitLabels &&
-          measurementIsInRange(proposed.value)
+          Object.hasOwn(unitLabels, proposed.unit) &&
+          measurementIsInRange(proposed.value) &&
+          measurementMatchesStep(proposed.value)
         );
       },
       validate: () =>

@@ -14,6 +14,7 @@ let {
   fieldsetDisabled = false,
   onmeasurementchange = undefined,
   ondateschange = undefined,
+  measurementStep = undefined,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -25,6 +26,7 @@ let {
   fieldsetDisabled?: boolean;
   onmeasurementchange?: (value: { value: number; unit: string } | null) => void;
   ondateschange?: (value: { startDate: string; endDate: string }) => void;
+  measurementStep?: number;
 } = $props();
 </script>
 
@@ -34,6 +36,7 @@ let {
 		name="measurement"
 		label="Measurement"
 		required={structuredRequired}
+		step={measurementStep}
 		onchange={onmeasurementchange}
 	/>
 	<DateRangeInput
