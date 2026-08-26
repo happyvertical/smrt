@@ -949,15 +949,45 @@ describe('SvelteKit Route Generator', () => {
                 isStatic: true,
                 isPublic: true,
               },
+              searchFacts: {
+                name: 'searchFacts',
+                parameters: [
+                  { name: 'query', type: 'string' },
+                  { name: 'limit', type: 'number' },
+                ],
+                returnType: 'Promise<any>',
+                isStatic: true,
+                isPublic: true,
+              },
+              searchReserved: {
+                name: 'searchReserved',
+                parameters: [
+                  { name: '__smrt_options', type: 'string' },
+                  { name: 'query', type: 'string' },
+                ],
+                returnType: 'Promise<any>',
+                isStatic: true,
+                isPublic: true,
+              },
             },
             decoratorConfig: {
               api: {
-                include: ['browseFacts'],
+                include: ['browseFacts', 'searchFacts', 'searchReserved'],
                 routes: {
                   browseFacts: {
                     scope: 'collection',
                     method: 'GET',
                     path: 'facts',
+                  },
+                  searchFacts: {
+                    scope: 'collection',
+                    method: 'GET',
+                    path: 'search-facts',
+                  },
+                  searchReserved: {
+                    scope: 'collection',
+                    method: 'GET',
+                    path: 'search-reserved',
                   },
                 },
               },
@@ -995,6 +1025,34 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain("ObjectRegistry.getClass('Document')");
       expect(content).toContain('await ClassRef.browseFacts(options)');
       expect(content).not.toContain('params.id');
+
+      const searchFactsRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('documents/search-facts/+server.ts'),
+        );
+      expect(searchFactsRoute).toBeDefined();
+      const searchContent = searchFactsRoute?.[1] as string;
+      expect(searchContent).toContain(
+        'new URL(request.url).searchParams.entries(),',
+      );
+      expect(searchContent).toContain(
+        'await ClassRef.searchFacts(options.query, options.limit)',
+      );
+
+      const reservedRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('documents/search-reserved/+server.ts'),
+        );
+      expect(reservedRoute).toBeDefined();
+      const reservedContent = reservedRoute?.[1] as string;
+      expect(reservedContent).toContain(
+        'new URL(request.url).searchParams.entries(),',
+      );
+      expect(reservedContent).toContain(
+        'await ClassRef.searchReserved(options.__smrt_options, options.query)',
+      );
     });
 
     it('emits generated route handlers without explicit any (#1656)', async () => {

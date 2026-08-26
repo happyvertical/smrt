@@ -588,6 +588,44 @@ describe('canonical WebMCP tool definitions (#2518)', () => {
     });
   });
 
+  it('publishes dynamic route inputs alongside a custom options bag', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      methods: {
+        preview: publicMethod('preview', {
+          parameters: [{ name: 'options', type: 'object', optional: true }],
+        }),
+      },
+      decoratorConfig: {
+        api: {
+          include: ['preview'],
+          routes: {
+            preview: {
+              method: 'GET',
+              path: 'preview/[batchId]',
+            },
+          },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+
+    const [definition] = buildWebMcpToolDefinitions(manifest(product));
+
+    expect(definition?.route).toMatchObject({
+      method: 'GET',
+      path: ['preview', '[batchId]'],
+      optionsBag: true,
+    });
+    expect(definition?.inputSchema).toMatchObject({
+      properties: {
+        options: expect.any(Object),
+        batchId: { type: 'string' },
+      },
+      required: ['id', 'batchId'],
+    });
+  });
+
   it('matches the last emitted collection-class route owner on a shared action', () => {
     const product = obj({
       className: 'Product',

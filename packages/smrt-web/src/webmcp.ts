@@ -10,21 +10,27 @@
  * policy #1540) are the security boundary — nothing is re-implemented here.
  *
  * Framework-agnostic: this module imports no UI framework. `document.modelContext`
- * is a browser global, not a dependency. Mutation actions use the same
- * optimistic/invalidation path as page code through `createSmrtCollection`.
+ * is a browser global, not a dependency. Legacy list-backed mutations use the
+ * same optimistic path as page code through `createSmrtCollection`; canonical
+ * tool-only definitions execute through REST fetchers and invalidate any
+ * materialized sibling caches through the host's shared `SmrtWebClient`.
  */
 
 import {
   createDefinitionFetchers,
   createSmrtCollection,
+  invalidateSmrtWebCollections,
   newLocalId,
   type SmrtCrudFetchers,
   type SmrtWebClient,
   type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
   type SmrtWebTransaction,
+  throwIfSmrtWebError,
   unwrapItemResult,
   unwrapListResult,
+  validateSmrtWebClient,
+  type WebMcpToolDefinition,
   type WebToolDescriptor,
 } from './index.js';
 import {
@@ -82,6 +88,14 @@ export interface RegisterWebMcpToolsOptions {
   resolveFetchers?: (
     definition: SmrtWebCollectionDefinition,
   ) => SmrtCrudFetchers;
+  /**
+   * Override direct REST fetchers for a canonical tool-only definition.
+   * Fetchers are optional because a get-only or custom-action-only model does
+   * not have a list or create route.
+   */
+  resolveToolFetchers?: (
+    definition: WebMcpToolDefinition,
+  ) => Partial<SmrtCrudFetchers>;
   /** Predicate to include/exclude individual tools (e.g. reads-only surfaces). */
   filter?: (
     definition: SmrtWebCollectionDefinition,
@@ -89,7 +103,14 @@ export interface RegisterWebMcpToolsOptions {
       SmrtWebCollectionDefinition['toolDescriptors']
     >[number],
   ) => boolean;
+  /** Predicate for canonical per-tool definitions. */
+  filterTool?: (definition: WebMcpToolDefinition) => boolean;
 }
+
+/** Accepted legacy collection definitions and canonical per-tool definitions. */
+export type WebMcpRegistrationDefinition =
+  | SmrtWebCollectionDefinition
+  | WebMcpToolDefinition;
 
 /**
  * Register every collection's generated tool descriptors with WebMCP.
@@ -98,13 +119,14 @@ export interface RegisterWebMcpToolsOptions {
  * browser without WebMCP the call is a no-op and the disposer is inert.
  */
 export function registerWebMcpTools(
-  definitions: SmrtWebCollectionDefinition[],
+  definitions: readonly WebMcpRegistrationDefinition[],
   options: RegisterWebMcpToolsOptions = {},
 ): () => void {
   const ctx = getModelContext();
   if (!ctx) return () => {};
 
   const basePath = options.basePath ?? '/api/v1';
+  const client = options.client;
   // ONE controller deregisters every tool this call registers: WebMCP removes a
   // tool when the signal it was registered with aborts, so the returned disposer
   // simply aborts. Idempotent — a second call is a harmless no-op.
@@ -113,48 +135,12 @@ export function registerWebMcpTools(
     SmrtWebCollectionDefinition,
     SmrtWebCollection<Record<string, unknown>>
   >();
-
-  for (const definition of definitions) {
-    const descriptors = definition.toolDescriptors;
-    if (!descriptors || descriptors.length === 0) continue;
-
-    const fetchers = options.resolveFetchers
-      ? options.resolveFetchers(definition)
-      : createDefinitionFetchers(definition, basePath, options.fetchFn);
-    const collection = createSmrtCollection(definition, {
-      fetchers,
-      basePath,
-      fetchFn: options.fetchFn,
-      ...(options.client ? { client: options.client } : {}),
-      ...(options.scope ? { scope: options.scope } : {}),
-    }) as SmrtWebCollection<Record<string, unknown>>;
-    collections.set(definition, collection);
-
-    for (const descriptor of descriptors) {
-      if (options.filter && !options.filter(definition, descriptor)) continue;
-
-      ctx.registerTool(
-        {
-          name: descriptor.name,
-          description: descriptor.description,
-          inputSchema: descriptor.inputSchema,
-          annotations: { readOnlyHint: descriptor.readOnly },
-          execute: (args) =>
-            dispatch(
-              fetchers,
-              collection,
-              definition,
-              descriptor.action,
-              descriptor.route,
-              args ?? {},
-            ),
-        },
-        { signal: controller.signal },
-      );
-    }
-  }
-
-  return () => {
+  const registeredNames = new Set<string>();
+  let clientValidated = false;
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
     controller.abort();
     for (const collection of collections.values()) {
       // Disposal is intentionally synchronous for WebMCP callers, but cleanup
@@ -164,6 +150,109 @@ export function registerWebMcpTools(
       void collection.cleanup().catch(() => undefined);
     }
   };
+
+  try {
+    // Prefer legacy collection-backed definitions regardless of input order.
+    // Their optimistic mutation and cache behavior is the established path;
+    // canonical entries for the same tool name are duplicate transport data.
+    for (const definition of definitions) {
+      if (isCanonicalToolDefinition(definition)) continue;
+      const descriptors = (definition.toolDescriptors ?? []).filter(
+        (descriptor) =>
+          !registeredNames.has(descriptor.name) &&
+          (!options.filter || options.filter(definition, descriptor)),
+      );
+      if (descriptors.length === 0) continue;
+
+      const fetchers = options.resolveFetchers
+        ? options.resolveFetchers(definition)
+        : createDefinitionFetchers(definition, basePath, options.fetchFn);
+      const collection = createSmrtCollection(definition, {
+        fetchers,
+        basePath,
+        fetchFn: options.fetchFn,
+        ...(client ? { client } : {}),
+        ...(options.scope ? { scope: options.scope } : {}),
+      }) as SmrtWebCollection<Record<string, unknown>>;
+      collections.set(definition, collection);
+
+      for (const descriptor of descriptors) {
+        ctx.registerTool(
+          {
+            name: descriptor.name,
+            description: descriptor.description,
+            inputSchema: descriptor.inputSchema,
+            annotations: { readOnlyHint: descriptor.readOnly },
+            execute: (args) =>
+              dispatchCollection(
+                fetchers,
+                collection,
+                definition,
+                descriptor.action,
+                descriptor.route,
+                args ?? {},
+              ),
+          },
+          { signal: controller.signal },
+        );
+        registeredNames.add(descriptor.name);
+      }
+    }
+
+    for (const definition of definitions) {
+      if (!isCanonicalToolDefinition(definition)) continue;
+      if (registeredNames.has(definition.name)) continue;
+      // A legacy collection filter may inspect fields that canonical per-tool
+      // definitions deliberately do not carry. Never fabricate incomplete
+      // metadata and risk a fail-open policy decision: hosts mixing canonical
+      // definitions with the legacy filter must provide the explicit tool
+      // predicate as well.
+      if (options.filter && !options.filterTool) {
+        throw new Error(
+          '[smrt-web] canonical WebMCP definitions require filterTool when filter is configured',
+        );
+      }
+      if (options.filterTool && !options.filterTool(definition)) {
+        continue;
+      }
+      if (!definition.readOnly && client && !clientValidated) {
+        validateSmrtWebClient(client);
+        clientValidated = true;
+      }
+      const fetchers = options.resolveToolFetchers
+        ? options.resolveToolFetchers(definition)
+        : createDefinitionFetchers(
+            { name: definition.collection, endpoint: definition.endpoint },
+            basePath,
+            options.fetchFn,
+          );
+      ctx.registerTool(
+        {
+          name: definition.name,
+          description: definition.description,
+          inputSchema: definition.inputSchema,
+          annotations: { readOnlyHint: definition.readOnly },
+          execute: (args) =>
+            dispatchDirect(fetchers, definition, args ?? {}, client),
+        },
+        { signal: controller.signal },
+      );
+      registeredNames.add(definition.name);
+    }
+  } catch (error) {
+    // Abort removes every tool registered with this call. Collection cleanup is
+    // best-effort async but all handles are detached synchronously first.
+    dispose();
+    throw error;
+  }
+
+  return dispose;
+}
+
+function isCanonicalToolDefinition(
+  definition: WebMcpRegistrationDefinition,
+): definition is WebMcpToolDefinition {
+  return 'collection' in definition && 'readOnly' in definition;
 }
 
 /** Require and return a string `id` from tool args, or throw a clear error. */
@@ -204,7 +293,7 @@ function listParams(args: Record<string, unknown>): Record<string, unknown> {
  * normalization ({@link unwrapListResult} / {@link unwrapItemResult}), so
  * `{ error }` bodies surface as thrown `SmrtWebRequestError`s the agent sees.
  */
-async function dispatch(
+async function dispatchCollection(
   fetchers: SmrtCrudFetchers,
   collection: SmrtWebCollection<Record<string, unknown>>,
   definition: SmrtWebCollectionDefinition,
@@ -280,6 +369,87 @@ async function dispatch(
       }
       return JSON.stringify(await collection.action(action, args, route));
   }
+}
+
+/** Execute a canonical definition without constructing a client collection. */
+async function dispatchDirect(
+  fetchers: Partial<SmrtCrudFetchers>,
+  definition: WebMcpToolDefinition,
+  args: Record<string, unknown>,
+  client?: SmrtWebClient,
+): Promise<string> {
+  let result: unknown;
+  switch (definition.action) {
+    case 'list':
+      if (!fetchers.list) {
+        throw new Error(`${definition.collection} has no list action`);
+      }
+      result = unwrapListResult(
+        await fetchers.list(listParams(args)),
+        definition.collection,
+      );
+      break;
+    case 'get':
+      if (!fetchers.get) {
+        throw new Error(`${definition.collection} has no get action`);
+      }
+      result = unwrapItemResult(
+        await fetchers.get(requireIdentifier(args)),
+        `get(${definition.collection})`,
+      );
+      break;
+    case 'create':
+      if (!fetchers.create) {
+        throw new Error(`${definition.collection} has no create action`);
+      }
+      result = unwrapItemResult(
+        await fetchers.create(args),
+        `create(${definition.collection})`,
+      );
+      break;
+    case 'update': {
+      if (!fetchers.update) {
+        throw new Error(`${definition.collection} has no update action`);
+      }
+      const id = requireId(args, 'update');
+      const { id: _id, ...body } = args;
+      result = unwrapItemResult(
+        await fetchers.update(id, body),
+        `update(${definition.collection})`,
+      );
+      break;
+    }
+    case 'delete': {
+      if (!fetchers.delete) {
+        throw new Error(`${definition.collection} has no delete action`);
+      }
+      const id = requireId(args, 'delete');
+      const deleteResult = await fetchers.delete(id);
+      throwIfSmrtWebError(deleteResult, `delete(${definition.collection})`);
+      result = { success: true, id };
+      break;
+    }
+    default:
+      if (!fetchers.custom) {
+        throw new Error(
+          `${definition.collection} has no custom action fetcher`,
+        );
+      }
+      result = throwIfSmrtWebError(
+        await fetchers.custom(definition.action, args, definition.route),
+        `${definition.action}(${definition.collection})`,
+      );
+  }
+
+  if (!definition.readOnly && client) {
+    invalidateSmrtWebCollections(client, [
+      definition.collection,
+      ...definition.relationships.map(
+        (relationship) => relationship.relatedCollection,
+      ),
+    ]);
+  }
+  return JSON.stringify(result);
 }
 
 /** Await the shared collection mutation lifecycle and return its server value. */

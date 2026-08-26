@@ -24,10 +24,20 @@ import { APIGenerator } from './rest';
 @smrt({
   api: {
     public: true,
-    include: ['create', 'list', 'get', 'quote', 'inspect', 'ping', 'refuse'],
+    include: [
+      'create',
+      'list',
+      'get',
+      'quote',
+      'inspect',
+      'reserved',
+      'ping',
+      'refuse',
+    ],
     routes: {
       quote: { method: 'POST', path: 'quote' },
       inspect: { method: 'GET', path: 'inspect' },
+      reserved: { method: 'GET', path: 'reserved' },
       ping: { method: 'POST', path: 'ping' },
       refuse: { method: 'POST', path: 'refuse' },
     },
@@ -40,6 +50,13 @@ class ActionWidget extends SmrtObject {
   constructor(options: any = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
+  }
+
+  static reserved(
+    __smrt_options: string,
+    query: string,
+  ): { marker: string; query: string } {
+    return { marker: __smrt_options, query };
   }
 }
 
@@ -78,6 +95,17 @@ class ActionWidgetCollection extends SmrtCollection<ActionWidget> {
 
 describe('runtime REST custom collection actions (#2047)', () => {
   ObjectRegistry.registerCollection('ActionWidget', ActionWidgetCollection);
+  ObjectRegistry.getMethods('ActionWidget').set('reserved', {
+    name: 'reserved',
+    async: false,
+    isPublic: true,
+    isStatic: true,
+    returnType: 'object',
+    parameters: [
+      { name: '__smrt_options', type: 'string', optional: false },
+      { name: 'query', type: 'string', optional: false },
+    ],
+  });
 
   let db: any;
   let handler: (req: Request) => Promise<Response>;
@@ -156,6 +184,20 @@ describe('runtime REST custom collection actions (#2047)', () => {
     expect(
       ((await object.json()) as { result: { value: string } }).result,
     ).toEqual({ value: 'HV' });
+  });
+
+  it('preserves a legitimate positional __smrt_options GET argument', async () => {
+    const response = await get(
+      'reserved?__smrt_options=legitimate&query=widgets',
+    );
+    expect(response.status).toBe(200);
+    expect(
+      (
+        (await response.json()) as {
+          result: { marker: string; query: string };
+        }
+      ).result,
+    ).toEqual({ marker: 'legitimate', query: 'widgets' });
   });
 
   it('maps a returned failure to its status and redacts the payload', async () => {
