@@ -69,7 +69,10 @@ module you are editing. This file keeps what holds in every module.
   names prefer the collection-backed path. Direct mutations invalidate their
   own and relationship-derived collection names through the public
   `invalidateSmrtWebCollections()` seam when the host supplies its shared
-  `SmrtWebClient`.
+  `SmrtWebClient`. Legacy `filter` callbacks receive complete collection
+  metadata; canonical definitions use `filterTool`. Mixing canonical tools with
+  only the legacy filter fails closed rather than fabricating incomplete field
+  metadata for a policy decision.
 
 - **No inter-smrt dependencies** — depends only on TanStack packages
   (dependency-DAG guardrails). Definitions and fetchers arrive as arguments.

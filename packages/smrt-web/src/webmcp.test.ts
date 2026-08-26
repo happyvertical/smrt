@@ -285,6 +285,33 @@ describe('registerWebMcpTools', () => {
     expect(registry.tools.map((t) => t.name)).toEqual(['product_list']);
   });
 
+  it('filters canonical definitions through the explicit tool predicate', () => {
+    const registry = installModelContext();
+    registerWebMcpTools(
+      [canonicalTool('get'), canonicalTool('refresh', { readOnly: false })],
+      {
+        resolveToolFetchers: () => ({ get: vi.fn(), custom: vi.fn() }),
+        filterTool: (definition) => definition.readOnly,
+      },
+    );
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['report_get']);
+  });
+
+  it('fails closed when canonical tools have only the legacy collection filter', () => {
+    const registry = installModelContext();
+    expect(() =>
+      registerWebMcpTools(
+        [canonicalTool('get'), canonicalTool('refresh', { readOnly: false })],
+        {
+          resolveToolFetchers: () => ({ get: vi.fn(), custom: vi.fn() }),
+          filter: (_definition, descriptor) => descriptor.readOnly,
+        },
+      ),
+    ).toThrow('require filterTool');
+    expect(registry.unregistered).toEqual([]);
+    expect(registry.tools).toEqual([]);
+  });
+
   it('ignores definitions with no tool descriptors', () => {
     const registry = installModelContext();
     const bare: SmrtWebCollectionDefinition = {
@@ -548,7 +575,7 @@ describe('registerWebMcpTools', () => {
       ?.execute({ force: true });
 
     expect(legacyResolver).not.toHaveBeenCalled();
-    expect(directResolver).toHaveBeenCalledTimes(1);
+    expect(directResolver).toHaveBeenCalledTimes(2);
     expect(get).toHaveBeenCalledWith('r1');
     expect(JSON.parse(got as string)).toEqual({ id: 'r1', title: 'One' });
     expect(custom).toHaveBeenCalledWith(

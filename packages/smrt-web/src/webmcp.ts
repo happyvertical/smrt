@@ -102,6 +102,8 @@ export interface RegisterWebMcpToolsOptions {
       SmrtWebCollectionDefinition['toolDescriptors']
     >[number],
   ) => boolean;
+  /** Predicate for canonical per-tool definitions. */
+  filterTool?: (definition: WebMcpToolDefinition) => boolean;
 }
 
 /** Accepted legacy collection definitions and canonical per-tool definitions. */
@@ -132,7 +134,6 @@ export function registerWebMcpTools(
     SmrtWebCollection<Record<string, unknown>>
   >();
   const registeredNames = new Set<string>();
-  const directFetchers = new Map<string, Partial<SmrtCrudFetchers>>();
   let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
@@ -198,21 +199,26 @@ export function registerWebMcpTools(
     for (const definition of definitions) {
       if (!isCanonicalToolDefinition(definition)) continue;
       if (registeredNames.has(definition.name)) continue;
-      const filterDefinition = collectionViewOfTool(definition);
-      if (options.filter && !options.filter(filterDefinition, definition)) {
+      // A legacy collection filter may inspect fields that canonical per-tool
+      // definitions deliberately do not carry. Never fabricate incomplete
+      // metadata and risk a fail-open policy decision: hosts mixing canonical
+      // definitions with the legacy filter must provide the explicit tool
+      // predicate as well.
+      if (options.filter && !options.filterTool) {
+        throw new Error(
+          '[smrt-web] canonical WebMCP definitions require filterTool when filter is configured',
+        );
+      }
+      if (options.filterTool && !options.filterTool(definition)) {
         continue;
       }
-      let fetchers = directFetchers.get(definition.collection);
-      if (!fetchers) {
-        fetchers = options.resolveToolFetchers
-          ? options.resolveToolFetchers(definition)
-          : createDefinitionFetchers(
-              { name: definition.collection, endpoint: definition.endpoint },
-              basePath,
-              options.fetchFn,
-            );
-        directFetchers.set(definition.collection, fetchers);
-      }
+      const fetchers = options.resolveToolFetchers
+        ? options.resolveToolFetchers(definition)
+        : createDefinitionFetchers(
+            { name: definition.collection, endpoint: definition.endpoint },
+            basePath,
+            options.fetchFn,
+          );
       ctx.registerTool(
         {
           name: definition.name,
@@ -240,23 +246,6 @@ function isCanonicalToolDefinition(
   definition: WebMcpRegistrationDefinition,
 ): definition is WebMcpToolDefinition {
   return 'collection' in definition && 'readOnly' in definition;
-}
-
-/** Preserve the legacy filter callback while canonical definitions are additive. */
-function collectionViewOfTool(
-  definition: WebMcpToolDefinition,
-): SmrtWebCollectionDefinition {
-  return {
-    name: definition.collection,
-    objectRef: definition.objectRef,
-    className: definition.className,
-    endpoint: definition.endpoint,
-    idField: definition.idField,
-    actions: [definition.action],
-    toolDescriptors: [definition],
-    fields: {},
-    relationships: definition.relationships,
-  };
 }
 
 /** Require and return a string `id` from tool args, or throw a clear error. */
