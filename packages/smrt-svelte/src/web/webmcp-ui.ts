@@ -204,14 +204,18 @@ function sanitizeSurfaceValue(
   value: unknown,
   hiddenColumnIds: Set<string>,
   redactRowIds: boolean,
+  parentKey?: string,
 ): unknown {
   if (Array.isArray(value)) {
     return value
       .filter(
-        (entry) => typeof entry !== 'string' || !hiddenColumnIds.has(entry),
+        (entry) =>
+          parentKey !== 'columnOrder' ||
+          typeof entry !== 'string' ||
+          !hiddenColumnIds.has(entry),
       )
       .map((entry) =>
-        sanitizeSurfaceValue(entry, hiddenColumnIds, redactRowIds),
+        sanitizeSurfaceValue(entry, hiddenColumnIds, redactRowIds, parentKey),
       )
       .filter((entry) => entry !== undefined);
   }
@@ -238,6 +242,7 @@ function sanitizeSurfaceValue(
         entry,
         hiddenColumnIds,
         redactRowIds,
+        key,
       );
       return sanitized === undefined ? [] : [[key, sanitized]];
     }),

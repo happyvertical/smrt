@@ -299,6 +299,7 @@ describe('registerWebMcpUiTools', () => {
             state: {
               filters: [
                 { columnId: 'internal', value: 'nested-hidden-filter' },
+                { columnId: 'id', value: ['internal'] },
               ],
               sorting: [{ columnId: 'internal', direction: 'asc' }],
               columnOrder: ['id', 'internal'],
@@ -333,6 +334,9 @@ describe('registerWebMcpUiTools', () => {
     expect(snapshot.state).not.toHaveProperty('internal');
     expect(JSON.stringify(snapshot)).not.toContain('nested-hidden-filter');
     expect(snapshot.state.table.state.columnOrder).toEqual(['id']);
+    expect(snapshot.state.table.state.filters).toEqual([
+      { columnId: 'id', value: ['internal'] },
+    ]);
 
     const hiddenRowKeyDescriptor = descriptor();
     hiddenRowKeyDescriptor.rowKey = 'internal';
