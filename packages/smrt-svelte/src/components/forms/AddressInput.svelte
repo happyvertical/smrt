@@ -242,6 +242,7 @@ onMount(() => {
       constraints: { required },
       webMcpSchema: {
         type: 'object',
+        additionalProperties: false,
         properties: Object.fromEntries(
           fields.map((field) => [field, { type: 'string' }]),
         ),

@@ -246,6 +246,8 @@ describe('Form WebMCP staged-edit intent', () => {
         webmcp: true,
         showAge: false,
         showMoney: true,
+        moneyMin: 100,
+        moneyMax: 5000,
         interactionRegistry: registry,
       },
     });
@@ -257,10 +259,21 @@ describe('Form WebMCP staged-edit intent', () => {
         budget: {
           type: 'integer',
           description:
-            'A monetary amount in dollars. WebMCP values use integer minor units (cents).',
+            'A monetary amount in dollars (between $1.00 and $50.00). WebMCP values use integer minor units (cents).',
+          minimum: 100,
+          maximum: 5000,
         },
       },
     });
+    expect(await registered.at(-1)?.execute({ budget: 123.5 })).toBe(
+      'Staged 1 change for review',
+    );
+    expect(
+      registry
+        .list()
+        .find((snapshot) => snapshot.identity.controlId === 'budget')?.state
+        .staged,
+    ).toMatchObject({ value: 123.5, valid: false });
     expect(await registered.at(-1)?.execute({ budget: 1234 })).toBe(
       'Staged 1 change for review',
     );
@@ -335,6 +348,7 @@ describe('Form WebMCP staged-edit intent', () => {
     });
     expect(schema.properties.address).toMatchObject({
       type: 'object',
+      additionalProperties: false,
       properties: {
         street: { type: 'string' },
         city: { type: 'string' },
@@ -362,6 +376,33 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(onsubmit).not.toHaveBeenCalled();
   });
 
+  it('stages through an additive legacy registry without executeBatch', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const baseRegistry = createControlInteractionRegistry();
+    const { executeBatch: _executeBatch, ...legacyRegistry } = baseRegistry;
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        interactionRegistry: legacyRegistry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
+      'Staged 1 change for review',
+    );
+    expect(legacyRegistry.list()[0]?.state.staged?.value).toBe('Ada');
+  });
+
   it('limits the address schema and payload to configured fields', async () => {
     const registered: Array<{
       inputSchema: Record<string, unknown>;
@@ -373,11 +414,13 @@ describe('Form WebMCP staged-edit intent', () => {
       },
     };
     const onsubmit = vi.fn();
+    const registry = createControlInteractionRegistry();
     render(FormWithStructuredFields, {
       props: {
         webmcp: true,
         addressFields: ['city', 'country'],
         onsubmit,
+        interactionRegistry: registry,
       },
     });
     await tick();
@@ -400,12 +443,18 @@ describe('Form WebMCP staged-edit intent', () => {
     const values = {
       measurement: { value: 1.5, unit: 'm' },
       dates: { startDate: '2026-01-01', endDate: '2026-01-02' },
-      address: { city: 'Edmonton', country: 'CA' },
+      address: { city: 'Edmonton', country: 'CA', street: 'hidden' },
     };
     expect(await registered[0].execute(values)).toBe(
       'Staged 3 changes for review',
     );
     expect(onsubmit).not.toHaveBeenCalled();
+    expect(
+      registry
+        .list('structured-fields')
+        .find((snapshot) => snapshot.identity.controlId === 'address')?.state
+        .staged?.value,
+    ).toEqual({ city: 'Edmonton', country: 'CA' });
   });
 
   it('allows partial payloads for optional structured fields', async () => {

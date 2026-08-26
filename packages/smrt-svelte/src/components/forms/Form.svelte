@@ -362,6 +362,7 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
       case 'measurement':
         schema = {
           type: 'object',
+          additionalProperties: false,
           properties: {
             value: {
               type: 'number',
@@ -385,6 +386,7 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
       case 'daterange':
         schema = {
           type: 'object',
+          additionalProperties: false,
           properties: {
             startDate: { type: 'string' },
             endDate: { type: 'string' },
@@ -397,6 +399,7 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
       case 'address':
         schema = {
           type: 'object',
+          additionalProperties: false,
           properties: {
             street: { type: 'string' },
             city: { type: 'string' },
@@ -444,10 +447,16 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
   if (field.options) {
     schema.enum = field.options.map((option) => option.value);
   }
-  if (schema.type === 'number' && field.constraints?.min !== undefined) {
+  if (
+    (schema.type === 'number' || schema.type === 'integer') &&
+    field.constraints?.min !== undefined
+  ) {
     schema.minimum = Number(field.constraints.min);
   }
-  if (schema.type === 'number' && field.constraints?.max !== undefined) {
+  if (
+    (schema.type === 'number' || schema.type === 'integer') &&
+    field.constraints?.max !== undefined
+  ) {
     schema.maximum = Number(field.constraints.max);
   }
   if (schema.type === 'string' && field.constraints?.minLength !== undefined) {
@@ -481,6 +490,7 @@ function formInputSchema(): Record<string, unknown> {
 
   return {
     type: 'object',
+    additionalProperties: false,
     properties,
     ...(required.length > 0 ? { required } : {}),
   };
@@ -529,15 +539,27 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
       return [];
     }
     const currentValue = field.getValue();
+    let sanitizedValue = value;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const schema = webMcpFieldSchema(field) as {
+        properties?: Record<string, unknown>;
+      };
+      const properties = schema.properties;
+      if (properties) {
+        sanitizedValue = Object.fromEntries(
+          Object.entries(value).filter(([key]) => key in properties),
+        );
+      }
+    }
     let proposedValue =
-      value !== null &&
-      typeof value === 'object' &&
-      !Array.isArray(value) &&
+      sanitizedValue !== null &&
+      typeof sanitizedValue === 'object' &&
+      !Array.isArray(sanitizedValue) &&
       currentValue !== null &&
       typeof currentValue === 'object' &&
       !Array.isArray(currentValue)
-        ? { ...currentValue, ...value }
-        : value;
+        ? { ...currentValue, ...sanitizedValue }
+        : sanitizedValue;
     if (
       field.type === 'measurement' &&
       proposedValue !== null &&
@@ -562,10 +584,17 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
   });
   if (commands.length === 0) return 'No reviewable changes provided';
 
-  const batch = await resolvedInteractionRegistry.executeBatch(commands, {
-    source: 'agent',
-    actorId: 'webmcp',
-  });
+  const context = { source: 'agent' as const, actorId: 'webmcp' };
+  let batch;
+  if (resolvedInteractionRegistry.executeBatch) {
+    batch = await resolvedInteractionRegistry.executeBatch(commands, context);
+  } else {
+    const results = [];
+    for (const command of commands) {
+      results.push(await resolvedInteractionRegistry.execute(command, context));
+    }
+    batch = { ok: results.every((result) => result.ok), results };
+  }
   const completed = batch.results.filter((result) => result.ok).length;
   const rejected = batch.results.length - completed;
   return rejected === 0

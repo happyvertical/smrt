@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import { createControlInteractionRegistry } from '../control-interaction.js';
 import Fixture from './staged-review.fixture.svelte';
@@ -43,6 +43,62 @@ describe('StagedControlReview', () => {
       ).not.toBeInTheDocument(),
     );
     await expectNoA11yViolations(container);
+  });
+
+  it('keeps Enter in the proposal editor from submitting the form', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const proposal = await screen.findByRole('textbox', {
+      name: 'Edit proposed value for Display name',
+    });
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    screen
+      .getByRole('form', { name: 'Profile form' })
+      .addEventListener('submit', submitted);
+    await userEvent.type(proposal, '{Enter}');
+
+    expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
+      'Ada',
+    );
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it('moves focus to the next proposal after applying one', async () => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    let secondValue = 'Ada';
+    const secondIdentity = { formId: 'profile', controlId: 'family-name' };
+    registry.register({
+      identity: secondIdentity,
+      metadata: { kind: 'text', label: 'Family name' },
+      getValue: () => secondValue,
+      setValue: (next) => {
+        secondValue = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      { action: 'stage', identity: secondIdentity, value: 'Hopper' },
+      { source: 'agent' },
+    );
+
+    const applyButtons = await screen.findAllByRole('button', {
+      name: 'Apply',
+    });
+    await userEvent.click(applyButtons[0]);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Apply' })).toHaveFocus(),
+    );
   });
 
   it('marks competing user edits stale and lets the human discard them', async () => {

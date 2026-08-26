@@ -67,7 +67,9 @@ useControlRegistration(() => {
         ?.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    getState: () => ({
+      disabled: disabled || root.closest('fieldset:disabled') !== null,
+    }),
   };
 });
 </script>

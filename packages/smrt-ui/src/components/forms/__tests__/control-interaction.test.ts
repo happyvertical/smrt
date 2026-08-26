@@ -54,6 +54,21 @@ describe('control interaction registry', () => {
     expect(value.profile.name).toBe('Ada');
   });
 
+  it('fails closed when a public value cannot be cloned', () => {
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => ({ callback: () => undefined }),
+      setValue: () => undefined,
+    });
+
+    expect(registry.get(identity)?.state).toMatchObject({
+      value: undefined,
+      valueRedacted: true,
+    });
+  });
+
   it('stages with provenance without mutation and only lets a human apply', async () => {
     let value = 'Ada';
     const events: Array<{ context?: { localGesture?: boolean } }> = [];
@@ -553,6 +568,58 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
+  it('isolates policy and subscriber objects from executable commands', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      policy: (command) => {
+        command.action = 'apply';
+        return { allowed: true };
+      },
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    registry.subscribe((event) => {
+      if (event.result) {
+        event.result.ok = false;
+        event.result.reason = 'observer-forged';
+      }
+      event.identity.controlId = 'observer-forged';
+    });
+
+    const staged = await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    expect(staged).toMatchObject({ ok: true, action: 'stage' });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
+  });
+
+  it('redacts sensitive custom-policy denial reasons', async () => {
+    const registry = createControlInteractionRegistry({
+      policy: () => ({ allowed: false, reason: 'private-policy-detail' }),
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text', sensitivity: 'sensitive' },
+      getValue: () => 'private',
+      setValue: () => undefined,
+    });
+
+    expect(
+      await registry.execute(
+        { action: 'stage', identity, value: 'replacement' },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: false, reason: 'command_failed' });
+  });
+
   it('serializes asynchronous proposals so the newest command wins', async () => {
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
@@ -909,7 +976,7 @@ describe('control interaction registry', () => {
         new Event('click'),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
-    expect(value).toBe('partially-cleared');
+    expect(value).toBe('Ada');
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
 
     value = 'Ada';

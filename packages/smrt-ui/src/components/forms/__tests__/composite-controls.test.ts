@@ -45,6 +45,15 @@ describe('composite controls', () => {
     ).toEqual(['country', 'channels', 'topics', 'region']);
   });
 
+  it('reports effective disabled state from an ancestor fieldset', () => {
+    const registry = createControlInteractionRegistry();
+    render(Fixture, { props: { registry, fieldsetDisabled: true } });
+
+    expect(registry.list('profile').map((item) => item.state.disabled)).toEqual(
+      [true, true, true, true],
+    );
+  });
+
   it('is axe-clean', async () => {
     const registry = createControlInteractionRegistry();
     const { container } = render(Fixture, { props: { registry } });

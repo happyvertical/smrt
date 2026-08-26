@@ -92,7 +92,7 @@ useControlRegistration(() => {
     focus: () => input.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    getState: () => ({ disabled: input.matches(':disabled') }),
   };
 });
 </script>

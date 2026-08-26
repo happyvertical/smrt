@@ -17,6 +17,8 @@ let {
   numberValue = null,
   showAge = true,
   showMoney = false,
+  moneyMin = undefined,
+  moneyMax = undefined,
   webmcp = false,
   textRequired = false,
   textDisabled = false,
@@ -34,6 +36,8 @@ let {
   numberValue?: number | null;
   showAge?: boolean;
   showMoney?: boolean;
+  moneyMin?: number;
+  moneyMax?: number;
   webmcp?: boolean;
   textRequired?: boolean;
   textDisabled?: boolean;
@@ -80,7 +84,7 @@ function mutateSubject() {
 		/>
 	{/if}
 	{#if showMoney}
-		<MoneyInput name="budget" label="Budget" />
+			<MoneyInput name="budget" label="Budget" min={moneyMin} max={moneyMax} />
 	{/if}
 	</fieldset>
 	{#if mutableSubject}

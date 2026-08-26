@@ -81,7 +81,9 @@ useControlRegistration(() => {
     focus: () => optionEls.find((item) => item && !item.disabled)?.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    getState: () => ({
+      disabled: disabled || root.closest('fieldset:disabled') !== null,
+    }),
   };
 });
 </script>

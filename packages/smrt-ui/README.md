@@ -110,6 +110,11 @@ consumes the gesture before authorizing a value-changing command.
 Serialized or programmatic `source: 'user', confirmed: true` input is never
 confirmation. Sensitive and secret values, validation details, failures, and
 events remain redacted from every public surface.
+`executeBatch` is an additive optional registry method; Forms fall back to
+ordered `execute` calls for older injected registries. Factory-created
+registries retain the framework's private, one-shot gesture proof, while an
+older custom registry remains responsible for its pre-existing execution
+policy and accepts review actions only from a trusted browser event.
 Custom controls whose clear operation is intentionally idempotent should return
 `true` from `clear()` to affirm that the unchanged cleared value was accepted.
 

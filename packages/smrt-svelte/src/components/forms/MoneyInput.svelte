@@ -254,8 +254,14 @@ onMount(() => {
       getValue: () => value,
       getState: () => ({ disabled }),
       constraints: { required, min, max },
+      validateValue: (candidate) =>
+        (candidate === null && !required) ||
+        (typeof candidate === 'number' &&
+          Number.isSafeInteger(candidate) &&
+          (min === undefined || candidate >= min) &&
+          (max === undefined || candidate <= max)),
       validate: () =>
-        value === null ? !required : Number.isFinite(value) && isInRange,
+        value === null ? !required : Number.isSafeInteger(value) && isInRange,
     };
     formContext.registerField(fieldDef);
   }

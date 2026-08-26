@@ -145,7 +145,7 @@ useControlRegistration(() => {
     focus: () => trigger.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    getState: () => ({ disabled: trigger.matches(':disabled') }),
   };
 });
 </script>

@@ -249,7 +249,7 @@ export interface ControlInteractionRegistry {
     context?: ControlCommandContext,
   ): Promise<ControlCommandResult>;
   /** Executes in order and always returns an explicit result for every command. */
-  executeBatch(
+  executeBatch?(
     commands: ControlCommand[],
     context?: ControlCommandContext,
   ): Promise<ControlBatchResult>;
@@ -272,6 +272,10 @@ const localGestureBatchExecutors = new WeakMap<
   ControlInteractionRegistry,
   LocalGestureBatchExecutor
 >();
+const consumedFallbackGestureEvents = new WeakMap<
+  ControlInteractionRegistry,
+  WeakSet<Event>
+>();
 
 /** Execute one value-changing command from a local DOM event handler. */
 export function executeLocalControlCommand(
@@ -292,15 +296,32 @@ export async function executeLocalControlBatch(
 ): Promise<ControlBatchResult> {
   const executor = localGestureBatchExecutors.get(registry);
   if (!executor) {
-    return {
-      ok: false,
-      results: commands.map((command) => ({
+    const consumed =
+      consumedFallbackGestureEvents.get(registry) ?? new WeakSet<Event>();
+    consumedFallbackGestureEvents.set(registry, consumed);
+    if (!event.isTrusted || consumed.has(event)) {
+      return {
         ok: false,
-        action: command.action,
-        identity: { ...command.identity },
-        reason: 'local_gesture_required',
-      })),
-    };
+        results: commands.map((command) => ({
+          ok: false,
+          action: command.action,
+          identity: cloneValue(command.identity),
+          reason: 'local_gesture_required',
+        })),
+      };
+    }
+    consumed.add(event);
+    const results: ControlCommandResult[] = [];
+    for (const command of commands) {
+      results.push(
+        await registry.execute(command, {
+          source: 'user',
+          confirmed: true,
+          localGesture: true,
+        }),
+      );
+    }
+    return { ok: results.every((entry) => entry.ok), results };
   }
   return executor(commands, event);
 }
@@ -411,7 +432,29 @@ function cloneValue<T>(value: T): T {
   try {
     return structuredClone(value);
   } catch {
-    return value;
+    if (value === undefined) return value;
+    const serialized = JSON.stringify(value, (_key, candidate) => {
+      if (
+        typeof candidate === 'function' ||
+        typeof candidate === 'symbol' ||
+        typeof candidate === 'bigint'
+      ) {
+        throw new DOMException('Value is not cloneable', 'DataCloneError');
+      }
+      return candidate;
+    });
+    if (serialized === undefined) {
+      throw new DOMException('Value is not cloneable', 'DataCloneError');
+    }
+    return JSON.parse(serialized) as T;
+  }
+}
+
+function clonePublicValue<T>(value: T): T | undefined {
+  try {
+    return cloneValue(value);
+  } catch {
+    return undefined;
   }
 }
 
@@ -432,6 +475,7 @@ function redactedFailureReason(reason: string): string {
     'staged_value_invalid',
     'staged_value_rejected',
     'nothing_to_undo',
+    'sensitive_control',
   ].includes(reason)
     ? reason
     : 'command_failed';
@@ -486,7 +530,7 @@ export function createControlInteractionRegistry(
     const next = { ...event, timestamp: now() };
     for (const listener of listeners) {
       try {
-        listener(next);
+        listener(cloneValue(next));
       } catch {
         // Observers cannot change a command's committed result or registry state.
       }
@@ -515,6 +559,8 @@ export function createControlInteractionRegistry(
             : stagedEntry.validationMessage,
         }
       : undefined;
+    const rawValue = redacted ? undefined : registration.getValue?.();
+    const publicValue = redacted ? undefined : clonePublicValue(rawValue);
     return {
       identity: cloneValue(registration.identity),
       metadata: {
@@ -532,8 +578,9 @@ export function createControlInteractionRegistry(
         validationMessage: redacted
           ? undefined
           : runtimeState?.validationMessage,
-        value: redacted ? undefined : cloneValue(registration.getValue?.()),
-        valueRedacted: redacted,
+        value: publicValue,
+        valueRedacted:
+          redacted || (rawValue !== undefined && publicValue === undefined),
         stagedValue: publicStaged?.value,
         stagedValueRedacted: publicStaged?.valueRedacted,
         staged: publicStaged,
@@ -556,7 +603,7 @@ export function createControlInteractionRegistry(
     return {
       ok,
       action: command.action,
-      identity: { ...command.identity },
+      identity: cloneValue(command.identity),
       snapshot,
       reason,
     };
@@ -615,8 +662,8 @@ export function createControlInteractionRegistry(
       const publicCommand: ControlCommand =
         redactsValue(registration) &&
         (command.action === 'stage' || command.action === 'apply')
-          ? { ...command, value: undefined }
-          : command;
+          ? cloneValue({ ...command, value: undefined })
+          : cloneValue(command);
       const publicContext: ControlCommandContext = {
         source: context.source,
         confirmed: context.confirmed,
@@ -635,15 +682,29 @@ export function createControlInteractionRegistry(
         );
         const policyDecision =
           invariantDecision.allowed && options.policy
-            ? await options.policy(publicCommand, publicContext, snapshot)
+            ? await options.policy(
+                cloneValue(publicCommand),
+                cloneValue(publicContext),
+                cloneValue(snapshot),
+              )
             : invariantDecision;
+        if (registrations.get(key) !== registration) {
+          throw new Error('staged_value_stale');
+        }
+        const postPolicyInvariant = defaultPolicy(
+          command,
+          publicContext,
+          snapshot,
+          publicContext.localGesture === true,
+        );
+        if (!postPolicyInvariant.allowed) {
+          throw new Error(postPolicyInvariant.reason ?? 'denied');
+        }
         if (!policyDecision.allowed) {
-          const denied = result(
-            command,
-            false,
-            registration,
-            policyDecision.reason ?? 'denied',
-          );
+          const denialReason = redactsValue(registration)
+            ? redactedFailureReason(policyDecision.reason ?? 'denied')
+            : (policyDecision.reason ?? 'denied');
+          const denied = result(command, false, registration, denialReason);
           emit({
             type: 'command',
             identity: command.identity,
@@ -795,10 +856,19 @@ export function createControlInteractionRegistry(
             }
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
+            let setterSettledAsynchronously = false;
             try {
-              await registration.setValue?.(nextValue);
+              const setterResult = registration.setValue?.(nextValue);
+              setterSettledAsynchronously =
+                setterResult !== null &&
+                typeof setterResult === 'object' &&
+                'then' in setterResult;
+              await setterResult;
             } catch (error) {
-              if (valuesEqual(registration.getValue?.(), nextValue)) {
+              if (
+                !setterSettledAsynchronously ||
+                valuesEqual(registration.getValue?.(), nextValue)
+              ) {
                 try {
                   await registration.setValue?.(previousValue);
                 } catch {
@@ -869,10 +939,16 @@ export function createControlInteractionRegistry(
           case 'clear': {
             const previousValue = cloneValue(registration.getValue?.());
             let clearDecision: boolean | undefined;
+            let clearSettledAsynchronously = false;
             try {
-              const decision = registration.clear
-                ? await registration.clear()
-                : await registration.setValue?.('');
+              const pendingDecision = registration.clear
+                ? registration.clear()
+                : registration.setValue?.('');
+              clearSettledAsynchronously =
+                pendingDecision !== null &&
+                typeof pendingDecision === 'object' &&
+                'then' in pendingDecision;
+              const decision = await pendingDecision;
               clearDecision =
                 decision === true
                   ? true
@@ -882,6 +958,7 @@ export function createControlInteractionRegistry(
             } catch (error) {
               const currentValue = registration.getValue?.();
               if (
+                !clearSettledAsynchronously ||
                 currentValue === '' ||
                 currentValue === null ||
                 currentValue === undefined ||
@@ -908,6 +985,7 @@ export function createControlInteractionRegistry(
                 !(Array.isArray(previousValue) && previousValue.length === 0));
             if (rejected) {
               if (
+                !clearSettledAsynchronously ||
                 clearedValue === '' ||
                 clearedValue === null ||
                 clearedValue === undefined ||

@@ -124,6 +124,9 @@ other text pairing clears WCAG AA in both schemes.
   Batch execution is ordered best-effort and returns one result per command;
   review-surface batch actions exclude stale and invalid proposals, which remain
   visible with per-field feedback.
+  `executeBatch` is additive and optional for injected legacy registries; the
+  framework falls back to ordered `execute` calls without weakening the private
+  one-shot gesture proof on factory-created registries.
 
 ## Gotchas
 

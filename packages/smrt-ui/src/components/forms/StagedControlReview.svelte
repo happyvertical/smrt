@@ -1,5 +1,5 @@
 <script lang="ts">
-import { untrack } from 'svelte';
+import { tick, untrack } from 'svelte';
 import { M, useI18n } from '../../i18n/index.js';
 import type {
   ControlCommand,
@@ -53,6 +53,7 @@ const text = $derived({
 let snapshots = $state<ControlSnapshot[]>([]);
 let drafts = $state<Record<string, string>>({});
 let status = $state('');
+let reviewElement = $state<HTMLElement | null>(null);
 
 const keyOf = (snapshot: ControlSnapshot) =>
   JSON.stringify([
@@ -200,10 +201,28 @@ function commandFor(
   };
 }
 
+async function restoreReviewFocus(removedIndex: number): Promise<void> {
+  await tick();
+  const items = reviewElement?.querySelectorAll<HTMLElement>(
+    '[data-staged-review-item]',
+  );
+  const target = items?.[Math.min(removedIndex, Math.max(0, items.length - 1))];
+  const nextAction = target?.querySelector<HTMLButtonElement>(
+    'button:not(:disabled)',
+  );
+  const fallback = reviewElement?.querySelector<HTMLButtonElement>(
+    '.batch-actions button:not(:disabled)',
+  );
+  (nextAction ?? fallback)?.focus();
+}
+
 async function applyOne(
   snapshot: ControlSnapshot,
   event: MouseEvent,
 ): Promise<void> {
+  const removedIndex = snapshots.findIndex(
+    (candidate) => keyOf(candidate) === keyOf(snapshot),
+  );
   try {
     const result = await executeLocalControlCommand(
       registry,
@@ -211,6 +230,7 @@ async function applyOne(
       event,
     );
     status = result.ok ? text.appliedStatus : (result.reason ?? text.invalid);
+    if (result.ok) await restoreReviewFocus(removedIndex);
   } catch {
     status = text.invalid;
   }
@@ -220,12 +240,16 @@ async function discardOne(
   snapshot: ControlSnapshot,
   event: MouseEvent,
 ): Promise<void> {
+  const removedIndex = snapshots.findIndex(
+    (candidate) => keyOf(candidate) === keyOf(snapshot),
+  );
   const result = await executeLocalControlCommand(
     registry,
     commandFor(snapshot, 'discard'),
     event,
   );
   status = result.ok ? text.discardedStatus : (result.reason ?? text.stale);
+  if (result.ok) await restoreReviewFocus(removedIndex);
 }
 
 async function applyAll(event: MouseEvent): Promise<void> {
@@ -266,7 +290,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
 </script>
 
 {#if summary && snapshots.length > 0}
-  <section class="staged-review" aria-label={text.region}>
+  <section bind:this={reviewElement} class="staged-review" aria-label={text.region}>
     <header>
       <div>
         <h2>{text.heading}</h2>
@@ -282,7 +306,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
       {#each snapshots as snapshot (keyOf(snapshot))}
         {@const staged = snapshot.state.staged}
         {@const label = snapshot.metadata.label ?? snapshot.identity.controlId}
-        <li class:stale={staged?.stale} class:invalid={staged?.valid === false}>
+        <li data-staged-review-item class:stale={staged?.stale} class:invalid={staged?.valid === false}>
           <div class="proposal-heading">
             <div><strong>{label}</strong><code>{formatIdentity(snapshot)}</code></div>
             <span>{text.proposedBy} {staged?.provenance.actorId ?? staged?.provenance.source} · {text.stagedAt} {staged ? new Date(staged.stagedAt).toLocaleString() : ''}</span>
@@ -300,6 +324,9 @@ async function discardAll(event: MouseEvent): Promise<void> {
                     value={drafts[keyOf(snapshot)] ?? ''}
                     oninput={(event) => {
                       drafts = { ...drafts, [keyOf(snapshot)]: event.currentTarget.value };
+                    }}
+                    onkeydown={(event) => {
+                      if (event.key === 'Enter') event.preventDefault();
                     }}
                   />
                 {/if}

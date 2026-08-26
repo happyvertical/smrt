@@ -99,6 +99,11 @@ adapter for a prefix; configure distinct prefixes for intentional coexistence.
 
 ## AI System
 
+- Rich Form WebMCP tools only stage review proposals. Structured payloads are
+  limited to published schema properties, money uses safe integer minor units,
+  and injected legacy registries without `executeBatch` use ordered `execute`
+  calls.
+
 - **Preload strategies**: `none`, `eager`, `idle` (recommended), `on-visible`
 - **Warm client cache**: module-level Map survives navigation/remounts -- avoids re-downloading WASM/models
 - **Adapters**: STT (browser-speech, whisper-cpp, whisper-wasm), TTS (browser-synthesis), LLM (webllm, transformers-llm)

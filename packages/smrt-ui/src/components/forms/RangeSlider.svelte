@@ -106,7 +106,13 @@ useControlRegistration(() => {
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
     validate: () => value.min <= value.max,
-    getState: () => ({ disabled, valid: value.min <= value.max }),
+    getState: () => ({
+      disabled:
+        disabled ||
+        minEl?.matches(':disabled') === true ||
+        maxEl?.matches(':disabled') === true,
+      valid: value.min <= value.max,
+    }),
   };
 });
 </script>
