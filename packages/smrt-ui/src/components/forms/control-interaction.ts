@@ -279,6 +279,7 @@ export interface CreateControlInteractionRegistryOptions {
 }
 
 type LocalGestureBatchExecutor = (
+  registry: ControlInteractionRegistry,
   commands: ControlCommand[],
   event: Event,
 ) => Promise<ControlBatchResult>;
@@ -407,7 +408,7 @@ export async function executeLocalControlBatch(
     }
     return { ok: results.every((entry) => entry.ok), results };
   }
-  return executor(commandSnapshots, event);
+  return executor(registry, commandSnapshots, event);
 }
 
 function identityKey(identity: ControlIdentity): string {
@@ -629,7 +630,9 @@ async function validateProposedValue(
   value: unknown,
 ): Promise<{ valid?: boolean; validationMessage?: string }> {
   if (!registration.validateValue) return {};
-  const validation = await registration.validateValue(value);
+  // Validators are untrusted extension points. Never expose the registry's
+  // stored proposal or the candidate that will later be passed to the setter.
+  const validation = await registration.validateValue(cloneValue(value));
   if (typeof validation === 'boolean') return { valid: validation };
   if (typeof validation === 'string') {
     return { valid: false, validationMessage: validation };
@@ -1141,6 +1144,29 @@ export function createControlInteractionRegistry(
                 ) {
                   throw new Error('stale_revision');
                 }
+                const commitSnapshot: ControlSnapshot = {
+                  identity: cloneValue(registration.identity),
+                  metadata: {
+                    ...registration.metadata,
+                    capabilities: capabilitiesOf(registration),
+                  },
+                  state: {
+                    ...registration.getState?.(),
+                    valueRedacted: redactsValue(registration),
+                  },
+                };
+                const commitInvariant = defaultPolicy(
+                  command,
+                  publicContext,
+                  commitSnapshot,
+                  publicContext.localGesture === true,
+                );
+                if (!commitInvariant.allowed) {
+                  throw new Error(commitInvariant.reason ?? 'denied');
+                }
+                if (!capabilitiesOf(registration).includes('stage')) {
+                  throw new Error('unsupported');
+                }
                 Object.assign(entry, validation);
                 const stageSnapshot = snapshotOf(registration);
                 const completed: ControlCommandResult = {
@@ -1196,9 +1222,10 @@ export function createControlInteractionRegistry(
             if (nextValue === undefined && !stagedEntry) {
               throw new Error('no_staged_value');
             }
+            const authorizedValue = cloneValue(nextValue);
             const proposedValidation = await validateProposedValue(
               registration,
-              nextValue,
+              authorizedValue,
             );
             if (registrations.get(key) !== registration) {
               throw new Error('staged_value_stale');
@@ -1243,7 +1270,7 @@ export function createControlInteractionRegistry(
                 registration,
                 previousValue,
                 userEditSnapshot,
-                () => registration.setValue?.(nextValue),
+                () => registration.setValue?.(cloneValue(authorizedValue)),
               );
             } catch (error) {
               try {
@@ -1263,7 +1290,7 @@ export function createControlInteractionRegistry(
             const appliedValue = cloneValue(registration.getValue?.());
             if (
               valuesEqual(appliedValue, previousValue) &&
-              !valuesEqual(nextValue, previousValue)
+              !valuesEqual(authorizedValue, previousValue)
             ) {
               throw new Error('staged_value_rejected');
             }
@@ -1476,9 +1503,16 @@ export function createControlInteractionRegistry(
         const results = commands.map(cloneFailureResult);
         return { ok: false, results };
       }
+      let contextSnapshot: ControlCommandContext;
+      try {
+        contextSnapshot = cloneValue(context);
+      } catch {
+        const results = commandSnapshots.map(cloneFailureResult);
+        return { ok: false, results };
+      }
       const results: ControlCommandResult[] = [];
       for (const command of commandSnapshots) {
-        results.push(await this.execute(command, context));
+        results.push(await this.execute(command, contextSnapshot));
       }
       return { ok: results.every((entry) => entry.ok), results };
     },
@@ -1490,6 +1524,7 @@ export function createControlInteractionRegistry(
   };
 
   const localGestureExecutor: LocalGestureBatchExecutor = async (
+    suppliedRegistry,
     commands,
     event,
   ) => {
@@ -1520,7 +1555,7 @@ export function createControlInteractionRegistry(
         confirmed: true,
       };
       locallyConfirmedContexts.add(context);
-      results.push(await registry.execute(command, context));
+      results.push(await suppliedRegistry.execute(command, context));
     }
     return { ok: results.every((entry) => entry.ok), results };
   };

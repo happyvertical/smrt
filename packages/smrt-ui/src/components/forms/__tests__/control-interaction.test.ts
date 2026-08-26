@@ -36,6 +36,13 @@ function dispatchLocalGesture<T>(
   return pending;
 }
 
+interface MutableStageCapabilityState {
+  sensitivity: 'public' | 'secret';
+  writable: boolean;
+  disabled: boolean;
+  readonly: boolean;
+}
+
 describe('control interaction registry', () => {
   it('discovers serializable metadata and current state', () => {
     let value = 'Ada';
@@ -77,6 +84,66 @@ describe('control interaction registry', () => {
     if (!snapshot) throw new Error('missing snapshot');
     (snapshot.state.value as typeof value).profile.name = 'Grace';
     expect(value.profile.name).toBe('Ada');
+  });
+
+  it('isolates retained validator aliases from staged and setter candidates', async () => {
+    let value = { role: 'viewer' };
+    const retainedCandidates: Array<{ role: string }> = [];
+    const setterCandidates: Array<{ role: string }> = [];
+    const policyStagedValues: unknown[] = [];
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: (command, _context, snapshot) => {
+        if (command.action === 'apply') {
+          policyStagedValues.push(snapshot.state.staged?.value);
+        }
+        return { allowed: true };
+      },
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => value,
+      setValue: (candidate) => {
+        const next = candidate as { role: string };
+        setterCandidates.push(next);
+        value = next;
+      },
+      validateValue: (candidate) => {
+        const retained = candidate as { role: string };
+        retainedCandidates.push(retained);
+        retained.role = 'admin';
+        return true;
+      },
+    });
+
+    expect(
+      await registry.execute(
+        { action: 'stage', identity, value: { role: 'viewer' } },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(identity)?.state.staged?.value).toEqual({
+      role: 'viewer',
+    });
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'apply', identity, revision: 1 },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(policyStagedValues).toEqual([{ role: 'viewer' }]);
+    expect(value).toEqual({ role: 'viewer' });
+    expect(setterCandidates[0]).not.toBe(retainedCandidates.at(-1));
+
+    const retainedAfterApply = retainedCandidates.at(-1);
+    if (!retainedAfterApply) throw new Error('validator was not invoked');
+    retainedAfterApply.role = 'owner';
+    expect(value).toEqual({ role: 'viewer' });
   });
 
   it('fails closed when a public value cannot be cloned', () => {
@@ -524,6 +591,115 @@ describe('control interaction registry', () => {
       reason: 'control_not_editable',
     });
     expect(value).toBe('Ada');
+  });
+
+  it.each([
+    {
+      capability: 'secret',
+      transition: (state: MutableStageCapabilityState) => {
+        state.sensitivity = 'secret';
+      },
+      reset: (state: MutableStageCapabilityState) => {
+        state.sensitivity = 'public';
+      },
+      reason: 'sensitive_control',
+    },
+    {
+      capability: 'non-writable',
+      transition: (state: MutableStageCapabilityState) => {
+        state.writable = false;
+      },
+      reset: (state: MutableStageCapabilityState) => {
+        state.writable = true;
+      },
+      reason: 'control_not_writable',
+    },
+    {
+      capability: 'disabled',
+      transition: (state: MutableStageCapabilityState) => {
+        state.disabled = true;
+      },
+      reset: (state: MutableStageCapabilityState) => {
+        state.disabled = false;
+      },
+      reason: 'control_not_editable',
+    },
+    {
+      capability: 'readonly',
+      transition: (state: MutableStageCapabilityState) => {
+        state.readonly = true;
+      },
+      reset: (state: MutableStageCapabilityState) => {
+        state.readonly = false;
+      },
+      reason: 'control_not_editable',
+    },
+  ])('rejects a stage when the control becomes $capability during validation', async ({
+    transition,
+    reset,
+    reason,
+  }) => {
+    const state: MutableStageCapabilityState = {
+      sensitivity: 'public',
+      writable: true,
+      disabled: false,
+      readonly: false,
+    };
+    let blockReplacement = false;
+    let releaseValidation: (() => void) | undefined;
+    let validationStarted: (() => void) | undefined;
+    const validationGate = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      validationStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: {
+        kind: 'text',
+        get sensitivity() {
+          return state.sensitivity;
+        },
+        get writable() {
+          return state.writable;
+        },
+      },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      getState: () => ({
+        disabled: state.disabled,
+        readonly: state.readonly,
+      }),
+      validateValue: async (candidate) => {
+        if (blockReplacement && candidate === 'Katherine') {
+          validationStarted?.();
+          await validationGate;
+        }
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    blockReplacement = true;
+
+    const replacing = registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+    await started;
+    transition(state);
+    releaseValidation?.();
+
+    expect(await replacing).toMatchObject({ ok: false, reason });
+    reset(state);
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: 'Grace',
+      revision: 1,
+    });
   });
 
   it('keeps invalid proposals staged and returns explicit batch results', async () => {
@@ -2646,6 +2822,66 @@ describe('control interaction registry', () => {
     expect(value).toBe('Ada');
   });
 
+  it('dispatches a copied gesture executor through the supplied registry wrapper', async () => {
+    let value = 'Ada';
+    const baseRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    baseRegistry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await baseRegistry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const wrapperExecute = vi.fn(async (command: ControlCommand) => ({
+      ok: false as const,
+      action: command.action,
+      identity: command.identity,
+      reason: 'wrapper_denied',
+    }));
+    const wrapperRegistry: ControlInteractionRegistry = {
+      ...baseRegistry,
+      execute: wrapperExecute,
+    };
+    let denied: Promise<unknown> | undefined;
+    let replayed: Promise<unknown> | undefined;
+    const target = new EventTarget();
+    target.addEventListener(
+      'click',
+      (event) => {
+        denied = executeLocalControlCommand(
+          wrapperRegistry,
+          { action: 'apply', identity, revision: 1 },
+          event,
+        );
+        replayed = executeLocalControlCommand(
+          wrapperRegistry,
+          { action: 'apply', identity, revision: 1 },
+          event,
+        );
+      },
+      { once: true },
+    );
+    target.dispatchEvent(new Event('click'));
+
+    expect(await denied).toMatchObject({
+      ok: false,
+      reason: 'wrapper_denied',
+    });
+    expect(await replayed).toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+    expect(wrapperExecute).toHaveBeenCalledOnce();
+    expect(value).toBe('Ada');
+  });
+
   it('rejects a trusted legacy-registry event retained beyond its dispatch', async () => {
     let captured: Event | undefined;
     const execute = vi.fn(async (command: ControlCommand) => ({
@@ -2744,6 +2980,85 @@ describe('control interaction registry', () => {
 
     expect((await pending)?.ok).toBe(true);
     expect(registry.get(identity)?.state.staged?.value).toEqual({ order: 2 });
+  });
+
+  it('snapshots batch context before awaiting the first command', async () => {
+    let releaseFirst: (() => void) | undefined;
+    let firstStarted: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const policyContexts: Array<{
+      source: string;
+      actorId?: string;
+      sessionId?: string;
+    }> = [];
+    const registry = createControlInteractionRegistry({
+      policy: (_command, context) => {
+        policyContexts.push({
+          source: context.source,
+          actorId: context.actorId,
+          sessionId: context.sessionId,
+        });
+        return { allowed: true };
+      },
+    });
+    const firstIdentity = { ...identity, controlId: 'first' };
+    const secondIdentity = { ...identity, controlId: 'second' };
+    registry.register({
+      identity: firstIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => '',
+      setValue: () => undefined,
+      validateValue: async () => {
+        firstStarted?.();
+        await blocked;
+        return true;
+      },
+    });
+    registry.register({
+      identity: secondIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => '',
+      setValue: () => undefined,
+      validateValue: () => true,
+    });
+    const context = {
+      source: 'agent' as const,
+      actorId: 'agent-original',
+      sessionId: 'session-original',
+    };
+    const pending = registry.executeBatch?.(
+      [
+        { action: 'stage', identity: firstIdentity, value: 'A' },
+        { action: 'stage', identity: secondIdentity, value: 'B' },
+      ],
+      context,
+    );
+    await started;
+    Object.assign(context, {
+      source: 'tutorial',
+      actorId: 'agent-mutated',
+      sessionId: 'session-mutated',
+    });
+    releaseFirst?.();
+
+    expect((await pending)?.ok).toBe(true);
+    const expectedProvenance = {
+      source: 'agent',
+      actorId: 'agent-original',
+      sessionId: 'session-original',
+    };
+    expect(registry.get(firstIdentity)?.state.staged?.provenance).toEqual(
+      expectedProvenance,
+    );
+    expect(registry.get(secondIdentity)?.state.staged?.provenance).toEqual(
+      expectedProvenance,
+    );
+    expect(policyContexts).toEqual([expectedProvenance, expectedProvenance]);
   });
 
   it('snapshots a public execute command before its queued mutation runs', async () => {
