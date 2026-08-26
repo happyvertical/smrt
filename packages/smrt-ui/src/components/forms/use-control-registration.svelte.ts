@@ -31,11 +31,16 @@ export function useControlRegistration(
       return;
     }
     const { controlId, subject, ...registration } = descriptor;
+    const registry = context.registry;
+    const formId = context.formId;
+    const identitySubject = subject
+      ? { type: subject.type, id: subject.id, label: subject.label }
+      : undefined;
     const previousDispose = disposeCurrent;
     disposeCurrent = untrack(() =>
-      context.registry.register({
+      registry.register({
         ...registration,
-        identity: { formId: context.formId, controlId, subject },
+        identity: { formId, controlId, subject: identitySubject },
       }),
     );
     // Register the replacement before disposing the prior descriptor. For a

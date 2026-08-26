@@ -12,5 +12,8 @@ let role = $state('user');
     <option value="">Choose a role</option>
     <option value="user">User</option>
     <option value="admin" disabled>Administrator</option>
+    <optgroup label="Unavailable roles" disabled>
+      <option value="owner">Owner</option>
+    </optgroup>
   </Select>
 </Form>

@@ -338,10 +338,51 @@ describe('StagedControlReview', () => {
     );
   });
 
+  it('moves registration when the form registry and identity change', async () => {
+    const firstRegistry = createReviewRegistry();
+    const secondRegistry = createReviewRegistry();
+    const view = render(Fixture, {
+      props: { registry: firstRegistry, formId: 'profile' },
+    });
+    expect(firstRegistry.get(identity)).toBeDefined();
+
+    await view.rerender({ registry: secondRegistry, formId: 'account' });
+
+    await waitFor(() => expect(firstRegistry.get(identity)).toBeUndefined());
+    expect(
+      secondRegistry.get({ formId: 'account', controlId: 'display-name' }),
+    ).toBeDefined();
+  });
+
+  it('moves registration when a subject identity mutates in place', async () => {
+    const registry = createReviewRegistry();
+    const subject = { type: 'record', id: 'one' };
+    render(Fixture, { props: { registry, subject } });
+    const firstIdentity = { ...identity, subject: { ...subject } };
+    expect(registry.get(firstIdentity)).toBeDefined();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Mutate subject' }),
+    );
+
+    await waitFor(() => expect(registry.get(firstIdentity)).toBeUndefined());
+    expect(
+      registry.get({
+        ...identity,
+        subject: { type: 'record', id: 'two' },
+      }),
+    ).toBeDefined();
+  });
+
   it('rejects disabled and undeclared base-select proposals on apply', async () => {
     const registry = createReviewRegistry();
     render(SelectFixture, { props: { registry } });
     const selectIdentity = { formId: 'account', controlId: 'role' };
+    expect(
+      registry
+        .get(selectIdentity)
+        ?.metadata.options?.find((option) => option.value === 'owner'),
+    ).toMatchObject({ disabled: true });
 
     for (const candidate of ['admin', 'owner']) {
       await registry.execute(

@@ -60,13 +60,17 @@ function setControlValue(next: unknown) {
   if (selectEl) emitControlChange(selectEl);
 }
 
+function isOptionDisabled(option: HTMLOptionElement) {
+  return option.disabled || option.closest('optgroup')?.disabled === true;
+}
+
 function validateControlValue(next: unknown) {
   const element = selectEl;
   if (!element) return true;
   const candidate = String(next ?? '');
   if (candidate === '' && !required) return true;
   return Array.from(element.options).some(
-    (option) => option.value === candidate && !option.disabled,
+    (option) => option.value === candidate && !isOptionDisabled(option),
   );
 }
 
@@ -89,7 +93,7 @@ useControlRegistration(() => {
       options: Array.from(element.options).map((option) => ({
         value: option.value,
         label: option.label,
-        disabled: option.disabled,
+        disabled: isOptionDisabled(option),
       })),
     },
     getValue: () => value,
