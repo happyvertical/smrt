@@ -262,14 +262,14 @@ export interface CreateControlInteractionRegistryOptions {
   isLocalGesture?: (event: Event) => boolean;
 }
 
-type LocalGestureExecutor = (
-  command: ControlCommand,
+type LocalGestureBatchExecutor = (
+  commands: ControlCommand[],
   event: Event,
-) => Promise<ControlCommandResult>;
+) => Promise<ControlBatchResult>;
 
-const localGestureExecutors = new WeakMap<
+const localGestureBatchExecutors = new WeakMap<
   ControlInteractionRegistry,
-  LocalGestureExecutor
+  LocalGestureBatchExecutor
 >();
 
 /** @internal Called only by the framework's local DOM event handlers. */
@@ -278,16 +278,9 @@ export function executeLocalControlCommand(
   command: ControlCommand,
   event: Event,
 ): Promise<ControlCommandResult> {
-  const executor = localGestureExecutors.get(registry);
-  if (!executor) {
-    return Promise.resolve({
-      ok: false,
-      action: command.action,
-      identity: { ...command.identity },
-      reason: 'local_gesture_required',
-    });
-  }
-  return executor(command, event);
+  return executeLocalControlBatch(registry, [command], event).then(
+    (batch) => batch.results[0],
+  );
 }
 
 /** @internal Ordered best-effort execution from one trusted local gesture. */
@@ -296,11 +289,19 @@ export async function executeLocalControlBatch(
   commands: ControlCommand[],
   event: Event,
 ): Promise<ControlBatchResult> {
-  const results: ControlCommandResult[] = [];
-  for (const command of commands) {
-    results.push(await executeLocalControlCommand(registry, command, event));
+  const executor = localGestureBatchExecutors.get(registry);
+  if (!executor) {
+    return {
+      ok: false,
+      results: commands.map((command) => ({
+        ok: false,
+        action: command.action,
+        identity: { ...command.identity },
+        reason: 'local_gesture_required',
+      })),
+    };
   }
-  return { ok: results.every((result) => result.ok), results };
+  return executor(commands, event);
 }
 
 function identityKey(identity: ControlIdentity): string {
@@ -441,6 +442,7 @@ export function createControlInteractionRegistry(
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
   const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
+  const consumedLocalGestureEvents = new WeakSet<Event>();
   let stagedRevision = 0;
 
   const emit = (event: Omit<ControlInteractionEvent, 'timestamp'>) => {
@@ -766,19 +768,33 @@ export function createControlInteractionRegistry(
     },
   };
 
-  localGestureExecutors.set(registry, async (command, event) => {
+  localGestureBatchExecutors.set(registry, async (commands, event) => {
     const isLocalGesture =
       options.isLocalGesture ?? ((candidate: Event) => candidate.isTrusted);
-    if (!isLocalGesture(event)) {
-      const registration = registrations.get(identityKey(command.identity));
-      return result(command, false, registration, 'local_gesture_required');
+    if (!isLocalGesture(event) || consumedLocalGestureEvents.has(event)) {
+      return {
+        ok: false,
+        results: commands.map((command) =>
+          result(
+            command,
+            false,
+            registrations.get(identityKey(command.identity)),
+            'local_gesture_required',
+          ),
+        ),
+      };
     }
-    const context: ControlCommandContext = {
-      source: 'user',
-      confirmed: true,
-    };
-    locallyConfirmedContexts.add(context);
-    return registry.execute(command, context);
+    consumedLocalGestureEvents.add(event);
+    const results: ControlCommandResult[] = [];
+    for (const command of commands) {
+      const context: ControlCommandContext = {
+        source: 'user',
+        confirmed: true,
+      };
+      locallyConfirmedContexts.add(context);
+      results.push(await registry.execute(command, context));
+    }
+    return { ok: results.every((entry) => entry.ok), results };
   });
 
   return registry;

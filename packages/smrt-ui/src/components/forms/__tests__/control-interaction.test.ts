@@ -99,14 +99,36 @@ describe('control interaction registry', () => {
       reason: 'local_gesture_required',
     });
 
+    const gesture = new Event('click');
     const applied = await executeLocalControlCommand(
       registry,
       { action: 'apply', identity, revision: 1 },
-      new Event('click'),
+      gesture,
     );
     expect(applied.ok).toBe(true);
     expect(value).toBe('Grace');
     expect(events.at(-1)?.context?.localGesture).toBe(true);
+
+    await registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+    const replayed = await executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 2 },
+      gesture,
+    );
+    expect(replayed).toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+    expect(value).toBe('Grace');
+
+    await executeLocalControlCommand(
+      registry,
+      { action: 'discard', identity, revision: 2 },
+      new Event('click'),
+    );
 
     await registry.execute(
       { action: 'undo', identity },
