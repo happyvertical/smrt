@@ -28,3 +28,15 @@ export { default as Provider } from './Provider.svelte';
 export * from './state/index.js';
 // Opt-in browser WebMCP lifecycle primitive.
 export { useWebMcpTool, type WebMcpToolSpec } from './web/webmcp.svelte.js';
+export type {
+  WebMcpProviderConfig,
+  WebMcpUiProviderConfig,
+} from './web/webmcp-provider.js';
+export {
+  type RegisterWebMcpUiToolsOptions,
+  registerWebMcpUiTools,
+} from './web/webmcp-ui.js';
+export {
+  useWebMcpUi,
+  type WebMcpUiContext,
+} from './web/webmcp-ui-context.js';

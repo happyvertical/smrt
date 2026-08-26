@@ -38,3 +38,15 @@ export {
   type UseUpdateAvailableOptions,
   useUpdateAvailable,
 } from './update-available.svelte.js';
+export type {
+  WebMcpProviderConfig,
+  WebMcpUiProviderConfig,
+} from './webmcp-provider.js';
+export {
+  type RegisterWebMcpUiToolsOptions,
+  registerWebMcpUiTools,
+} from './webmcp-ui.js';
+export {
+  useWebMcpUi,
+  type WebMcpUiContext,
+} from './webmcp-ui-context.js';

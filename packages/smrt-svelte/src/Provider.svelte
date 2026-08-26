@@ -1,14 +1,11 @@
 <script lang="ts">
+import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
+import { createControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import {
   createI18nContext,
   type I18nSnapshot,
   setI18nContext,
 } from '@happyvertical/smrt-ui/i18n';
-import {
-  type RegisterWebMcpToolsOptions,
-  type SmrtWebClient,
-  type SmrtWebCollectionDefinition,
-} from '@happyvertical/smrt-web';
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
 import { logger } from './internal/logger.js';
@@ -21,6 +18,9 @@ import type {
 } from './state/app-state.js';
 import { createAppState } from './state/app-state.svelte.js';
 import { setAppStateContext } from './state/context.js';
+import type { WebMcpProviderConfig } from './web/webmcp-provider.js';
+import { registerWebMcpUiTools } from './web/webmcp-ui.js';
+import { setWebMcpUiContext } from './web/webmcp-ui-context.js';
 
 interface Props {
   /**
@@ -84,24 +84,15 @@ interface Props {
    */
   i18n?: I18nSnapshot;
   /**
-   * Opt in to the generated collection tools for this browser surface.
-   * WebMCP is feature-detected by smrt-web, so this is safe during SSR and on
-   * browsers that do not expose `document.modelContext`.
+   * Opt in to generated data tools and the fixed mounted-UI tool adapter for
+   * this browser surface. WebMCP is feature-detected, so this is safe during
+   * SSR and on browsers that do not expose `document.modelContext`.
    */
   webmcp?: boolean | WebMcpProviderConfig;
   /**
    * Children to render
    */
   children: Snippet;
-}
-
-export interface WebMcpProviderConfig {
-  definitions?: SmrtWebCollectionDefinition[];
-  client?: SmrtWebClient;
-  basePath?: string;
-  fetchFn?: typeof fetch;
-  scope?: string;
-  filter?: RegisterWebMcpToolsOptions['filter'];
 }
 
 const {
@@ -135,6 +126,32 @@ const appState = createAppState({
   },
 });
 
+const localControlRegistry = createControlInteractionRegistry();
+const localDataSurfaceRegistry = createDataSurfaceRegistry();
+const webMcpConfig = $derived(typeof webmcp === 'object' ? webmcp : undefined);
+const webMcpUiConfig = $derived(
+  webMcpConfig?.ui === false
+    ? undefined
+    : typeof webMcpConfig?.ui === 'object'
+      ? webMcpConfig.ui
+      : {},
+);
+const resolvedControlRegistry = $derived(
+  webMcpUiConfig?.controlRegistry ?? localControlRegistry,
+);
+const resolvedDataSurfaceRegistry = $derived(
+  webMcpUiConfig?.dataSurfaceRegistry ?? localDataSurfaceRegistry,
+);
+
+setWebMcpUiContext({
+  get controlRegistry() {
+    return resolvedControlRegistry;
+  },
+  get dataSurfaceRegistry() {
+    return resolvedDataSurfaceRegistry;
+  },
+});
+
 $effect(() => {
   const currentPreferences = untrack(() => appState.state.session.preferences);
   if (currentPreferences.autoEnableSmrt === autoEnableSmrt) {
@@ -146,6 +163,17 @@ $effect(() => {
       ...currentPreferences,
       autoEnableSmrt,
     },
+  });
+});
+
+// Register one fixed UI tool set. Mounted components change registry contents,
+// not the document-level WebMCP tool set.
+$effect(() => {
+  if (typeof window === 'undefined' || !webmcp || !webMcpUiConfig) return;
+  return registerWebMcpUiTools({
+    controlRegistry: resolvedControlRegistry,
+    dataSurfaceRegistry: resolvedDataSurfaceRegistry,
+    ...(webMcpUiConfig.prefix ? { prefix: webMcpUiConfig.prefix } : {}),
   });
 });
 

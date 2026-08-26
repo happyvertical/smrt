@@ -19,6 +19,7 @@ import {
   setFormContext,
 } from '../../state/form-context.js';
 import { useWebMcpTool } from '../../web/webmcp.svelte.js';
+import { tryGetWebMcpUiContext } from '../../web/webmcp-ui-context.js';
 import type { LLMModelId, STTAdapterType } from './types.js';
 
 const { t } = useI18n();
@@ -80,9 +81,12 @@ const stt = useSTT();
 const instanceId = $props.id();
 const generatedFormId = `smrt-form-${instanceId}`;
 const localInteractionRegistry = createControlInteractionRegistry();
+const providerWebMcpUi = tryGetWebMcpUiContext();
 const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
 const resolvedInteractionRegistry = $derived(
-  interactionRegistry ?? localInteractionRegistry,
+  interactionRegistry ??
+    providerWebMcpUi?.controlRegistry ??
+    localInteractionRegistry,
 );
 const interactionDisposers = new Map<string, () => void>();
 
