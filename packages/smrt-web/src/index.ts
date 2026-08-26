@@ -712,13 +712,15 @@ export function createDefinitionFetchers(
       } else {
         const queryParams = new URLSearchParams();
         if (optionsBag) {
-          if (optionsValue === undefined) {
+          if (optionsValue === undefined && pathArgs.size === 0) {
             queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'undefined');
-          } else if (optionsValue === null) {
+          } else if (optionsValue === null && pathArgs.size === 0) {
             queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'null');
           } else {
             const queryBody =
-              typeof optionsValue === 'object' && !Array.isArray(optionsValue)
+              optionsValue !== null &&
+              typeof optionsValue === 'object' &&
+              !Array.isArray(optionsValue)
                 ? (optionsValue as Record<string, unknown>)
                 : {};
             const entries = Object.entries(queryBody).filter(
@@ -732,7 +734,7 @@ export function createDefinitionFetchers(
                   : String(value),
               );
             }
-            if (entries.length === 0) {
+            if (entries.length === 0 && pathArgs.size === 0) {
               queryParams.set(CUSTOM_OPTIONS_QUERY_MARKER, 'object');
             }
           }

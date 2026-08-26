@@ -682,6 +682,49 @@ describe('registerWebMcpTools', () => {
     ]);
   });
 
+  it('does not leak options-bag markers into GET routes with dynamic path inputs', async () => {
+    const registry = installModelContext();
+    const calls: string[] = [];
+    const fetchFn = (async (url: string | URL) => {
+      calls.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    registerWebMcpTools(
+      [
+        canonicalTool('preview', {
+          readOnly: false,
+          route: {
+            method: 'GET',
+            scope: 'collection',
+            path: ['preview', '[batchId]'],
+            optionsBag: true,
+          },
+        }),
+      ],
+      { basePath: '/custom-api', fetchFn },
+    );
+
+    const preview = registry.tools[0];
+    await preview?.execute({ batchId: 'b1', options: undefined });
+    await preview?.execute({ batchId: 'b1', options: null });
+    await preview?.execute({ batchId: 'b1', options: {} });
+    await preview?.execute({
+      batchId: 'b1',
+      options: { format: 'summary' },
+    });
+
+    expect(calls).toEqual([
+      '/custom-api/reports/preview/b1',
+      '/custom-api/reports/preview/b1',
+      '/custom-api/reports/preview/b1',
+      '/custom-api/reports/preview/b1?format=summary',
+    ]);
+  });
+
   it('prefers a legacy collection-backed tool when canonical input duplicates its name', async () => {
     const registry = installModelContext();
     const legacyFetchers = mockFetchers();
