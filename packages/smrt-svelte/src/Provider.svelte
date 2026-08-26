@@ -144,6 +144,9 @@ const resolvedDataSurfaceRegistry = $derived(
 );
 
 setWebMcpUiContext({
+  get enabled() {
+    return webMcpUiConfig !== undefined;
+  },
   get controlRegistry() {
     return resolvedControlRegistry;
   },

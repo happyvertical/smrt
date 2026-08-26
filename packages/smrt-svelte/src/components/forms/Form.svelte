@@ -85,7 +85,9 @@ const providerWebMcpUi = tryGetWebMcpUiContext();
 const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
 const resolvedInteractionRegistry = $derived(
   interactionRegistry ??
-    providerWebMcpUi?.controlRegistry ??
+    (providerWebMcpUi?.enabled
+      ? providerWebMcpUi.controlRegistry
+      : undefined) ??
     localInteractionRegistry,
 );
 const interactionDisposers = new Map<string, () => void>();

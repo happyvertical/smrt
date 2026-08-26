@@ -215,7 +215,19 @@ function visibleDescriptor(
 function visibleSnapshot(
   snapshot: DataSurfaceSnapshot,
 ): VisibleDataSurfaceSnapshot {
-  return { ...snapshot, descriptor: visibleDescriptor(snapshot.descriptor) };
+  const hiddenColumnIds = new Set(
+    snapshot.descriptor.columns
+      .filter((column) => column.visibility === 'hidden')
+      .map((column) => column.id),
+  );
+  const state = Object.fromEntries(
+    Object.entries(snapshot.state).filter(([key]) => !hiddenColumnIds.has(key)),
+  );
+  return {
+    ...snapshot,
+    descriptor: visibleDescriptor(snapshot.descriptor),
+    state,
+  };
 }
 
 function executeSafely(

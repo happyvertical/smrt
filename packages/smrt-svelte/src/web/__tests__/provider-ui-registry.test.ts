@@ -83,6 +83,7 @@ describe('Provider WebMCP UI registry context', () => {
 
   it('preserves legacy object configs that did not opt into UI tools', async () => {
     const names: string[] = [];
+    const providerRegistry = createControlInteractionRegistry();
     document.modelContext = {
       registerTool(tool) {
         names.push(tool.name);
@@ -90,7 +91,7 @@ describe('Provider WebMCP UI registry context', () => {
     };
     const view = render(Fixture, {
       props: {
-        providerRegistry: createControlInteractionRegistry(),
+        providerRegistry,
         explicitRegistry: createControlInteractionRegistry(),
         enableUi: false,
       },
@@ -98,6 +99,7 @@ describe('Provider WebMCP UI registry context', () => {
     await tick();
 
     expect(names).toEqual([]);
+    expect(providerRegistry.list()).toEqual([]);
     view.unmount();
   });
 });

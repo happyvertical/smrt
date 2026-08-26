@@ -5,6 +5,7 @@ import { getContext, setContext } from 'svelte';
 const WEBMCP_UI_CONTEXT_KEY = Symbol('smrt-webmcp-ui-context');
 
 export interface WebMcpUiContext {
+  readonly enabled: boolean;
   readonly controlRegistry: ControlInteractionRegistry;
   readonly dataSurfaceRegistry: DataSurfaceRegistry;
 }
@@ -20,7 +21,7 @@ export function tryGetWebMcpUiContext(): WebMcpUiContext | null {
 /** Return the mounted-UI registries owned by the nearest SMRT Provider. */
 export function useWebMcpUi(): WebMcpUiContext {
   const context = tryGetWebMcpUiContext();
-  if (!context) {
+  if (!context?.enabled) {
     throw new Error(
       'WebMCP UI context not found. Wrap this component with <Provider>.',
     );

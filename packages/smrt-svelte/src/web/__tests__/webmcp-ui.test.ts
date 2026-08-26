@@ -208,7 +208,10 @@ describe('registerWebMcpUiTools', () => {
     let page = 1;
     surfaces.register({
       descriptor: descriptor(),
-      getSnapshot: () => ({ revision, state: { page } }),
+      getSnapshot: () => ({
+        revision,
+        state: { page, internal: 'never-serialize-this' },
+      }),
       execute: (_command: DataSurfaceVisibleCommand) => {
         page += 1;
         revision += 1;
@@ -233,6 +236,7 @@ describe('registerWebMcpUiTools', () => {
     expect((await parse(list.execute({}))).result[0].columns).toHaveLength(1);
     const snapshot = (await parse(inspect.execute({ identity }))).result;
     expect(snapshot.descriptor.query.projectableColumnIds).toEqual(['id']);
+    expect(snapshot.state).not.toHaveProperty('internal');
 
     const hiddenRowKeyDescriptor = descriptor();
     hiddenRowKeyDescriptor.rowKey = 'internal';
@@ -268,6 +272,7 @@ describe('registerWebMcpUiTools', () => {
       revision: 3,
     });
     expect(completed.snapshot.descriptor.columns).toHaveLength(1);
+    expect(completed.snapshot.state).not.toHaveProperty('internal');
     expect((await parse(execute.execute(command))).result).toMatchObject({
       ok: true,
       revision: 3,
