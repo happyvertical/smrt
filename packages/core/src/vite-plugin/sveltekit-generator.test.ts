@@ -1121,7 +1121,8 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(content).toContain('const pathParams = {');
       expect(content).toContain('profileKey: params.profileKey,');
-      expect(content).toContain(
+      expect(content).toContain("([key]) => key !== '__smrt_options',");
+      expect(content).not.toContain(
         '...Object.fromEntries(new URL(request.url).searchParams.entries()),',
       );
       expect(content).toContain('...pathParams,');

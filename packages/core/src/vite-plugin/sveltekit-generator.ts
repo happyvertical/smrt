@@ -1124,8 +1124,13 @@ function buildActionOptionsLoad(
     if (hasPathParams) {
       lines.push(
         `  const pathParams = ${pathParamsObjectLiteral};`,
+        '  const searchParams = new URL(request.url).searchParams;',
         '  const options = {',
-        '    ...Object.fromEntries(new URL(request.url).searchParams.entries()),',
+        '    ...Object.fromEntries(',
+        '      [...searchParams.entries()].filter(',
+        "        ([key]) => key !== '__smrt_options',",
+        '      ),',
+        '    ),',
         '    ...pathParams,',
         `  } as ${isSingleOptionsParameter ? 'ActionArgs[0]' : 'ActionOptions'};`,
         '',
