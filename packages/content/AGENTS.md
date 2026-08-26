@@ -2,6 +2,15 @@
 
 STI content management with governance workflows, contribution intake, AI reviews, fact-checking, corrections, versioning, transparency reports, and thumbnail generation.
 
+## Modules
+
+Per-module semantics live in sibling module docs — read the one for the module
+you are editing. This file keeps what holds across the package.
+
+| Module | Scope | Module doc |
+|---|---|---|
+| `src/svelte/content-list-*.ts` + `components/ContentList.svelte` | the shared list adapter (#2451), server-backed queries over `POST /api/v1/contents/query` (#2452), shareable URL state, and saved views | [agents/content-list.md](agents/content-list.md) |
+
 ## Models
 
 - **Content** (STI base): `type`, `variant` (generator:domain:specific format), `status` (published/draft/review/archived/deleted), `state`, `category` (hierarchical path with `/` separator), `metadata` JSON, `tags` array, `thumbnailAssetId`
@@ -85,92 +94,6 @@ Three strategies via ThumbnailGenerator:
 
 ### Contributions
 `ContentContributionForm`, `ContentContributionInbox`, `ContentContributionPortal`, `ContentContributionTypeManager`, `ContentContributorManager`
-
-## ContentList migration (#2451)
-
-`ContentList` no longer holds bespoke local state. `src/svelte/content-list-controller.ts`
-is the single adapter every presentation reads from, and one shared
-`DataTableController` (from `@happyvertical/smrt-ui/data`) owns search, filters,
-sorting, page, and selection.
-
-| Before | After |
-|--------|-------|
-| local `searchTerm`/`selectedType`/`selectedStatus` runes | controller commands `setSearch` / `setFilters` (stable filter ids `type`, `status`) |
-| `filteredContents` `$derived` per view | `toContentListRows` → `selectContentListRows` → `paginateContentListRows`, computed once for all three modes |
-| bespoke `<table>` markup in compact mode | smrt-ui `DataTable` with the shared columns plus per-column cell snippets |
-| no selection | checkbox selection in every mode via `toggleRowSelection` / `setSelectedRows` |
-| `getViewHref` called inline three times | `resolveContentHref` / `contentListRowActions` (one eligibility source) |
-
-Props are unchanged and still exported as `ContentListProps`: `apiBaseUrl`,
-`contents`, `type` (still locks and hides the type filter), `defaultViewMode`
-(still seeds once), `onEdit`, `onDelete`, `onAdd`, `controls`, `getViewHref`.
-New optional props: `loading`, `error`, `onRetry`, and `dataSurface`
-(`{ registry, descriptor? }`).
-
-Adapter exports (also re-exported from `./svelte`): `createContentListController`,
-`buildContentListColumns`, `buildContentListSurfaceDescriptor`,
-`toContentListRows`, `selectContentListRows`, `paginateContentListRows`,
-`contentListFilters`, `readContentListFilter`, `applyContentListFilter`,
-`contentListRowActions`, `resolveContentHref`, `selectableContentListRowIds`,
-`resolveSelectedContentListRows`, `resolveSelectedContents`, plus the
-`CONTENT_LIST_*` identity constants.
-
-Notes:
-
-- Controller modes are all `manual`: the adapter owns search, filters, sorting,
-  and paging in **every** presentation, and the compact table receives
-  `data={pageRows}` plus `totalRows={queryRows.length}`. Letting DataTable
-  filter locally over already-filtered rows re-ran the transform with subtly
-  different semantics (untrimmed search, its own equality rules), so the two
-  presentations could disagree. The component clamps the page with
-  `controller.clampPage(queryRows.length)`. #2452 replaces the local
-  implementation of that transform with a server query behind the same contract.
-- A `type` prop lock is enforced against live state, not just against the prop:
-  a data-surface `set-filters` or `reset` command that drops the type filter is
-  re-applied by the lock effect (equality-guarded, so it settles).
-- Selection may only address durable rows. All three presentations render a
-  disabled, explained checkbox for `identified: false` rows, page select-all
-  skips them, and a normalization effect re-dispatches `setSelectedRows` without
-  any non-durable id, which covers data-surface commands too.
-- Compact mode renders a content-owned `select` column (header + cell snippets)
-  instead of passing `selectable` to DataTable. DataTable has no per-row
-  selection predicate, so its header select-all addresses the synthetic id of an
-  unidentified row; the normalization effect then strips it and the header stays
-  indeterminate forever. Because column order is reconciled from the
-  controller's known column ids, the structural `select` and `actions` ids are
-  part of `CONTENT_LIST_TABLE_COLUMN_IDS` — omit them and selection renders
-  behind every data column.
-- Only rendered columns are published to a data surface. `description` is a
-  hidden, search-only column so search still reaches the deck; the descriptor
-  additionally declares the `id` row-key column, which the surface contract
-  requires but the table never renders.
-- Rows without a durable `id` (or repeating one) still render, keyed by
-  position, but are marked `identified: false`;
-  `resolveSelectedContentListRows` drops them so a bulk action can never act on
-  an unaddressable row. `ContentData` has no expiry or site field, so the
-  `site` column is derived from `url`/`source`.
-- Column ids are public identifiers and do not always match the model field, so
-  the descriptor's `fieldName` comes from an explicit map
-  (`publish` → `publish_date`, `updated` → `updatedAt`); the derived `site`
-  column advertises no field at all rather than a nonexistent one.
-- Filter values are normalized per column (`type` via `normalizeContentType`,
-  everything else via `normalizeContentToken`) through
-  `normalizeContentListFilterValue`, and a blank value clears the filter — an
-  `equals ''` filter would silently exclude every row.
-- The card presentations render their own page controls (smrt-ui `Pagination`
-  dispatching `setPage`) and their own polite refresh status, because DataTable
-  — which owns both in compact mode — is not mounted there. A page size arriving
-  from a saved view or a surface command would otherwise strand the operator on
-  page one, and a refresh over retained rows would be silent.
-- `dataSurface` registers the compact table only. Agent addressability for the
-  grid and detailed presentations lands with #2456.
-- Compact mode stays mounted for empty and loading results — DataTable renders
-  its own `empty` snippet and loading row — because it owns the mounted surface:
-  swapping it for the shared empty panel unregisters the surface, and an agent
-  whose own search returned nothing then gets `not_found` on the command that
-  would undo it. The shared loading/empty panels are the card presentations'
-  only; the `error` branch still replaces the list in every mode, since a load
-  failure is host-driven rather than surface-driven.
 
 ## Dev Server
 

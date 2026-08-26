@@ -4,6 +4,9 @@ import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentData } from '../../mock-smrt-client.js';
+import { ContentListQueryError } from '../content-list-query.js';
+import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
+import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
 import ContentList from './ContentList.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
@@ -786,5 +789,416 @@ describe('ContentList accessibility', () => {
     expect(
       buttonByLabel(target, 'Compact List').getAttribute('aria-pressed'),
     ).toBe('false');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Server-backed mode, URL state, and saved views (#2452)
+// ---------------------------------------------------------------------------
+
+function serverRow(
+  id: string,
+  title: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    type: 'article',
+    title,
+    description: '',
+    author: 'Ada Lovelace',
+    status: 'published',
+    state: 'active',
+    updated_at: '2026-02-01T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
+async function settle() {
+  await Promise.resolve();
+  await Promise.resolve();
+  flushSync();
+}
+
+describe('ContentList server-backed mode (#2452)', () => {
+  it('renders exactly the rows the transport returned, in that order', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding },
+    });
+
+    // A search no local row could satisfy: if the component still ran the local
+    // predicate over the server's answer, both rows would disappear.
+    typeText(searchInput(target), 'zzzz-no-local-match');
+    query.resolve([
+      serverRow('server-2', 'Zoning appendix'),
+      serverRow('server-1', 'Council budget explained'),
+    ]);
+    flushSync();
+
+    expect(rowTitles(target)).toEqual([
+      'Zoning appendix',
+      'Council budget explained',
+    ]);
+  });
+
+  it('does not re-sort or re-page the server answer', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      // A page size of one: a second local pass would keep a single row.
+      query: { bind: () => query.binding, request: { defaultPageSize: 1 } },
+    });
+
+    click(buttonByLabel(target, 'Compact List'));
+    // An ascending title sort: a second local pass would reorder these three.
+    const titleHeader = Array.from(target.querySelectorAll('th button')).find(
+      (button) => button.textContent?.includes('Title'),
+    );
+    if (!titleHeader) throw new Error('No sortable Title header');
+    click(titleHeader);
+
+    query.resolve(
+      [
+        serverRow('server-b', 'Beta'),
+        serverRow('server-a', 'Alpha'),
+        serverRow('server-c', 'Gamma'),
+      ],
+      3,
+    );
+    flushSync();
+
+    expect(
+      Array.from(target.querySelectorAll('tbody tr td:nth-child(3)')).map(
+        (cell) => cell.textContent?.trim(),
+      ),
+    ).toEqual(['Beta', 'Alpha', 'Gamma']);
+    // The sort did reach the server, it just did not run again locally.
+    expect(query.requests.at(-1)?.sort).toEqual([
+      { field: 'title', direction: 'asc' },
+      { field: 'id', direction: 'asc' },
+    ]);
+  });
+
+  it('ignores the `contents` prop entirely', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+
+    expect(rowTitles(target)).toEqual([]);
+
+    query.resolve([serverRow('server-1', 'Only from the server')]);
+    flushSync();
+
+    expect(rowTitles(target)).toEqual(['Only from the server']);
+  });
+
+  it('executes an offset request that maps the columns to server fields', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: {
+        bind: () => query.binding,
+        request: { defaultPageSize: 20 },
+      },
+    });
+
+    expect(query.requests).toHaveLength(1);
+    expect(query.requests[0]).toMatchObject({
+      version: 1,
+      mode: 'rows',
+      page: { kind: 'offset', offset: 0, limit: 20 },
+    });
+
+    selectOption(
+      target.querySelectorAll('select')[0] as HTMLSelectElement,
+      'article',
+    );
+
+    expect(query.requests).toHaveLength(2);
+    expect(JSON.stringify(query.requests[1].filter)).toContain(
+      '"field":"type"',
+    );
+  });
+
+  it('re-queries for a query change but not for a selection change', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('server-1', 'Council budget explained')]);
+    flushSync();
+
+    const beforeSelection = query.requests.length;
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    expect(query.requests).toHaveLength(beforeSelection);
+
+    typeText(searchInput(target), 'budget');
+    expect(query.requests.length).toBe(beforeSelection + 1);
+  });
+
+  it('keeps a selection addressable across a server page change', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('server-1', 'Council budget explained')], 2);
+    flushSync();
+
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    expect(target.textContent).toContain('1 selected');
+
+    // The next page carries entirely different rows; the selection must not be
+    // silently discarded just because its row is no longer rendered.
+    query.resolve([serverRow('server-2', 'Zoning appendix')], 2);
+    flushSync();
+
+    expect(target.textContent).toContain('1 selected');
+  });
+
+  it('pages against the server total rather than the rendered page', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: {
+        bind: () => query.binding,
+        request: { defaultPageSize: 2 },
+      },
+    });
+    // Two rows on screen, fifty in the query.
+    query.resolve(
+      [serverRow('server-1', 'Alpha'), serverRow('server-2', 'Beta')],
+      50,
+    );
+    flushSync();
+
+    const pages = target.querySelector('nav');
+    expect(pages).toBeTruthy();
+    expect(pages?.getAttribute('aria-label')).toBe('Content pages');
+  });
+
+  it('announces a query failure through the shared error panel and retries', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+
+    query.fail(
+      new ContentListQueryError('Filter field is not declared: secret', {
+        code: 'DATA_QUERY_FILTER_NOT_ALLOWED',
+        status: 400,
+      }),
+    );
+    flushSync();
+
+    const panel = target.querySelector('[role="alert"]');
+    expect(panel?.textContent).toContain('Contents could not be loaded');
+    expect(panel?.textContent).toContain('DATA_QUERY_FILTER_NOT_ALLOWED');
+
+    click(buttonsByText(target, 'Retry')[0]);
+    expect(query.retries).toBe(1);
+  });
+
+  it('announces a refresh over rows that are already on screen', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('server-1', 'Council budget explained')]);
+    flushSync();
+
+    query.setBusy({ refreshing: true });
+    flushSync();
+
+    const status = target.querySelector('[role="status"]');
+    expect(status?.textContent?.trim()).toBe('Refreshing contents...');
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+  });
+
+  it('leaves local mode untouched when no query source is supplied (H3)', () => {
+    const target = renderList();
+
+    typeText(searchInput(target), 'zoning');
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+  });
+});
+
+describe('ContentList URL state (#2452)', () => {
+  it('restores search, a filter, and the page from query parameters', () => {
+    const target = renderList({
+      urlState: { params: 'q=zoning&status=draft' },
+    });
+
+    expect(searchInput(target).value).toBe('zoning');
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+  });
+
+  it('reports what a stale link could not restore', () => {
+    const target = renderList({
+      urlState: { params: 'legacyScore.gt=5' },
+    });
+
+    const notice = target.querySelector('.state-notice');
+    expect(notice?.textContent).toContain(
+      'Part of this view could not be applied',
+    );
+    expect(notice?.textContent).toContain('legacyScore');
+    expect(notice?.textContent).toContain('that column no longer exists');
+
+    click(buttonsByText(target, 'Dismiss')[0]);
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('lets the `type` prop lock win over a restored type filter', () => {
+    const target = renderList({
+      type: 'article',
+      urlState: { params: 'type=document' },
+    });
+
+    // `document` was restored, then the lock effect re-applied `article`.
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+    // A locked list never renders the type select at all.
+    expect(
+      Array.from(target.querySelectorAll('select')).some(
+        (select) => select.getAttribute('aria-label') === 'Filter by type',
+      ),
+    ).toBe(false);
+  });
+
+  it('publishes changes while preserving foreign parameters', () => {
+    const onChange = vi.fn();
+    const target = renderList({
+      urlState: { params: 'utm_source=newsletter', onChange },
+    });
+
+    // The initial restore must not be published back at the host.
+    expect(onChange).not.toHaveBeenCalled();
+
+    typeText(searchInput(target), 'zoning');
+
+    expect(onChange).toHaveBeenCalled();
+    const params = onChange.mock.calls.at(-1)?.[0] as URLSearchParams;
+    expect(params.get('q')).toBe('zoning');
+    expect(params.get('utm_source')).toBe('newsletter');
+  });
+});
+
+describe('ContentList saved views (#2452)', () => {
+  it('saves the current view and applies it again', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:component',
+    });
+    const target = renderList({ savedViews: store });
+    await settle();
+
+    typeText(searchInput(target), 'zoning');
+    const nameInput = target.querySelector<HTMLInputElement>(
+      'input[aria-label="Name for this view"]',
+    );
+    if (!nameInput) throw new Error('No saved-view name input');
+    typeText(nameInput, 'Zoning work');
+    click(buttonsByText(target, 'Save view')[0]);
+    await settle();
+
+    expect((await store.list()).map((view) => view.name)).toEqual([
+      'Zoning work',
+    ]);
+
+    // Move away from the saved view, then come back to it.
+    typeText(searchInput(target), '');
+    expect(rowTitles(target)).toHaveLength(2);
+
+    const [saved] = await store.list();
+    const select = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Saved views"]',
+    );
+    if (!select) throw new Error('No saved-view select');
+    selectOption(select, saved.id);
+
+    expect(searchInput(target).value).toBe('zoning');
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+  });
+
+  it('restores a stale view and reports the columns it dropped', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:stale',
+    });
+    await store.save({
+      name: 'Legacy audit',
+      snapshot: {
+        version: 3,
+        modes: {
+          filtering: 'manual',
+          sorting: 'manual',
+          pagination: 'manual',
+        },
+        state: {
+          search: 'zoning',
+          filters: [
+            { columnId: 'legacyScore', operator: 'gt', value: 5 },
+            { columnId: 'status', operator: 'equals', value: 'draft' },
+          ],
+          sorting: [],
+          page: 1,
+          pageSize: null,
+          columnOrder: [],
+          columnVisibility: [],
+          columnWidths: [],
+          columnPinning: [],
+          selection: { scope: 'explicit', rowIds: [] },
+          selectedRowIds: [],
+          expandedRowIds: [],
+        },
+      } as never,
+    });
+
+    const target = renderList({ savedViews: store });
+    await settle();
+
+    const [saved] = await store.list();
+    const select = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Saved views"]',
+    );
+    if (!select) throw new Error('No saved-view select');
+    selectOption(select, saved.id);
+
+    // The valid remainder still applied.
+    expect(searchInput(target).value).toBe('zoning');
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+    // And the stale column was reported rather than silently discarded.
+    const notice = target.querySelector('.state-notice');
+    expect(notice?.textContent).toContain('legacyScore');
+  });
+
+  it('deletes the selected view', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:delete',
+    });
+    const saved = await store.save({
+      name: 'Temporary',
+      snapshot: {
+        version: 3,
+        modes: {
+          filtering: 'manual',
+          sorting: 'manual',
+          pagination: 'manual',
+        },
+        state: {
+          search: '',
+          filters: [],
+          sorting: [],
+          page: 1,
+          pageSize: null,
+          columnOrder: [],
+          columnVisibility: [],
+          columnWidths: [],
+          columnPinning: [],
+          selection: { scope: 'explicit', rowIds: [] },
+          selectedRowIds: [],
+          expandedRowIds: [],
+        },
+      } as never,
+    });
+
+    const target = renderList({ savedViews: store });
+    await settle();
+
+    const select = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Saved views"]',
+    );
+    if (!select) throw new Error('No saved-view select');
+    selectOption(select, saved.id);
+    click(buttonsByText(target, 'Delete view')[0]);
+    await settle();
+
+    expect(await store.list()).toEqual([]);
   });
 });
