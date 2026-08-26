@@ -1053,6 +1053,18 @@ describe('ContentList URL state (#2452)', () => {
     ).toBe(false);
   });
 
+  it('restores a type filter when no `type` prop locks the list', () => {
+    const target = renderList({ urlState: { params: 'type=document' } });
+
+    // Without a lock the select owns the filter, so a restored type must
+    // survive rather than being cleared as though the prop had been removed.
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+    const select = Array.from(target.querySelectorAll('select')).find(
+      (candidate) => candidate.getAttribute('aria-label') === 'Filter by type',
+    );
+    expect(select?.value).toBe('document');
+  });
+
   it('publishes changes while preserving foreign parameters', () => {
     const onChange = vi.fn();
     const target = renderList({

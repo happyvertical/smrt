@@ -342,16 +342,26 @@ const lockedType = $derived(type?.trim() ? normalizeContentType(type) : null);
 // lock is enforced against the live state, not only against the prop, because a
 // data-surface `set-filters` or `reset` command can otherwise replace or clear
 // it. The equality guard keeps the effect from dispatching in a loop.
+// Tracks the previous prop so an unlocked list can tell "the lock was just
+// removed" from "there was never a lock". A plain binding, so writing it here
+// cannot re-trigger the effect.
+let previousLockedType: string | null = untrack(() => lockedType);
+
 $effect(() => {
   const locked = lockedType;
   if (locked === null) {
-    // Unlocked: the toolbar select owns the filter. Only reading `type` here
-    // keeps the legacy behaviour of clearing it when the prop is removed.
+    const lockWasRemoved = previousLockedType !== null;
+    previousLockedType = null;
+    // Unlocked: the toolbar select owns the filter. Clear it only when the prop
+    // actually went away, because clearing on every run would also discard a
+    // type filter restored from a link or a saved view.
+    if (!lockWasRemoved) return;
     untrack(() =>
       applyContentListFilter(controller, CONTENT_LIST_TYPE_FILTER_ID, null),
     );
     return;
   }
+  previousLockedType = locked;
   if (
     isContentListFilterExactly(tableState, CONTENT_LIST_TYPE_FILTER_ID, locked)
   )
