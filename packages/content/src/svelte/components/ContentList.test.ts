@@ -282,6 +282,47 @@ describe('ContentList shared query state', () => {
     expect(target.textContent).not.toContain('Published appendix');
   });
 
+  it('re-applies the locked type filter when a surface command inverts it', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      type: 'article',
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      contents: [
+        ...contents,
+        {
+          id: 'content-3',
+          type: 'document',
+          title: 'Published appendix',
+          status: 'published',
+          state: 'active',
+        },
+      ],
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+
+    // A filter naming the locked value but negating it must not pass the lock.
+    await registry.execute({
+      version: 1,
+      commandId: 'invert-type-filter',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-filters',
+      payload: {
+        filters: [
+          { columnId: 'type', operator: 'notEquals', value: 'article' },
+        ],
+      },
+    });
+    flushSync();
+
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(target.textContent).toContain('Council budget explained');
+    expect(target.textContent).not.toContain('Published appendix');
+  });
+
   it('selects and clears every row on the page from the shared selection bar', () => {
     const target = renderList();
 

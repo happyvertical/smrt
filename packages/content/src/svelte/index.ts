@@ -187,6 +187,7 @@ export {
   contentTypeLabel,
   createContentListController,
   formatContentListDate,
+  isContentListFilterExactly,
   normalizeContentToken,
   normalizeContentType,
   paginateContentListRows,

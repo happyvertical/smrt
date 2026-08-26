@@ -538,6 +538,29 @@ export function readContentListFilter(
 }
 
 /**
+ * True when a column is filtered to exactly the given value and nothing else.
+ *
+ * A locked filter has to be checked as a whole rather than by reading one
+ * value: a `notEquals` on the locked value, or a second filter on the same
+ * column, would otherwise satisfy a value-only comparison while selecting rows
+ * the lock is meant to exclude.
+ */
+export function isContentListFilterExactly(
+  state: DataTableViewState,
+  columnId: string,
+  value: string,
+): boolean {
+  const applied = state.filters.filter(
+    (filter) => filter.columnId === columnId,
+  );
+  return (
+    applied.length === 1 &&
+    applied[0].operator === 'equals' &&
+    applied[0].value === normalizeContentListFilterValue(columnId, value)
+  );
+}
+
+/**
  * Replaces one filter while preserving the others, so locking the type filter
  * never discards a status the operator chose.
  *

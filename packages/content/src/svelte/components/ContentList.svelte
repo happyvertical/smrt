@@ -23,6 +23,7 @@ import {
   contentStateVariant,
   contentStatusVariant,
   createContentListController,
+  isContentListFilterExactly,
   normalizeContentType,
   paginateContentListRows,
   readContentListFilter,
@@ -109,7 +110,9 @@ $effect(() => {
     );
     return;
   }
-  if (readContentListFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID) === locked)
+  if (
+    isContentListFilterExactly(tableState, CONTENT_LIST_TYPE_FILTER_ID, locked)
+  )
     return;
   untrack(() =>
     applyContentListFilter(controller, CONTENT_LIST_TYPE_FILTER_ID, locked),

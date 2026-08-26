@@ -14,6 +14,7 @@ import {
   contentListFilters,
   contentListRowActions,
   createContentListController,
+  isContentListFilterExactly,
   paginateContentListRows,
   readContentListFilter,
   resolveContentHref,
@@ -196,6 +197,60 @@ describe('content list controller', () => {
     expect(
       readContentListFilter(applied.getState(), CONTENT_LIST_TYPE_FILTER_ID),
     ).toBe('article');
+  });
+
+  it('accepts a locked filter only when it is one equals on the locked value', () => {
+    const controller = createContentListController({ type: 'article' });
+    expect(
+      isContentListFilterExactly(
+        controller.getState(),
+        CONTENT_LIST_TYPE_FILTER_ID,
+        'article',
+      ),
+    ).toBe(true);
+
+    // Negating the locked value names it without selecting it.
+    controller.dispatch({
+      type: 'setFilters',
+      filters: [
+        {
+          columnId: CONTENT_LIST_TYPE_FILTER_ID,
+          operator: 'notEquals',
+          value: 'article',
+        },
+      ],
+    });
+    expect(
+      isContentListFilterExactly(
+        controller.getState(),
+        CONTENT_LIST_TYPE_FILTER_ID,
+        'article',
+      ),
+    ).toBe(false);
+
+    // A second filter on the same column widens the query past the lock.
+    controller.dispatch({
+      type: 'setFilters',
+      filters: [
+        {
+          columnId: CONTENT_LIST_TYPE_FILTER_ID,
+          operator: 'equals',
+          value: 'article',
+        },
+        {
+          columnId: CONTENT_LIST_TYPE_FILTER_ID,
+          operator: 'notEquals',
+          value: 'article',
+        },
+      ],
+    });
+    expect(
+      isContentListFilterExactly(
+        controller.getState(),
+        CONTENT_LIST_TYPE_FILTER_ID,
+        'article',
+      ),
+    ).toBe(false);
   });
 
   it('builds declarative filters only for the values that are set', () => {
