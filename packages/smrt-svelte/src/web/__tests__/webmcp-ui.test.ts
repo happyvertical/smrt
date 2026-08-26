@@ -243,7 +243,11 @@ describe('registerWebMcpUiTools', () => {
     const hiddenRowKeySurfaces = createDataSurfaceRegistry();
     hiddenRowKeySurfaces.register({
       descriptor: hiddenRowKeyDescriptor,
-      getSnapshot: () => ({ revision: 0, state: {} }),
+      getSnapshot: () => ({
+        revision: 0,
+        state: {},
+        selection: { scope: 'explicit-ids', rowIds: ['private-row-id'] },
+      }),
     });
     const hiddenRowKeyBrowser = modelContext();
     registerWebMcpUiTools({
@@ -258,6 +262,14 @@ describe('registerWebMcpUiTools', () => {
       ).execute({}),
     );
     expect(hiddenRowKeyList.result[0]).not.toHaveProperty('rowKey');
+    const hiddenRowKeyInspect = await parse(
+      findTool(
+        hiddenRowKeyBrowser.registered,
+        'smrt_ui_inspect_data_surface',
+      ).execute({ identity }),
+    );
+    expect(hiddenRowKeyInspect.result.selection).toBeNull();
+    expect(JSON.stringify(hiddenRowKeyInspect)).not.toContain('private-row-id');
 
     const command = {
       version: 1,

@@ -223,10 +223,12 @@ function visibleSnapshot(
   const state = Object.fromEntries(
     Object.entries(snapshot.state).filter(([key]) => !hiddenColumnIds.has(key)),
   );
+  const rowKeyHidden = hiddenColumnIds.has(snapshot.descriptor.rowKey);
   return {
     ...snapshot,
     descriptor: visibleDescriptor(snapshot.descriptor),
     state,
+    selection: rowKeyHidden ? null : snapshot.selection,
   };
 }
 

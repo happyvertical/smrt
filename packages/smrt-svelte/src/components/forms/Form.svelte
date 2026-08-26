@@ -104,7 +104,12 @@ setControlInteractionContext({
 $effect(() => {
   if (!oninteraction) return;
   return resolvedInteractionRegistry.subscribe((event) => {
-    if (event.identity.formId === resolvedFormId) oninteraction(event);
+    if (event.identity.formId !== resolvedFormId) return;
+    try {
+      oninteraction(event);
+    } catch (error) {
+      logger.warn('Form: interaction observer failed', { error });
+    }
   });
 });
 

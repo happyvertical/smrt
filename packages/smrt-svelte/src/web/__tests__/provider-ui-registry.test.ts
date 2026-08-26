@@ -81,6 +81,29 @@ describe('Provider WebMCP UI registry context', () => {
     view.unmount();
   });
 
+  it('isolates throwing interaction observers from registry command outcomes', async () => {
+    const providerRegistry = createControlInteractionRegistry();
+    const view = render(Fixture, {
+      props: {
+        providerRegistry,
+        explicitRegistry: createControlInteractionRegistry(),
+        onSiblingInteraction: () => {
+          throw new Error('observer failed');
+        },
+      },
+    });
+    await tick();
+
+    await expect(
+      providerRegistry.execute({
+        action: 'stage',
+        identity: { formId: 'sibling-form', controlId: 'sibling-name' },
+        value: 'still staged',
+      }),
+    ).resolves.toMatchObject({ ok: true, action: 'stage' });
+    view.unmount();
+  });
+
   it('preserves legacy object configs that did not opt into UI tools', async () => {
     const names: string[] = [];
     const providerRegistry = createControlInteractionRegistry();
