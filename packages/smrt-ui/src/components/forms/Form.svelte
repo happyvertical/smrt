@@ -51,6 +51,9 @@ let {
   id,
   name,
   onsubmit,
+  onclick,
+  oninput,
+  onchange,
   children,
   ...rest
 }: Props = $props();
@@ -111,18 +114,20 @@ function recordDirectUserEdit(event: Event) {
   });
 }
 
-$effect(() => {
-  const form = formElement;
-  if (!form) return;
-  form.addEventListener('click', recordDirectUserEdit);
-  form.addEventListener('input', recordDirectUserEdit);
-  form.addEventListener('change', recordDirectUserEdit);
-  return () => {
-    form.removeEventListener('click', recordDirectUserEdit);
-    form.removeEventListener('input', recordDirectUserEdit);
-    form.removeEventListener('change', recordDirectUserEdit);
-  };
-});
+function handleClick(event: MouseEvent & { currentTarget: HTMLFormElement }) {
+  recordDirectUserEdit(event);
+  onclick?.(event);
+}
+
+function handleInput(event: Event & { currentTarget: HTMLFormElement }) {
+  recordDirectUserEdit(event);
+  oninput?.(event);
+}
+
+function handleChange(event: Event & { currentTarget: HTMLFormElement }) {
+  recordDirectUserEdit(event);
+  onchange?.(event);
+}
 </script>
 
 <form
@@ -132,6 +137,9 @@ $effect(() => {
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
+  onclick={handleClick}
+  oninput={handleInput}
+  onchange={handleChange}
   {...rest}
 >
 	{@render children()}
