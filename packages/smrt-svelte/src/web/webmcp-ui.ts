@@ -170,16 +170,26 @@ function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
   };
 }
 
+type VisibleDataSurfaceDescriptor = Omit<DataSurfaceDescriptor, 'rowKey'> & {
+  rowKey?: string;
+};
+
+type VisibleDataSurfaceSnapshot = Omit<DataSurfaceSnapshot, 'descriptor'> & {
+  descriptor: VisibleDataSurfaceDescriptor;
+};
+
 function visibleDescriptor(
   descriptor: DataSurfaceDescriptor,
-): DataSurfaceDescriptor {
+): VisibleDataSurfaceDescriptor {
   const columns = descriptor.columns.filter(
     (column) => column.visibility !== 'hidden',
   );
   const visibleColumnIds = new Set(columns.map((column) => column.id));
+  const { rowKey, ...visible } = descriptor;
   return {
-    ...descriptor,
+    ...visible,
     identity: { ...descriptor.identity },
+    ...(visibleColumnIds.has(rowKey) ? { rowKey } : {}),
     columns,
     query: {
       ...descriptor.query,
@@ -202,7 +212,9 @@ function visibleDescriptor(
   };
 }
 
-function visibleSnapshot(snapshot: DataSurfaceSnapshot): DataSurfaceSnapshot {
+function visibleSnapshot(
+  snapshot: DataSurfaceSnapshot,
+): VisibleDataSurfaceSnapshot {
   return { ...snapshot, descriptor: visibleDescriptor(snapshot.descriptor) };
 }
 
@@ -350,7 +362,12 @@ function tools(
           } else {
             command = { action, identity } as ControlCommand;
           }
-          return controlRegistry.execute(command, { source: 'agent' });
+          const result = await controlRegistry.execute(command, {
+            source: 'agent',
+          });
+          return result.snapshot
+            ? { ...result, snapshot: sanitizeControl(result.snapshot) }
+            : result;
         }),
     },
     readTool(

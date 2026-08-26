@@ -101,7 +101,9 @@ setControlInteractionContext({
 
 $effect(() => {
   if (!oninteraction) return;
-  return resolvedInteractionRegistry.subscribe(oninteraction);
+  return resolvedInteractionRegistry.subscribe((event) => {
+    if (event.identity.formId === resolvedFormId) oninteraction(event);
+  });
 });
 
 // Internal state

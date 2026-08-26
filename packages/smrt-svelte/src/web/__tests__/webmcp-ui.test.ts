@@ -154,7 +154,7 @@ describe('registerWebMcpUiTools', () => {
     expect(value).toBe('Ada');
   });
 
-  it('keeps secret values redacted from list and inspect responses', async () => {
+  it('keeps secret values redacted from list, inspect, and execute responses', async () => {
     const browser = modelContext();
     const controls = createControlInteractionRegistry();
     controls.register({
@@ -177,17 +177,28 @@ describe('registerWebMcpUiTools', () => {
       browser.registered,
       'smrt_ui_inspect_form_control',
     );
+    const execute = findTool(
+      browser.registered,
+      'smrt_ui_execute_form_control',
+    );
     const listed = await parse(list.execute({ formId: 'account' }));
     const inspected = await parse(
       inspect.execute({
         identity: { formId: 'account', controlId: 'password' },
       }),
     );
-    expect(JSON.stringify([listed, inspected])).not.toContain(
+    const executed = await parse(
+      execute.execute({
+        action: 'focus',
+        identity: { formId: 'account', controlId: 'password' },
+      }),
+    );
+    expect(JSON.stringify([listed, inspected, executed])).not.toContain(
       'never-serialize-this',
     );
     expect(listed.result[0].state.valueRedacted).toBe(true);
     expect(inspected.result.state.valueRedacted).toBe(true);
+    expect(executed.result.snapshot.state.valueRedacted).toBe(true);
   });
 
   it('filters hidden columns and preserves surface revision and replay failures', async () => {
@@ -222,6 +233,27 @@ describe('registerWebMcpUiTools', () => {
     expect((await parse(list.execute({}))).result[0].columns).toHaveLength(1);
     const snapshot = (await parse(inspect.execute({ identity }))).result;
     expect(snapshot.descriptor.query.projectableColumnIds).toEqual(['id']);
+
+    const hiddenRowKeyDescriptor = descriptor();
+    hiddenRowKeyDescriptor.rowKey = 'internal';
+    const hiddenRowKeySurfaces = createDataSurfaceRegistry();
+    hiddenRowKeySurfaces.register({
+      descriptor: hiddenRowKeyDescriptor,
+      getSnapshot: () => ({ revision: 0, state: {} }),
+    });
+    const hiddenRowKeyBrowser = modelContext();
+    registerWebMcpUiTools({
+      controlRegistry: createControlInteractionRegistry(),
+      dataSurfaceRegistry: hiddenRowKeySurfaces,
+      document: hiddenRowKeyBrowser.document,
+    });
+    const hiddenRowKeyList = await parse(
+      findTool(
+        hiddenRowKeyBrowser.registered,
+        'smrt_ui_list_data_surfaces',
+      ).execute({}),
+    );
+    expect(hiddenRowKeyList.result[0]).not.toHaveProperty('rowKey');
 
     const command = {
       version: 1,

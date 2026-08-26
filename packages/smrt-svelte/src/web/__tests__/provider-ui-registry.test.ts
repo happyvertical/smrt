@@ -1,7 +1,7 @@
 import { createControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import Fixture from './provider-ui-registry.fixture.svelte';
 
 afterEach(() => {
@@ -36,6 +36,7 @@ describe('Provider WebMCP UI registry context', () => {
 
     expect(providerRegistry.list().map((entry) => entry.identity)).toEqual([
       { formId: 'shared-form', controlId: 'shared-name' },
+      { formId: 'sibling-form', controlId: 'sibling-name' },
     ]);
     expect(explicitRegistry.list().map((entry) => entry.identity)).toEqual([
       { formId: 'explicit-form', controlId: 'explicit-name' },
@@ -46,6 +47,38 @@ describe('Provider WebMCP UI registry context', () => {
     expect(explicitRegistry.list()).toEqual([]);
     expect(signals).toHaveLength(6);
     expect(signals.every((signal) => signal.aborted)).toBe(true);
+  });
+
+  it('keeps form interaction callbacks scoped when forms share a Provider registry', async () => {
+    const providerRegistry = createControlInteractionRegistry();
+    const onSharedInteraction = vi.fn();
+    const onSiblingInteraction = vi.fn();
+    const view = render(Fixture, {
+      props: {
+        providerRegistry,
+        explicitRegistry: createControlInteractionRegistry(),
+        onSharedInteraction,
+        onSiblingInteraction,
+      },
+    });
+    await tick();
+    onSharedInteraction.mockClear();
+    onSiblingInteraction.mockClear();
+
+    await providerRegistry.execute({
+      action: 'stage',
+      identity: { formId: 'sibling-form', controlId: 'sibling-name' },
+      value: 'private sibling value',
+    });
+
+    expect(onSharedInteraction).not.toHaveBeenCalled();
+    expect(onSiblingInteraction).toHaveBeenCalled();
+    expect(
+      onSiblingInteraction.mock.calls.every(
+        ([event]) => event.identity.formId === 'sibling-form',
+      ),
+    ).toBe(true);
+    view.unmount();
   });
 
   it('preserves legacy object configs that did not opt into UI tools', async () => {
