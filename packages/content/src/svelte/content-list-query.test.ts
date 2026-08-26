@@ -6,7 +6,14 @@
  * here rather than a production query.
  */
 
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  MAX_DATA_QUERY_FILTERS,
+  MAX_DATA_QUERY_IN_VALUES,
+  MAX_DATA_QUERY_OFFSET,
+  MAX_DATA_QUERY_REQUEST_BYTES,
+  normalizeDataQueryRequest,
+} from '@happyvertical/smrt-core';
 import type { DataTableViewState } from '@happyvertical/smrt-ui/data';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,9 +30,18 @@ import {
 } from './content-list-controller';
 import {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+  CONTENT_LIST_QUERY_DEFAULT_SORT,
   CONTENT_LIST_QUERY_FIELDS,
   CONTENT_LIST_QUERY_IDENTITY_FIELD,
+  CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH,
+  CONTENT_LIST_QUERY_MAX_FILTER_NODES,
+  CONTENT_LIST_QUERY_MAX_IN_VALUES,
+  CONTENT_LIST_QUERY_MAX_OFFSET,
+  CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS,
   CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
+  CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH,
+  CONTENT_LIST_QUERY_MAX_VALUE_LENGTH,
+  CONTENT_LIST_QUERY_PROJECTABLE_FIELDS,
   CONTENT_LIST_QUERY_PROJECTION,
   CONTENT_LIST_QUERY_SEARCH_FIELDS,
   type ContentListDataQueryRequest,
@@ -398,11 +414,14 @@ describe('translating sorting', () => {
     });
   });
 
-  it('omits `sort` when nothing is sortable, so the schema default applies', () => {
+  it('emits the schema default explicitly when nothing is sortable', () => {
+    // Explicit rather than omitted: the normalizer injects `defaultSort` when
+    // the key is absent and then measures the NORMALIZED request against the
+    // byte limit, so omitting it makes the client under-measure by 84 bytes.
     const { request } = translate({
       sorting: [{ columnId: 'site', direction: 'asc' }],
     });
-    expect(request.sort).toBeUndefined();
+    expect(request.sort).toEqual([...CONTENT_LIST_QUERY_DEFAULT_SORT]);
   });
 });
 
@@ -1012,25 +1031,66 @@ describe('validity rules beyond the numeric caps (Shape B sweep)', () => {
     expect(empty.request.requestId.length).toBeLessThanOrEqual(128);
   });
 
-  it('bounds and de-duplicates a caller-supplied projection', () => {
+  it('drops a projection field the schema does not declare projectable', async () => {
+    const schema = await buildContentQuerySchema();
+    const projectable = new Set(
+      schema.fields.filter((field) => field.projectable).map((f) => f.id),
+    );
+
     const { request, dropped } = contentListViewStateToDataQueryRequest(
       viewState(),
       {
         createRequestId: () => 'fixed',
-        projection: Array.from({ length: 80 }, (_, index) => `field-${index}`),
+        // A typo, a withheld document field, and the tenant field the schema
+        // never declares — each a 400 for the whole list if it were sent.
+        projection: ['titel', 'body', 'tenantId', 'title'],
       },
     );
-    expect(request.projection?.length).toBe(50);
-    expect(request.projection).toContain(CONTENT_LIST_QUERY_IDENTITY_FIELD);
-    expect(dropped).toContainEqual(
-      expect.objectContaining({ scope: 'state', reason: 'out-of-range' }),
-    );
 
+    expect(request.projection).toEqual(['id', 'title']);
+    for (const field of request.projection ?? []) {
+      expect(projectable.has(field)).toBe(true);
+    }
+    expect(
+      dropped.filter((drop) => drop.reason === 'unsupported-value'),
+    ).toHaveLength(3);
+  });
+
+  it('drops a projection entry that is not a usable field id', () => {
+    const { request, dropped } = contentListViewStateToDataQueryRequest(
+      viewState(),
+      {
+        createRequestId: () => 'fixed',
+        projection: ['', 'x'.repeat(300), 'title'],
+      },
+    );
+    expect(request.projection).toEqual(['id', 'title']);
+    expect(
+      dropped.filter((drop) => drop.reason === 'unsupported-value'),
+    ).toHaveLength(2);
+  });
+
+  it('de-duplicates and always projects the identity field', () => {
     const deduped = contentListViewStateToDataQueryRequest(viewState(), {
       createRequestId: () => 'fixed',
-      projection: ['title', 'title', 'id'],
+      projection: ['title', 'title'],
     });
     expect(deduped.request.projection).toEqual(['id', 'title']);
+  });
+
+  it('caps the projection count at the normalizer limit', async () => {
+    const schema = await buildContentQuerySchema();
+    const projectable = schema.fields
+      .filter((field) => field.projectable)
+      .map((field) => field.id);
+    // Every declared field, so the cap is exercised with REAL ids only.
+    const { request } = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'fixed',
+      projection: projectable,
+    });
+    expect(request.projection?.length).toBe(
+      Math.min(projectable.length, CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS),
+    );
   });
 });
 
@@ -1084,5 +1144,200 @@ describe('the bounded request survives the real normalizer', () => {
         ],
       }),
     ).resolves.toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 3: every mirrored constant is self-enforcing (#2452 finding 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The client mirrors numbers that live in the schema and in
+ * `@happyvertical/smrt-core`. A hand-copied number that silently drifts is the
+ * defect class this whole issue has been chasing: lowering the server's page
+ * limit while the client keeps seeding and paging by the old one strands rows
+ * with every existing test still green.
+ *
+ * Each assertion below binds one mirrored constant to its source. Where core
+ * exports the constant, the assertion is direct; where it does not, the
+ * assertion is against core's observable BEHAVIOUR (the largest value it
+ * accepts, and the smallest it refuses) rather than being skipped.
+ */
+describe('mirrored constants are pinned to their source', () => {
+  const schemaFor = () => buildContentQuerySchema();
+
+  it('CONTENT_LIST_MAX_PAGE_SIZE === schema.maxPageLimit', async () => {
+    expect(CONTENT_LIST_MAX_PAGE_SIZE).toBe((await schemaFor()).maxPageLimit);
+  });
+
+  it('CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE === schema.defaultPageLimit', async () => {
+    expect(CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE).toBe(
+      (await schemaFor()).defaultPageLimit,
+    );
+  });
+
+  it('CONTENT_LIST_QUERY_IDENTITY_FIELD === schema.identityField', async () => {
+    expect(CONTENT_LIST_QUERY_IDENTITY_FIELD).toBe(
+      (await schemaFor()).identityField,
+    );
+  });
+
+  it('CONTENT_LIST_QUERY_DEFAULT_SORT === schema.defaultSort', async () => {
+    expect([...CONTENT_LIST_QUERY_DEFAULT_SORT]).toEqual(
+      (await schemaFor()).defaultSort,
+    );
+  });
+
+  it('CONTENT_LIST_QUERY_PROJECTABLE_FIELDS === the schema projectable ids', async () => {
+    const schema = await schemaFor();
+    expect([...CONTENT_LIST_QUERY_PROJECTABLE_FIELDS].sort()).toEqual(
+      schema.fields
+        .filter((field) => field.projectable)
+        .map((field) => field.id)
+        .sort(),
+    );
+  });
+
+  it('the offset, filter, in-value and request-byte caps === core', () => {
+    expect(CONTENT_LIST_QUERY_MAX_OFFSET).toBe(MAX_DATA_QUERY_OFFSET);
+    expect(CONTENT_LIST_QUERY_MAX_FILTER_NODES).toBe(MAX_DATA_QUERY_FILTERS);
+    expect(CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS).toBe(
+      MAX_DATA_QUERY_FILTERS,
+    );
+    expect(CONTENT_LIST_QUERY_MAX_IN_VALUES).toBe(MAX_DATA_QUERY_IN_VALUES);
+    expect(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES).toBe(
+      MAX_DATA_QUERY_REQUEST_BYTES,
+    );
+  });
+
+  // The remaining limits are literals inside core with no export, so they are
+  // pinned to what core actually accepts and refuses.
+  describe('constants core does not export, pinned to its behaviour', () => {
+    let schema: Awaited<ReturnType<typeof buildContentQuerySchema>>;
+
+    beforeEach(async () => {
+      schema = await buildContentQuerySchema();
+    });
+
+    const withFilterValue = (value: string) => ({
+      version: 1 as const,
+      requestId: 'pin',
+      mode: 'rows' as const,
+      filter: {
+        kind: 'condition' as const,
+        field: 'title',
+        operator: 'eq' as const,
+        value,
+      },
+    });
+
+    it('CONTENT_LIST_QUERY_MAX_VALUE_LENGTH is the largest scalar core takes', () => {
+      const atCap = 'a'.repeat(CONTENT_LIST_QUERY_MAX_VALUE_LENGTH);
+      expect(() =>
+        normalizeDataQueryRequest(withFilterValue(atCap), schema),
+      ).not.toThrow();
+      expect(() =>
+        normalizeDataQueryRequest(withFilterValue(`${atCap}a`), schema),
+      ).toThrow();
+    });
+
+    it('CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH is the largest id core takes', () => {
+      const request = (length: number) => ({
+        version: 1 as const,
+        requestId: 'r'.repeat(length),
+        mode: 'count' as const,
+      });
+      expect(() =>
+        normalizeDataQueryRequest(
+          request(CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH),
+          schema,
+        ),
+      ).not.toThrow();
+      expect(() =>
+        normalizeDataQueryRequest(
+          request(CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH + 1),
+          schema,
+        ),
+      ).toThrow();
+    });
+
+    it('CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH is the largest field id core takes', () => {
+      // A field id at the cap is refused for being undeclared, not for its
+      // length; one over the cap is refused for its length. The two error
+      // messages distinguish the rules.
+      const project = (length: number) => ({
+        version: 1 as const,
+        requestId: 'pin',
+        mode: 'rows' as const,
+        projection: ['f'.repeat(length)],
+      });
+      expect(() =>
+        normalizeDataQueryRequest(
+          project(CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH),
+          schema,
+        ),
+      ).toThrow(/projection field is not allowed/);
+      expect(() =>
+        normalizeDataQueryRequest(
+          project(CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH + 1),
+          schema,
+        ),
+      ).toThrow(/must be a non-empty string up to/);
+    });
+
+    it('the client byte bound is never smaller than core\u2019s, with or without a sort', () => {
+      // The default view carries no sorting at all: the case where the
+      // normalizer used to inject 84 bytes the client had not counted.
+      for (const state of [
+        viewState(),
+        viewState({ sorting: [{ columnId: 'title', direction: 'asc' }] }),
+        viewState({ search: 'budget', page: 4, pageSize: 25 }),
+      ]) {
+        const { request } = contentListViewStateToDataQueryRequest(state, {
+          createRequestId: () => 'byte-parity',
+        });
+        const clientBytes = new TextEncoder().encode(
+          JSON.stringify(request),
+        ).byteLength;
+        const normalizedBytes = new TextEncoder().encode(
+          JSON.stringify(normalizeDataQueryRequest(request, schema)),
+        ).byteLength;
+        expect(normalizedBytes).toBeLessThanOrEqual(clientBytes);
+      }
+    });
+
+    it('the request byte bound is measured the way core measures it', () => {
+      // The whole point of finding 3: core measures the NORMALIZED request.
+      // A translator-shaped request at the client cap must survive core.
+      const values = Array.from({ length: 100 }, (_, index) =>
+        `${index}`.padEnd(4_000, 'v'),
+      );
+      const { request } = contentListViewStateToDataQueryRequest(
+        viewState({
+          filters: [
+            { columnId: 'status', operator: 'in', value: values },
+            { columnId: 'author', operator: 'in', value: values },
+            { columnId: 'title', operator: 'in', value: values },
+          ],
+        }),
+        { createRequestId: () => 'byte-bound' },
+      );
+      const clientBytes = new TextEncoder().encode(
+        JSON.stringify(request),
+      ).byteLength;
+      expect(clientBytes).toBeLessThanOrEqual(
+        CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
+      );
+      // The invariant finding 3 was about: core measures the NORMALIZED
+      // request, so the client's measurement is only meaningful if it can
+      // never come out SMALLER. Omitting `sort` breaks this by exactly the 84
+      // bytes core injects, which is why the translator always emits it.
+      const normalized = normalizeDataQueryRequest(request, schema);
+      const normalizedBytes = new TextEncoder().encode(
+        JSON.stringify(normalized),
+      ).byteLength;
+      expect(normalizedBytes).toBeLessThanOrEqual(clientBytes);
+      expect(normalizedBytes).toBeLessThanOrEqual(MAX_DATA_QUERY_REQUEST_BYTES);
+    });
   });
 });

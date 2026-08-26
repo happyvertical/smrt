@@ -138,6 +138,8 @@ export const M = defineMessages({
   'content.content_list.drop_malformed': 'that entry could not be read',
   'content.content_list.drop_out_of_range':
     'that value was outside the allowed range',
+  'content.content_list.drop_page_unreachable':
+    'page {requested} cannot be loaded — the list stops at page {landed}, which is what is shown',
   'content.content_list.drop_unpaginated':
     'an unpaginated list is not available from the server; the default page size is in use',
   'content.content_list.result_truncated':

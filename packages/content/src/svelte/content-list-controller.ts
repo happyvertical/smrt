@@ -485,16 +485,43 @@ export function buildContentListColumns(
 }
 
 /**
+ * Columns whose stored values are lowercase tokens rather than free text.
+ *
+ * Only these may have their case normalized by a filter: their domain is a
+ * fixed vocabulary the model writes in lower case, so folding the operator's
+ * input to match it is a correction. Every other column holds text a person
+ * typed.
+ */
+export const CONTENT_LIST_TOKEN_COLUMN_IDS = [
+  'type',
+  'status',
+  'state',
+] as const satisfies readonly ContentListColumnId[];
+
+const TOKEN_COLUMNS = new Set<string>(CONTENT_LIST_TOKEN_COLUMN_IDS);
+
+/**
  * One normalizer per filter column, so a filter built by the toolbar, by the
  * `type` lock, and by a restored view all compare equal.
+ *
+ * CASE IS PRESERVED FOR FREE TEXT. This helper was written for #2451, when
+ * every comparison happened in the browser and lowercasing everything was
+ * harmless. Under #2452 a stored filter value becomes a server-side `eq` or
+ * `like` predicate compared against the STORED text, so lowercasing `NASA`
+ * would send `%nasa%` and miss `NASA Update` on a case-sensitive backend
+ * (PostgreSQL, DuckDB). Local matching is unaffected either way: the local
+ * evaluator compares through `textValue()`, which lower-cases BOTH sides at
+ * compare time, so a case-preserving stored value still matches
+ * case-insensitively there.
  */
 export function normalizeContentListFilterValue(
   columnId: string,
   value: string,
 ): string {
-  return columnId === CONTENT_LIST_TYPE_FILTER_ID
-    ? normalizeContentType(value)
-    : normalizeContentToken(value);
+  if (columnId === CONTENT_LIST_TYPE_FILTER_ID)
+    return normalizeContentType(value);
+  if (TOKEN_COLUMNS.has(columnId)) return normalizeContentToken(value);
+  return value.trim();
 }
 
 /** Builds the declarative filter set for the two toolbar filters. */

@@ -1603,3 +1603,218 @@ describe('ContentList retry refreshes the completeness notice (#2452 batch 2)', 
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review batch 3 (#2452)
+// ---------------------------------------------------------------------------
+
+function serverFilterValues(
+  request: { filter?: unknown } | undefined,
+): unknown[] {
+  const found: unknown[] = [];
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== 'object') return;
+    const entry = node as Record<string, unknown>;
+    if (entry.kind === 'condition') {
+      found.push(entry.value);
+      return;
+    }
+    if (Array.isArray(entry.filters)) entry.filters.forEach(walk);
+    if (entry.filter) walk(entry.filter);
+  };
+  walk(request?.filter);
+  return found;
+}
+
+describe('ContentList free-text filter case (#2452 batch 3)', () => {
+  it('sends a restored free-text filter with its case intact', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      query: { bind: () => query.binding },
+      urlState: { params: 'author.contains=NASA' },
+    });
+
+    // `%nasa%` would miss `NASA Update` on a case-sensitive backend.
+    expect(serverFilterValues(query.requests.at(-1))).toContain('%NASA%');
+  });
+
+  it('sends a saved view free-text filter with its case intact', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:case',
+    });
+    await store.save({
+      name: 'NASA',
+      snapshot: {
+        version: 3,
+        modes: {
+          filtering: 'manual',
+          sorting: 'manual',
+          pagination: 'manual',
+        },
+        state: {
+          search: '',
+          filters: [{ columnId: 'title', operator: 'equals', value: 'NASA' }],
+          sorting: [],
+          page: 1,
+          pageSize: null,
+          columnOrder: [],
+          columnVisibility: [],
+          columnWidths: [],
+          columnPinning: [],
+          selection: { scope: 'explicit', rowIds: [] },
+          selectedRowIds: [],
+          expandedRowIds: [],
+        },
+      } as never,
+    });
+
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      savedViews: store,
+      query: { bind: () => query.binding },
+    });
+    await settle();
+    const [saved] = await store.list();
+    const select = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Saved views"]',
+    );
+    if (!select) throw new Error('No saved-view select');
+    selectOption(select, saved.id);
+
+    expect(serverFilterValues(query.requests.at(-1))).toContain('NASA');
+  });
+
+  it('still normalizes the token columns, whose stored values are tokens', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      query: { bind: () => query.binding },
+      urlState: { params: 'status=Published&state=ACTIVE' },
+    });
+
+    const values = serverFilterValues(query.requests.at(-1));
+    expect(values).toContain('published');
+    expect(values).toContain('active');
+  });
+
+  it('keeps local matching case-insensitive', () => {
+    const target = renderList({
+      urlState: { params: 'title.contains=ZONING' },
+    });
+    // The stored filter is `ZONING`; the local evaluator lowercases both sides.
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+  });
+
+  it('settles the type lock without re-dispatching', () => {
+    let transitions = 0;
+    const target = renderList({
+      type: 'article',
+      urlState: {
+        // Free-text case is preserved in the stored filter; local matching
+        // still lowercases both sides at compare time.
+        params: 'author.contains=ADA',
+        onChange: () => {
+          transitions += 1;
+        },
+      },
+    });
+    // A lock predicate that disagreed with the normalizer would dispatch on
+    // every flush; the list would never settle.
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+    expect(transitions).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('ContentList capped-offset reporting (#2452 batch 3)', () => {
+  it('tells the operator that the page was redirected', () => {
+    const query = createFakeContentListQuery();
+    // A link is the way an unreachable page arrives now that the pager stops
+    // offering them: it is applied before anything can clamp it.
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+      urlState: { params: 'page=9000' },
+    });
+
+    const page = query.requests.at(-1)?.page as { offset: number };
+    expect(page.offset).toBeLessThanOrEqual(1_000_000);
+    // The redirect survives the corrective re-translation that follows it.
+    const notice = target.querySelector('.state-notice');
+    expect(notice?.textContent).toContain('page 9000 cannot be loaded');
+    expect(notice?.textContent).toContain('the list stops at page 5001');
+  });
+
+  it('clears the redirect notice once the operator moves elsewhere', async () => {
+    const registry = createDataSurfaceRegistry();
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+      urlState: { params: 'page=9000' },
+    });
+    query.resolve([serverRow('a', 'Alpha')], 2_000_000);
+    flushSync();
+    expect(target.querySelector('.state-notice')).not.toBeNull();
+
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await registry.execute({
+      version: 1,
+      commandId: 'elsewhere',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 2 },
+    });
+    flushSync();
+
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('keeps a restored page when the compact table mounts', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      defaultViewMode: 'compact',
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { params: 'page=3' },
+    });
+    // DataTable clamps the controller's page against `totalRows`; before the
+    // first response there is no total to clamp against, and handing it a zero
+    // would silently open a `?page=3` link on page 1.
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+  });
+
+  it('never advertises a page the endpoint cannot fetch', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+    });
+    // 2,000,000 rows at 200 a page is 10,000 pages, but offset paging stops at
+    // 1,000,000 — page 5,001 is the last one that can ever be fetched.
+    query.resolve([serverRow('a', 'Alpha')], 2_000_000);
+    flushSync();
+
+    const labels = Array.from(
+      paginationNav(target)?.querySelectorAll('button') ?? [],
+    ).map((button) => button.textContent?.trim() ?? '');
+    expect(labels).toContain('5001');
+    expect(labels).not.toContain('10000');
+  });
+
+  it('advertises every page when they are all reachable', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+    });
+    query.resolve([serverRow('a', 'Alpha')], 45);
+    flushSync();
+
+    const labels = Array.from(
+      paginationNav(target)?.querySelectorAll('button') ?? [],
+    ).map((button) => button.textContent?.trim() ?? '');
+    expect(labels).toContain('5');
+  });
+});

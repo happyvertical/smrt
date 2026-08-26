@@ -391,12 +391,13 @@ describe('list values containing the separator (#2452)', () => {
         },
       ],
     });
-    // Normalized to lower case by the adapter, then escaped on the way out.
-    expect(params.get('author.in')).toBe('smith\\, john,ada');
+    // Escaped on the way out, and free-text case is preserved (#2452 batch 3):
+    // the value becomes a server predicate compared against the stored text.
+    expect(params.get('author.in')).toBe('Smith\\, John,Ada');
 
     const restored = contentListViewStateFromSearchParams(params);
     expect(restored.filters).toEqual([
-      { columnId: 'author', operator: 'in', value: ['smith, john', 'ada'] },
+      { columnId: 'author', operator: 'in', value: ['Smith, John', 'Ada'] },
     ]);
   });
 

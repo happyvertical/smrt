@@ -78,6 +78,7 @@ import {
   contentListQueryErrorMessage,
   contentListQueryRowsToContents,
   contentListQueryTotalValue,
+  CONTENT_LIST_QUERY_MAX_OFFSET,
   contentListViewStateToDataQueryRequest,
   readContentListQueryNotices,
   resolveContentListMaxPageSize,
@@ -233,6 +234,13 @@ const controller = createContentListController({
 /** Everything a restore or a translation refused, surfaced as one notice. */
 let restoreDrops = $state<ContentListDropNotice[]>([]);
 let queryDrops = $state<ContentListQueryDrop[]>([]);
+/**
+ * A capped-offset redirect, held apart from `queryDrops` so it survives the
+ * corrective re-translation that immediately follows it.
+ */
+let pageCapDrop = $state<ContentListQueryDrop | null>(null);
+/** Which page the last offset cap redirected to. Named in the notice. */
+let pageCapCorrectedTo = $state<number | undefined>(undefined);
 let dismissedDropKey = $state('');
 let resultNotices = $state<ContentListQueryNotices>({
   truncated: false,
@@ -397,16 +405,57 @@ $effect(() => {
   // Before the first response there is no authoritative total; clamping to zero
   // would reset a page restored from a link before it was ever queried.
   if (serverBacked && serverTotal === undefined) return;
+  // Deliberately the TRUE total, not `pageableRowCount`: clamping to the
+  // reachable ceiling here would silently move a crafted `?page=9000` before
+  // the query effect ever sees it, and the operator would never be told why
+  // they landed somewhere else.
   untrack(() => controller.clampPage(totalRows));
 });
 
+/**
+ * The last page a server query can actually fetch.
+ *
+ * Offset paging stops at `CONTENT_LIST_QUERY_MAX_OFFSET`, so on a very large
+ * list the arithmetic total implies pages the endpoint will never return.
+ * Advertising them is worse than not offering them: every click past the
+ * boundary silently lands back on the same page.
+ */
+const maxReachablePage = $derived(
+  serverBacked && tableState.pageSize
+    ? Math.floor(CONTENT_LIST_QUERY_MAX_OFFSET / tableState.pageSize) + 1
+    : Number.POSITIVE_INFINITY,
+);
+/**
+ * The row count the pagers may page over. DataTable derives its own page count
+ * from `totalRows` and takes no ceiling, so the ceiling has to be applied to
+ * the number handed to it. `clampPage` deliberately keeps using the true total
+ * (see below).
+ */
+const pageableRowCount = $derived(
+  tableState.pageSize
+    ? Math.min(totalRowCount, maxReachablePage * tableState.pageSize)
+    : totalRowCount,
+);
+/**
+ * What DataTable is told, which is `undefined` until the first authoritative
+ * total arrives.
+ *
+ * DataTable clamps the controller's page against `totalRows`, so handing it the
+ * pre-response zero resets a page restored from a link the moment the compact
+ * table mounts — a `?page=3` link silently opens on page 1. `undefined` is the
+ * documented "not known yet" value: DataTable renders no pager and clamps
+ * nothing until a real count exists.
+ */
+const dataTableTotalRows = $derived(
+  serverBacked && serverTotal === undefined ? undefined : pageableRowCount,
+);
 // The card presentations have to render their own page controls: DataTable —
 // and with it the page navigation — is only mounted in compact mode, so a page
 // size set from a saved view or a surface command would otherwise strand the
 // operator on page one.
 const totalPages = $derived(
   tableState.pageSize
-    ? Math.max(1, Math.ceil(totalRowCount / tableState.pageSize))
+    ? Math.max(1, Math.ceil(pageableRowCount / tableState.pageSize))
     : 1,
 );
 const showPagination = $derived(Boolean(tableState.pageSize) && totalPages > 1);
@@ -465,6 +514,7 @@ const querySignature = $derived(
 let executedSignature: string | undefined;
 let publishedUrlSignature: string | undefined;
 
+
 $effect(() => {
   const signature = querySignature;
   untrack(() => {
@@ -475,17 +525,34 @@ $effect(() => {
         state,
         queryRequestOptions,
       );
-      queryDrops = translated.dropped;
+      // The page-cap drop is held separately because it must OUTLIVE this
+      // translation: the corrective dispatch below re-enters this effect, and
+      // the second translation caps nothing, so a drop stored here would be
+      // overwritten in the same flush and the redirect would be silent.
+      queryDrops = translated.dropped.filter((drop) => drop.scope !== 'page');
       if (translated.effectivePage !== state.page) {
         // The offset had to be capped. Move the controller's page marker to the
         // page the request actually reads, or the UI labels this answer with a
         // page number the server never saw. The dispatch re-enters this effect
         // with the corrected signature, which then executes.
+        pageCapDrop = {
+          scope: 'page',
+          reason: 'out-of-range',
+          detail: String(state.page),
+        };
+        pageCapCorrectedTo = translated.effectivePage;
         controller.dispatch({
           type: 'setPage',
           page: translated.effectivePage,
         });
         return;
+      }
+      // The redirect notice stands until the operator moves off the page they
+      // were redirected to; clearing it on the corrective re-run would be the
+      // same silence by a different route.
+      if (pageCapDrop !== null && state.page !== pageCapCorrectedTo) {
+        pageCapDrop = null;
+        pageCapCorrectedTo = undefined;
       }
       // The binding owns cancellation of a superseded run and already reflects
       // a failure in its error state, so a rejection here is not also an
@@ -592,6 +659,7 @@ const surfaceOptions = $derived(
 const dropNotices = $derived<ContentListDropNotice[]>([
   ...restoreDrops,
   ...queryDrops,
+  ...(pageCapDrop === null ? [] : [pageCapDrop]),
 ]);
 /**
  * What the server said about the completeness of the answer.
@@ -634,6 +702,14 @@ const DROP_REASON_MESSAGES: Record<
 };
 
 function dropNoticeText(drop: ContentListDropNotice): string {
+  // A capped offset is a redirect, not merely a refused value: the operator
+  // needs to know which page they asked for and which one they are looking at.
+  if (drop.scope === 'page' && drop.reason === 'out-of-range') {
+    return t(M['content.content_list.drop_page_unreachable'], {
+      requested: drop.detail ?? '',
+      landed: String(pageCapCorrectedTo ?? ''),
+    });
+  }
   return t(M['content.content_list.dropped_item'], {
     target: drop.columnId ?? drop.scope,
     reason: t(DROP_REASON_MESSAGES[drop.reason]),
@@ -1166,7 +1242,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       <div class="content-table-wrapper">
         <DataTable
           data={pageRows}
-          totalRows={totalRowCount}
+          totalRows={dataTableTotalRows}
           columns={tableColumns}
           rowKey={CONTENT_LIST_ROW_KEY}
           {controller}

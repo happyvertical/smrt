@@ -232,10 +232,21 @@ The translator also enforces the normalizer's **input caps**, because exceeding
 one 400s the entire list rather than degrading it. Each is capped and reported:
 at most 100 `in`/`notIn` values, at most 50 filter nodes (counting every
 `all`/`any` container, so search costs 4 and the outer `all` 1), at most 50
-projection fields, a request id of at most 128 characters, at most 4096
-characters per filter value, and 100 000 bytes for the whole serialized request
-(100 values of 4096 characters is inside every per-value cap and still five
-times that limit, so the newest filter branches are shed until it fits).
+projection fields — each of which must also be a declared projectable field id
+of 1-256 characters, or it is dropped rather than 400ing the list — a request id
+of at most 128 characters, at most 4096 characters per filter value, and 100 000
+bytes for the whole serialized request (100 values of 4096 characters is inside
+every per-value cap and still five times that limit, so the newest filter
+branches are shed until it fits).
+
+**Measure what the server measures.** `boundRequestSize` weighs the NORMALIZED
+request, not the body as sent, and the normalizer injects `schema.defaultSort`
+when `sort` is absent — 84 bytes the client had not counted, so a request of
+99 917-100 000 bytes passed the client check and 400ed at the server. The
+translator therefore always emits `sort`, falling back to
+`CONTENT_LIST_QUERY_DEFAULT_SORT` (the schema default) rather than omitting the
+key. The invariant to preserve: the client's byte count is never smaller than
+core's.
 
 **Measure in the server's unit.** `dataQueryScalar` tests `value.length`, which
 counts UTF-16 code units, so an astral character costs TWO. The bounders iterate
@@ -249,9 +260,33 @@ datetime is checked against the server's exact RFC 3339 pattern rather than
 merely round-tripping through `Date`: a year outside the four-digit range
 serializes as `+275760-09-13T00:00:00.000Z` and is refused.
 
-Server filters compare **exactly**; local mode compares case-insensitively. The
-adapter already lowercases `type` / `status` / `state` filter values, which is
-what keeps the two agreeing for the toolbar filters.
+### Filter case: tokens are folded, free text is not
+
+`normalizeContentListFilterValue` folds case for the **token** columns only —
+`type`, `status`, `state`, whose domain is a fixed lowercase vocabulary the
+model writes. Every other column holds text a person typed, and its value
+becomes a server-side `eq` or `like` compared against the STORED text: folding
+`NASA` to `%nasa%` would miss `NASA Update` on PostgreSQL or DuckDB. The helper
+dates from #2451, when every comparison was local and folding everything was
+harmless; server mode invalidated that assumption.
+
+Preserving case is safe locally because the local evaluator compares through
+`textValue()`, which lower-cases BOTH sides at compare time — a case-preserving
+stored value still matches case-insensitively there. The `type`-lock predicate
+(`isContentListFilterExactly`) goes through the same helper, so the lock still
+settles rather than re-dispatching.
+
+**Free-text server matching is therefore dialect-dependent, and the protocol
+cannot make it uniform.** There is no `ilike` in the operator vocabulary, so:
+
+| Backend | `like` / `eq` on free text |
+|---|---|
+| PostgreSQL, DuckDB | case-SENSITIVE |
+| SQLite | case-insensitive for ASCII |
+
+Local mode is case-insensitive everywhere. Do not describe free-text filtering
+as uniform; a portable fix needs a case-insensitive operator at the collection
+boundary.
 
 ### Scope is application-supplied and server-derived
 
@@ -261,6 +296,21 @@ workspace narrowing is the host's: the framework models neither site nor
 organization, so a host calls `executeContentQuery(collection, body, { scope })`
 from its own route with conditions derived from the authenticated context —
 never from the request body.
+
+### Mirrored constants are self-enforcing
+
+Every number this package copies from the schema or from
+`@happyvertical/smrt-core` is bound to its source by a test, because a
+hand-copied limit that drifts is the defect this issue kept producing: lowering
+the server's page limit while the client still seeds and pages by the old one
+strands rows with the whole suite green.
+
+Where core exports the constant the assertion is direct; where it does not, the
+assertion pins core's observable BEHAVIOUR — the largest value it accepts and
+the smallest it refuses — rather than being skipped. Add a cross-assertion
+alongside any new mirrored number. The field map, projectable fields, operator
+vocabulary and search fields are asserted against the real
+`buildContentQuerySchema()` for the same reason.
 
 ### Documented limits
 
@@ -296,10 +346,24 @@ never from the request body.
   of 200 distinct 4096-character values are inside every per-value cap and still
   several times the 1 MB result limit; values are dropped and the facet and the
   result are flagged rather than the response being refused.
-- A capped offset moves the caller's page marker. `?page=10000&size=200` caps the
-  request offset at 1 000 000, and the translation returns the `effectivePage`
-  the request actually reads so the UI cannot label the answer with a page the
-  server never saw.
+- A capped offset moves the caller's page marker AND says so. `?page=9000&size=200`
+  caps the request offset at 1 000 000; the translation returns the
+  `effectivePage` the request actually reads, and the redirect is reported in
+  the notice ("page 9000 cannot be loaded — the list stops at page 5001"). That
+  drop is held apart from the rest, because the corrective dispatch re-enters
+  the query effect in the same flush and the second translation caps nothing —
+  storing it with the others would erase it before it was ever rendered. It
+  stands until the operator moves off the page they landed on.
+- The pagers never advertise a page the endpoint cannot fetch. `totalPages` — and
+  the `totalRows` handed to DataTable, which derives its own page count and
+  takes no ceiling — are capped at `floor(MAX_OFFSET / pageSize) + 1`.
+  `clampPage` deliberately keeps using the TRUE total, so a crafted `?page=`
+  still reaches the query effect and gets the notice instead of being silently
+  clamped first.
+- DataTable is told `totalRows: undefined` until the first authoritative total
+  arrives. It clamps the controller's page against `totalRows`, so the
+  pre-response zero would reset a page restored from a link the moment the
+  compact table mounts.
 - A retry replaces the rendered rows, so it also replaces the completeness
   flags. `retry()`'s envelope is read through the same path as `execute()`'s;
   discarding it left a "rows are missing" notice standing over a complete page.

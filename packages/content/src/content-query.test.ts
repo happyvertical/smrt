@@ -8,8 +8,13 @@
  */
 
 import {
+  createDataQueryFingerprint,
   field,
   getTestDatabase,
+  MAX_DATA_QUERY_RESULT_BYTES,
+  MAX_DATA_QUERY_WARNINGS,
+  normalizeDataQueryRequest,
+  normalizeDataQueryResult,
   SmrtCollection,
   SmrtObject,
   smrt,
@@ -29,6 +34,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
+  CONTENT_QUERY_DEFAULT_PAGE_LIMIT,
+  CONTENT_QUERY_DEFAULT_SORT,
+  CONTENT_QUERY_IDENTITY_FIELD,
   CONTENT_QUERY_MAX_PAGE_LIMIT,
   CONTENT_QUERY_MAX_RESULT_BYTES,
   type ContentQueryCollection,
@@ -37,6 +45,8 @@ import {
   DATA_QUERY_MAX_JSON_DEPTH,
   DATA_QUERY_MAX_JSON_STRING_LENGTH,
   DATA_QUERY_MAX_STRING_LENGTH,
+  DATA_QUERY_MAX_WARNING_LENGTH,
+  DATA_QUERY_MAX_WARNINGS,
   executeContentQuery,
   mergeContentQueryScope,
 } from './content-query';
@@ -1073,5 +1083,172 @@ describe('POST /api/v1/contents/query (generated route)', () => {
       status: 400,
       code: 'DATA_QUERY_PROJECTION_NOT_ALLOWED',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 3: the adapter's mirrored constants are self-enforcing (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * `content-query.ts` mirrors several limits that belong to
+ * `@happyvertical/smrt-core`'s result normalizer. Where core exports the
+ * constant the mirror is asserted directly; where it does not (the JSON
+ * document rules, the scalar cap, the warning rules) the mirror is pinned to
+ * what `normalizeDataQueryResult` actually accepts and refuses, so a change in
+ * core breaks a test here rather than a production query.
+ */
+describe('mirrored adapter constants are pinned to their source', () => {
+  let schema: DataQuerySchema;
+
+  beforeEach(async () => {
+    schema = await buildContentQuerySchema();
+  });
+
+  const resultFor = (
+    overrides: Record<string, unknown>,
+    projection: string[],
+  ) => {
+    const req = {
+      version: 1 as const,
+      requestId: 'pin',
+      mode: 'rows' as const,
+      projection,
+      page: { kind: 'offset' as const, offset: 0, limit: 1 },
+    };
+    const normalizedRequest = normalizeDataQueryRequest(req, schema);
+    return () =>
+      normalizeDataQueryResult(
+        {
+          version: 1 as const,
+          requestId: normalizedRequest.requestId,
+          queryFingerprint: createDataQueryFingerprint(
+            normalizedRequest,
+            schema,
+          ),
+          identityField: schema.identityField,
+          rows: [],
+          page: { kind: 'offset', offset: 0, limit: 1, hasMore: false },
+          total: { kind: 'exact', value: 0 },
+          freshness: { state: 'fresh' },
+          warnings: [],
+          truncated: false,
+          ...overrides,
+        },
+        normalizedRequest,
+        schema,
+      );
+  };
+
+  it('the schema constants match the schema they build', () => {
+    expect(schema.maxPageLimit).toBe(CONTENT_QUERY_MAX_PAGE_LIMIT);
+    expect(schema.defaultPageLimit).toBe(CONTENT_QUERY_DEFAULT_PAGE_LIMIT);
+    expect(schema.maxResultBytes).toBe(CONTENT_QUERY_MAX_RESULT_BYTES);
+    expect(schema.identityField).toBe(CONTENT_QUERY_IDENTITY_FIELD);
+    expect(schema.defaultSort).toEqual(CONTENT_QUERY_DEFAULT_SORT);
+  });
+
+  it('the result byte and warning counts match core', () => {
+    expect(CONTENT_QUERY_MAX_RESULT_BYTES).toBeLessThanOrEqual(
+      MAX_DATA_QUERY_RESULT_BYTES,
+    );
+    expect(DATA_QUERY_MAX_WARNINGS).toBe(MAX_DATA_QUERY_WARNINGS);
+  });
+
+  it('DATA_QUERY_MAX_STRING_LENGTH is the largest scalar core accepts', () => {
+    const row = (length: number) => [{ id: 'a', title: 't'.repeat(length) }];
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_STRING_LENGTH) }, ['id', 'title']),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_STRING_LENGTH + 1) }, [
+        'id',
+        'title',
+      ]),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_WARNING_LENGTH is the largest warning core accepts', () => {
+    const warn = (length: number) => ({ warnings: ['w'.repeat(length)] });
+    expect(
+      resultFor(warn(DATA_QUERY_MAX_WARNING_LENGTH), ['id']),
+    ).not.toThrow();
+    expect(
+      resultFor(warn(DATA_QUERY_MAX_WARNING_LENGTH + 1), ['id']),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_JSON_STRING_LENGTH is core’s JSON string limit', () => {
+    const row = (length: number) => [
+      { id: 'a', metadata: { note: 'n'.repeat(length) } },
+    ];
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_STRING_LENGTH) }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_STRING_LENGTH + 1) }, [
+        'id',
+        'metadata',
+      ]),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_JSON_CONTAINER_ITEMS is core’s container limit', () => {
+    const row = (count: number) => [
+      { id: 'a', metadata: { list: Array.from({ length: count }, () => 1) } },
+    ];
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_CONTAINER_ITEMS) }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_CONTAINER_ITEMS + 1) }, [
+        'id',
+        'metadata',
+      ]),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_JSON_DEPTH is core’s nesting limit', () => {
+    const nest = (levels: number) => {
+      let value: Record<string, unknown> = { leaf: 1 };
+      for (let index = 0; index < levels; index += 1) value = { n: value };
+      return [{ id: 'a', metadata: value }];
+    };
+    // Core counts the field value as depth 0 and refuses past
+    // MAX_DATA_QUERY_JSON_DEPTH, so the deepest accepted document has
+    // `DATA_QUERY_MAX_JSON_DEPTH - 1` wrappers. The adapter cuts at
+    // `>= DATA_QUERY_MAX_JSON_DEPTH`, one level shallower, so everything it
+    // emits is accepted — this pins the boundary that has to stay true.
+    expect(
+      resultFor({ rows: nest(DATA_QUERY_MAX_JSON_DEPTH - 1) }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: nest(DATA_QUERY_MAX_JSON_DEPTH) }, ['id', 'metadata']),
+    ).toThrow(/JSON depth limit/);
+  });
+
+  it('DATA_QUERY_FORBIDDEN_JSON_KEYS is exactly what core refuses', () => {
+    for (const key of DATA_QUERY_FORBIDDEN_JSON_KEYS) {
+      const metadata = JSON.parse(`{"${key}": 1}`);
+      expect(
+        resultFor({ rows: [{ id: 'a', metadata }] }, ['id', 'metadata']),
+        `core no longer refuses ${key}`,
+      ).toThrow();
+    }
+    expect(
+      resultFor({ rows: [{ id: 'a', metadata: { ordinary: 1 } }] }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
   });
 });

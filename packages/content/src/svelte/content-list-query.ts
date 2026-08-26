@@ -178,6 +178,22 @@ export const CONTENT_LIST_QUERY_FIELDS: Readonly<
 export const CONTENT_LIST_QUERY_IDENTITY_FIELD = 'id';
 
 /**
+ * The schema's `defaultSort`, mirrored so the translator can send it rather
+ * than let the normalizer inject it. Cross-asserted against the real schema in
+ * `content-list-query.test.ts`.
+ */
+export const CONTENT_LIST_QUERY_DEFAULT_SORT: ReadonlyArray<{
+  field: string;
+  direction: 'asc' | 'desc';
+}> = Object.freeze([
+  Object.freeze({ field: 'updated_at', direction: 'desc' as const }),
+  Object.freeze({
+    field: CONTENT_LIST_QUERY_IDENTITY_FIELD,
+    direction: 'asc' as const,
+  }),
+]);
+
+/**
  * The server fields the list actually renders. Kept deliberately narrow: the
  * envelope has a byte budget, and a projection is the cheapest place to keep a
  * page inside it.
@@ -198,6 +214,46 @@ export const CONTENT_LIST_QUERY_PROJECTION: readonly string[] = Object.freeze([
   'fileKey',
   'thumbnailAssetId',
 ]);
+
+/**
+ * Every server field the content query schema declares as projectable.
+ *
+ * A host may override `query.request.projection` with any of these. Naming
+ * anything else — a typo, a field that was removed, `body`, `tenantId` — is
+ * refused by the normalizer with `DATA_QUERY_PROJECTION_NOT_ALLOWED`, which
+ * fails the whole list rather than degrading it, so the translator drops the
+ * entry instead. Cross-asserted against `buildContentQuerySchema()`.
+ */
+export const CONTENT_LIST_QUERY_PROJECTABLE_FIELDS: readonly string[] =
+  Object.freeze([
+    'author',
+    'bodyFormat',
+    'category',
+    'context',
+    'created_at',
+    'description',
+    'fileKey',
+    'id',
+    'language',
+    'metadata',
+    'name',
+    'original_url',
+    'publish_date',
+    'slug',
+    'source',
+    'state',
+    'status',
+    'tags',
+    'thumbnailAssetId',
+    'title',
+    'type',
+    'updated_at',
+    'url',
+    'variant',
+  ]);
+
+/** `stringValue()`'s default ceiling, applied to every field id in a request. */
+export const CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH = 256;
 
 /**
  * Fields free-text search reaches, mirroring the adapter's searchable columns
@@ -727,7 +783,13 @@ function translateSorting(
     seen.add(field.field);
     terms.push({ field: field.field, direction: rule.direction });
   }
-  if (terms.length === 0) return terms;
+  // Nothing sortable survived: emit the schema default EXPLICITLY rather than
+  // omitting `sort`. The normalizer injects `schema.defaultSort` when the key
+  // is absent and then measures the NORMALIZED request against the byte limit,
+  // so an omitted sort makes the client's byte count 84 bytes short of the
+  // server's — a request the client accepts at 99,917-100,000 bytes and the
+  // server refuses outright. Sending it makes the two measurements identical.
+  if (terms.length === 0) return [...CONTENT_LIST_QUERY_DEFAULT_SORT];
   // A paged read must be totally ordered or two pages can repeat or skip a row.
   if (!seen.has(CONTENT_LIST_QUERY_IDENTITY_FIELD)) {
     terms.push({ field: CONTENT_LIST_QUERY_IDENTITY_FIELD, direction: 'asc' });
@@ -770,24 +832,46 @@ function boundRequestId(createRequestId?: () => string): string {
 }
 
 /**
- * Bounds a caller-supplied projection. The normalizer caps the array before it
- * dedupes, and always projects the identity field, so a host that overrides the
- * projection cannot accidentally make every query a 400.
+ * Bounds a caller-supplied projection against the normalizer's *rules*, not
+ * only its count.
+ *
+ * A projection entry must be a non-empty string of at most 256 characters
+ * (`stringValue`) AND name a field the schema declares projectable, or the
+ * request is refused outright with `DATA_QUERY_PROJECTION_NOT_ALLOWED` — a 400
+ * for the whole list, which is precisely what the drop-and-report contract
+ * exists to avoid. The identity field is always projected, as the normalizer
+ * does, so a projection can never be emptied to nothing.
  */
 function boundProjection(
   projection: readonly string[],
   dropped: ContentListQueryDrop[],
 ): string[] {
-  const unique = [
-    ...new Set([CONTENT_LIST_QUERY_IDENTITY_FIELD, ...projection]),
-  ];
-  if (unique.length <= CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS) return unique;
+  const allowed = new Set(CONTENT_LIST_QUERY_PROJECTABLE_FIELDS);
+  const unique = new Set<string>([CONTENT_LIST_QUERY_IDENTITY_FIELD]);
+  for (const field of projection) {
+    if (
+      typeof field !== 'string' ||
+      field.length === 0 ||
+      field.length > CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH ||
+      !allowed.has(field)
+    ) {
+      dropped.push({
+        scope: 'state',
+        reason: 'unsupported-value',
+        detail: typeof field === 'string' ? field.slice(0, 64) : undefined,
+      });
+      continue;
+    }
+    unique.add(field);
+  }
+  const fields = [...unique];
+  if (fields.length <= CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS) return fields;
   dropped.push({
     scope: 'state',
     reason: 'out-of-range',
-    detail: String(unique.length),
+    detail: String(fields.length),
   });
-  return unique.slice(0, CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS);
+  return fields.slice(0, CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS);
 }
 
 const requestEncoder = new TextEncoder();
@@ -923,7 +1007,9 @@ export function contentListViewStateToDataQueryRequest(
               ? filters[0]
               : { kind: 'all', filters: [...filters] },
         }),
-    ...(sort.length === 0 ? {} : { sort }),
+    // Always present: see `translateSorting`. Omitting it would make the
+    // client's byte measurement disagree with the server's.
+    sort,
     page: { kind: 'offset', offset, limit },
   });
 
