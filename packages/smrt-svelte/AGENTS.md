@@ -16,6 +16,7 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/components/settings/` (`./settings`) | `SettingsCatalog`, `paginateSettingsCatalog`, and the summary-vs-detail scalability contract | [agents/settings.md](agents/settings.md) |
 | `src/components/workspace/` (`./workspace` + `./web`) | the AdminShell family and its principles, the legacy ToolsDock surface, the `./web` activity-feed and `updateAvailable` adapters, and server-side dock gates | [agents/workspace.md](agents/workspace.md) |
 | `src/web/remote-query.svelte.ts` | Svelte 5 binding for query-shaped remote pages: rows, page, totals, loading/refreshing/stale/error, retry, last-updated, and query-scoped live subscriptions (#2445) | — |
+| `src/web/webmcp-ui.ts` | Fixed, low-cardinality WebMCP adapter over the Provider's mounted form-control and data-surface registries (#2521) | — |
 
 ## The UI split — primitive-adoption contract (#1589)
 
@@ -63,6 +64,15 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
   {@render children()}
 </Provider>
 ```
+
+With `webmcp` enabled, Provider also owns shared control/data-surface registries
+and registers six fixed `smrt_ui_*` tools. Descendant rich Forms use the shared
+control registry unless their explicit `interactionRegistry` prop overrides it.
+Supply `webmcp.ui.dataSurfaceRegistry` when mounted surface components already
+share an application registry. The adapter resolves registry state at execution
+time, never reads the DOM, never accepts agent confirmation, and removes the
+entire tool set with one abort signal. A document may have only one active
+adapter for a prefix; configure distinct prefixes for intentional coexistence.
 
 ## Hooks
 

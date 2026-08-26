@@ -92,6 +92,46 @@ hydrating its whole collection. It exposes `rows`, `page`, `total`,
 </Provider>
 ```
 
+### Mounted UI through WebMCP
+
+`<Provider webmcp>` registers six fixed `smrt_ui_*` tools for the mounted UI:
+list, inspect, and execute for form controls and data surfaces. The tool set does
+not change as components mount and unmount; each call reads the current
+transport-neutral registries instead of inspecting or simulating the DOM.
+
+Forms automatically join the Provider's control registry. An explicit Form
+`interactionRegistry` still takes precedence. Pass the same data-surface
+registry used by `DataTable` or `CollectionToolbar` when those mounted surfaces
+should be discoverable:
+
+```svelte
+<script lang="ts">
+  import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
+  import { Provider } from '@happyvertical/smrt-svelte';
+
+  const surfaces = createDataSurfaceRegistry();
+</script>
+
+<Provider webmcp={{ ui: { dataSurfaceRegistry: surfaces } }}>
+  <!-- pass {surfaces} to mounted data-surface components -->
+  {@render children()}
+</Provider>
+```
+
+The default prefix is `smrt_ui_`. Configure `ui.prefix` when multiple Providers
+must coexist in one document; the same prefix cannot be registered twice.
+`ui: false` disables only the fixed UI adapter while leaving generated model
+tools enabled. For compatibility, an object config that omits `ui` continues to
+enable only generated model tools; use `webmcp={true}` or provide `ui: {}` to
+enable the mounted-UI adapter.
+
+Form commands always run with `source: 'agent'`. WebMCP input cannot assert
+confirmation: staging is allowed by the registry policy, while apply, clear,
+and undo require a separate human-confirmed path. Secret control values and
+hidden data-surface columns are not serialized. Read responses are marked as
+untrusted content. Bespoke `useWebMcpTool` and `<Form webmcp>` tools retain their
+existing lifecycle and submit behavior.
+
 ### Form Components
 
 ```svelte

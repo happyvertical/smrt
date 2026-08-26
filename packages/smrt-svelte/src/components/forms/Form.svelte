@@ -19,6 +19,7 @@ import {
   setFormContext,
 } from '../../state/form-context.js';
 import { useWebMcpTool } from '../../web/webmcp.svelte.js';
+import { tryGetWebMcpUiContext } from '../../web/webmcp-ui-context.js';
 import type { LLMModelId, STTAdapterType } from './types.js';
 
 const { t } = useI18n();
@@ -80,11 +81,21 @@ const stt = useSTT();
 const instanceId = $props.id();
 const generatedFormId = `smrt-form-${instanceId}`;
 const localInteractionRegistry = createControlInteractionRegistry();
+const providerWebMcpUi = tryGetWebMcpUiContext();
 const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
 const resolvedInteractionRegistry = $derived(
-  interactionRegistry ?? localInteractionRegistry,
+  interactionRegistry ??
+    (providerWebMcpUi?.enabled
+      ? providerWebMcpUi.controlRegistry
+      : undefined) ??
+    localInteractionRegistry,
 );
-const interactionDisposers = new Map<string, () => void>();
+const interactionDisposers = new Map<
+  string,
+  { field: FieldDefinition; dispose: () => void }
+>();
+let activeInteractionRegistry: ControlInteractionRegistry | undefined;
+let activeInteractionFormId: string | undefined;
 
 setControlInteractionContext({
   get formId() {
@@ -97,7 +108,14 @@ setControlInteractionContext({
 
 $effect(() => {
   if (!oninteraction) return;
-  return resolvedInteractionRegistry.subscribe(oninteraction);
+  return resolvedInteractionRegistry.subscribe((event) => {
+    if (event.identity.formId !== resolvedFormId) return;
+    try {
+      oninteraction(event);
+    } catch (error) {
+      logger.warn('Form: interaction observer failed', { error });
+    }
+  });
 });
 
 // Internal state
@@ -132,47 +150,104 @@ function interactionKind(field: FieldDefinition): ControlKind {
   }
 }
 
+function registerInteraction(
+  registry: ControlInteractionRegistry,
+  currentFormId: string,
+  field: FieldDefinition,
+): (() => void) | undefined {
+  const identity = {
+    formId: currentFormId,
+    controlId: field.controlId ?? field.name,
+  };
+  if (registry.get(identity)) {
+    logger.warn('Form: duplicate interaction identity rejected', { identity });
+    return undefined;
+  }
+  return registry.register({
+    identity,
+    metadata: {
+      kind: interactionKind(field),
+      label: field.label,
+      description: field.description,
+      sensitivity: field.sensitivity ?? 'public',
+      readable: field.readable,
+      writable: field.writable,
+      constraints: field.constraints,
+      options: field.options,
+      unit: field.unit,
+    },
+    getValue: field.getValue,
+    setValue: field.setValue,
+    clear: field.clear ?? (() => field.setValue('')),
+    focus: field.focus,
+    reveal: field.reveal,
+    highlight: field.highlight,
+    validate: field.validate,
+    getState: field.getState,
+  });
+}
+
+let interactionRegistryRevision = $state(0);
+
+$effect(() => {
+  const registry = resolvedInteractionRegistry;
+  return registry.subscribe((event) => {
+    if (event.type === 'registered' || event.type === 'unregistered') {
+      interactionRegistryRevision += 1;
+    }
+  });
+});
+
+$effect(() => {
+  const registry = resolvedInteractionRegistry;
+  const currentFormId = resolvedFormId;
+  const currentFields = new Map(fields);
+  void interactionRegistryRevision;
+  if (
+    activeInteractionRegistry !== registry ||
+    activeInteractionFormId !== currentFormId
+  ) {
+    for (const registration of interactionDisposers.values()) {
+      registration.dispose();
+    }
+    interactionDisposers.clear();
+    activeInteractionRegistry = registry;
+    activeInteractionFormId = currentFormId;
+  }
+  for (const [name, registration] of interactionDisposers) {
+    const identity = {
+      formId: currentFormId,
+      controlId: registration.field.controlId ?? registration.field.name,
+    };
+    if (
+      currentFields.get(name) !== registration.field ||
+      !registry.get(identity)
+    ) {
+      registration.dispose();
+      interactionDisposers.delete(name);
+    }
+  }
+  for (const [name, field] of currentFields) {
+    if (interactionDisposers.has(name)) continue;
+    const dispose = registerInteraction(registry, currentFormId, field);
+    if (!dispose) continue;
+    interactionDisposers.set(name, {
+      field,
+      dispose,
+    });
+  }
+});
+
 // Create form context
 const formContext: SMRTFormContext = {
   get mode() {
     return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
-    interactionDisposers.get(field.name)?.();
     fields.set(field.name, field);
     fields = new Map(fields); // Trigger reactivity
-    interactionDisposers.set(
-      field.name,
-      resolvedInteractionRegistry.register({
-        identity: {
-          formId: resolvedFormId,
-          controlId: field.controlId ?? field.name,
-        },
-        metadata: {
-          kind: interactionKind(field),
-          label: field.label,
-          description: field.description,
-          sensitivity: field.sensitivity ?? 'public',
-          readable: field.readable,
-          writable: field.writable,
-          constraints: field.constraints,
-          options: field.options,
-          unit: field.unit,
-        },
-        getValue: field.getValue,
-        setValue: field.setValue,
-        clear: field.clear ?? (() => field.setValue('')),
-        focus: field.focus,
-        reveal: field.reveal,
-        highlight: field.highlight,
-        validate: field.validate,
-        getState: field.getState,
-      }),
-    );
   },
   unregisterField(name: string) {
-    interactionDisposers.get(name)?.();
-    interactionDisposers.delete(name);
     fields.delete(name);
     fields = new Map(fields);
   },
@@ -762,7 +837,9 @@ onDestroy(() => {
     clearTimeout(silenceTimer);
   }
   stopAudioLevelMonitoring();
-  for (const dispose of interactionDisposers.values()) dispose();
+  for (const registration of interactionDisposers.values()) {
+    registration.dispose();
+  }
   interactionDisposers.clear();
 });
 
