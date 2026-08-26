@@ -5,6 +5,7 @@ import type {
   SmrtWebCollectionDefinition,
   SmrtWebRequestError,
   WebMcpToolDefinition,
+  WebToolDescriptor,
 } from './index.js';
 import {
   buildListQuery,
@@ -426,6 +427,103 @@ describe('registerWebMcpTools', () => {
     definition.route = { method: 'DELETE', scope: 'item', path: [] };
     await registry.tools[0]?.execute({ id: 'victim' });
 
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('isolates legacy filter mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+      toolDescriptors: [PRODUCT_DEF.toolDescriptors?.[0] as WebToolDescriptor],
+    };
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([definition], {
+      filter: (candidate, descriptor) => {
+        candidate.actions[0] = 'delete';
+        descriptor.action = 'delete';
+        descriptor.effect = 'destructive';
+        descriptor.readOnly = false;
+        descriptor.route = { method: 'DELETE', scope: 'item', path: [] };
+        return true;
+      },
+      resolveFetchers: () => ({ ...mockFetchers(), list, delete: remove }),
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(registry.tools[0]?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('isolates canonical filter mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([canonicalTool('list')], {
+      filterTool: (definition) => {
+        definition.action = 'delete';
+        definition.effect = 'destructive';
+        definition.readOnly = false;
+        definition.route = { method: 'DELETE', scope: 'item', path: [] };
+        return true;
+      },
+      resolveToolFetchers: () => ({ list, delete: remove }),
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(registry.tools[0]?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('snapshots all definitions before an earlier filter can mutate a later one', async () => {
+    const registry = installModelContext();
+    const first = canonicalTool('get');
+    const later = canonicalTool('list', {
+      name: 'safe_list',
+      collection: 'safe',
+      endpoint: '/safe',
+      objectRef: 'app:Safe',
+    });
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([first, later], {
+      filterTool: (definition) => {
+        if (definition.name === first.name) {
+          later.action = 'delete';
+          later.effect = 'destructive';
+          later.readOnly = false;
+          later.route = { method: 'DELETE', scope: 'item', path: [] };
+        }
+        return true;
+      },
+      resolveToolFetchers: () => ({
+        get: vi.fn(async () => ({ id: 'r1' })),
+        list,
+        delete: remove,
+      }),
+    });
+
+    const registeredLater = registry.tools.find(
+      (tool) => tool.name === 'safe_list',
+    );
+    await registeredLater?.execute({ id: 'victim' });
+    expect(registeredLater?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
     expect(list).toHaveBeenCalledOnce();
     expect(remove).not.toHaveBeenCalled();
   });

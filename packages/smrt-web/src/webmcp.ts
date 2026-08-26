@@ -323,8 +323,15 @@ function selectProspectiveTools(
     );
   }
 
+  // Snapshot the complete input graph before invoking any host callback. A
+  // filter for an earlier tool may close over and mutate a later caller-owned
+  // definition; lazy per-definition snapshots would let that mutation cross
+  // the policy boundary before the later tool is classified.
+  const stableDefinitions = definitions.map((definition) =>
+    snapshotValue(definition),
+  );
   const tools: ProspectiveTool[] = [];
-  for (const definition of definitions) {
+  for (const definition of stableDefinitions) {
     if (isCanonicalToolDefinition(definition)) {
       const semantics = actionSemantics(definition.action, definition);
       if (!allowedEffects.has(semantics.effect)) continue;
@@ -337,37 +344,50 @@ function selectProspectiveTools(
         definition,
         semantics,
       );
-      if (options.filterTool && !options.filterTool(stableDefinition)) continue;
+      if (
+        options.filterTool &&
+        !options.filterTool(
+          snapshotCanonicalDefinition(stableDefinition, semantics),
+        )
+      ) {
+        continue;
+      }
       tools.push({
         kind: 'canonical',
         definition: stableDefinition,
         descriptor: stableDefinition,
-        name: qualifiedToolName(definition.name, namespace),
-        identity: `${definition.collection}#${definition.action}`,
+        name: qualifiedToolName(stableDefinition.name, namespace),
+        identity: `${stableDefinition.collection}#${stableDefinition.action}`,
         ...semantics,
       });
       continue;
     }
 
     const stableDefinition = snapshotLegacyDefinition(definition);
-    for (const descriptor of definition.toolDescriptors ?? []) {
-      if (!definition.actions.includes(descriptor.action)) {
+    for (const descriptor of stableDefinition.toolDescriptors ?? []) {
+      if (!stableDefinition.actions.includes(descriptor.action)) {
         throw new Error(
-          `WebMCP tool ${descriptor.name} exposes action ${descriptor.action} outside ${definition.name}'s allowed actions`,
+          `WebMCP tool ${descriptor.name} exposes action ${descriptor.action} outside ${stableDefinition.name}'s allowed actions`,
         );
       }
       const semantics = actionSemantics(descriptor.action, descriptor);
       if (!allowedEffects.has(semantics.effect)) continue;
       const stableDescriptor = snapshotLegacyDescriptor(descriptor, semantics);
-      if (options.filter && !options.filter(definition, stableDescriptor)) {
+      if (
+        options.filter &&
+        !options.filter(
+          snapshotLegacyDefinition(stableDefinition),
+          snapshotLegacyDescriptor(stableDescriptor, semantics),
+        )
+      ) {
         continue;
       }
       tools.push({
         kind: 'legacy',
         definition: stableDefinition,
         descriptor: stableDescriptor,
-        name: qualifiedToolName(descriptor.name, namespace),
-        identity: `${definition.name}#${descriptor.action}`,
+        name: qualifiedToolName(stableDescriptor.name, namespace),
+        identity: `${stableDefinition.name}#${stableDescriptor.action}`,
         ...semantics,
       });
     }
@@ -411,51 +431,54 @@ function actionSemantics(
 function snapshotRoute(
   route: WebToolDescriptor['route'],
 ): WebToolDescriptor['route'] {
-  return route
-    ? {
-        ...route,
-        path: [...route.path],
-        ...(route.parameterAliases
-          ? { parameterAliases: { ...route.parameterAliases } }
-          : {}),
-      }
-    : undefined;
+  return route ? snapshotValue(route) : undefined;
+}
+
+function snapshotValue<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((entry) => snapshotValue(entry)) as T;
+  }
+  if (value && typeof value === 'object') {
+    const snapshot: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      snapshot[key] = snapshotValue(entry);
+    }
+    return snapshot as T;
+  }
+  return value;
 }
 
 function snapshotLegacyDescriptor(
   descriptor: WebToolDescriptor,
   semantics: ToolSemantics,
 ): WebToolDescriptor {
-  return {
+  return snapshotValue({
     ...descriptor,
     ...semantics,
     readOnly: semantics.effect === 'read',
     route: snapshotRoute(descriptor.route),
-  };
+  });
 }
 
 function snapshotLegacyDefinition(
   definition: SmrtWebCollectionDefinition,
 ): SmrtWebCollectionDefinition {
-  return {
+  return snapshotValue({
     ...definition,
     actions: [...definition.actions],
-    fields: { ...definition.fields },
-    relationships: definition.relationships?.map((edge) => ({ ...edge })),
-  };
+  });
 }
 
 function snapshotCanonicalDefinition(
   definition: WebMcpToolDefinition,
   semantics: ToolSemantics,
 ): WebMcpToolDefinition {
-  return {
+  return snapshotValue({
     ...definition,
     ...semantics,
     readOnly: semantics.effect === 'read',
     route: snapshotRoute(definition.route) as WebMcpToolDefinition['route'],
-    relationships: definition.relationships.map((edge) => ({ ...edge })),
-  };
+  });
 }
 
 function validateProspectiveTools(
