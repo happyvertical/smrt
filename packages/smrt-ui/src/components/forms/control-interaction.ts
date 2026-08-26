@@ -565,6 +565,13 @@ export function createControlInteractionRegistry(
   const staged = new Map<string, InternalStagedEntry>();
   const undo = new Map<string, InternalUndoEntry[]>();
   const userEdits = new Map<string, { revision: number; value: unknown }>();
+  const registrationBaselines = new WeakMap<
+    ControlRegistration,
+    {
+      value: unknown;
+      userEdit: { revision: number; value: unknown } | null;
+    }
+  >();
   const listeners = new Set<(event: ControlInteractionEvent) => void>();
   const now = options.now ?? Date.now;
   const locallyConfirmedContexts = new WeakSet<ControlCommandContext>();
@@ -593,24 +600,16 @@ export function createControlInteractionRegistry(
   ): Promise<boolean> => {
     const current = registrations.get(key);
     if (!current || current === registration) return false;
-    let oldValue: unknown;
-    let currentValue: unknown;
-    try {
-      oldValue = registration.getValue?.();
-      currentValue = current.getValue?.();
-    } catch {
-      return true;
-    }
-    if (!valuesEqual(oldValue, currentValue)) return true;
     const currentWithEdits = editAwareRegistration(key, current);
-    const currentUserEdit =
-      current.getUserEditSnapshot?.() ?? userEdits.get(key);
-    const restoreValue = currentUserEdit?.value ?? previousValue;
-    if (currentWithEdits.restoreValue) {
-      await currentWithEdits.restoreValue(cloneValue(restoreValue));
-    } else {
-      await currentWithEdits.setValue?.(cloneValue(restoreValue));
-    }
+    const baseline = registrationBaselines.get(current) ?? {
+      value: previousValue,
+      userEdit: null,
+    };
+    await restoreRegistrationValue(
+      currentWithEdits,
+      cloneValue(baseline.value),
+      cloneValue(baseline.userEdit),
+    );
     return true;
   };
 
@@ -714,6 +713,21 @@ export function createControlInteractionRegistry(
   const registry: ControlInteractionRegistry = {
     register(registration) {
       const key = identityKey(registration.identity);
+      // Capture outside the caller's reactive registration effect so reading the
+      // model does not make ordinary value changes re-register the control.
+      queueMicrotask(() => {
+        try {
+          registrationBaselines.set(registration, {
+            value: cloneValue(registration.getValue?.()),
+            userEdit:
+              cloneValue(
+                registration.getUserEditSnapshot?.() ?? userEdits.get(key),
+              ) ?? null,
+          });
+        } catch {
+          // A broken reader is handled by command execution, not registration.
+        }
+      });
       registrations.set(key, registration);
       emit({ type: 'registered', identity: registration.identity });
       return () => {

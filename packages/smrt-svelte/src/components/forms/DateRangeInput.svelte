@@ -197,10 +197,15 @@ onMount(() => {
     const fieldDef: FieldDefinition = {
       name,
       type: 'daterange',
-      label,
-      description:
-        description ||
-        'A date range with start and end dates (say "from [start] to [end]")',
+      get label() {
+        return label;
+      },
+      get description() {
+        return (
+          description ||
+          'A date range with start and end dates (say "from [start] to [end]")'
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined) {
           updateValue('', '');

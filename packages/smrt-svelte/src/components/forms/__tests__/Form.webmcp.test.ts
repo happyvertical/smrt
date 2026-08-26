@@ -875,6 +875,7 @@ describe('Form WebMCP staged-edit intent', () => {
 
   it('updates configured rich-field schemas after prop changes', async () => {
     const registered: Array<{ inputSchema: Record<string, unknown> }> = [];
+    const registry = createControlInteractionRegistry();
     document.modelContext = {
       registerTool(tool) {
         registered.push(tool as (typeof registered)[number]);
@@ -885,6 +886,10 @@ describe('Form WebMCP staged-edit intent', () => {
         webmcp: true,
         addressFields: ['city'],
         measurementUnits: ['m'],
+        measurementLabel: 'Height',
+        measurementMin: 0,
+        measurementMax: 10,
+        interactionRegistry: registry,
       },
     });
     await tick();
@@ -894,6 +899,10 @@ describe('Form WebMCP staged-edit intent', () => {
       webmcp: true,
       addressFields: ['country'],
       measurementUnits: ['ft'],
+      measurementLabel: 'Weight',
+      measurementMin: 100,
+      measurementMax: 200,
+      interactionRegistry: registry,
     });
     await tick();
     await tick();
@@ -901,13 +910,37 @@ describe('Form WebMCP staged-edit intent', () => {
     const schema = registered.at(-1)?.inputSchema as {
       properties: Record<
         string,
-        { properties: Record<string, { enum?: string[] }> }
+        {
+          title?: string;
+          description?: string;
+          properties: Record<
+            string,
+            { enum?: string[]; minimum?: number; maximum?: number }
+          >;
+        }
       >;
     };
     expect(schema.properties.address.properties).toEqual({
       country: { type: 'string' },
     });
     expect(schema.properties.measurement.properties.unit.enum).toEqual(['ft']);
+    expect(schema.properties.measurement).toMatchObject({
+      title: 'Weight',
+      description: expect.stringContaining('between 100 and 200'),
+    });
+    expect(schema.properties.measurement.properties.value).toMatchObject({
+      minimum: 100,
+      maximum: 200,
+    });
+    expect(
+      registry
+        .list('structured-fields')
+        .find((snapshot) => snapshot.identity.controlId === 'measurement')
+        ?.metadata,
+    ).toMatchObject({
+      label: 'Weight',
+      description: expect.stringContaining('between 100 and 200'),
+    });
   });
 
   it('allows partial payloads for optional structured fields', async () => {

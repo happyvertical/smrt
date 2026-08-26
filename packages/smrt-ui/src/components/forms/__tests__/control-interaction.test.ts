@@ -1803,6 +1803,7 @@ describe('control interaction registry', () => {
       new Event('click'),
     );
     await setterStartedPromise;
+    value = 'Katherine';
     registry.register({
       identity,
       metadata: { kind: 'text' },
@@ -1820,7 +1821,7 @@ describe('control interaction registry', () => {
       ok: false,
       reason: 'staged_value_stale',
     });
-    expect(value).toBe('Ada');
+    expect(value).toBe('Katherine');
   });
 
   it('reconciles a throwing superseded setter through the current registration', async () => {
@@ -1857,6 +1858,7 @@ describe('control interaction registry', () => {
       new Event('click'),
     );
     await setterStartedPromise;
+    value = 'Katherine';
     registry.register({
       identity,
       metadata: { kind: 'text' },
@@ -1874,7 +1876,79 @@ describe('control interaction registry', () => {
       ok: false,
       reason: 'setter_failed',
     });
-    expect(value).toBe('Ada');
+    expect(value).toBe('Katherine');
+  });
+
+  it('replays a null human edit made during replacement restoration', async () => {
+    let value: string | null = 'Ada';
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    let releaseRestore: (() => void) | undefined;
+    let restoreStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const restoreBlocked = new Promise<void>((resolve) => {
+      releaseRestore = resolve;
+    });
+    const restoreStartedPromise = new Promise<void>((resolve) => {
+      restoreStarted = resolve;
+    });
+    let restoreCalls = 0;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        setterStarted?.();
+        await setterBlocked;
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const applying = executeLocalControlCommand(
+      registry,
+      { action: 'apply', identity, revision: 1 },
+      new Event('click'),
+    );
+    await setterStartedPromise;
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = next === null ? null : String(next);
+      },
+      restoreValue: async (next) => {
+        restoreCalls += 1;
+        if (restoreCalls === 1) {
+          restoreStarted?.();
+          await restoreBlocked;
+        }
+        value = next === null ? null : String(next);
+      },
+    });
+    releaseSetter?.();
+    await restoreStartedPromise;
+    value = null;
+    registry.recordUserEdit?.(identity);
+    releaseRestore?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBeNull();
+    expect(restoreCalls).toBe(2);
   });
 
   it('uses form-recorded user edits during async policy waits', async () => {

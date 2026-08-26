@@ -17,6 +17,9 @@ let {
   onaddresschange = undefined,
   measurementStep = undefined,
   measurementUnits = undefined,
+  measurementLabel = 'Measurement',
+  measurementMin = undefined,
+  measurementMax = undefined,
   minDate = undefined,
   maxDate = undefined,
   dateDisabled = false,
@@ -36,6 +39,9 @@ let {
   onaddresschange?: (value: Partial<Record<string, string>>) => void;
   measurementStep?: number;
   measurementUnits?: Array<'ft' | 'in' | 'm' | 'cm' | 'mm' | 'yd'>;
+  measurementLabel?: string;
+  measurementMin?: number;
+  measurementMax?: number;
   minDate?: string;
   maxDate?: string;
   dateDisabled?: boolean;
@@ -48,8 +54,10 @@ let {
 	<fieldset disabled={fieldsetDisabled}>
 	<MeasurementInput
 		name={measurementName}
-		label="Measurement"
+		label={measurementLabel}
 		required={structuredRequired}
+		min={measurementMin}
+		max={measurementMax}
 		step={measurementStep}
 		units={measurementUnits}
 		onchange={onmeasurementchange}

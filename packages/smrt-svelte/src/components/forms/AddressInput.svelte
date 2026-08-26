@@ -202,10 +202,15 @@ onMount(() => {
     const fieldDef: FieldDefinition = {
       name,
       type: 'address',
-      label,
-      description:
-        description ||
-        'A mailing address with street, city, province, postal code, and country',
+      get label() {
+        return label;
+      },
+      get description() {
+        return (
+          description ||
+          'A mailing address with street, city, province, postal code, and country'
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined) {
           street = '';
