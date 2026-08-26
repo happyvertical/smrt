@@ -496,6 +496,32 @@ describe('registerWebMcpTools', () => {
     expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
   });
 
+  it('isolates legacy resolver mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+      toolDescriptors: [PRODUCT_DEF.toolDescriptors?.[0] as WebToolDescriptor],
+    };
+
+    registerWebMcpToolsWithPolicy([definition], {
+      resolveFetchers: (candidate) => {
+        candidate.actions[0] = 'delete';
+        if (candidate.toolDescriptors?.[0]) {
+          candidate.toolDescriptors[0].action = 'delete';
+          candidate.toolDescriptors[0].effect = 'destructive';
+        }
+        return { ...mockFetchers(), list, delete: remove };
+      },
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
   it('isolates canonical filter mutations from the selected dispatch snapshot', async () => {
     const registry = installModelContext();
     const list = vi.fn(async () => []);
@@ -517,6 +543,26 @@ describe('registerWebMcpTools', () => {
       readOnlyHint: true,
       destructiveHint: false,
     });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('isolates canonical resolver mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([canonicalTool('list')], {
+      resolveToolFetchers: (definition) => {
+        definition.action = 'delete';
+        definition.effect = 'destructive';
+        definition.readOnly = false;
+        definition.route = { method: 'DELETE', scope: 'item', path: [] };
+        return { list, delete: remove };
+      },
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
     expect(list).toHaveBeenCalledOnce();
     expect(remove).not.toHaveBeenCalled();
   });

@@ -219,7 +219,7 @@ export function registerWebMcpTools(
         let collection = collections.get(definition);
         if (!fetchers || !collection) {
           fetchers = options.resolveFetchers
-            ? options.resolveFetchers(definition)
+            ? options.resolveFetchers(snapshotLegacyDefinition(definition))
             : createDefinitionFetchers(definition, basePath, options.fetchFn);
           collection = createSmrtCollection(definition, {
             fetchers,
@@ -258,7 +258,9 @@ export function registerWebMcpTools(
       }
       const { definition } = tool;
       const fetchers = options.resolveToolFetchers
-        ? options.resolveToolFetchers(definition)
+        ? options.resolveToolFetchers(
+            snapshotCanonicalDefinition(definition, tool),
+          )
         : createDefinitionFetchers(
             { name: definition.collection, endpoint: definition.endpoint },
             basePath,
