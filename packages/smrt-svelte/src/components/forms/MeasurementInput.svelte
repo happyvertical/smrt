@@ -333,10 +333,23 @@ onMount(() => {
         if (
           typeof candidate === 'object' &&
           candidate !== null &&
-          'value' in candidate &&
-          'unit' in candidate
+          !Array.isArray(candidate)
         ) {
-          proposed = candidate as MeasurementValue;
+          const measurement = candidate as Record<string, unknown>;
+          if (
+            [Object.prototype, null].includes(
+              Object.getPrototypeOf(measurement),
+            ) &&
+            Object.keys(measurement).every((key) =>
+              ['value', 'unit'].includes(key),
+            ) &&
+            Object.hasOwn(measurement, 'value') &&
+            Object.hasOwn(measurement, 'unit') &&
+            typeof measurement.value === 'number' &&
+            typeof measurement.unit === 'string'
+          ) {
+            proposed = measurement as unknown as MeasurementValue;
+          }
         } else if (typeof candidate === 'number') {
           proposed = { value: candidate, unit };
         } else {

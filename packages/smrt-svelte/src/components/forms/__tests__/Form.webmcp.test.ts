@@ -297,7 +297,25 @@ describe('Form WebMCP staged-edit intent', () => {
       ).results[0].ok,
     ).toBe(false);
     expect(
+      (
+        await apply('dates', {
+          startDate: '2026-08-10',
+          endDate: '2026-08-20',
+          constructor: 'payload',
+        })
+      ).results[0].ok,
+    ).toBe(false);
+    expect(
       (await apply('measurement', { value: 2, unit: 'ft' })).results[0].ok,
+    ).toBe(false);
+    expect(
+      (
+        await apply('measurement', {
+          value: 2,
+          unit: 'm',
+          constructor: 'payload',
+        })
+      ).results[0].ok,
     ).toBe(false);
     expect(addressChanged).not.toHaveBeenCalled();
     expect(datesChanged).not.toHaveBeenCalled();
@@ -350,7 +368,7 @@ describe('Form WebMCP staged-edit intent', () => {
     );
     await view.rerender({
       interactionRegistry: registry,
-      fieldsetDisabled: true,
+      dateDisabled: true,
     });
     await tick();
 

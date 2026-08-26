@@ -732,6 +732,12 @@ export function createControlInteractionRegistry(
 
       try {
         const snapshot = snapshotOf(registration);
+        const commandUserEditSnapshot =
+          command.action === 'apply' ||
+          command.action === 'clear' ||
+          command.action === 'undo'
+            ? (cloneValue(registration.getUserEditSnapshot?.()) ?? null)
+            : null;
         const invariantDecision = defaultPolicy(
           command,
           publicContext,
@@ -747,6 +753,12 @@ export function createControlInteractionRegistry(
               )
             : invariantDecision;
         if (registrations.get(key) !== registration) {
+          throw new Error('staged_value_stale');
+        }
+        if (
+          commandUserEditSnapshot &&
+          userEditSuperseded(registration, commandUserEditSnapshot)
+        ) {
           throw new Error('staged_value_stale');
         }
         const postPolicyInvariant = defaultPolicy(
@@ -900,6 +912,12 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_stale');
             }
             if (
+              commandUserEditSnapshot &&
+              userEditSuperseded(registration, commandUserEditSnapshot)
+            ) {
+              throw new Error('staged_value_stale');
+            }
+            if (
               stagedEntry &&
               (staged.get(key) !== stagedEntry ||
                 !valuesEqual(stagedEntry.baseValue, registration.getValue?.()))
@@ -926,8 +944,7 @@ export function createControlInteractionRegistry(
             }
             const previousValue = cloneValue(registration.getValue?.());
             const history = undo.get(key) ?? [];
-            const userEditSnapshot =
-              cloneValue(registration.getUserEditSnapshot?.()) ?? null;
+            const userEditSnapshot = commandUserEditSnapshot;
             try {
               const setterResult = registration.setValue?.(nextValue);
               await setterResult;
@@ -1028,8 +1045,7 @@ export function createControlInteractionRegistry(
           case 'clear': {
             const previousValue = cloneValue(registration.getValue?.());
             let clearDecision: boolean | undefined;
-            const userEditSnapshot =
-              cloneValue(registration.getUserEditSnapshot?.()) ?? null;
+            const userEditSnapshot = commandUserEditSnapshot;
             try {
               const pendingDecision = registration.clear
                 ? registration.clear()
@@ -1103,8 +1119,7 @@ export function createControlInteractionRegistry(
             const undoEntry = history.at(-1);
             if (!undoEntry) throw new Error('nothing_to_undo');
             const currentValue = cloneValue(registration.getValue?.());
-            const userEditSnapshot =
-              cloneValue(registration.getUserEditSnapshot?.()) ?? null;
+            const userEditSnapshot = commandUserEditSnapshot;
             if (!valuesEqual(currentValue, undoEntry.appliedValue)) {
               throw new Error('staged_value_stale');
             }

@@ -239,17 +239,30 @@ async function restoreReviewFocus(
       originalControl &&
       !originalControl.matches(':disabled') &&
       originalControl.matches(
-        'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        'button, input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])',
       )
         ? originalControl
         : undefined;
-    const nestedControl = originalControl?.querySelector<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-    );
-    const formFallback = formElement?.querySelector<HTMLElement>(
-      'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-    );
-    (directControl ?? nestedControl ?? formFallback)?.focus();
+    const focusableSelector =
+      'button:not(:disabled), input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+    const candidates = [
+      ...(directControl ? [directControl] : []),
+      ...Array.from(
+        originalControl?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+      ),
+      ...Array.from(
+        formElement?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+      ),
+    ];
+    for (const candidate of candidates) {
+      candidate.focus();
+      if (
+        document.activeElement === candidate ||
+        candidate.contains(document.activeElement)
+      ) {
+        return;
+      }
+    }
   };
   if (
     !registry

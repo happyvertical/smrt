@@ -247,9 +247,20 @@ onMount(() => {
       },
       validateValue: (candidate) => {
         if (candidate === null || candidate === undefined) return !required;
-        if (typeof candidate !== 'object') return false;
-        const range = candidate as Partial<DateRangeValue>;
         if (
+          typeof candidate !== 'object' ||
+          Array.isArray(candidate) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(candidate))
+        ) {
+          return false;
+        }
+        const range = candidate as Record<string, unknown>;
+        if (
+          !Object.keys(range).every((key) =>
+            ['startDate', 'endDate'].includes(key),
+          ) ||
+          !Object.hasOwn(range, 'startDate') ||
+          !Object.hasOwn(range, 'endDate') ||
           typeof range.startDate !== 'string' ||
           typeof range.endDate !== 'string'
         ) {

@@ -19,6 +19,7 @@ let {
   measurementUnits = undefined,
   minDate = undefined,
   maxDate = undefined,
+  dateDisabled = false,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -35,6 +36,7 @@ let {
   measurementUnits?: Array<'ft' | 'in' | 'm' | 'cm' | 'mm' | 'yd'>;
   minDate?: string;
   maxDate?: string;
+  dateDisabled?: boolean;
 } = $props();
 </script>
 
@@ -54,6 +56,7 @@ let {
 		required={structuredRequired}
 		{minDate}
 		{maxDate}
+		disabled={dateDisabled}
 		onchange={ondateschange}
 	/>
 	<AddressInput
