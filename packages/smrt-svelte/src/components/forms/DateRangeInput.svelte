@@ -206,6 +206,7 @@ onMount(() => {
           .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
+      getState: () => ({ disabled }),
       constraints: { required },
       validate: () =>
         !required || (startDate.trim().length > 0 && endDate.trim().length > 0),

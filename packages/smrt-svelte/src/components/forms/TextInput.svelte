@@ -102,6 +102,7 @@ onMount(() => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
+      getState: () => ({ disabled }),
       constraints: { required },
       validate: () =>
         (!required || value.trim().length > 0) &&

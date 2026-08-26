@@ -64,6 +64,7 @@ onMount(() => {
         }
       },
       getValue: () => checked,
+      getState: () => ({ disabled }),
       constraints: { required },
       validate: () => !required || checked,
     };

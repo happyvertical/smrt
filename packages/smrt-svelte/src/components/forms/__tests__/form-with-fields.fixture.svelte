@@ -17,6 +17,7 @@ let {
   webmcp = false,
   textRequired = false,
   textDisabled = false,
+  formSubject = undefined,
   ageRequired = false,
   ageMin = undefined,
   ageMax = undefined,
@@ -30,13 +31,14 @@ let {
   webmcp?: boolean;
   textRequired?: boolean;
   textDisabled?: boolean;
+  formSubject?: { type: string; id: string; label?: string };
   ageRequired?: boolean;
   ageMin?: number;
   ageMax?: number;
 } = $props();
 </script>
 
-<Form {onsubmit} {method} {action} {webmcp}>
+<Form {onsubmit} {method} {action} {webmcp} subject={formSubject}>
 	<TextInput
 		name="fullname"
 		label="Full name"

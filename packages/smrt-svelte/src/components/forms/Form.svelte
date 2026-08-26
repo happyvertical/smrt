@@ -4,6 +4,7 @@ import {
   type ControlInteractionRegistry,
   type ControlKind,
   type ControlRuntimeState,
+  type ControlSubject,
   createControlInteractionRegistry,
   StagedControlReview,
   setControlInteractionContext,
@@ -51,6 +52,8 @@ export interface Props {
   action?: string;
   /** Stable identity used by control/agent interaction adapters. */
   formId?: string;
+  /** Default record-qualified identity for registered fields. */
+  subject?: ControlSubject;
   interactionRegistry?: ControlInteractionRegistry;
   oninteraction?: (event: ControlInteractionEvent) => void;
   /** Render the built-in human review surface for staged changes. */
@@ -73,6 +76,7 @@ const {
   method,
   action,
   formId,
+  subject,
   interactionRegistry,
   oninteraction,
   stagedReview = true,
@@ -198,7 +202,7 @@ function registerInteraction(
   const identity = {
     formId: currentFormId,
     controlId: field.controlId ?? field.name,
-    subject: field.subject,
+    subject: field.subject ?? subject,
   };
   if (registry.get(identity)) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
@@ -260,6 +264,7 @@ $effect(() => {
     const identity = {
       formId: currentFormId,
       controlId: registration.field.controlId ?? registration.field.name,
+      subject: registration.field.subject ?? subject,
     };
     if (
       currentFields.get(name) !== registration.field ||
@@ -482,7 +487,7 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
         identity: {
           formId: resolvedFormId,
           controlId: field.controlId ?? field.name,
-          subject: field.subject,
+          subject: field.subject ?? subject,
         },
         value,
       },

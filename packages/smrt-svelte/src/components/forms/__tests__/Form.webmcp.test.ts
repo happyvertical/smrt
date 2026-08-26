@@ -122,8 +122,20 @@ describe('Form WebMCP staged-edit intent', () => {
         registered.push(tool as (typeof registered)[number]);
       },
     };
-    render(FormWithFields, {
-      props: { webmcp: true, textDisabled: true, showAge: false },
+    const view = render(FormWithFields, {
+      props: { webmcp: true, textDisabled: false, showAge: false },
+    });
+    await tick();
+    await tick();
+
+    expect(registered.at(-1)?.inputSchema).toMatchObject({
+      properties: { fullname: { type: 'string' } },
+    });
+
+    await view.rerender({
+      webmcp: true,
+      textDisabled: true,
+      showAge: false,
     });
     await tick();
     await tick();
@@ -134,6 +146,31 @@ describe('Form WebMCP staged-edit intent', () => {
       'No reviewable changes provided',
     );
     expect(screen.getByRole('textbox', { name: 'Full name' })).toBeDisabled();
+  });
+
+  it('uses the form subject for rich-field registration and staging', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        formSubject: { type: 'person', id: 'person-1' },
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
+      'Staged 1 change for review',
+    );
+    expect(await screen.findByText(/person:person-1/)).toBeInTheDocument();
   });
 
   it('keeps the browser path a no-op without WebMCP', async () => {

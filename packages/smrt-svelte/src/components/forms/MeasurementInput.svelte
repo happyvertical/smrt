@@ -302,6 +302,7 @@ onMount(() => {
         }
       },
       getValue: () => (value !== null ? { value, unit } : null),
+      getState: () => ({ disabled }),
       constraints: { required, min, max },
       validate: () =>
         value === null ? !required : Number.isFinite(value) && isInRange,

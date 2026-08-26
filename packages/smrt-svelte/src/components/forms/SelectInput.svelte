@@ -77,6 +77,7 @@ onMount(() => {
         }
       },
       getValue: () => value,
+      getState: () => ({ disabled }),
       constraints: { required },
       options: options.map((option) => ({
         value: option.value,

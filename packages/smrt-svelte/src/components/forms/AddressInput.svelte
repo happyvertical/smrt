@@ -233,6 +233,7 @@ onMount(() => {
         }
       },
       getValue: () => value,
+      getState: () => ({ disabled }),
       constraints: { required },
       webMcpSchema: {
         type: 'object',
