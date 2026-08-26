@@ -3,7 +3,11 @@ import {
   type DataSurfaceDescriptor,
   type DataSurfaceVisibleCommand,
 } from '@happyvertical/smrt-ui/data';
-import { createControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
+import {
+  type ControlInteractionRegistry,
+  type ControlSnapshot,
+  createControlInteractionRegistry,
+} from '@happyvertical/smrt-ui/forms';
 import { describe, expect, it, vi } from 'vitest';
 import type { WebMcpToolSpec } from '../webmcp.svelte.js';
 import { registerWebMcpUiTools } from '../webmcp-ui.js';
@@ -241,6 +245,43 @@ describe('registerWebMcpUiTools', () => {
     expect(JSON.stringify(result)).not.toContain('customer 4711');
   });
 
+  it('redacts secret values from an injected registry even when its flags are inconsistent', async () => {
+    const browser = modelContext();
+    const snapshot = {
+      identity: { formId: 'injected', controlId: 'secret' },
+      metadata: { kind: 'password', sensitivity: 'secret' },
+      state: {
+        value: 'injected-secret-value',
+        valueRedacted: false,
+        stagedValue: 'injected-staged-secret',
+        stagedValueRedacted: false,
+      },
+    } satisfies ControlSnapshot;
+    const controls: ControlInteractionRegistry = {
+      register: () => () => {},
+      unregister: () => {},
+      list: () => [snapshot],
+      get: () => snapshot,
+      execute: async (command) => ({
+        ok: true,
+        action: command.action,
+        identity: command.identity,
+        snapshot,
+      }),
+      subscribe: () => () => {},
+    };
+    registerWebMcpUiTools({
+      controlRegistry: controls,
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+      document: browser.document,
+    });
+
+    const list = await parse(
+      findTool(browser.registered, 'smrt_ui_list_form_controls').execute({}),
+    );
+    expect(JSON.stringify(list)).not.toContain('injected-secret');
+  });
+
   it('filters hidden columns and preserves surface revision and replay failures', async () => {
     const browser = modelContext();
     const surfaces = createDataSurfaceRegistry();
@@ -260,6 +301,7 @@ describe('registerWebMcpUiTools', () => {
                 { columnId: 'internal', value: 'nested-hidden-filter' },
               ],
               sorting: [{ columnId: 'internal', direction: 'asc' }],
+              columnOrder: ['id', 'internal'],
             },
           },
         },
@@ -290,6 +332,7 @@ describe('registerWebMcpUiTools', () => {
     expect(snapshot.descriptor.query.projectableColumnIds).toEqual(['id']);
     expect(snapshot.state).not.toHaveProperty('internal');
     expect(JSON.stringify(snapshot)).not.toContain('nested-hidden-filter');
+    expect(snapshot.state.table.state.columnOrder).toEqual(['id']);
 
     const hiddenRowKeyDescriptor = descriptor();
     hiddenRowKeyDescriptor.rowKey = 'internal';

@@ -190,8 +190,12 @@ function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
     },
     state: {
       ...(redactText ? runtimeState : snapshot.state),
-      ...(snapshot.state.valueRedacted ? { value: undefined } : {}),
-      ...(snapshot.state.stagedValueRedacted ? { stagedValue: undefined } : {}),
+      ...(redactText || snapshot.state.valueRedacted
+        ? { value: undefined }
+        : {}),
+      ...(redactText || snapshot.state.stagedValueRedacted
+        ? { stagedValue: undefined }
+        : {}),
     },
   };
 }
@@ -203,6 +207,9 @@ function sanitizeSurfaceValue(
 ): unknown {
   if (Array.isArray(value)) {
     return value
+      .filter(
+        (entry) => typeof entry !== 'string' || !hiddenColumnIds.has(entry),
+      )
       .map((entry) =>
         sanitizeSurfaceValue(entry, hiddenColumnIds, redactRowIds),
       )
