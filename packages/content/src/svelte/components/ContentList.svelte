@@ -21,9 +21,11 @@ import {
   contentStateVariant,
   contentStatusVariant,
   createContentListController,
+  normalizeContentType,
   paginateContentListRows,
   readContentListFilter,
   resolveContentHref,
+  selectableContentListRowIds,
   selectContentListRows,
   toContentListRows,
 } from '../content-list-controller.js';
@@ -86,19 +88,31 @@ $effect(() =>
   }),
 );
 
-// A `type` prop locks the type filter, exactly as the legacy select did.
+const tableState = $derived(snapshot.state);
+
+/** The normalized type the `type` prop locks the list to, if any. */
+const lockedType = $derived(type?.trim() ? normalizeContentType(type) : null);
+
+// A `type` prop locks the type filter, exactly as the legacy select did. The
+// lock is enforced against the live state, not only against the prop, because a
+// data-surface `set-filters` or `reset` command can otherwise replace or clear
+// it. The equality guard keeps the effect from dispatching in a loop.
 $effect(() => {
-  const lockedType = type;
+  const locked = lockedType;
+  if (locked === null) {
+    // Unlocked: the toolbar select owns the filter. Only reading `type` here
+    // keeps the legacy behaviour of clearing it when the prop is removed.
+    untrack(() =>
+      applyContentListFilter(controller, CONTENT_LIST_TYPE_FILTER_ID, null),
+    );
+    return;
+  }
+  if (readContentListFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID) === locked)
+    return;
   untrack(() =>
-    applyContentListFilter(
-      controller,
-      CONTENT_LIST_TYPE_FILTER_ID,
-      lockedType ?? null,
-    ),
+    applyContentListFilter(controller, CONTENT_LIST_TYPE_FILTER_ID, locked),
   );
 });
-
-const tableState = $derived(snapshot.state);
 
 const columnLabels = $derived({
   type: t(M['content.content_list.column_type']),
@@ -118,19 +132,44 @@ const queryRows = $derived(
 );
 const pageRows = $derived(paginateContentListRows(queryRows, tableState));
 
+// The adapter owns filtering, sorting, and paging, so the controller's page has
+// to be clamped against the adapter's result count rather than DataTable's.
+$effect(() => {
+  const totalRows = queryRows.length;
+  untrack(() => controller.clampPage(totalRows));
+});
+
 const selectedRowKeys = $derived(
   new Set(tableState.selectedRowIds.map((rowId) => String(rowId))),
 );
-const pageRowIds = $derived(pageRows.map((row) => row.id));
+// Only durable rows may be addressed by a selection.
+const identifiedRowKeys = $derived(
+  new Set(selectableContentListRowIds(rows).map((rowId) => String(rowId))),
+);
+const selectablePageRowIds = $derived(selectableContentListRowIds(pageRows));
 const allPageSelected = $derived(
-  pageRowIds.length > 0 &&
-    pageRowIds.every((rowId) => selectedRowKeys.has(String(rowId))),
+  selectablePageRowIds.length > 0 &&
+    selectablePageRowIds.every((rowId) => selectedRowKeys.has(String(rowId))),
 );
 const somePageSelected = $derived(
   !allPageSelected &&
-    pageRowIds.some((rowId) => selectedRowKeys.has(String(rowId))),
+    selectablePageRowIds.some((rowId) => selectedRowKeys.has(String(rowId))),
 );
 const selectedCount = $derived(tableState.selectedRowIds.length);
+
+// DataTable's own selection column and data-surface commands can both introduce
+// ids for rows that carry no durable identity. Normalizing here covers every
+// path at once; re-dispatching only on a real difference keeps it settling.
+$effect(() => {
+  const selected = tableState.selectedRowIds;
+  const durable = selected.filter((rowId) =>
+    identifiedRowKeys.has(String(rowId)),
+  );
+  if (durable.length === selected.length) return;
+  untrack(() =>
+    controller.dispatch({ type: 'setSelectedRows', rowIds: durable }),
+  );
+});
 
 const selectedType = $derived(
   readContentListFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID) ?? '',
@@ -155,17 +194,22 @@ function isSelected(row: ContentListRow): boolean {
 }
 
 function toggleRow(row: ContentListRow) {
+  if (!row.identified) return;
   controller.dispatch({ type: 'toggleRowSelection', rowId: row.id });
 }
 
 function togglePageSelection() {
   const remaining = tableState.selectedRowIds.filter(
     (rowId) =>
-      !pageRowIds.some((pageRowId) => String(pageRowId) === String(rowId)),
+      !selectablePageRowIds.some(
+        (pageRowId) => String(pageRowId) === String(rowId),
+      ),
   );
   controller.dispatch({
     type: 'setSelectedRows',
-    rowIds: allPageSelected ? remaining : [...remaining, ...pageRowIds],
+    rowIds: allPageSelected
+      ? remaining
+      : [...remaining, ...selectablePageRowIds],
   });
 }
 
@@ -318,7 +362,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           handleSearch((event.currentTarget as HTMLInputElement).value)}
       />
 
-      {#if !type}
+      {#if !lockedType}
         <Select
           aria-label={t(M['content.content_list.filter_type'])}
           value={selectedType}
@@ -462,7 +506,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     {#if viewMode === 'compact'}
       <div class="content-table-wrapper">
         <DataTable
-          data={queryRows}
+          data={pageRows}
+          totalRows={queryRows.length}
           columns={tableColumns}
           rowKey={CONTENT_LIST_ROW_KEY}
           {controller}
@@ -484,7 +529,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <div class="content-row__select">
               <Checkbox
                 checked={isSelected(row)}
+                disabled={!row.identified}
                 aria-label={selectRowLabel(row)}
+                title={row.identified
+                  ? undefined
+                  : t(M['content.content_list.row_not_selectable'])}
                 onchange={() => toggleRow(row)}
               />
             </div>
@@ -565,7 +614,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               <div class="content-header__eyebrow">
                 <Checkbox
                   checked={isSelected(row)}
+                  disabled={!row.identified}
                   aria-label={selectRowLabel(row)}
+                  title={row.identified
+                    ? undefined
+                    : t(M['content.content_list.row_not_selectable'])}
                   onchange={() => toggleRow(row)}
                 />
                 <span class={`type-pill type-pill--${row.type}`}>{row.typeLabel}</span>

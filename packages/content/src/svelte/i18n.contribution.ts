@@ -94,6 +94,8 @@ export const M = defineMessages({
   'content.content_list.select_all': 'Select all contents on this page',
   'content.content_list.select_row': 'Select {title}',
   'content.content_list.deselect_row': 'Deselect {title}',
+  'content.content_list.row_not_selectable':
+    'This content has no stable id and cannot be selected.',
   'content.content_list.selection_count': '{count} selected',
   'content.content_list.clear_selection': 'Clear selection',
   'content.content_list.loading': 'Loading contents...',

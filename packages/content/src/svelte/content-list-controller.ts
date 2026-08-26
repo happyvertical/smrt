@@ -8,8 +8,12 @@
  *
  * The module owns no transport, no DOM, and no routing: callers supply the
  * content array, a `getViewHref` resolver, and a `DataTableController` that
- * holds the serializable view state. Query modes are `local` today; #2452 flips
- * them to `manual` without changing this contract.
+ * holds the serializable view state.
+ *
+ * Query modes are `manual`: this adapter, not the renderer, applies search,
+ * filters, sorting, and paging, so a card view and the compact table can never
+ * disagree about the visible rows. #2452 replaces the local implementation of
+ * that transform with a server query behind the same contract.
  */
 
 import {
@@ -510,8 +514,9 @@ export function createContentListController(
   return createDataTableController({
     columnIds: CONTENT_LIST_COLUMN_IDS,
     hiddenColumnIds: CONTENT_LIST_HIDDEN_COLUMN_IDS,
-    // Local ownership today; #2452 flips these to 'manual' for server queries.
-    modes: { filtering: 'local', sorting: 'local', pagination: 'local' },
+    // This adapter owns the transform in every presentation, so the renderer
+    // must not apply a second, subtly different pass over the same rows.
+    modes: { filtering: 'manual', sorting: 'manual', pagination: 'manual' },
     initialState: {
       search: options.search ?? '',
       filters: contentListFilters({
@@ -557,8 +562,9 @@ function compareFilterValues(left: unknown, right: unknown): number {
 }
 
 /**
- * Mirrors DataTable's local filter semantics so a card view and the compact
- * table always agree on the visible row set.
+ * The single declarative-filter evaluator. It follows DataTable's operator
+ * semantics so a persisted or agent-issued filter behaves the same here as it
+ * would in a locally filtered table.
  */
 function matchesContentListFilter(
   row: ContentListRow,
@@ -612,8 +618,8 @@ function matchesContentListFilter(
 
 /**
  * Applies search, declarative filters, and sorting once for every
- * presentation. Pagination stays separate so the compact table can page the
- * same query result the card views page.
+ * presentation. Pagination stays separate so a caller can report the unpaged
+ * result count (DataTable's `totalRows`) alongside the current page.
  */
 export function selectContentListRows(
   rows: readonly ContentListRow[],

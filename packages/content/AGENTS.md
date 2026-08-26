@@ -117,8 +117,22 @@ Adapter exports (also re-exported from `./svelte`): `createContentListController
 
 Notes:
 
-- Controller modes are all `local`. #2452 flips them to `manual` for
-  server-backed querying without changing the adapter contract.
+- Controller modes are all `manual`: the adapter owns search, filters, sorting,
+  and paging in **every** presentation, and the compact table receives
+  `data={pageRows}` plus `totalRows={queryRows.length}`. Letting DataTable
+  filter locally over already-filtered rows re-ran the transform with subtly
+  different semantics (untrimmed search, its own equality rules), so the two
+  presentations could disagree. The component clamps the page with
+  `controller.clampPage(queryRows.length)`. #2452 replaces the local
+  implementation of that transform with a server query behind the same contract.
+- A `type` prop lock is enforced against live state, not just against the prop:
+  a data-surface `set-filters` or `reset` command that drops the type filter is
+  re-applied by the lock effect (equality-guarded, so it settles).
+- Selection may only address durable rows. Grid and detailed render a disabled,
+  explained checkbox for `identified: false` rows, page select-all skips them,
+  and a normalization effect re-dispatches `setSelectedRows` without any
+  non-durable id — which covers DataTable's own selection column and
+  data-surface commands in one place.
 - Only rendered columns are published to a data surface. `description` is a
   hidden, search-only column so search still reaches the deck; the descriptor
   additionally declares the `id` row-key column, which the surface contract

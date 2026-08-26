@@ -120,13 +120,15 @@ describe('content list rows', () => {
 });
 
 describe('content list controller', () => {
-  it('owns local filtering, sorting, and pagination and hides the search-only column', () => {
+  it('declares the adapter as the only owner of the query and hides the search-only column', () => {
     const controller = createContentListController();
 
+    // Manual modes keep the renderer from applying a second, subtly different
+    // pass over rows this adapter has already filtered, sorted, and paged.
     expect(controller.getModes()).toEqual({
-      filtering: 'local',
-      sorting: 'local',
-      pagination: 'local',
+      filtering: 'manual',
+      sorting: 'manual',
+      pagination: 'manual',
     });
     expect(controller.getState().pageSize).toBeNull();
     expect(controller.getState().columnVisibility).toContainEqual({

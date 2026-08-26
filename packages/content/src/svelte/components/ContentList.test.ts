@@ -228,6 +228,60 @@ describe('ContentList shared query state', () => {
     expect(rowTitles(target)).toEqual(['Council budget explained']);
   });
 
+  it('re-applies the locked type filter when a surface command drops it', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      type: 'article',
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      contents: [
+        ...contents,
+        {
+          id: 'content-3',
+          type: 'document',
+          title: 'Published appendix',
+          status: 'published',
+          state: 'active',
+        },
+      ],
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+
+    // A surface may set its own filters, but it may not unlock the list.
+    await registry.execute({
+      version: 1,
+      commandId: 'clear-type-filter',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-filters',
+      payload: {
+        filters: [
+          { columnId: 'status', operator: 'equals', value: 'published' },
+        ],
+      },
+    });
+    flushSync();
+
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(target.textContent).toContain('Council budget explained');
+    expect(target.textContent).not.toContain('Published appendix');
+
+    await registry.execute({
+      version: 1,
+      commandId: 'reset-view',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'reset',
+    });
+    flushSync();
+
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(target.textContent).not.toContain('Published appendix');
+  });
+
   it('selects and clears every row on the page from the shared selection bar', () => {
     const target = renderList();
 
@@ -236,6 +290,145 @@ describe('ContentList shared query state', () => {
 
     click(buttonsByText(target, 'Clear selection')[0]);
     expect(target.textContent).toContain('0 selected');
+  });
+});
+
+describe('ContentList query ownership', () => {
+  it('renders the same rows in every mode for a search with surrounding whitespace', () => {
+    const target = renderList();
+
+    typeText(searchInput(target), '  zoning  ');
+    const gridTitles = rowTitles(target);
+
+    expect(gridTitles).toEqual(['Zoning appendix']);
+
+    switchTo(target, 'Compact List');
+    const compactTitles = Array.from(
+      target.querySelectorAll('tbody tr td:nth-child(3)'),
+    ).map((cell) => cell.textContent?.trim());
+
+    expect(compactTitles).toEqual(gridTitles);
+  });
+
+  it('sorts through the adapter when a compact column header is clicked', () => {
+    const target = renderList({ defaultViewMode: 'compact' });
+
+    // Ascending, then descending: the second click has to reverse the rows even
+    // though DataTable itself no longer sorts anything.
+    click(buttonByLabel(target, 'Sort Title ascending'));
+    click(buttonByLabel(target, 'Sort Title descending'));
+
+    expect(
+      Array.from(target.querySelectorAll('tbody tr td:nth-child(3)')).map(
+        (cell) => cell.textContent?.trim(),
+      ),
+    ).toEqual(['Zoning appendix', 'Council budget explained']);
+
+    switchTo(target, 'Grid View');
+    expect(rowTitles(target)).toEqual([
+      'Zoning appendix',
+      'Council budget explained',
+    ]);
+  });
+
+  it('renders the same rows in every mode for a mixed-case equals filter', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await registry.execute({
+      version: 1,
+      commandId: 'filter-published',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-filters',
+      payload: {
+        filters: [
+          { columnId: 'status', operator: 'equals', value: 'PUBLISHED' },
+        ],
+      },
+    });
+    flushSync();
+
+    const compactTitles = Array.from(
+      target.querySelectorAll('tbody tr td:nth-child(3)'),
+    ).map((cell) => cell.textContent?.trim());
+    expect(compactTitles).toEqual(['Council budget explained']);
+
+    switchTo(target, 'Grid View');
+    expect(rowTitles(target)).toEqual(compactTitles);
+  });
+});
+
+describe('ContentList selection integrity', () => {
+  const withGhostRow: ContentData[] = [
+    contents[0],
+    { type: 'article', title: 'Ghost row', status: 'draft', state: 'active' },
+  ];
+
+  it('disables and explains the checkbox of a row without a durable id', () => {
+    const target = renderList({ contents: withGhostRow });
+
+    const ghost = checkboxByLabel(target, 'Select Ghost row');
+    expect(ghost.disabled).toBe(true);
+    expect(ghost.getAttribute('title')).toBe(
+      'This content has no stable id and cannot be selected.',
+    );
+    expect(
+      checkboxByLabel(target, 'Select Council budget explained').disabled,
+    ).toBe(false);
+  });
+
+  it('skips rows without a durable id when selecting the whole page', () => {
+    const target = renderList({ contents: withGhostRow });
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+
+    expect(target.textContent).toContain('1 selected');
+  });
+
+  it('normalizes a table selection that reaches a row without a durable id', () => {
+    const target = renderList({
+      contents: withGhostRow,
+      defaultViewMode: 'compact',
+    });
+
+    click(checkboxByLabel(target, 'Select Ghost row'));
+
+    expect(target.textContent).toContain('0 selected');
+  });
+
+  it('normalizes a surface selection that reaches a row without a durable id', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    const target = renderList({
+      contents: withGhostRow,
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    await registry.execute({
+      version: 1,
+      commandId: 'select-ghost',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-selected-rows',
+      payload: {
+        rowIds: ['content-list:unidentified:1', 'content-1'],
+      },
+    });
+    flushSync();
+
+    expect(target.textContent).toContain('1 selected');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+    expect(checkboxByLabel(target, 'Select Ghost row').checked).toBe(false);
   });
 });
 
