@@ -18,6 +18,7 @@ import type {
 import {
   buildWebCollectionDefinition,
   buildWebFieldDefinitions,
+  buildWebMcpToolDefinitions,
   buildWebRelationships,
   buildWebToolDescriptors,
   computeWebManifestHash,
@@ -25,6 +26,7 @@ import {
   resolveCollectionItemObject,
   resolveCollectionItemTypeName,
   selectWebCollectionEntries,
+  selectWebMcpToolEntries,
 } from './web-collections.js';
 
 type ObjInput = Partial<SmartObjectDefinition> & {
@@ -460,6 +462,309 @@ describe('buildWebToolDescriptors', () => {
       legacyManifest,
     );
     expect(definition.objectRef).toBe('@example/products:Product');
+  });
+});
+
+describe('canonical WebMCP tool definitions (#2518)', () => {
+  const publicMethod = (
+    name: string,
+    options: {
+      isStatic?: boolean;
+      parameters?: SmartObjectDefinition['methods'][string]['parameters'];
+    } = {},
+  ): SmartObjectDefinition['methods'][string] => ({
+    name,
+    isPublic: true,
+    isStatic: options.isStatic ?? false,
+    async: true,
+    returnType: 'Promise<void>',
+    parameters: options.parameters ?? [],
+  });
+
+  it('emits get-only and custom-action-only object tools without materializing collections', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      decoratorConfig: { api: { include: ['get'] } },
+    });
+    const report = obj({
+      className: 'Report',
+      collection: 'reports',
+      methods: {
+        refresh: publicMethod('refresh', {
+          isStatic: true,
+          parameters: [{ name: 'options', type: 'object', optional: true }],
+        }),
+      },
+      decoratorConfig: {
+        api: {
+          include: ['refresh'],
+          routes: {
+            refresh: {
+              method: 'PATCH',
+              scope: 'collection',
+              path: 'refresh-now',
+            },
+          },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+    const m = manifest(product, report);
+
+    expect(selectWebCollectionEntries(m)).toEqual([]);
+    expect(buildWebMcpToolDefinitions(m)).toMatchObject([
+      {
+        collection: 'products',
+        action: 'get',
+        name: 'product_get',
+        route: { method: 'GET', scope: 'item', path: [] },
+      },
+      {
+        collection: 'reports',
+        action: 'refresh',
+        name: 'report_refresh',
+        route: {
+          method: 'PATCH',
+          scope: 'collection',
+          path: ['refresh-now'],
+          optionsBag: true,
+        },
+      },
+    ]);
+  });
+
+  it('merges collection-class custom actions into the owning row collection', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      decoratorConfig: { api: false },
+    });
+    const products = obj({
+      className: 'ProductCollection',
+      collection: 'products',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Product',
+      methods: {
+        publish: publicMethod('publish', {
+          parameters: [{ name: 'id', type: 'string', optional: false }],
+        }),
+      },
+      decoratorConfig: {
+        api: {
+          include: ['publish'],
+          routes: {
+            publish: {
+              method: 'POST',
+              scope: 'collection',
+              path: 'publish/[batchId]',
+            },
+          },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+
+    const [definition] = buildWebMcpToolDefinitions(
+      manifest(products, product),
+    );
+    expect(definition).toMatchObject({
+      collection: 'products',
+      objectRef: '@happyvertical/smrt-core:Product',
+      className: 'Product',
+      action: 'publish',
+      name: 'product_publish',
+      route: {
+        method: 'POST',
+        scope: 'collection',
+        path: ['publish', '[batchId]'],
+        parameterAliases: { actionId: 'id' },
+      },
+    });
+    expect(definition?.inputSchema).toMatchObject({
+      properties: {
+        actionId: { type: 'string' },
+        batchId: { type: 'string' },
+      },
+      required: ['actionId', 'batchId'],
+    });
+  });
+
+  it('matches the last emitted collection-class route owner on a shared action', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      decoratorConfig: { api: false },
+    });
+    const baseCollection = obj({
+      className: 'ProductCollection',
+      collection: 'products',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Product',
+      methods: { search: publicMethod('search') },
+      decoratorConfig: {
+        api: { include: ['search'], routes: { search: { path: 'base' } } },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+    const specializedCollection = obj({
+      className: 'SpecialProductCollection',
+      collection: 'products',
+      extends: 'ProductCollection',
+      methods: { search: publicMethod('search') },
+      decoratorConfig: {
+        api: {
+          include: ['search'],
+          routes: { search: { path: 'specialized' } },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+
+    const forward = buildWebMcpToolDefinitions(
+      manifest(product, baseCollection, specializedCollection),
+    );
+    const reverse = buildWebMcpToolDefinitions(
+      manifest(product, specializedCollection, baseCollection),
+    );
+    expect(forward[0]).toMatchObject({
+      collection: 'products',
+      action: 'search',
+      name: 'product_search',
+      route: { path: ['specialized'] },
+    });
+    expect(reverse[0]).toMatchObject({
+      collection: 'products',
+      action: 'search',
+      name: 'product_search',
+      route: { path: ['base'] },
+    });
+  });
+
+  it('honors API disablement, empty includes, exclusions, and ignores CLI/MCP-only exposure', () => {
+    const definitions = buildWebMcpToolDefinitions(
+      manifest(
+        obj({
+          className: 'Disabled',
+          collection: 'disabled',
+          decoratorConfig: { api: false, mcp: true, cli: true },
+        }),
+        obj({
+          className: 'Empty',
+          collection: 'empty',
+          decoratorConfig: { api: { include: [] } },
+        }),
+        obj({
+          className: 'Excluded',
+          collection: 'excluded',
+          decoratorConfig: {
+            api: { include: ['get'], exclude: ['get'] },
+          },
+        }),
+      ),
+    );
+
+    expect(definitions).toEqual([]);
+  });
+
+  it('uses public DTO fields and finalized bounded schemas', () => {
+    const definitions = buildWebMcpToolDefinitions(
+      manifest(
+        obj({
+          className: 'Product',
+          collection: 'products',
+          fields: {
+            name: { type: 'text', required: true } as FieldDefinition,
+            secret: { type: 'text', sensitive: true } as FieldDefinition,
+            scratch: { type: 'text', transient: true } as FieldDefinition,
+            metadata: { type: 'meta' } as FieldDefinition,
+            items: { type: 'oneToMany', related: 'Item' } as FieldDefinition,
+          },
+          decoratorConfig: { api: { include: ['create'] } },
+        }),
+      ),
+    );
+    const schema = definitions[0]?.inputSchema as {
+      $schema?: string;
+      properties?: Record<string, unknown>;
+    };
+
+    expect(schema.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
+    expect(Object.keys(schema.properties ?? {})).toEqual(['name']);
+  });
+
+  it('is scan-order independent and gives an object action precedence over a collection action collision', () => {
+    const product = obj({
+      className: 'Product',
+      collection: 'products',
+      methods: { publish: publicMethod('publish', { isStatic: true }) },
+      decoratorConfig: {
+        api: {
+          include: ['publish'],
+          routes: { publish: { path: 'object-publish' } },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+    const products = obj({
+      className: 'ProductCollection',
+      collection: 'products',
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Product',
+      methods: { publish: publicMethod('publish') },
+      decoratorConfig: {
+        api: {
+          include: ['publish'],
+          routes: { publish: { path: 'collection-publish' } },
+        },
+      } as SmartObjectDefinition['decoratorConfig'],
+    });
+
+    const forward = manifest(product, products);
+    const reverse = manifest(products, product);
+    expect(selectWebMcpToolEntries(forward)).toHaveLength(1);
+    expect(buildWebMcpToolDefinitions(forward)).toEqual(
+      buildWebMcpToolDefinitions(reverse),
+    );
+    expect(buildWebMcpToolDefinitions(forward)[0]?.route.path).toEqual([
+      'object-publish',
+    ]);
+  });
+
+  it('keeps unique STI child actions while the base owns shared CRUD tools', () => {
+    const animal = obj({
+      className: 'Animal',
+      collection: 'animals',
+      decoratorConfig: { api: false, tableStrategy: 'sti' },
+    });
+    const cat = obj({
+      className: 'Cat',
+      collection: 'animals',
+      extends: 'Animal',
+      methods: { groom: publicMethod('groom') },
+      decoratorConfig: { api: { include: ['get', 'groom'] } },
+    });
+
+    const definitions = buildWebMcpToolDefinitions(manifest(cat, animal));
+    expect(
+      definitions.map(({ action, className, name }) => ({
+        action,
+        className,
+        name,
+      })),
+    ).toEqual([
+      { action: 'get', className: 'Animal', name: 'animal_get' },
+      { action: 'groom', className: 'Animal', name: 'animal_groom' },
+    ]);
+    expect(definitions[1]?.route.scope).toBe('item');
+  });
+
+  it('does not add WebMCP-only inputs to the row-shape manifest hash', () => {
+    const getOnly = obj({
+      className: 'Lookup',
+      collection: 'lookups',
+      decoratorConfig: { api: { include: ['get'] } },
+    });
+    const before = computeWebManifestHash(manifest(getOnly));
+    getOnly.decoratorConfig.idType = 'text';
+    getOnly.methods.lookup = publicMethod('lookup');
+
+    expect(computeWebManifestHash(manifest(getOnly))).toBe(before);
   });
 });
 

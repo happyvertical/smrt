@@ -270,6 +270,27 @@ export interface SmrtWebToolRouteDescriptor {
   optionsBag?: boolean;
 }
 
+/**
+ * Canonical data-only definition for one API-backed browser tool. Unlike a
+ * collection definition, this does not imply that a list route or client cache
+ * exists.
+ */
+export interface WebMcpToolDefinition extends WebToolDescriptor {
+  /** Stable definition identity is `(collection, action)`. */
+  collection: string;
+  /** Canonical qualified row-model identity. */
+  objectRef: string;
+  /** Row-model class used by the shared MCP tool vocabulary. */
+  className: string;
+  endpoint: string;
+  idField: string;
+  idType: 'uuid' | 'text';
+  /** Complete generated route metadata, including CRUD actions. */
+  route: SmrtWebToolRouteDescriptor;
+  /** Cache-invalidation edges for materialized sibling collections. */
+  relationships: SmrtWebRelationship[];
+}
+
 /** Reserved GET query marker for preserving an options bag's nullish value. */
 const CUSTOM_OPTIONS_QUERY_MARKER = '__smrt_options';
 

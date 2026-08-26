@@ -2,18 +2,17 @@
  * Manifest → web collection selection (single source of truth).
  *
  * The browser client data runtime (`@happyvertical/smrt-web`, #1761) consumes
- * one typed collection definition per API-exposed REST collection. Three
- * emission sites need the SAME selection and field rules, or the emitted
- * runtime values and their declared types drift apart:
+ * one typed collection definition per API-exposed REST collection. Four
+ * co-managed emission surfaces need the SAME selection and field rules, or the
+ * emitted runtime values and their declared types drift apart:
  *
  *  - the `\0smrt:web` runtime virtual module (JSON literal — {@link generateWebModule})
  *  - the `@happyvertical/smrt-virt-web` ambient d.ts (vite-plugin)
  *  - the physical `@smrt/web` d.ts (prebuild, for `tsc`-only consumers)
+ *  - the dependency-free type mirror in `@happyvertical/smrt-web`
  *
- * All three import {@link selectWebCollectionEntries} from here so the value
- * emission and the type emission can never disagree. A fourth, hand-written
- * mirror of the field/collection definition types lives in
- * `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts`) — that package
+ * The three generated sites import {@link selectWebCollectionEntries} from
+ * here so the value emission and the type emission can never disagree. The hand-written mirror
  * is deliberately smrt-dependency-free, so its copy cannot import these types;
  * keep it textually in sync when the shape here changes. The per-collection SHAPE
  * (name/objectRef/className/endpoint/idField/actions/fields/relationships) is built by the
@@ -30,9 +29,12 @@ import {
 } from '../generators/custom-action.js';
 import {
   buildToolDescriptors,
+  finalizeMcpJsonSchema,
   isCrudAction,
   type ToolDescriptor,
   type ToolFieldMeta,
+  type ToolIdType,
+  type ToolRouteDescriptor,
 } from '../generators/tool-schema.js';
 import type {
   FieldDefinition,
@@ -131,6 +133,40 @@ export interface WebCollectionEntry {
   obj: SmartObjectDefinition;
   /** Sorted set of exposed CRUD + custom actions. */
   actions: string[];
+}
+
+/**
+ * One canonical WebMCP tool candidate. `obj` owns the REST collection and row
+ * contract; `actionHost` declares the action. They differ for custom methods
+ * declared on a `SmrtCollection` subclass.
+ */
+export interface WebMcpToolEntry {
+  collection: string;
+  obj: SmartObjectDefinition;
+  actionHost: SmartObjectDefinition;
+  action: string;
+}
+
+/**
+ * Transport-complete, data-only definition for one generated browser tool.
+ * Unlike {@link WebCollectionEntry}, this shape does not imply that a list
+ * route or cache-backed browser collection exists.
+ */
+export interface WebMcpToolDefinition extends ToolDescriptor {
+  /** Stable definition identity is `(collection, action)`. */
+  collection: string;
+  /** Canonical qualified identity of the row model owning the collection. */
+  objectRef: string;
+  /** Row-model class used by the shared MCP tool vocabulary. */
+  className: string;
+  /** Path below the generated API base path. */
+  endpoint: string;
+  idField: string;
+  idType: ToolIdType;
+  /** Always present so a fetch-only registrar needs no action heuristics. */
+  route: ToolRouteDescriptor;
+  /** Cache-invalidation edges for materialized sibling collections. */
+  relationships: WebRelationship[];
 }
 
 function compareText(left: string, right: string): number {
@@ -526,6 +562,192 @@ export function selectWebCollectionEntries(
   return selectEntriesQualifiedBy(manifest, (actions) => actions.has('list'));
 }
 
+/** Walk to the highest STI ancestor that owns the same REST collection. */
+function resolveStiCollectionOwner(
+  manifest: SmartObjectManifest,
+  obj: SmartObjectDefinition,
+): SmartObjectDefinition {
+  const seen = new Set<string>();
+  let owner = obj;
+  let parentName = owner.extendsQualified || owner.extends;
+  while (parentName && !seen.has(parentName)) {
+    seen.add(parentName);
+    const parent = findManifestObjectByName(manifest, parentName, owner);
+    if (!parent || parent.collection !== obj.collection) break;
+    owner = parent;
+    parentName = owner.extendsQualified || owner.extends;
+  }
+  return owner;
+}
+
+/**
+ * Select every generated WebMCP action independently of collection
+ * materialization. Object actions establish the owning row model first;
+ * collection-class actions then supplement missing `(collection, action)`
+ * identities. Therefore an object action wins an exact collision, while all
+ * ordering is independent of manifest insertion order.
+ */
+export function selectWebMcpToolEntries(
+  manifest: SmartObjectManifest,
+): WebMcpToolEntry[] {
+  const manifestObjects = Object.values(manifest.objects);
+  const sortedObjects = [...manifestObjects].sort((left, right) =>
+    compareText(
+      webCollectionObjectRef(manifest, left),
+      webCollectionObjectRef(manifest, right),
+    ),
+  );
+  const objectOwners = new Map<string, WebCollectionEntry>();
+
+  for (const candidate of sortedObjects) {
+    if (isCollectionManifestClass(manifest, candidate)) continue;
+    const existing = objectOwners.get(candidate.collection);
+    const candidateIsChild = isStiChildModel(manifest, candidate);
+    const existingIsChild = existing
+      ? isStiChildModel(manifest, existing.obj)
+      : false;
+    if (existing && !(existingIsChild && !candidateIsChild)) continue;
+
+    objectOwners.set(candidate.collection, {
+      collection: candidate.collection,
+      obj: candidate,
+      actions: [],
+    });
+  }
+
+  const entries = new Map<string, WebMcpToolEntry>();
+  const ownerObjects = [...objectOwners.values()]
+    .sort(
+      (left, right) =>
+        compareText(left.collection, right.collection) ||
+        compareText(
+          webCollectionObjectRef(manifest, left.obj),
+          webCollectionObjectRef(manifest, right.obj),
+        ),
+    )
+    .map((entry) => entry.obj);
+  const ownerSet = new Set(ownerObjects);
+  // Owners go first so the STI base wins an exact object-action collision.
+  // Remaining models still contribute unique custom actions on the shared
+  // collection instead of disappearing behind the owning row definition.
+  const objectActionHosts = [
+    ...ownerObjects,
+    ...sortedObjects.filter(
+      (candidate) =>
+        !isCollectionManifestClass(manifest, candidate) &&
+        !ownerSet.has(candidate),
+    ),
+  ];
+
+  for (const actionHost of objectActionHosts) {
+    const owner = objectOwners.get(actionHost.collection);
+    if (!owner) continue;
+    for (const action of [...resolveApiActionSet(actionHost, manifest)].sort(
+      compareText,
+    )) {
+      const identity = `${owner.collection}\0${action}`;
+      if (entries.has(identity)) continue;
+      entries.set(identity, {
+        collection: owner.collection,
+        obj: owner.obj,
+        // CRUD is a shared collection identity owned by the STI base even if
+        // a child is the manifest entry that exposed it. Custom actions retain
+        // their declaring host so route overrides and parameters stay exact.
+        actionHost: isCrudAction(action) ? owner.obj : actionHost,
+        action,
+      });
+    }
+  }
+
+  // SvelteKit emits collection-class routes in manifest order and a later
+  // class replaces an earlier handler at the same path. Follow that ownership
+  // rule so the selected parameter/route metadata describes the live handler.
+  // Object actions remain authoritative over collection-class collisions.
+  for (const collectionClass of manifestObjects) {
+    if (!isCollectionManifestClass(manifest, collectionClass)) continue;
+    const itemObject = resolveCollectionItemObject(manifest, collectionClass);
+    if (!itemObject) continue;
+    const owner =
+      objectOwners.get(collectionClass.collection)?.obj ??
+      resolveStiCollectionOwner(manifest, itemObject);
+
+    for (const action of [
+      ...resolveApiActionSet(collectionClass, manifest),
+    ].sort(compareText)) {
+      const identity = `${collectionClass.collection}\0${action}`;
+      const existing = entries.get(identity);
+      if (
+        existing &&
+        !isCollectionManifestClass(manifest, existing.actionHost)
+      ) {
+        continue;
+      }
+      entries.set(identity, {
+        collection: collectionClass.collection,
+        obj: owner,
+        actionHost: collectionClass,
+        action,
+      });
+    }
+  }
+
+  return [...entries.values()].sort(
+    (left, right) =>
+      compareText(left.collection, right.collection) ||
+      compareText(left.action, right.action) ||
+      compareText(
+        webCollectionObjectRef(manifest, left.actionHost),
+        webCollectionObjectRef(manifest, right.actionHost),
+      ),
+  );
+}
+
+function requireRoutePathInputs(
+  descriptor: ToolDescriptor | undefined,
+): ToolDescriptor | undefined {
+  if (!descriptor) return undefined;
+  const route = descriptor.route;
+  if (!route) return descriptor;
+
+  const pathParameters = route.path
+    .filter((segment) => /^\[[^\]]+\]$/.test(segment))
+    .map((segment) => segment.slice(1, -1));
+  if (pathParameters.length === 0) return descriptor;
+
+  const schema = descriptor.inputSchema;
+  const properties = {
+    ...((schema.properties as Record<string, unknown> | undefined) ?? {}),
+  };
+  const required = new Set(
+    Array.isArray(schema.required)
+      ? schema.required.filter(
+          (name): name is string => typeof name === 'string',
+        )
+      : [],
+  );
+
+  for (const parameterName of pathParameters) {
+    const inputName =
+      Object.entries(route.parameterAliases ?? {}).find(
+        ([, originalName]) => originalName === parameterName,
+      )?.[0] ?? parameterName;
+    properties[inputName] ??= {
+      type: 'string',
+      description: `Required route parameter: ${parameterName}`,
+    };
+    required.add(inputName);
+  }
+
+  return {
+    ...descriptor,
+    inputSchema: finalizeMcpJsonSchema({
+      ...schema,
+      properties,
+      required: [...required],
+    }),
+  };
+}
+
 /**
  * Select the entries the ETag salt (#1764) must cover: every api-exposed model
  * with a GENERATED READ ROUTE — `list` OR `get`. Broader than
@@ -735,7 +957,23 @@ export function buildWebToolDescriptors(
   entry: WebCollectionEntry,
   options: { kebabRoutes?: boolean } = {},
 ): ToolDescriptor[] {
-  const webFields = buildWebFieldDefinitions(entry.obj);
+  return buildWebToolDescriptorsForHost({
+    owner: entry.obj,
+    actionHost: entry.obj,
+    actions: entry.actions,
+    options,
+  });
+}
+
+function buildWebToolDescriptorsForHost(input: {
+  owner: SmartObjectDefinition;
+  actionHost: SmartObjectDefinition;
+  actions: string[];
+  options: { kebabRoutes?: boolean };
+  collectionHost?: boolean;
+}): ToolDescriptor[] {
+  const { owner, actionHost, actions, options, collectionHost = false } = input;
+  const webFields = buildWebFieldDefinitions(owner);
   const fields: ToolFieldMeta[] = Object.entries(webFields).map(
     ([name, def]) => ({
       name,
@@ -752,35 +990,38 @@ export function buildWebToolDescriptors(
     }),
   );
   const descriptors = buildToolDescriptors({
-    className: entry.obj.className,
+    className: owner.className,
     fields,
-    actions: entry.actions,
+    actions,
     customActions: Object.fromEntries(
-      entry.actions.map((action) => [
+      actions.map((action) => [
         action,
         resolveCustomActionMetadata({
           actionName: action,
-          method: entry.obj.methods?.[action],
-          apiConfig: entry.obj.decoratorConfig?.api,
+          method: actionHost.methods?.[action],
+          apiConfig: actionHost.decoratorConfig?.api,
+          ...(collectionHost ? { defaultScope: 'collection' as const } : {}),
         }),
       ]),
     ),
-    idType: entry.obj.decoratorConfig.idType,
+    idType: owner.decoratorConfig.idType,
   });
 
   return descriptors.map((descriptor) => {
     if (isCrudAction(descriptor.action)) return descriptor;
-    const method = entry.obj.methods?.[descriptor.action];
+    const method = actionHost.methods?.[descriptor.action];
     const route = resolveApiActionRouteConfig(
       descriptor.action,
       method ?? {},
-      entry.obj.decoratorConfig?.api,
+      actionHost.decoratorConfig?.api,
       { kebabRoutes: options.kebabRoutes },
+      collectionHost ? 'collection' : method?.isStatic ? 'collection' : 'item',
     );
     const metadata = resolveCustomActionMetadata({
       actionName: descriptor.action,
       method,
-      apiConfig: entry.obj.decoratorConfig?.api,
+      apiConfig: actionHost.decoratorConfig?.api,
+      ...(collectionHost ? { defaultScope: 'collection' as const } : {}),
     });
     const parameterAliases = Object.fromEntries(
       (method?.parameters ?? [])
@@ -807,6 +1048,67 @@ export function buildWebToolDescriptors(
       },
     };
   });
+}
+
+function crudToolRoute(action: string): ToolRouteDescriptor {
+  switch (action) {
+    case 'list':
+      return { method: 'GET', scope: 'collection', path: [] };
+    case 'get':
+      return { method: 'GET', scope: 'item', path: [] };
+    case 'create':
+      return { method: 'POST', scope: 'collection', path: [] };
+    case 'update':
+      return { method: 'PUT', scope: 'item', path: [] };
+    case 'delete':
+      return { method: 'DELETE', scope: 'item', path: [] };
+    default:
+      throw new Error(`[smrt] Unknown generated CRUD action: ${action}`);
+  }
+}
+
+/** Build the canonical, transport-complete definition for one selected tool. */
+export function buildWebMcpToolDefinition(
+  entry: WebMcpToolEntry,
+  manifest: SmartObjectManifest,
+  options: { kebabRoutes?: boolean } = {},
+): WebMcpToolDefinition {
+  const descriptor = requireRoutePathInputs(
+    buildWebToolDescriptorsForHost({
+      owner: entry.obj,
+      actionHost: entry.actionHost,
+      actions: [entry.action],
+      options,
+      collectionHost: isCollectionManifestClass(manifest, entry.actionHost),
+    })[0],
+  );
+  if (!descriptor) {
+    throw new Error(
+      `[smrt] Failed to build WebMCP descriptor for ${entry.collection}.${entry.action}`,
+    );
+  }
+
+  return {
+    collection: entry.collection,
+    objectRef: webCollectionObjectRef(manifest, entry.obj),
+    className: entry.obj.className,
+    endpoint: `/${entry.collection}`,
+    idField: 'id',
+    idType: entry.obj.decoratorConfig.idType ?? 'uuid',
+    relationships: buildWebRelationships(entry.obj, manifest),
+    ...descriptor,
+    route: descriptor.route ?? crudToolRoute(entry.action),
+  };
+}
+
+/** Emit every API-backed WebMCP tool, including non-list models. */
+export function buildWebMcpToolDefinitions(
+  manifest: SmartObjectManifest,
+  options: { kebabRoutes?: boolean } = {},
+): WebMcpToolDefinition[] {
+  return selectWebMcpToolEntries(manifest).map((entry) =>
+    buildWebMcpToolDefinition(entry, manifest, options),
+  );
 }
 
 /**

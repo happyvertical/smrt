@@ -13,6 +13,14 @@ invariants, and the traps that apply before editing anything live in
 | MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |
 | Web collections | `src/vite-plugin/web-collections.ts` (selectors) + `generateWebModule` | `@happyvertical/smrt-virt-web` — one typed collection definition per API-exposed REST collection (#1761), consumed by `@happyvertical/smrt-web` |
 
+The same web virtual module exports `webMcpToolDefinitions` (#2518), a
+canonical per-tool array selected independently of list materialization. Every
+non-empty canonical API action set contributes tools, so get-only and
+custom-action-only models are discoverable; custom actions declared on a
+`SmrtCollection` merge into the owning row collection. Each definition carries
+complete route and invalidation metadata. `collectionDefinitions` and its
+embedded descriptor copy remain unchanged for existing cache-backed consumers.
+
 Generated API clients share `selectApiClientEntries()` across the runtime Vite
 module, its ambient declaration, and physical prebuild declarations. When a
 collection class and its populated model share an endpoint, the model owns the
@@ -24,6 +32,9 @@ qualified names first, then package-local simple names, then a stable identity
 fallback so duplicate class names across packages cannot reintroduce ordering.
 
 The web module also emits a build-time **`manifestHash`** constant (#1764): `computeWebManifestHash(manifest)` is a deterministic, replica-stable digest of the emitted web-collection SHAPE (name/className/endpoint/idField/actions/fields/relationships), canonicalized (recursive key sort) before `sha256 → base64url`, truncated to 16 chars — so the same schema always hashes the same, and a field add/remove/type-change/edge-change changes it. A change means old persisted client rows may mis-hydrate, so smrt-web keys its durable persistence namespace on it and its `updateAvailable` contract signal compares against it. Four co-managed emission sites must not drift: the runtime value (`generateWebModule`), the `@happyvertical/smrt-virt-web` ambient d.ts (`vite-plugin/index.ts`), the physical `@smrt/web` d.ts (`prebuild/index.ts`), and the hand-written type mirror in `@happyvertical/smrt-web` (`packages/smrt-web/src/index.ts` — dependency-free, so textual sync only).
+
+`webMcpToolDefinitions` is deliberately outside that digest: tool-only route,
+identifier, or annotation changes cannot alter persisted row hydration.
 
 Per-field web emission (#2046): `buildWebFieldDefinitions` carries `description` (from `@field({ description })`) and sanitized `ui` hints (from `@field({ ui: { basic, group, order, locked } })`, read off the manifest `_meta.ui` bag through per-key type guards) into each emitted field definition, and `buildWebToolDescriptors` threads the same `description` into browser MCP tool schemas. `sensitive`/`transient` fields are excluded from emission entirely, so their descriptions never ship. Both keys are conditional, so hint-less schemas emit byte-identical definitions (and hashes) as before; adding a description/ui hint changes the manifest hash — deliberate over-invalidation, harmless per the #1764 contract.
 

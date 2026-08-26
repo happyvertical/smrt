@@ -388,6 +388,18 @@ declare module '@smrt/web' {
     route?: WebToolRouteDescriptor;
   }
 
+  /** Canonical data-only definition for one generated browser tool. */
+  export interface WebMcpToolDefinition extends WebToolDescriptor {
+    collection: string;
+    objectRef: string;
+    className: string;
+    endpoint: string;
+    idField: string;
+    idType: 'uuid' | 'text';
+    route: WebToolRouteDescriptor;
+    relationships: SmrtWebRelationship[];
+  }
+
   export interface SmrtWebCollectionDefinition<TData = Record<string, unknown>> {
     name: string;
     /** Canonical qualified model identity (\`@package/name:ClassName\`) for policy APIs. */
@@ -410,6 +422,8 @@ ${webCollectionEntries}
   }
 
   export const collectionDefinitions: SmrtWebCollectionDefinitions;
+  /** Every API-backed WebMCP tool, independent of list materialization. */
+  export const webMcpToolDefinitions: readonly WebMcpToolDefinition[];
   export function getCollectionDefinition<
     K extends keyof SmrtWebCollectionDefinitions,
   >(name: K): SmrtWebCollectionDefinitions[K];
