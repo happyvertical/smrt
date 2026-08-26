@@ -7,6 +7,10 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  booleanControlValue,
+  validateNativeCheckedValue,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
@@ -62,10 +66,7 @@ $effect(() => {
 });
 
 function setChecked(next: unknown) {
-  checked =
-    typeof next === 'string'
-      ? ['true', '1', 'yes', 'on'].includes(next.toLowerCase())
-      : Boolean(next);
+  checked = booleanControlValue(next);
   if (inputEl) emitControlChange(inputEl);
 }
 
@@ -101,6 +102,7 @@ useControlRegistration(() => {
     highlight: (durationMs) =>
       highlightControl(element.closest('label') ?? element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validateNativeCheckedValue(element, next),
     getState: () => ({
       disabled: element.matches(':disabled'),
       readonly: false,

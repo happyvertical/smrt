@@ -75,6 +75,75 @@ describe('core controls', () => {
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
   });
 
+  it('marks constrained proposals invalid before the first valid-only batch', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(Fixture, { props: { registry, validInitial: true } });
+    const invalid = new Map<string, unknown>([
+      ['accepted', false],
+      ['notifications', false],
+      ['role', 'administrator'],
+      ['price', { min: 20, max: 83 }],
+      ['view', 'cards'],
+      ['notes', 'x'],
+      ['pinned', 'yes'],
+    ]);
+    for (const [controlId, value] of invalid) {
+      await registry.execute(
+        {
+          action: 'stage',
+          identity: { formId: 'settings', controlId },
+          value,
+        },
+        { source: 'agent' },
+      );
+      expect(
+        registry.get({ formId: 'settings', controlId })?.state.staged?.valid,
+      ).toBe(false);
+    }
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'settings', controlId: 'volume' },
+        value: 12,
+      },
+      { source: 'agent' },
+    );
+    expect(
+      registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged
+        ?.valid,
+    ).toBe(false);
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'settings', controlId: 'volume' },
+        value: 55,
+      },
+      { source: 'agent' },
+    );
+    expect(
+      registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged
+        ?.valid,
+    ).toBe(true);
+    expect(await screen.findAllByRole('alert')).toHaveLength(invalid.size);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
+    expect(
+      registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged,
+    ).toBeUndefined();
+    for (const controlId of invalid.keys()) {
+      expect(
+        registry.get({ formId: 'settings', controlId })?.state.staged?.valid,
+      ).toBe(false);
+    }
+  });
+
   it('is axe-clean as a composed form', async () => {
     const registry = createControlInteractionRegistry();
     const { container } = render(Fixture, { props: { registry } });

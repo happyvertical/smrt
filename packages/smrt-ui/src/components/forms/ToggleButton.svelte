@@ -66,6 +66,7 @@ useControlRegistration(() => {
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
+    validateValue: (next) => typeof next === 'boolean',
     getState: () => ({ disabled: element.matches(':disabled') }),
   };
 });

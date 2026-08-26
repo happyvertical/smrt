@@ -2,6 +2,7 @@
 import { highlightControl, revealControl } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import { validatesStringArray } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   values?: string[];
@@ -55,10 +56,10 @@ function remove(index: number) {
 }
 function setValues(next: unknown) {
   if (!Array.isArray(next)) return;
-  values = next
+  const normalized = next
     .map(String)
-    .filter((tag, index, all) => allowDuplicates || all.indexOf(tag) === index)
-    .slice(0, maxTags);
+    .filter((tag, index, all) => allowDuplicates || all.indexOf(tag) === index);
+  values = maxTags === undefined ? normalized : normalized.slice(0, maxTags);
   onvalueschange?.(values);
 }
 function handleKeydown(event: KeyboardEvent) {
@@ -92,6 +93,8 @@ useControlRegistration(() => {
     focus: () => input.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
+    validateValue: (next) =>
+      validatesStringArray(next, maxTags, allowDuplicates),
     getState: () => ({ disabled: input.matches(':disabled') }),
   };
 });

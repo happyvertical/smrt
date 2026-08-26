@@ -45,6 +45,33 @@ describe('composite controls', () => {
     ).toEqual(['country', 'channels', 'topics', 'region']);
   });
 
+  it('rejects invalid choice and normalized-shape proposals at staging time', async () => {
+    const registry = createControlInteractionRegistry();
+    render(Fixture, { props: { registry } });
+    const invalid = new Map<string, unknown>([
+      ['country', 'unknown'],
+      ['channels', ['fax']],
+      ['topics', ['duplicate', 'duplicate']],
+      ['region', 'north'],
+    ]);
+
+    for (const [controlId, value] of invalid) {
+      await registry.execute(
+        {
+          action: 'stage',
+          identity: { formId: 'profile', controlId },
+          value,
+        },
+        { source: 'agent' },
+      );
+      expect(
+        registry.get({ formId: 'profile', controlId })?.state.staged?.valid,
+      ).toBe(false);
+    }
+
+    expect(await screen.findAllByRole('alert')).toHaveLength(invalid.size);
+  });
+
   it('reports effective disabled state from an ancestor fieldset', () => {
     const registry = createControlInteractionRegistry();
     render(Fixture, { props: { registry, fieldsetDisabled: true } });

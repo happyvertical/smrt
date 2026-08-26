@@ -6,6 +6,10 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  snapSteppedNumber,
+  validatesSteppedNumber,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import type { RangeSliderValue } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
@@ -61,7 +65,22 @@ const controlId = $derived(
         `range-${instanceId}`),
 );
 function snap(next: number) {
-  return Math.min(max, Math.max(min, Math.round(next / step) * step));
+  return snapSteppedNumber(next, min, max, step);
+}
+function validateRange(next: unknown) {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) return false;
+  const candidate = next as Record<string, unknown>;
+  if (
+    !Object.hasOwn(candidate, 'min') ||
+    !Object.hasOwn(candidate, 'max') ||
+    Object.keys(candidate).some((key) => key !== 'min' && key !== 'max')
+  )
+    return false;
+  return (
+    validatesSteppedNumber(candidate.min, min, max, step) &&
+    validatesSteppedNumber(candidate.max, min, max, step) &&
+    Number(candidate.min) <= Number(candidate.max)
+  );
 }
 function setRange(next: unknown) {
   if (!next || typeof next !== 'object') return;
@@ -106,6 +125,7 @@ useControlRegistration(() => {
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
     validate: () => value.min <= value.max,
+    validateValue: validateRange,
     getState: () => ({
       disabled:
         disabled ||

@@ -7,6 +7,7 @@ import type {
   ControlOption,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import { validatesEnabledOption } from './control-value-validation.js';
 import { setRadioGroupContext } from './radio-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
@@ -108,6 +109,7 @@ useControlRegistration(() => {
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validatesEnabledOption(options, next),
     getState: () => ({
       disabled: element.matches(':disabled'),
       valid: !required || !!value,

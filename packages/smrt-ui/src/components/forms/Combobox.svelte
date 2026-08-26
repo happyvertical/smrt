@@ -5,6 +5,7 @@ import type {
   ControlOption,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import { matchingOption } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -58,9 +59,7 @@ function commit(option: ControlOption) {
 }
 function setValue(next: unknown) {
   const candidate = String(next ?? '');
-  const option = options.find(
-    (item) => String(item.value) === candidate || item.label === candidate,
-  );
+  const option = matchingOption(options, candidate, true);
   if (option) commit(option);
   else if (allowCustom) {
     value = candidate;
@@ -149,6 +148,12 @@ useControlRegistration(() => {
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
     validate: () => input.reportValidity(),
+    validateValue: (next) => {
+      const candidate = String(next ?? '');
+      const option = matchingOption(options, candidate, true);
+      if (option) return option.disabled !== true;
+      return allowCustom && (!required || candidate.length > 0);
+    },
     getState: () => ({
       disabled: input.matches(':disabled'),
       valid: input.validity.valid,

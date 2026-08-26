@@ -24,9 +24,9 @@ let region = $state<string | number>('west');
 
 <Form formId="profile" interactionRegistry={registry} aria-label="Profile">
   <fieldset disabled={fieldsetDisabled}>
-  <Combobox name="country" label="Country" options={countries} bind:value={country} />
+  <Combobox name="country" label="Country" options={countries} required bind:value={country} />
   <MultiSelect name="channels" label="Channels" options={[{ value: 'email', label: 'Email' }, { value: 'sms', label: 'SMS' }]} bind:values={channels} />
-  <TagsInput name="topics" label="Topics" bind:values={tags} />
+  <TagsInput name="topics" label="Topics" maxTags={2} bind:values={tags} />
   <Listbox name="region" label="Region" options={[{ value: 'west', label: 'West' }, { value: 'east', label: 'East' }]} bind:value={region} />
   </fieldset>
 </Form>

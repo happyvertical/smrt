@@ -7,6 +7,10 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  snapSteppedNumber,
+  validatesSteppedNumber,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props
@@ -61,7 +65,7 @@ const controlId = $derived(
 );
 const percent = $derived(max === min ? 0 : ((value - min) / (max - min)) * 100);
 function clamp(next: number) {
-  return Math.min(max, Math.max(min, Math.round(next / step) * step));
+  return snapSteppedNumber(next, min, max, step);
 }
 function setValue(next: unknown) {
   const parsed = Number(next);
@@ -104,6 +108,7 @@ useControlRegistration(() => {
     highlight: (durationMs) =>
       highlightControl(element.closest('.slider') ?? element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validatesSteppedNumber(next, min, max, step),
     getState: () => ({
       disabled: element.matches(':disabled'),
       valid: element.validity.valid,

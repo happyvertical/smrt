@@ -6,6 +6,7 @@ import type {
   ControlOption,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import { validatesEnabledOptions } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -145,6 +146,7 @@ useControlRegistration(() => {
     focus: () => trigger.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
+    validateValue: (next) => validatesEnabledOptions(options, next),
     getState: () => ({ disabled: trigger.matches(':disabled') }),
   };
 });
