@@ -3,7 +3,8 @@ import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import type {
   RegisterWebMcpToolsOptions,
   SmrtWebClient,
-  SmrtWebCollectionDefinition,
+  WebMcpExposurePolicy,
+  WebMcpRegistrationDefinition,
 } from '@happyvertical/smrt-web';
 
 export interface WebMcpUiProviderConfig {
@@ -13,13 +14,14 @@ export interface WebMcpUiProviderConfig {
   prefix?: string;
 }
 
-export interface WebMcpProviderConfig {
-  definitions?: SmrtWebCollectionDefinition[];
+export interface WebMcpProviderConfig extends WebMcpExposurePolicy {
+  definitions?: readonly WebMcpRegistrationDefinition[];
   client?: SmrtWebClient;
   basePath?: string;
   fetchFn?: typeof fetch;
   scope?: string;
   filter?: RegisterWebMcpToolsOptions['filter'];
+  filterTool?: RegisterWebMcpToolsOptions['filterTool'];
   /** Fixed browser-native tools over the mounted form/data registries. */
   ui?: false | WebMcpUiProviderConfig;
 }

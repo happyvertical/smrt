@@ -1,5 +1,12 @@
 # @happyvertical/smrt-web
 
+## Unreleased
+
+- WebMCP registration now defaults to read-only exposure and supports explicit
+  effect allowlists, namespaces, tool budgets, atomic duplicate validation, and
+  complete safety annotations. Existing callers that intentionally expose
+  mutations must opt into `write` and `destructive` effects.
+
 ## 0.43.3
 
 ## 0.43.2

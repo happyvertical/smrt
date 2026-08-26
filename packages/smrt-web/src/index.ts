@@ -1670,4 +1670,7 @@ export function createSmrtCollection<TData extends object>(
 export {
   type RegisterWebMcpToolsOptions,
   registerWebMcpTools,
+  type WebMcpExposurePolicy,
+  type WebMcpRegistrationDefinition,
+  type WebMcpToolEffect,
 } from './webmcp.js';

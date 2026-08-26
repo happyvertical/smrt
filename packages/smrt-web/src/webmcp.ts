@@ -43,7 +43,13 @@ interface WebMcpToolRegistration {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  annotations?: { readOnlyHint?: boolean; untrustedContentHint?: boolean };
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+    untrustedContentHint?: boolean;
+  };
   execute: (args: Record<string, unknown>) => Promise<string> | string;
 }
 
@@ -71,7 +77,18 @@ function getModelContext(): ModelContextLike | undefined {
   return undefined;
 }
 
-export interface RegisterWebMcpToolsOptions {
+export type WebMcpToolEffect = 'read' | 'write' | 'destructive';
+
+export interface WebMcpExposurePolicy {
+  /** Allowed effects. Omitted means read-only exposure. */
+  effects?: readonly WebMcpToolEffect[];
+  /** Prefix every registered tool name with `<namespace>_`. */
+  namespace?: string;
+  /** Maximum tools registered by one call (default 64). */
+  maxTools?: number;
+}
+
+export interface RegisterWebMcpToolsOptions extends WebMcpExposurePolicy {
   /** REST base path for the fetchers (default `/api/v1`). */
   basePath?: string;
   /** Injectable fetch (tests / SSR-safe wrappers). */
@@ -112,6 +129,30 @@ export type WebMcpRegistrationDefinition =
   | SmrtWebCollectionDefinition
   | WebMcpToolDefinition;
 
+interface ProspectiveLegacyTool {
+  kind: 'legacy';
+  definition: SmrtWebCollectionDefinition;
+  descriptor: WebToolDescriptor;
+  name: string;
+  identity: string;
+  effect: WebMcpToolEffect;
+  idempotent: boolean;
+  openWorld: boolean;
+}
+
+interface ProspectiveCanonicalTool {
+  kind: 'canonical';
+  definition: WebMcpToolDefinition;
+  descriptor: WebMcpToolDefinition;
+  name: string;
+  identity: string;
+  effect: WebMcpToolEffect;
+  idempotent: boolean;
+  openWorld: boolean;
+}
+
+type ProspectiveTool = ProspectiveLegacyTool | ProspectiveCanonicalTool;
+
 /**
  * Register every collection's generated tool descriptors with WebMCP.
  *
@@ -127,6 +168,19 @@ export function registerWebMcpTools(
 
   const basePath = options.basePath ?? '/api/v1';
   const client = options.client;
+  // Selection, filtering, duplicate detection, and budget validation happen
+  // before any browser registration or collection allocation. A bad policy or
+  // definition set therefore has no partial capability exposure.
+  const { tools, allowedEffects } = selectProspectiveTools(
+    definitions,
+    options,
+  );
+  if (
+    client &&
+    tools.some((tool) => tool.kind === 'canonical' && tool.effect !== 'read')
+  ) {
+    validateSmrtWebClient(client);
+  }
   // ONE controller deregisters every tool this call registers: WebMCP removes a
   // tool when the signal it was registered with aborts, so the returned disposer
   // simply aborts. Idempotent — a second call is a harmless no-op.
@@ -135,8 +189,10 @@ export function registerWebMcpTools(
     SmrtWebCollectionDefinition,
     SmrtWebCollection<Record<string, unknown>>
   >();
-  const registeredNames = new Set<string>();
-  let clientValidated = false;
+  const collectionFetchers = new Map<
+    SmrtWebCollectionDefinition,
+    SmrtCrudFetchers
+  >();
   let disposed = false;
   const dispose = (): void => {
     if (disposed) return;
@@ -152,73 +208,47 @@ export function registerWebMcpTools(
   };
 
   try {
-    // Prefer legacy collection-backed definitions regardless of input order.
-    // Their optimistic mutation and cache behavior is the established path;
-    // canonical entries for the same tool name are duplicate transport data.
-    for (const definition of definitions) {
-      if (isCanonicalToolDefinition(definition)) continue;
-      const descriptors = (definition.toolDescriptors ?? []).filter(
-        (descriptor) =>
-          !registeredNames.has(descriptor.name) &&
-          (!options.filter || options.filter(definition, descriptor)),
-      );
-      if (descriptors.length === 0) continue;
-
-      const fetchers = options.resolveFetchers
-        ? options.resolveFetchers(definition)
-        : createDefinitionFetchers(definition, basePath, options.fetchFn);
-      const collection = createSmrtCollection(definition, {
-        fetchers,
-        basePath,
-        fetchFn: options.fetchFn,
-        ...(client ? { client } : {}),
-        ...(options.scope ? { scope: options.scope } : {}),
-      }) as SmrtWebCollection<Record<string, unknown>>;
-      collections.set(definition, collection);
-
-      for (const descriptor of descriptors) {
+    for (const tool of tools) {
+      if (tool.kind === 'legacy') {
+        const { definition, descriptor } = tool;
+        let fetchers = collectionFetchers.get(definition);
+        let collection = collections.get(definition);
+        if (!fetchers || !collection) {
+          fetchers = options.resolveFetchers
+            ? options.resolveFetchers(definition)
+            : createDefinitionFetchers(definition, basePath, options.fetchFn);
+          collection = createSmrtCollection(definition, {
+            fetchers,
+            basePath,
+            fetchFn: options.fetchFn,
+            ...(client ? { client } : {}),
+            ...(options.scope ? { scope: options.scope } : {}),
+          }) as SmrtWebCollection<Record<string, unknown>>;
+          collectionFetchers.set(definition, fetchers);
+          collections.set(definition, collection);
+         }
         ctx.registerTool(
           {
-            name: descriptor.name,
+            name: tool.name,
             description: descriptor.description,
             inputSchema: descriptor.inputSchema,
-            annotations: { readOnlyHint: descriptor.readOnly },
-            execute: (args) =>
+            annotations: annotationsFor(tool),
+            execute: guardedExecute(tool, allowedEffects, (args) =>
               dispatchCollection(
                 fetchers,
                 collection,
                 definition,
                 descriptor.action,
                 descriptor.route,
-                args ?? {},
+                args,
               ),
+            ),
           },
           { signal: controller.signal },
         );
-        registeredNames.add(descriptor.name);
-      }
-    }
-
-    for (const definition of definitions) {
-      if (!isCanonicalToolDefinition(definition)) continue;
-      if (registeredNames.has(definition.name)) continue;
-      // A legacy collection filter may inspect fields that canonical per-tool
-      // definitions deliberately do not carry. Never fabricate incomplete
-      // metadata and risk a fail-open policy decision: hosts mixing canonical
-      // definitions with the legacy filter must provide the explicit tool
-      // predicate as well.
-      if (options.filter && !options.filterTool) {
-        throw new Error(
-          '[smrt-web] canonical WebMCP definitions require filterTool when filter is configured',
-        );
-      }
-      if (options.filterTool && !options.filterTool(definition)) {
         continue;
       }
-      if (!definition.readOnly && client && !clientValidated) {
-        validateSmrtWebClient(client);
-        clientValidated = true;
-      }
+      const { definition } = tool;
       const fetchers = options.resolveToolFetchers
         ? options.resolveToolFetchers(definition)
         : createDefinitionFetchers(
@@ -228,16 +258,16 @@ export function registerWebMcpTools(
           );
       ctx.registerTool(
         {
-          name: definition.name,
+          name: tool.name,
           description: definition.description,
           inputSchema: definition.inputSchema,
-          annotations: { readOnlyHint: definition.readOnly },
-          execute: (args) =>
-            dispatchDirect(fetchers, definition, args ?? {}, client),
+          annotations: annotationsFor(tool),
+          execute: guardedExecute(tool, allowedEffects, (args) =>
+            dispatchDirect(fetchers, definition, args, client),
+          ),
         },
         { signal: controller.signal },
       );
-      registeredNames.add(definition.name);
     }
   } catch (error) {
     // Abort removes every tool registered with this call. Collection cleanup is
@@ -247,6 +277,162 @@ export function registerWebMcpTools(
   }
 
   return dispose;
+}
+
+const DEFAULT_MAX_TOOLS = 64;
+const VALID_EFFECTS: readonly WebMcpToolEffect[] = [
+  'read',
+  'write',
+  'destructive',
+];
+const NAMESPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+
+function selectProspectiveTools(
+  definitions: readonly WebMcpRegistrationDefinition[],
+  options: RegisterWebMcpToolsOptions,
+): {
+  tools: ProspectiveTool[];
+  allowedEffects: ReadonlySet<WebMcpToolEffect>;
+} {
+  const effects = options.effects ?? ['read'];
+  for (const effect of effects) {
+    if (!VALID_EFFECTS.includes(effect)) {
+      throw new Error(`Invalid WebMCP effect: ${String(effect)}`);
+    }
+  }
+  const allowedEffects = new Set(effects);
+  const maxTools = options.maxTools ?? DEFAULT_MAX_TOOLS;
+  if (!Number.isSafeInteger(maxTools) || maxTools < 0) {
+    throw new Error('WebMCP maxTools must be a non-negative safe integer');
+  }
+  const namespace = options.namespace;
+  if (namespace !== undefined && !NAMESPACE_PATTERN.test(namespace)) {
+    throw new Error(
+      'WebMCP namespace must start with an alphanumeric character and contain only letters, numbers, underscores, or hyphens',
+    );
+  }
+
+  const tools: ProspectiveTool[] = [];
+  for (const definition of definitions) {
+    if (isCanonicalToolDefinition(definition)) {
+      if (!allowedEffects.has(definition.effect)) continue;
+      if (options.filter && !options.filterTool) {
+        throw new Error(
+          '[smrt-web] canonical WebMCP definitions require filterTool when filter is configured',
+        );
+      }
+      if (options.filterTool && !options.filterTool(definition)) continue;
+      tools.push({
+        kind: 'canonical',
+        definition,
+        descriptor: definition,
+        name: qualifiedToolName(definition.name, namespace),
+        identity: `${definition.objectRef}#${definition.action}`,
+        effect: definition.effect,
+        idempotent: definition.idempotent,
+        openWorld: definition.openWorld,
+      });
+      continue;
+    }
+
+    for (const descriptor of definition.toolDescriptors ?? []) {
+      const semantics = legacySemantics(descriptor);
+      if (!allowedEffects.has(semantics.effect)) continue;
+      if (options.filter && !options.filter(definition, descriptor)) continue;
+      tools.push({
+        kind: 'legacy',
+        definition,
+        descriptor,
+        name: qualifiedToolName(descriptor.name, namespace),
+        identity: `${definition.objectRef ?? definition.className ?? definition.name}#${descriptor.action}`,
+        ...semantics,
+      });
+    }
+  }
+
+  validateProspectiveTools(tools, maxTools);
+  return { tools, allowedEffects };
+}
+
+function qualifiedToolName(name: string, namespace?: string): string {
+  return namespace ? `${namespace}_${name}` : name;
+}
+
+function legacySemantics(descriptor: WebToolDescriptor): {
+  effect: WebMcpToolEffect;
+  idempotent: boolean;
+  openWorld: boolean;
+} {
+  if (descriptor.effect) {
+    return {
+      effect: descriptor.effect,
+      idempotent: descriptor.idempotent ?? false,
+      openWorld: descriptor.openWorld ?? descriptor.effect === 'destructive',
+    };
+  }
+  switch (descriptor.action) {
+    case 'list':
+    case 'get':
+      return { effect: 'read', idempotent: true, openWorld: false };
+    case 'create':
+      return { effect: 'write', idempotent: false, openWorld: false };
+    case 'update':
+      return { effect: 'write', idempotent: true, openWorld: false };
+    case 'delete':
+      return { effect: 'destructive', idempotent: true, openWorld: false };
+    default:
+      return { effect: 'destructive', idempotent: false, openWorld: true };
+  }
+}
+
+function validateProspectiveTools(
+  tools: readonly ProspectiveTool[],
+  maxTools: number,
+): void {
+  if (tools.length > maxTools) {
+    throw new Error(
+      `WebMCP tool budget exceeded: ${tools.length} tools selected, maximum is ${maxTools}`,
+    );
+  }
+  const names = new Set<string>();
+  const identities = new Set<string>();
+  for (const tool of tools) {
+    if (names.has(tool.name)) {
+      throw new Error(`Duplicate WebMCP tool name: ${tool.name}`);
+    }
+    names.add(tool.name);
+    if (identities.has(tool.identity)) {
+      throw new Error(`Duplicate WebMCP tool identity: ${tool.identity}`);
+    }
+    identities.add(tool.identity);
+  }
+}
+
+function annotationsFor(
+  tool: ProspectiveTool,
+): NonNullable<WebMcpToolRegistration['annotations']> {
+  return {
+    readOnlyHint: tool.effect === 'read',
+    destructiveHint: tool.effect === 'destructive',
+    idempotentHint: tool.idempotent,
+    openWorldHint: tool.openWorld,
+    untrustedContentHint: tool.effect === 'read',
+  };
+}
+
+function guardedExecute(
+  tool: ProspectiveTool,
+  allowedEffects: ReadonlySet<WebMcpToolEffect>,
+  execute: (args: Record<string, unknown>) => Promise<string> | string,
+): WebMcpToolRegistration['execute'] {
+  return (args) => {
+    if (!allowedEffects.has(tool.effect)) {
+      throw new Error(
+        `WebMCP policy no longer allows ${tool.effect} tool ${tool.name}`,
+      );
+    }
+    return execute(args ?? {});
+  };
 }
 
 function isCanonicalToolDefinition(

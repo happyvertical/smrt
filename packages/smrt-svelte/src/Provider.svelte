@@ -198,11 +198,15 @@ $effect(() => {
   void import('@happyvertical/smrt-web').then(({ registerWebMcpTools }) => {
     if (cancelled) return;
     dispose = registerWebMcpTools(config.definitions ?? [], {
-      ...(config.client ? { client: config.client } : {}),
-      ...(config.basePath ? { basePath: config.basePath } : {}),
-      ...(config.fetchFn ? { fetchFn: config.fetchFn } : {}),
-      ...(config.scope ? { scope: config.scope } : {}),
-      ...(config.filter ? { filter: config.filter } : {}),
+      client: config.client,
+      basePath: config.basePath,
+      fetchFn: config.fetchFn,
+      scope: config.scope,
+      filter: config.filter,
+      filterTool: config.filterTool,
+      effects: config.effects,
+      namespace: config.namespace,
+      maxTools: config.maxTools,
     });
   });
 

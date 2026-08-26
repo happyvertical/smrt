@@ -13,8 +13,25 @@ import {
 } from './index.js';
 import {
   type RegisterWebMcpToolsOptions,
-  registerWebMcpTools,
+  registerWebMcpTools as registerWebMcpToolsWithPolicy,
+  type WebMcpRegistrationDefinition,
 } from './webmcp.js';
+
+const ALLOW_ALL = {
+  effects: ['read', 'write', 'destructive'] as const,
+};
+
+// Preserve the pre-policy expectations in the existing dispatch regression
+// suite. Policy-default behavior is tested explicitly with the raw registrar.
+function registerWebMcpTools(
+  definitions: readonly WebMcpRegistrationDefinition[],
+  options: RegisterWebMcpToolsOptions = {},
+): () => void {
+  return registerWebMcpToolsWithPolicy(definitions, {
+    ...ALLOW_ALL,
+    ...options,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // A fake WebMCP registry standing in for Chrome's document.modelContext.
@@ -24,7 +41,13 @@ interface CapturedTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  annotations?: { readOnlyHint?: boolean };
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+    untrustedContentHint?: boolean;
+  };
   execute: (args: Record<string, unknown>) => Promise<string> | string;
 }
 
@@ -111,6 +134,11 @@ function canonicalTool(
   overrides: Partial<WebMcpToolDefinition> = {},
 ): WebMcpToolDefinition {
   const readOnly = action === 'get' || action === 'list';
+  const effect = readOnly
+    ? 'read'
+    : action === 'create' || action === 'update'
+      ? 'write'
+      : 'destructive';
   return {
     collection: 'reports',
     objectRef: '@test/smrt-web:Report',
@@ -124,6 +152,10 @@ function canonicalTool(
     description: `${action} Report`,
     inputSchema: { type: 'object', properties: {} },
     readOnly,
+    effect,
+    idempotent:
+      action !== 'create' && !readOnly ? action !== 'refresh' : readOnly,
+    openWorld: !['list', 'get', 'create', 'update', 'delete'].includes(action),
     route: {
       method: readOnly ? 'GET' : 'POST',
       scope: action === 'get' ? 'item' : 'collection',
@@ -175,6 +207,162 @@ describe('registerWebMcpTools', () => {
     });
     expect(dispose).toBeInstanceOf(Function);
     expect(() => dispose()).not.toThrow(); // inert disposer, no crash
+  });
+
+  it('exposes only read tools when no effects policy is configured', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+      resolveFetchers: () => mockFetchers(),
+    });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
+  });
+
+  it('opts into read, write, and destructive tools explicitly', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {
+      ...ALLOW_ALL,
+      resolveFetchers: () => mockFetchers(),
+    });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual([
+      'product_list',
+      'product_create',
+      'product_publish',
+      'product_update',
+      'product_delete',
+    ]);
+  });
+
+  it('classifies legacy CRUD and undeclared custom actions conservatively', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {
+      effects: ['write'],
+      resolveFetchers: () => mockFetchers(),
+    });
+    expect(registry.tools.map((tool) => tool.name)).toEqual([
+      'product_create',
+      'product_update',
+    ]);
+
+    clearModelContext();
+    const destructiveRegistry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {
+      effects: ['destructive'],
+      resolveFetchers: () => mockFetchers(),
+    });
+    expect(destructiveRegistry.tools.map((tool) => tool.name)).toEqual([
+      'product_publish',
+      'product_delete',
+    ]);
+  });
+
+  it('emits complete WebMCP annotations from effect metadata', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy(
+      [
+        canonicalTool('get'),
+        canonicalTool('update'),
+        canonicalTool('delete'),
+        canonicalTool('refresh'),
+      ],
+      { ...ALLOW_ALL, resolveToolFetchers: () => mockFetchers() },
+    );
+
+    const annotations = new Map(
+      registry.tools.map((tool) => [tool.name, tool.annotations]),
+    );
+    expect(annotations.get('report_get')).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_update')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      untrustedContentHint: false,
+    });
+    expect(annotations.get('report_delete')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+      untrustedContentHint: false,
+    });
+    expect(annotations.get('report_refresh')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+      untrustedContentHint: false,
+    });
+  });
+
+  it('namespaces selected tools without changing their stable identities', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+      namespace: 'admin',
+      resolveFetchers: () => mockFetchers(),
+    });
+    expect(registry.tools.map((tool) => tool.name)).toEqual([
+      'admin_product_list',
+    ]);
+  });
+
+  it('validates duplicate identities and budgets before any registration', () => {
+    const duplicateIdentity = canonicalTool('get', { name: 'report_lookup' });
+    const registry = installModelContext();
+    expect(() =>
+      registerWebMcpToolsWithPolicy([canonicalTool('get'), duplicateIdentity], {
+        resolveToolFetchers: () => mockFetchers(),
+      }),
+    ).toThrow('Duplicate WebMCP tool identity: @test/smrt-web:Report#get');
+    expect(registry.tools).toEqual([]);
+
+    expect(() =>
+      registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+        ...ALLOW_ALL,
+        maxTools: 2,
+        resolveFetchers: () => mockFetchers(),
+      }),
+    ).toThrow('WebMCP tool budget exceeded: 3 tools selected, maximum is 2');
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('rejects invalid exposure policy before resolving fetchers', () => {
+    const registry = installModelContext();
+    const resolveFetchers = vi.fn(() => mockFetchers());
+    expect(() =>
+      registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+        namespace: 'unsafe namespace',
+        resolveFetchers,
+      }),
+    ).toThrow('WebMCP namespace');
+    expect(registry.tools).toEqual([]);
+    expect(resolveFetchers).not.toHaveBeenCalled();
+  });
+
+  it('keeps REST authorization as the execution boundary for visible tools', async () => {
+    const registry = installModelContext();
+    const fetchFn = vi.fn(async () =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: 'unauthorized principal' }),
+      } as Response),
+    ) as unknown as typeof fetch;
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF], { fetchFn });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
+    await expect(registry.tools[0]?.execute({})).rejects.toMatchObject({
+      name: 'SmrtWebRequestError',
+      status: 401,
+      message: expect.stringContaining('unauthorized principal'),
+    });
   });
 
   it('registers one tool per descriptor with the right names', () => {
@@ -728,34 +916,30 @@ describe('registerWebMcpTools', () => {
     ]);
   });
 
-  it('prefers a legacy collection-backed tool when canonical input duplicates its name', async () => {
+  it('rejects duplicate tool names before registering anything', () => {
     const registry = installModelContext();
     const legacyFetchers = mockFetchers();
     const directResolver = vi.fn(() => ({ list: vi.fn() }));
-    registerWebMcpTools(
-      [
-        canonicalTool('list', {
-          collection: 'products',
-          className: 'Product',
-          objectRef: '@test/smrt-web:Product',
-          endpoint: '/products',
-          name: 'product_list',
-        }),
-        PRODUCT_DEF,
-      ],
-      {
-        resolveFetchers: () => legacyFetchers,
-        resolveToolFetchers: directResolver,
-      },
-    );
-
-    expect(
-      registry.tools.filter((tool) => tool.name === 'product_list'),
-    ).toHaveLength(1);
-    await registry.tools
-      .find((tool) => tool.name === 'product_list')
-      ?.execute({ limit: 1 });
-    expect(legacyFetchers.list).toHaveBeenCalledWith({ limit: 1 });
+    expect(() =>
+      registerWebMcpTools(
+        [
+          canonicalTool('list', {
+            collection: 'products',
+            className: 'Product',
+            objectRef: '@test/smrt-web:Product',
+            endpoint: '/products',
+            name: 'product_list',
+          }),
+          PRODUCT_DEF,
+        ],
+        {
+          resolveFetchers: () => legacyFetchers,
+          resolveToolFetchers: directResolver,
+        },
+      ),
+    ).toThrow('Duplicate WebMCP tool name: product_list');
+    expect(registry.tools).toEqual([]);
+    expect(legacyFetchers.list).not.toHaveBeenCalled();
     expect(directResolver).not.toHaveBeenCalled();
   });
 

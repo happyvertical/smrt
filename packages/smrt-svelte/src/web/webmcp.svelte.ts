@@ -5,6 +5,9 @@ export interface WebMcpToolSpec {
   inputSchema: Record<string, unknown>;
   annotations?: {
     readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
     untrustedContentHint?: boolean;
   };
   execute: (args: Record<string, unknown>) => string | Promise<string>;

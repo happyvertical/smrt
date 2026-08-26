@@ -133,6 +133,55 @@ core.
 | Version awareness | `createUpdateState` |
 | WebMCP | `registerWebMcpTools` |
 
+## WebMCP capability exposure
+
+`registerWebMcpTools()` is secure by default: omitting an exposure policy
+registers only `read` tools. CRUD effects are fixed (`list`/`get` are `read`,
+`create`/`update` are `write`, and `delete` is `destructive`). A custom action
+without declared metadata is treated as destructive, non-idempotent, and open
+world. Declare safer custom-action semantics in the route metadata only when
+they are true:
+
+```ts
+@smrt({
+  api: {
+    routes: {
+      preview: { effect: 'read', idempotent: true, openWorld: false },
+    },
+  },
+})
+class Report extends SmrtObject {}
+```
+
+Opt into broader capabilities explicitly. `namespace` prevents cross-surface
+name collisions, `maxTools` bounds the selected set (default `64`), and
+duplicate names or stable model/action identities reject the entire call before
+the first browser registration:
+
+```ts
+registerWebMcpTools(definitions, {
+  effects: ['read', 'write', 'destructive'],
+  namespace: 'admin',
+  maxTools: 32,
+  filter: (collection, tool) => collection.fields.tenantId !== undefined,
+  filterTool: (tool) => tool.collection === 'reports',
+});
+```
+
+`filter` receives legacy collection metadata; `filterTool` receives canonical
+per-tool definitions. When canonical definitions are present, configuring only
+the legacy `filter` fails closed because canonical tools do not carry complete
+collection field metadata.
+
+WebMCP policy controls which capabilities a page advertises; it is not an
+authorization boundary. Execution still uses the page's authenticated REST
+transport, whose auth, tenancy, writable-field, and sensitive-field guards must
+remain enabled. Returned read data is annotated as untrusted content.
+
+Migration note: registrations that previously relied on every descriptor being
+exposed must now pass `effects: ['read', 'write', 'destructive']`. Prefer a
+narrower allowlist for each browser surface.
+
 ## Development
 
 ```bash
