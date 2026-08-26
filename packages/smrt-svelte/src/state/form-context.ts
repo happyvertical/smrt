@@ -56,7 +56,7 @@ export interface FieldDefinition {
   options?: ControlOption[];
   unit?: string;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
-  clear?: () => undefined | boolean;
+  clear?: (() => void) | (() => boolean);
   focus?: () => void;
   reveal?: () => void;
   highlight?: (durationMs?: number) => void;

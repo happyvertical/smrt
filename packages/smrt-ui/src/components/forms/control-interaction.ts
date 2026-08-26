@@ -147,7 +147,11 @@ export interface ControlRegistration {
   getValue?: () => unknown;
   setValue?: (value: unknown) => void | Promise<void>;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
-  clear?: () => undefined | boolean | Promise<undefined | boolean>;
+  clear?:
+    | (() => void)
+    | (() => boolean)
+    | (() => Promise<void>)
+    | (() => Promise<boolean>);
   focus?: () => void | Promise<void>;
   reveal?: () => void | Promise<void>;
   highlight?: (durationMs?: number) => void | Promise<void>;
@@ -541,13 +545,21 @@ export function createControlInteractionRegistry(
     ok: boolean,
     registration?: ControlRegistration,
     reason?: string,
-  ): ControlCommandResult => ({
-    ok,
-    action: command.action,
-    identity: { ...command.identity },
-    snapshot: registration ? snapshotOf(registration) : undefined,
-    reason,
-  });
+  ): ControlCommandResult => {
+    let snapshot: ControlSnapshot | undefined;
+    try {
+      snapshot = registration ? snapshotOf(registration) : undefined;
+    } catch {
+      // A broken control reader must not prevent a structured command result.
+    }
+    return {
+      ok,
+      action: command.action,
+      identity: { ...command.identity },
+      snapshot,
+      reason,
+    };
+  };
 
   const registry: ControlInteractionRegistry = {
     register(registration) {
@@ -686,7 +698,6 @@ export function createControlInteractionRegistry(
               };
               const previousEntry = staged.get(key);
               staged.set(key, entry);
-              let stagedSnapshot: ControlStagedEntry | undefined;
               try {
                 const validation = await validateProposedValue(
                   registration,
@@ -699,7 +710,28 @@ export function createControlInteractionRegistry(
                   throw new Error('stale_revision');
                 }
                 Object.assign(entry, validation);
-                stagedSnapshot = snapshotOf(registration).state.staged;
+                const stageSnapshot = snapshotOf(registration);
+                const completed: ControlCommandResult = {
+                  ok: true,
+                  action: command.action,
+                  identity: { ...command.identity },
+                  snapshot: stageSnapshot,
+                };
+                emit({
+                  type: 'staged',
+                  identity: command.identity,
+                  command: publicCommand,
+                  context: publicContext,
+                  staged: stageSnapshot.state.staged,
+                });
+                emit({
+                  type: 'command',
+                  identity: command.identity,
+                  command: publicCommand,
+                  context: publicContext,
+                  result: completed,
+                });
+                return completed;
               } catch (error) {
                 if (staged.get(key) === entry) {
                   if (
@@ -713,15 +745,7 @@ export function createControlInteractionRegistry(
                 }
                 throw error;
               }
-              emit({
-                type: 'staged',
-                identity: command.identity,
-                command: publicCommand,
-                context: publicContext,
-                staged: stagedSnapshot,
-              });
             }
-            break;
           case 'apply': {
             const stagedEntry = staged.get(key);
             if (

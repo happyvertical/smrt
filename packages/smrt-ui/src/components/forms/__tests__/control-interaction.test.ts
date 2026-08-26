@@ -454,6 +454,45 @@ describe('control interaction registry', () => {
     });
   });
 
+  it('uses the guarded staged snapshot as the successful command result', async () => {
+    let postValidationReads = 0;
+    let replacing = false;
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => {
+        if (replacing) {
+          postValidationReads += 1;
+          if (postValidationReads > 2) throw new Error('late_snapshot_failed');
+        }
+        return 'Ada';
+      },
+      setValue: () => undefined,
+      validateValue: (value) => {
+        if (value === 'Katherine') replacing = true;
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const replacement = await registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+    replacing = false;
+
+    expect(replacement).toMatchObject({ ok: true });
+    expect(postValidationReads).toBe(2);
+    expect(replacement.snapshot?.state.staged).toMatchObject({
+      value: 'Katherine',
+      revision: 2,
+    });
+  });
+
   it('does not let subscriber failures change committed command results', async () => {
     const registry = createControlInteractionRegistry();
     registry.register({
