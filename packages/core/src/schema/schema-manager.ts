@@ -223,7 +223,7 @@ export class SchemaManager {
     try {
       if (this.engine === 'postgres') {
         const result = await this.db.query(
-          'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+          'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
           tableName,
         );
         const rows = extractRows<{ column_name: string }>(result);

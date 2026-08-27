@@ -57,7 +57,7 @@ describe('SchemaManager', () => {
 
     expect(query).toHaveBeenNthCalledWith(
       1,
-      'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+      'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
       'users',
     );
   });

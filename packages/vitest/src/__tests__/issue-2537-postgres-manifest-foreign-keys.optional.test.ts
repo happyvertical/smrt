@@ -431,6 +431,88 @@ postgresDescribe(
       }
     });
 
+    it('reconciles columns only from the active PostgreSQL schema', async () => {
+      const tableName = 'i2537_schema_scoped_columns';
+      const addedColumn = 'added_later';
+      const shadowSchema = `i2537_shadow_${randomUUID().replaceAll('-', '_')}`;
+      await dropIssueTables(tableName);
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-schema-scope-${randomUUID()}.json`,
+      );
+      const objects = (includeAddedColumn: boolean) => ({
+        Scoped: {
+          className: 'Scoped',
+          schema: {
+            tableName,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              ...(includeAddedColumn
+                ? { [addedColumn]: { type: 'TEXT' } }
+                : {}),
+            },
+          },
+        },
+      });
+      writeFileSync(manifestPath, JSON.stringify({ objects: objects(false) }));
+
+      const initial = await createIsolatedTestDbFromManifest({ manifestPath });
+      await initial.cleanup();
+      const setupAdmin = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+      try {
+        const createShadowSchema = await setupAdmin.query(
+          `SELECT format('CREATE SCHEMA %I', $1::text) AS statement`,
+          [shadowSchema],
+        );
+        await setupAdmin.query(createShadowSchema.rows[0].statement);
+        const createShadowTable = await setupAdmin.query(
+          `SELECT format('CREATE TABLE %I.%I (%I TEXT)', $1::text, $2::text, $3::text) AS statement`,
+          [shadowSchema, tableName, addedColumn],
+        );
+        await setupAdmin.query(createShadowTable.rows[0].statement);
+      } finally {
+        await setupAdmin.close();
+      }
+      try {
+        writeFileSync(manifestPath, JSON.stringify({ objects: objects(true) }));
+
+        const evolved = await createIsolatedTestDbFromManifest({
+          manifestPath,
+        });
+        try {
+          const columns = await evolved.db.query(
+            `SELECT column_name
+             FROM information_schema.columns
+             WHERE table_schema = current_schema()
+               AND table_name = $1
+               AND column_name = $2`,
+            [tableName, addedColumn],
+          );
+          expect(columns.rows).toEqual([{ column_name: addedColumn }]);
+        } finally {
+          await evolved.cleanup();
+        }
+      } finally {
+        const cleanupAdmin = await getDatabase({
+          type: 'postgres',
+          url: process.env.DATABASE_URL as string,
+        });
+        try {
+          const dropShadowSchema = await cleanupAdmin.query(
+            `SELECT format('DROP SCHEMA IF EXISTS %I CASCADE', $1::text) AS statement`,
+            [shadowSchema],
+          );
+          await cleanupAdmin.query(dropShadowSchema.rows[0].statement);
+        } finally {
+          await cleanupAdmin.close();
+        }
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
     it('preserves unowned constraints and leaves unchanged owned constraints in place', async () => {
       await dropIssueTables('i2537_owned_child', 'i2537_owned_parent');
       const manifestPath = join(
