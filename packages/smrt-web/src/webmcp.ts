@@ -136,6 +136,7 @@ interface ProspectiveLegacyTool {
   name: string;
   identity: string;
   effect: WebMcpToolEffect;
+  destructive: boolean;
   idempotent: boolean;
   openWorld: boolean;
 }
@@ -147,6 +148,7 @@ interface ProspectiveCanonicalTool {
   name: string;
   identity: string;
   effect: WebMcpToolEffect;
+  destructive: boolean;
   idempotent: boolean;
   openWorld: boolean;
 }
@@ -154,7 +156,7 @@ interface ProspectiveCanonicalTool {
 type ProspectiveTool = ProspectiveLegacyTool | ProspectiveCanonicalTool;
 type ToolSemantics = Pick<
   ProspectiveTool,
-  'effect' | 'idempotent' | 'openWorld'
+  'effect' | 'destructive' | 'idempotent' | 'openWorld'
 >;
 
 /**
@@ -263,6 +265,7 @@ export function registerWebMcpTools(
         ? options.resolveToolFetchers(
             snapshotCanonicalDefinition(definition, {
               effect: tool.effect,
+              destructive: tool.destructive,
               idempotent: tool.idempotent,
               openWorld: tool.openWorld,
             }),
@@ -442,21 +445,44 @@ function actionSemantics(
   switch (action) {
     case 'list':
     case 'get':
-      return { effect: 'read', idempotent: true, openWorld: false };
-    case 'create':
-      return { effect: 'write', idempotent: false, openWorld: false };
-    case 'update':
-      return { effect: 'write', idempotent: true, openWorld: false };
-    case 'delete':
-      return { effect: 'destructive', idempotent: true, openWorld: false };
-    default:
       return {
-        effect: VALID_EFFECTS.includes(declared.effect as WebMcpToolEffect)
-          ? (declared.effect as WebMcpToolEffect)
-          : 'destructive',
+        effect: 'read',
+        destructive: false,
+        idempotent: true,
+        openWorld: false,
+      };
+    case 'create':
+      return {
+        effect: 'write',
+        destructive: false,
+        idempotent: false,
+        openWorld: false,
+      };
+    case 'update':
+      return {
+        effect: 'write',
+        destructive: true,
+        idempotent: true,
+        openWorld: false,
+      };
+    case 'delete':
+      return {
+        effect: 'destructive',
+        destructive: true,
+        idempotent: true,
+        openWorld: false,
+      };
+    default: {
+      const effect = VALID_EFFECTS.includes(declared.effect as WebMcpToolEffect)
+        ? (declared.effect as WebMcpToolEffect)
+        : 'destructive';
+      return {
+        effect,
+        destructive: effect !== 'read',
         idempotent: declared.idempotent ?? false,
         openWorld: declared.openWorld ?? true,
       };
+    }
   }
 }
 
@@ -486,7 +512,9 @@ function snapshotLegacyDescriptor(
 ): WebToolDescriptor {
   return snapshotValue({
     ...descriptor,
-    ...semantics,
+    effect: semantics.effect,
+    idempotent: semantics.idempotent,
+    openWorld: semantics.openWorld,
     readOnly: semantics.effect === 'read',
     route: snapshotRoute(descriptor.route),
   });
@@ -514,7 +542,9 @@ function snapshotCanonicalDefinition(
 ): WebMcpToolDefinition {
   return snapshotValue({
     ...definition,
-    ...semantics,
+    effect: semantics.effect,
+    idempotent: semantics.idempotent,
+    openWorld: semantics.openWorld,
     readOnly: semantics.effect === 'read',
     route: snapshotRoute(definition.route) as WebMcpToolDefinition['route'],
   });
@@ -548,7 +578,7 @@ function annotationsFor(
 ): NonNullable<WebMcpToolRegistration['annotations']> {
   return {
     readOnlyHint: tool.effect === 'read',
-    destructiveHint: tool.effect === 'destructive',
+    destructiveHint: tool.destructive,
     idempotentHint: tool.idempotent,
     openWorldHint: tool.openWorld,
     untrustedContentHint: true,

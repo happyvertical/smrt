@@ -288,9 +288,11 @@ describe('registerWebMcpTools', () => {
     registerWebMcpToolsWithPolicy(
       [
         canonicalTool('get'),
+        canonicalTool('create'),
         canonicalTool('update'),
         canonicalTool('delete'),
         canonicalTool('refresh'),
+        canonicalTool('publish', { effect: 'write', idempotent: false }),
       ],
       { ...ALLOW_ALL, resolveToolFetchers: () => mockFetchers() },
     );
@@ -307,7 +309,7 @@ describe('registerWebMcpTools', () => {
     });
     expect(annotations.get('report_update')).toEqual({
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: true,
       openWorldHint: false,
       untrustedContentHint: true,
@@ -320,6 +322,20 @@ describe('registerWebMcpTools', () => {
       untrustedContentHint: true,
     });
     expect(annotations.get('report_refresh')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_create')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_publish')).toEqual({
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
