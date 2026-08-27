@@ -71,7 +71,7 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       );
       const { render: renderSsr } = await vite.ssrLoadModule('svelte/server');
       const result = renderSsr(ssrFixture);
-      expect(result.body).toContain('WebMCP SSR-safe fixture');
+      expect(result.body).toContain('webmcp-ssr-fixture');
     } finally {
       await vite.close();
     }
