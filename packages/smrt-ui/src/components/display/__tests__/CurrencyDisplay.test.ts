@@ -137,40 +137,46 @@ describe('CurrencyDisplay', () => {
     'SLL',
     'ZWL',
     'ZZZ',
+    'uſd',
+    'ıqd',
+    'ßp',
     '',
   ])('renders invalid code %j without throwing', (currency) => {
-    render(CurrencyDisplay, {
+    const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency },
     });
     const normalized = currency.trim().toUpperCase() || '(empty)';
-    expect(
-      screen.getByRole('status', {
-        name: `Invalid currency code: ${normalized}`,
-      }),
-    ).toHaveClass('invalid');
+    const display = container.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent(`Invalid currency code: ${normalized}`);
+  });
+
+  it('bounds malformed currency text so one row cannot force table overflow', () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: 'invalid-currency-code' },
+    });
+    expect(container.querySelector('.currency-display')).toHaveTextContent(
+      'Invalid currency code: INVALID-CURR…',
+    );
   });
 
   it('rejects a non-string currency from an untyped runtime caller without throwing', () => {
-    render(CurrencyDisplay, {
+    const { container } = render(CurrencyDisplay, {
       // @ts-expect-error JavaScript callers can pass values outside the public type.
       props: { amount: 12345, currency: null },
     });
-    expect(
-      screen.getByRole('status', {
-        name: 'Invalid currency code: (non-string)',
-      }),
-    ).toHaveClass('invalid');
+    const display = container.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent('Invalid currency code: (non-string)');
   });
 
   it('requires major-unit input for ISO codes without a minor unit', async () => {
     const { rerender } = render(CurrencyDisplay, {
       props: { amount: 12.5, currency: 'XAU' },
     });
-    expect(
-      screen.getByRole('status', {
-        name: 'Currency code has no minor unit: XAU',
-      }),
-    ).toHaveClass('invalid');
+    const display = document.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent('Currency code has no minor unit: XAU');
 
     await rerender({ amount: 12.5, currency: 'XAU', unit: 'dollars' });
     expect(document.querySelector('.currency-display')?.textContent).toBe(

@@ -8,8 +8,9 @@ interface NormalizedCurrency {
 
 function normalizeCurrencyCode(value: unknown): NormalizedCurrency | null {
   if (typeof value !== 'string') return null;
-  const code = value.trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(code)) return null;
+  const trimmed = value.trim();
+  if (!/^[A-Za-z]{3}$/.test(trimmed)) return null;
+  const code = trimmed.toUpperCase();
 
   const minorUnitDigits = ISO_4217_MINOR_UNITS.get(code);
   return minorUnitDigits === undefined ? null : { code, minorUnitDigits };
@@ -17,7 +18,12 @@ function normalizeCurrencyCode(value: unknown): NormalizedCurrency | null {
 
 function invalidCurrencyCode(value: unknown): string {
   if (typeof value !== 'string') return '(non-string)';
-  return value.trim().toUpperCase() || '(empty)';
+  const normalized = value.trim().toUpperCase();
+  if (!normalized) return '(empty)';
+  const characters = Array.from(normalized);
+  return characters.length > 12
+    ? `${characters.slice(0, 12).join('')}…`
+    : normalized;
 }
 
 function isStringNumericLiteral(
@@ -174,8 +180,6 @@ const colorClass = $derived.by(() => {
   class:negative={colorClass === 'negative'}
   class:positive={colorClass === 'positive'}
   class:invalid={formatted.invalidCode !== null}
-  role={formatted.invalidCode !== null ? 'status' : undefined}
-  aria-label={formatted.invalidCode !== null ? formatted.text : undefined}
 >
   {formatted.text}
 </span>
