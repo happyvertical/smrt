@@ -160,7 +160,10 @@ Custom rich fields may continue to call `registerField(field)` and later
 `unregisterField(name)`. New code should retain and invoke the disposer returned
 by `registerField`: it is bound to that exact registration, so cleanup cannot
 remove a same-name replacement. The return value is additive; legacy form
-contexts whose `registerField` returns `void` remain supported.
+contexts whose `registerField` returns `void` remain supported. Context accessors
+bind legacy name-based cleanup to registrations made by that caller, so
+overlapping same-name fields can unmount in either order without retaining a
+detached control.
 
 ### Form Components
 

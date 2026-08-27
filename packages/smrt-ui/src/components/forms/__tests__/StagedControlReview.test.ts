@@ -926,7 +926,7 @@ describe('StagedControlReview', () => {
     expect(registry.get(identity)?.state.staged?.value).toBeNull();
   });
 
-  it('keeps subject-qualified identities distinct in the review list', async () => {
+  it('gives same-label subject-qualified proposals unique action names', async () => {
     const registry = createReviewRegistry();
     let secondValue = 'Ada';
     registry.register({
@@ -934,7 +934,7 @@ describe('StagedControlReview', () => {
         ...identity,
         subject: { type: 'record', id: 'two' },
       },
-      metadata: { kind: 'text', label: 'Record two' },
+      metadata: { kind: 'text', label: 'Display name' },
       getValue: () => secondValue,
       setValue: (next) => {
         secondValue = String(next);
@@ -971,9 +971,20 @@ describe('StagedControlReview', () => {
 
     expect(screen.getByText('profile/display-name · record:one')).toBeVisible();
     expect(screen.getByText('profile/display-name · record:two')).toBeVisible();
-    expect(
-      screen.getAllByRole('textbox', { name: /Edit proposed value/ }),
-    ).toHaveLength(2);
+    for (const subjectId of ['one', 'two']) {
+      const actionName = `Display name record:${subjectId}`;
+      expect(
+        screen.getByRole('textbox', {
+          name: `Edit proposed value for ${actionName}`,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: `Apply ${actionName}` }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: `Discard ${actionName}` }),
+      ).toBeInTheDocument();
+    }
   });
 
   it('rejects secret staging and discards proposals on form reset and unmount', async () => {

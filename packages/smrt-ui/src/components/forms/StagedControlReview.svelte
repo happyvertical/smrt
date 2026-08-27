@@ -85,6 +85,28 @@ function formatIdentity(snapshot: ControlSnapshot): string {
     : `${formId}/${controlId}`;
 }
 
+function actionIdentity(snapshot: ControlSnapshot): string {
+  const label = snapshot.metadata.label ?? snapshot.identity.controlId;
+  const sameLabel = snapshots.filter(
+    (candidate) =>
+      (candidate.metadata.label ?? candidate.identity.controlId) === label,
+  );
+  if (sameLabel.length < 2) return label;
+
+  const subject = snapshot.identity.subject;
+  if (!subject) return `${label} ${snapshot.identity.controlId}`;
+  const subjectLabelCount = subject.label
+    ? sameLabel.filter(
+        (candidate) => candidate.identity.subject?.label === subject.label,
+      ).length
+    : 0;
+  // Prefer a human-facing subject label when it is sufficient to distinguish
+  // this proposal. Fall back to the stable type/id only for actual collisions.
+  return subject.label && subjectLabelCount === 1
+    ? `${label} ${subject.label}`
+    : `${label} ${subject.type}:${subject.id}`;
+}
+
 function refresh(): void {
   const nextSnapshots = registry
     .list(formId)
@@ -515,6 +537,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
       {#each snapshots as snapshot (keyOf(snapshot))}
         {@const staged = snapshot.state.staged}
         {@const label = snapshot.metadata.label ?? snapshot.identity.controlId}
+        {@const actionName = actionIdentity(snapshot)}
         <li data-staged-review-item class:stale={staged?.stale} class:invalid={staged?.valid === false}>
           <div class="proposal-heading">
             <div><strong>{label}</strong><code>{formatIdentity(snapshot)}</code></div>
@@ -530,7 +553,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
                 {:else if typeof staged?.value === 'boolean'}
                   <input
                     type="checkbox"
-                    aria-label={`${text.edit} ${label}`}
+                    aria-label={`${text.edit} ${actionName}`}
                     checked={(drafts[draftKeyOf(snapshot)] ?? 'false') === 'true'}
                     onchange={(event) => {
                       drafts = {
@@ -544,7 +567,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
                   />
                 {:else}
                   <input
-                    aria-label={`${text.edit} ${label}`}
+                    aria-label={`${text.edit} ${actionName}`}
                     value={drafts[draftKeyOf(snapshot)] ?? ''}
                     oninput={(event) => {
                       drafts = { ...drafts, [draftKeyOf(snapshot)]: event.currentTarget.value };
@@ -563,11 +586,11 @@ async function discardAll(event: MouseEvent): Promise<void> {
           <div class="item-actions">
             <button
               type="button"
-              aria-label={`${text.apply} ${label}`}
+              aria-label={`${text.apply} ${actionName}`}
               disabled={staged?.stale || snapshot.state.disabled || snapshot.state.readonly}
               onclick={(event) => applyOne(snapshot, event)}
             >{text.apply}</button>
-            <button type="button" class="secondary" aria-label={`${text.discard} ${label}`} onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
+            <button type="button" class="secondary" aria-label={`${text.discard} ${actionName}`} onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
           </div>
         </li>
       {/each}

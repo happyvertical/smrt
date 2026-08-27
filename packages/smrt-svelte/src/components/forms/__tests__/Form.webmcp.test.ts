@@ -2543,6 +2543,59 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toBeUndefined();
   });
 
+  it('restores the older legacy registration when its replacement unmounts first', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        showFirst: false,
+        showCustomFirst: true,
+        showCustomReplacement: true,
+        legacyCustomCleanup: true,
+      },
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom replacement');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: true,
+      showCustomReplacement: false,
+      legacyCustomCleanup: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom first');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      showCustomReplacement: false,
+      legacyCustomCleanup: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      }),
+    ).toBeUndefined();
+  });
+
   it('cleans up built-ins against a legacy void-returning context', async () => {
     const registered = vi.fn();
     const unregistered = vi.fn();

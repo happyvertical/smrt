@@ -1176,7 +1176,9 @@ describe('control interaction registry', () => {
       ReturnType<ControlInteractionRegistry['execute']>
     > | null = null;
     let invokedNested = false;
-    const registry = createControlInteractionRegistry();
+    const registry = createControlInteractionRegistry({
+      reentrantMutationTimeoutMs: 10,
+    });
     registry.register({
       identity,
       metadata: { kind: 'text' },
@@ -1195,6 +1197,10 @@ describe('control interaction registry', () => {
       },
     });
 
+    let taskRan = false;
+    setTimeout(() => {
+      taskRan = true;
+    }, 0);
     const outerResult = await registry.execute(
       { action: 'stage', identity, value: 'Outer' },
       { source: 'agent' },
@@ -1205,6 +1211,8 @@ describe('control interaction registry', () => {
       reason: 'reentrant_mutation',
     });
     expect(outerResult).toMatchObject({ ok: true });
+    expect(taskRan).toBe(true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(registry.get(identity)?.state.staged?.value).toBe('Outer');
   });
 
@@ -1232,6 +1240,7 @@ describe('control interaction registry', () => {
     };
     registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
+      reentrantMutationTimeoutMs: 10,
       policy:
         boundary === 'policy'
           ? async () => {
@@ -1342,7 +1351,7 @@ describe('control interaction registry', () => {
     });
   });
 
-  it('rejects a competing proposal while apply validation is pending', async () => {
+  it('serializes apply validation against a competing proposal', async () => {
     let value = 'Ada';
     let blockApplyValidation = false;
     let releaseApply: (() => void) | undefined;
@@ -1355,6 +1364,7 @@ describe('control interaction registry', () => {
     });
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
+      reentrantMutationTimeoutMs: 20,
     });
     registry.register({
       identity,
@@ -1391,12 +1401,13 @@ describe('control interaction registry', () => {
     releaseApply?.();
 
     expect((await apply).ok).toBe(true);
-    expect(await competingStage).toMatchObject({
-      ok: false,
-      reason: 'reentrant_mutation',
-    });
+    expect((await competingStage).ok).toBe(true);
     expect(value).toBe('Grace');
-    expect(registry.get(identity)?.state.staged).toBeUndefined();
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: 'Katherine',
+      revision: 2,
+      stale: false,
+    });
   });
 
   it('keeps a proposal when a control rejects its applied value', async () => {
@@ -1725,10 +1736,13 @@ describe('control interaction registry', () => {
         value = '';
         throw new Error('clear_failed');
       },
-      restoreValue: () => {
+      restoreValue: async (next) => {
+        await Promise.resolve();
         restoreCalls += 1;
         value = `human-${restoreCalls}`;
         userEdit = { revision: restoreCalls, value };
+        await Promise.resolve();
+        value = String(next);
       },
     });
 
@@ -1743,6 +1757,7 @@ describe('control interaction registry', () => {
     expect(result).toMatchObject({ ok: false, reason: 'clear_failed' });
     expect(restoreCalls).toBe(8);
     expect(value).toBe('human-8');
+    expect(userEdit).toEqual({ revision: 8, value: 'human-8' });
   });
 
   it('rolls back partial clear and undo mutations while retaining recovery state', async () => {

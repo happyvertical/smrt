@@ -111,22 +111,41 @@ export interface SMRTFormContext {
  */
 export const SMRT_FORM_KEY = Symbol('smrt-form');
 
-/**
- * Set form context (used by SMRTForm)
- */
-export function setFormContext(ctx: SMRTFormContext): void {
-  const normalizedContext: SMRTFormContext = {
+function createFormContextFacade(ctx: SMRTFormContext): SMRTFormContext {
+  const registrations = new Map<string, Set<() => void>>();
+
+  return {
     get mode() {
       return ctx.mode;
     },
     registerField(field) {
       const registeredName = field.name;
-      const dispose = ctx.registerField(field);
-      return typeof dispose === 'function'
-        ? dispose
-        : () => ctx.unregisterField(registeredName);
+      const registeredDisposer = ctx.registerField(field);
+      const disposeField =
+        typeof registeredDisposer === 'function'
+          ? registeredDisposer
+          : () => ctx.unregisterField(registeredName);
+      let active = true;
+      const dispose = () => {
+        if (!active) return;
+        active = false;
+        const ownedRegistrations = registrations.get(registeredName);
+        ownedRegistrations?.delete(dispose);
+        if (ownedRegistrations?.size === 0) {
+          registrations.delete(registeredName);
+        }
+        disposeField();
+      };
+      const ownedRegistrations = registrations.get(registeredName) ?? new Set();
+      ownedRegistrations.add(dispose);
+      registrations.set(registeredName, ownedRegistrations);
+      return dispose;
     },
-    unregisterField: (name) => ctx.unregisterField(name),
+    unregisterField(name) {
+      const ownedRegistrations = registrations.get(name);
+      const dispose = ownedRegistrations?.values().next().value;
+      dispose?.();
+    },
     getFieldSchema: () => ctx.getFieldSchema(),
     get isFormListening() {
       return ctx.isFormListening;
@@ -142,7 +161,13 @@ export function setFormContext(ctx: SMRTFormContext): void {
       return ctx.formId;
     },
   };
-  setContext(SMRT_FORM_KEY, normalizedContext);
+}
+
+/**
+ * Set form context (used by SMRTForm)
+ */
+export function setFormContext(ctx: SMRTFormContext): void {
+  setContext(SMRT_FORM_KEY, createFormContextFacade(ctx));
 }
 
 /**
@@ -158,12 +183,13 @@ export function getFormContext(): SMRTFormContext {
     );
   }
 
-  return ctx;
+  return createFormContextFacade(ctx);
 }
 
 /**
  * Try to get form context (returns null if not available)
  */
 export function tryGetFormContext(): SMRTFormContext | null {
-  return getContext<SMRTFormContext>(SMRT_FORM_KEY) ?? null;
+  const ctx = getContext<SMRTFormContext>(SMRT_FORM_KEY);
+  return ctx ? createFormContextFacade(ctx) : null;
 }

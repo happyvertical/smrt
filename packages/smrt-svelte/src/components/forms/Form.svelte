@@ -592,21 +592,33 @@ const formContext: SMRTFormContext = {
       if (fieldGenerations.get(registeredName) !== generation) return;
       const registeredFields = untrack(() => fields);
       if (registeredFields.get(registeredName) !== field) return;
-      fieldGenerations.delete(registeredName);
-      registeredFields.delete(registeredName);
+      const previousRegistration = orderedRegistrations?.at(-1);
+      if (previousRegistration) {
+        fieldGenerations.set(registeredName, previousRegistration.generation);
+        registeredFields.set(registeredName, previousRegistration.field);
+      } else {
+        fieldGenerations.delete(registeredName);
+        registeredFields.delete(registeredName);
+      }
       fields = new Map(registeredFields);
     };
   },
   unregisterField(name: string) {
     const registrations = fieldRegistrationOrder.get(name);
-    const registration = registrations?.shift();
+    const registration = registrations?.pop();
     if (registrations?.length === 0) fieldRegistrationOrder.delete(name);
     if (!registration) return;
     if (fieldGenerations.get(name) !== registration.generation) return;
     const registeredFields = untrack(() => fields);
     if (registeredFields.get(name) !== registration.field) return;
-    fieldGenerations.delete(name);
-    registeredFields.delete(name);
+    const previousRegistration = registrations?.at(-1);
+    if (previousRegistration) {
+      fieldGenerations.set(name, previousRegistration.generation);
+      registeredFields.set(name, previousRegistration.field);
+    } else {
+      fieldGenerations.delete(name);
+      registeredFields.delete(name);
+    }
     fields = new Map(registeredFields);
   },
   getFieldSchema() {

@@ -279,6 +279,8 @@ export interface CreateControlInteractionRegistryOptions {
   now?: () => number;
   /** Host/test trust hook. Active DOM dispatch is always required independently. */
   isLocalGesture?: (event: Event) => boolean;
+  /** Maximum wait used to break an extension awaiting its own queued mutation. */
+  reentrantMutationTimeoutMs?: number;
 }
 
 type LocalGestureBatchExecutor = (
@@ -648,7 +650,16 @@ async function restoreRegistrationValue(
     }
     observedUserEdit = latestUserEdit;
     value = cloneValue(latestUserEdit.value);
-    if (attempt === 7) throw new Error('rollback_retry_exhausted');
+    if (attempt === 7) {
+      // The bounded replay just observed a newer human value after the final
+      // restorer completed. Hand that value to the primitive setter once so a
+      // custom restore workflow cannot leave the prior replay in the control.
+      // This final handoff is intentionally not retried.
+      if (registration.setValue) {
+        await invokeExtension(() => registration.setValue?.(value));
+      }
+      return;
+    }
   }
 }
 
@@ -727,7 +738,11 @@ export function createControlInteractionRegistry(
   const internallyQueuedContexts = new WeakSet<ControlCommandContext>();
   const consumedLocalGestureEvents = new WeakSet<Event>();
   const mutationQueues = new Map<string, Promise<void>>();
-  const invokingExtensionDepth = new Map<string, number>();
+  const synchronousExtensionDepth = new Map<string, number>();
+  const pendingExtensionLeases = new Map<string, Set<object>>();
+  const reentrantMutationTimeoutMs =
+    options.reentrantMutationTimeoutMs ?? 1_000;
+  const reentrantMutationTimeout = {};
   let stagedRevision = 0;
 
   const editAwareRegistration = (
@@ -744,34 +759,42 @@ export function createControlInteractionRegistry(
   });
 
   const invokeExtension = <T>(key: string, invoke: () => T): T => {
-    invokingExtensionDepth.set(key, (invokingExtensionDepth.get(key) ?? 0) + 1);
-    let released = false;
-    const release = () => {
-      if (released) return;
-      released = true;
-      const remaining = (invokingExtensionDepth.get(key) ?? 1) - 1;
+    synchronousExtensionDepth.set(
+      key,
+      (synchronousExtensionDepth.get(key) ?? 0) + 1,
+    );
+    const releaseDepth = (depths: Map<string, number>) => {
+      const remaining = (depths.get(key) ?? 1) - 1;
       if (remaining === 0) {
-        invokingExtensionDepth.delete(key);
+        depths.delete(key);
       } else {
-        invokingExtensionDepth.set(key, remaining);
+        depths.set(key, remaining);
       }
     };
+    let returned: T;
     try {
-      const returned = invoke();
-      if (
-        returned &&
-        (typeof returned === 'object' || typeof returned === 'function') &&
-        'then' in returned &&
-        typeof returned.then === 'function'
-      ) {
-        return Promise.resolve(returned).finally(release) as T;
-      }
-      release();
-      return returned;
+      returned = invoke();
     } catch (error) {
-      release();
+      releaseDepth(synchronousExtensionDepth);
       throw error;
     }
+    releaseDepth(synchronousExtensionDepth);
+    if (
+      returned &&
+      (typeof returned === 'object' || typeof returned === 'function') &&
+      'then' in returned &&
+      typeof returned.then === 'function'
+    ) {
+      const lease = {};
+      const leases = pendingExtensionLeases.get(key) ?? new Set<object>();
+      leases.add(lease);
+      pendingExtensionLeases.set(key, leases);
+      return Promise.resolve(returned).finally(() => {
+        leases.delete(lease);
+        if (leases.size === 0) pendingExtensionLeases.delete(key);
+      }) as T;
+    }
+    return returned;
   };
 
   const reconcileSupersededRegistration = async (
@@ -800,7 +823,31 @@ export function createControlInteractionRegistry(
 
   const enqueueMutation = <T>(key: string, operation: () => Promise<T>) => {
     const previous = mutationQueues.get(key) ?? Promise.resolve();
-    const pending = previous.catch(() => undefined).then(operation);
+    let cancelled = false;
+    const pending = previous
+      .catch(() => undefined)
+      .then(() => {
+        if (cancelled) throw reentrantMutationTimeout;
+        return operation();
+      });
+    let publicResult = pending;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const blockingLeases = [...(pendingExtensionLeases.get(key) ?? [])];
+    if (blockingLeases.length > 0) {
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(() => {
+          const activeLeases = pendingExtensionLeases.get(key);
+          if (!blockingLeases.some((lease) => activeLeases?.has(lease))) return;
+          cancelled = true;
+          reject(reentrantMutationTimeout);
+        }, reentrantMutationTimeoutMs);
+      });
+      publicResult = Promise.race([pending, timeout]);
+      const clearMutationTimeout = () => {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+      };
+      void publicResult.then(clearMutationTimeout, clearMutationTimeout);
+    }
     const settled = pending.then(
       () => undefined,
       () => undefined,
@@ -809,7 +856,7 @@ export function createControlInteractionRegistry(
     void settled.finally(() => {
       if (mutationQueues.get(key) === settled) mutationQueues.delete(key);
     });
-    return pending;
+    return publicResult;
   };
 
   const invokeTrackedValueMutation = async <T>(
@@ -1033,7 +1080,7 @@ export function createControlInteractionRegistry(
       const key = identityKey(command.identity);
       if (
         isMutation(command.action) &&
-        (invokingExtensionDepth.get(key) ?? 0) > 0
+        (synchronousExtensionDepth.get(key) ?? 0) > 0
       ) {
         const registration = registrations.get(key);
         return result(
@@ -1065,9 +1112,22 @@ export function createControlInteractionRegistry(
             generation: localGrant?.generation,
           });
         }
-        return enqueueMutation(key, () =>
-          this.execute(commandSnapshot, queuedContext),
-        );
+        try {
+          return await enqueueMutation(key, () =>
+            this.execute(commandSnapshot, queuedContext),
+          );
+        } catch (error) {
+          if (error !== reentrantMutationTimeout) throw error;
+          const registration = registrations.get(key);
+          return result(
+            commandSnapshot,
+            false,
+            registration,
+            registration && redactsValue(registration)
+              ? 'command_failed'
+              : 'reentrant_mutation',
+          );
+        }
       }
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
