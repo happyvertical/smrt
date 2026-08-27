@@ -566,17 +566,18 @@ const formContext: SMRTFormContext = {
     return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
-    const generation = Symbol(field.name);
+    const registeredName = field.name;
+    const generation = Symbol(registeredName);
     const currentFields = untrack(() => fields);
-    currentFields.set(field.name, field);
-    fieldGenerations.set(field.name, generation);
+    currentFields.set(registeredName, field);
+    fieldGenerations.set(registeredName, generation);
     fields = new Map(currentFields); // Trigger reactivity
     return () => {
-      if (fieldGenerations.get(field.name) !== generation) return;
+      if (fieldGenerations.get(registeredName) !== generation) return;
       const registeredFields = untrack(() => fields);
-      if (registeredFields.get(field.name) !== field) return;
-      fieldGenerations.delete(field.name);
-      registeredFields.delete(field.name);
+      if (registeredFields.get(registeredName) !== field) return;
+      fieldGenerations.delete(registeredName);
+      registeredFields.delete(registeredName);
       fields = new Map(registeredFields);
     };
   },
