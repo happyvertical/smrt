@@ -790,7 +790,13 @@ $effect(() => {
 // stay visible and never produce the refresh that a success would.
 $effect(() => {
   const completions = completedJobs;
-  if (!queryBinding?.refresh || completions.length === 0) return;
+  if (completions.length === 0) return;
+  if (!queryBinding?.refresh) {
+    // Local lists and structurally valid read-only bindings cannot consume a
+    // completion. Discard it rather than retaining unbounded job history.
+    completedJobs = [];
+    return;
+  }
   // A success can arrive while an older query is still in flight. Keep the
   // completion queued until that request settles so its pre-job answer cannot
   // become the indefinitely visible final state.

@@ -19,6 +19,7 @@ import { createContentListMemorySavedViewStore } from '../content-list-saved-vie
 import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
+import RefreshCapabilityHarness from './__tests__/content-list-refresh-capability-harness.svelte';
 import ContentList from './ContentList.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
@@ -807,6 +808,42 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     query.setBusy({ refreshing: false });
     await settle();
     expect(query.refreshes).toBe(1);
+  });
+
+  it('discards completions when the query cannot refresh', async () => {
+    const jobs = createContentListJobController();
+    const onRefresh = vi.fn();
+    let enableRefresh!: () => void;
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(RefreshCapabilityHarness, {
+      target,
+      props: {
+        contents,
+        jobs,
+        onRefresh,
+        onReady: (enable) => {
+          enableRefresh = enable;
+        },
+      },
+    });
+    mountedComponents.push(component);
+    await settle();
+
+    jobs.update({
+      jobId: 'job-no-refresh',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    jobs.update({ ...jobs.snapshot().jobs[0], status: 'succeeded' });
+    await settle();
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    enableRefresh();
+    await settle();
+    expect(onRefresh).not.toHaveBeenCalled();
   });
 
   it('keeps a failed job failed and exposes its explicit retry', async () => {
