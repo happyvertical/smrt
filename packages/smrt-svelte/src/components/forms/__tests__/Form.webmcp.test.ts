@@ -845,6 +845,48 @@ describe('Form WebMCP staged-edit intent', () => {
     }
   });
 
+  it('applies an untouched canonical append-mode value from the mounted review', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        showScalarFields: true,
+        notesValue: 'Existing',
+        notesAppendMode: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(await registered.at(-1)?.execute({ notes: 'Proposed' })).toBe(
+      'Staged 1 change for review',
+    );
+    const notes = registry
+      .list()
+      .find((item) => item.identity.controlId === 'notes');
+    expect(notes?.state.staged?.value).toBe('Existing\nProposed');
+    expect(
+      screen.getByRole('textbox', { name: 'Edit proposed value for Notes' }),
+    ).toHaveValue('Existing\nProposed');
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Notes' }));
+    expect(
+      registry.get(notes?.identity ?? { formId: '', controlId: '' })?.state
+        .value,
+    ).toBe('Existing\nProposed');
+  });
+
   it('applies an edited canonical append-mode value from the mounted review', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;

@@ -112,6 +112,16 @@ Retaining an event for later use is rejected even when it remains trusted.
 Serialized or programmatic `source: 'user', confirmed: true` input is never
 confirmation. Sensitive and secret values, validation details, failures, and
 events remain redacted from every public surface.
+The shared review surface marks its complete edited Apply value with
+`reviewedValueIsCanonical: true`. That marker carries no authority: the registry
+honors it only for a current staged entry after validating the exact command
+under an actively dispatching local gesture. Controls with non-idempotent
+proposal preparation can implement `prepareReviewedValue(value)` to validate or
+canonicalize the complete displayed value without re-applying proposal-relative
+behavior. Controls without that hook route marked edits through their ordinary
+`prepareValue`, so a generic marker never bypasses custom normalization or
+rejection. An unchanged value exactly equal to the stored staged canonical value
+uses that trusted stored value directly.
 Registries expose optional `refresh(formId)` notification for hosts whose live
 metadata or runtime-state getters change without a registration event; it
 updates subscribers without discarding an internal staged proposal.

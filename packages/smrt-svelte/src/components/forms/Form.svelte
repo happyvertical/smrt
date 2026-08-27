@@ -383,6 +383,7 @@ function registerInteraction(
       // The registry calls this inside its stage retry loop, so partial
       // structured proposals merge with the latest stable human value.
       prepareValue: (value) => prepareInteractionValue(field, value),
+      prepareReviewedValue: field.prepareReviewedValue,
       clear:
         field.clear ??
         (() => {

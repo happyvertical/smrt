@@ -56,6 +56,8 @@ export interface FieldDefinition {
    * May throw when the value cannot be represented canonically by this field.
    */
   prepareValue?: (value: unknown) => unknown;
+  /** Validate/canonicalize a complete value edited in staged review. */
+  prepareReviewedValue?: (value: unknown) => unknown;
   /**
    * Convert a value extracted from speech into the field's canonical value.
    * May be asynchronous for controls that support natural-language parsing.

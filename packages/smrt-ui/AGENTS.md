@@ -121,6 +121,14 @@ other text pairing clears WCAG AA in both schemes.
   and the complete command or batch is snapshotted synchronously before gesture
   consumption. Serialized or programmatic `source: 'user', confirmed: true`
   input is not confirmation.
+  `StagedControlReview` marks its complete edited Apply value with
+  `reviewedValueIsCanonical: true`, but the marker grants no authority and is
+  honored only for a current staged entry under the registry's exact local
+  gesture proof. A control with proposal-relative preparation implements
+  `prepareReviewedValue` to validate/canonicalize the complete displayed value;
+  without that hook, marked edits still pass through ordinary `prepareValue`.
+  Only an unchanged value exactly equal to the stored staged canonical value can
+  reuse that trusted stored value without either hook.
   Secret controls never accept staging, and sensitive/secret
   values stay redacted in snapshots, events, policy callbacks, and review UI.
   Batch execution is ordered best-effort and returns one result per command;

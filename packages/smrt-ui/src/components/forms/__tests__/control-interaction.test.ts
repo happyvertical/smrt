@@ -511,6 +511,7 @@ describe('control interaction registry', () => {
     const prepareValue = vi.fn(
       (proposal: unknown) => `${value}\n${String(proposal)}`,
     );
+    const prepareReviewedValue = vi.fn((reviewed: unknown) => String(reviewed));
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
     });
@@ -519,6 +520,7 @@ describe('control interaction registry', () => {
       metadata: { kind: 'textarea' },
       getValue: () => value,
       prepareValue,
+      prepareReviewedValue,
       setValue: (next) => {
         value = String(next);
       },
@@ -577,6 +579,69 @@ describe('control interaction registry', () => {
       ),
     ).toMatchObject({ ok: true });
     expect(value).toBe('Existing\nReviewed edit');
+    expect(prepareValue).toHaveBeenCalledTimes(4);
+    expect(prepareReviewedValue).toHaveBeenCalledOnce();
+  });
+
+  it('routes marked custom review edits through ordinary preparation by default', async () => {
+    let value = 'Original';
+    const prepareValue = vi.fn((proposal: unknown) => {
+      const next = String(proposal).trim().toUpperCase();
+      if (next === 'FORBIDDEN') throw new Error('forbidden_review_value');
+      return next;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'custom' },
+      getValue: () => value,
+      prepareValue,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'proposal' },
+      { source: 'agent' },
+    );
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        {
+          action: 'apply',
+          identity,
+          revision: 1,
+          value: '  reviewed edit  ',
+          reviewedValueIsCanonical: true,
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('REVIEWED EDIT');
+
+    value = 'Original';
+    await registry.execute(
+      { action: 'stage', identity, value: 'proposal' },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        {
+          action: 'apply',
+          identity,
+          revision: 2,
+          value: ' forbidden ',
+          reviewedValueIsCanonical: true,
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: false, reason: 'forbidden_review_value' });
+    expect(value).toBe('Original');
+    expect(registry.get(identity)?.state.staged).toBeDefined();
     expect(prepareValue).toHaveBeenCalledTimes(4);
   });
 
@@ -3992,6 +4057,7 @@ describe('control interaction registry', () => {
       metadata: { kind: 'textarea' },
       getValue: () => value,
       prepareValue,
+      prepareReviewedValue: (reviewed) => String(reviewed),
       setValue: (next) => {
         value = String(next);
       },

@@ -163,6 +163,11 @@ export interface ControlRegistration {
    * May throw when the control cannot represent the intent canonically.
    */
   prepareValue?: (value: unknown) => unknown;
+  /**
+   * Validate/canonicalize a complete value edited in the staged-review UI.
+   * Without this hook, reviewed edits still pass through prepareValue.
+   */
+  prepareReviewedValue?: (value: unknown) => unknown;
   /** Restore a value without re-running a fallible async mutation workflow. */
   restoreValue?: (
     value: unknown,
@@ -1456,7 +1461,15 @@ export function createControlInteractionRegistry(
             const nextValue = usesExactStagedValue
               ? stagedEntry.value
               : usesCanonicalReviewValue
-                ? command.value
+                ? registration.prepareReviewedValue
+                  ? invokeExtension(key, () =>
+                      registration.prepareReviewedValue?.(command.value),
+                    )
+                  : registration.prepareValue
+                    ? invokeExtension(key, () =>
+                        registration.prepareValue?.(command.value),
+                      )
+                    : command.value
                 : suppliedValue
                   ? registration.prepareValue
                     ? invokeExtension(key, () =>

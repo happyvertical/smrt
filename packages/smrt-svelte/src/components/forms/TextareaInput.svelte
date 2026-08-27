@@ -95,6 +95,9 @@ $effect(() => {
         const next = prepareTextFieldValue(candidate);
         return appendMode && value ? `${value}\n${next}` : next;
       },
+      // The review editor contains the complete displayed text, not a new
+      // append intent. Canonicalize its scalar shape without appending again.
+      prepareReviewedValue: prepareTextFieldValue,
       getState: () => ({ disabled }),
       get constraints() {
         return { required };
