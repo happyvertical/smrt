@@ -153,7 +153,10 @@ export interface ControlRegistration {
    */
   getUserEditSnapshot?: () => { revision: number; value: unknown };
   setValue?: (value: unknown) => void | Promise<void>;
-  /** Resolve a staged intent against the current value without mutating it. */
+  /**
+   * Resolve a staged intent against the current value without mutating it.
+   * May throw when the control cannot represent the intent canonically.
+   */
   prepareValue?: (value: unknown) => unknown;
   /** Restore a value without re-running a fallible async mutation workflow. */
   restoreValue?: (value: unknown) => void | Promise<void>;

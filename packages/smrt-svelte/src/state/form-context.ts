@@ -45,7 +45,10 @@ export interface FieldDefinition {
   setValue: (value: unknown) => void;
   /** Get current field value */
   getValue: () => unknown;
-  /** Convert an incoming intent into the final value shown for review/applied. */
+  /**
+   * Convert an incoming intent into the final value shown for review/applied.
+   * May throw when the value cannot be represented canonically by this field.
+   */
   prepareValue?: (value: unknown) => unknown;
   /** Optional richer interaction metadata and capabilities. */
   controlId?: string;

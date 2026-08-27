@@ -1012,7 +1012,16 @@ function applyExtractedValues(values: Record<string, unknown>) {
     const field = fields.get(name);
     if (field && value !== undefined && value !== null) {
       const cleanedValue = cleanValue(value, field.type);
-      field.setValue(field.prepareValue?.(cleanedValue) ?? cleanedValue);
+      try {
+        field.setValue(field.prepareValue?.(cleanedValue) ?? cleanedValue);
+      } catch (error) {
+        // One uncanonicalizable transcript fragment must not abort later
+        // extracted fields or expose an internal preparation error to the UI.
+        logger.warn('Form: skipped invalid extracted field value', {
+          field: name,
+          error,
+        });
+      }
     }
   }
 }
