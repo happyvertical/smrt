@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.43.4
+
+### Patch Changes
+
+- ### Features
+
+  - enforce explicit WebMCP exposure policy (#2530) (smrt-web)
+  - rebuild ContentList on the shared DataTable controller and data surface (#2527) (content)
+  - execute canonical WebMCP tools (#2525) (smrt-web)
+  - expose mounted UI through WebMCP (#2526) (svelte)
+  - emit canonical WebMCP tool definitions (#2524) (core)
+  - @happyvertical/smrt-config@0.43.4
+  - @happyvertical/smrt-types@0.43.4
+  - @happyvertical/smrt-scanner@0.43.4
+
 ## 0.43.3
 
 ### Patch Changes
