@@ -454,7 +454,9 @@ function actionSemantics(
     case 'create':
       return {
         effect: 'write',
-        destructive: false,
+        // SMRT create routes are natural-key upserts, so they may replace an
+        // existing row and cannot claim the MCP additive-only guarantee.
+        destructive: true,
         idempotent: false,
         openWorld: false,
       };

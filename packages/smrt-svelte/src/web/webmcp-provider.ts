@@ -22,6 +22,8 @@ export interface WebMcpProviderConfig extends WebMcpExposurePolicy {
   scope?: string;
   filter?: RegisterWebMcpToolsOptions['filter'];
   filterTool?: RegisterWebMcpToolsOptions['filterTool'];
+  resolveFetchers?: RegisterWebMcpToolsOptions['resolveFetchers'];
+  resolveToolFetchers?: RegisterWebMcpToolsOptions['resolveToolFetchers'];
   /** Fixed browser-native tools over the mounted form/data registries. */
   ui?: false | WebMcpUiProviderConfig;
 }

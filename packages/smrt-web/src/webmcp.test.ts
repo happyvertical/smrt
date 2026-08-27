@@ -330,7 +330,7 @@ describe('registerWebMcpTools', () => {
     });
     expect(annotations.get('report_create')).toEqual({
       readOnlyHint: false,
-      destructiveHint: false,
+      destructiveHint: true,
       idempotentHint: false,
       openWorldHint: false,
       untrustedContentHint: true,

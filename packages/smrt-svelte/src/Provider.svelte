@@ -205,6 +205,8 @@ $effect(() => {
         scope: config.scope,
         filter: config.filter,
         filterTool: config.filterTool,
+        resolveFetchers: config.resolveFetchers,
+        resolveToolFetchers: config.resolveToolFetchers,
         effects: config.effects,
         namespace: config.namespace,
         maxTools: config.maxTools,

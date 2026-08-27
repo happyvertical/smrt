@@ -1,4 +1,7 @@
-import type { WebMcpRegistrationDefinition } from '@happyvertical/smrt-web';
+import type {
+  RegisterWebMcpToolsOptions,
+  WebMcpRegistrationDefinition,
+} from '@happyvertical/smrt-web';
 import { render, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from './internal/logger.js';
@@ -32,6 +35,8 @@ describe('Provider WebMCP policy', () => {
   it('passes the same exposure policy to the framework-agnostic registrar', async () => {
     const filter = vi.fn(() => true);
     const filterTool = vi.fn(() => true);
+    const resolveFetchers = vi.fn();
+    const resolveToolFetchers = vi.fn();
     const definitions = [];
 
     render(Harness, {
@@ -45,6 +50,8 @@ describe('Provider WebMCP policy', () => {
           scope: 'tenant-a',
           filter,
           filterTool,
+          resolveFetchers,
+          resolveToolFetchers,
         },
       },
     });
@@ -57,6 +64,8 @@ describe('Provider WebMCP policy', () => {
       scope: 'tenant-a',
       filter,
       filterTool,
+      resolveFetchers,
+      resolveToolFetchers,
       effects: ['read', 'write'],
       namespace: 'workspace',
       maxTools: 12,
@@ -115,6 +124,21 @@ describe('Provider WebMCP policy', () => {
         route: { method: 'GET', scope: 'item', path: [] },
       },
     ];
+    const resolveFetchers: NonNullable<
+      RegisterWebMcpToolsOptions['resolveFetchers']
+    > = (definition) => {
+      definition.actions.length = 0;
+      return {
+        list: async () => [],
+        create: async (data) => data,
+      };
+    };
+    const resolveToolFetchers: NonNullable<
+      RegisterWebMcpToolsOptions['resolveToolFetchers']
+    > = (definition) => {
+      definition.action = 'delete';
+      return { get: async () => ({ id: 'a1' }) };
+    };
     const policy = {
       definitions,
       effects: ['read', 'write'] as const,
@@ -124,6 +148,8 @@ describe('Provider WebMCP policy', () => {
       filterTool: (
         tool: Extract<WebMcpRegistrationDefinition, { collection: string }>,
       ) => tool.collection === 'audits',
+      resolveFetchers: vi.fn(resolveFetchers),
+      resolveToolFetchers: vi.fn(resolveToolFetchers),
     };
     const captured: Array<{ name: string; annotations?: unknown }> = [];
     const installRegistry = () => {
@@ -152,6 +178,8 @@ describe('Provider WebMCP policy', () => {
       'workspace_report_create',
       'workspace_audit_get',
     ]);
+    expect(policy.resolveFetchers).toHaveBeenCalledTimes(2);
+    expect(policy.resolveToolFetchers).toHaveBeenCalledTimes(2);
   });
 
   it('defaults generated data tools to read-only exposure', async () => {
