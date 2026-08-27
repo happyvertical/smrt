@@ -253,13 +253,11 @@ describe('generateDeclarations', () => {
         'utf-8',
       ),
     ];
-    const typeSurfaces = [
-      ...declarationSurfaces,
-      readFileSync(
-        new URL('../../../smrt-web/src/index.ts', import.meta.url),
-        'utf-8',
-      ),
-    ];
+    const runtimeSurface = readFileSync(
+      new URL('../../../smrt-web/src/index.ts', import.meta.url),
+      'utf-8',
+    );
+    const typeSurfaces = [...declarationSurfaces, runtimeSurface];
     const sharedMembers = [
       'collection: string;',
       'objectRef: string;',
@@ -278,10 +276,20 @@ describe('generateDeclarations', () => {
       expect(surface).toContain('interface WebMcpToolDefinition');
       for (const member of sharedMembers) expect(surface).toContain(member);
       expect(surface).toMatch(/route: (?:Smrt)?WebToolRouteDescriptor;/);
+    }
+
+    // Generated definitions are complete, while the runtime consumer type
+    // keeps newly-added semantics optional for hand-authored legacy literals.
+    for (const surface of declarationSurfaces) {
       expect(surface).toMatch(/effect: 'read' \| 'write' \| 'destructive';/);
       expect(surface).toContain('idempotent: boolean;');
       expect(surface).toContain('openWorld: boolean;');
     }
+    expect(runtimeSurface).toMatch(
+      /effect\?: 'read' \| 'write' \| 'destructive';/,
+    );
+    expect(runtimeSurface).toContain('idempotent?: boolean;');
+    expect(runtimeSurface).toContain('openWorld?: boolean;');
   });
 
   it('types canonical collection endpoints from populated models regardless of manifest order', async () => {
