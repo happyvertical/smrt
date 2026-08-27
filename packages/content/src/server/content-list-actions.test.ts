@@ -14,7 +14,9 @@ import type { DataQueryRequest } from '@happyvertical/smrt-types';
 import { describe, expect, it, vi } from 'vitest';
 import type { Content } from '../content.js';
 import { buildContentQuerySchema } from '../content-query.js';
+import { CONTENT_LIST_WORKFLOW_OPTIONS } from '../svelte/content-list-workflows.js';
 import {
+  CONTENT_LIST_WORKFLOWS,
   type ContentListActionCollection,
   type ContentListActionRequest,
   type ContentListWorkflowId,
@@ -32,8 +34,20 @@ type Row = {
 const identity = {
   surfaceId: 'content-list',
   kind: 'table' as const,
-  subject: { type: 'tenant', id: 'tenant-a' },
 };
+
+function permissionDeniedError(): Error {
+  const error = new Error('Permission denied.');
+  error.name = 'OperationPermissionError';
+  Object.assign(error, {
+    decision: {
+      allowed: false,
+      permission: 'contents.update',
+      reason: 'permission_denied',
+    },
+  });
+  return error;
+}
 
 function matchesCondition(
   row: Row,
@@ -218,6 +232,7 @@ function harness(
     };
     handlers?: Parameters<typeof createContentListActionAdapter>[0]['handlers'];
     assertOperation?: PrincipalRun['assertOperation'];
+    revision?: Parameters<typeof createContentListActionAdapter>[0]['revision'];
   } = {},
 ) {
   const collection = options.collection ?? new MemoryContentCollection(rows());
@@ -253,7 +268,7 @@ function harness(
   const adapter = createContentListActionAdapter({
     state: new InMemoryDataSurfaceActionStateStore(),
     collection: async () => collection,
-    revision: async () => 7,
+    revision: options.revision ?? (async () => 7),
     authorize: options.authorize,
     scope: options.scope,
     backgroundQueue: options.backgroundQueue,
@@ -275,6 +290,40 @@ function harness(
 }
 
 describe('ContentList bulk workflow server adapter (#2453)', () => {
+  it('keeps browser and server workflow catalogs in parity', () => {
+    expect(CONTENT_LIST_WORKFLOW_OPTIONS).toEqual(
+      CONTENT_LIST_WORKFLOWS.map(({ id, label, execution, sensitivity }) => ({
+        id,
+        label,
+        execution,
+        sensitivity,
+      })),
+    );
+  });
+
+  it('rejects a forged surface subject and resolves revisions against trusted identity', async () => {
+    const revision = vi.fn(async () => 7);
+    const setup = harness({ revision });
+    const forged = actionRequest(
+      'preview',
+      'categorize',
+      { scope: 'explicit-ids', rowIds: ['a'] },
+      { expectedCount: 1 },
+      {
+        identity: {
+          ...identity,
+          subject: { type: 'tenant', id: 'tenant-a' },
+        },
+        payload: { category: 'news' },
+      },
+    );
+
+    await expect(
+      setup.adapter.preview(forged, setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'not_found' });
+    expect(revision).toHaveBeenCalledWith(setup.run, identity);
+  });
+
   it('resolves all matching rows from the canonical frozen query, not the loaded page', async () => {
     const setup = harness();
     const targetQuery = query();
@@ -461,7 +510,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       permissions: ['contents:update'],
       assertOperation: async (collection, action) => {
         if (collection === 'contentversions' && action === 'create') {
-          throw new Error('operation denied');
+          throw permissionDeniedError();
         }
         return { allowed: true } as Awaited<
           ReturnType<PrincipalRun['assertOperation']>
@@ -491,6 +540,40 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       'create',
     );
     expect(setup.collection.saveCalls).toEqual([]);
+  });
+
+  it('surfaces permission catalog failures instead of misreporting them as denial', async () => {
+    const setup = harness({
+      assertOperation: async (collection) => {
+        if (collection === 'facts') {
+          const error = new Error('Unknown operation permission.');
+          error.name = 'OperationPermissionError';
+          Object.assign(error, {
+            decision: {
+              allowed: false,
+              permission: null,
+              reason: 'unknown_permission',
+            },
+          });
+          throw error;
+        }
+        return { allowed: true } as Awaited<
+          ReturnType<PrincipalRun['assertOperation']>
+        >;
+      },
+    });
+
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'automated-review',
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { expectedCount: 1 },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'execution_failed' });
   });
 
   it('reports accepted, skipped, and failed rows without leaking the failure', async () => {

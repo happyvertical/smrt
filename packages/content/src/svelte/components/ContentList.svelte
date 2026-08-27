@@ -1482,6 +1482,9 @@ async function applyWorkflow() {
     workflowResult = result;
     if (!result.ok) {
       workflowError = result.reason ?? 'Workflow failed.';
+      workflowPreview = null;
+      workflowIdempotencyKey = '';
+      workflowConfirmOpen = false;
       return;
     }
     if (result.details?.background !== true) {

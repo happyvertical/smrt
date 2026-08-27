@@ -317,6 +317,7 @@ export {
   type ContentListWorkflowClient,
   ContentListWorkflowError,
   type ContentListWorkflowId,
+  type ContentListWorkflowJobStatus,
   type ContentListWorkflowOption,
   type ContentListWorkflowRequest,
   type ContentListWorkflowTransportOptions,

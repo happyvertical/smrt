@@ -9,6 +9,10 @@
  */
 
 import { createHash } from 'node:crypto';
+// Publication and automated-review permissions include facts operations. The
+// catalog is registration-driven, so ensure those definitions exist even when
+// a host imports only the content server entry point.
+import '@happyvertical/smrt-facts';
 import type { PrincipalRun } from '@happyvertical/smrt-agents';
 import {
   createDataSurfaceActionAdapter,
@@ -135,9 +139,12 @@ const GOVERNANCE_READ_OPERATIONS = [
 const PUBLICATION_OPERATIONS = [
   CONTENT_READ_OPERATION,
   CONTENT_UPDATE_OPERATION,
-  // ContentReference is internal-only (no catalog operation); contents:read
-  // is the public authority for reading its citation edges.
   ...GOVERNANCE_READ_OPERATIONS,
+  {
+    id: 'content-references:read',
+    collection: 'contentreferences',
+    action: 'read',
+  },
   { id: 'facts:read', collection: 'facts', action: 'read' },
   { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
   { id: 'fact-sources:read', collection: 'factsources', action: 'read' },
@@ -423,6 +430,13 @@ class ContentListActionError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPermissionDenied(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name !== 'OperationPermissionError')
+    return false;
+  const decision = (error as Error & { decision?: unknown }).decision;
+  return isRecord(decision) && decision.reason === 'permission_denied';
 }
 
 function isWorkflowId(value: unknown): value is ContentListWorkflowId {
@@ -906,15 +920,16 @@ export function createContentListActionAdapter(
               payloadRecord(invocation.request.payload).status !== 'published'
                 ? entry.permissionRequirements.operations.slice(0, 2)
                 : entry.permissionRequirements.operations;
-            try {
-              for (const operation of operations.slice(1)) {
+            for (const operation of operations.slice(1)) {
+              try {
                 await invocation.run.assertOperation(
                   operation.collection,
                   operation.action,
                 );
+              } catch (error) {
+                if (isPermissionDenied(error)) return false;
+                throw error;
               }
-            } catch {
-              return false;
             }
             return options.authorize?.(entry.id, invocation.run) ?? true;
           },
@@ -951,9 +966,9 @@ export function createContentListActionAdapter(
     backgroundQueue: options.backgroundQueue,
     tokenTtlMs: options.tokenTtlMs,
     runAsPrincipal: options.runAsPrincipal,
-    resolveSurface: async (run, identity) => ({
-      descriptor: { ...descriptor, identity },
-      revision: await (options.revision?.(run, identity) ?? 0),
+    resolveSurface: async (run) => ({
+      descriptor,
+      revision: await (options.revision?.(run, descriptor.identity) ?? 0),
       actions: definitions,
     }),
     resolveSelection: async (invocation, selection) => {
@@ -962,7 +977,7 @@ export function createContentListActionAdapter(
       const scope = await options.scope?.(invocation.run);
       const revision = await (options.revision?.(
         invocation.run,
-        request.identity,
+        descriptor.identity,
       ) ?? 0);
       const resolved = await resolveQuerySelection(
         { ...request, selection },

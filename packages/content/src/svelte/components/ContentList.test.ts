@@ -467,6 +467,10 @@ describe('ContentList bulk workflows', () => {
       expect(target.textContent).toContain('stale_preview'),
     );
     expect(target.textContent).toContain('1 selected');
+    expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(0);
+    expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(failed.preview).toHaveBeenCalledTimes(2));
 
     const status = vi.fn().mockResolvedValue({
       jobId: 'job-content-42',
