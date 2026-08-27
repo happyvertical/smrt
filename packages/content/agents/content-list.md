@@ -709,6 +709,15 @@ vocabulary and search fields are asserted against the real
   | `json` | `null`, or not at all | a document has no incremental shortening |
   | number, boolean, `null` | never | already minimal |
   | the identity field | never | it is the row's address; emptying it fails result normalization |
+  | ANY field whose reduced form is no smaller | never | `{}` and `[]` are TWO bytes, so nulling them costs four |
+
+  That last row is a floor rule as much as a shrink rule. **A row's floor is the
+  size it can be reduced TO, so it can never exceed the size the row already
+  is.** Taking the reduced size as the floor unconditionally overstates it by
+  two bytes per empty-document field per row, which refuses pages that would
+  have fitted — and the refusal repeats for that page forever. The invariant
+  `floor <= cost` is now stated by `measureRow` and held defensively by
+  `allocateRowBytes`, rather than being an accident of a caller's short-circuit.
 
   The rule generalizes: **a value may be shortened only when its type accepts
   arbitrary prefixes.** Any format-constrained type added later is all-or-nothing
@@ -716,6 +725,11 @@ vocabulary and search fields are asserted against the real
   with it KEPT — losing a whole value to save a few bytes is a last resort, so a
   200 KB `metadata` blob goes immediately while a 26-byte `updated_at` survives
   whenever the strings can absorb the difference.
+
+  Byte accounting is exact at the boundary: each row charges the array separator
+  that follows it, so an N-row page is refunded the one separator it does not
+  need. Without that refund a page whose true size exactly equals the budget is
+  needlessly shortened, or — if it is irreducible — refused outright.
 
   Shortening is already a reported state (`truncated` plus its warning) and it
   leaves offset paging exact. Only a page whose FLOORS exceed the budget fails,

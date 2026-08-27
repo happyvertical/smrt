@@ -27,6 +27,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type {
+  DataQueryFieldDescriptor,
   DataQueryRequest,
   DataQuerySchema,
 } from '@happyvertical/smrt-types';
@@ -35,6 +36,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   allocateRowBytes,
   assertContentQuerySchema,
+  boundRowBytes,
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
   CONTENT_QUERY_DEFAULT_PAGE_LIMIT,
@@ -53,6 +55,7 @@ import {
   DATA_QUERY_MAX_WARNINGS,
   executeContentQuery,
   mergeContentQueryScope,
+  RESULT_ENVELOPE_RESERVE_BYTES,
 } from './content-query';
 import { Contents } from './contents';
 import { POST as queryRoute } from './routes/api/v1/contents/query/+server';
@@ -2034,6 +2037,92 @@ describe('result byte budget is shared across rows', () => {
     }
   });
 
+  // A row's floor is the size it can be reduced TO, so the smallest budget at
+  // which a page is producible must equal the size of that page fully reduced —
+  // no larger (the floor would be overstating, refusing pages that fit) and no
+  // smaller (the allocation would be promising bytes it cannot deliver).
+  describe('the declared floor is the true floor', () => {
+    const descriptors = new Map<string, DataQueryFieldDescriptor>([
+      [
+        'id',
+        { id: 'id', label: 'Id', type: 'string' } as DataQueryFieldDescriptor,
+      ],
+      [
+        'title',
+        {
+          id: 'title',
+          label: 'Title',
+          type: 'string',
+        } as DataQueryFieldDescriptor,
+      ],
+      [
+        'metadata',
+        {
+          id: 'metadata',
+          label: 'Meta',
+          type: 'json',
+        } as DataQueryFieldDescriptor,
+      ],
+      [
+        'tags',
+        { id: 'tags', label: 'Tags', type: 'json' } as DataQueryFieldDescriptor,
+      ],
+    ]);
+    // `{}` and `[]` serialize to TWO bytes, so nulling them costs four and makes
+    // the row bigger. Taking the reduced size as the floor unconditionally
+    // therefore overstates it by two bytes per such field per row.
+    const page = (): DataQueryRow[] =>
+      Array.from({ length: 7 }, (_, index) => ({
+        id: `row-${index}`,
+        title: 'x'.repeat(40),
+        metadata: {},
+        tags: [],
+      }));
+
+    const bound = (budget: number) =>
+      boundRowBytes(
+        page(),
+        budget + RESULT_ENVELOPE_RESERVE_BYTES,
+        descriptors,
+        'id',
+        {
+          fields: new Set<string>(),
+        },
+      );
+
+    it('accepts every budget down to the fully reduced size, and no lower', () => {
+      // Reduced independently of the implementation: strings accept prefixes so
+      // they go to empty; nothing else can shrink without growing.
+      const reduced = page().map((row) => ({ ...row, title: '' }));
+      const trueFloor = Buffer.byteLength(JSON.stringify(reduced), 'utf8');
+
+      let smallest = Number.MAX_SAFE_INTEGER;
+      for (let budget = trueFloor - 40; budget <= trueFloor + 40; budget += 1) {
+        try {
+          bound(budget);
+          smallest = Math.min(smallest, budget);
+        } catch {
+          // Below the floor the page cannot be produced; keep scanning.
+        }
+      }
+
+      expect(smallest).toBe(trueFloor);
+    });
+
+    it('never enlarges a field in the name of shrinking it', () => {
+      const reduced = page().map((row) => ({ ...row, title: '' }));
+      const bounded = bound(Buffer.byteLength(JSON.stringify(reduced), 'utf8'));
+
+      for (const row of bounded.rows) {
+        // `null` here would be two bytes MORE than the value it replaced.
+        expect({ metadata: row.metadata, tags: row.tags }).toEqual({
+          metadata: {},
+          tags: [],
+        });
+      }
+    });
+  });
+
   // The integration test above cannot fail on revert: a row's floor is
   // dominated by the projection's key bytes, which are identical across the
   // rows of one page, so the floor disparity that breaks cost-first ordering is
@@ -2051,6 +2140,18 @@ describe('result byte budget is shared across rows', () => {
       expect(allowances[0]).toBeGreaterThanOrEqual(310);
       expect(allowances[1]).toBeGreaterThanOrEqual(21);
       expect(allowances[0] + allowances[1]).toBeLessThanOrEqual(339);
+    });
+
+    // `measureRow` guarantees `floor <= cost`, but that guarantee used to be an
+    // accident of a caller's short-circuit rather than a stated invariant. Hold
+    // the allocator to the floor even when the precondition is broken, so a
+    // future measure bug degrades into a slightly roomy page instead of a row
+    // starved below the size it can be reduced to.
+    it('seats the floor even when a caller violates floor <= cost', () => {
+      // Cost 6 against floor 10: the row claims it can shrink below its own
+      // current size. Allocating `cost - floor` unclamped hands it -4, which
+      // leaks four bytes to its neighbour and leaves it under its floor.
+      expect(allocateRowBytes([10, 10], [6, 100], 40)).toEqual([10, 30]);
     });
 
     // The same guarantee, not just the one counterexample: across a spread of
@@ -2076,11 +2177,14 @@ describe('result byte budget is shared across rows', () => {
       }
       const granted = allowances.reduce((sum, value) => sum + value, 0);
       expect(granted).toBeLessThanOrEqual(budget);
-      // Nothing is handed more than it can use.
       for (const [index, cost] of costs.entries()) {
-        expect(allowances[index]).toBeLessThanOrEqual(
-          Math.max(cost, floors[index]),
-        );
+        // A floor is a size the row can be reduced TO, so it can never exceed
+        // the size the row already is. `Math.max(cost, floor)` here would
+        // tolerate a floor that overstates — the exact defect that made nulling
+        // an empty `{}` look like a saving.
+        expect(floors[index]).toBeLessThanOrEqual(cost);
+        // And nothing is handed more than it can use.
+        expect(allowances[index]).toBeLessThanOrEqual(cost);
       }
     });
   });
@@ -2089,60 +2193,93 @@ describe('result byte budget is shared across rows', () => {
   // halving search, which turned an ordinary wide page at the default budget
   // into seconds of blocked event loop — a denial of service reachable by any
   // caller who asks for the whole projection.
-  it('bounds a wide page without a runaway cost', async () => {
-    const base = await buildContentQuerySchema();
-    const projection = base.fields
-      .filter((field) => field.projectable)
-      .map((field) => field.id);
-    const big = (seed: string) => seed.repeat(2_000);
-    for (let index = 0; index < 200; index += 1) {
-      const item = await contents.create({
-        name: `bulk-${index}`,
-        title: big('a'),
-        description: big('b'),
-        url: big('c'),
-        source: big('d'),
-        category: big('e'),
-        language: big('f'),
-        original_url: big('g'),
-        variant: big('h'),
-        slug: `${big('i')}${index}`,
-        fileKey: big('j'),
-        author: big('k'),
-        context: big('l'),
+  //
+  // This times the BOUNDING PASS, not `executeContentQuery`. Timing the whole
+  // request buries the cost: the SQLite read of a multi-megabyte page dominates
+  // both sides, so a 2-3x regression in the shortening itself would pass
+  // unnoticed. `boundRowBytes` is a pure function of the rows, so it can be
+  // called on the same fixture directly.
+  it('bounds a wide page for a small constant number of page walks', () => {
+    const descriptors = new Map<string, DataQueryFieldDescriptor>(
+      Array.from({ length: 12 }, (_, index) => [
+        `field_${index}`,
+        {
+          id: `field_${index}`,
+          label: `Field ${index}`,
+          type: 'string',
+        } as DataQueryFieldDescriptor,
+      ]),
+    );
+    descriptors.set('id', {
+      id: 'id',
+      label: 'Id',
+      type: 'string',
+    } as DataQueryFieldDescriptor);
+
+    const page = (count: number): DataQueryRow[] =>
+      Array.from({ length: count }, (_, row) => {
+        const entry: DataQueryRow = { id: `row-${row}` };
+        for (let index = 0; index < 12; index += 1) {
+          entry[`field_${index}`] = String.fromCharCode(97 + index).repeat(
+            2_000,
+          );
+        }
+        return entry;
       });
-      await item.save();
-    }
-    const run = async (maxResultBytes: number) => {
-      const started = performance.now();
-      const result = await executeContentQuery(
-        contents as unknown as ContentQueryCollection,
-        request({
-          projection,
-          page: { kind: 'offset', offset: 0, limit: 200 },
-        }),
-        { schema: { ...base, maxResultBytes } },
+
+    const timeBounding = (count: number): number => {
+      const rows = page(count);
+      const budget = Math.floor(
+        Buffer.byteLength(JSON.stringify(rows), 'utf8') / 4,
       );
-      return { ms: performance.now() - started, truncated: result.truncated };
+      // Copy per iteration so every run shortens full-length values.
+      const runs = 5;
+      const samples: number[] = [];
+      for (let run = 0; run < runs; run += 1) {
+        const input = page(count);
+        const started = performance.now();
+        const bounded = boundRowBytes(
+          input,
+          budget + RESULT_ENVELOPE_RESERVE_BYTES,
+          descriptors,
+          'id',
+          { fields: new Set<string>() },
+        );
+        samples.push(performance.now() - started);
+        expect(bounded.truncated).toBe(true);
+      }
+      samples.sort((left, right) => left - right);
+      return samples[Math.floor(runs / 2)];
     };
 
-    // Warm the read path, then compare the SAME request with and without
-    // bounding. An absolute millisecond threshold would be a flake on a loaded
-    // CI box; the ratio against the identical unbounded read is what isolates
-    // the cost of the bounding itself.
-    const roomy = 10_000_000;
-    await run(roomy);
-    const unbounded = await run(roomy);
-    const bounded = await run(1_048_576);
+    // The denominator is serializing the SAME page once. Bounding is
+    // serialization-shaped work on the same data, so the ratio is a count of
+    // "how many times over does bounding walk this page" — machine-independent,
+    // unlike a millisecond threshold, and not swamped by an unrelated database
+    // read. Measured: 3.4 page walks with the arithmetic pass, 35 with the
+    // halving search restored. The bound sits between them, well clear of both.
+    const timeStringify = (count: number): number => {
+      const rows = page(count);
+      const samples: number[] = [];
+      for (let run = 0; run < 5; run += 1) {
+        const started = performance.now();
+        JSON.stringify(rows);
+        samples.push(performance.now() - started);
+      }
+      samples.sort((left, right) => left - right);
+      return samples[2];
+    };
 
-    expect(unbounded.truncated).toBe(false);
-    expect(bounded.truncated).toBe(true);
-    // Before the fix this ratio was ~60x. The bound is deliberately loose: it
-    // is here to catch a return to super-linear shrinking, not to police jitter.
-    // Measured: 1.04x with the arithmetic allocation, 9.1x with the halving
-    // search restored. The ratio (not an absolute millisecond count) is what
-    // survives a loaded CI box; the floor covers a machine where the unbounded
-    // read is itself near-instant.
-    expect(bounded.ms).toBeLessThan(Math.max(unbounded.ms * 4, 100));
+    timeBounding(50); // warm both paths
+    timeStringify(50);
+    const bounding = timeBounding(200);
+    const serializing = timeStringify(200);
+
+    expect(bounding).toBeLessThan(serializing * 12);
+
+    // AND the per-row cost must not grow with the page, which is the separate
+    // signature of a super-linear search returning.
+    const large = timeBounding(800);
+    expect(large / 800).toBeLessThan((bounding / 200) * 3);
   }, 120_000);
 });

@@ -118,7 +118,7 @@ export const DATA_QUERY_FORBIDDEN_JSON_KEYS: ReadonlySet<string> = new Set([
  * complete serialized envelope against `maxResultBytes`, so the row budget must
  * leave room for it.
  */
-const RESULT_ENVELOPE_RESERVE_BYTES = 4_096;
+export const RESULT_ENVELOPE_RESERVE_BYTES = 4_096;
 
 /**
  * Smallest row allowance a page can be given and still answer with anything.
@@ -795,7 +795,7 @@ function pushWarning(warnings: string[], message: string): void {
 }
 
 /** Records values the adapter had to shorten so the caller is told. */
-interface TruncationLog {
+export interface TruncationLog {
   fields: Set<string>;
 }
 
@@ -990,7 +990,7 @@ function jsonByteLength(value: unknown): number {
   return encoder.encode(JSON.stringify(value) ?? 'null').byteLength;
 }
 
-interface BoundedRows {
+export interface BoundedRows {
   rows: DataQueryRow[];
   truncated: boolean;
 }
@@ -1092,8 +1092,16 @@ function measureRow(
 ): MeasuredRow {
   const entries = Object.entries(row);
   const fields = entries.map(([field, value]) => {
-    const reduction = reductionFor(field, value, identityField, descriptors);
+    const declared = reductionFor(field, value, identityField, descriptors);
     const valueBytes = jsonByteLength(value);
+    // A reduction that would not SHRINK the field is not a reduction. `{}` and
+    // `[]` serialize to two bytes, so nulling them costs four and makes the row
+    // bigger; taking the reduced size as the floor unconditionally also
+    // overstates the floor, which refuses pages that would have fitted.
+    const reduction: FieldReduction =
+      declared === 'none' || REDUCED_VALUE_BYTES[declared] < valueBytes
+        ? declared
+        : 'none';
     return {
       field,
       keyBytes: jsonByteLength(field),
@@ -1150,15 +1158,19 @@ function waterFillCap(
 /**
  * Shrink ONE row so its serialized form fits `allowance` bytes.
  *
- * The field contributing the most bytes gives way first, so a 200 KB
- * `metadata` blob goes before a 20-character `title` is touched — but HOW it
- * gives way depends on its declared type (see {@link reductionFor}): a string
- * is levelled to a shared cap, while a `json` document or a `datetime` is
- * dropped to `null` because no prefix of either is valid.
+ * HOW a field gives way depends on its declared type (see {@link reductionFor}):
+ * a string is levelled to a shared cap, while a `json` document or a `datetime`
+ * is all-or-nothing, dropped to `null`, because no prefix of either is valid.
  *
- * All-or-nothing fields are considered first only when they are larger than the
- * cap the strings could otherwise reach, which is what keeps "largest gives way
- * first" true across both kinds.
+ * **Strings give way FIRST.** An all-or-nothing field loses its whole value to
+ * save its bytes, so it is dropped only when the row cannot fit with it kept —
+ * that is, only while it is larger than the cap the strings could otherwise
+ * level down to. At a 50 KB allowance a 30 KB `metadata` blob beside a 100 KB
+ * `title` therefore SURVIVES: levelling the title alone is enough. The same
+ * blob beside a 20-character title does not, because no amount of levelling
+ * gets there. Reaching for the largest field first would instead empty the blob
+ * whenever it happened to be the biggest, discarding a whole document to save
+ * bytes the strings had to spare.
  *
  * Returns `undefined` only when the row's floor exceeds the allowance. Callers
  * allocate at least each row's floor, so in practice this never fires.
@@ -1254,7 +1266,13 @@ function shrinkRowToBytes(
  * that breaks cost-first ordering is not reachable through `executeContentQuery`.
  * The property is real and worth holding; this is the level it can be held at.
  *
- * @param floors - Per-row irreducible byte cost.
+ * PRECONDITION: `floors[i] <= costs[i]` for every row — a floor is a size the
+ * row can actually be reduced TO, so it can never exceed the size it already
+ * is. {@link measureRow} guarantees this by declining any reduction that would
+ * not shrink the field. The appetite below is clamped at zero so that a
+ * violation still yields at least the floor rather than silently starving a row.
+ *
+ * @param floors - Per-row irreducible byte cost; at most the row's cost.
  * @param costs - Per-row current byte cost; always at least the floor.
  * @param budget - Bytes available for the rows themselves.
  * @returns Per-row byte allowance, each at least the row's floor.
@@ -1270,7 +1288,9 @@ export function allocateRowBytes(
   // What each row could still use ON TOP of its floor. Ordering by appetite
   // rather than by cost is what keeps a row that needs nothing from consuming
   // another row's floor.
-  const appetites = costs.map((cost, index) => cost - floors[index]);
+  const appetites = costs.map((cost, index) =>
+    Math.max(0, cost - floors[index]),
+  );
   const order = floors
     .map((_, index) => index)
     .sort((left, right) => appetites[left] - appetites[right]);
@@ -1312,7 +1332,7 @@ export function allocateRowBytes(
  * case no amount of shortening can reach. Failing loudly beats answering with a
  * page that silently omits rows.
  */
-function boundRowBytes(
+export function boundRowBytes(
   rows: DataQueryRow[],
   maxResultBytes: number,
   descriptors: Map<string, DataQueryFieldDescriptor>,
@@ -1324,8 +1344,12 @@ function boundRowBytes(
     (maxResultBytes || CONTENT_QUERY_MAX_RESULT_BYTES) -
       RESULT_ENVELOPE_RESERVE_BYTES,
   );
-  // Opening and closing brackets of the serialized rows array.
-  const framing = 2;
+  // `[` and `]`. Each row's `structural` charges the separator that FOLLOWS it,
+  // but N rows need N-1, so a non-empty page has one separator too many; refund
+  // it here rather than special-casing the last row. Without the refund a page
+  // whose true size exactly equals the budget is needlessly shortened — or, if
+  // it is irreducible, refused.
+  const framing = rows.length > 0 ? 1 : 2;
   const measured = rows.map((row) =>
     measureRow(row, descriptors, identityField),
   );
