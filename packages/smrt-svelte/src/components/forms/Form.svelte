@@ -379,6 +379,7 @@ function registerInteraction(
       },
       getValue: field.getValue,
       setValue: field.setValue,
+      setValueWithContext: field.setValueWithContext,
       // The registry calls this inside its stage retry loop, so partial
       // structured proposals merge with the latest stable human value.
       prepareValue: (value) => prepareInteractionValue(field, value),

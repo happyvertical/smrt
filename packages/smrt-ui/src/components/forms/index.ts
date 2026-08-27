@@ -23,6 +23,7 @@ export {
   type ControlCommandResult,
   type ControlCommandSource,
   type ControlConstraints,
+  type ControlExtensionContext,
   type ControlIdentity,
   type ControlInteractionEvent,
   type ControlInteractionOptions,

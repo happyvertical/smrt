@@ -135,7 +135,10 @@ same control immediately, while commands from independent callers remain in
 the normal ordered queue regardless of how long the hook takes. Existing hooks
 that omit the additional argument remain compatible. Setters retain their exact
 legacy `setValue(value)` invocation; a setter that needs this context implements
-the additive `setValueWithContext(value, extension)` hook instead.
+the additive `setValueWithContext(value, extension)` hook instead. A hook must
+not await a same-control mutation through a captured registry reference: that
+call is indistinguishable from an independent caller in browser runtimes and,
+like any hook that never settles, can hold the ordered queue indefinitely.
 
 ## DataTable controller
 

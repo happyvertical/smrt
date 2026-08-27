@@ -4,6 +4,7 @@
 
 import type {
   ControlConstraints,
+  ControlExtensionContext,
   ControlInteractionRegistry,
   ControlKind,
   ControlOption,
@@ -43,6 +44,11 @@ export interface FieldDefinition {
   description?: string;
   /** Set the field value */
   setValue: (value: unknown) => void;
+  /** Context-aware setter for hooks that need to issue another control command. */
+  setValueWithContext?: (
+    value: unknown,
+    context: ControlExtensionContext,
+  ) => void | Promise<void>;
   /** Get current field value */
   getValue: () => unknown;
   /**
@@ -70,12 +76,17 @@ export interface FieldDefinition {
   options?: ControlOption[];
   unit?: string;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
-  clear?: (() => void | Promise<void>) | (() => boolean | Promise<boolean>);
+  clear?:
+    | ((context?: ControlExtensionContext) => void | Promise<void>)
+    | ((context?: ControlExtensionContext) => boolean | Promise<boolean>);
   focus?: () => void;
   reveal?: () => void;
   highlight?: (durationMs?: number) => void;
-  validate?: () => boolean;
-  validateValue?: (value: unknown) => ControlValueValidationResult;
+  validate?: (context?: ControlExtensionContext) => boolean | Promise<boolean>;
+  validateValue?: (
+    value: unknown,
+    context?: ControlExtensionContext,
+  ) => ControlValueValidationResult | Promise<ControlValueValidationResult>;
   getState?: () => ControlRuntimeState;
 }
 
