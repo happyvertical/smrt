@@ -25,10 +25,14 @@ async function dropIssueTables(...tableNames: string[]): Promise<void> {
   });
   try {
     for (const tableName of tableNames) {
-      if (!/^i2537_[a-z_]+$/.test(tableName)) {
+      if (!/^i2537_[a-z_"]+$/.test(tableName)) {
         throw new Error(`Unsafe issue-table cleanup target: ${tableName}`);
       }
-      await admin.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+      const drop = await admin.query(
+        `SELECT format('DROP TABLE IF EXISTS %I CASCADE', $1::text) AS statement`,
+        [tableName],
+      );
+      await admin.query(drop.rows[0].statement);
     }
   } finally {
     await admin.close();
@@ -327,6 +331,102 @@ postgresDescribe(
         expect(await readChildConstraints(removed.db)).toEqual([]);
       } finally {
         await removed.cleanup();
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
+    it('materializes and evolves embedded-quote identifiers before installing deferred relationships', async () => {
+      const parentTable = 'i2537_quoted_parent_"q"';
+      const childTable = 'i2537_quoted_child_"q"';
+      const relationshipColumn = 'parent_"id"';
+      const addedColumn = 'added_"later"';
+      await dropIssueTables(childTable, parentTable);
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-quoted-${randomUUID()}.json`,
+      );
+      const objects = (includeAddedColumn: boolean) => ({
+        Parent: {
+          className: 'Parent',
+          schema: {
+            tableName: parentTable,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+            },
+          },
+        },
+        Child: {
+          className: 'Child',
+          schema: {
+            tableName: childTable,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              [relationshipColumn]: {
+                type: 'TEXT',
+                foreignKey: {
+                  table: parentTable,
+                  column: 'id',
+                  onDelete: 'CASCADE',
+                  onUpdate: 'CASCADE',
+                },
+              },
+              ...(includeAddedColumn
+                ? { [addedColumn]: { type: 'TEXT' } }
+                : {}),
+            },
+          },
+        },
+      });
+      writeFileSync(manifestPath, JSON.stringify({ objects: objects(false) }));
+
+      const initial = await createIsolatedTestDbFromManifest({ manifestPath });
+      await initial.cleanup();
+      writeFileSync(manifestPath, JSON.stringify({ objects: objects(true) }));
+
+      const evolved = await createIsolatedTestDbFromManifest({ manifestPath });
+      try {
+        const columns = await evolved.db.query(
+          `SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = $1
+             AND column_name IN ($2, $3)
+           ORDER BY column_name`,
+          [childTable, addedColumn, relationshipColumn],
+        );
+        expect(columns.rows).toEqual(
+          [addedColumn, relationshipColumn]
+            .sort()
+            .map((column_name) => ({ column_name })),
+        );
+
+        const parentId = randomUUID();
+        const parentInsert = await evolved.db.query(
+          `SELECT format('INSERT INTO %I (%I) VALUES ($1)', $1::text, $2::text) AS statement`,
+          [parentTable, 'id'],
+        );
+        await evolved.db.query(parentInsert.rows[0].statement, [parentId]);
+        const childInsert = await evolved.db.query(
+          `SELECT format('INSERT INTO %I (%I, %I, %I) VALUES ($1, $2, $3)', $1::text, $2::text, $3::text, $4::text) AS statement`,
+          [childTable, 'id', relationshipColumn, addedColumn],
+        );
+        await evolved.db.query(childInsert.rows[0].statement, [
+          randomUUID(),
+          parentId,
+          'reconciled',
+        ]);
+        const orphanInsert = await evolved.db.query(
+          `SELECT format('INSERT INTO %I (%I, %I) VALUES ($1, $2)', $1::text, $2::text, $3::text) AS statement`,
+          [childTable, 'id', relationshipColumn],
+        );
+        await expect(
+          evolved.db.query(orphanInsert.rows[0].statement, [
+            randomUUID(),
+            randomUUID(),
+          ]),
+        ).rejects.toThrow();
+      } finally {
+        await evolved.cleanup();
         rmSync(manifestPath, { force: true });
       }
     });

@@ -46,7 +46,10 @@ import {
   isSmrtCollectionExtendsName,
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
-import type { ForeignKeyDefinition } from '@happyvertical/smrt-core/schema';
+import type {
+  ForeignKeyDefinition,
+  SchemaDefinition,
+} from '@happyvertical/smrt-core/schema';
 import {
   foreignKeyConstraintName,
   planForeignKeyCreation,
@@ -54,6 +57,7 @@ import {
   renderForeignKeyConstraintComment,
   renderForeignKeyConstraintDrop,
   renderForeignKeyConstraintValidate,
+  SchemaManager,
   schemaForeignKeysForEngine,
 } from '@happyvertical/smrt-core/schema';
 import {
@@ -492,6 +496,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
   postSchemaStatements: readonly PostSchemaStatement[],
   manifestTables: readonly ManifestTableReconciliation[] = [],
+  postgresManifestPlan?: PostgresManifestSchemaPlan,
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -682,7 +687,37 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         ['smrt-vitest-manifest-schema'],
       );
-      await syncSchema({ db: schemaTransaction, schema });
+      if (postgresManifestPlan) {
+        // SDK syncSchema's PostgreSQL parser accepts only `\w+` identifiers.
+        // Execute the canonical renderer output first so valid delimited
+        // identifiers (including embedded quotes) are materialized exactly,
+        // then let SMRT's schema manager reconcile structured missing columns.
+        // Legacy cached DDL remains additive through syncSchema after its
+        // idempotent CREATE TABLE has been applied directly.
+        for (const statement of postgresManifestPlan.createTableStatements) {
+          await schemaTransaction.query(statement);
+        }
+        if (postgresManifestPlan.structuredDefinitions.length > 0) {
+          const schemaManager = new SchemaManager(schemaTransaction, {
+            engine: 'postgres',
+            skipTriggers: true,
+          });
+          await schemaManager.ensureTables([
+            ...postgresManifestPlan.structuredDefinitions,
+          ]);
+        }
+        if (postgresManifestPlan.legacySchema) {
+          await syncSchema({
+            db: schemaTransaction,
+            schema: postgresManifestPlan.legacySchema,
+          });
+        }
+        for (const statement of postgresManifestPlan.indexStatements) {
+          await schemaTransaction.query(statement);
+        }
+      } else {
+        await syncSchema({ db: schemaTransaction, schema });
+      }
       await applyPostSchemaStatements(schemaTransaction);
       await ensureSystemTables(schemaTransaction, config.type);
       await schemaTransaction.commit();
@@ -773,6 +808,13 @@ interface ManifestTableReconciliation {
   tableName: string;
   /** Full structured manifests are authoritative; partial/legacy inputs are additive. */
   pruneOwnedForeignKeys: boolean;
+}
+
+interface PostgresManifestSchemaPlan {
+  createTableStatements: readonly string[];
+  structuredDefinitions: readonly SchemaDefinition[];
+  legacySchema?: string;
+  indexStatements: readonly string[];
 }
 
 // ============================================================================
@@ -1396,13 +1438,22 @@ export async function createIsolatedTestDbFromManifest(
   const rendered = renderedDefinitions.flatMap((definition) => {
     const table = tableMap.get(definition.tableName);
     return table
-      ? [renderCollectedManifestTable({ ...table.table, definition }, adapter)]
+      ? [
+          {
+            definition,
+            structured: table.table.structured,
+            ddl: renderCollectedManifestTable(
+              { ...table.table, definition },
+              adapter,
+            ),
+          },
+        ]
       : [];
   });
 
   // CREATE TABLE statements first
   const createTableDDL = rendered
-    .map((ddl) => ddl.createTable)
+    .map(({ ddl }) => ddl.createTable)
     .filter(Boolean)
     .join('\n\n');
 
@@ -1413,7 +1464,7 @@ export async function createIsolatedTestDbFromManifest(
   // (`ManifestSchema` has no `triggers`), and multi-statement trigger bodies
   // would not survive the schema splitter below.
   const createIndexDDL = rendered
-    .flatMap((ddl) => ddl.indexes)
+    .flatMap(({ ddl }) => ddl.indexes)
     .filter(Boolean)
     .join('\n');
 
@@ -1453,5 +1504,23 @@ export async function createIsolatedTestDbFromManifest(
           }))
           .sort((a, b) => a.tableName.localeCompare(b.tableName))
       : [],
+    adapter === 'postgres'
+      ? {
+          createTableStatements: rendered
+            .map(({ ddl }) => ddl.createTable)
+            .filter(Boolean),
+          structuredDefinitions: rendered
+            .filter(({ structured }) => structured)
+            .map(({ definition }) => definition),
+          legacySchema: rendered
+            .filter(({ structured }) => !structured)
+            .map(({ ddl }) => ddl.createTable)
+            .filter(Boolean)
+            .join('\n\n'),
+          indexStatements: rendered
+            .flatMap(({ ddl }) => ddl.indexes)
+            .filter(Boolean),
+        }
+      : undefined,
   );
 }

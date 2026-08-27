@@ -92,10 +92,14 @@ When `includeObjects` names an object that is not in the package-local manifest,
 the helper resolves that explicitly requested object from dependency manifests
 already registered by `smrtVitestPlugin()`. It does not materialize every
 registered dependency implicitly. PostgreSQL serializes schema preparation with
-a transaction-scoped advisory lock, reconciles the core renderer's ordered
-constraint-free table/index statements, then applies every physical foreign key
-through the core FK renderer after all tables exist. Renderer-owned named
-constraints must never be fed back through the generic SQL schema parser.
+a transaction-scoped advisory lock, executes the core renderer's ordered,
+constraint-free `CREATE TABLE IF NOT EXISTS` statements exactly, reconciles
+structured missing columns through the core `SchemaManager`, and executes core
+index statements directly. This preserves valid delimited identifiers that the
+generic SQL synchronizer cannot parse. It then applies every physical foreign
+key through the core FK renderer after all tables exist. Renderer-owned named
+constraints and structured manifest DDL must never be fed back through the
+generic SQL schema parser.
 SQLite keeps its existing schema-template and synchronizer path.
 
 The package's PostgreSQL integration lane reads the built commerce and
