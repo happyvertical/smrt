@@ -418,9 +418,9 @@ describe('SchemaManager addMissingColumns edge cases', () => {
     );
   });
 
-  it('uses information_schema introspection for postgres and logs on failure', async () => {
+  it('uses pg_catalog introspection for postgres and logs on failure', async () => {
     const query = vi.fn(async (sql: string) => {
-      if (sql.includes('information_schema.columns')) {
+      if (sql.includes('pg_attribute')) {
         throw new Error('permission denied');
       }
       return { rows: [] };

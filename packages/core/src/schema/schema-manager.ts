@@ -212,7 +212,7 @@ export class SchemaManager {
    *
    * Uses engine-appropriate introspection:
    * - SQLite/DuckDB: PRAGMA table_info
-   * - PostgreSQL: information_schema.columns
+   * - PostgreSQL: pg_catalog.pg_attribute for the exact search-path relation
    *
    * @param tableName - Name of the table to inspect
    * @returns Set of existing column names (lowercase)
