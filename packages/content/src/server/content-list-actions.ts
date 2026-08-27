@@ -710,6 +710,8 @@ async function resolveQuerySelection(
 
   if (selection.scope === 'explicit-ids') {
     const ids = [...new Set(selection.rowIds.map((rowId) => String(rowId)))];
+    if (ids.length > maxSelectionSize)
+      throw new ContentListActionError('limit_exceeded');
     queryFingerprint = `explicit:${revisionFingerprint(ids.map((id) => ({ id })))}`;
     for (let start = 0; start < ids.length; start += 100) {
       const chunk = ids.slice(start, start + 100);

@@ -235,6 +235,7 @@ function harness(
     assertOperation?: PrincipalRun['assertOperation'];
     revision?: Parameters<typeof createContentListActionAdapter>[0]['revision'];
     allowedTools?: string[];
+    maxSelectionSize?: number;
   } = {},
 ) {
   const collection = options.collection ?? new MemoryContentCollection(rows());
@@ -275,6 +276,7 @@ function harness(
     scope: options.scope,
     backgroundQueue: options.backgroundQueue,
     handlers: options.handlers,
+    maxSelectionSize: options.maxSelectionSize,
     runAsPrincipal,
   });
   const context = {
@@ -397,6 +399,27 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       ok: false,
       reason: 'matching_count_drifted',
     });
+  });
+
+  it('rejects oversized explicit selections before querying the collection', async () => {
+    const setup = harness({ maxSelectionSize: 2 });
+    const list = vi.spyOn(setup.collection, 'list');
+    const count = vi.spyOn(setup.collection, 'count');
+
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'categorize',
+          { scope: 'explicit-ids', rowIds: ['a', 'b', 'c'] },
+          { expectedCount: 3 },
+          { payload: { category: 'news' } },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'limit_exceeded' });
+    expect(list).not.toHaveBeenCalled();
+    expect(count).not.toHaveBeenCalled();
   });
 
   it('previews without writes, requires confirmation, and rejects row revision drift at apply', async () => {
