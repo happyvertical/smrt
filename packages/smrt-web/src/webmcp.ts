@@ -309,7 +309,10 @@ export function registerWebMcpTools(
     }
   } catch (error) {
     // Abort removes every tool registered with this call. Collection cleanup is
-    // best-effort async but all handles are detached synchronously first.
+    // best-effort async but all handles are detached synchronously first. An
+    // earlier browser promise may still reject after this synchronous failure;
+    // observe every started registration before returning control to the host.
+    void Promise.all(registrations).catch(() => undefined);
     dispose();
     throw error;
   }

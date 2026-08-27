@@ -155,7 +155,7 @@ describe('Provider WebMCP policy', () => {
     const installRegistry = () => {
       captured.length = 0;
       document.modelContext = {
-        registerTool(tool) {
+        async registerTool(tool) {
           captured.push({ name: tool.name, annotations: tool.annotations });
         },
       };
@@ -185,7 +185,7 @@ describe('Provider WebMCP policy', () => {
   it('defaults generated data tools to read-only exposure', async () => {
     const captured: string[] = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         captured.push(tool.name);
       },
     };

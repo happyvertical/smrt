@@ -1500,6 +1500,49 @@ describe('registerWebMcpTools', () => {
       'WebMCP tool report_get is no longer registered',
     );
   });
+
+  it('observes an earlier browser rejection when a later resolver throws', async () => {
+    const registry = installModelContext();
+    const documentRef = (
+      globalThis as {
+        document?: { modelContext?: { registerTool?: unknown } };
+      }
+    ).document;
+    if (!documentRef?.modelContext)
+      throw new Error('modelContext not installed');
+    documentRef.modelContext.registerTool = (
+      tool: CapturedTool,
+      opts?: { signal?: AbortSignal },
+    ) => {
+      opts?.signal?.addEventListener('abort', () =>
+        registry.unregistered.push(tool.name),
+      );
+      return Promise.reject(new Error('browser rejected first tool'));
+    };
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    try {
+      expect(() =>
+        registerWebMcpTools(
+          [canonicalTool('get'), canonicalTool('refresh', { readOnly: false })],
+          {
+            resolveToolFetchers: (definition) => {
+              if (definition.action === 'refresh') {
+                throw new Error('later resolver failed');
+              }
+              return { get: vi.fn() };
+            },
+          },
+        ),
+      ).toThrow('later resolver failed');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(registry.unregistered).toEqual(['report_get']);
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
+  });
 });
 
 describe('buildListQuery', () => {

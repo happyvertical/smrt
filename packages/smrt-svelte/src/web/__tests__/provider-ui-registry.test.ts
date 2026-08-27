@@ -15,7 +15,7 @@ describe('Provider WebMCP UI registry context', () => {
     const signals: AbortSignal[] = [];
     const names: string[] = [];
     document.modelContext = {
-      registerTool(tool, options) {
+      async registerTool(tool, options) {
         names.push(tool.name);
         if (options?.signal) signals.push(options.signal);
       },
@@ -206,7 +206,7 @@ describe('Provider WebMCP UI registry context', () => {
   it('contains duplicate Provider prefixes without crashing the app', async () => {
     const names: string[] = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         names.push(tool.name);
       },
     };
@@ -257,7 +257,7 @@ describe('Provider WebMCP UI registry context', () => {
     const names: string[] = [];
     const providerRegistry = createControlInteractionRegistry();
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         names.push(tool.name);
       },
     };

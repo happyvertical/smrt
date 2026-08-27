@@ -14,7 +14,7 @@ declare global {
     registerTool(
       tool: WebMcpToolSpec,
       options?: { signal?: AbortSignal },
-    ): void | Promise<void>;
+    ): Promise<void>;
   }
 }
 
