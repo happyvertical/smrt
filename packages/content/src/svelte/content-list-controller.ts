@@ -177,6 +177,8 @@ export interface ContentListSurfaceDescriptorOptions {
   columnLabels?: ContentListColumnLabels;
   actionLabels?: ContentListActionLabels;
   limits?: Partial<DataSurfaceLimits>;
+  /** Publish bulk workflow actions only when the mounted list can execute them. */
+  includeWorkflows?: boolean;
 }
 
 /**
@@ -1169,17 +1171,19 @@ export function buildContentListSurfaceDescriptor(
       selectionScopes: ['explicit-ids', 'current-page'],
       requiresConfirmation: true,
     },
-    ...CONTENT_LIST_WORKFLOW_OPTIONS.map((workflow) => ({
-      id: workflow.id,
-      label: workflow.label,
-      sensitivity: workflow.sensitivity,
-      selectionScopes: [
-        'current-page' as const,
-        'explicit-ids' as const,
-        'all-matching' as const,
-      ],
-      requiresConfirmation: true,
-    })),
+    ...(options.includeWorkflows
+      ? CONTENT_LIST_WORKFLOW_OPTIONS.map((workflow) => ({
+          id: workflow.id,
+          label: workflow.label,
+          sensitivity: workflow.sensitivity,
+          selectionScopes: [
+            'current-page' as const,
+            'explicit-ids' as const,
+            'all-matching' as const,
+          ],
+          requiresConfirmation: true,
+        }))
+      : []),
   ];
   return {
     version: 1,

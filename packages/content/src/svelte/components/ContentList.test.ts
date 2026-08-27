@@ -399,6 +399,35 @@ describe('ContentList bulk workflows', () => {
     });
   });
 
+  it('uses explicit IDs after partially deselecting a server page', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-partial-page',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 2);
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 2 matching')).toHaveLength(1),
+    );
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    click(checkboxByLabel(target, 'Deselect Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      selection: { scope: 'explicit-ids', rowIds: ['content-2'] },
+      target: { expectedCount: 1 },
+    });
+  });
+
   it('prevents duplicate preview calls and shows the resolved preview consequences', async () => {
     let resolvePreview: ((value: unknown) => void) | undefined;
     const workflow = workflowBinding({
@@ -688,6 +717,8 @@ describe('ContentList bulk workflows', () => {
       status: 'succeeded',
       result: {
         ok: false,
+        phase: 'apply',
+        actionId: 'optimize',
         reason: 'stale_preview',
       },
     });
@@ -1624,6 +1655,11 @@ describe('ContentList data surface', () => {
 
     await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
     expect(registry.inspect(identity)?.descriptor.rowKey).toBe('id');
+    expect(
+      registry
+        .inspect(identity)
+        ?.descriptor.actions.some((action) => action.id === 'mark-draft'),
+    ).toBe(false);
 
     const result = await registry.execute({
       version: 1,
@@ -1638,6 +1674,23 @@ describe('ContentList data surface', () => {
     expect(result.ok).toBe(true);
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(searchInput(target).value).toBe('zoning');
+  });
+
+  it('advertises bulk actions only when a workflow binding is mounted', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+    renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      workflows: workflowBinding(),
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    expect(
+      registry
+        .inspect(identity)
+        ?.descriptor.actions.some((action) => action.id === 'mark-draft'),
+    ).toBe(true);
   });
 });
 

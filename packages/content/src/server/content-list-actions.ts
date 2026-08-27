@@ -714,6 +714,7 @@ async function applyWorkflow(
       return;
     case 'automated-review':
       await content.runReviewAction({
+        expectedUpdatedAt,
         ...(typeof input.kind === 'string'
           ? { kind: input.kind as never }
           : {}),
@@ -955,25 +956,42 @@ export function createContentListActionAdapter(
     );
   }
   const resolvedByRequest = new WeakMap<object, ResolvedContentSelection>();
+  const contentByRequest = new WeakMap<
+    object,
+    Map<string, Promise<Content | null>>
+  >();
   async function loadContent(
     invocation: { run: PrincipalRun; request: DataSurfaceServerActionRequest },
     rowId: DataSurfaceRowId,
   ): Promise<Content | null> {
     const key = String(rowId);
-    const collection = await options.collection(invocation.run);
-    const content = await collection.get({ id: key });
-    if (!content) return null;
-    const resolved = resolvedByRequest.get(invocation.request);
-    const expected = resolved?.rows.find((row) => String(row.id) === key);
-    const revisionValue = (value: unknown) =>
-      value instanceof Date ? value.toISOString() : String(value ?? '');
-    if (
-      !expected ||
-      revisionValue(content.updated_at) !== revisionValue(expected.updated_at)
-    ) {
-      throw new ContentListActionError('row_revision_drifted');
+    let byRow = contentByRequest.get(invocation.request);
+    if (!byRow) {
+      byRow = new Map();
+      contentByRequest.set(invocation.request, byRow);
     }
-    return content;
+    let pending = byRow.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const collection = await options.collection(invocation.run);
+        const content = await collection.get({ id: key });
+        if (!content) return null;
+        const resolved = resolvedByRequest.get(invocation.request);
+        const expected = resolved?.rows.find((row) => String(row.id) === key);
+        const revisionValue = (value: unknown) =>
+          value instanceof Date ? value.toISOString() : String(value ?? '');
+        if (
+          !expected ||
+          revisionValue(content.updated_at) !==
+            revisionValue(expected.updated_at)
+        ) {
+          throw new ContentListActionError('row_revision_drifted');
+        }
+        return content;
+      })();
+      byRow.set(key, pending);
+    }
+    return pending;
   }
 
   const mapActionError = (error: unknown) =>

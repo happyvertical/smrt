@@ -84,6 +84,44 @@ describe('ContentList workflow transport', () => {
     expect(fetch.mock.calls[0]?.[1]?.method).toBe('GET');
   });
 
+  it('rejects a job status response for a different job', async () => {
+    const client = createContentListWorkflowTransport({
+      jobStatusPath: 'jobs/{jobId}',
+      fetch: vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ jobId: 'job-b', status: 'succeeded' }),
+            { status: 200 },
+          ),
+        ),
+    });
+
+    await expect(client.status?.('job-a')).rejects.toThrow(
+      'invalid job status',
+    );
+  });
+
+  it('rejects a terminal job result that is not an apply result', async () => {
+    const client = createContentListWorkflowTransport({
+      jobStatusPath: 'jobs/{jobId}',
+      fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            jobId: 'job-a',
+            status: 'succeeded',
+            result: { ...request(), ok: true, phase: 'preview' },
+          }),
+          { status: 200 },
+        ),
+      ),
+    });
+
+    await expect(client.status?.('job-a')).rejects.toThrow(
+      'invalid job result',
+    );
+  });
+
   it('retains only valid accepted, skipped, and failed row outcomes', () => {
     expect(
       contentListWorkflowOutcomes({

@@ -92,6 +92,14 @@ class MemoryContentCollection implements ContentListActionCollection {
           isGoverned: false,
           enforcePublishReadiness: false,
         }),
+        runReviewAction: async (options?: {
+          expectedUpdatedAt?: Date | string;
+        }) => {
+          await content.save({
+            expectedUpdatedAt: options?.expectedUpdatedAt,
+          });
+          return {};
+        },
         save: async (options?: { expectedUpdatedAt?: Date | string }) => {
           this.saveCalls.push(row.id);
           if (this.failOnSave.has(row.id))
@@ -886,16 +894,14 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
   it('rechecks each row revision immediately before mutation', async () => {
     const collection = new MemoryContentCollection(rows().slice(0, 1));
     const get = vi.spyOn(collection, 'get');
-    get.mockImplementation(async (filter) => {
-      if (get.mock.calls.length === 3) {
-        collection.rows[0].updated_at = '2026-09-01T00:00:00.000Z';
-      }
-      return (
-        collection.contents.get(
-          typeof filter === 'string' ? filter : String(filter.id),
-        ) ?? null
-      );
-    });
+    const content = await collection.get('a');
+    if (!content) throw new Error('expected content');
+    const save = content.save.bind(content);
+    content.save = async (options) => {
+      collection.rows[0].updated_at = '2026-09-01T00:00:00.000Z';
+      return save(options);
+    };
+    get.mockClear();
     const setup = harness({ collection });
     const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
     const target = { expectedCount: 1 };
@@ -924,7 +930,8 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
         ],
       },
     });
-    expect(collection.saveCalls).toEqual([]);
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(collection.saveCalls).toEqual(['a']);
   });
 
   it('uses an atomic revision guard for long-running handler mutations', async () => {
@@ -978,6 +985,61 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
     });
     expect(setup.collection.rows[0].title).toBe('Alpha');
+  });
+
+  it('rejects an automated review when content changes during AI work', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let reviewWrites = 0;
+    const setup = harness({
+      backgroundQueue: {
+        enqueue: async (job) => {
+          queued = job;
+          return { jobId: 'review-cas-job' };
+        },
+      },
+    });
+    const content = await setup.collection.get('a');
+    if (!content) throw new Error('expected content');
+    Object.assign(content, {
+      resolveGovernance: async () => ({
+        isGoverned: true,
+        enforcePublishReadiness: false,
+        reviewPolicies: [],
+      }),
+      runReviewAction: async (options: {
+        expectedUpdatedAt?: Date | string;
+      }) => {
+        setup.collection.rows[0].updated_at =
+          '2026-01-01T00:00:00.000Z-concurrent';
+        await content.save({ expectedUpdatedAt: options.expectedUpdatedAt });
+        reviewWrites += 1;
+      },
+    });
+    const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
+    const target = { expectedCount: 1 };
+    const preview = await setup.adapter.preview(
+      actionRequest('preview', 'automated-review', selection, target),
+      setup.context,
+    );
+    await setup.adapter.apply(
+      actionRequest('apply', 'automated-review', selection, target, {
+        confirmationToken: preview.confirmationToken,
+        idempotencyKey: 'review-cas',
+      }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        failed: 1,
+        outcomes: [
+          { rowId: 'a', status: 'failed', reason: 'row_revision_drifted' },
+        ],
+      },
+    });
+    expect(reviewWrites).toBe(0);
   });
 
   it('binds the content target into idempotent retries', async () => {

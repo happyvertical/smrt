@@ -234,12 +234,23 @@ export function createContentListWorkflowTransport(
       if (
         !isRecord(status) ||
         typeof status.jobId !== 'string' ||
+        status.jobId !== jobId ||
         !['queued', 'running', 'succeeded', 'failed', 'cancelled'].includes(
           String(status.status),
         )
       ) {
         throw new ContentListWorkflowError(
           'The content workflow returned an invalid job status.',
+        );
+      }
+      if (
+        status.result !== undefined &&
+        (!isRecord(status.result) ||
+          typeof status.result.ok !== 'boolean' ||
+          status.result.phase !== 'apply')
+      ) {
+        throw new ContentListWorkflowError(
+          'The content workflow returned an invalid job result.',
         );
       }
       return status as unknown as ContentListWorkflowJobStatus;

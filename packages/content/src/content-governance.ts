@@ -178,6 +178,8 @@ export interface RunContentReviewOptions {
   factIds?: string[];
   metadata?: Record<string, unknown>;
   createVersion?: boolean;
+  /** Claim the loaded content revision after AI work, before persisting review artifacts. */
+  expectedUpdatedAt?: Date | string;
 }
 
 export interface IssueContentCorrectionOptions {

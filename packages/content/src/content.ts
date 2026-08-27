@@ -3783,6 +3783,9 @@ export class Content
       resolvedPrompt.text,
       promptMessageOptions(resolvedPrompt.ai),
     );
+    if (options.expectedUpdatedAt !== undefined) {
+      await this.save({ expectedUpdatedAt: options.expectedUpdatedAt });
+    }
     const result = parseContentReviewResponse(rawResponse);
     const version =
       options.createVersion === false

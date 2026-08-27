@@ -419,7 +419,9 @@ let workflowError = $state<string | null>(null);
 let workflowConfirmOpen = $state(false);
 let workflowIntentAtPreview = '';
 let workflowIdempotencyKey = '';
-let workflowQueuedJobs = $state<Array<{ intent: string; jobId: string }>>([]);
+let workflowQueuedJobs = $state<
+  Array<{ intent: string; jobId: string; actionId: ContentListWorkflowId }>
+>([]);
 
 $effect(() =>
   controller.subscribe((transition) => {
@@ -1061,7 +1063,10 @@ const surfaceOptions = $derived(
         registry: dataSurface.registry,
         descriptor:
           dataSurface.descriptor ??
-          buildContentListSurfaceDescriptor({ columnLabels }),
+          buildContentListSurfaceDescriptor({
+            columnLabels,
+            includeWorkflows: workflows !== undefined,
+          }),
       }
     : undefined,
 );
@@ -1336,7 +1341,17 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
   if (selection.scope === 'allMatching') {
     return { scope: 'all-matching', queryFingerprint: selection.queryFingerprint };
   }
-  if (selection.scope === 'page') return { scope: 'current-page' };
+  if (
+    selection.scope === 'page' &&
+    selection.rowIds.length === selectablePageRowIds.length &&
+    selectablePageRowIds.every((rowId) =>
+      selection.rowIds.some(
+        (selectedId) => String(selectedId) === String(rowId),
+      ),
+    )
+  ) {
+    return { scope: 'current-page' };
+  }
   if (selection.rowIds.length === 0) return null;
   return { scope: 'explicit-ids', rowIds: selection.rowIds };
 }
@@ -1545,7 +1560,11 @@ async function applyWorkflow() {
     ) {
       workflowQueuedJobs = [
         ...workflowQueuedJobs,
-        { intent: workflowIntentAtPreview, jobId: result.details.jobId },
+        {
+          intent: workflowIntentAtPreview,
+          jobId: result.details.jobId,
+          actionId: request.actionId,
+        },
       ];
     }
     workflowPreview = null;
@@ -1560,16 +1579,25 @@ async function applyWorkflow() {
 
 async function checkWorkflowJob() {
   if (!workflows?.client.status || !workflowQueuedJob || workflowPending) return;
+  const queuedJob = workflowQueuedJob;
   workflowPending = true;
   workflowError = null;
   try {
-    const job = await workflows.client.status(workflowQueuedJob.jobId);
+    const job = await workflows.client.status(queuedJob.jobId);
     if (job.status === 'queued' || job.status === 'running') {
       workflowError = `Job ${job.jobId} is still ${job.status}.`;
       return;
     }
     if (job.status === 'succeeded' && !job.result) {
       workflowError = `Job ${job.jobId} completed without an action result; check the job runner before retrying.`;
+      return;
+    }
+    if (
+      job.result &&
+      (job.result.phase !== 'apply' ||
+        job.result.actionId !== queuedJob.actionId)
+    ) {
+      workflowError = `Job ${job.jobId} returned a result for another workflow.`;
       return;
     }
     workflowQueuedJobs = workflowQueuedJobs.filter(

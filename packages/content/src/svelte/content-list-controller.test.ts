@@ -463,7 +463,9 @@ describe('content list data surface descriptor', () => {
   });
 
   it('publishes every bulk workflow with the same preview/confirmation scopes as the human UI', () => {
-    const descriptor = buildContentListSurfaceDescriptor();
+    const descriptor = buildContentListSurfaceDescriptor({
+      includeWorkflows: true,
+    });
     const workflowIds = [
       'move-to-trash',
       'mark-draft',
@@ -487,6 +489,15 @@ describe('content list data surface descriptor', () => {
         selectionScopes: ['current-page', 'explicit-ids', 'all-matching'],
       });
     }
+  });
+
+  it('does not advertise workflows when no execution binding is mounted', () => {
+    const descriptor = buildContentListSurfaceDescriptor();
+    expect(descriptor.actions.map((action) => action.id)).toEqual([
+      'view',
+      'edit',
+      'delete',
+    ]);
   });
 
   it('accepts a host surface id, subject, and translated labels', () => {
