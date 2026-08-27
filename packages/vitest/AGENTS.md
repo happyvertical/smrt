@@ -88,6 +88,15 @@ string is a CREATE TABLE preview and is merged in only for a table whose
 contributors expose no `columns` (hand-authored manifests). Do not add a
 private DDL/index renderer here; extend the core strategy instead.
 
+When `includeObjects` names an object that is not in the package-local manifest,
+the helper resolves that explicitly requested object from dependency manifests
+already registered by `smrtVitestPlugin()`. It does not materialize every
+registered dependency implicitly. PostgreSQL executes the core renderer's
+ordered table/index statements directly, then applies planner-deferred foreign
+keys after every table exists; these renderer-owned constraints must never be
+fed back through the generic SQL schema parser. SQLite keeps its existing
+schema-template and synchronizer path.
+
 On PostgreSQL, the isolated factories provision the canonical change-feed
 table and `_smrt_append_change` helper on the base connection before opening
 the test transaction. Transaction handles are treated as already initialized

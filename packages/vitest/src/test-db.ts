@@ -44,6 +44,7 @@ import { join } from 'node:path';
 import {
   ensureSystemTables,
   isSmrtCollectionExtendsName,
+  ObjectRegistry,
 } from '@happyvertical/smrt-core';
 import {
   foreignKeyConstraintName,
@@ -129,6 +130,9 @@ export interface ManifestTestDbOptions {
    * Accepts either simple class names (`'Product'`) or fully-qualified
    * manifest keys (`'@my-org/smrt-models:Product'`).  When omitted, every
    * object that has a schema in the manifest is included.
+   *
+   * An explicitly named object absent from the local manifest is resolved from
+   * dependency manifests already registered by `smrtVitestPlugin()`.
    *
    * @example `['Product', 'Order', 'OrderItem']`
    */
@@ -481,6 +485,7 @@ export async function createIsolatedTestDb(
 async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
   postSchemaStatements: readonly PostSchemaStatement[],
+  directSchemaStatements: readonly string[] = [],
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -517,7 +522,13 @@ async function createIsolatedTestDbWithPostSchemaStatements(
 
   // Sync schema if provided (must be done before transaction for DDL)
   if (schema && config.type !== 'sqlite') {
-    await syncSchema({ db: baseDb, schema });
+    if (directSchemaStatements.length > 0) {
+      for (const statement of directSchemaStatements) {
+        await baseDb.query(statement);
+      }
+    } else {
+      await syncSchema({ db: baseDb, schema });
+    }
   }
 
   // PostgreSQL cycle planning removes cyclic constraints from CREATE TABLE
@@ -1047,6 +1058,38 @@ function extractTablesFromManifest(
     entries.push({ schema: objectDef.schema, source: key });
   }
 
+  // The Vitest plugin registers dependency manifests in ObjectRegistry but
+  // deliberately leaves the generated local manifest package-local. Resolve
+  // only explicitly requested objects that are absent from that local file;
+  // pulling every registered dependency table would unexpectedly expand
+  // otherwise focused test schemas.
+  if (includeObjects) {
+    const missingIncludes = includeObjects.filter(
+      (includeObject) => !findManifestObject(manifest, includeObject),
+    );
+    const registeredSchemas =
+      missingIncludes.length > 0
+        ? ObjectRegistry.getAllSchemasAsDefinitions()
+        : undefined;
+    const addedRegisteredTables = new Set<string>();
+    for (const includeObject of missingIncludes) {
+      const tableName = ObjectRegistry.getTableName(includeObject);
+      const schema =
+        tableName && registeredSchemas
+          ? registeredSchemas[tableName]
+          : undefined;
+      if (!schema || addedRegisteredTables.has(schema.tableName)) {
+        continue;
+      }
+
+      addedRegisteredTables.add(schema.tableName);
+      entries.push({
+        schema,
+        source: `registered manifest object ${includeObject}`,
+      });
+    }
+  }
+
   const collected = Array.from(collectManifestTables(entries).values());
   const includedTables = new Set(collected.map((table) => table.tableName));
 
@@ -1253,5 +1296,8 @@ export async function createIsolatedTestDbFromManifest(
       tableName: table,
       constraintName: foreignKeyConstraintName(table, foreignKey),
     })),
+    adapter === 'postgres'
+      ? rendered.flatMap((ddl) => [ddl.createTable, ...ddl.indexes])
+      : [],
   );
 }

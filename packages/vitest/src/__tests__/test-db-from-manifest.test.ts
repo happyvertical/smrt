@@ -7,8 +7,9 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { materializeManifestDDLForEngine } from '@happyvertical/smrt-core/schema/utils';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 // Import the function we're testing
 import { createIsolatedTestDbFromManifest } from '../test-db.js';
 
@@ -1239,6 +1240,60 @@ describe('createIsolatedTestDbFromManifest', () => {
   });
 
   describe('options', () => {
+    it('should materialize an explicitly requested registered dependency manifest object', async () => {
+      const manifestPath = join(testDir, 'registered-dependency-test.json');
+      const localTable = `issue_2537_local_${Date.now()}`;
+      const dependencyTable = `issue_2537_dependency_${Date.now()}`;
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          objects: {
+            LocalRecord: {
+              className: 'LocalRecord',
+              schema: {
+                tableName: localTable,
+                columns: {
+                  id: { type: 'UUID', primaryKey: true, notNull: true },
+                },
+                indexes: [],
+              },
+            },
+          },
+        }),
+      );
+      vi.spyOn(ObjectRegistry, 'getTableName').mockImplementation((name) =>
+        name === 'ExternalRecord' ? dependencyTable : undefined,
+      );
+      vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+        [dependencyTable]: {
+          tableName: dependencyTable,
+          columns: {
+            id: { type: 'UUID', primaryKey: true, notNull: true },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: 'issue-2537',
+        },
+      });
+
+      try {
+        const { db, cleanup } = await createIsolatedTestDbFromManifest({
+          manifestPath,
+          includeObjects: ['LocalRecord', 'ExternalRecord'],
+        });
+        try {
+          await expect(db.list(localTable, {})).resolves.toEqual([]);
+          await expect(db.list(dependencyTable, {})).resolves.toEqual([]);
+        } finally {
+          await cleanup();
+        }
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
+
     it('should use custom prefix for temp files', async () => {
       const manifestPath = join(testDir, 'prefix-test.json');
       const manifest = {
