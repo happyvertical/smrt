@@ -871,11 +871,21 @@ function matchesContentListFilter(
   const expected = filter.value;
   const valueText = textValue(value);
   const expectedText = textValue(expected);
+  // A literal `null` in a filter names ABSENCE, and the flattened row cannot
+  // express it — an absent author reads as empty text, which is not the same
+  // thing. `in`/`notIn` lists reach here from a data-surface `set-filters`
+  // command, and the executor lowers a listed null to `IS NULL` / `IS NOT
+  // NULL`; matching that here is what keeps the two modes agreeing.
+  const matchesEntry = (entry: unknown): boolean =>
+    entry === null
+      ? isAbsentContentValue(row, column)
+      : sameFilterValue(value, entry);
+
   switch (filter.operator) {
     case 'equals':
-      return sameFilterValue(value, expected);
+      return matchesEntry(expected);
     case 'notEquals':
-      return !sameFilterValue(value, expected);
+      return !matchesEntry(expected);
     case 'contains':
       return valueText.includes(expectedText);
     case 'notContains':
@@ -885,15 +895,9 @@ function matchesContentListFilter(
     case 'endsWith':
       return valueText.endsWith(expectedText);
     case 'in':
-      return (
-        Array.isArray(expected) &&
-        expected.some((entry) => sameFilterValue(value, entry))
-      );
+      return Array.isArray(expected) && expected.some(matchesEntry);
     case 'notIn':
-      return (
-        Array.isArray(expected) &&
-        !expected.some((entry) => sameFilterValue(value, entry))
-      );
+      return Array.isArray(expected) && !expected.some(matchesEntry);
     case 'gt':
     case 'gte':
     case 'lt':
@@ -963,6 +967,18 @@ export function selectContentListRows(
         (candidate) => candidate.id === rule.columnId,
       );
       if (!column) continue;
+      // Absent values sort LAST ascending and FIRST descending. Without this
+      // an absent value flattens to empty text and sorts first ascending —
+      // which silently changes which rows land on page one when the same list
+      // is served from the query endpoint. See `agents/content-list.md`: the
+      // placement matches the SQL standard and the PostgreSQL/DuckDB default,
+      // and no portable way exists to state it in an `orderBy` term.
+      const leftAbsent = isAbsentContentValue(left, column);
+      const rightAbsent = isAbsentContentValue(right, column);
+      if (leftAbsent !== rightAbsent) {
+        const absentAfter = leftAbsent ? 1 : -1;
+        return rule.direction === 'desc' ? -absentAfter : absentAfter;
+      }
       const result = defaultSort(
         left,
         right,

@@ -546,6 +546,36 @@ function boundScalarText(text: string): { text: string; truncated: boolean } {
   };
 }
 
+/**
+ * `YYYY-MM-DD`, optionally followed by a time or offset — the shapes a link or
+ * a saved view can carry for a datetime column.
+ */
+const CALENDAR_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ].*)?$/;
+
+/**
+ * True when the date part of an input names a real calendar day.
+ *
+ * Mirrors the component round-trip `normalizedInstant` performs in
+ * `@happyvertical/smrt-core`: build the day from the parsed numbers and check
+ * that it reads back as the same numbers. `2026-02-31` does not, and must be
+ * refused rather than quietly become `2026-03-03`.
+ */
+function isRealCalendarDate(text: string): boolean {
+  const match = CALENDAR_DATE_PREFIX.exec(text.trim());
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(0, 0, 0, 0);
+  return (
+    calendar.getUTCFullYear() === year &&
+    calendar.getUTCMonth() === month - 1 &&
+    calendar.getUTCDate() === day
+  );
+}
+
 function scalarText(value: unknown): string | null {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
@@ -568,6 +598,13 @@ function coerceValue(
   const text = scalarText(raw);
   if (text === null) return undefined;
   if (field.type === 'datetime') {
+    // Validate the INPUT, never the value derived from it. `new Date()` rolls
+    // an impossible calendar date forward — `2026-02-31` becomes March 3 — and
+    // the rolled-forward instant then passes every shape check, so the query
+    // would silently target a date the link never asked for. The server rejects
+    // it (`normalizedInstant` re-derives the components and compares), so this
+    // has to reject it too, and report the drop.
+    if (!isRealCalendarDate(text)) return undefined;
     const parsed = new Date(text);
     if (Number.isNaN(parsed.getTime())) return undefined;
     const instant = parsed.toISOString();
@@ -631,9 +668,17 @@ function translateFilter(
     return null;
   }
 
-  // `isNull` / `isNotNull`: a null scalar, which the normalizer accepts for
-  // eq/ne and the query builder lowers to `IS NULL` / `IS NOT NULL`.
-  if (mapping.nullValue) {
+  // `isNull` / `isNotNull`, and a literal `null` comparand on `equals` /
+  // `notEquals`, which names the same thing. A null scalar is what the
+  // normalizer accepts for eq/ne, and the query builder lowers it to
+  // `IS NULL` / `IS NOT NULL`. Without the second case the local evaluator
+  // would match an absent row while the translator dropped the filter, so the
+  // same data-surface command would answer differently by mode.
+  if (
+    mapping.nullValue ||
+    (filter.value === null &&
+      (mapping.operator === 'eq' || mapping.operator === 'ne'))
+  ) {
     return {
       kind: 'condition',
       field: field.field,
@@ -648,7 +693,15 @@ function translateFilter(
     const truncated = { value: false };
     let overflowed = false;
     for (const entry of entries) {
-      const coerced = coerceValue(field, entry, truncated);
+      // A literal `null` is MEANINGFUL, not missing: in an `in` list it says
+      // "or rows with no value", and in a `notIn` list it says "and not rows
+      // with no value". `coerceValue` reports it as unusable, so it has to be
+      // carried past the coercion — dropping it here would send
+      // `notIn ['Ada']` for `notIn ['Ada', null]` and return exactly the
+      // authorless rows the caller listed `null` to exclude, undoing the
+      // executor's own null-aware lowering.
+      const coerced =
+        entry === null ? null : coerceValue(field, entry, truncated);
       if (coerced === undefined || values.includes(coerced)) continue;
       if (values.length >= CONTENT_LIST_QUERY_MAX_IN_VALUES) {
         // The normalizer refuses the whole request past this many values, so

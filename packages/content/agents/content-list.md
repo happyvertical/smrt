@@ -218,6 +218,23 @@ operator's own `%`/`_` escaped with a backslash.
 That fails closed (empty result) rather than open (every row); a portable fix
 needs an `ESCAPE` clause at the collection/SQL boundary.
 
+**Second known dialect gap — where an absent value sorts.** A sort term is
+`<field> <ASC|DESC>` and nothing more: `buildOrderBySql` splits the term on
+whitespace and discards everything after the direction, and `DataQuerySort`
+carries only a field and a direction, so `NULLS FIRST`/`NULLS LAST` cannot be
+expressed from this package at all. The placement is therefore whatever the
+dialect defaults to — PostgreSQL and DuckDB put NULLs LAST ascending, SQLite
+puts them FIRST — which changes **which rows land on page one**.
+
+The local comparator is aligned to ONE documented choice: **absent sorts last
+ascending and first descending**, matching the SQL standard, the PostgreSQL and
+DuckDB defaults, and therefore the production dialects. A SQLite-backed
+deployment will disagree with local mode on where absent values fall. That
+divergence is dialect-level and not fixable here; fixing it needs a nulls
+placement in the sort term at the `@happyvertical/sql` / `SmrtCollection`
+boundary, and a slot for it in `DataQuerySort`. A test pins SQLite's observed
+ordering so this note cannot rot.
+
 `isNull` / `isNotNull` map to a **null-valued `eq` / `ne`**. That is null-aware
 end to end and is not a comparison against NULL: the protocol scalar type admits
 `null`, the request normalizer rejects a null value only for
@@ -251,6 +268,14 @@ translator therefore always emits `sort`, falling back to
 `CONTENT_LIST_QUERY_DEFAULT_SORT` (the schema default) rather than omitting the
 key. The invariant to preserve: the client's byte count is never smaller than
 core's.
+
+**Validate the input, never the value derived from it.** `new Date()` rolls an
+impossible calendar date forward — `2026-02-31` becomes `2026-03-03` — so
+checking the *produced* instant against the RFC 3339 pattern reports nothing and
+the query silently targets a day the link never named. The translator re-derives
+the year/month/day and compares, exactly as `normalizedInstant` does server-side,
+and drops the filter with a report. A date-only value (`2026-02-01`) is still
+accepted and widened to midnight UTC; only impossible days are refused.
 
 **Measure in the server's unit.** `dataQueryScalar` tests `value.length`, which
 counts UTF-16 code units, so an astral character costs TWO. The bounders iterate
@@ -306,10 +331,22 @@ differs per operator:
 | `ne` (value ≠ null) | `IS NULL OR <> v` | server gained the union: "not v" includes rows with no value, as the local evaluator has always said |
 | `notIn` (no `null` listed) | `IS NULL OR (AND of <> v)` | same |
 | `notIn` WITH a `null` listed | `(AND of <> v) AND IS NOT NULL` | **no union**: a listed `null` says absent rows are excluded too |
+| `eq null` / `ne null`, and `in`/`notIn` carrying a listed `null` | `IS NULL` / `IS NOT NULL` | the translator forwards a literal `null` rather than coercing it away, and the local evaluator resolves it through `isAbsentContentValue` |
 | `ne null` (`isNotNull`) | `IS NOT NULL` | untouched — a union would match every row |
 | `gt`, `gte`, `lt`, `lte` — asked for directly | plain predicate | the LOCAL evaluator gained null-awareness |
 | `gt`, `gte`, `lt`, `lte` — reached through `not` | `IS NULL OR <predicate>` | server gained the union, so the negation is a true complement |
 | `isNull` / `isNotNull` | `IS NULL` / `IS NOT NULL` | the LOCAL evaluator gained null-awareness |
+
+**A literal `null` has to survive the TRANSLATOR too.** `coerceValue` reports a
+null as unusable, which is right for a value that arrived as text and wrong for
+one a caller wrote deliberately: dropping it sent `notIn ['Ada']` for
+`notIn ['Ada', null]` and returned exactly the rows the caller excluded — the
+executor's correct lowering undone one layer up. A literal null is now carried
+through `in`/`notIn` lists and accepted as an `equals`/`notEquals` comparand,
+and the local evaluator resolves it to absence, so a data-surface `set-filters`
+means the same thing in both modes. Such a value cannot arrive from a link or a
+saved view — the sanitizer refuses a non-text filter value — so the reachable
+path is an agent command.
 
 **A listed `null` inverts the rule, and getting that wrong is a data leak of the
 worst kind — a filter returning exactly the rows it was asked to exclude.**

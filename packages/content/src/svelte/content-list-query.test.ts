@@ -1474,6 +1474,115 @@ describe('null-valued rows through both filter paths', () => {
     ).toEqual(['Other author', 'With author']);
   });
 
+  /**
+   * A literal `null` in a filter list names ABSENCE.
+   *
+   * These run the DataTable filter through the TRANSLATOR and then the real
+   * executor against a real database. The earlier partition tests build the
+   * request by hand, which is why a translator that silently stripped the null
+   * entry — sending `notIn ['Ada']` for `notIn ['Ada', null]` and returning
+   * exactly the rows the caller excluded — survived six review rounds.
+   */
+  const listedNull = (
+    operator: 'in' | 'notIn',
+    values: unknown[],
+  ): DataTableFilter =>
+    ({ columnId: 'author', operator, value: values }) as DataTableFilter;
+
+  it('carries a literal null through the translator, not around it', () => {
+    const { request } = contentListViewStateToDataQueryRequest(
+      viewState({ filters: [listedNull('notIn', ['Ada Lovelace', null])] }),
+      { createRequestId: () => 'listed-null' },
+    );
+    const condition = conditions(request.filter)[0];
+    expect(condition.operator).toBe('notIn');
+    expect(condition.value).toEqual(['Ada Lovelace', null]);
+  });
+
+  it('excludes the authorless row for `notIn` WITH a listed null', async () => {
+    expect(
+      await bothAgree(listedNull('notIn', ['Ada Lovelace', null])),
+    ).toEqual(['Other author']);
+  });
+
+  it('includes it for `in` WITH a listed null', async () => {
+    expect(await bothAgree(listedNull('in', ['Ada Lovelace', null]))).toEqual([
+      'No author',
+      'With author',
+    ]);
+  });
+
+  it('resolves a null-only list to absence, in both modes', async () => {
+    expect(await bothAgree(listedNull('in', [null]))).toEqual(['No author']);
+    expect(await bothAgree(listedNull('notIn', [null]))).toEqual([
+      'Other author',
+      'With author',
+    ]);
+  });
+
+  it('resolves a literal null comparand for equals / notEquals', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'equals',
+        value: null,
+      } as DataTableFilter),
+    ).toEqual(['No author']);
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'notEquals',
+        value: null,
+      } as DataTableFilter),
+    ).toEqual(['Other author', 'With author']);
+  });
+
+  it('partitions every list shape end to end, through the translator', async () => {
+    const pairs: Array<[string, DataTableFilter, DataTableFilter]> = [
+      [
+        'plain list',
+        listedNull('in', ['Ada Lovelace']),
+        listedNull('notIn', ['Ada Lovelace']),
+      ],
+      [
+        'list with a null',
+        listedNull('in', ['Ada Lovelace', null]),
+        listedNull('notIn', ['Ada Lovelace', null]),
+      ],
+      ['null-only list', listedNull('in', [null]), listedNull('notIn', [null])],
+    ];
+    const all = ['No author', 'Other author', 'With author'];
+    for (const [label, predicate, negation] of pairs) {
+      const yes = await bothAgree(predicate);
+      const no = await bothAgree(negation);
+      expect(
+        yes.filter((title) => no.includes(title)),
+        `overlap ${label}`,
+      ).toEqual([]);
+      expect([...yes, ...no].sort(), `gap ${label}`).toEqual(all);
+    }
+  });
+
+  it('leaves the absent row out of BOTH sides of an ordered pair, in both modes', async () => {
+    // `gt` and `lte` are not complements for an absent value, deliberately:
+    // absence takes part in no ordered comparison. What matters is that the two
+    // modes agree about it, which the pair below asserts.
+    const above = await bothAgree({
+      columnId: 'author',
+      operator: 'gt',
+      value: 'B',
+    });
+    const below = await bothAgree({
+      columnId: 'author',
+      operator: 'lte',
+      value: 'B',
+    });
+    expect([...above, ...below].sort()).toEqual([
+      'Other author',
+      'With author',
+    ]);
+  });
+
   it('partitions the rows: a predicate and its negation, no overlap or gap', async () => {
     const all = ['No author', 'Other author', 'With author'];
     const pairs: Array<[DataTableFilter, DataTableFilter]> = [
@@ -1875,5 +1984,132 @@ describe('display fallback labels are never compared', () => {
         filters: [{ columnId: 'type', operator: 'isNull' }],
       }),
     ).toEqual(['bare']);
+  });
+});
+
+describe('an impossible calendar date is refused, not rolled forward', () => {
+  const dateFilter = (value: string) =>
+    translate({
+      filters: [{ columnId: 'publish', operator: 'gte', value }],
+    });
+
+  it('drops 2026-02-31 rather than silently querying 2026-03-03', () => {
+    // `new Date('2026-02-31')` IS a valid Date — it rolls forward — so
+    // validating the produced instant reports nothing and the query targets a
+    // day the link never named.
+    expect(new Date('2026-02-31T00:00:00Z').toISOString()).toBe(
+      '2026-03-03T00:00:00.000Z',
+    );
+
+    const { request, dropped } = dateFilter('2026-02-31');
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      scope: 'filter',
+      reason: 'unsupported-value',
+      columnId: 'publish',
+    });
+  });
+
+  it.each([
+    ['a 31st of a 30-day month', '2026-04-31'],
+    ['a 13th month', '2026-13-01'],
+    ['a zero day', '2026-01-00'],
+    ['a leap day in a common year', '2026-02-29'],
+    ['a rolled-forward instant', '2026-02-31T10:00:00.000Z'],
+  ])('drops %s', (_label, value) => {
+    expect(dateFilter(value).request.filter).toBeUndefined();
+  });
+
+  it('keeps every shape a real link carries', () => {
+    for (const [input, expected] of [
+      ['2026-02-01', '2026-02-01T00:00:00.000Z'],
+      ['2026-02-28', '2026-02-28T00:00:00.000Z'],
+      // A real leap day in a leap year.
+      ['2024-02-29', '2024-02-29T00:00:00.000Z'],
+      ['2026-02-01T10:00:00.000Z', '2026-02-01T10:00:00.000Z'],
+      ['2026-02-01t10:00:00.000z', '2026-02-01T10:00:00.000Z'],
+    ] as const) {
+      const { request, dropped } = dateFilter(input);
+      expect(dropped, `dropped ${input}`).toEqual([]);
+      expect(conditions(request.filter)[0]?.value, input).toBe(expected);
+    }
+  });
+
+  it('still drops the out-of-range and unparseable inputs', () => {
+    expect(dateFilter('+275760-09-13').request.filter).toBeUndefined();
+    expect(dateFilter('yesterday').request.filter).toBeUndefined();
+  });
+});
+
+describe('absent values have one documented ordering', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const fixtures = [
+    { name: 'alpha', title: 'Alpha', author: 'Ada' },
+    { name: 'beta', title: 'Beta', author: 'Zoe' },
+    { name: 'none', title: 'None', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of fixtures) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const localOrder = (direction: 'asc' | 'desc') =>
+    selectContentListRows(
+      toContentListRows(
+        fixtures.map((entry) => ({
+          id: entry.name,
+          title: entry.title,
+          author: entry.author,
+        })),
+      ),
+      {
+        ...createContentListController().getState(),
+        sorting: [{ columnId: 'author', direction }],
+      },
+    ).map((row) => String(row.content.id));
+
+  const serverOrder = async (direction: 'asc' | 'desc') => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(
+        viewState({ sorting: [{ columnId: 'author', direction }] }),
+        { createRequestId: () => 'null-order', projection: ['id', 'name'] },
+      ).request,
+    );
+    return result.rows.map((row) => String(row.name));
+  };
+
+  it('sorts an absent value LAST ascending, matching the SQL standard', () => {
+    expect(localOrder('asc')).toEqual(['alpha', 'beta', 'none']);
+  });
+
+  it('sorts an absent value FIRST descending', () => {
+    expect(localOrder('desc')).toEqual(['none', 'beta', 'alpha']);
+  });
+
+  it('keeps present values in their own order either way', () => {
+    expect(localOrder('asc').slice(0, 2)).toEqual(['alpha', 'beta']);
+    expect(localOrder('desc').slice(1)).toEqual(['beta', 'alpha']);
+  });
+
+  it('DIALECT DIVERGENCE: SQLite places an absent value first ascending', async () => {
+    // Pinned to observed behaviour so the documented divergence cannot rot.
+    // `orderBy` carries only `<field> <ASC|DESC>` — `buildOrderBySql` splits on
+    // whitespace and discards anything after the direction — so NULLS
+    // FIRST/LAST is not expressible from this package, and this cannot be
+    // aligned here. See `agents/content-list.md`.
+    expect(await serverOrder('asc')).toEqual(['none', 'alpha', 'beta']);
+    expect(await serverOrder('desc')).toEqual(['beta', 'alpha', 'none']);
   });
 });
