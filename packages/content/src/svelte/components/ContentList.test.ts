@@ -993,24 +993,26 @@ describe('ContentList server-backed mode (#2452)', () => {
     expect(target.textContent).toContain('1 selected');
   });
 
-  it('pages against the server total rather than the rendered page', () => {
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      query: {
-        bind: () => query.binding,
-        request: { defaultPageSize: 2 },
-      },
-    });
-    // Two rows on screen, fifty in the query.
-    query.resolve(
-      [serverRow('server-1', 'Alpha'), serverRow('server-2', 'Beta')],
-      50,
-    );
-    flushSync();
+  describePaging('server-total paging', (renderIn) => {
+    it('pages against the server total rather than the rendered page', () => {
+      const query = createFakeContentListQuery();
+      const target = renderIn({
+        query: {
+          bind: () => query.binding,
+          request: { defaultPageSize: 2 },
+        },
+      });
+      // Two rows on screen, fifty in the query.
+      query.resolve(
+        [serverRow('server-1', 'Alpha'), serverRow('server-2', 'Beta')],
+        50,
+      );
+      flushSync();
 
-    const pages = target.querySelector('nav');
-    expect(pages).toBeTruthy();
-    expect(pages?.getAttribute('aria-label')).toBe('Content pages');
+      const pages = target.querySelector('nav');
+      expect(pages).toBeTruthy();
+      expect(pages?.getAttribute('aria-label')).toBe('Content pages');
+    });
   });
 
   it('announces a query failure through the shared error panel and retries', () => {
@@ -1532,9 +1534,9 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
     expect(target.querySelector('.state-notice')?.textContent).toContain(
       'that value was outside the allowed range',
     );
-    // 5000 rows at 25 a page is 200 pages, so page controls must render. The
-    // card presentations own their own nav; compact mode delegates to DataTable.
-    switchTo(target, 'Grid View');
+    // 5000 rows at 25 a page is 200 pages, so page controls must render — in
+    // COMPACT, without switching away. ContentList renders the pager itself in
+    // every view mode, so the assertion holds where the test actually mounted.
     expect(paginationNav(target)).toBeTruthy();
   });
 

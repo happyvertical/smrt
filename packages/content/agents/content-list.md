@@ -40,11 +40,12 @@ Notes:
 
 - Controller modes are all `manual`: the adapter owns search, filters, sorting,
   and paging in **every** presentation, and the compact table receives
-  `data={pageRows}` plus `totalRows={queryRows.length}`. Letting DataTable
-  filter locally over already-filtered rows re-ran the transform with subtly
-  different semantics (untrimmed search, its own equality rules), so the two
-  presentations could disagree. The component clamps the page with
-  `controller.clampPage(queryRows.length)`. #2452 replaces the local
+  `data={pageRows}` and no `totalRows` at all (see "ContentList owns paging in
+  EVERY presentation" below for why that prop is withheld rather than computed).
+  Letting DataTable filter locally over already-filtered rows re-ran the
+  transform with subtly different semantics (untrimmed search, its own equality
+  rules), so the two presentations could disagree. The component clamps the page
+  with `controller.clampPage(queryRows.length)`. #2452 replaces the local
   implementation of that transform with a server query behind the same contract.
 - A `type` prop lock is enforced against live state, not just against the prop:
   a data-surface `set-filters` or `reset` command that drops the type filter is
@@ -683,22 +684,50 @@ vocabulary and search fields are asserted against the real
   `{ kind, offset, limit, hasMore }` with no next-offset slot, and the
   normalizer refuses a `nextCursor` on an offset page, so a continuation offset
   cannot express "resume at 170" either. Instead the page's budget is allocated
-  max-min fair — rows are considered smallest-first and each may take an even
-  share of what is left — and a row over its share gives way on whichever field
-  is contributing the most bytes: a string is halved repeatedly, a `json`
-  document becomes `null`, and the identity field is never touched. Shortening
-  is already a reported state (`truncated` plus its warning) and it leaves
-  offset paging exact. A row whose irreducible part — identity, field names,
-  numbers, booleans — exceeds its share cannot be fitted at all, and that fails
-  the request loudly rather than answering with a page that quietly omits rows.
+  **floor-first, then max-min fair**: every row is seated at its irreducible
+  minimum before any surplus is shared, and the surplus goes to the smallest
+  APPETITE (cost minus floor) first. Ordering by current cost instead would let
+  a row that needs nothing take an even share while a large, mostly-irreducible
+  row is starved below its own floor — declaring a feasible page impossible.
+  Seating the floors first makes the guarantee unconditional: if the floors fit,
+  the page is served. That guarantee lives in `allocateRowBytes`, which is
+  exported and unit-tested, because a row's floor is dominated by the
+  projection's key bytes — identical across the rows of one page — so the
+  disparity that breaks cost-first ordering is not reachable through
+  `executeContentQuery` itself.
+
+  Within a row, the fields are levelled to a shared byte cap computed in one
+  sorted walk (water-filling), not searched for by halving and re-measuring —
+  the old search re-serialized the row and every field on every step, which
+  turned an ordinary wide page at the default budget into ~9x the cost of the
+  same unbounded read. HOW a field gives way depends on its declared type:
+
+  | declared type | how it gives way | why |
+  |---|---|---|
+  | `string` | levelled to the shared cap | any prefix of free text is still free text |
+  | `datetime` | `null`, or not at all | **no prefix of an RFC 3339 instant is valid** — a shortened one makes the adapter emit a value that breaks the type it declared, and the normalizer then rejects the whole page with `must be an RFC 3339 instant`, blaming the caller |
+  | `json` | `null`, or not at all | a document has no incremental shortening |
+  | number, boolean, `null` | never | already minimal |
+  | the identity field | never | it is the row's address; emptying it fails result normalization |
+
+  The rule generalizes: **a value may be shortened only when its type accepts
+  arbitrary prefixes.** Any format-constrained type added later is all-or-nothing
+  by default. An all-or-nothing field is dropped only when the row cannot fit
+  with it KEPT — losing a whole value to save a few bytes is a last resort, so a
+  200 KB `metadata` blob goes immediately while a 26-byte `updated_at` survives
+  whenever the strings can absorb the difference.
+
+  Shortening is already a reported state (`truncated` plus its warning) and it
+  leaves offset paging exact. Only a page whose FLOORS exceed the budget fails,
+  and it fails loudly rather than answering with a page that quietly omits rows.
 - A restored page size is clamped to `maxPageSize` (default
   `CONTENT_LIST_MAX_PAGE_SIZE`, 200, matching the schema's `maxPageLimit`), and
   the clamp is reported. The ceiling is resolved once and applied to **both**
   restore paths — a saved view is not a way around a limit a host set for links.
-- The server bounds its own answer: it shortens over-long values and drops
-  trailing rows to fit `maxResultBytes`, flagging `truncated` with a warning.
-  That matters to a paging client, because the next page is computed from
-  `page * limit`, so dropped rows are skipped on the following page too.
+- The server bounds its own answer: it shortens over-long values to fit
+  `maxResultBytes`, flagging `truncated` with a warning. It does **not** drop
+  rows — see the bullet above — precisely because the next page is computed from
+  `page * limit`, so a dropped row would be skipped on the following page too.
   `ContentList` reads those flags — from the binding when it exposes them, and
   otherwise off the envelope its own `execute` resolved — and renders them in
   the same notice as the drops.
@@ -725,16 +754,12 @@ vocabulary and search fields are asserted against the real
   the query effect in the same flush and the second translation caps nothing —
   storing it with the others would erase it before it was ever rendered. It
   stands until the operator moves off the page they landed on.
-- The pagers never advertise a page the endpoint cannot fetch. `totalPages` — and
-  the `totalRows` handed to DataTable, which derives its own page count and
-  takes no ceiling — are capped at `floor(MAX_OFFSET / pageSize) + 1`.
-  `clampPage` deliberately keeps using the TRUE total, so a crafted `?page=`
-  still reaches the query effect and gets the notice instead of being silently
-  clamped first.
-- DataTable is told `totalRows: undefined` until the first authoritative total
-  arrives. It clamps the controller's page against `totalRows`, so the
-  pre-response zero would reset a page restored from a link the moment the
-  compact table mounts.
+- The pagers never advertise a page the endpoint cannot fetch. `totalPages` is
+  capped at `floor(MAX_OFFSET / pageSize) + 1`. `clampPage` deliberately keeps
+  using the TRUE total, so a crafted `?page=` still reaches the query effect and
+  gets the notice instead of being silently clamped first. There is only one
+  pager to cap, because ContentList renders `<Pagination>` itself in every view
+  mode and hands DataTable no total to derive a second page count from.
 - A retry replaces the rendered rows, so it also replaces the completeness
   flags. `retry()`'s envelope is read through the same path as `execute()`'s;
   discarding it left a "rows are missing" notice standing over a complete page.

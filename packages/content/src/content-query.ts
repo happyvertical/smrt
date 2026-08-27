@@ -998,82 +998,291 @@ interface BoundedRows {
 /** Cut a string to a BYTE budget without splitting a code point. */
 function capStringBytes(value: string, maxBytes: number): string {
   if (maxBytes <= 0) return '';
-  if (jsonByteLength(value) - 2 <= maxBytes) return value;
-  let kept = '';
+  const totalBytes = encoder.encode(value).byteLength;
+  if (totalBytes <= maxBytes) return value;
+  // Fast path: an all-ASCII value has one byte per code unit, so the cut is a
+  // slice. Encoding character by character allocates a typed array PER
+  // CHARACTER, which dominates the whole bounding pass on a large page.
+  if (totalBytes === value.length) return value.slice(0, maxBytes);
   let used = 0;
+  let end = 0;
   for (const character of value) {
-    const cost = encoder.encode(character).byteLength;
+    const point = character.codePointAt(0) ?? 0;
+    const cost = point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
     if (used + cost > maxBytes) break;
-    kept += character;
     used += cost;
+    end += character.length;
   }
-  return kept;
+  return value.slice(0, end);
 }
 
 /**
- * Shrink ONE row until its serialized form fits `allowance` bytes.
+ * How a field's value may give way when a row has to get smaller.
  *
- * Each pass gives way on the field currently contributing the MOST bytes, so
- * the value that made the row large is the one that shrinks: a 200 KB
- * `metadata` blob goes before a 20-character `title` is touched. A string is
- * halved (repeatedly, so it converges on the allowance rather than collapsing);
- * a `json` document becomes `null`, because there is no way to shorten a
- * document by a few bytes at a time. Numbers and booleans are irreducible, and
- * the identity field is never touched at all — it is the row's address, and the
- * result normalizer refuses a row whose identity is empty.
+ * The distinction that matters is FORMAT. A `string` is free text, so a prefix
+ * of it is still a valid string. A `datetime` is an RFC 3339 instant and NO
+ * prefix of one is valid — truncating it makes the adapter emit a value that
+ * violates the field type it declared, and the result normalizer then rejects
+ * the whole page with `must be an RFC 3339 instant`, blaming the caller for a
+ * shape the adapter produced. `json` is a document with no incremental
+ * shortening. Both of those are all-or-nothing.
  *
- * Returns `undefined` only when the row's irreducible part — its identity, its
- * field names, and its numeric and boolean values — is itself larger than the
- * allowance. Every shortened field is recorded, so the caller reports it the
- * same way it reports any other shortened value.
+ * Numbers and booleans are already minimal, and the identity field is the row's
+ * address, so neither is reducible at all.
+ */
+type FieldReduction = 'truncate' | 'null' | 'none';
+
+function reductionFor(
+  field: string,
+  value: unknown,
+  identityField: string,
+  descriptors: Map<string, DataQueryFieldDescriptor>,
+): FieldReduction {
+  if (field === identityField || value === null) return 'none';
+  const type = descriptors.get(field)?.type;
+  if (type === 'json') return 'null';
+  // Format-constrained: reduce to null or not at all, never to a prefix.
+  if (type === 'datetime') return 'null';
+  if (typeof value === 'string' && value.length > 0) return 'truncate';
+  return 'none';
+}
+
+/** The JSON byte cost of a value once it has given way completely. */
+const REDUCED_VALUE_BYTES: Record<FieldReduction, number> = {
+  truncate: 2, // `""`
+  null: 4, // `null`
+  none: 0, // replaced by the value's own size
+};
+
+interface MeasuredField {
+  field: string;
+  /** `"key":` — fixed for the life of the row. */
+  keyBytes: number;
+  /** Current JSON byte cost of the value. */
+  valueBytes: number;
+  reduction: FieldReduction;
+  /** Value bytes once fully reduced. */
+  floorBytes: number;
+}
+
+interface MeasuredRow {
+  fields: MeasuredField[];
+  /** Braces, commas, and the array separator — independent of the values. */
+  structural: number;
+  /** Current serialized cost, equal to `jsonByteLength(row) + 1`. */
+  cost: number;
+  /** The smallest this row can ever be: every reducible value given way. */
+  floor: number;
+}
+
+/**
+ * Measure a row ONCE, so every later decision is arithmetic.
+ *
+ * The previous shrink re-serialized the whole row on every iteration AND every
+ * field on every iteration, turning an ordinary page — 200 rows of a wide
+ * projection at the default 1 MB budget — into seconds of blocked event loop.
+ * The serialized size of an object is exactly its structural bytes plus, per
+ * field, the key, a colon, and the value; so it can be recomputed from a single
+ * measurement as values change, with no further stringification.
+ */
+function measureRow(
+  row: DataQueryRow,
+  descriptors: Map<string, DataQueryFieldDescriptor>,
+  identityField: string,
+): MeasuredRow {
+  const entries = Object.entries(row);
+  const fields = entries.map(([field, value]) => {
+    const reduction = reductionFor(field, value, identityField, descriptors);
+    const valueBytes = jsonByteLength(value);
+    return {
+      field,
+      keyBytes: jsonByteLength(field),
+      valueBytes,
+      reduction,
+      floorBytes:
+        reduction === 'none' ? valueBytes : REDUCED_VALUE_BYTES[reduction],
+    };
+  });
+  // `{`, `}`, one comma between fields, and the separator this row costs inside
+  // the rows array.
+  const structural = entries.length === 0 ? 3 : entries.length + 2;
+  const overhead = fields.reduce(
+    (sum, entry) => sum + entry.keyBytes + 1,
+    structural,
+  );
+  return {
+    fields,
+    structural,
+    cost: fields.reduce((sum, entry) => sum + entry.valueBytes, overhead),
+    floor: fields.reduce((sum, entry) => sum + entry.floorBytes, overhead),
+  };
+}
+
+/**
+ * The largest per-value byte cap that keeps a set of truncatable sizes within
+ * `available`, or `undefined` when even the floor does not fit.
+ *
+ * Classic max-min water-filling: sizes at or below the cap keep their real
+ * cost, and everything above it is levelled to the cap. Solved by walking the
+ * sorted sizes once rather than by repeated halving and re-measurement.
+ */
+function waterFillCap(
+  sizes: readonly number[],
+  available: number,
+  floorBytes: number,
+): number | undefined {
+  if (sizes.length === 0)
+    return available >= 0 ? Number.MAX_SAFE_INTEGER : undefined;
+  if (available < sizes.length * floorBytes) return undefined;
+  const sorted = [...sizes].sort((left, right) => left - right);
+  let prefix = 0;
+  for (let index = 0; index < sorted.length; index += 1) {
+    const remaining = sorted.length - index;
+    // Everything from `index` on levelled to `sorted[index]`.
+    if (prefix + remaining * sorted[index] > available) {
+      return Math.max(floorBytes, Math.floor((available - prefix) / remaining));
+    }
+    prefix += sorted[index];
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * Shrink ONE row so its serialized form fits `allowance` bytes.
+ *
+ * The field contributing the most bytes gives way first, so a 200 KB
+ * `metadata` blob goes before a 20-character `title` is touched — but HOW it
+ * gives way depends on its declared type (see {@link reductionFor}): a string
+ * is levelled to a shared cap, while a `json` document or a `datetime` is
+ * dropped to `null` because no prefix of either is valid.
+ *
+ * All-or-nothing fields are considered first only when they are larger than the
+ * cap the strings could otherwise reach, which is what keeps "largest gives way
+ * first" true across both kinds.
+ *
+ * Returns `undefined` only when the row's floor exceeds the allowance. Callers
+ * allocate at least each row's floor, so in practice this never fires.
  */
 function shrinkRowToBytes(
   row: DataQueryRow,
   allowance: number,
-  descriptors: Map<string, DataQueryFieldDescriptor>,
-  identityField: string,
+  measured: MeasuredRow,
   truncation: TruncationLog,
 ): DataQueryRow | undefined {
-  const shrunk: DataQueryRow = { ...row };
-  const cost = (): number => jsonByteLength(shrunk) + 1;
-  // Bounded by the number of halvings a 64-bit length can survive, times the
-  // number of fields; the loop cannot run away.
-  let guard = 0;
-  while (cost() > allowance && guard < 4_096) {
-    guard += 1;
-    // The largest remaining contributor, whatever kind it is. Exhausting every
-    // string before considering a JSON document would empty a four-character
-    // `name` while a 200 KB `metadata` blob — the actual cause — sat untouched.
-    let target: string | undefined;
-    let targetBytes = 0;
-    for (const [field, value] of Object.entries(shrunk)) {
-      // The identity field is the row's address, and is never reducible.
-      if (field === identityField || value === null) continue;
-      const reducible =
-        (typeof value === 'string' && value.length > 0) ||
-        descriptors.get(field)?.type === 'json';
-      if (!reducible) continue;
-      const bytes = jsonByteLength(value);
-      if (bytes > targetBytes) {
-        target = field;
-        targetBytes = bytes;
-      }
-    }
-    if (target === undefined) return undefined;
-    const current = shrunk[target];
-    if (typeof current === 'string') {
-      const currentBytes = encoder.encode(current).byteLength;
-      // Halve it, and fall to empty when halving cannot make it any smaller —
-      // a one-character value halves to itself, which would spin forever.
-      const halved =
-        currentBytes <= 1 ? '' : capStringBytes(current, currentBytes >> 1);
-      shrunk[target] = halved.length < current.length ? halved : '';
-    } else {
-      shrunk[target] = null;
-    }
-    truncation.fields.add(target);
+  if (measured.floor > allowance) return undefined;
+  const nulled = new Set<string>();
+  let cap: number | undefined;
+
+  // Give way on the all-or-nothing fields only while one of them is a bigger
+  // contributor than any string would be after levelling.
+  for (;;) {
+    const kept = measured.fields.filter(
+      (entry) => entry.reduction !== 'truncate' && !nulled.has(entry.field),
+    );
+    const truncatable = measured.fields.filter(
+      (entry) => entry.reduction === 'truncate',
+    );
+    const fixed = kept.reduce((sum, entry) => sum + entry.valueBytes, 0);
+    const nulledBytes = REDUCED_VALUE_BYTES.null * nulled.size;
+    const overhead = measured.fields.reduce(
+      (sum, entry) => sum + entry.keyBytes + 1,
+      measured.structural,
+    );
+    const available = allowance - overhead - fixed - nulledBytes;
+    cap = waterFillCap(
+      truncatable.map((entry) => entry.valueBytes),
+      available,
+      REDUCED_VALUE_BYTES.truncate,
+    );
+    // An all-or-nothing field gives way only when the row cannot fit with it
+    // KEPT. Dropping one loses a whole value to save a few bytes, so it is a
+    // last resort rather than a race with the strings: a 200 KB `metadata`
+    // blob makes the row infeasible and goes immediately, while a 26-byte
+    // `updated_at` survives whenever the strings can absorb the difference.
+    if (cap !== undefined) break;
+    const biggestNullable = measured.fields
+      .filter((entry) => entry.reduction === 'null' && !nulled.has(entry.field))
+      .sort((left, right) => right.valueBytes - left.valueBytes)[0];
+    if (biggestNullable === undefined) return undefined;
+    nulled.add(biggestNullable.field);
   }
-  return cost() <= allowance ? shrunk : undefined;
+  if (cap === undefined) return undefined;
+
+  const shrunk: DataQueryRow = { ...row };
+  for (const entry of measured.fields) {
+    if (nulled.has(entry.field)) {
+      shrunk[entry.field] = null;
+      truncation.fields.add(entry.field);
+      continue;
+    }
+    if (entry.reduction !== 'truncate' || entry.valueBytes <= cap) continue;
+    const original = shrunk[entry.field] as string;
+    // The cap is a budget for the SERIALIZED value, so the content budget is
+    // two bytes smaller; JSON escaping can inflate the rest, so the value is
+    // measured once and trimmed again on the rare occasion it overshoots.
+    let content = capStringBytes(original, cap - 2);
+    let guard = 0;
+    while (jsonByteLength(content) > cap && content.length > 0 && guard < 8) {
+      guard += 1;
+      const overshoot = jsonByteLength(content) - cap;
+      content = capStringBytes(
+        content,
+        Math.max(0, encoder.encode(content).byteLength - overshoot),
+      );
+    }
+    shrunk[entry.field] = content;
+    truncation.fields.add(entry.field);
+  }
+  return shrunk;
+}
+
+/**
+ * Share a byte budget across rows: every row keeps its irreducible floor, and
+ * the surplus is divided max-min fair over what each row could still use.
+ *
+ * Allocating max-min fair over the rows' CURRENT costs — without seating the
+ * floors first — can declare a feasible page impossible. A small row is handed
+ * its whole cost while a large, mostly-irreducible row is left below its own
+ * floor, so the request fails even though the floors fit the budget with room
+ * to spare. Seating the floors first makes the guarantee unconditional: if
+ * `sum(floors) <= budget` then every row is allocated at least its floor,
+ * whatever the shape of the page.
+ *
+ * Exported because that guarantee is a property of the ARITHMETIC, not of any
+ * page the content schema can actually produce — a row's floor is dominated by
+ * the projection's key bytes, which are identical across rows, so the disparity
+ * that breaks cost-first ordering is not reachable through `executeContentQuery`.
+ * The property is real and worth holding; this is the level it can be held at.
+ *
+ * @param floors - Per-row irreducible byte cost.
+ * @param costs - Per-row current byte cost; always at least the floor.
+ * @param budget - Bytes available for the rows themselves.
+ * @returns Per-row byte allowance, each at least the row's floor.
+ */
+export function allocateRowBytes(
+  floors: readonly number[],
+  costs: readonly number[],
+  budget: number,
+): number[] {
+  const allowances = [...floors];
+  const seated = floors.reduce((sum, floor) => sum + floor, 0);
+  if (seated > budget) return allowances;
+  // What each row could still use ON TOP of its floor. Ordering by appetite
+  // rather than by cost is what keeps a row that needs nothing from consuming
+  // another row's floor.
+  const appetites = costs.map((cost, index) => cost - floors[index]);
+  const order = floors
+    .map((_, index) => index)
+    .sort((left, right) => appetites[left] - appetites[right]);
+  let surplus = budget - seated;
+  let left = floors.length;
+  for (const index of order) {
+    const granted = Math.min(appetites[index], Math.floor(surplus / left));
+    allowances[index] += granted;
+    surplus -= granted;
+    left -= 1;
+  }
+  return allowances;
 }
 
 /**
@@ -1091,14 +1300,17 @@ function shrinkRowToBytes(
  *
  * So a row is never dropped for size — only shortened, which is a state the
  * result already reports through `truncated` and its warning, and which leaves
- * offset paging exact. Budget is allocated max-min fair: rows are considered
- * smallest-first and each may take up to an even share of what is left, so a
- * single enormous row is cut back while every other row on the page survives
- * whole.
+ * offset paging exact.
  *
- * Throws only when a row cannot be made to fit at all — its identity and field
- * names alone exceed its share. Failing loudly beats answering with a page that
- * silently omits rows.
+ * Allocation is floor-first, then max-min fair. Every row is given its
+ * irreducible floor before any surplus is shared, so a page whose floors fit is
+ * always produced — ordering rows by their CURRENT cost could otherwise hand a
+ * small row more than it needed and starve a large one below its floor,
+ * declaring a feasible page impossible.
+ *
+ * Throws only when the floors themselves exceed the budget, which is the one
+ * case no amount of shortening can reach. Failing loudly beats answering with a
+ * page that silently omits rows.
  */
 function boundRowBytes(
   rows: DataQueryRow[],
@@ -1114,34 +1326,32 @@ function boundRowBytes(
   );
   // Opening and closing brackets of the serialized rows array.
   const framing = 2;
-  const costs = rows.map((row) => jsonByteLength(row) + 1);
-  const total = costs.reduce((sum, cost) => sum + cost, framing);
+  const measured = rows.map((row) =>
+    measureRow(row, descriptors, identityField),
+  );
+  const total = measured.reduce((sum, row) => sum + row.cost, framing);
   if (total <= budget) return { rows, truncated: false };
 
-  // Max-min fair allocation: walk the rows smallest-first, giving each an even
-  // share of the remaining budget. A row that fits its share keeps its whole
-  // size and returns the difference to the pool for the rows that do not.
-  const order = rows
-    .map((_, index) => index)
-    .sort((left, right) => costs[left] - costs[right]);
-  const allowances = new Array<number>(rows.length);
-  let remaining = budget - framing;
-  let left = rows.length;
-  for (const index of order) {
-    const share = Math.floor(remaining / left);
-    const allowance = Math.min(costs[index], share);
-    allowances[index] = allowance;
-    remaining -= allowance;
-    left -= 1;
+  const floors = measured.reduce((sum, row) => sum + row.floor, framing);
+  if (floors > budget) {
+    return queryFail(
+      'Content query cannot fit its rows inside the maximum result bytes; request fewer fields or a smaller page.',
+      'DATA_QUERY_RESULT_TOO_LARGE',
+    );
   }
 
+  const allowances = allocateRowBytes(
+    measured.map((row) => row.floor),
+    measured.map((row) => row.cost),
+    budget - framing,
+  );
+
   const bounded = rows.map((row, index) => {
-    if (costs[index] <= allowances[index]) return row;
+    if (measured[index].cost <= allowances[index]) return row;
     const shrunk = shrinkRowToBytes(
       row,
       allowances[index],
-      descriptors,
-      identityField,
+      measured[index],
       truncation,
     );
     if (shrunk === undefined) {

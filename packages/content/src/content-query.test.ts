@@ -33,6 +33,7 @@ import type {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  allocateRowBytes,
   assertContentQuerySchema,
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
@@ -1874,4 +1875,274 @@ describe('a host can validate its schema before serving a request', () => {
       if (db && typeof db.close === 'function') await db.close();
     }
   });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Shortening a row to fit the byte budget must never produce a value that
+ * violates the field type the schema declared (#2452 round 14).
+ */
+describe('row shortening respects declared field formats', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+  let base: DataQuerySchema;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (let index = 0; index < 5; index += 1) {
+      const item = await contents.create({
+        name: `row-${index}`,
+        title: 'x'.repeat(500),
+        description: 'y'.repeat(500),
+      });
+      await item.save();
+    }
+    base = await buildContentQuerySchema();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const runWithBudget = (maxResultBytes: number) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['id', 'name', 'title', 'description', 'updated_at'],
+        page: { kind: 'offset', offset: 0, limit: 5 },
+      }),
+      { schema: { ...base, maxResultBytes } },
+    );
+
+  // No PREFIX of an RFC 3339 instant is itself a valid instant, so a `datetime`
+  // that is shortened rather than dropped makes the adapter emit a value that
+  // breaks the type it declared. The normalizer then rejects the whole page
+  // with `must be an RFC 3339 instant` — blaming the caller for a malformed
+  // shape the adapter produced, and taking down every request in the band of
+  // budgets where the timestamp happened to be the field that gave way.
+  it.each([
+    4_650, 4_700, 4_750, 4_800, 4_900, 5_000, 5_200,
+  ])('returns a whole instant or null, never a prefix, at %i bytes', async (maxResultBytes) => {
+    const result = await runWithBudget(maxResultBytes);
+
+    expect(result.rows).toHaveLength(5);
+    for (const row of result.rows) {
+      const stamp = row.updated_at;
+      if (stamp === null) continue;
+      expect(typeof stamp).toBe('string');
+      // A prefix such as `2026-08-27T04:0` parses as NaN and fails to round
+      // trip; a whole instant does both.
+      expect(Number.isNaN(Date.parse(stamp as string))).toBe(false);
+      expect(stamp).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
+      );
+    }
+  });
+
+  // The property above is a consequence of a general rule, so assert the rule
+  // rather than only the one type that broke: a value may be shortened only
+  // when its type accepts arbitrary prefixes. Any OTHER declared type must come
+  // back either untouched or null.
+  it('shortens only free-text fields, whatever the declared type', async () => {
+    const declared = new Map(
+      base.fields.map((field) => [field.id, field.type] as const),
+    );
+    const whole = await runWithBudget(base.maxResultBytes ?? 1_048_576);
+    const wholeById = new Map(
+      whole.rows.map((row) => [String(row.id), row] as const),
+    );
+
+    const changed = new Set<string>();
+    for (const maxResultBytes of [4_650, 4_800, 5_000, 6_000, 8_000]) {
+      const shortened = await runWithBudget(maxResultBytes);
+      for (const row of shortened.rows) {
+        const original = wholeById.get(String(row.id));
+        expect(original).toBeDefined();
+        for (const [field, value] of Object.entries(row)) {
+          if (value === (original as DataQueryRow)[field]) continue;
+          changed.add(field);
+          const type = declared.get(field);
+          if (type === 'string') continue;
+          // Non-string types are all-or-nothing: null is the only other state.
+          expect({ field, type, value }).toEqual({ field, type, value: null });
+        }
+      }
+    }
+    // Guard the guard: if nothing was ever shortened the loop above proves
+    // nothing at all.
+    expect(changed.size).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Byte-budget allocation across rows: every page whose irreducible floors fit
+ * must be produced, and producing it must stay cheap (#2452 round 14).
+ */
+describe('result byte budget is shared across rows', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  // Allocating by CURRENT cost lets a small row take more than it can use while
+  // a large one is starved below its own floor, so the request fails as
+  // impossible even though the floors fit the budget with room to spare. Here
+  // one row is nearly all identity (irreducible) and the others carry long text
+  // that can be levelled away, which is exactly that shape.
+  it('serves a page whose floors fit even when the rows are lopsided', async () => {
+    const wide = await contents.create({
+      name: 'w',
+      title: 'x'.repeat(4_000),
+      description: 'y'.repeat(4_000),
+    });
+    await wide.save();
+    for (let index = 0; index < 3; index += 1) {
+      const narrow = await contents.create({ name: `n${index}`, title: 'T' });
+      await narrow.save();
+    }
+    const base = await buildContentQuerySchema();
+
+    // Just above the floor of the whole page: too small for the real values,
+    // large enough for every row's irreducible minimum.
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['id', 'name', 'title', 'description'],
+        page: { kind: 'offset', offset: 0, limit: 4 },
+      }),
+      { schema: { ...base, maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES } },
+    );
+
+    // No row is dropped for size — offset paging would skip the dropped rows on
+    // every subsequent page.
+    expect(result.rows).toHaveLength(4);
+    expect(result.truncated).toBe(true);
+    for (const row of result.rows) {
+      expect(typeof row.id).toBe('string');
+      expect(String(row.id)).not.toBe('');
+    }
+  });
+
+  // The integration test above cannot fail on revert: a row's floor is
+  // dominated by the projection's key bytes, which are identical across the
+  // rows of one page, so the floor disparity that breaks cost-first ordering is
+  // not reachable through `executeContentQuery`. The guarantee is a property of
+  // the allocation arithmetic, so it is asserted there.
+  describe('allocateRowBytes', () => {
+    // One row that is nearly all irreducible (310 bytes, none of it reducible)
+    // beside one that is mostly text (81 bytes, floor 21), against a budget of
+    // 339. The floors sum to 331, so the page fits. Allocating max-min fair
+    // over CURRENT costs hands the small row its whole 81 and leaves the large
+    // one 258 — below its own 310-byte floor — and the request fails.
+    it('seats every floor when the floors fit, whatever the costs', () => {
+      const allowances = allocateRowBytes([310, 21], [310, 81], 339);
+
+      expect(allowances[0]).toBeGreaterThanOrEqual(310);
+      expect(allowances[1]).toBeGreaterThanOrEqual(21);
+      expect(allowances[0] + allowances[1]).toBeLessThanOrEqual(339);
+    });
+
+    // The same guarantee, not just the one counterexample: across a spread of
+    // shapes, no row is ever left below its floor when the floors fit.
+    it.each([
+      { floors: [310, 21], costs: [310, 81], budget: 339 },
+      { floors: [1, 1, 1, 500], costs: [900, 900, 900, 500], budget: 600 },
+      { floors: [100, 100], costs: [100, 10_000], budget: 205 },
+      { floors: [50, 50, 50], costs: [50, 50, 50], budget: 150 },
+      { floors: [0, 400], costs: [9_000, 400], budget: 401 },
+    ])('never starves a row below its floor: %j', ({
+      floors,
+      costs,
+      budget,
+    }) => {
+      const allowances = allocateRowBytes(floors, costs, budget);
+
+      for (const [index, floor] of floors.entries()) {
+        expect({ index, allowed: allowances[index] >= floor }).toEqual({
+          index,
+          allowed: true,
+        });
+      }
+      const granted = allowances.reduce((sum, value) => sum + value, 0);
+      expect(granted).toBeLessThanOrEqual(budget);
+      // Nothing is handed more than it can use.
+      for (const [index, cost] of costs.entries()) {
+        expect(allowances[index]).toBeLessThanOrEqual(
+          Math.max(cost, floors[index]),
+        );
+      }
+    });
+  });
+
+  // Shortening used to re-serialize the row AND every field on every step of a
+  // halving search, which turned an ordinary wide page at the default budget
+  // into seconds of blocked event loop — a denial of service reachable by any
+  // caller who asks for the whole projection.
+  it('bounds a wide page without a runaway cost', async () => {
+    const base = await buildContentQuerySchema();
+    const projection = base.fields
+      .filter((field) => field.projectable)
+      .map((field) => field.id);
+    const big = (seed: string) => seed.repeat(2_000);
+    for (let index = 0; index < 200; index += 1) {
+      const item = await contents.create({
+        name: `bulk-${index}`,
+        title: big('a'),
+        description: big('b'),
+        url: big('c'),
+        source: big('d'),
+        category: big('e'),
+        language: big('f'),
+        original_url: big('g'),
+        variant: big('h'),
+        slug: `${big('i')}${index}`,
+        fileKey: big('j'),
+        author: big('k'),
+        context: big('l'),
+      });
+      await item.save();
+    }
+    const run = async (maxResultBytes: number) => {
+      const started = performance.now();
+      const result = await executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        request({
+          projection,
+          page: { kind: 'offset', offset: 0, limit: 200 },
+        }),
+        { schema: { ...base, maxResultBytes } },
+      );
+      return { ms: performance.now() - started, truncated: result.truncated };
+    };
+
+    // Warm the read path, then compare the SAME request with and without
+    // bounding. An absolute millisecond threshold would be a flake on a loaded
+    // CI box; the ratio against the identical unbounded read is what isolates
+    // the cost of the bounding itself.
+    const roomy = 10_000_000;
+    await run(roomy);
+    const unbounded = await run(roomy);
+    const bounded = await run(1_048_576);
+
+    expect(unbounded.truncated).toBe(false);
+    expect(bounded.truncated).toBe(true);
+    // Before the fix this ratio was ~60x. The bound is deliberately loose: it
+    // is here to catch a return to super-linear shrinking, not to police jitter.
+    // Measured: 1.04x with the arithmetic allocation, 9.1x with the halving
+    // search restored. The ratio (not an absolute millisecond count) is what
+    // survives a loaded CI box; the floor covers a machine where the unbounded
+    // read is itself near-instant.
+    expect(bounded.ms).toBeLessThan(Math.max(unbounded.ms * 4, 100));
+  }, 120_000);
 });
