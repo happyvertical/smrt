@@ -150,7 +150,9 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       root: process.cwd(),
       server: { middlewareMode: true },
     });
+    const originalDocument = (globalThis as { document?: unknown }).document;
     try {
+      delete (globalThis as { document?: unknown }).document;
       const { default: ssrFixture } = await vite.ssrLoadModule(
         '/src/web/__tests__/webmcp-ssr.fixture.svelte',
       );
@@ -158,6 +160,11 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       const result = renderSsr(ssrFixture);
       expect(result.body).toContain('webmcp-ssr-fixture');
     } finally {
+      if (originalDocument === undefined) {
+        delete (globalThis as { document?: unknown }).document;
+      } else {
+        (globalThis as { document?: unknown }).document = originalDocument;
+      }
       await vite.close();
     }
   });
