@@ -88,21 +88,8 @@ postgresDescribe(
 
       const createCycleDb = () =>
         createIsolatedTestDbFromManifest({ manifestPath });
-      const seed = await createCycleDb();
-      try {
-        // Leave the tables in place but remove both planner-deferred
-        // constraints so concurrent factories race on ADD CONSTRAINT rather
-        // than short-circuiting on the preflight existence check.
-        await seed.baseDb.query(
-          'ALTER TABLE "i2537_cycle_a" DROP CONSTRAINT "i2537_cycle_a_b_id_i2537_cycle_b_id_fkey"',
-        );
-        await seed.baseDb.query(
-          'ALTER TABLE "i2537_cycle_b" DROP CONSTRAINT "i2537_cycle_b_a_id_i2537_cycle_a_id_fkey"',
-        );
-      } finally {
-        await seed.cleanup();
-      }
-
+      // Both factories start against an empty catalog. PostgreSQL schema
+      // preparation must serialize table, index, and deferred-FK creation.
       const [left, right] = await Promise.all([
         createCycleDb(),
         createCycleDb(),
@@ -126,6 +113,112 @@ postgresDescribe(
         expect(right.db.isActive()).toBe(true);
       } finally {
         await Promise.all([left.cleanup(), right.cleanup()]);
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
+    it('reconciles an existing table before adding a newly declared relationship', async () => {
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-evolve-${randomUUID()}.json`,
+      );
+      const baseObjects = {
+        Parent: {
+          className: 'Parent',
+          schema: {
+            tableName: 'i2537_evolve_parent',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+            },
+          },
+        },
+        Child: {
+          className: 'Child',
+          schema: {
+            tableName: 'i2537_evolve_child',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              parent_id: { type: 'TEXT' },
+            },
+          },
+        },
+      };
+      writeFileSync(manifestPath, JSON.stringify({ objects: baseObjects }));
+
+      const initial = await createIsolatedTestDbFromManifest({ manifestPath });
+      await initial.cleanup();
+
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          objects: {
+            ...baseObjects,
+            Child: {
+              ...baseObjects.Child,
+              schema: {
+                ...baseObjects.Child.schema,
+                columns: {
+                  ...baseObjects.Child.schema.columns,
+                  parent_id: {
+                    type: 'TEXT',
+                    referenceKind: 'foreignKey',
+                    foreignKey: {
+                      table: 'i2537_evolve_parent',
+                      column: 'id',
+                      onDelete: 'CASCADE',
+                      onUpdate: 'CASCADE',
+                    },
+                  },
+                  added_later: { type: 'TEXT' },
+                },
+              },
+            },
+          },
+        }),
+      );
+
+      const evolved = await createIsolatedTestDbFromManifest({ manifestPath });
+      try {
+        const columnResult = await evolved.db.query(
+          `SELECT column_name
+           FROM information_schema.columns
+           WHERE table_schema = current_schema()
+             AND table_name = 'i2537_evolve_child'
+             AND column_name = 'added_later'`,
+        );
+        expect(columnResult.rows).toEqual([{ column_name: 'added_later' }]);
+
+        const constraintResult = await evolved.db.query(
+          `SELECT constraint_row.conname AS constraint_name
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+           WHERE namespace_row.nspname = current_schema()
+             AND child.relname = 'i2537_evolve_child'
+             AND constraint_row.contype = 'f'`,
+        );
+        expect(constraintResult.rows).toEqual([
+          {
+            constraint_name:
+              'i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey',
+          },
+        ]);
+
+        const parentId = randomUUID();
+        await evolved.db.insert('i2537_evolve_parent', { id: parentId });
+        await evolved.db.insert('i2537_evolve_child', {
+          id: randomUUID(),
+          parent_id: parentId,
+          added_later: 'reconciled',
+        });
+        await expect(
+          evolved.db.insert('i2537_evolve_child', {
+            id: randomUUID(),
+            parent_id: randomUUID(),
+          }),
+        ).rejects.toThrow();
+      } finally {
+        await evolved.cleanup();
         rmSync(manifestPath, { force: true });
       }
     });

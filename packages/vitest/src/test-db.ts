@@ -49,6 +49,8 @@ import {
 import {
   foreignKeyConstraintName,
   planForeignKeyCreation,
+  renderDeferredForeignKeyAdd,
+  schemaForeignKeysForEngine,
 } from '@happyvertical/smrt-core/schema';
 import {
   type CollectedManifestTable,
@@ -485,7 +487,6 @@ export async function createIsolatedTestDb(
 async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
   postSchemaStatements: readonly PostSchemaStatement[],
-  directSchemaStatements: readonly string[] = [],
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -520,46 +521,51 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // bypasses the setup file's pragma application, so it happens here.
   await applySqliteSpeedPragmas(baseDb, config);
 
-  // Sync schema if provided (must be done before transaction for DDL)
-  if (schema && config.type !== 'sqlite') {
-    if (directSchemaStatements.length > 0) {
-      for (const statement of directSchemaStatements) {
-        await baseDb.query(statement);
-      }
-    } else {
-      await syncSchema({ db: baseDb, schema });
-    }
-  }
-
-  // PostgreSQL cycle planning removes cyclic constraints from CREATE TABLE
-  // and adds them only after every table exists. syncSchema intentionally
-  // handles schema definitions rather than arbitrary follow-up statements, so
-  // execute the planner's deferred constraints explicitly before opening the
-  // test transaction.
-  for (const deferred of postSchemaStatements) {
-    if (
-      await postgresConstraintExists(
-        baseDb,
-        deferred.tableName,
-        deferred.constraintName,
-      )
-    ) {
-      continue;
-    }
-    try {
-      await baseDb.query(deferred.statement);
-    } catch (error) {
-      // Parallel test factories may both observe the constraint as absent.
-      // Treat the losing ADD as successful only when the exact table/name is
-      // now present; otherwise preserve the original database failure.
+  const applyPostSchemaStatements = async (
+    schemaDb: DatabaseInterfaceWithTransaction,
+  ): Promise<void> => {
+    for (const deferred of postSchemaStatements) {
       if (
         await postgresConstraintExists(
-          baseDb,
+          schemaDb,
           deferred.tableName,
           deferred.constraintName,
         )
       ) {
         continue;
+      }
+      await schemaDb.query(deferred.statement);
+    }
+  };
+
+  let systemTablesPrepared = false;
+
+  // Sync schema if provided (must be done before the isolated test
+  // transaction). PostgreSQL schema preparation is serialized across workers
+  // in a transaction-scoped advisory lock. The lock covers reconciliation,
+  // FK installation, and framework system tables without leaking a session
+  // lock through a pooled connection.
+  if (schema && config.type !== 'sqlite') {
+    if (!baseDb.beginTransaction) {
+      throw new Error(
+        `Database adapter '${config.type}' does not support beginTransaction(). ` +
+          'This requires @happyvertical/sql with SDK PR #722 merged.',
+      );
+    }
+    const schemaTransaction = await baseDb.beginTransaction();
+    try {
+      await schemaTransaction.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['smrt-vitest-manifest-schema'],
+      );
+      await syncSchema({ db: schemaTransaction, schema });
+      await applyPostSchemaStatements(schemaTransaction);
+      await ensureSystemTables(schemaTransaction, config.type);
+      await schemaTransaction.commit();
+      systemTablesPrepared = true;
+    } catch (error) {
+      if (schemaTransaction.isActive()) {
+        await schemaTransaction.rollback();
       }
       throw error;
     }
@@ -570,7 +576,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // A missing-table probe aborts a PostgreSQL transaction even when the caller
   // catches the error. Provision every framework-owned system table on the base
   // connection before opening the isolated transaction.
-  if (config.type === 'postgres') {
+  if (config.type === 'postgres' && !systemTablesPrepared) {
     await ensureSystemTables(baseDb, config.type);
   }
 
@@ -1259,7 +1265,25 @@ export async function createIsolatedTestDbFromManifest(
       );
     }
   }
-  const rendered = plan.schemas.flatMap((definition) => {
+  // PostgreSQL's generic synchronizer remains responsible for reconciling
+  // existing test tables, indexes, defaults, and newly added columns. Keep
+  // named constraints out of that parser and apply every physical FK through
+  // the core renderer only after all tables exist. SQLite retains its existing
+  // inline-constraint rendering path.
+  const renderedDefinitions =
+    adapter === 'postgres'
+      ? plan.schemas.map((definition) => ({
+          ...definition,
+          columns: Object.fromEntries(
+            Object.entries(definition.columns).map(([name, column]) => [
+              name,
+              { ...column, foreignKey: undefined },
+            ]),
+          ),
+          foreignKeys: [],
+        }))
+      : plan.schemas;
+  const rendered = renderedDefinitions.flatMap((definition) => {
     const table = tableMap.get(definition.tableName);
     return table
       ? [renderCollectedManifestTable({ ...table.table, definition }, adapter)]
@@ -1291,13 +1315,23 @@ export async function createIsolatedTestDbFromManifest(
   // 4. Delegate to existing function
   return createIsolatedTestDbWithPostSchemaStatements(
     { schema: sortedDDL, prefix },
-    plan.deferredConstraints.map(({ table, foreignKey }, index) => ({
-      statement: plan.deferredStatements[index] as string,
-      tableName: table,
-      constraintName: foreignKeyConstraintName(table, foreignKey),
-    })),
     adapter === 'postgres'
-      ? rendered.flatMap((ddl) => [ddl.createTable, ...ddl.indexes])
+      ? tables
+          .flatMap(({ tableName, table }) =>
+            schemaForeignKeysForEngine(table.definition, 'postgres').map(
+              (foreignKey) => ({ tableName, foreignKey }),
+            ),
+          )
+          .sort((a, b) =>
+            `${a.tableName}.${a.foreignKey.column}`.localeCompare(
+              `${b.tableName}.${b.foreignKey.column}`,
+            ),
+          )
+          .map(({ tableName, foreignKey }) => ({
+            statement: renderDeferredForeignKeyAdd(tableName, foreignKey),
+            tableName,
+            constraintName: foreignKeyConstraintName(tableName, foreignKey),
+          }))
       : [],
   );
 }

@@ -9,10 +9,12 @@ export {
   foreignKeyConstraintName,
   renderForeignKeyConstraint,
   schemaForeignKeys,
+  schemaForeignKeysForEngine,
 } from './foreign-key-ddl.js';
 export {
   type ForeignKeyCreationPlan,
   planForeignKeyCreation,
+  renderDeferredForeignKeyAdd,
 } from './foreign-key-planner.js';
 export {
   normalizeForeignKeyAction,
