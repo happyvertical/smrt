@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +10,11 @@ import {
   CONTENT_LIST_UNREPRESENTABLE_OPTION,
   normalizeContentToken,
 } from '../content-list-controller.js';
-import { ContentListQueryError } from '../content-list-query.js';
+import {
+  ContentListQueryError,
+  contentListQueryRequestKey,
+} from '../content-list-query.js';
+import { createContentListJobController } from '../content-list-runtime.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
@@ -647,6 +653,176 @@ describe('ContentList async states', () => {
     expect(emptyTarget.textContent).toContain(
       'No contents match your filters.',
     );
+  });
+});
+
+describe('ContentList trustworthy async runtime (#2455)', () => {
+  it('keeps stale rows usable and reports a failed refresh without success', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    query.setFreshness({ stale: true, lastUpdated: 1_787_765_400_000 });
+    query.fail(new Error('reconnect failed'));
+    flushSync();
+
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+    const alert = target.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('latest refresh failed');
+    expect(alert?.textContent).toContain('reconnect failed');
+    expect(alert?.textContent).not.toContain('Completed');
+    expect(target.textContent).toContain('Showing saved content');
+  });
+
+  it('subscribes to the exact live query and reconnects after offline state', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    try {
+      const query = createFakeContentListQuery();
+      const target = renderList({ query: { bind: () => query.binding } });
+      query.resolve([serverRow('content-1', 'Council budget explained')]);
+      flushSync();
+
+      expect(query.liveSubscriptions).toBe(1);
+      window.dispatchEvent(new Event('offline'));
+      flushSync();
+      expect(target.textContent).toContain('Offline — showing saved content');
+      expect(rowTitles(target)).toEqual(['Council budget explained']);
+
+      window.dispatchEvent(new Event('online'));
+      flushSync();
+      expect(query.reconnects).toBe(1);
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, 'onLine', descriptor);
+      else Reflect.deleteProperty(navigator, 'onLine');
+    }
+  });
+
+  it('reconciles an external row change without losing query or selection', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    flushSync();
+
+    typeText(searchInput(target), 'budget');
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    query.resolve([serverRow('content-1', 'Council budget updated')]);
+    flushSync();
+
+    expect(searchInput(target).value).toBe('budget');
+    expect(rowTitles(target)).toEqual(['Council budget updated']);
+    expect(target.textContent).toContain('1 selected');
+  });
+
+  it('shows job id and progress, disables its row, and refreshes only on success', async () => {
+    const query = createFakeContentListQuery();
+    const jobs = createContentListJobController();
+    jobs.update({
+      jobId: 'job-review-1',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+      completed: 1,
+      total: 3,
+    });
+    const target = renderList({
+      jobs,
+      query: { bind: () => query.binding },
+    });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    flushSync();
+
+    expect(target.textContent).toContain('Job job-review-1');
+    expect(target.querySelector('progress')?.getAttribute('value')).toBe('1');
+    expect(buttonsByText(target, 'Edit')[0].disabled).toBe(true);
+
+    jobs.update({
+      ...jobs.snapshot().jobs[0],
+      status: 'succeeded',
+      completed: 3,
+    });
+    await settle();
+    expect(query.refreshes).toBe(1);
+
+    jobs.update({
+      jobId: 'job-unrelated',
+      actionId: 'review',
+      submissionKey: 'review:content-2',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-2'] },
+    });
+    const unrelated = jobs
+      .snapshot()
+      .jobs.find((job) => job.jobId === 'job-unrelated');
+    expect(unrelated).toBeDefined();
+    if (!unrelated) throw new Error('Expected the unrelated job snapshot.');
+    jobs.update({ ...unrelated, status: 'succeeded' });
+    await settle();
+    expect(query.refreshes).toBe(1);
+
+    const activeRequest = query.requests.at(-1);
+    expect(activeRequest).toBeDefined();
+    if (!activeRequest) throw new Error('Expected the active query request.');
+    jobs.update({
+      jobId: 'job-query',
+      actionId: 'bulk-review',
+      submissionKey: 'bulk-review:active-query',
+      status: 'running',
+      target: {
+        kind: 'query',
+        queryKey: contentListQueryRequestKey(activeRequest),
+      },
+    });
+    flushSync();
+    expect(buttonsByText(target, 'Edit')[0].disabled).toBe(true);
+    expect(
+      checkboxByLabel(target, 'Select Council budget explained').disabled,
+    ).toBe(true);
+  });
+
+  it('keeps a failed job failed and exposes its explicit retry', async () => {
+    const retry = vi.fn(async () => ({
+      jobId: 'job-retry-2',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running' as const,
+      target: { kind: 'rows' as const, rowIds: ['content-1'] },
+    }));
+    const jobs = createContentListJobController({ retry });
+    jobs.update({
+      jobId: 'job-failed-1',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    const target = renderList({ jobs });
+    jobs.update({
+      ...jobs.snapshot().jobs[0],
+      status: 'failed',
+      error: 'model unavailable',
+    });
+    flushSync();
+
+    expect(
+      target.querySelector('[data-job-id="job-failed-1"] [role="alert"]')
+        ?.textContent,
+    ).toBe('model unavailable');
+    click(buttonsByText(target, 'Retry job')[0]);
+    await settle();
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('ships a reduced-motion override for refresh affordances', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/svelte/components/ContentList.svelte'),
+      'utf8',
+    );
+    expect(source).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(source).toMatch(/refresh-button[\s\S]*transition: none/);
   });
 });
 

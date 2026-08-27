@@ -84,10 +84,17 @@ import {
   contentListQueryRowsToContents,
   contentListQueryTotalValue,
   CONTENT_LIST_QUERY_MAX_OFFSET,
+  contentListQueryRequestKey,
   contentListViewStateToDataQueryRequest,
   readContentListQueryNotices,
   resolveContentListMaxPageSize,
 } from '../content-list-query.js';
+import {
+  contentListJobAffectsQuery,
+  type ContentListJob,
+  type ContentListJobBinding,
+  type ContentListJobSnapshot,
+} from '../content-list-runtime.js';
 import {
   type ContentListSavedView,
   type ContentListSavedViewStore,
@@ -144,6 +151,8 @@ interface Props {
   urlState?: ContentListUrlStateBinding;
   /** Opt-in saved views. `createContentListSavedViewStore()` is the default store. */
   savedViews?: ContentListSavedViewStore;
+  /** Shared background-workflow state. The same binding guards submissions. */
+  jobs?: ContentListJobBinding;
 }
 
 let {
@@ -163,9 +172,11 @@ let {
   query = undefined,
   urlState = undefined,
   savedViews = undefined,
+  jobs = undefined,
 }: Props = $props();
 
 const initialQuery = untrack(() => query);
+const initialJobs = untrack(() => jobs);
 
 // One controller owns search, filters, sorting, paging, and selection for
 // every presentation. The view mode lives beside it, so switching presentation
@@ -329,6 +340,41 @@ let pendingDelete = $state<ContentListRow | null>(null);
 let savedViewList = $state<ContentListSavedView[]>([]);
 let selectedSavedViewId = $state('');
 let savedViewName = $state('');
+let offline = $state(false);
+let jobSnapshot = $state<ContentListJobSnapshot>({
+  jobs: [],
+  pendingRowIds: new Set(),
+  pendingQueryKeys: new Set(),
+});
+let completedJobs = $state<ContentListJob[]>([]);
+let activeQueryKey = $state<string | undefined>(undefined);
+
+// Job state is subscribed once so hosts can use a framework-free controller.
+// Only transitions observed after the initial snapshot are completion events;
+// old successful history must not refresh every newly-mounted list.
+$effect(() => {
+  const binding = initialJobs;
+  if (!binding) return;
+  let initialized = false;
+  const statuses = new Map<string, ContentListJob['status']>();
+  return binding.subscribe((next) => {
+    const completions: ContentListJob[] = [];
+    for (const job of next.jobs) {
+      const previous = statuses.get(job.jobId);
+      if (
+        initialized &&
+        job.status === 'succeeded' &&
+        previous !== 'succeeded'
+      )
+        completions.push(job);
+      statuses.set(job.jobId, job.status);
+    }
+    initialized = true;
+    jobSnapshot = next;
+    if (completions.length > 0)
+      completedJobs = [...completedJobs, ...completions];
+  });
+});
 
 $effect(() =>
   controller.subscribe((transition) => {
@@ -427,6 +473,9 @@ const sourceContents = $derived(
   queryBinding ? contentListQueryRowsToContents(queryBinding.rows) : contents,
 );
 const rows = $derived(toContentListRows(sourceContents));
+const visibleRowIds = $derived(
+  new Set(rows.filter((row) => row.identified).map((row) => String(row.id))),
+);
 // In server mode the returned rows ARE the answer: the server already applied
 // the search, the filters, the sort, and the page. Running the local transform
 // over them again would re-filter with subtly different semantics (untrimmed
@@ -552,6 +601,26 @@ const isLoading = $derived(loading || (queryBinding?.loading ?? false));
 const refreshing = $derived(
   (queryBinding?.refreshing ?? false) || (isLoading && pageRows.length > 0),
 );
+const stale = $derived((queryBinding?.stale ?? false) || offline);
+const blockingError = $derived(
+  error ?? (pageRows.length === 0 ? queryErrorMessage : null),
+);
+const recoverableError = $derived(
+  error === null && pageRows.length > 0 ? queryErrorMessage : null,
+);
+const lastUpdated = $derived(queryBinding?.lastUpdated);
+
+function refreshQuery(): void {
+  if (!queryBinding?.refresh || refreshing || isLoading) return;
+  const key = activeQueryKey;
+  void queryBinding
+    .refresh()
+    .then((result) => {
+      if (result !== undefined && activeQueryKey === key)
+        resultNotices = readContentListQueryNotices(result);
+    })
+    .catch(() => undefined);
+}
 /**
  * A retry re-reads the same query, so its answer replaces the rendered rows —
  * and therefore has to replace the completeness flags that describe them too.
@@ -641,6 +710,7 @@ $effect(() => {
       // a failure in its error state, so a rejection here is not also an
       // unhandled one. The resolved envelope carries the server's completeness
       // flags, which the binding itself does not expose.
+      activeQueryKey = contentListQueryRequestKey(translated.request);
       void queryBinding
         .execute(translated.request)
         .then((result) => {
@@ -674,6 +744,53 @@ $effect(() => {
   });
 });
 
+// Query-scoped live updates are opt-in at the transport. Reconnect refreshes
+// the exact active query before resubscribing; without a live transport, the
+// same browser event falls back to an ordinary exact-query refresh.
+$effect(() => {
+  if (!queryBinding || typeof window === 'undefined') return;
+  offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  let live:
+    | { unsubscribe(): void; reconnect?: () => void }
+    | undefined;
+  try {
+    live = queryBinding.subscribeLive?.();
+  } catch {
+    live = undefined;
+  }
+  const handleOffline = () => {
+    offline = true;
+  };
+  const handleOnline = () => {
+    const wasOffline = offline;
+    offline = false;
+    if (!wasOffline) return;
+    if (live?.reconnect) live.reconnect();
+    else refreshQuery();
+  };
+  window.addEventListener('offline', handleOffline);
+  window.addEventListener('online', handleOnline);
+  return () => {
+    window.removeEventListener('offline', handleOffline);
+    window.removeEventListener('online', handleOnline);
+    live?.unsubscribe();
+  };
+});
+
+// A successful workflow refreshes only the page/query it can affect. Failures
+// stay visible and never produce the refresh that a success would.
+$effect(() => {
+  const completions = completedJobs;
+  if (!queryBinding?.refresh || completions.length === 0) return;
+  completedJobs = [];
+  if (
+    completions.some((job) =>
+      contentListJobAffectsQuery(job, activeQueryKey, visibleRowIds),
+    )
+  )
+    refreshQuery();
+});
+
 const selectedRowKeys = $derived(
   new Set(tableState.selectedRowIds.map((rowId) => String(rowId))),
 );
@@ -681,7 +798,9 @@ const selectedRowKeys = $derived(
 const identifiedRowKeys = $derived(
   new Set(selectableContentListRowIds(rows).map((rowId) => String(rowId))),
 );
-const selectablePageRowIds = $derived(selectableContentListRowIds(pageRows));
+const selectablePageRowIds = $derived(
+  selectableContentListRowIds(pageRows.filter((row) => !rowPending(row))),
+);
 const allPageSelected = $derived(
   selectablePageRowIds.length > 0 &&
     selectablePageRowIds.every((rowId) => selectedRowKeys.has(String(rowId))),
@@ -997,8 +1116,35 @@ function isSelected(row: ContentListRow): boolean {
   return selectedRowKeys.has(String(row.id));
 }
 
+function rowPending(row: ContentListRow): boolean {
+  return (
+    jobSnapshot.pendingRowIds.has(String(row.id)) ||
+    (activeQueryKey !== undefined &&
+      jobSnapshot.pendingQueryKeys.has(activeQueryKey))
+  );
+}
+
+function retryJob(jobId: string): void {
+  void initialJobs?.retry(jobId).catch(() => undefined);
+}
+
+function jobStatusLabel(job: ContentListJob): string {
+  if (job.status === 'queued') return t(M['content.content_list.job_queued']);
+  if (job.status === 'running') return t(M['content.content_list.job_running']);
+  if (job.status === 'succeeded')
+    return t(M['content.content_list.job_succeeded']);
+  return t(M['content.content_list.job_failed']);
+}
+
+function formattedLastUpdated(value: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
 function toggleRow(row: ContentListRow) {
-  if (!row.identified) return;
+  if (!row.identified || rowPending(row)) return;
   controller.dispatch({ type: 'toggleRowSelection', rowId: row.id });
 }
 
@@ -1048,6 +1194,7 @@ function selectRowLabel(row: ContentListRow): string {
 }
 
 function handleDeleteContent(row: ContentListRow) {
+  if (rowPending(row)) return;
   pendingDelete = row;
 }
 
@@ -1123,10 +1270,12 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 {#snippet selectCell({ row }: { row: ContentListRow })}
   <Checkbox
     checked={isSelected(row)}
-    disabled={!row.identified}
+    disabled={!row.identified || rowPending(row)}
     aria-label={selectRowLabel(row)}
     title={row.identified
-      ? undefined
+      ? rowPending(row)
+        ? t(M['content.content_list.row_pending'])
+        : undefined
       : t(M['content.content_list.row_not_selectable'])}
     onchange={() => toggleRow(row)}
   />
@@ -1179,6 +1328,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         size="sm"
         class="icon-btn"
         type="button"
+        disabled={rowPending(row)}
         onclick={() => onEdit(row.content)}
         title={t(M['content.content_list.edit'])}
         aria-label={t(M['content.content_list.edit'])}
@@ -1192,6 +1342,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         size="sm"
         class="icon-btn delete-icon"
         type="button"
+        disabled={rowPending(row)}
         onclick={() => handleDeleteContent(row)}
         title={t(M['content.content_list.delete'])}
         aria-label={t(M['content.content_list.delete'])}
@@ -1407,10 +1558,75 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     </div>
   {/if}
 
-  {#if activeError}
+  {#if serverBacked}
+    <div class="content-freshness" aria-live="polite" aria-atomic="true">
+      <span>
+        {#if offline}
+          {t(M['content.content_list.offline'])}
+        {:else if stale}
+          {t(M['content.content_list.stale'])}
+        {:else if lastUpdated !== undefined}
+          {t(M['content.content_list.last_updated'], {
+            time: formattedLastUpdated(lastUpdated),
+          })}
+        {/if}
+      </span>
+      {#if queryBinding?.refresh}
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          class="refresh-button"
+          disabled={refreshing || isLoading || offline}
+          onclick={refreshQuery}
+        >
+          {t(M['content.content_list.refresh'])}
+        </Button>
+      {/if}
+    </div>
+  {/if}
+
+  {#if jobSnapshot.jobs.length > 0}
+    <section class="content-jobs" aria-label={t(M['content.content_list.jobs'])}>
+      <ul class="content-jobs__list" aria-live="polite" aria-atomic="false">
+        {#each jobSnapshot.jobs as job (job.jobId)}
+          <li class={`content-job content-job--${job.status}`} data-job-id={job.jobId}>
+            <span class="content-job__identity">
+              {t(M['content.content_list.job_identity'], { id: job.jobId })}
+            </span>
+            <span>{jobStatusLabel(job)}</span>
+            {#if job.total !== undefined && job.total > 0}
+              <progress
+                value={Math.min(job.completed ?? 0, job.total)}
+                max={job.total}
+                aria-label={t(M['content.content_list.job_progress'], {
+                  completed: job.completed ?? 0,
+                  total: job.total,
+                })}
+              ></progress>
+            {/if}
+            {#if job.message}<span>{job.message}</span>{/if}
+            {#if job.status === 'failed'}
+              {#if job.error}<span role="alert">{job.error}</span>{/if}
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onclick={() => retryJob(job.jobId)}
+              >
+                {t(M['content.content_list.retry_job'])}
+              </Button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
+  {#if blockingError}
     <div class="state-panel state-panel--error" role="alert">
       <p class="state-panel__title">{t(M['content.content_list.error_title'])}</p>
-      <p class="state-panel__detail">{activeError}</p>
+      <p class="state-panel__detail">{blockingError}</p>
       {#if retryHandler}
         <Button variant="ghost" type="button" class="retry-button" onclick={() => retryHandler?.()}>
           {t(M['content.content_list.retry'])}
@@ -1418,6 +1634,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       {/if}
     </div>
   {:else}
+    {#if recoverableError}
+      <div class="state-panel state-panel--error state-panel--inline" role="alert">
+        <p class="state-panel__title">{t(M['content.content_list.refresh_error_title'])}</p>
+        <p class="state-panel__detail">{recoverableError}</p>
+        {#if retryHandler}
+          <Button variant="ghost" type="button" class="retry-button" onclick={() => retryHandler?.()}>
+            {t(M['content.content_list.retry'])}
+          </Button>
+        {/if}
+      </div>
+    {/if}
     {#if pageRows.length > 0 || selectedCount > 0}
       <div class="content-selection">
         {#if viewMode !== 'compact'}
@@ -1484,10 +1711,12 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <div class="content-row__select">
               <Checkbox
                 checked={isSelected(row)}
-                disabled={!row.identified}
+                disabled={!row.identified || rowPending(row)}
                 aria-label={selectRowLabel(row)}
                 title={row.identified
-                  ? undefined
+                  ? rowPending(row)
+                    ? t(M['content.content_list.row_pending'])
+                    : undefined
                   : t(M['content.content_list.row_not_selectable'])}
                 onchange={() => toggleRow(row)}
               />
@@ -1533,7 +1762,13 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
                 <a href={viewHref(row)} class="quiet-action">{t(M['content.content_list.view_article'])}</a>
               {/if}
               {#if actions.includes('edit')}
-                <Button variant="ghost" type="button" class="quiet-action" onclick={() => onEdit(content)}>
+                <Button
+                  variant="ghost"
+                  type="button"
+                  class="quiet-action"
+                  disabled={rowPending(row)}
+                  onclick={() => onEdit(content)}
+                >
                   {t(M['content.content_list.edit'])}
                 </Button>
               {/if}
@@ -1541,6 +1776,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
                 <Button
                   variant="ghost"
                   type="button"
+                  disabled={rowPending(row)}
                   class="quiet-action quiet-action--danger"
                   onclick={() => handleDeleteContent(row)}
                 >
@@ -1569,10 +1805,12 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               <div class="content-header__eyebrow">
                 <Checkbox
                   checked={isSelected(row)}
-                  disabled={!row.identified}
+                  disabled={!row.identified || rowPending(row)}
                   aria-label={selectRowLabel(row)}
                   title={row.identified
-                    ? undefined
+                    ? rowPending(row)
+                      ? t(M['content.content_list.row_pending'])
+                      : undefined
                     : t(M['content.content_list.row_not_selectable'])}
                   onchange={() => toggleRow(row)}
                 />
@@ -1609,12 +1847,24 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
                   <a href={viewHref(row)} class="view-btn">{t(M['content.content_list.view_article_button'])}</a>
                 {/if}
                 {#if actions.includes('edit')}
-                  <Button variant="ghost" type="button" class="content-action-btn" onclick={() => onEdit(content)}>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    class="content-action-btn"
+                    disabled={rowPending(row)}
+                    onclick={() => onEdit(content)}
+                  >
                     {t(M['content.content_list.edit'])}
                   </Button>
                 {/if}
                 {#if actions.includes('delete')}
-                  <Button variant="ghost" type="button" class="content-action-btn delete-btn" onclick={() => handleDeleteContent(row)}>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    class="content-action-btn delete-btn"
+                    disabled={rowPending(row)}
+                    onclick={() => handleDeleteContent(row)}
+                  >
                     {t(M['content.content_list.delete'])}
                   </Button>
                 {/if}
@@ -2076,6 +2326,58 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
+  .content-freshness {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-height: 2rem;
+    margin-bottom: 0.75rem;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+
+  .content-freshness :global(.refresh-button) {
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .content-jobs {
+    margin-bottom: 1rem;
+  }
+
+  .content-jobs__list {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .content-job {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+
+  .content-job--failed {
+    border-color: var(--smrt-color-error);
+  }
+
+  .content-job__identity {
+    color: var(--smrt-color-on-surface);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+  }
+
+  .content-job progress {
+    min-width: 8rem;
+  }
+
   .content-pagination {
     display: flex;
     justify-content: center;
@@ -2181,6 +2483,12 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     color: var(--smrt-color-on-surface);
   }
 
+  .state-panel--inline {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    text-align: left;
+  }
+
   .state-panel__title {
     margin: 0 0 0.5rem;
     font-weight: var(--smrt-typography-weight-semibold, 600);
@@ -2235,6 +2543,13 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     .content-row__actions {
       grid-auto-flow: row;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .content-freshness :global(.refresh-button),
+    .actions-cell :global(.icon-btn) {
+      transition: none;
     }
   }
 </style>

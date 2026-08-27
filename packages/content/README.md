@@ -465,7 +465,7 @@ startup and seeds sample content (3 items) for immediate testing.
 
 | Component | Props | Description |
 |-----------|-------|-------------|
-| `ContentList` | `contents`, `onEdit`, `onDelete`, `onAdd`, `getViewHref` | Card/list catalog with search, filters, and view toggles |
+| `ContentList` | `contents` or `query`, `jobs`, `onEdit`, `onDelete`, `onAdd`, `getViewHref` | Query-backed catalog with realtime freshness, background-job progress, retry, search, filters, and view toggles |
 | `ContentEditor` | `content`, `contentId`, `onSave`, `onCancel` | Full content editor with metadata, assets, references |
 | `GovernedContentEditor` | `content`, `contentId`, `onSave`, `onCancel` | Editor with integrated governance panel and review controls |
 | `ContentAgentChat` | `contentId`, `apiBasePath` | AI chat sidebar for content with thread management |

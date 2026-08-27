@@ -7,6 +7,43 @@ adapter (`src/svelte/content-list-controller.ts`) over a `DataTableController`,
 and can source those rows either from a client array or from the bounded
 content query endpoint. This doc covers both modes end to end.
 
+## Realtime, freshness, and background workflows (#2455)
+
+A server-backed list consumes the complete reactive seam exposed by
+`remoteQuery(...)`: initial loading, stale-while-refreshing rows, error, retry,
+last-updated time, and an optional query-shaped live subscription. ContentList
+subscribes after its first request. The remote-query controller carries that
+live intent across query changes, so search/filter/page changes rebind to the
+new exact query rather than subscribing to the whole collection. Browser
+`offline` keeps usable rows on screen and announces their freshness; `online`
+calls the live handle's `reconnect()` (which refreshes the exact request before
+resubscribing), or falls back to `refresh()` when the transport has no live
+handle. A refresh failure over existing rows is an inline error and never
+replaces them with an empty/error-only screen.
+
+Long-running actions share a framework-free
+`createContentListJobController()`. Give that controller to action controls and
+pass it to ContentList as `jobs`. Its `submit({ actionId, submissionKey,
+target }, start)` method coalesces duplicate active submission keys before
+calling `start`, publishes the accepted job id/progress, and leaves a rejected
+submission failed until an explicit retry. Server progress enters through
+`update(job)`; terminal state cannot be reverted by an out-of-order progress
+event. Row-targeted pending work disables that row's selection/edit/delete
+controls.
+
+Job targets are deliberately precise:
+
+- `{ kind: 'rows', rowIds }` refreshes only when at least one affected row is
+  visible;
+- `{ kind: 'query', queryKey }` refreshes only when the key equals
+  `contentListQueryRequestKey(activeRequest)`.
+
+Only a transition to `succeeded` triggers that refresh. Failed jobs remain
+visible with their error and retry affordance, so error recovery cannot report
+success or refresh as though the action applied. The tracker is exported from
+`@happyvertical/smrt-content/svelte` for the bulk-action slice to reuse rather
+than creating a second pending-state machine.
+
 ## ContentList migration (#2451)
 
 `ContentList` no longer holds bespoke local state. `src/svelte/content-list-controller.ts`
