@@ -782,6 +782,10 @@ $effect(() => {
 $effect(() => {
   const completions = completedJobs;
   if (!queryBinding?.refresh || completions.length === 0) return;
+  // A success can arrive while an older query is still in flight. Keep the
+  // completion queued until that request settles so its pre-job answer cannot
+  // become the indefinitely visible final state.
+  if (refreshing || isLoading) return;
   completedJobs = [];
   if (
     completions.some((job) =>

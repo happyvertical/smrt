@@ -783,6 +783,31 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     ).toBe(true);
   });
 
+  it('retains a successful job refresh until an in-flight query settles', async () => {
+    const query = createFakeContentListQuery();
+    const jobs = createContentListJobController();
+    jobs.update({
+      jobId: 'job-during-refresh',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    renderList({ jobs, query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    query.setBusy({ refreshing: true });
+    flushSync();
+
+    const running = jobs.snapshot().jobs[0];
+    jobs.update({ ...running, status: 'succeeded' });
+    await settle();
+    expect(query.refreshes).toBe(0);
+
+    query.setBusy({ refreshing: false });
+    await settle();
+    expect(query.refreshes).toBe(1);
+  });
+
   it('keeps a failed job failed and exposes its explicit retry', async () => {
     const retry = vi.fn(async () => ({
       jobId: 'job-retry-2',
