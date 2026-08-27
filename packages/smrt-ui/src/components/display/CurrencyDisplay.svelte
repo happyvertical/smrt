@@ -24,7 +24,8 @@ function invalidCurrencyCode(value: unknown): string {
   let diagnostic = '';
   let consumed = 0;
   for (const character of characters) {
-    const codePoint = character.codePointAt(0)!;
+    const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) continue;
     const visibleCharacter =
       codePoint >= 0x20 && codePoint <= 0x7e
         ? character.replace(/[a-z]/g, (ascii) => ascii.toUpperCase())
