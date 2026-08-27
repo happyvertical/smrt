@@ -122,8 +122,10 @@ pnpm smrt generate-mcp --no-config --no-readme
 
 WebMCP registration is documented as an opt-in, per-page integration using
 `collectionDefinitions` from `@happyvertical/smrt-virt-web` and
-`registerWebMcpTools()` from `@happyvertical/smrt-web`. CRUD is wired in
-0.38.25; custom action execution is not yet wired and is documented as such.
+`registerWebMcpTools()` from `@happyvertical/smrt-web`. Generated model tools
+default to read-effect exposure, including custom actions declared as reads.
+Write and destructive effects require explicit opt-in, and all custom actions
+execute through their generated REST routes.
 The CLI's manifest-only `objects` and `schema` commands work in this
 source-first template. Local-object CRUD execution through the generic CLI
 additionally requires a compiled JavaScript project entry point.
@@ -134,8 +136,11 @@ additionally requires a compiled JavaScript project entry point.
 consumer adds it only when a page imports the live collection or WebMCP runtime:
 
 ```bash
-pnpm add @happyvertical/smrt-web@0.38.25
+pnpm add "@happyvertical/smrt-web@$(node -p "require('./package.json').dependencies['@happyvertical/smrt-core']")"
 ```
+
+Run this inside the generated project. It keeps `smrt-web` on the same release
+line as the template's synchronized `smrt-core` dependency.
 
 The generated-project README shows the current hydration pattern:
 `createSmrtCollection(getCollectionDefinition('items'), { initialData,

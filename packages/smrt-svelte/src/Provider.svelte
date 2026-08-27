@@ -195,16 +195,38 @@ $effect(() => {
 
   // Keep the data-plane engine out of applications that do not opt in. The
   // dynamic import also means SSR never evaluates browser-only engine code.
-  void import('@happyvertical/smrt-web').then(({ registerWebMcpTools }) => {
-    if (cancelled) return;
-    dispose = registerWebMcpTools(config.definitions ?? [], {
-      ...(config.client ? { client: config.client } : {}),
-      ...(config.basePath ? { basePath: config.basePath } : {}),
-      ...(config.fetchFn ? { fetchFn: config.fetchFn } : {}),
-      ...(config.scope ? { scope: config.scope } : {}),
-      ...(config.filter ? { filter: config.filter } : {}),
+  void import('@happyvertical/smrt-web')
+    .then(({ registerWebMcpTools }) => {
+      if (cancelled) return;
+      const registration = registerWebMcpTools(config.definitions ?? [], {
+        client: config.client,
+        basePath: config.basePath,
+        fetchFn: config.fetchFn,
+        scope: config.scope,
+        filter: config.filter,
+        filterTool: config.filterTool,
+        resolveFetchers: config.resolveFetchers,
+        resolveToolFetchers: config.resolveToolFetchers,
+        effects: config.effects,
+        namespace: config.namespace,
+        maxTools: config.maxTools,
+      });
+      dispose = registration;
+      void registration.ready.catch((error) => {
+        if (!cancelled) {
+          logger.warn('Provider: WebMCP data tool registration rejected', {
+            error,
+          });
+        }
+      });
+    })
+    .catch((error) => {
+      if (!cancelled) {
+        logger.warn('Provider: WebMCP data tool registration rejected', {
+          error,
+        });
+      }
     });
-  });
 
   return () => {
     cancelled = true;

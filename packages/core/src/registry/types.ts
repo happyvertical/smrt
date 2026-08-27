@@ -35,6 +35,9 @@ export type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
 
 export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/** Browser/agent-visible effect classification for a generated API action. */
+export type ToolEffect = 'read' | 'write' | 'destructive';
+
 export interface ApiSerializerReference {
   /**
    * Module specifier to import the serializer from.
@@ -77,6 +80,20 @@ export interface ApiCustomRouteConfig {
    * ```
    */
   path?: string;
+
+  /**
+   * Agent-visible effect classification for this custom action.
+   *
+   * Omitted custom actions are treated as `destructive` by generated tool
+   * surfaces so missing metadata can never widen browser capability exposure.
+   */
+  effect?: ToolEffect;
+
+  /** Whether repeating the action with the same arguments is safe. */
+  idempotent?: boolean;
+
+  /** Whether the action can interact outside the SMRT application. */
+  openWorld?: boolean;
 }
 
 export interface ApiSerializersConfig {

@@ -61,7 +61,7 @@ describe('Form WebMCP staged-edit intent', () => {
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         registered.push(tool as (typeof registered)[number]);
       },
     };
@@ -1020,7 +1020,7 @@ describe('Form WebMCP staged-edit intent', () => {
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         registered.push(tool as (typeof registered)[number]);
       },
     };
@@ -1267,7 +1267,7 @@ describe('Form WebMCP staged-edit intent', () => {
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         registered.push(tool as (typeof registered)[number]);
       },
     };
@@ -1570,7 +1570,7 @@ describe('Form WebMCP staged-edit intent', () => {
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         registered.push(tool as (typeof registered)[number]);
       },
     };
@@ -1821,7 +1821,7 @@ describe('Form WebMCP staged-edit intent', () => {
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
     document.modelContext = {
-      registerTool(tool) {
+      async registerTool(tool) {
         registered.push(tool as (typeof registered)[number]);
       },
     };
