@@ -4,6 +4,7 @@ import AddressInput from '../AddressInput.svelte';
 import DateRangeInput from '../DateRangeInput.svelte';
 import Form from '../Form.svelte';
 import MeasurementInput from '../MeasurementInput.svelte';
+import TextInput from '../TextInput.svelte';
 
 let {
   onsubmit = undefined,
@@ -27,6 +28,7 @@ let {
   dateDisabled = false,
   measurementName = 'measurement',
   showCollidingSibling = false,
+  showExactNameCollisions = false,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -51,6 +53,7 @@ let {
   dateDisabled?: boolean;
   measurementName?: string;
   showCollidingSibling?: boolean;
+  showExactNameCollisions?: boolean;
 } = $props();
 </script>
 
@@ -85,6 +88,10 @@ let {
 		onchange={onaddresschange}
 		/>
 	</fieldset>
+	{#if showExactNameCollisions}
+		<TextInput name="address[city]" label="Exact address city" />
+		<TextInput name="{measurementName}_unit" label="Exact measurement unit" />
+	{/if}
 	{#if showCollidingSibling}<input name="{measurementName}_note" />{/if}
 	<button type="submit">Submit</button>
 </Form>

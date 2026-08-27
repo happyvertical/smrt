@@ -25,6 +25,9 @@ let displayName = $state('Ada');
 let apiToken = $state('token');
 let volume = $state(25);
 let score = $state<string | number>(1);
+let birthday = $state('');
+let meetingTime = $state('');
+let intensity = $state(50);
 let mutableSubject = $state<ControlSubject | undefined>();
 $effect(() => {
   mutableSubject = subject ? { ...subject } : undefined;
@@ -43,6 +46,9 @@ function mutateSubject() {
   </FormGroup>
   <Slider name="volume" label="Volume" bind:value={volume} />
   <Input name="score" aria-label="Score" type="number" bind:value={score} />
+  <Input name="birthday" aria-label="Birthday" type="date" bind:value={birthday} />
+  <Input name="meeting-time" aria-label="Meeting time" type="time" bind:value={meetingTime} />
+  <Input name="intensity" aria-label="Intensity" type="range" min="10" max="90" bind:value={intensity} />
   <button type="reset">Reset</button>
   {#if mutableSubject}
     <button type="button" onclick={mutateSubject}>Mutate subject</button>

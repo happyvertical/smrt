@@ -104,7 +104,19 @@ function validateControlValue(next: unknown) {
     return { valid: false, message: 'invalid_number' };
   }
   const candidate = inputEl.cloneNode() as HTMLInputElement;
-  candidate.value = String(next ?? '');
+  const proposedValue = String(next ?? '');
+  try {
+    candidate.value = proposedValue;
+  } catch {
+    return { valid: false, message: 'invalid_value' };
+  }
+  // Native inputs sanitize some assignments without making them invalid: an
+  // optional invalid date/time becomes empty and a range value can clamp to a
+  // bound. A staged proposal must never be marked applicable when the setter
+  // would apply a different value than the one reviewed.
+  if (candidate.value !== proposedValue) {
+    return { valid: false, message: 'invalid_value' };
+  }
   return {
     valid: candidate.checkValidity(),
     message: candidate.validationMessage || undefined,

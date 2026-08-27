@@ -115,13 +115,22 @@ function recordDirectUserEdit(event: Event) {
 }
 
 function handleInput(event: Event & { currentTarget: HTMLFormElement }) {
-  recordDirectUserEdit(event);
-  oninput?.(event);
+  try {
+    oninput?.(event);
+  } finally {
+    // Consumer handlers may synchronously normalize the bound value. Capture
+    // that final human value even when the handler throws.
+    recordDirectUserEdit(event);
+  }
 }
 
 function handleChange(event: Event & { currentTarget: HTMLFormElement }) {
-  recordDirectUserEdit(event);
-  onchange?.(event);
+  try {
+    onchange?.(event);
+  } finally {
+    // Match input semantics for controls that commit via change.
+    recordDirectUserEdit(event);
+  }
 }
 </script>
 

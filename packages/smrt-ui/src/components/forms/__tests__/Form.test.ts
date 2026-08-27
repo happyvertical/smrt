@@ -11,7 +11,10 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
-import { createControlInteractionRegistry } from '../control-interaction.js';
+import {
+  createControlInteractionRegistry,
+  executeLocalControlCommand,
+} from '../control-interaction.js';
 import Form from '../Form.svelte';
 
 const children = createRawSnippet(() => ({
@@ -39,6 +42,23 @@ function dispatchTrusted(target: EventTarget, type: string): void {
     { capture: true, once: true },
   );
   target.dispatchEvent(event);
+}
+
+function dispatchLocalGesture<T>(
+  execute: (event: Event) => Promise<T>,
+): Promise<T> {
+  const target = new EventTarget();
+  let pending: Promise<T> | undefined;
+  target.addEventListener(
+    'click',
+    (event) => {
+      pending = execute(event);
+    },
+    { once: true },
+  );
+  target.dispatchEvent(new Event('click'));
+  if (!pending) throw new Error('local gesture handler did not run');
+  return pending;
 }
 
 describe('Form', () => {
@@ -98,6 +118,75 @@ describe('Form', () => {
       controlId: 'display-name',
       subject: undefined,
     });
+  });
+
+  it('preserves a consumer-normalized human edit while an async setter rolls back', async () => {
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const { container } = render(Form, {
+      props: {
+        formId: 'profile',
+        interactionRegistry: registry,
+        children: controlledInput,
+        oninput: (event) => {
+          const input = event.target as HTMLInputElement;
+          input.value = input.value.replace(/^./, (character) =>
+            character.toUpperCase(),
+          );
+        },
+      },
+    });
+    const input = container.querySelector('input');
+    if (!input) throw new Error('Expected controlled input');
+    const identity = { formId: 'profile', controlId: 'display-name' };
+
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => input.value,
+      setValue: async (next) => {
+        input.value = String(next);
+        setterStarted?.();
+        await setterBlocked;
+        throw new Error('setter_failed');
+      },
+      restoreValue: (next) => {
+        input.value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const applying = dispatchLocalGesture((event) =>
+      executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        event,
+      ),
+    );
+    await setterStartedPromise;
+
+    input.value = 'katherine';
+    dispatchTrusted(input, 'input');
+    expect(input.value).toBe('Katherine');
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'setter_failed',
+    });
+    expect(input.value).toBe('Katherine');
   });
 
   it('is axe-clean', async () => {

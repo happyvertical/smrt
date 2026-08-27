@@ -324,6 +324,56 @@ describe('StagedControlReview', () => {
     expect(screen.getByRole('spinbutton', { name: 'Score' })).toHaveValue(1);
   });
 
+  it.each([
+    {
+      controlId: 'birthday',
+      proposal: '2025-02-30',
+      currentValue: '',
+    },
+    {
+      controlId: 'meeting-time',
+      proposal: '25:00',
+      currentValue: '',
+    },
+    {
+      controlId: 'intensity',
+      proposal: 5,
+      currentValue: 50,
+    },
+  ])('keeps native $controlId proposals invalid when the browser would canonicalize them', async ({
+    controlId,
+    proposal,
+    currentValue,
+  }) => {
+    const registry = createReviewRegistry();
+    render(Fixture, { props: { registry } });
+    const nativeIdentity = { formId: 'profile', controlId };
+
+    expect(
+      await registry.execute(
+        { action: 'stage', identity: nativeIdentity, value: proposal },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(nativeIdentity)?.state.staged).toMatchObject({
+      value: proposal,
+      valid: false,
+      validationMessage: 'invalid_value',
+    });
+    expect(registry.get(nativeIdentity)?.state.value).toBe(currentValue);
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'apply', identity: nativeIdentity },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: false, reason: 'invalid_value' });
+    expect(registry.get(nativeIdentity)?.state.value).toBe(currentValue);
+  });
+
   it('does not coerce an emptied numeric draft to zero', async () => {
     const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });

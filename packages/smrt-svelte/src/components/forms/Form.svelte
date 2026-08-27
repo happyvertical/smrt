@@ -104,6 +104,7 @@ interface InteractionRegistration {
   field: FieldDefinition;
   subject: ControlSubject | undefined;
   identity: ControlIdentity;
+  ownershipKey: string;
   disposeRegistration: () => void;
   restoreAttributes: () => void;
 }
@@ -189,23 +190,32 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
 function fieldControls(field: FieldDefinition) {
   const measurementUnitName =
     field.type === 'measurement' ? `${field.name}_unit` : undefined;
-  return formElement
-    ? Array.from(formElement.elements).filter(
-        (
-          control,
-        ): control is
-          | HTMLInputElement
-          | HTMLSelectElement
-          | HTMLTextAreaElement =>
-          (control instanceof HTMLInputElement ||
-            control instanceof HTMLSelectElement ||
-            control instanceof HTMLTextAreaElement) &&
-          control.type !== 'hidden' &&
-          (control.name === field.name ||
-            control.name.startsWith(`${field.name}[`) ||
-            control.name === measurementUnitName),
-      )
-    : [];
+  if (!formElement) return [];
+  const controls = Array.from(formElement.elements).filter(
+    (
+      control,
+    ): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+      (control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement ||
+        control instanceof HTMLTextAreaElement) &&
+      control.type !== 'hidden',
+  );
+  const exactControls = controls.filter(
+    (control) => control.name === field.name,
+  );
+  const hasExactId = exactControls.some((control) => control.id === field.name);
+  return controls.filter((control) => {
+    if (control.name === field.name) {
+      return !hasExactId || control.id === field.name;
+    }
+    // Exact registered names take precedence over the address and measurement
+    // composite naming conventions.
+    if (fields.has(control.name)) return false;
+    return (
+      control.name.startsWith(`${field.name}[`) ||
+      control.name === measurementUnitName
+    );
+  });
 }
 
 function decorateFieldControls(
@@ -305,6 +315,7 @@ function registerInteraction(
   };
   const replacesOwnedIdentity =
     previous !== undefined && sameRegistryIdentity(previous.identity, identity);
+  const ownershipKey = Array.from(fields.keys()).sort().join('\0');
   if (registry.get(identity) && !replacesOwnedIdentity) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
     return undefined;
@@ -364,7 +375,9 @@ function registerInteraction(
       },
       getValue: field.getValue,
       setValue: field.setValue,
-      prepareValue: field.prepareValue,
+      // The registry calls this inside its stage retry loop, so partial
+      // structured proposals merge with the latest stable human value.
+      prepareValue: (value) => prepareInteractionValue(field, value),
       clear:
         field.clear ??
         (() => {
@@ -400,6 +413,7 @@ function registerInteraction(
     field,
     subject: resolvedSubject,
     identity,
+    ownershipKey,
     disposeRegistration,
     restoreAttributes,
   };
@@ -447,8 +461,13 @@ let interactionRegistryRevision = $state(0);
 $effect(() => {
   const registry = resolvedInteractionRegistry;
   return registry.subscribe((event) => {
-    if (event.type === 'registered' || event.type === 'unregistered') {
-      interactionRegistryRevision += 1;
+    if (
+      event.type === 'registered' ||
+      event.type === 'unregistered' ||
+      (event.type === 'refreshed' && event.identity.formId === resolvedFormId)
+    ) {
+      interactionRegistryRevision =
+        untrack(() => interactionRegistryRevision) + 1;
     }
   });
 });
@@ -457,6 +476,9 @@ $effect(() => {
   const registry = resolvedInteractionRegistry;
   const currentFormId = resolvedFormId;
   const currentFields = new Map(fields);
+  const currentOwnershipKey = Array.from(currentFields.keys())
+    .sort()
+    .join('\0');
   void interactionRegistryRevision;
   if (
     activeInteractionRegistry !== registry ||
@@ -498,6 +520,7 @@ $effect(() => {
     const previous = interactionDisposers.get(name);
     if (
       previous?.field === field &&
+      previous.ownershipKey === currentOwnershipKey &&
       sameSubject(previous.subject, resolvedFieldSubject(field)) &&
       registry.get(previous.identity)
     )
@@ -686,7 +709,56 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
   return schema;
 }
 
+function structuredProposalProperties(
+  field: FieldDefinition,
+): Record<string, unknown> | undefined {
+  return (
+    webMcpFieldSchema(field) as {
+      properties?: Record<string, unknown>;
+    }
+  ).properties;
+}
+
+function prepareInteractionValue(field: FieldDefinition, value: unknown) {
+  let preparedValue = value;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const properties = structuredProposalProperties(field);
+    if (properties) {
+      const currentValue = field.getValue();
+      const currentObject =
+        currentValue !== null &&
+        typeof currentValue === 'object' &&
+        !Array.isArray(currentValue)
+          ? (currentValue as Record<string, unknown>)
+          : undefined;
+      const projectedCurrent = currentObject
+        ? Object.fromEntries(
+            Object.entries(currentObject).filter(([key]) =>
+              Object.hasOwn(properties, key),
+            ),
+          )
+        : {};
+      // WebMCP sanitizes its transport payload before it enters the registry.
+      // Preserve unknown members from direct registry callers so the field's
+      // validator can reject them rather than silently laundering them away.
+      preparedValue = { ...projectedCurrent, ...value };
+    }
+  }
+  if (
+    field.type === 'measurement' &&
+    preparedValue !== null &&
+    typeof preparedValue === 'object' &&
+    !Array.isArray(preparedValue) &&
+    !('unit' in preparedValue) &&
+    field.unit
+  ) {
+    preparedValue = { ...preparedValue, unit: field.unit };
+  }
+  return field.prepareValue?.(preparedValue) ?? preparedValue;
+}
+
 function formInputSchema(): Record<string, unknown> {
+  void interactionRegistryRevision;
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
@@ -753,54 +825,16 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     ) {
       return [];
     }
-    const currentValue = field.getValue();
-    let mergeBaseValue = currentValue;
     let sanitizedValue = value;
     if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const schema = webMcpFieldSchema(field) as {
-        properties?: Record<string, unknown>;
-      };
-      const properties = schema.properties;
+      const properties = structuredProposalProperties(field);
       if (properties) {
-        const currentObject =
-          currentValue !== null &&
-          typeof currentValue === 'object' &&
-          !Array.isArray(currentValue)
-            ? (currentValue as Record<string, unknown>)
-            : undefined;
-        const projectedCurrent = currentObject
-          ? Object.fromEntries(
-              Object.entries(currentObject).filter(([key]) =>
-                Object.hasOwn(properties, key),
-              ),
-            )
-          : undefined;
-        mergeBaseValue = projectedCurrent;
         sanitizedValue = Object.fromEntries(
           Object.entries(value).filter(([key]) =>
             Object.hasOwn(properties, key),
           ),
         );
       }
-    }
-    let proposedValue =
-      sanitizedValue !== null &&
-      typeof sanitizedValue === 'object' &&
-      !Array.isArray(sanitizedValue) &&
-      mergeBaseValue !== null &&
-      typeof mergeBaseValue === 'object' &&
-      !Array.isArray(mergeBaseValue)
-        ? { ...mergeBaseValue, ...sanitizedValue }
-        : sanitizedValue;
-    if (
-      field.type === 'measurement' &&
-      proposedValue !== null &&
-      typeof proposedValue === 'object' &&
-      !Array.isArray(proposedValue) &&
-      !('unit' in proposedValue) &&
-      field.unit
-    ) {
-      proposedValue = { ...proposedValue, unit: field.unit };
     }
     return [
       {
@@ -810,7 +844,7 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
           controlId: field.controlId ?? field.name,
           subject: field.subject ?? subject,
         },
-        value: proposedValue,
+        value: sanitizedValue,
       },
     ];
   });

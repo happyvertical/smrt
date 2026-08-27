@@ -738,6 +738,70 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toBe('Existing human\nProposed');
   });
 
+  it('retries partial structured merges against an intervening human edit', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    let releasePolicy: (() => void) | undefined;
+    let policyStarted: (() => void) | undefined;
+    const policyBlocked = new Promise<void>((resolve) => {
+      releasePolicy = resolve;
+    });
+    const policyStartedPromise = new Promise<void>((resolve) => {
+      policyStarted = resolve;
+    });
+    const policyValues: unknown[] = [];
+    const registry = createControlInteractionRegistry({
+      policy: async (command) => {
+        if (command.action === 'stage') {
+          policyValues.push(command.value);
+          if (policyValues.length === 1) {
+            policyStarted?.();
+            await policyBlocked;
+          }
+        }
+        return { allowed: true };
+      },
+    });
+    render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        structuredRequired: false,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    const staging = registered.at(-1)?.execute({
+      address: { street: '123 Main Street' },
+    });
+    await policyStartedPromise;
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'City' }),
+      'Calgary',
+    );
+    releasePolicy?.();
+
+    expect(await staging).toBe('Staged 1 change for review');
+    const stagedAddress = registry.get({
+      formId: 'structured-fields',
+      controlId: 'address',
+    })?.state.staged?.value;
+    expect(stagedAddress).toMatchObject({
+      street: '123 Main Street',
+      city: 'Calgary',
+    });
+    expect(policyValues).toHaveLength(2);
+    expect(policyValues[0]).toMatchObject({ city: '' });
+    expect(policyValues[1]).toMatchObject({ city: 'Calgary' });
+  });
+
   it('rejects a non-object date-range proposal without delayed mutation', async () => {
     const datesChanged = vi.fn();
     const registry = createControlInteractionRegistry({
@@ -1095,6 +1159,47 @@ describe('Form WebMCP staged-edit intent', () => {
       'No reviewable changes provided',
     );
     expect(screen.getByRole('textbox', { name: 'Full name' })).toBeDisabled();
+  });
+
+  it('refreshes the WebMCP schema after imperative editability changes', async () => {
+    const registered: Array<{ inputSchema: Record<string, unknown> }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithFields, {
+      props: { webmcp: true, showAge: false },
+    });
+    await tick();
+    await tick();
+    const input = screen.getByRole('textbox', { name: 'Full name' });
+    expect(registered.at(-1)?.inputSchema).toMatchObject({
+      properties: { fullname: expect.any(Object) },
+    });
+
+    let registrationCount = registered.length;
+    input.setAttribute('disabled', '');
+    await waitFor(() =>
+      expect(registered.length).toBeGreaterThan(registrationCount),
+    );
+    expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
+
+    registrationCount = registered.length;
+    input.removeAttribute('disabled');
+    await waitFor(() =>
+      expect(registered.length).toBeGreaterThan(registrationCount),
+    );
+    expect(registered.at(-1)?.inputSchema).toMatchObject({
+      properties: { fullname: expect.any(Object) },
+    });
+
+    registrationCount = registered.length;
+    input.setAttribute('readonly', '');
+    await waitFor(() =>
+      expect(registered.length).toBeGreaterThan(registrationCount),
+    );
+    expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
   });
 
   it('does not expose fields disabled by an ancestor fieldset', async () => {
@@ -2026,6 +2131,62 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(
       await registered.at(-1)?.execute({ user: { value: 2, unit: 'm' } }),
     ).toBe('No reviewable changes provided');
+  });
+
+  it('gives exact registered names precedence over composite ownership', async () => {
+    const registered: Array<{ inputSchema: Record<string, unknown> }> = [];
+    const registry = createControlInteractionRegistry();
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        structuredRequired: false,
+        fieldsetDisabled: true,
+        measurementName: 'weight',
+        showExactNameCollisions: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    const tool = registered.at(-1);
+    if (!tool) throw new Error('WebMCP tool was not registered');
+    const properties = (
+      tool.inputSchema as { properties: Record<string, unknown> }
+    ).properties;
+    expect(properties).toHaveProperty('address[city]');
+    expect(properties).toHaveProperty('weight_unit');
+    expect(properties).not.toHaveProperty('address');
+    expect(properties).not.toHaveProperty('weight');
+
+    const exactAddress = screen.getByRole('textbox', {
+      name: 'Exact address city',
+    });
+    const exactUnit = screen.getByRole('textbox', {
+      name: 'Exact measurement unit',
+    });
+    expect(exactAddress).toHaveAttribute('data-smrt-control', 'address[city]');
+    expect(exactUnit).toHaveAttribute('data-smrt-control', 'weight_unit');
+    expect(screen.getByRole('textbox', { name: 'City' })).not.toHaveAttribute(
+      'data-smrt-control',
+    );
+    expect(
+      registry.get({
+        formId: 'structured-fields',
+        controlId: 'address[city]',
+      })?.state.disabled,
+    ).toBe(false);
+    expect(
+      registry.get({
+        formId: 'structured-fields',
+        controlId: 'weight_unit',
+      })?.state.disabled,
+    ).toBe(false);
   });
 
   it('removes a smrt-mode date range when its fieldset becomes disabled', async () => {
