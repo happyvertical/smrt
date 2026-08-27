@@ -12,10 +12,27 @@
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
+import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+
+const formCapture = vi.hoisted(() => ({
+  field: undefined as
+    | { setValue: (value: unknown) => void; getValue: () => unknown }
+    | undefined,
+}));
 
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
   useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),
+}));
+vi.mock('../../../state/form-context.js', () => ({
+  tryGetFormContext: () => ({
+    registerField: (field: typeof formCapture.field) => {
+      formCapture.field = field;
+    },
+    unregisterField: () => {
+      formCapture.field = undefined;
+    },
+  }),
 }));
 
 import AddressInput from '../AddressInput.svelte';
@@ -133,6 +150,51 @@ describe('AddressInput — behavior', () => {
     expect(countries.querySelector('option[value="US"]')?.textContent).toBe(
       'United States',
     );
+  });
+
+  it('parses spoken countries only from the live configured options', async () => {
+    const onchange = vi.fn();
+    render(AddressInput, {
+      props: {
+        name: 'addr',
+        label: 'Address',
+        fields: ['country'],
+        countries: [{ value: 'FR', label: 'France' }],
+        onchange,
+      },
+    });
+    await tick();
+    const field = formCapture.field;
+    if (!field) throw new Error('AddressInput did not register its field');
+
+    field.setValue('Canada');
+    expect(onchange).not.toHaveBeenCalled();
+    expect(field.getValue()).toEqual({ country: 'FR' });
+
+    field.setValue('France');
+    expect(onchange).toHaveBeenLastCalledWith({ country: 'FR' });
+    field.setValue('FR');
+    expect(onchange).toHaveBeenLastCalledWith({ country: 'FR' });
+  });
+
+  it('retains spoken Canada and United States defaults', async () => {
+    const onchange = vi.fn();
+    render(AddressInput, {
+      props: {
+        name: 'addr',
+        label: 'Address',
+        fields: ['country'],
+        onchange,
+      },
+    });
+    await tick();
+    const field = formCapture.field;
+    if (!field) throw new Error('AddressInput did not register its field');
+
+    field.setValue('Canada');
+    expect(onchange).toHaveBeenLastCalledWith({ country: 'CA' });
+    field.setValue('United States');
+    expect(onchange).toHaveBeenLastCalledWith({ country: 'US' });
   });
 
   it('marks every field invalid and links one alert when error is set', () => {

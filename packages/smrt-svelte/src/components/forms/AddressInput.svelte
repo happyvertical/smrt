@@ -198,11 +198,16 @@ function parseSpokenAddress(text: string): Partial<AddressValue> {
     }
   }
 
-  // Try to extract country
-  if (/\bcanada\b/i.test(normalized)) {
-    result.country = 'CA';
-  } else if (/\bunited states\b|\busa\b|\bu\.?s\.?a?\.?\b/i.test(normalized)) {
-    result.country = 'US';
+  // Try to extract a currently configured country by its label or value.
+  for (const option of countries) {
+    const matches = [option.label, option.value].some((candidate) => {
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|\\W)${escaped}(?=$|\\W)`, 'i').test(normalized);
+    });
+    if (matches) {
+      result.country = option.value;
+      break;
+    }
   }
 
   // Common city extraction patterns
@@ -284,13 +289,21 @@ onMount(() => {
           return;
         }
         // Try to parse spoken address
-        const parsed = parseSpokenAddress(String(v));
-        if (Object.keys(parsed).length > 0) {
-          if (parsed.street) street = parsed.street;
-          if (parsed.city) city = parsed.city;
-          if (parsed.province) province = parsed.province;
-          if (parsed.postalCode) postalCode = parsed.postalCode;
-          if (parsed.country) country = parsed.country;
+        const parsed = Object.fromEntries(
+          Object.entries(parseSpokenAddress(String(v))).filter(([field]) =>
+            fields.includes(field as AddressField),
+          ),
+        ) as Partial<AddressValue>;
+        const nextValue = { ...currentValue(), ...parsed };
+        if (
+          Object.keys(parsed).length > 0 &&
+          validatesAddressCandidate(nextValue)
+        ) {
+          if (parsed.street !== undefined) street = parsed.street;
+          if (parsed.city !== undefined) city = parsed.city;
+          if (parsed.province !== undefined) province = parsed.province;
+          if (parsed.postalCode !== undefined) postalCode = parsed.postalCode;
+          if (parsed.country !== undefined) country = parsed.country;
           updateValue();
         }
       },
