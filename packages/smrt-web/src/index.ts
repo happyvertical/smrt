@@ -1672,5 +1672,6 @@ export {
   registerWebMcpTools,
   type WebMcpExposurePolicy,
   type WebMcpRegistrationDefinition,
+  type WebMcpRegistrationDisposer,
   type WebMcpToolEffect,
 } from './webmcp.js';

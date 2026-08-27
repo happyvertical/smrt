@@ -198,7 +198,7 @@ $effect(() => {
   void import('@happyvertical/smrt-web')
     .then(({ registerWebMcpTools }) => {
       if (cancelled) return;
-      dispose = registerWebMcpTools(config.definitions ?? [], {
+      const registration = registerWebMcpTools(config.definitions ?? [], {
         client: config.client,
         basePath: config.basePath,
         fetchFn: config.fetchFn,
@@ -210,6 +210,14 @@ $effect(() => {
         effects: config.effects,
         namespace: config.namespace,
         maxTools: config.maxTools,
+      });
+      dispose = registration;
+      void registration.ready.catch((error) => {
+        if (!cancelled) {
+          logger.warn('Provider: WebMCP data tool registration rejected', {
+            error,
+          });
+        }
       });
     })
     .catch((error) => {

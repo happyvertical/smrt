@@ -248,4 +248,42 @@ describe('Provider WebMCP policy', () => {
       ),
     );
   });
+
+  it('reports asynchronous browser registration rejection', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    document.modelContext = {
+      registerTool: () => Promise.reject(new Error('browser rejected tool')),
+    };
+    const definitions: WebMcpRegistrationDefinition[] = [
+      {
+        collection: 'audits',
+        objectRef: '@test/smrt-svelte:Audit',
+        className: 'Audit',
+        endpoint: '/audits',
+        idField: 'id',
+        idType: 'uuid',
+        relationships: [],
+        action: 'get',
+        name: 'audit_get',
+        description: 'Get an audit record',
+        inputSchema: { type: 'object' },
+        readOnly: true,
+        effect: 'read',
+        idempotent: true,
+        openWorld: false,
+        route: { method: 'GET', scope: 'item', path: [] },
+      },
+    ];
+
+    render(Harness, { props: { webmcp: { definitions } } });
+
+    await waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        'Provider: WebMCP data tool registration rejected',
+        {
+          error: expect.objectContaining({ message: 'browser rejected tool' }),
+        },
+      ),
+    );
+  });
 });

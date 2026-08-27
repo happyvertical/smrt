@@ -60,7 +60,14 @@ interface ModelContextLike {
   registerTool: (
     tool: WebMcpToolRegistration,
     options?: { signal?: AbortSignal },
-  ) => void;
+  ) => void | Promise<void>;
+}
+
+/** Disposes a registration and exposes completion of browser registration. */
+export interface WebMcpRegistrationDisposer {
+  (): void;
+  /** Rejects if the browser rejects any tool; all sibling tools are aborted. */
+  readonly ready: Promise<void>;
 }
 
 /**
@@ -168,10 +175,10 @@ type ToolSemantics = Pick<
 export function registerWebMcpTools(
   definitions: readonly WebMcpRegistrationDefinition[],
   options: RegisterWebMcpToolsOptions = {},
-): () => void {
+): WebMcpRegistrationDisposer {
   const exposure = validateExposurePolicy(options);
   const ctx = getModelContext();
-  if (!ctx) return () => {};
+  if (!ctx) return registrationDisposer(() => {}, Promise.resolve());
 
   const basePath = options.basePath ?? '/api/v1';
   const client = options.client;
@@ -214,6 +221,7 @@ export function registerWebMcpTools(
       void collection.cleanup().catch(() => undefined);
     }
   };
+  const registrations: Promise<void>[] = [];
 
   try {
     for (const tool of tools) {
@@ -235,28 +243,32 @@ export function registerWebMcpTools(
           collectionFetchers.set(definition, fetchers);
           collections.set(definition, collection);
         }
-        ctx.registerTool(
-          {
-            name: tool.name,
-            description: descriptor.description,
-            inputSchema: descriptor.inputSchema,
-            annotations: annotationsFor(tool),
-            execute: guardedExecute(
-              tool,
-              allowedEffects,
-              () => disposed,
-              (args) =>
-                dispatchCollection(
-                  fetchers,
-                  collection,
-                  definition,
-                  descriptor.action,
-                  descriptor.route,
-                  args,
+        registrations.push(
+          Promise.resolve(
+            ctx.registerTool(
+              {
+                name: tool.name,
+                description: descriptor.description,
+                inputSchema: descriptor.inputSchema,
+                annotations: annotationsFor(tool),
+                execute: guardedExecute(
+                  tool,
+                  allowedEffects,
+                  () => disposed,
+                  (args) =>
+                    dispatchCollection(
+                      fetchers,
+                      collection,
+                      definition,
+                      descriptor.action,
+                      descriptor.route,
+                      args,
+                    ),
                 ),
+              },
+              { signal: controller.signal },
             ),
-          },
-          { signal: controller.signal },
+          ),
         );
         continue;
       }
@@ -275,20 +287,24 @@ export function registerWebMcpTools(
             basePath,
             options.fetchFn,
           );
-      ctx.registerTool(
-        {
-          name: tool.name,
-          description: definition.description,
-          inputSchema: definition.inputSchema,
-          annotations: annotationsFor(tool),
-          execute: guardedExecute(
-            tool,
-            allowedEffects,
-            () => disposed,
-            (args) => dispatchDirect(fetchers, definition, args, client),
+      registrations.push(
+        Promise.resolve(
+          ctx.registerTool(
+            {
+              name: tool.name,
+              description: definition.description,
+              inputSchema: definition.inputSchema,
+              annotations: annotationsFor(tool),
+              execute: guardedExecute(
+                tool,
+                allowedEffects,
+                () => disposed,
+                (args) => dispatchDirect(fetchers, definition, args, client),
+              ),
+            },
+            { signal: controller.signal },
           ),
-        },
-        { signal: controller.signal },
+        ),
       );
     }
   } catch (error) {
@@ -298,7 +314,24 @@ export function registerWebMcpTools(
     throw error;
   }
 
-  return dispose;
+  const ready = Promise.all(registrations)
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      dispose();
+      throw error;
+    });
+  // Direct callers may only need the synchronous disposer. Mark the browser
+  // rejection as observed while preserving `ready`'s rejection for callers
+  // that need to report registration failures.
+  void ready.catch(() => undefined);
+  return registrationDisposer(dispose, ready);
+}
+
+function registrationDisposer(
+  dispose: () => void,
+  ready: Promise<void>,
+): WebMcpRegistrationDisposer {
+  return Object.assign(dispose, { ready });
 }
 
 const VALID_EFFECTS: readonly WebMcpToolEffect[] = [

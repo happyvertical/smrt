@@ -27,7 +27,7 @@ const ALLOW_ALL = {
 function registerWebMcpTools(
   definitions: readonly WebMcpRegistrationDefinition[],
   options: RegisterWebMcpToolsOptions = {},
-): () => void {
+) {
   return registerWebMcpToolsWithPolicy(definitions, {
     ...ALLOW_ALL,
     ...options,
@@ -201,13 +201,14 @@ describe('registerWebMcpTools', () => {
     vi.restoreAllMocks();
   });
 
-  it('is a no-op when the browser has no WebMCP support', () => {
+  it('is a no-op when the browser has no WebMCP support', async () => {
     clearModelContext();
     const dispose = registerWebMcpTools([PRODUCT_DEF], {
       resolveFetchers: () => mockFetchers(),
     });
     expect(dispose).toBeInstanceOf(Function);
     expect(() => dispose()).not.toThrow(); // inert disposer, no crash
+    await expect(dispose.ready).resolves.toBeUndefined();
   });
 
   it('validates exposure policy without WebMCP browser support', () => {
@@ -1464,6 +1465,40 @@ describe('registerWebMcpTools', () => {
       ),
     ).toThrow('duplicate host tool');
     expect(registry.unregistered).toEqual(['report_get']);
+  });
+
+  it('atomically aborts sibling tools when browser registration rejects', async () => {
+    const registry = installModelContext();
+    const documentRef = (
+      globalThis as {
+        document?: { modelContext?: { registerTool?: unknown } };
+      }
+    ).document;
+    if (!documentRef?.modelContext)
+      throw new Error('modelContext not installed');
+    documentRef.modelContext.registerTool = (
+      tool: CapturedTool,
+      opts?: { signal?: AbortSignal },
+    ) => {
+      registry.tools.push(tool);
+      opts?.signal?.addEventListener('abort', () =>
+        registry.unregistered.push(tool.name),
+      );
+      return tool.name === 'report_refresh'
+        ? Promise.reject(new Error('browser rejected tool'))
+        : Promise.resolve();
+    };
+
+    const registration = registerWebMcpTools(
+      [canonicalTool('get'), canonicalTool('refresh', { readOnly: false })],
+      { resolveToolFetchers: () => ({ get: vi.fn(), custom: vi.fn() }) },
+    );
+
+    await expect(registration.ready).rejects.toThrow('browser rejected tool');
+    expect(registry.unregistered).toEqual(['report_get', 'report_refresh']);
+    expect(() => registry.tools[0]?.execute({})).toThrow(
+      'WebMCP tool report_get is no longer registered',
+    );
   });
 });
 

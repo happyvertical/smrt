@@ -174,6 +174,10 @@ registerWebMcpTools(definitions, {
 });
 ```
 
+The returned disposer also exposes a `ready` promise. Await it when the host
+must report browser-side registration rejection; any rejected tool aborts all
+sibling registrations from that call before `ready` rejects.
+
 `filter` receives legacy collection metadata; `filterTool` receives canonical
 per-tool definitions. Configuring only one filter while registering definitions
 for the other filter kind fails closed; canonical tools do not carry complete
