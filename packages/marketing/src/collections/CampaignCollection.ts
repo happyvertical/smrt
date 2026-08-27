@@ -20,14 +20,21 @@ import {
   normalizeUuid,
 } from '../customer-scope.js';
 import { Campaign } from '../models/Campaign.js';
+import { calculateCampaignPacing } from '../services/pacing-calculation.js';
 import type {
+  CampaignChannelMixEntry,
   CampaignCustomerCursor,
   CampaignCustomerCursorInput,
   CampaignCustomerPage,
   CampaignCustomerSummary,
+  CampaignMetricTotals,
+  CampaignReportingPage,
   CampaignStatus,
+  ListCampaignReportingByCustomerOptions,
   ListCampaignsByCustomerOptions,
 } from '../types.js';
+import { CampaignChannelCollection } from './CampaignChannelCollection.js';
+import { CampaignMetricSnapshotCollection } from './CampaignMetricSnapshotCollection.js';
 
 export const MAX_CAMPAIGN_CUSTOMER_PAGE_SIZE = 100;
 export const MAX_CAMPAIGN_CUSTOMER_BATCH_SIZE = 100;
@@ -121,6 +128,179 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
         ),
       ),
     );
+  }
+
+  /**
+   * Return one bounded customer page with its complete read-only reporting
+   * projection. Channels and immutable evidence are aggregated in two grouped
+   * reads, independent of page size; no campaign callback or lazy load runs.
+   */
+  async listReportingByCustomer(
+    tenantId: string | null,
+    customerId: string,
+    options: ListCampaignReportingByCustomerOptions = {},
+  ): Promise<CampaignReportingPage> {
+    const normalizedTenantId = normalizeTenantScope(
+      tenantId,
+      'CampaignCollection.listReportingByCustomer',
+    );
+    const normalizedCustomerId = normalizeUuid(customerId, 'customerId');
+    const limit = resolveListLimit(options.limit, {
+      defaultValue: 50,
+      maxValue: Number.MAX_SAFE_INTEGER,
+      parameterName: 'campaign reporting page limit',
+    });
+    if (limit > MAX_CAMPAIGN_CUSTOMER_PAGE_SIZE) {
+      throw new Error(
+        `Campaign reporting page limit must not exceed ${MAX_CAMPAIGN_CUSTOMER_PAGE_SIZE}.`,
+      );
+    }
+    if (limit < 1) {
+      throw new Error('Campaign reporting page limit must be at least 1.');
+    }
+    const cursor = normalizeCursor(options.after);
+    const at = normalizeReportingAt(options.at);
+
+    return withCanonicalTenantContext(normalizedTenantId, () =>
+      this.inCustomerReadTransaction(async (bound) => {
+        const page = await bound.listByCustomerInTransaction(
+          normalizedTenantId,
+          normalizedCustomerId,
+          limit,
+          cursor,
+        );
+        return bound.projectReportingPage(normalizedTenantId, page, at);
+      }),
+    );
+  }
+
+  private async projectReportingPage(
+    tenantId: string | null,
+    page: CampaignCustomerPage,
+    at: Date,
+  ): Promise<CampaignReportingPage> {
+    const campaignIds = page.items.map((campaign) => {
+      if (!campaign.id) {
+        throw new Error('Campaign reporting requires persisted Campaign rows.');
+      }
+      return normalizeUuid(campaign.id, 'campaign id');
+    });
+    if (campaignIds.length === 0) {
+      return { items: [], nextCursor: page.nextCursor };
+    }
+
+    const channelRows = await this.loadChannelMixRows(tenantId, campaignIds);
+    const metricRows = await this.loadMetricRows(tenantId, campaignIds);
+    const channelsByCampaign = groupChannelMix(channelRows);
+    const metricsByCampaign = groupMetricTotals(metricRows);
+
+    return {
+      items: page.items.map((campaign) => {
+        const campaignId = campaign.id ?? '';
+        const channelMix = channelsByCampaign.get(campaignId) ?? [];
+        const metrics =
+          metricsByCampaign.get(campaignId) ?? emptyMetricTotals();
+        return {
+          campaign,
+          channelCount: channelMix.reduce(
+            (sum, entry) =>
+              checkedAdd(sum, entry.count, 'Campaign channel count'),
+            0,
+          ),
+          channelMix,
+          metricTotals: metrics.totals,
+          pacing: calculateCampaignPacing(
+            campaign,
+            {
+              spendCents: metrics.totals.spendCents,
+              snapshotCount: metrics.snapshotCount,
+              usedCampaignRollups: metrics.usedCampaignRollups,
+            },
+            at,
+          ),
+        };
+      }),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  private async loadChannelMixRows(
+    tenantId: string | null,
+    campaignIds: string[],
+  ): Promise<Array<Record<string, unknown>>> {
+    const channels = await CampaignChannelCollection.create({
+      ...this.options,
+      db: this.db,
+      defaultListLimit: undefined,
+      maxListLimit: undefined,
+    });
+    const db = requireDatabase(this.options);
+    const placeholders = campaignIds.map(() => '?').join(', ');
+    const tenantPredicate =
+      tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+    const tenantParams = tenantId === null ? [] : [tenantId];
+    const result = await db.query(
+      `SELECT campaign_id, channel_kind, COUNT(*) AS channel_count
+       FROM ${channels.tableName}
+       WHERE ${tenantPredicate} AND campaign_id IN (${placeholders})
+       GROUP BY campaign_id, channel_kind
+       ORDER BY campaign_id ASC, channel_kind ASC`,
+      ...tenantParams,
+      ...campaignIds,
+    );
+    return result.rows;
+  }
+
+  private async loadMetricRows(
+    tenantId: string | null,
+    campaignIds: string[],
+  ): Promise<Array<Record<string, unknown>>> {
+    const snapshots = await CampaignMetricSnapshotCollection.create({
+      ...this.options,
+      db: this.db,
+      defaultListLimit: undefined,
+      maxListLimit: undefined,
+    });
+    const db = requireDatabase(this.options);
+    const placeholders = campaignIds.map(() => '?').join(', ');
+    const tenantPredicate =
+      tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+    const tenantParams = tenantId === null ? [] : [tenantId];
+    const result = await db.query(
+      `WITH scoped_snapshots AS (
+         SELECT *
+         FROM ${snapshots.tableName}
+         WHERE ${tenantPredicate} AND campaign_id IN (${placeholders})
+       ), rollup_periods AS (
+         SELECT DISTINCT campaign_id, period_start, period_end
+         FROM scoped_snapshots
+         WHERE campaign_channel_id IS NULL
+       ), selected_snapshots AS (
+         SELECT s.*
+         FROM scoped_snapshots s
+         LEFT JOIN rollup_periods r
+           ON r.campaign_id = s.campaign_id
+          AND r.period_start = s.period_start
+          AND r.period_end = s.period_end
+         WHERE s.campaign_channel_id IS NULL OR r.campaign_id IS NULL
+       )
+       SELECT campaign_id,
+              COUNT(*) AS snapshot_count,
+              MAX(CASE WHEN campaign_channel_id IS NULL THEN 1 ELSE 0 END)
+                AS used_campaign_rollups,
+              SUM(spend_cents) AS spend_cents,
+              SUM(impressions) AS impressions,
+              SUM(clicks) AS clicks,
+              SUM(conversions) AS conversions,
+              SUM(leads) AS leads,
+              SUM(COALESCE(revenue_cents, 0)) AS revenue_cents
+       FROM selected_snapshots
+       GROUP BY campaign_id
+       ORDER BY campaign_id ASC`,
+      ...tenantParams,
+      ...campaignIds,
+    );
+    return result.rows;
   }
 
   private async listByCustomerInTransaction(
@@ -313,6 +493,95 @@ interface QueryDatabase {
   ): Promise<{ rows: Array<Record<string, unknown>> }>;
 }
 
+interface GroupedMetricTotals {
+  totals: CampaignMetricTotals;
+  snapshotCount: number;
+  usedCampaignRollups: boolean;
+}
+
+function groupChannelMix(
+  rows: Array<Record<string, unknown>>,
+): Map<string, CampaignChannelMixEntry[]> {
+  const grouped = new Map<string, CampaignChannelMixEntry[]>();
+  for (const row of rows) {
+    const campaignId = normalizeUuid(String(row.campaign_id), 'campaign id');
+    const channelKind = String(row.channel_kind);
+    if (!channelKind) throw new Error('Campaign channel kind is empty.');
+    const entry = {
+      channelKind,
+      count: toSafeCount(row.channel_count, 'Campaign channel count'),
+    };
+    const entries = grouped.get(campaignId) ?? [];
+    entries.push(entry);
+    grouped.set(campaignId, entries);
+  }
+  return grouped;
+}
+
+function groupMetricTotals(
+  rows: Array<Record<string, unknown>>,
+): Map<string, GroupedMetricTotals> {
+  return new Map(
+    rows.map((row) => {
+      const campaignId = normalizeUuid(String(row.campaign_id), 'campaign id');
+      return [
+        campaignId,
+        {
+          totals: {
+            spendCents: toSafeCount(row.spend_cents, 'Campaign spend total'),
+            impressions: toSafeCount(
+              row.impressions,
+              'Campaign impression total',
+            ),
+            clicks: toSafeCount(row.clicks, 'Campaign click total'),
+            conversions: toSafeCount(
+              row.conversions,
+              'Campaign conversion total',
+            ),
+            leads: toSafeCount(row.leads, 'Campaign lead total'),
+            revenueCents: toSafeCount(
+              row.revenue_cents,
+              'Campaign revenue total',
+            ),
+          },
+          snapshotCount: toSafeCount(
+            row.snapshot_count,
+            'Campaign snapshot count',
+          ),
+          usedCampaignRollups: toBooleanFlag(row.used_campaign_rollups),
+        },
+      ];
+    }),
+  );
+}
+
+function emptyMetricTotals(): GroupedMetricTotals {
+  return {
+    totals: {
+      spendCents: 0,
+      impressions: 0,
+      clicks: 0,
+      conversions: 0,
+      leads: 0,
+      revenueCents: 0,
+    },
+    snapshotCount: 0,
+    usedCampaignRollups: false,
+  };
+}
+
+function toBooleanFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1';
+}
+
+function checkedAdd(left: number, right: number, label: string): number {
+  const sum = left + right;
+  if (!Number.isSafeInteger(sum) || sum < 0) {
+    throw new Error(`${label} is outside the safe integer range.`);
+  }
+  return sum;
+}
+
 function requireDatabase(options: { db?: unknown }): QueryDatabase {
   const db = options.db;
   if (!db || typeof db !== 'object' || !('query' in db)) {
@@ -349,6 +618,13 @@ function normalizeCursor(
   const startAt = coerceDate(cursor.startAt);
   if (!startAt) throw new Error('campaign customer cursor startAt is invalid.');
   return { id, startAt };
+}
+
+function normalizeReportingAt(value: Date | string | number | undefined): Date {
+  if (value === undefined) return new Date();
+  const at = coerceDate(value);
+  if (!at) throw new Error('campaign reporting at is invalid.');
+  return at;
 }
 
 function cursorFromCampaign(

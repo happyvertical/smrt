@@ -72,6 +72,40 @@ export interface CampaignCustomerPage {
   nextCursor: CampaignCustomerCursor | null;
 }
 
+export interface ListCampaignReportingByCustomerOptions
+  extends ListCampaignsByCustomerOptions {
+  /** Clock used for deterministic pacing calculations. Defaults to now. */
+  at?: Date | string | number;
+}
+
+export interface CampaignChannelMixEntry {
+  channelKind: string;
+  count: number;
+}
+
+/** Totals from the immutable evidence selected by campaign pacing rules. */
+export interface CampaignMetricTotals {
+  spendCents: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  leads: number;
+  revenueCents: number;
+}
+
+export interface CampaignReportingItem {
+  campaign: Campaign;
+  channelCount: number;
+  channelMix: CampaignChannelMixEntry[];
+  metricTotals: CampaignMetricTotals;
+  pacing: BudgetPacingResult;
+}
+
+export interface CampaignReportingPage {
+  items: CampaignReportingItem[];
+  nextCursor: CampaignCustomerCursor | null;
+}
+
 export interface CampaignCustomerSummary {
   customerId: string;
   totalCount: number;

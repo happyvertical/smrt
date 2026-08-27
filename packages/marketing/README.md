@@ -83,12 +83,31 @@ const secondPage = firstPage.nextCursor
 
 const summaries = await campaigns.summarizeByCustomers(tenantId, customerIds);
 // [{ customerId, totalCount, activeCount, latestStartAt }]
+
+const reporting = await campaigns.listReportingByCustomer(
+  tenantId,
+  customerId,
+  {
+    limit: 50,
+    after: firstPage.nextCursor ?? undefined,
+    at: new Date('2026-08-15T00:00:00Z'),
+  },
+);
+// reporting.items keeps the same newest-first page order. Every item contains:
+// { campaign, channelCount, channelMix, metricTotals, pacing }
 ```
 
-Pages and summary batches are capped at 100 items and reject larger inputs.
-Pagination is newest-first by `startAt`, then UUID; campaigns without a start
-time follow scheduled campaigns. Summary resolution uses a bounded grouped
-query rather than loading tenant campaigns or issuing one query per Customer.
+Pages, reporting pages, and summary batches are capped at 100 items and reject
+larger inputs. Pagination is newest-first by `startAt`, then UUID; campaigns
+without a start time follow scheduled campaigns. `listReportingByCustomer()`
+validates Customer scope and reads the page in one transaction, then performs
+one grouped channel read and one grouped immutable-evidence read regardless of
+page size. `metricTotals` use the same evidence selection as
+`BudgetPacingService`: for each exact period, a campaign rollup replaces its
+channel snapshots while channel-only periods remain. `pacing` is therefore
+equivalent to `getCampaignPacing()` without per-campaign callbacks or lazy
+loads. Summary resolution likewise uses a bounded grouped query rather than
+loading tenant campaigns or issuing one query per Customer.
 
 ### Migrating metadata-backed associations
 
