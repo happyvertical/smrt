@@ -5,6 +5,7 @@ import type {
   SmrtWebCollectionDefinition,
   SmrtWebRequestError,
   WebMcpToolDefinition,
+  WebToolDescriptor,
 } from './index.js';
 import {
   buildListQuery,
@@ -13,8 +14,25 @@ import {
 } from './index.js';
 import {
   type RegisterWebMcpToolsOptions,
-  registerWebMcpTools,
+  registerWebMcpTools as registerWebMcpToolsWithPolicy,
+  type WebMcpRegistrationDefinition,
 } from './webmcp.js';
+
+const ALLOW_ALL = {
+  effects: ['read', 'write', 'destructive'] as const,
+};
+
+// Preserve the pre-policy expectations in the existing dispatch regression
+// suite. Policy-default behavior is tested explicitly with the raw registrar.
+function registerWebMcpTools(
+  definitions: readonly WebMcpRegistrationDefinition[],
+  options: RegisterWebMcpToolsOptions = {},
+) {
+  return registerWebMcpToolsWithPolicy(definitions, {
+    ...ALLOW_ALL,
+    ...options,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // A fake WebMCP registry standing in for Chrome's document.modelContext.
@@ -24,7 +42,13 @@ interface CapturedTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  annotations?: { readOnlyHint?: boolean };
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+    untrustedContentHint?: boolean;
+  };
   execute: (args: Record<string, unknown>) => Promise<string> | string;
 }
 
@@ -111,6 +135,11 @@ function canonicalTool(
   overrides: Partial<WebMcpToolDefinition> = {},
 ): WebMcpToolDefinition {
   const readOnly = action === 'get' || action === 'list';
+  const effect = readOnly
+    ? 'read'
+    : action === 'create' || action === 'update'
+      ? 'write'
+      : 'destructive';
   return {
     collection: 'reports',
     objectRef: '@test/smrt-web:Report',
@@ -124,6 +153,10 @@ function canonicalTool(
     description: `${action} Report`,
     inputSchema: { type: 'object', properties: {} },
     readOnly,
+    effect,
+    idempotent:
+      action !== 'create' && !readOnly ? action !== 'refresh' : readOnly,
+    openWorld: !['list', 'get', 'create', 'update', 'delete'].includes(action),
     route: {
       method: readOnly ? 'GET' : 'POST',
       scope: action === 'get' ? 'item' : 'collection',
@@ -168,13 +201,546 @@ describe('registerWebMcpTools', () => {
     vi.restoreAllMocks();
   });
 
-  it('is a no-op when the browser has no WebMCP support', () => {
+  it('is a no-op when the browser has no WebMCP support', async () => {
     clearModelContext();
     const dispose = registerWebMcpTools([PRODUCT_DEF], {
       resolveFetchers: () => mockFetchers(),
     });
     expect(dispose).toBeInstanceOf(Function);
     expect(() => dispose()).not.toThrow(); // inert disposer, no crash
+    await expect(dispose.ready).resolves.toBeUndefined();
+  });
+
+  it('validates exposure policy without WebMCP browser support', () => {
+    clearModelContext();
+    expect(() =>
+      registerWebMcpToolsWithPolicy([], {
+        effects: ['invalid' as 'read'],
+      }),
+    ).toThrow('Invalid WebMCP effect');
+    expect(() =>
+      registerWebMcpToolsWithPolicy([], { namespace: 'unsafe namespace' }),
+    ).toThrow('WebMCP namespace');
+    expect(() => registerWebMcpToolsWithPolicy([], { maxTools: -1 })).toThrow(
+      'WebMCP maxTools',
+    );
+  });
+
+  it('exposes only read tools when no effects policy is configured', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+      resolveFetchers: () => mockFetchers(),
+    });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
+  });
+
+  it('selects custom actions by their declared effect under the default policy', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([
+      canonicalTool('preview', { effect: 'read' }),
+      canonicalTool('publish', { effect: 'write' }),
+    ]);
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['report_preview']);
+  });
+
+  it('keeps legacy canonical literals source-compatible and fail-closed', () => {
+    const {
+      effect: _effect,
+      idempotent: _idempotent,
+      openWorld: _openWorld,
+      ...legacyCanonical
+    } = canonicalTool('refresh');
+    const definition: WebMcpToolDefinition = legacyCanonical;
+    const registry = installModelContext();
+
+    registerWebMcpToolsWithPolicy([definition], {
+      resolveToolFetchers: () => ({ custom: vi.fn() }),
+    });
+
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('opts into read, write, and destructive tools explicitly', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {
+      ...ALLOW_ALL,
+      resolveFetchers: () => mockFetchers(),
+    });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual([
+      'product_list',
+      'product_create',
+      'product_publish',
+      'product_update',
+      'product_delete',
+    ]);
+  });
+
+  it('classifies legacy CRUD and undeclared custom actions conservatively', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {
+      effects: ['write'],
+      resolveFetchers: () => mockFetchers(),
+    });
+    expect(registry.tools.map((tool) => tool.name)).toEqual([
+      'product_create',
+      'product_update',
+    ]);
+
+    clearModelContext();
+    const destructiveRegistry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {
+      effects: ['destructive'],
+      resolveFetchers: () => mockFetchers(),
+    });
+    expect(destructiveRegistry.tools.map((tool) => tool.name)).toEqual([
+      'product_publish',
+      'product_delete',
+    ]);
+  });
+
+  it('emits complete WebMCP annotations from effect metadata', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy(
+      [
+        canonicalTool('get'),
+        canonicalTool('create'),
+        canonicalTool('update'),
+        canonicalTool('delete'),
+        canonicalTool('refresh'),
+        canonicalTool('publish', { effect: 'write', idempotent: false }),
+      ],
+      { ...ALLOW_ALL, resolveToolFetchers: () => mockFetchers() },
+    );
+
+    const annotations = new Map(
+      registry.tools.map((tool) => [tool.name, tool.annotations]),
+    );
+    expect(annotations.get('report_get')).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_update')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_delete')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_refresh')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_create')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    expect(annotations.get('report_publish')).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+      untrustedContentHint: true,
+    });
+  });
+
+  it('namespaces selected tools without changing their stable identities', () => {
+    const registry = installModelContext();
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+      namespace: 'admin',
+      resolveFetchers: () => mockFetchers(),
+    });
+    expect(registry.tools.map((tool) => tool.name)).toEqual([
+      'admin_product_list',
+    ]);
+  });
+
+  it('validates duplicate identities and budgets before any registration', () => {
+    const duplicateIdentity = canonicalTool('get', { name: 'report_lookup' });
+    const registry = installModelContext();
+    expect(() =>
+      registerWebMcpToolsWithPolicy([canonicalTool('get'), duplicateIdentity], {
+        resolveToolFetchers: () => mockFetchers(),
+      }),
+    ).toThrow('Duplicate WebMCP tool identity: reports#get');
+    expect(registry.tools).toEqual([]);
+
+    expect(() =>
+      registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+        ...ALLOW_ALL,
+        maxTools: 2,
+        resolveFetchers: () => mockFetchers(),
+      }),
+    ).toThrow('WebMCP tool budget exceeded: 3 tools selected, maximum is 2');
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('does not impose an implicit budget on whole-manifest read registration', () => {
+    const registry = installModelContext();
+    const definitions = Array.from({ length: 65 }, (_, index) =>
+      canonicalTool('list', {
+        collection: `reports_${index}`,
+        endpoint: `/reports-${index}`,
+        name: `report_${index}_list`,
+      }),
+    );
+
+    registerWebMcpToolsWithPolicy(definitions, {
+      resolveToolFetchers: () => mockFetchers(),
+    });
+
+    expect(registry.tools).toHaveLength(65);
+  });
+
+  it('rejects invalid exposure policy before resolving fetchers', () => {
+    const registry = installModelContext();
+    const resolveFetchers = vi.fn(() => mockFetchers());
+    expect(() =>
+      registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+        namespace: 'unsafe namespace',
+        resolveFetchers,
+      }),
+    ).toThrow('WebMCP namespace');
+    expect(registry.tools).toEqual([]);
+    expect(resolveFetchers).not.toHaveBeenCalled();
+  });
+
+  it('keeps REST authorization as the execution boundary for visible tools', async () => {
+    const registry = installModelContext();
+    const fetchFn = vi.fn(async () =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+        json: async () => ({ error: 'unauthorized principal' }),
+      } as Response),
+    ) as unknown as typeof fetch;
+    registerWebMcpToolsWithPolicy([PRODUCT_DEF], { fetchFn });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
+    await expect(registry.tools[0]?.execute({})).rejects.toMatchObject({
+      name: 'SmrtWebRequestError',
+      status: 401,
+      message: expect.stringContaining('unauthorized principal'),
+    });
+  });
+
+  it('enforces intrinsic CRUD effects even when input metadata is mislabeled', () => {
+    const registry = installModelContext();
+    const disguisedCanonicalDelete = canonicalTool('delete', {
+      effect: 'read',
+      readOnly: true,
+    });
+    const disguisedLegacyDelete: SmrtWebCollectionDefinition = {
+      ...MUTATION_DEF,
+      toolDescriptors: [
+        {
+          ...MUTATION_DEF.toolDescriptors?.[1],
+          action: 'delete',
+          name: 'product_delete',
+          description: 'Delete a product',
+          inputSchema: { type: 'object' },
+          readOnly: true,
+          effect: 'read',
+        },
+      ],
+    };
+
+    registerWebMcpToolsWithPolicy(
+      [disguisedCanonicalDelete, disguisedLegacyDelete],
+      {
+        resolveFetchers: () => mockFetchers(),
+        resolveToolFetchers: () => mockFetchers(),
+      },
+    );
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('rejects legacy descriptors outside the exposed API action set atomically', () => {
+    const registry = installModelContext();
+    const widened: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+    };
+    expect(() =>
+      registerWebMcpToolsWithPolicy([widened], {
+        ...ALLOW_ALL,
+        resolveFetchers: () => mockFetchers(),
+      }),
+    ).toThrow('product_create exposes action create outside products');
+    expect(registry.tools).toEqual([]);
+  });
+
+  it('rejects cyclic definition metadata clearly before registration', () => {
+    const registry = installModelContext();
+    const definition = canonicalTool('list');
+    const cyclicSchema: Record<string, unknown> = { type: 'object' };
+    cyclicSchema.self = cyclicSchema;
+    definition.inputSchema = cyclicSchema;
+    const resolveToolFetchers = vi.fn(() => mockFetchers());
+
+    expect(() =>
+      registerWebMcpToolsWithPolicy([definition], { resolveToolFetchers }),
+    ).toThrow(
+      '[smrt-web] WebMCP definitions must be acyclic (cycle at $.inputSchema.self)',
+    );
+    expect(registry.tools).toEqual([]);
+    expect(resolveToolFetchers).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a canonical-only filter is used with legacy tools', () => {
+    const registry = installModelContext();
+    const resolveFetchers = vi.fn(() => mockFetchers());
+    expect(() =>
+      registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+        ...ALLOW_ALL,
+        filterTool: () => false,
+        resolveFetchers,
+      }),
+    ).toThrow(
+      'legacy WebMCP definitions require filter when filterTool is configured',
+    );
+    expect(registry.tools).toEqual([]);
+    expect(resolveFetchers).not.toHaveBeenCalled();
+  });
+
+  it('snapshots dispatch metadata so callers cannot widen a registered read tool', async () => {
+    const registry = installModelContext();
+    const definition = canonicalTool('list');
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+    registerWebMcpToolsWithPolicy([definition], {
+      resolveToolFetchers: () => ({ list, delete: remove }),
+    });
+
+    definition.action = 'delete';
+    definition.effect = 'destructive';
+    definition.readOnly = false;
+    definition.route = { method: 'DELETE', scope: 'item', path: [] };
+    await registry.tools[0]?.execute({ id: 'victim' });
+
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('isolates legacy filter mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+      toolDescriptors: [PRODUCT_DEF.toolDescriptors?.[0] as WebToolDescriptor],
+    };
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([definition], {
+      filter: (candidate, descriptor) => {
+        candidate.actions[0] = 'delete';
+        descriptor.action = 'delete';
+        descriptor.effect = 'destructive';
+        descriptor.readOnly = false;
+        descriptor.route = { method: 'DELETE', scope: 'item', path: [] };
+        return true;
+      },
+      resolveFetchers: () => ({ ...mockFetchers(), list, delete: remove }),
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(registry.tools[0]?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('normalizes every legacy descriptor before exposing collection metadata to filters', () => {
+    const registry = installModelContext();
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+      toolDescriptors: [
+        {
+          ...(PRODUCT_DEF.toolDescriptors?.[0] as WebToolDescriptor),
+          effect: 'destructive',
+          readOnly: false,
+          idempotent: false,
+          openWorld: true,
+        },
+      ],
+    };
+    const filter = vi.fn((candidate: SmrtWebCollectionDefinition) => {
+      expect(candidate.toolDescriptors?.[0]).toMatchObject({
+        effect: 'read',
+        readOnly: true,
+        idempotent: true,
+        openWorld: false,
+      });
+      return true;
+    });
+
+    registerWebMcpToolsWithPolicy([definition], {
+      filter,
+      resolveFetchers: () => mockFetchers(),
+    });
+
+    expect(filter).toHaveBeenCalledOnce();
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['product_list']);
+  });
+
+  it('isolates legacy resolver mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+    const definition: SmrtWebCollectionDefinition = {
+      ...PRODUCT_DEF,
+      actions: ['list'],
+      toolDescriptors: [PRODUCT_DEF.toolDescriptors?.[0] as WebToolDescriptor],
+    };
+
+    registerWebMcpToolsWithPolicy([definition], {
+      resolveFetchers: (candidate) => {
+        candidate.actions[0] = 'delete';
+        if (candidate.toolDescriptors?.[0]) {
+          candidate.toolDescriptors[0].action = 'delete';
+          candidate.toolDescriptors[0].effect = 'destructive';
+        }
+        return { ...mockFetchers(), list, delete: remove };
+      },
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('isolates canonical filter mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([canonicalTool('list')], {
+      filterTool: (definition) => {
+        definition.action = 'delete';
+        definition.effect = 'destructive';
+        definition.readOnly = false;
+        definition.route = { method: 'DELETE', scope: 'item', path: [] };
+        return true;
+      },
+      resolveToolFetchers: () => ({ list, delete: remove }),
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(registry.tools[0]?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('isolates canonical resolver mutations from the selected dispatch snapshot', async () => {
+    const registry = installModelContext();
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+    let resolvedDefinition: WebMcpToolDefinition | undefined;
+
+    registerWebMcpToolsWithPolicy([canonicalTool('list')], {
+      namespace: 'admin',
+      resolveToolFetchers: (definition) => {
+        resolvedDefinition = structuredClone(definition);
+        definition.action = 'delete';
+        definition.effect = 'destructive';
+        definition.readOnly = false;
+        definition.route = { method: 'DELETE', scope: 'item', path: [] };
+        return { list, delete: remove };
+      },
+    });
+
+    await registry.tools[0]?.execute({ id: 'victim' });
+    expect(resolvedDefinition).toMatchObject({
+      name: 'report_list',
+      collection: 'reports',
+      action: 'list',
+    });
+    expect(resolvedDefinition).not.toHaveProperty('kind');
+    expect(resolvedDefinition).not.toHaveProperty('definition');
+    expect(resolvedDefinition).not.toHaveProperty('descriptor');
+    expect(resolvedDefinition).not.toHaveProperty('identity');
+    expect(registry.tools[0]?.name).toBe('admin_report_list');
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('snapshots all definitions before an earlier filter can mutate a later one', async () => {
+    const registry = installModelContext();
+    const first = canonicalTool('get');
+    const later = canonicalTool('list', {
+      name: 'safe_list',
+      collection: 'safe',
+      endpoint: '/safe',
+      objectRef: 'app:Safe',
+    });
+    const list = vi.fn(async () => []);
+    const remove = vi.fn(async () => true);
+
+    registerWebMcpToolsWithPolicy([first, later], {
+      filterTool: (definition) => {
+        if (definition.name === first.name) {
+          later.action = 'delete';
+          later.effect = 'destructive';
+          later.readOnly = false;
+          later.route = { method: 'DELETE', scope: 'item', path: [] };
+        }
+        return true;
+      },
+      resolveToolFetchers: () => ({
+        get: vi.fn(async () => ({ id: 'r1' })),
+        list,
+        delete: remove,
+      }),
+    });
+
+    const registeredLater = registry.tools.find(
+      (tool) => tool.name === 'safe_list',
+    );
+    await registeredLater?.execute({ id: 'victim' });
+    expect(registeredLater?.annotations).toMatchObject({
+      readOnlyHint: true,
+      destructiveHint: false,
+    });
+    expect(list).toHaveBeenCalledOnce();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('rejects invocation through a stale host reference after disposal', () => {
+    const registry = installModelContext();
+    const dispose = registerWebMcpToolsWithPolicy([PRODUCT_DEF], {
+      resolveFetchers: () => mockFetchers(),
+    });
+    const staleExecute = registry.tools[0]?.execute;
+    dispose();
+
+    expect(() => staleExecute?.({})).toThrow(
+      'WebMCP tool product_list is no longer registered',
+    );
   });
 
   it('registers one tool per descriptor with the right names', () => {
@@ -410,6 +976,7 @@ describe('registerWebMcpTools', () => {
     }) as unknown as typeof fetch;
     const definition: SmrtWebCollectionDefinition = {
       ...PRODUCT_DEF,
+      actions: [...PRODUCT_DEF.actions, 'preview'],
       toolDescriptors: [
         {
           action: 'publish',
@@ -477,6 +1044,7 @@ describe('registerWebMcpTools', () => {
     }) as unknown as typeof fetch;
     const definition: SmrtWebCollectionDefinition = {
       ...PRODUCT_DEF,
+      actions: [...PRODUCT_DEF.actions, 'archive', 'archiveCollection'],
       toolDescriptors: [
         {
           action: 'archive',
@@ -728,34 +1296,30 @@ describe('registerWebMcpTools', () => {
     ]);
   });
 
-  it('prefers a legacy collection-backed tool when canonical input duplicates its name', async () => {
+  it('rejects duplicate tool names before registering anything', () => {
     const registry = installModelContext();
     const legacyFetchers = mockFetchers();
     const directResolver = vi.fn(() => ({ list: vi.fn() }));
-    registerWebMcpTools(
-      [
-        canonicalTool('list', {
-          collection: 'products',
-          className: 'Product',
-          objectRef: '@test/smrt-web:Product',
-          endpoint: '/products',
-          name: 'product_list',
-        }),
-        PRODUCT_DEF,
-      ],
-      {
-        resolveFetchers: () => legacyFetchers,
-        resolveToolFetchers: directResolver,
-      },
-    );
-
-    expect(
-      registry.tools.filter((tool) => tool.name === 'product_list'),
-    ).toHaveLength(1);
-    await registry.tools
-      .find((tool) => tool.name === 'product_list')
-      ?.execute({ limit: 1 });
-    expect(legacyFetchers.list).toHaveBeenCalledWith({ limit: 1 });
+    expect(() =>
+      registerWebMcpTools(
+        [
+          canonicalTool('list', {
+            collection: 'products',
+            className: 'Product',
+            objectRef: '@test/smrt-web:Product',
+            endpoint: '/products',
+            name: 'product_list',
+          }),
+          PRODUCT_DEF,
+        ],
+        {
+          resolveFetchers: () => legacyFetchers,
+          resolveToolFetchers: directResolver,
+        },
+      ),
+    ).toThrow('Duplicate WebMCP tool name: product_list');
+    expect(registry.tools).toEqual([]);
+    expect(legacyFetchers.list).not.toHaveBeenCalled();
     expect(directResolver).not.toHaveBeenCalled();
   });
 
@@ -935,6 +1499,83 @@ describe('registerWebMcpTools', () => {
       ),
     ).toThrow('duplicate host tool');
     expect(registry.unregistered).toEqual(['report_get']);
+  });
+
+  it('atomically aborts sibling tools when browser registration rejects', async () => {
+    const registry = installModelContext();
+    const documentRef = (
+      globalThis as {
+        document?: { modelContext?: { registerTool?: unknown } };
+      }
+    ).document;
+    if (!documentRef?.modelContext)
+      throw new Error('modelContext not installed');
+    documentRef.modelContext.registerTool = (
+      tool: CapturedTool,
+      opts?: { signal?: AbortSignal },
+    ) => {
+      registry.tools.push(tool);
+      opts?.signal?.addEventListener('abort', () =>
+        registry.unregistered.push(tool.name),
+      );
+      return tool.name === 'report_refresh'
+        ? Promise.reject(new Error('browser rejected tool'))
+        : Promise.resolve();
+    };
+
+    const registration = registerWebMcpTools(
+      [canonicalTool('get'), canonicalTool('refresh', { readOnly: false })],
+      { resolveToolFetchers: () => ({ get: vi.fn(), custom: vi.fn() }) },
+    );
+
+    await expect(registration.ready).rejects.toThrow('browser rejected tool');
+    expect(registry.unregistered).toEqual(['report_get', 'report_refresh']);
+    expect(() => registry.tools[0]?.execute({})).toThrow(
+      'WebMCP tool report_get is no longer registered',
+    );
+  });
+
+  it('observes an earlier browser rejection when a later resolver throws', async () => {
+    const registry = installModelContext();
+    const documentRef = (
+      globalThis as {
+        document?: { modelContext?: { registerTool?: unknown } };
+      }
+    ).document;
+    if (!documentRef?.modelContext)
+      throw new Error('modelContext not installed');
+    documentRef.modelContext.registerTool = (
+      tool: CapturedTool,
+      opts?: { signal?: AbortSignal },
+    ) => {
+      opts?.signal?.addEventListener('abort', () =>
+        registry.unregistered.push(tool.name),
+      );
+      return Promise.reject(new Error('browser rejected first tool'));
+    };
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    try {
+      expect(() =>
+        registerWebMcpTools(
+          [canonicalTool('get'), canonicalTool('refresh', { readOnly: false })],
+          {
+            resolveToolFetchers: (definition) => {
+              if (definition.action === 'refresh') {
+                throw new Error('later resolver failed');
+              }
+              return { get: vi.fn() };
+            },
+          },
+        ),
+      ).toThrow('later resolver failed');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(registry.unregistered).toEqual(['report_get']);
+    } finally {
+      process.off('unhandledRejection', unhandled);
+    }
   });
 });
 

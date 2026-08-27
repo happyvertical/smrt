@@ -7,10 +7,12 @@
  * route, but it cannot change a method's receiver.
  */
 
+import type { ToolEffect } from '../registry/types.js';
 import type { MethodDefinition } from '../scanner/types.js';
 import { convertTypeToJsonSchema } from '../tools/tool-generator.js';
 
 export type CustomActionScope = 'item' | 'collection';
+export type { ToolEffect } from '../registry/types.js';
 
 export interface CustomActionMetadata {
   scope: CustomActionScope;
@@ -20,7 +22,17 @@ export interface CustomActionMetadata {
   parameters?: MethodDefinition['parameters'];
   /** Collection actions on a model class invoke its static method. */
   isStatic: boolean;
+  /** Browser/agent-visible effect. Omitted declarations fail closed. */
+  effect?: ToolEffect;
+  /** Whether repeating the action with the same arguments is safe. */
+  idempotent?: boolean;
+  /** Whether the opaque action may interact outside the SMRT application. */
+  openWorld?: boolean;
 }
+
+/** Fully resolved metadata returned by {@link resolveCustomActionMetadata}. */
+export type ResolvedCustomActionMetadata = CustomActionMetadata &
+  Required<Pick<CustomActionMetadata, 'effect' | 'idempotent' | 'openWorld'>>;
 
 /**
  * Return the transport field for a method parameter. Flat tool and CLI
@@ -56,7 +68,7 @@ type ToolArgs = Record<string, unknown>;
  */
 export function resolveCustomActionMetadata(
   options: ResolveCustomActionMetadataOptions,
-): CustomActionMetadata {
+): ResolvedCustomActionMetadata {
   const defaultScope =
     options.defaultScope ?? (options.method?.isStatic ? 'collection' : 'item');
   const requestedScope = readConfiguredScope(
@@ -68,6 +80,11 @@ export function resolveCustomActionMetadata(
   // recognized collection-class method are always collection-targeted. Keep
   // a matching explicit value for diagnostics/config round-tripping only.
   const scope = requestedScope === defaultScope ? requestedScope : defaultScope;
+  const configured = readConfiguredToolMetadata(
+    options.apiConfig,
+    options.actionName,
+  );
+  const effect = configured.effect ?? 'destructive';
 
   return {
     scope,
@@ -76,6 +93,9 @@ export function resolveCustomActionMetadata(
       ? { parameters: options.method.parameters }
       : {}),
     isStatic: options.method?.isStatic === true,
+    effect,
+    idempotent: configured.idempotent ?? effect === 'read',
+    openWorld: configured.openWorld ?? true,
   };
 }
 
@@ -239,6 +259,44 @@ function readConfiguredScope(
     (route.scope === 'item' || route.scope === 'collection')
     ? route.scope
     : undefined;
+}
+
+function readConfiguredToolMetadata(
+  apiConfig: unknown,
+  actionName: string,
+): {
+  effect?: ToolEffect;
+  idempotent?: boolean;
+  openWorld?: boolean;
+} {
+  if (!isRecord(apiConfig) || !isRecord(apiConfig.routes)) return {};
+  const route = apiConfig.routes[actionName];
+  if (!isRecord(route)) return {};
+  const effect =
+    route.effect === 'read' ||
+    route.effect === 'write' ||
+    route.effect === 'destructive'
+      ? route.effect
+      : undefined;
+  if (
+    effect === 'read' &&
+    (route.method === 'PUT' ||
+      route.method === 'PATCH' ||
+      route.method === 'DELETE')
+  ) {
+    throw new Error(
+      `Custom action ${actionName} cannot declare a read effect for a ${route.method} route`,
+    );
+  }
+  return {
+    ...(effect ? { effect } : {}),
+    ...(typeof route.idempotent === 'boolean'
+      ? { idempotent: route.idempotent }
+      : {}),
+    ...(typeof route.openWorld === 'boolean'
+      ? { openWorld: route.openWorld }
+      : {}),
+  };
 }
 
 function redactValue(value: unknown, seen = new WeakSet<object>()): unknown {

@@ -255,6 +255,12 @@ export interface WebToolDescriptor {
   inputSchema: Record<string, unknown>;
   /** True for non-mutating reads → WebMCP `annotations.readOnlyHint`. */
   readOnly: boolean;
+  /** Capability effect used by WebMCP exposure policy. */
+  effect?: 'read' | 'write' | 'destructive';
+  /** Whether repeating the tool with the same arguments is safe. */
+  idempotent?: boolean;
+  /** Whether the tool may interact outside the SMRT application. */
+  openWorld?: boolean;
   /** Generated custom-route transport metadata. */
   route?: SmrtWebToolRouteDescriptor;
 }
@@ -273,7 +279,8 @@ export interface SmrtWebToolRouteDescriptor {
 /**
  * Canonical data-only definition for one API-backed browser tool. Unlike a
  * collection definition, this does not imply that a list route or client cache
- * exists.
+ * exists. Generated definitions carry explicit semantics; manual legacy
+ * literals may omit them and register with fail-closed defaults.
  */
 export interface WebMcpToolDefinition extends WebToolDescriptor {
   /** Stable definition identity is `(collection, action)`. */
@@ -1660,4 +1667,8 @@ export function createSmrtCollection<TData extends object>(
 export {
   type RegisterWebMcpToolsOptions,
   registerWebMcpTools,
+  type WebMcpExposurePolicy,
+  type WebMcpRegistrationDefinition,
+  type WebMcpRegistrationDisposer,
+  type WebMcpToolEffect,
 } from './webmcp.js';

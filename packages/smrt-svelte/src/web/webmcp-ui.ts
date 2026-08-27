@@ -66,7 +66,14 @@ export interface RegisterWebMcpUiToolsOptions {
   dataSurfaceRegistry: DataSurfaceRegistry;
   prefix?: string;
   /** Injectable browser document used by tests and non-window hosts. */
-  document?: { modelContext?: WebMcpModelContext };
+  document?: { modelContext?: WebMcpModelContextLike };
+}
+
+interface WebMcpModelContextLike {
+  registerTool(
+    tool: WebMcpToolSpec,
+    options?: { signal?: AbortSignal },
+  ): void | Promise<void>;
 }
 
 type ToolResult =
@@ -587,7 +594,7 @@ export function registerWebMcpUiTools(
 
   const documentLike =
     options.document ??
-    (globalThis as { document?: { modelContext?: WebMcpModelContext } })
+    (globalThis as { document?: { modelContext?: WebMcpModelContextLike } })
       .document;
   const modelContext = documentLike?.modelContext;
   if (!modelContext || typeof modelContext.registerTool !== 'function') {

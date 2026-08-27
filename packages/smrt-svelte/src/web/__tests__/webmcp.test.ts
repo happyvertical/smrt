@@ -9,7 +9,10 @@ function installModelContext() {
     signal?: AbortSignal;
   }> = [];
   document.modelContext = {
-    registerTool(tool: { name: string }, options?: { signal?: AbortSignal }) {
+    async registerTool(
+      tool: { name: string },
+      options?: { signal?: AbortSignal },
+    ) {
       registered.push({ name: tool.name, signal: options?.signal });
     },
   };
