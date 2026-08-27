@@ -898,6 +898,105 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toBe('Existing\nProposed');
   });
 
+  it('canonically applies a reverse-order measurement proposal from empty', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const measurementChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        structuredRequired: false,
+        interactionRegistry: registry,
+        onmeasurementchange: measurementChanged,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(
+      await registered.at(-1)?.execute({
+        measurement: { unit: 'ft', value: 12 },
+      }),
+    ).toBe('Staged 1 change for review');
+    const staged = registry.get({
+      formId: 'structured-fields',
+      controlId: 'measurement',
+    })?.state.staged?.value;
+    expect(JSON.stringify(staged)).toBe('{"value":12,"unit":"ft"}');
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+    await waitFor(() =>
+      expect(measurementChanged).toHaveBeenLastCalledWith({
+        value: 12,
+        unit: 'ft',
+      }),
+    );
+    expect(
+      registry.get({
+        formId: 'structured-fields',
+        controlId: 'measurement',
+      })?.state.staged,
+    ).toBeUndefined();
+  });
+
+  it('canonically applies a spoken phone proposal', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        showAge: false,
+        showScalarFields: true,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(
+      await registered.at(-1)?.execute({
+        phone: 'five five five one two three four five six seven',
+      }),
+    ).toBe('Staged 1 change for review');
+    const phone = registry
+      .list()
+      .find((item) => item.identity.controlId === 'phone');
+    if (!phone) throw new Error('Phone control was not registered');
+    expect(registry.get(phone.identity)?.state.staged?.value).toBe(
+      '(555) 123-4567',
+    );
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Phone' })).toHaveValue(
+        '(555) 123-4567',
+      ),
+    );
+    expect(registry.get(phone.identity)?.state.staged).toBeUndefined();
+  });
+
   it('prepares appended textarea proposals after an async policy wait', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;

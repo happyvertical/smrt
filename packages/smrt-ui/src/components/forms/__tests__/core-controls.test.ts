@@ -5,7 +5,10 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Progress from '../../feedback/Progress.svelte';
 import Spinner from '../../feedback/Spinner.svelte';
 import { createControlInteractionRegistry } from '../control-interaction.js';
-import { snapSteppedNumber } from '../control-value-validation.js';
+import {
+  snapSteppedNumber,
+  validatesSteppedNumber,
+} from '../control-value-validation.js';
 import ErrorSummary from '../ErrorSummary.svelte';
 import Fixture from './core-controls.fixture.svelte';
 import DecimalSlidersFixture from './decimal-sliders.fixture.svelte';
@@ -141,9 +144,34 @@ describe('core controls', () => {
     const valueIdentity = { formId: 'decimal', controlId: 'value' };
     const rangeIdentity = { formId: 'decimal', controlId: 'range' };
     const tinyIdentity = { formId: 'decimal', controlId: 'tiny' };
+    const microscopicIdentity = {
+      formId: 'decimal',
+      controlId: 'microscopic',
+    };
+    const microscopicRangeIdentity = {
+      formId: 'decimal',
+      controlId: 'microscopic-range',
+    };
 
-    expect(snapSteppedNumber(3e-16, 1e-16, 9e-16, 2e-16)).toBe(3e-16);
-    expect(snapSteppedNumber(3e-101, 1e-101, 9e-101, 2e-101)).toBe(3e-101);
+    const validCases = [
+      { next: 0.3, min: 0.1, max: 1, step: 0.2 },
+      { next: 3e-16, min: 1e-16, max: 9e-16, step: 2e-16 },
+      { next: 3e-101, min: 1e-101, max: 9e-101, step: 2e-101 },
+      { next: 1.12e-101, min: 1e-101, max: 1.9e-101, step: 3e-103 },
+      {
+        next: Number.MIN_VALUE * 3,
+        min: Number.MIN_VALUE,
+        max: Number.MIN_VALUE * 5,
+        step: Number.MIN_VALUE,
+      },
+    ];
+    for (const { next, min, max, step } of validCases) {
+      expect(validatesSteppedNumber(next, min, max, step)).toBe(true);
+      const snapped = snapSteppedNumber(next, min, max, step);
+      expect(snapped).toBe(next);
+      expect(validatesSteppedNumber(snapped, min, max, step)).toBe(true);
+      expect(snapSteppedNumber(snapped, min, max, step)).toBe(snapped);
+    }
 
     await registry.execute(
       { action: 'stage', identity: valueIdentity, value: 0.3 },
@@ -151,6 +179,18 @@ describe('core controls', () => {
     );
     await registry.execute(
       { action: 'stage', identity: tinyIdentity, value: 3e-16 },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      { action: 'stage', identity: microscopicIdentity, value: 1.12e-101 },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: microscopicRangeIdentity,
+        value: { min: 1.12e-101, max: 1.9e-101 },
+      },
       { source: 'agent' },
     );
     await registry.execute(
@@ -173,11 +213,25 @@ describe('core controls', () => {
       value: 3e-16,
       valid: true,
     });
+    expect(registry.get(microscopicIdentity)?.state.staged).toMatchObject({
+      value: 1.12e-101,
+      valid: true,
+    });
+    expect(registry.get(microscopicRangeIdentity)?.state.staged).toMatchObject({
+      value: { min: 1.12e-101, max: 1.9e-101 },
+      valid: true,
+    });
 
     await userEvent.click(screen.getByRole('button', { name: 'Apply Value' }));
     await userEvent.click(screen.getByRole('button', { name: 'Apply Range' }));
     await userEvent.click(
       screen.getByRole('button', { name: 'Apply Tiny value' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Microscopic value' }),
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Microscopic range' }),
     );
 
     expect(registry.get(valueIdentity)?.state).toMatchObject({ value: 0.3 });
@@ -185,15 +239,34 @@ describe('core controls', () => {
       value: { min: 0.3, max: 0.5 },
     });
     expect(registry.get(tinyIdentity)?.state).toMatchObject({ value: 3e-16 });
+    expect(registry.get(microscopicIdentity)?.state).toMatchObject({
+      value: 1.12e-101,
+    });
+    expect(registry.get(microscopicRangeIdentity)?.state).toMatchObject({
+      value: { min: 1.12e-101, max: 1.9e-101 },
+    });
     expect(registry.get(valueIdentity)?.state.staged).toBeUndefined();
     expect(registry.get(rangeIdentity)?.state.staged).toBeUndefined();
     expect(registry.get(tinyIdentity)?.state.staged).toBeUndefined();
+    expect(registry.get(microscopicIdentity)?.state.staged).toBeUndefined();
+    expect(
+      registry.get(microscopicRangeIdentity)?.state.staged,
+    ).toBeUndefined();
     expect(screen.getByRole('slider', { name: 'Value' })).toHaveValue('0.3');
     expect(screen.getByRole('slider', { name: 'Minimum' })).toHaveValue('0.3');
     expect(screen.getByRole('slider', { name: 'Maximum' })).toHaveValue('0.5');
     expect(screen.getByRole('slider', { name: 'Tiny value' })).toHaveValue(
       '3e-16',
     );
+    expect(
+      screen.getByRole('slider', { name: 'Microscopic value' }),
+    ).toHaveValue('1.12e-101');
+    expect(
+      screen.getByRole('slider', { name: 'Microscopic minimum' }),
+    ).toHaveValue('1.12e-101');
+    expect(
+      screen.getByRole('slider', { name: 'Microscopic maximum' }),
+    ).toHaveValue('1.9e-101');
   });
 
   it('marks constrained proposals invalid before the first valid-only batch', async () => {

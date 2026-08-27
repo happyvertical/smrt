@@ -164,9 +164,14 @@ $effect(() => {
       prepareValue: (candidate) => {
         const prepared = prepareTextFieldValue(candidate);
         if (prepared === '') return '';
-        if (!isValidPhoneValue(prepared)) return prepared;
-        const formatted = parseSpokenPhone(prepared);
-        return formatted || invalidStagedValue();
+        const digits = extractSpokenPhoneDigits(prepared);
+        if (
+          digits.length !== 10 &&
+          !(digits.length === 11 && digits[0] === '1')
+        ) {
+          return prepared;
+        }
+        return formatPhoneNumber(digits) || invalidStagedValue();
       },
       getState: () => ({ disabled }),
       get constraints() {

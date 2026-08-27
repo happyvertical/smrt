@@ -335,7 +335,16 @@ $effect(() => {
         ) {
           return invalidStagedValue();
         }
-        return candidate;
+        const measurement = candidate as Record<string, unknown>;
+        return {
+          value: measurement.value,
+          unit: measurement.unit,
+          ...Object.fromEntries(
+            Object.entries(measurement).filter(
+              ([key]) => key !== 'value' && key !== 'unit',
+            ),
+          ),
+        };
       },
       clear: () => {
         updateValue(null);
