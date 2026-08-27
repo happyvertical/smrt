@@ -229,6 +229,94 @@ describe('StagedControlReview', () => {
     expect(registry.get(numberIdentity)?.state.staged?.value).toBe(5);
   });
 
+  it.each([
+    { staged: true, applied: false },
+    { staged: false, applied: true },
+  ])('edits a $staged boolean proposal with a native checkbox and applies $applied', async ({
+    staged,
+    applied,
+  }) => {
+    let value = staged;
+    const booleanIdentity = { formId: 'profile', controlId: 'enabled' };
+    const setValue = vi.fn((next: unknown) => {
+      value = next as boolean;
+    });
+    const registry = createReviewRegistry();
+    registry.register({
+      identity: booleanIdentity,
+      metadata: { kind: 'checkbox', label: 'Enabled' },
+      getValue: () => value,
+      setValue,
+    });
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity: booleanIdentity, value: staged },
+      { source: 'agent' },
+    );
+
+    const editor = await screen.findByRole('checkbox', {
+      name: 'Edit proposed value for Enabled',
+    });
+    expect(editor).toHaveProperty('checked', staged);
+    expect(
+      screen.queryByRole('textbox', {
+        name: 'Edit proposed value for Enabled',
+      }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(editor);
+    expect(editor).toHaveProperty('checked', applied);
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(setValue).toHaveBeenLastCalledWith(applied);
+    expect(value).toBe(applied);
+    expect(typeof value).toBe('boolean');
+    expect(registry.get(booleanIdentity)?.state.staged).toBeUndefined();
+  });
+
+  it('announces stale apply failures with localized review text', async () => {
+    let registry!: ReturnType<typeof createControlInteractionRegistry>;
+    registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: (command) => {
+        if (command.action === 'apply') {
+          registry.recordUserEdit?.(command.identity);
+        }
+        return { allowed: true };
+      },
+    });
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    const status = screen.getByText(
+      'The field changed after this proposal was staged.',
+      { selector: 'p[role="status"]' },
+    );
+    expect(status).not.toHaveTextContent('staged_value_stale');
+  });
+
+  it('announces gesture failures with localized invalid text', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => false,
+    });
+    render(Fixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    const status = screen.getByText('This proposal is not valid.', {
+      selector: 'p[role="status"]',
+    });
+    expect(status).not.toHaveTextContent('local_gesture_required');
+  });
+
   it('announces the pre-batch proposal total', async () => {
     const registry = createReviewRegistry();
     render(Fixture, { props: { registry } });

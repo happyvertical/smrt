@@ -185,11 +185,22 @@ function editedValue(snapshot: ControlSnapshot): unknown {
     if (!Number.isFinite(number)) throw new Error('invalid_number');
     return number;
   }
-  if (typeof original === 'boolean') return draft === 'true';
+  if (typeof original === 'boolean') {
+    if (draft !== 'true' && draft !== 'false') {
+      throw new Error('invalid_boolean');
+    }
+    return draft === 'true';
+  }
   if (original === null) return JSON.parse(draft);
   if (original !== null && typeof original === 'object')
     return JSON.parse(draft);
   return draft;
+}
+
+function failureStatus(reason?: string): string {
+  return reason === 'staged_value_stale' || reason === 'stale_revision'
+    ? text.stale
+    : text.invalid;
 }
 
 function commandFor(
@@ -305,7 +316,7 @@ async function applyOne(
       commandFor(snapshot, 'apply'),
       event,
     );
-    status = result.ok ? text.appliedStatus : (result.reason ?? text.invalid);
+    status = result.ok ? text.appliedStatus : failureStatus(result.reason);
     if (result.ok) await restoreReviewFocus(snapshot, removedIndex);
   } catch {
     status = text.invalid;
@@ -324,7 +335,7 @@ async function discardOne(
     commandFor(snapshot, 'discard'),
     event,
   );
-  status = result.ok ? text.discardedStatus : (result.reason ?? text.stale);
+  status = result.ok ? text.discardedStatus : failureStatus(result.reason);
   if (result.ok) await restoreReviewFocus(snapshot, removedIndex);
 }
 
@@ -398,6 +409,18 @@ async function discardAll(event: MouseEvent): Promise<void> {
               <dd>
                 {#if staged?.valueRedacted}
                   {text.redacted}
+                {:else if typeof staged?.value === 'boolean'}
+                  <input
+                    type="checkbox"
+                    aria-label={`${text.edit} ${label}`}
+                    checked={(drafts[draftKeyOf(snapshot)] ?? 'false') === 'true'}
+                    onchange={(event) => {
+                      drafts = {
+                        ...drafts,
+                        [draftKeyOf(snapshot)]: String(event.currentTarget.checked),
+                      };
+                    }}
+                  />
                 {:else}
                   <input
                     aria-label={`${text.edit} ${label}`}
@@ -443,6 +466,7 @@ async function discardAll(event: MouseEvent): Promise<void> {
   dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-3, .75rem); }
   dt { font-weight: 600; } dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
   input { width: 100%; box-sizing: border-box; padding: .4rem .5rem; color: inherit; background: var(--smrt-color-surface, #fff); border: 1px solid var(--smrt-color-outline, #64748b); border-radius: var(--smrt-radius-small, .375rem); }
+  input[type="checkbox"] { width: auto; }
   button { min-height: 2.25rem; padding: .4rem .75rem; color: var(--smrt-color-on-primary, #fff); background: var(--smrt-color-primary, #005ac1); border: 1px solid transparent; border-radius: var(--smrt-radius-small, .375rem); cursor: pointer; }
   button.secondary { color: var(--smrt-color-primary, #005ac1); background: transparent; border-color: var(--smrt-color-outline, #64748b); }
   button:focus-visible, input:focus-visible { outline: 2px solid var(--smrt-color-primary, #005ac1); outline-offset: 2px; }
