@@ -387,12 +387,18 @@ describe('WebMCP application composition (#2523)', () => {
     if (!list || !create || !get || !run) {
       throw new Error('fixture generated tools were not all registered');
     }
-    expect(JSON.parse(await list.execute({}))).toEqual(
+    const listed = JSON.parse(await list.execute({})) as Array<
+      Record<string, unknown>
+    >;
+    expect(listed).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: 'first' })]),
     );
-    expect(JSON.parse(await create.execute({ name: 'agent-created' }))).toEqual(
-      expect.objectContaining({ name: 'agent-created' }),
-    );
+    expect(listed.every((item) => !Object.hasOwn(item, 'secret'))).toBe(true);
+    const created = JSON.parse(
+      await create.execute({ name: 'agent-created' }),
+    ) as Record<string, unknown>;
+    expect(created).toEqual(expect.objectContaining({ name: 'agent-created' }));
+    expect(created).not.toHaveProperty('secret');
     expect(
       JSON.parse(await get.execute({ id: getOnlyRecord?.id })),
     ).toMatchObject({
