@@ -1442,15 +1442,41 @@ export function contentListQueryRowsToContents(
 }
 
 /**
- * The row count to page against, or `undefined` when the server could not
- * produce one (`total.kind === 'unavailable'`), in which case the caller should
- * fall back to the rows it has.
+ * The row count to DISPLAY a pager against, or `undefined` when the server
+ * could not produce one (`total.kind === 'unavailable'`).
+ *
+ * Accepts an estimate: an approximate page count is what an estimate is for.
+ * Do NOT clamp a page against this — see
+ * {@link contentListQueryExactTotal}.
  */
 export function contentListQueryTotalValue(
   total: ContentListQueryTotal | undefined,
 ): number | undefined {
   if (!total || total.kind === 'unavailable') return undefined;
   return total.value;
+}
+
+/**
+ * The row count a page may be CLAMPED against, or `undefined` when none exists.
+ *
+ * Clamping moves the operator, so it may only act on a count that is exactly
+ * right. `DataQueryTotal` has three kinds and only one of them qualifies:
+ *
+ * - `exact` — authoritative. Clamp.
+ * - `estimated` — an approximation, and clamping on one can strand a page that
+ *   really exists: an estimate of 100 rows on a 300-row query hides pages 3
+ *   onward, and the operator has no way to reach content that is there. The
+ *   opposite risk, offering a page that turns out to be empty, is visible and
+ *   self-correcting — they navigate, see nothing, and come back. Refusing to
+ *   hide reachable rows is the same rule as "truncation only when it narrows".
+ * - `unavailable` — the total is UNKNOWN. Not zero, and emphatically not the
+ *   length of the page in hand, which would send every page above the first
+ *   back to page one the moment the request settled.
+ */
+export function contentListQueryExactTotal(
+  total: ContentListQueryTotal | undefined,
+): number | undefined {
+  return total?.kind === 'exact' ? total.value : undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -23,6 +23,15 @@ export interface FakeContentListQuery {
   readonly retries: number;
   /** Publish a result page. `total` defaults to the page length. */
   resolve(rows: Array<Record<string, unknown>>, total?: number): void;
+  /**
+   * Publish a result page with an arbitrary total kind. `DataQueryTotal` is
+   * exact | estimated | unavailable, and only `exact` is authoritative for
+   * clamping, so the other two need to be expressible here.
+   */
+  resolveWithTotal(
+    rows: Array<Record<string, unknown>>,
+    total: ContentListQueryTotal,
+  ): void;
   /** Publish a failure. */
   fail(error: unknown): void;
   /** Toggle the busy flags independently of a request. */
@@ -85,6 +94,13 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     resolve(nextRows, nextTotal) {
       rows = nextRows;
       total = { kind: 'exact', value: nextTotal ?? nextRows.length };
+      loading = false;
+      refreshing = false;
+      error = null;
+    },
+    resolveWithTotal(nextRows, nextTotal) {
+      rows = nextRows;
+      total = nextTotal;
       loading = false;
       refreshing = false;
       error = null;

@@ -158,8 +158,29 @@ search, filters, sort, and page — so `selectContentListRows` /
 `paginateContentListRows` must not run over them. Running them again re-filters
 with different semantics (untrimmed search, case-insensitive comparison, a
 `site` predicate the server never saw) and can hide rows the server returned.
-`totalRows` therefore comes from `result.total`, not from the page length, and
-`clampPage` waits for the first authoritative total instead of clamping to zero.
+`totalRows` therefore comes from `result.total`, not from the page length.
+
+**Clamping moves the operator, so it acts only on a count that is exactly
+right.** Two findings in a row were "the clamp acted on a number that wasn't the
+total", so the rule is stated as a set rather than patched case by case:
+
+| Input | Clamp against it? |
+|---|---|
+| local mode row count | yes — the supplied array IS the whole result set |
+| server total, `exact` | yes |
+| server total, `estimated` | **no** — an approximation can hide a page that really exists |
+| server total, `unavailable` | **no** — the count is unknown; `rows.length` is the page, not the total |
+| no response yet for this query | **no** — a page restored from a link survives until its own count arrives |
+| a settled response for a DIFFERENT query | **no** — the binding holds the previous total while a new request is in flight |
+| a page-size change | n/a — `setPageSize` resets the page itself |
+
+`estimated` is a deliberate choice, not an oversight. Clamping on an estimate
+strands rows the operator cannot then reach; not clamping can offer a page that
+comes back empty, which is visible and self-correcting. Hiding reachable rows is
+the worse failure — the same reasoning as "truncation only when it narrows".
+Showing a pager is a different question, so `pageableRowCount` still accepts an
+estimate through `contentListQueryTotalValue`; only
+`contentListQueryExactTotal` feeds the clamp.
 
 Selection normalization also changes shape in server mode: `rows` is only the
 current page, so membership cannot be the durability test (it would clear the

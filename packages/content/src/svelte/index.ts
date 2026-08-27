@@ -246,6 +246,7 @@ export {
   type ContentListQueryTransportOptions,
   contentFromContentListQueryRow,
   contentListQueryErrorMessage,
+  contentListQueryExactTotal,
   contentListQueryRequestKey,
   contentListQueryRowsToContents,
   contentListQueryTotalValue,

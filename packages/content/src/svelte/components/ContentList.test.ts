@@ -2377,3 +2377,128 @@ describe('a page is only clamped against its own query total', () => {
     expect(query.requests.at(-1)?.page).toMatchObject({ offset: 10 });
   });
 });
+
+describe('only an authoritative count may clamp a page', () => {
+  /**
+   * Mounts on page 3 with a page size of 10, so the first request reads offset
+   * 20 and any clamp is immediately visible as a re-query at offset 0.
+   */
+  function mountOnPageThree() {
+    const query = createFakeContentListQuery();
+    renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { params: 'page=3' },
+    });
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+    return query;
+  }
+
+  it('does not clamp on an UNAVAILABLE total, and still clamps on an exact one', async () => {
+    const query = mountOnPageThree();
+
+    // The response for THIS query arrives, but the backend cannot count. An
+    // unavailable total is unknown — not zero, and not the one row in hand.
+    query.resolveWithTotal([serverRow('a', 'Alpha')], { kind: 'unavailable' });
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+
+    // CONTROL, in this same mount: the clamp effect is live, not inert. Give
+    // it an authoritative count that page 3 exceeds and it must act — so the
+    // assertion above is the rule being applied, not the effect failing to run.
+    query.resolve([serverRow('a', 'Alpha')], 5);
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 10,
+    });
+  });
+
+  it('does not clamp on an ESTIMATED total', async () => {
+    const query = mountOnPageThree();
+
+    // An estimate of 5 rows implies one page, and clamping on it would hide
+    // pages the query really has. Over-offering a page is visible and
+    // self-correcting; hiding reachable rows is not.
+    query.resolveWithTotal([serverRow('a', 'Alpha')], {
+      kind: 'estimated',
+      value: 5,
+    });
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+  });
+
+  it('clamps on an exact total, which is the authoritative case', async () => {
+    const query = mountOnPageThree();
+    query.resolveWithTotal([serverRow('a', 'Alpha')], {
+      kind: 'exact',
+      value: 5,
+    });
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 10,
+    });
+  });
+
+  it('leaves a page alone when the exact total covers it', async () => {
+    const query = mountOnPageThree();
+    query.resolveWithTotal([serverRow('a', 'Alpha')], {
+      kind: 'exact',
+      value: 100,
+    });
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+  });
+
+  it('still shows a pager for an estimate, which is what estimates are for', async () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+    });
+    query.resolveWithTotal([serverRow('a', 'Alpha')], {
+      kind: 'estimated',
+      value: 45,
+    });
+    await settle();
+
+    // Displaying a pager and moving the operator are different questions.
+    const labels = Array.from(
+      paginationNav(target)?.querySelectorAll('button') ?? [],
+    ).map((button) => button.textContent?.trim() ?? '');
+    expect(labels).toContain('5');
+  });
+
+  it('still clamps in local mode, where the array IS the result set', () => {
+    const target = renderList({
+      urlState: { params: 'page=3&size=10' },
+    });
+    // Two rows, one page: local mode has an exact count by construction.
+    expect(rowTitles(target)).toEqual([
+      'Council budget explained',
+      'Zoning appendix',
+    ]);
+  });
+});

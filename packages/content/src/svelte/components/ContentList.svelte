@@ -80,6 +80,7 @@ import {
   type ContentListQueryRequestOptions,
   type ContentListQuerySource,
   contentListQueryErrorMessage,
+  contentListQueryExactTotal,
   contentListQueryRowsToContents,
   contentListQueryTotalValue,
   CONTENT_LIST_QUERY_MAX_OFFSET,
@@ -445,17 +446,47 @@ const totalRowCount = $derived(
   serverBacked ? (serverTotal ?? rows.length) : queryRows.length,
 );
 
+/**
+ * The row count the current page may be clamped against, or `undefined` when
+ * no authoritative count exists.
+ *
+ * Clamping MOVES the operator, so every input has to be judged on whether it is
+ * exactly right — twice now a clamp has acted on a number that was not the
+ * total. The complete set:
+ *
+ * | Input | Authoritative? |
+ * |---|---|
+ * | local mode row count | yes — the supplied array IS the whole result set |
+ * | server total, `exact` | yes |
+ * | server total, `estimated` | NO — clamping on an approximation can hide a page that really exists |
+ * | server total, `unavailable` | NO — the count is unknown, and `rows.length` is the page, not the total |
+ * | no response yet for this query | NO — a page restored from a link must survive until its own count arrives |
+ * | a settled response for a DIFFERENT query | NO — the binding still holds the previous query's total while a new request is in flight |
+ * | a page-size change | n/a — `setPageSize` resets the page itself, so it can never strand an out-of-range one |
+ *
+ * `pageableRowCount` deliberately keeps using the looser
+ * `contentListQueryTotalValue`: an estimate is fine for SHOWING a pager, and
+ * over-offering a page is visible and self-correcting where hiding one is not.
+ */
+const clampableRowCount = $derived(
+  serverBacked
+    ? contentListQueryExactTotal(queryBinding?.total)
+    : queryRows.length,
+);
+
 // The adapter owns filtering, sorting, and paging, so the controller's page has
 // to be clamped against the result count rather than DataTable's. In server
 // mode that count is the server's total — clamping against the page length
 // would collapse every list to a single page.
 $effect(() => {
-  const totalRows = totalRowCount;
-  // Only ever clamp against a total that belongs to THIS query. That covers the
-  // pre-response case (nothing has settled yet, so a page restored from a link
-  // survives until its own count arrives) and the stale case (the binding still
-  // holds the previous query's total while the new request is in flight).
-  if (serverBacked && settledSignature !== querySignature) return;
+  const totalRows = clampableRowCount;
+  // Both signatures are read as dependencies on purpose: the effect must re-run
+  // when the SETTLED query changes even if the new query's count happens to
+  // equal the old one's, or a stale page survives on a coincidence.
+  const settled = settledSignature;
+  const signature = querySignature;
+  if (totalRows === undefined) return;
+  if (serverBacked && settled !== signature) return;
   // Deliberately the TRUE total, not `pageableRowCount`: clamping to the
   // reachable ceiling here would silently move a crafted `?page=9000` before
   // the query effect ever sees it, and the operator would never be told why
