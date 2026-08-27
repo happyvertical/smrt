@@ -100,12 +100,26 @@ const formatted = $derived.by((): FormattedCurrency => {
     };
   }
 
+  const minorUnitDigits = ISO_4217_MINOR_UNITS.get(normalizedCurrency);
+  if (minorUnitDigits === undefined) {
+    return {
+      text: `Invalid currency code: ${normalizedCurrency}`,
+      invalidCode: normalizedCurrency,
+    };
+  }
+
+  const formatOptions: Intl.NumberFormatOptions = {
+    style: 'currency',
+    currency: normalizedCurrency,
+  };
+  if (minorUnitDigits !== null) {
+    formatOptions.minimumFractionDigits = minorUnitDigits;
+    formatOptions.maximumFractionDigits = minorUnitDigits;
+  }
+
   let formatter: Intl.NumberFormat;
   try {
-    formatter = new Intl.NumberFormat('en-CA', {
-      style: 'currency',
-      currency: normalizedCurrency,
-    });
+    formatter = new Intl.NumberFormat('en-CA', formatOptions);
   } catch {
     return {
       text: `Invalid currency code: ${normalizedCurrency}`,
@@ -113,7 +127,6 @@ const formatted = $derived.by((): FormattedCurrency => {
     };
   }
 
-  const minorUnitDigits = ISO_4217_MINOR_UNITS.get(normalizedCurrency);
   let majorAmount = amount;
   if (unit === 'cents') {
     if (minorUnitDigits == null) {

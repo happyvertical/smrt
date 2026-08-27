@@ -17,22 +17,17 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import CurrencyDisplay from '../CurrencyDisplay.svelte';
 
 /** Mirror the component's absolute-value currency formatting. */
-function money(absDollars: number, currency = 'CAD'): string {
+function money(
+  absDollars: number,
+  currency = 'CAD',
+  minorUnitDigits?: number,
+): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
+    minimumFractionDigits: minorUnitDigits,
+    maximumFractionDigits: minorUnitDigits,
   }).format(absDollars);
-}
-
-function majorUnitsFromMinor(amount: number, currency: string): number {
-  const formatter = new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-  });
-  const digits = formatter.resolvedOptions().maximumFractionDigits;
-  if (digits === undefined)
-    throw new Error(`Missing minor-unit digits for ${currency}`);
-  return amount / 10 ** digits;
 }
 
 describe('CurrencyDisplay', () => {
@@ -72,14 +67,15 @@ describe('CurrencyDisplay', () => {
   });
 
   it.each([
-    ['JPY', 12345],
-    ['BHD', 12345],
-  ])('uses the ISO minor-unit scale for %s', (currency, amount) => {
+    ['JPY', 0, 12345],
+    ['BHD', 3, 12345],
+    ['IQD', 3, 12345],
+  ])('uses the ISO minor-unit scale for %s', (currency, digits, amount) => {
     const { container } = render(CurrencyDisplay, {
       props: { amount, currency },
     });
     expect(container.querySelector('span')?.textContent).toBe(
-      money(majorUnitsFromMinor(amount, currency), currency),
+      money(amount / 10 ** digits, currency, digits),
     );
   });
 
@@ -93,7 +89,7 @@ describe('CurrencyDisplay', () => {
       props: { amount: 12345, currency },
     });
     expect(container.querySelector('span')?.textContent).toBe(
-      money(123.45, normalized),
+      money(123.45, normalized, 2),
     );
   });
 
