@@ -256,9 +256,6 @@ postgresDescribe(
       });
       try {
         await admin.query(
-          'COMMENT ON CONSTRAINT "i2537_owned_child_parent_id_i2537_owned_parent_id_fkey" ON "i2537_owned_child" IS NULL',
-        );
-        await admin.query(
           'ALTER TABLE "i2537_evolve_child" DROP CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey"',
         );
         await admin.query(
@@ -370,6 +367,9 @@ postgresDescribe(
         url: process.env.DATABASE_URL as string,
       });
       try {
+        await admin.query(
+          'COMMENT ON CONSTRAINT "i2537_owned_child_parent_id_i2537_owned_parent_id_fkey" ON "i2537_owned_child" IS NULL',
+        );
         await admin.query(
           'ALTER TABLE "i2537_owned_child" ADD CONSTRAINT "external_owned_child_parent_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_owned_parent" ("id")',
         );
