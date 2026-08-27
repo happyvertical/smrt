@@ -28,6 +28,7 @@ vi.mock('../../../hooks/useSTT.svelte.js', () => ({
 }));
 
 import AsyncValidationForm from './async-validation-form.fixture.svelte';
+import AsyncValidationSnapshotForm from './async-validation-snapshot-form.fixture.svelte';
 import FormRegistrationLifecycle from './form-registration-lifecycle.fixture.svelte';
 import FormWithFields from './form-with-fields.fixture.svelte';
 import FormWithPolicyField from './form-with-policy-field.fixture.svelte';
@@ -85,6 +86,103 @@ describe('Form WebMCP staged-edit intent', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(onsubmit).not.toHaveBeenCalled();
+  });
+
+  it('awaits a cross-realm async false validation before the WebMCP form submits', async () => {
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const ForeignPromise = frame.contentWindow?.Promise;
+    if (!ForeignPromise)
+      throw new Error('iframe Promise constructor unavailable');
+    expect(ForeignPromise).not.toBe(Promise);
+
+    const validation = ForeignPromise.resolve(
+      false,
+    ) as unknown as Promise<boolean>;
+    expect(validation).not.toBeInstanceOf(Promise);
+    const validate = vi.fn(() => validation);
+    const onsubmit = vi.fn();
+    render(AsyncValidationForm, {
+      props: { onsubmit, validate, webmcp: true },
+    });
+    await tick();
+    await tick();
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onsubmit).not.toHaveBeenCalled();
+    frame.remove();
+  });
+
+  it('submits after an async true field validation', async () => {
+    const validate = vi.fn(async () => true);
+    const onsubmit = vi.fn();
+    render(AsyncValidationForm, {
+      props: { onsubmit, validate, webmcp: true },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(onsubmit).toHaveBeenCalledWith({ 'async-invalid': 'proposal' }),
+    );
+  });
+
+  it('blocks submission when an async field validation rejects', async () => {
+    const validate = vi.fn(() =>
+      Promise.reject(new Error('validation_failed')),
+    );
+    const onsubmit = vi.fn();
+    render(AsyncValidationForm, {
+      props: { onsubmit, validate, webmcp: true },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onsubmit).not.toHaveBeenCalled();
+  });
+
+  it('submits a coherent field snapshot when validation allows intervening edits', async () => {
+    let resolveValidation: (valid: boolean) => void = () => {};
+    const validation = new Promise<boolean>((resolve) => {
+      resolveValidation = resolve;
+    });
+    const validate = vi.fn(() => validation);
+    const onsubmit = vi.fn();
+    render(AsyncValidationSnapshotForm, { props: { onsubmit, validate } });
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(1));
+
+    await userEvent.clear(screen.getByRole('textbox', { name: 'Later value' }));
+    await userEvent.type(
+      screen.getByRole('textbox', { name: 'Later value' }),
+      'after',
+    );
+    resolveValidation(true);
+
+    await waitFor(() =>
+      expect(onsubmit).toHaveBeenCalledWith({
+        'async-invalid': 'proposal',
+        later: 'before',
+      }),
+    );
+  });
+
+  it('calls onsubmit synchronously when a field validator is synchronous', async () => {
+    const validate = vi.fn(() => true);
+    const onsubmit = vi.fn();
+    const { container } = render(AsyncValidationForm, {
+      props: { onsubmit, validate, webmcp: true },
+    });
+    const form = container.querySelector('form');
+    if (!form) throw new Error('Form not rendered');
+
+    form.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+    expect(validate).toHaveBeenCalledTimes(1);
+    expect(onsubmit).toHaveBeenCalledWith({ 'async-invalid': 'proposal' });
   });
 
   it('registers a field-derived tool and stages without mutating or submitting', async () => {

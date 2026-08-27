@@ -838,7 +838,12 @@ setFormContext(formContext);
 async function submitCurrentForm(): Promise<string> {
   const data: Record<string, unknown> = {};
   let valid = true;
-  for (const [name, field] of fields) {
+  const fieldSnapshot = Array.from(fields);
+
+  // Snapshot every field before running a validator: a validator may await,
+  // while the user can continue editing later controls. The submit handler must
+  // receive one coherent gesture-time payload, not a mixture of revisions.
+  for (const [name, field] of fieldSnapshot) {
     data[name] = field.getValue();
     if (
       field.constraints?.required &&
@@ -846,11 +851,14 @@ async function submitCurrentForm(): Promise<string> {
     ) {
       valid = false;
     }
+  }
+
+  for (const [, field] of fieldSnapshot) {
     if (field.validate) {
       try {
         const validation = field.validate();
         valid =
-          (validation instanceof Promise ? await validation : validation) &&
+          (typeof validation === 'boolean' ? validation : await validation) &&
           valid;
       } catch {
         valid = false;
