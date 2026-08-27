@@ -135,12 +135,9 @@ const GOVERNANCE_READ_OPERATIONS = [
 const PUBLICATION_OPERATIONS = [
   CONTENT_READ_OPERATION,
   CONTENT_UPDATE_OPERATION,
+  // ContentReference is internal-only (no catalog operation); contents:read
+  // is the public authority for reading its citation edges.
   ...GOVERNANCE_READ_OPERATIONS,
-  {
-    id: 'content-references:read',
-    collection: 'contentreferences',
-    action: 'read',
-  },
   { id: 'facts:read', collection: 'facts', action: 'read' },
   { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
   { id: 'fact-sources:read', collection: 'factsources', action: 'read' },
@@ -166,11 +163,6 @@ const AUTOMATED_REVIEW_OPERATIONS = [
   CONTENT_READ_OPERATION,
   CONTENT_UPDATE_OPERATION,
   ...GOVERNANCE_READ_OPERATIONS,
-  {
-    id: 'content-references:read',
-    collection: 'contentreferences',
-    action: 'read',
-  },
   { id: 'facts:read', collection: 'facts', action: 'read' },
   { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
   {
