@@ -478,7 +478,7 @@ describe('content list data surface descriptor', () => {
     ];
 
     expect(descriptor.schemaVersion).toBe(2);
-    expect(descriptor.limits.maxSelectionSize).toBe(10_000);
+    expect(descriptor.limits.maxSelectionSize).toBe(200);
     for (const id of workflowIds) {
       expect(
         descriptor.actions.find((action) => action.id === id),

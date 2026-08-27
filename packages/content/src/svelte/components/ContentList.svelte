@@ -1345,6 +1345,21 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
 }
 
 function workflowIntentSignature(): string {
+  const selection = workflowSelection();
+  if (selection?.scope === 'explicit-ids') {
+    return JSON.stringify([
+      selectedWorkflow,
+      workflowPayload(),
+      {
+        scope: selection.scope,
+        rowIds: [...selection.rowIds].sort((left, right) => {
+          const leftKey = `${typeof left}:${String(left)}`;
+          const rightKey = `${typeof right}:${String(right)}`;
+          return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+        }),
+      },
+    ]);
+  }
   return JSON.stringify([
     selectedWorkflow,
     workflowPayload(),

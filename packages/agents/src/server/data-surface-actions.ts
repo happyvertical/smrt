@@ -296,6 +296,15 @@ export interface DataSurfaceActionAdapterOptions {
   runAsPrincipal?: typeof executeAsPrincipal;
   idempotencyPollIntervalMs?: number;
   idempotencyWaitTimeoutMs?: number;
+  /** Domain-specific request input that must participate in confirmation/idempotency. */
+  requestFingerprintExtension?(
+    request: DataSurfaceServerActionRequest,
+  ): DataSurfaceJsonValue | undefined;
+  /** Maps domain failures from deferred execution into the shared result contract. */
+  mapError?(
+    error: unknown,
+    request: DataSurfaceServerActionRequest,
+  ): string | undefined;
 }
 
 export interface DataSurfaceActionAdapter {
@@ -428,13 +437,17 @@ function canonicalSelection(
   return { scope: selection.scope, rowIds: canonicalRowIds(selection.rowIds) };
 }
 
-function requestFingerprint(request: DataSurfaceServerActionRequest): string {
+function requestFingerprint(
+  request: DataSurfaceServerActionRequest,
+  extension?: DataSurfaceJsonValue,
+): string {
   return fingerprint({
     identity: canonicalIdentity(request.identity),
     actionId: request.actionId,
     selection: canonicalSelection(request.selection),
     payload: request.payload,
     expectedRevision: request.expectedRevision,
+    ...(extension === undefined ? {} : { extension }),
   });
 }
 
@@ -542,6 +555,8 @@ export function createDataSurfaceActionAdapter(
     0,
     options.idempotencyWaitTimeoutMs ?? 5_000,
   );
+  const fingerprintRequest = (request: DataSurfaceServerActionRequest) =>
+    requestFingerprint(request, options.requestFingerprintExtension?.(request));
 
   async function resolveInvocation(
     request: DataSurfaceServerActionRequest,
@@ -650,7 +665,7 @@ export function createDataSurfaceActionAdapter(
         const selectionFingerprint = fingerprint(
           canonicalSelection(request.selection),
         );
-        const requestFingerprintValue = requestFingerprint(request);
+        const requestFingerprintValue = fingerprintRequest(request);
         const expiresAt = now() + tokenTtlMs;
         await state.putToken(confirmationToken, {
           expiresAt,
@@ -722,7 +737,7 @@ export function createDataSurfaceActionAdapter(
     const ownerToken = randomBytes(16).toString('base64url');
     const executionFingerprint = fingerprint({
       kind: 'background-execution',
-      request: token?.requestFingerprint ?? requestFingerprint(request),
+      request: token?.requestFingerprint ?? fingerprintRequest(request),
       action: token?.actionFingerprint ?? request.actionId,
     });
     const executionScope = fingerprint({
@@ -758,8 +773,11 @@ export function createDataSurfaceActionAdapter(
         try {
           executed = await authorizedApply(request, context, token, false);
         } catch (error) {
-          await state.releaseIdempotency(executionScope, ownerToken);
-          throw error;
+          executed = result(
+            request,
+            false,
+            options.mapError?.(error, request) ?? 'execution_failed',
+          );
         }
         if (
           !(await state.completeIdempotency(
@@ -862,7 +880,7 @@ export function createDataSurfaceActionAdapter(
     const tenantId = context.principal.principal.tenantId;
     const onBehalfOfUserId = context.principal.onBehalfOfUserId ?? null;
     const actsAsProfileId = context.principal.principal.actsAsProfileId ?? null;
-    const requestFingerprintValue = requestFingerprint(request);
+    const requestFingerprintValue = fingerprintRequest(request);
     const idempotencyScope = fingerprint({
       actorUserId,
       tenantId,

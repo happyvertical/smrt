@@ -85,6 +85,9 @@ class MemoryContentCollection implements ContentListActionCollection {
         title: row.title,
         status: row.status,
         category: '',
+        get updated_at() {
+          return row.updated_at;
+        },
         resolveGovernance: async () => ({
           isGoverned: false,
           enforcePublishReadiness: false,
@@ -422,6 +425,40 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(count).not.toHaveBeenCalled();
   });
 
+  it('rejects malformed requests and non-string restore statuses', async () => {
+    const setup = harness();
+
+    await expect(
+      setup.adapter.preview(null as never, setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    await expect(
+      setup.adapter.preview(
+        {
+          version: 1,
+          requestId: 'missing-selection',
+          identity,
+          actionId: 'categorize',
+          phase: 'preview',
+          expectedRevision: 7,
+          target: { expectedCount: 0 },
+        } as never,
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'restore',
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { expectedCount: 1 },
+          { payload: { status: ['published'] } as never },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_payload' });
+  });
+
   it('previews without writes, requires confirmation, and rejects row revision drift at apply', async () => {
     const setup = harness();
     const selection = { scope: 'explicit-ids' as const, rowIds: ['a', 'b'] };
@@ -530,11 +567,11 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     });
   });
 
-  it('fails closed when automated review lacks secondary collection permissions', async () => {
+  it('fails closed when automated review lacks reference-read permission', async () => {
     const setup = harness({
       permissions: ['contents:update'],
       assertOperation: async (collection, action) => {
-        if (collection === 'contentversions' && action === 'create') {
+        if (collection === 'contentreferences' && action === 'read') {
           throw permissionDeniedError();
         }
         return { allowed: true } as Awaited<
@@ -561,8 +598,8 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       'read',
     );
     expect(setup.run.assertOperation).toHaveBeenCalledWith(
-      'contentversions',
-      'create',
+      'contentreferences',
+      'read',
     );
     expect(setup.collection.saveCalls).toEqual([]);
   });
@@ -679,6 +716,95 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(JSON.stringify(result)).not.toContain('private persistence failure');
   });
 
+  it('rechecks each row revision immediately before mutation', async () => {
+    const collection = new MemoryContentCollection(rows().slice(0, 1));
+    const get = vi.spyOn(collection, 'get');
+    get.mockImplementation(async (filter) => {
+      if (get.mock.calls.length === 3) {
+        collection.rows[0].updated_at = '2026-09-01T00:00:00.000Z';
+      }
+      return (
+        collection.contents.get(
+          typeof filter === 'string' ? filter : String(filter.id),
+        ) ?? null
+      );
+    });
+    const setup = harness({ collection });
+    const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
+    const target = { expectedCount: 1 };
+    const preview = await setup.adapter.preview(
+      actionRequest('preview', 'categorize', selection, target, {
+        payload: { category: 'news' },
+      }),
+      setup.context,
+    );
+
+    const result = await setup.adapter.apply(
+      actionRequest('apply', 'categorize', selection, target, {
+        payload: { category: 'news' },
+        confirmationToken: preview.confirmationToken,
+      }),
+      setup.context,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        failed: 1,
+        outcomes: [
+          { rowId: 'a', status: 'failed', reason: 'execution_failed' },
+        ],
+      },
+    });
+    expect(collection.saveCalls).toEqual([]);
+  });
+
+  it('binds the content target into idempotent retries', async () => {
+    const setup = harness();
+    const selection = { scope: 'current-page' as const };
+    const firstQuery = query({
+      filter: { kind: 'condition', field: 'id', operator: 'eq', value: 'a' },
+    });
+    const secondQuery = query({
+      requestId: 'content-list-query-b',
+      filter: { kind: 'condition', field: 'id', operator: 'eq', value: 'b' },
+    });
+    const firstTarget = { query: firstQuery, expectedCount: 1 };
+    const secondTarget = { query: secondQuery, expectedCount: 1 };
+    const firstPreview = await setup.adapter.preview(
+      actionRequest('preview', 'categorize', selection, firstTarget, {
+        payload: { category: 'news' },
+      }),
+      setup.context,
+    );
+    await setup.adapter.apply(
+      actionRequest('apply', 'categorize', selection, firstTarget, {
+        payload: { category: 'news' },
+        confirmationToken: firstPreview.confirmationToken,
+        idempotencyKey: 'same-key',
+      }),
+      setup.context,
+    );
+    const secondPreview = await setup.adapter.preview(
+      actionRequest('preview', 'categorize', selection, secondTarget, {
+        payload: { category: 'news' },
+      }),
+      setup.context,
+    );
+
+    await expect(
+      setup.adapter.apply(
+        actionRequest('apply', 'categorize', selection, secondTarget, {
+          payload: { category: 'news' },
+          confirmationToken: secondPreview.confirmationToken,
+          idempotencyKey: 'same-key',
+        }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'idempotency_conflict' });
+  });
+
   it('queues long-running work once and replays the same accepted job for a duplicate apply', async () => {
     let queued: DataSurfaceBackgroundActionJob | undefined;
     const enqueue = vi.fn(async (job: DataSurfaceBackgroundActionJob) => {
@@ -730,5 +856,39 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     });
     expect(replayed).toEqual(executed);
     expect(formatBody).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns a structured failure when a queued selection drifts', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const collection = new MemoryContentCollection(rows().slice(0, 2));
+    const setup = harness({
+      collection,
+      backgroundQueue: {
+        enqueue: async (job) => {
+          queued = job;
+          return { jobId: 'content-job-drift' };
+        },
+      },
+      handlers: { formatBody: vi.fn() },
+    });
+    const selection = { scope: 'explicit-ids' as const, rowIds: ['a', 'b'] };
+    const target = { expectedCount: 2 };
+    const preview = await setup.adapter.preview(
+      actionRequest('preview', 'format-body', selection, target),
+      setup.context,
+    );
+    await setup.adapter.apply(
+      actionRequest('apply', 'format-body', selection, target, {
+        confirmationToken: preview.confirmationToken,
+        idempotencyKey: 'queued-drift',
+      }),
+      setup.context,
+    );
+    collection.rows.splice(1, 1);
+
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: false,
+      reason: 'matching_count_drifted',
+    });
   });
 });

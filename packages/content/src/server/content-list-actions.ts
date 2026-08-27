@@ -173,6 +173,11 @@ const AUTOMATED_REVIEW_OPERATIONS = [
   CONTENT_READ_OPERATION,
   CONTENT_UPDATE_OPERATION,
   ...GOVERNANCE_READ_OPERATIONS,
+  {
+    id: 'content-references:read',
+    collection: 'contentreferences',
+    action: 'read',
+  },
   { id: 'facts:read', collection: 'facts', action: 'read' },
   { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
   {
@@ -422,7 +427,7 @@ interface ResolvedContentSelection {
 }
 
 const REQUIRED_QUERY_FIELDS = ['id', 'title', 'status', 'updated_at'] as const;
-const DEFAULT_MAX_SELECTION_SIZE = 10_000;
+const DEFAULT_MAX_SELECTION_SIZE = 200;
 const DEFAULT_REPRESENTATIVE_LIMIT = 5;
 
 class ContentListActionError extends Error {
@@ -462,7 +467,8 @@ function validPayload(
     case 'restore':
       return (
         keys.length === 1 &&
-        ['draft', 'review', 'published'].includes(String(value.status))
+        typeof value.status === 'string' &&
+        ['draft', 'review', 'published'].includes(value.status)
       );
     case 'categorize':
       return (
@@ -502,23 +508,43 @@ function validPayload(
 }
 
 function actionResult(
-  request: ContentListActionRequest,
+  request: unknown,
   ok: boolean,
   reason?: string,
 ): DataSurfaceActionResult {
+  const candidate = isRecord(request) ? request : {};
+  const identityCandidate = isRecord(candidate.identity)
+    ? candidate.identity
+    : {};
+  const identity: DataSurfaceIdentity =
+    typeof identityCandidate.surfaceId === 'string' &&
+    ['table', 'list', 'report', 'custom'].includes(
+      String(identityCandidate.kind),
+    )
+      ? (identityCandidate as unknown as DataSurfaceIdentity)
+      : { surfaceId: 'content-list', kind: 'table' };
   return {
     version: 1,
-    requestId: request.requestId,
-    identity: request.identity,
-    actionId: request.actionId,
-    phase: request.phase,
+    requestId:
+      typeof candidate.requestId === 'string'
+        ? candidate.requestId
+        : 'invalid-request',
+    identity,
+    actionId:
+      typeof candidate.actionId === 'string' ? candidate.actionId : 'invalid',
+    phase: candidate.phase === 'apply' ? 'apply' : 'preview',
     ok,
     ...(reason ? { reason } : {}),
   };
 }
 
-function validateTarget(request: ContentListActionRequest): string | undefined {
-  if (!isWorkflowId(request.actionId) || !isRecord(request.target))
+function validateTarget(request: unknown): string | undefined {
+  if (
+    !isRecord(request) ||
+    !isWorkflowId(request.actionId) ||
+    !isRecord(request.target) ||
+    !isRecord(request.selection)
+  )
     return 'invalid_request';
   const keys = Object.keys(request.target);
   if (keys.some((key) => key !== 'query' && key !== 'expectedCount'))
@@ -873,27 +899,34 @@ export function createContentListActionAdapter(
     options.representativeLimit ?? DEFAULT_REPRESENTATIVE_LIMIT;
   const descriptor = options.descriptor ?? defaultDescriptor(maxSelectionSize);
   const resolvedByRequest = new WeakMap<object, ResolvedContentSelection>();
-  const contentByInvocation = new WeakMap<
-    object,
-    Map<string, Content | null>
-  >();
-
   async function loadContent(
     invocation: { run: PrincipalRun; request: DataSurfaceServerActionRequest },
     rowId: DataSurfaceRowId,
   ): Promise<Content | null> {
-    let cache = contentByInvocation.get(invocation);
-    if (!cache) {
-      cache = new Map();
-      contentByInvocation.set(invocation, cache);
-    }
     const key = String(rowId);
-    if (cache.has(key)) return cache.get(key) ?? null;
     const collection = await options.collection(invocation.run);
     const content = await collection.get({ id: key });
-    cache.set(key, content);
+    if (!content) return null;
+    const resolved = resolvedByRequest.get(invocation.request);
+    const expected = resolved?.rows.find((row) => String(row.id) === key);
+    const revisionValue = (value: unknown) =>
+      value instanceof Date ? value.toISOString() : String(value ?? '');
+    if (
+      !expected ||
+      revisionValue(content.updated_at) !== revisionValue(expected.updated_at)
+    ) {
+      throw new ContentListActionError('row_revision_drifted');
+    }
     return content;
   }
+
+  const mapActionError = (error: unknown) =>
+    error instanceof ContentListActionError
+      ? error.reason
+      : isPermissionDenied(error) ||
+          error instanceof PrincipalToolNotAllowedError
+        ? 'denied'
+        : 'execution_failed';
 
   const definitions = Object.fromEntries(
     CONTENT_LIST_WORKFLOWS.map(
@@ -971,6 +1004,10 @@ export function createContentListActionAdapter(
     backgroundQueue: options.backgroundQueue,
     tokenTtlMs: options.tokenTtlMs,
     runAsPrincipal: options.runAsPrincipal,
+    requestFingerprintExtension: (request) =>
+      (request as ContentListActionRequest)
+        .target as unknown as DataSurfaceJsonValue,
+    mapError: mapActionError,
     resolveSurface: async (run) => ({
       descriptor,
       revision: await (options.revision?.(run, descriptor.identity) ?? 0),
@@ -1028,16 +1065,7 @@ export function createContentListActionAdapter(
         },
       };
     } catch (error) {
-      return actionResult(
-        request,
-        false,
-        error instanceof ContentListActionError
-          ? error.reason
-          : isPermissionDenied(error) ||
-              error instanceof PrincipalToolNotAllowedError
-            ? 'denied'
-            : 'execution_failed',
-      );
+      return actionResult(request, false, mapActionError(error));
     } finally {
       resolvedByRequest.delete(request);
     }

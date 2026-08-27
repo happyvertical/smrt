@@ -77,6 +77,8 @@ function harness(options: {
   runAsPrincipal?: typeof executeAsPrincipal;
   confirmation?: DataSurfaceServerActionDefinition['confirmation'];
   surfaceIdentity?: DataSurfaceIdentity;
+  requestFingerprintExtension?: () => string;
+  mapError?: (error: unknown) => string;
 }) {
   const calls: ExecuteAsPrincipalOptions[] = [];
   const resolveSelectionCalls: DataSurfaceSelectionReference[] = [];
@@ -158,6 +160,8 @@ function harness(options: {
     ...(options.enqueue
       ? { backgroundQueue: { enqueue: options.enqueue } }
       : {}),
+    requestFingerprintExtension: options.requestFingerprintExtension,
+    mapError: options.mapError,
   });
   const context = {
     principal: {
@@ -716,6 +720,19 @@ describe('data-surface action adapter', () => {
     });
   });
 
+  it('binds a domain request extension into idempotency', async () => {
+    let extension = 'target-a';
+    const setup = harness({ requestFingerprintExtension: () => extension });
+    const token = await previewToken(setup);
+    const applyRequest = request('apply', { confirmationToken: token });
+    await setup.adapter.apply(applyRequest, setup.context);
+
+    extension = 'target-b';
+    await expect(
+      setup.adapter.apply(applyRequest, setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'idempotency_conflict' });
+  });
+
   it('allows the same idempotency key to retry after a non-terminal adapter failure', async () => {
     let applyAuthorizationAttempts = 0;
     const setup = harness({
@@ -782,5 +799,37 @@ describe('data-surface action adapter', () => {
     expect(redelivery).toEqual(completed);
     expect(applyRow).toHaveBeenCalledTimes(2);
     expect(setup.calls).toHaveLength(3);
+  });
+
+  it('maps deferred failures into a structured background result', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let authorizationChecks = 0;
+    const setup = harness({
+      execution: 'background',
+      authorize: () => {
+        authorizationChecks += 1;
+        if (authorizationChecks === 3) throw new Error('domain drift');
+        return true;
+      },
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-failure' };
+      },
+      mapError: () => 'domain_drifted',
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: false,
+      reason: 'domain_drifted',
+    });
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: false,
+      reason: 'domain_drifted',
+    });
   });
 });

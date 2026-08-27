@@ -372,6 +372,66 @@ describe('ContentList bulk workflows', () => {
     );
   });
 
+  it('keeps an explicit-id background intent locked across query changes', async () => {
+    const remote = createFakeContentListQuery();
+    remote.resolve(
+      [
+        {
+          id: 'content-1',
+          title: 'First',
+          status: 'draft',
+          updated_at: '2026-08-27T17:00:00.000Z',
+        },
+      ],
+      2,
+    );
+    const workflow = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          skipped: 0,
+          failed: 0,
+          background: true,
+          jobId: 'job-explicit-42',
+        },
+      }),
+    });
+    const target = renderList({
+      query: {
+        bind: () => remote.binding,
+        request: { defaultPageSize: 1 },
+      },
+      workflows: workflow,
+    });
+
+    click(checkboxByLabel(target, 'Select First'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('job-explicit-42 queued'),
+    );
+
+    typeText(searchInput(target), 'changed query');
+    await vi.waitFor(() => expect(remote.requests.length).toBeGreaterThan(1));
+    click(buttonByLabel(target, 'Go to page 2'));
+    await vi.waitFor(() => expect(remote.requests.length).toBeGreaterThan(2));
+
+    expect(target.textContent).toContain('1 selected');
+    expect(buttonsByText(target, 'Job queued')[0]?.disabled).toBe(true);
+    expect(workflow.preview).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed when an all-matching query changes after preview', async () => {
     const remote = createFakeContentListQuery();
     remote.setEnvelope({

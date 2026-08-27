@@ -236,7 +236,7 @@ const DEFAULT_ACTION_LABELS: Record<ContentListActionId, string> = {
 const DEFAULT_SURFACE_LIMITS: DataSurfaceLimits = {
   maxQueryRows: 200,
   maxQueryBytes: 50_000,
-  maxSelectionSize: 10_000,
+  maxSelectionSize: 200,
 };
 
 /** Local table commands a mounted content list accepts from a data surface. */
