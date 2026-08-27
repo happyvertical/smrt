@@ -816,6 +816,31 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
+  it('refuses a delete confirmed after its row becomes pending', () => {
+    const onDelete = vi.fn();
+    const jobs = createContentListJobController();
+    const target = renderList({ jobs, onDelete });
+    click(buttonsByText(target, 'Delete')[0]);
+
+    jobs.update({
+      jobId: 'job-after-dialog',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    flushSync();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    const confirm = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+      (button) => button.textContent?.trim() === 'Delete',
+    );
+    click(confirm as HTMLButtonElement);
+
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it('ships a reduced-motion override for refresh affordances', () => {
     const source = readFileSync(
       resolve(process.cwd(), 'src/svelte/components/ContentList.svelte'),

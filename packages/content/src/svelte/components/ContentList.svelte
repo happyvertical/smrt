@@ -1201,7 +1201,7 @@ function handleDeleteContent(row: ContentListRow) {
 function confirmDelete() {
   const target = pendingDelete;
   pendingDelete = null;
-  if (target) {
+  if (target && !rowPending(target)) {
     onDelete(target.content);
   }
 }
