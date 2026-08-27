@@ -263,6 +263,20 @@ describe('StagedControlReview', () => {
         name: 'Edit proposed value for Enabled',
       }),
     ).not.toBeInTheDocument();
+    const submitted = vi.fn((event: Event) => event.preventDefault());
+    screen
+      .getByRole('form', { name: 'Profile form' })
+      .addEventListener('submit', submitted);
+    const enter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(editor.dispatchEvent(enter)).toBe(false);
+    expect(enter.defaultPrevented).toBe(true);
+    expect(submitted).not.toHaveBeenCalled();
+    expect(registry.get(booleanIdentity)?.state.staged?.value).toBe(staged);
+
     await userEvent.click(editor);
     expect(editor).toHaveProperty('checked', applied);
     await userEvent.click(screen.getByRole('button', { name: 'Apply' }));

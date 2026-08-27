@@ -420,6 +420,9 @@ async function discardAll(event: MouseEvent): Promise<void> {
                         [draftKeyOf(snapshot)]: String(event.currentTarget.checked),
                       };
                     }}
+                    onkeydown={(event) => {
+                      if (event.key === 'Enter') event.preventDefault();
+                    }}
                   />
                 {:else}
                   <input
