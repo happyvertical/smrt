@@ -94,7 +94,9 @@ describe('Form', () => {
     expect(
       screen.getByRole('region', { name: 'Review proposed changes' }),
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
     expect(value).toBe('Grace');
   });
 });

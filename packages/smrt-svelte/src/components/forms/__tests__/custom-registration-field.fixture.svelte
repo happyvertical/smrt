@@ -8,9 +8,11 @@ import {
 let {
   name,
   label,
+  legacyCleanup = false,
 }: {
   name: string;
   label: string;
+  legacyCleanup?: boolean;
 } = $props();
 
 let value = $state('');
@@ -26,7 +28,11 @@ onMount(() => {
     },
     getValue: () => value,
   };
-  return formContext?.registerField(field);
+  const dispose = formContext?.registerField(field);
+  if (!formContext) return;
+  return legacyCleanup
+    ? () => formContext.unregisterField(field.name)
+    : dispose;
 });
 </script>
 

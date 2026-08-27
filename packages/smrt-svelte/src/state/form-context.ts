@@ -50,6 +50,11 @@ export interface FieldDefinition {
    * May throw when the value cannot be represented canonically by this field.
    */
   prepareValue?: (value: unknown) => unknown;
+  /**
+   * Convert a value extracted from speech into the field's canonical value.
+   * May be asynchronous for controls that support natural-language parsing.
+   */
+  prepareExtractedValue?: (value: unknown) => unknown | Promise<unknown>;
   /** Optional richer interaction metadata and capabilities. */
   controlId?: string;
   /** Immutable token identifying the DOM subtree owned by this field. */
@@ -80,8 +85,14 @@ export interface FieldDefinition {
 export interface SMRTFormContext {
   /** Current mode */
   readonly mode: 'smrt' | 'default';
-  /** Register a field with the form */
-  registerField: (field: FieldDefinition) => () => void;
+  /**
+   * Register a field with the form. New contexts return an identity-bound
+   * disposer; legacy void-returning contexts remain supported.
+   */
+  // biome-ignore lint/suspicious/noConfusingVoidType: void preserves source compatibility with legacy context implementations.
+  registerField: (field: FieldDefinition) => void | (() => void);
+  /** Legacy name-based cleanup. Prefer the disposer returned by registerField. */
+  unregisterField: (name: string) => void;
   /** Get all registered fields schema (for LLM prompt) */
   getFieldSchema: () => FieldDefinition[];
   /** Whether form-level listening is active */
@@ -104,7 +115,34 @@ export const SMRT_FORM_KEY = Symbol('smrt-form');
  * Set form context (used by SMRTForm)
  */
 export function setFormContext(ctx: SMRTFormContext): void {
-  setContext(SMRT_FORM_KEY, ctx);
+  const normalizedContext: SMRTFormContext = {
+    get mode() {
+      return ctx.mode;
+    },
+    registerField(field) {
+      const registeredName = field.name;
+      const dispose = ctx.registerField(field);
+      return typeof dispose === 'function'
+        ? dispose
+        : () => ctx.unregisterField(registeredName);
+    },
+    unregisterField: (name) => ctx.unregisterField(name),
+    getFieldSchema: () => ctx.getFieldSchema(),
+    get isFormListening() {
+      return ctx.isFormListening;
+    },
+    get isExtracting() {
+      return ctx.isExtracting;
+    },
+    toggleListening: () => ctx.toggleListening(),
+    get interactionRegistry() {
+      return ctx.interactionRegistry;
+    },
+    get formId() {
+      return ctx.formId;
+    },
+  };
+  setContext(SMRT_FORM_KEY, normalizedContext);
 }
 
 /**

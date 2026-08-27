@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
@@ -118,7 +118,9 @@ describe('StagedControlReview', () => {
     await userEvent.clear(proposal);
     await userEvent.type(proposal, 'Grace Hopper');
     expect(field).toHaveValue('Ada');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
     expect(field).toHaveValue('Grace Hopper');
     await waitFor(() =>
       expect(
@@ -172,13 +174,19 @@ describe('StagedControlReview', () => {
     }
     fieldset.disabled = true;
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled(),
+      expect(
+        screen.getByRole('button', { name: 'Apply Display name' }),
+      ).toBeDisabled(),
     );
-    expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Discard Display name' }),
+    ).not.toBeDisabled();
 
     fieldset.disabled = false;
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled(),
+      expect(
+        screen.getByRole('button', { name: 'Apply Display name' }),
+      ).not.toBeDisabled(),
     );
   });
 
@@ -200,13 +208,17 @@ describe('StagedControlReview', () => {
     await waitFor(() =>
       expect(registry.get(identity)?.state.disabled).toBe(true),
     );
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    ).toBeDisabled();
 
     fieldset.disabled = false;
     await waitFor(() =>
       expect(registry.get(identity)?.state.disabled).toBe(false),
     );
-    expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    ).not.toBeDisabled();
   });
 
   it('resets an edited draft when a replacement proposal has a new revision', async () => {
@@ -228,7 +240,9 @@ describe('StagedControlReview', () => {
     );
 
     expect(proposal).toHaveValue('Hopper');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
     expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
       'Hopper',
     );
@@ -257,13 +271,122 @@ describe('StagedControlReview', () => {
     );
 
     const applyButtons = await screen.findAllByRole('button', {
-      name: 'Apply',
+      name: /^Apply (?!valid changes$)/,
     });
     await userEvent.click(applyButtons[0]);
 
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Apply' })).toHaveFocus(),
+      expect(
+        screen.getByRole('button', { name: 'Apply Family name' }),
+      ).toHaveFocus(),
     );
+  });
+
+  it('names every proposal action and reports batch failures on their affected fields', async () => {
+    const familyIdentity = { formId: 'profile', controlId: 'family-name' };
+    const preferencesIdentity = {
+      formId: 'profile',
+      controlId: 'preferences',
+    };
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: (command) =>
+        command.action === 'apply' &&
+        command.identity.controlId === familyIdentity.controlId
+          ? { allowed: false, reason: 'opaque_policy_code' }
+          : { allowed: true },
+    });
+    let familyName = 'Lovelace';
+    let preferences: Record<string, string> = { layout: 'comfortable' };
+    render(Fixture, { props: { registry } });
+    registry.register({
+      identity: familyIdentity,
+      metadata: { kind: 'text', label: 'Family name' },
+      getValue: () => familyName,
+      setValue: (next) => {
+        familyName = String(next);
+      },
+    });
+    registry.register({
+      identity: preferencesIdentity,
+      metadata: { kind: 'custom', label: 'Preferences' },
+      getValue: () => preferences,
+      setValue: (next) => {
+        preferences = next as Record<string, string>;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      { action: 'stage', identity: familyIdentity, value: 'Hopper' },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: preferencesIdentity,
+        value: { layout: 'compact' },
+      },
+      { source: 'agent' },
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Discard Display name' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Apply Family name' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Discard Family name' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Apply Preferences' }),
+    ).toBeInTheDocument();
+
+    const preferencesEditor = screen.getByRole('textbox', {
+      name: 'Edit proposed value for Preferences',
+    });
+    await userEvent.clear(preferencesEditor);
+    await userEvent.type(preferencesEditor, '"');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply valid changes' }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Processed 1 of 3 proposed changes.'),
+      ).toBeInTheDocument(),
+    );
+    const familyItem = screen
+      .getByText('Family name', {
+        selector: 'strong',
+      })
+      .closest('li');
+    const preferencesItem = screen
+      .getByText('Preferences', {
+        selector: 'strong',
+      })
+      .closest('li');
+    if (!familyItem || !preferencesItem) {
+      throw new Error('Expected remaining proposal items');
+    }
+    expect(within(familyItem).getByRole('alert')).toHaveTextContent(
+      'This proposal is not valid.',
+    );
+    expect(within(preferencesItem).getByRole('alert')).toHaveTextContent(
+      'This proposal is not valid.',
+    );
+    expect(screen.queryByText('opaque_policy_code')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Unexpected end of JSON input'),
+    ).not.toBeInTheDocument();
+    expect(familyName).toBe('Lovelace');
+    expect(preferences).toEqual({ layout: 'comfortable' });
   });
 
   it('returns focus to the affected control after applying the final batch', async () => {
@@ -386,7 +509,7 @@ describe('StagedControlReview', () => {
       name: 'Edit proposed value for Score',
     });
     await userEvent.clear(proposal);
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Score' }));
 
     expect(screen.getByRole('spinbutton', { name: 'Score' })).toHaveValue(1);
     expect(registry.get(numberIdentity)?.state.staged?.value).toBe(5);
@@ -442,7 +565,9 @@ describe('StagedControlReview', () => {
 
     await userEvent.click(editor);
     expect(editor).toHaveProperty('checked', applied);
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Enabled' }),
+    );
 
     expect(setValue).toHaveBeenLastCalledWith(applied);
     expect(value).toBe(applied);
@@ -467,7 +592,9 @@ describe('StagedControlReview', () => {
       { source: 'agent' },
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
 
     const status = screen.getByText(
       'The field changed after this proposal was staged.',
@@ -486,7 +613,9 @@ describe('StagedControlReview', () => {
       { source: 'agent' },
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
 
     const status = screen.getByText('This proposal is not valid.', {
       selector: 'p[role="status"]',
@@ -533,8 +662,12 @@ describe('StagedControlReview', () => {
         screen.getByText('The field changed after this proposal was staged.'),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    ).toBeDisabled();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Discard Display name' }),
+    );
     expect(field).toHaveValue('Katherine');
     await waitFor(() =>
       expect(
@@ -739,7 +872,7 @@ describe('StagedControlReview', () => {
     );
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
-        'Constraints not satisfied',
+        'This proposal is not valid.',
       ),
     );
     const field = screen.getByRole('textbox', { name: 'Display name' });
@@ -748,8 +881,12 @@ describe('StagedControlReview', () => {
       name: 'Edit proposed value for Display name',
     });
     await userEvent.type(proposal, 'Grace');
-    expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    ).toBeEnabled();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
     await waitFor(() => expect(field).toHaveValue('Grace'));
     expect(registry.get(identity)?.state.staged).toBeUndefined();
   });
@@ -780,7 +917,9 @@ describe('StagedControlReview', () => {
         name: 'Edit proposed value for Display name',
       }),
     ).toHaveValue('null');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
     expect(screen.getByRole('textbox', { name: 'Display name' })).toHaveValue(
       'Ada',
     );

@@ -137,6 +137,10 @@ $effect(() => {
 // Internal state
 let fields = $state<Map<string, FieldDefinition>>(new Map());
 const fieldGenerations = new Map<string, symbol>();
+const fieldRegistrationOrder = new Map<
+  string,
+  Array<{ field: FieldDefinition; generation: symbol }>
+>();
 let isFormListening = $state(false);
 let isExtracting = $state(false);
 let spokenText = $state('');
@@ -568,11 +572,23 @@ const formContext: SMRTFormContext = {
   registerField(field: FieldDefinition) {
     const registeredName = field.name;
     const generation = Symbol(registeredName);
+    const registrations = fieldRegistrationOrder.get(registeredName) ?? [];
+    const registration = { field, generation };
+    registrations.push(registration);
+    fieldRegistrationOrder.set(registeredName, registrations);
     const currentFields = untrack(() => fields);
     currentFields.set(registeredName, field);
     fieldGenerations.set(registeredName, generation);
     fields = new Map(currentFields); // Trigger reactivity
     return () => {
+      const orderedRegistrations = fieldRegistrationOrder.get(registeredName);
+      const registrationIndex = orderedRegistrations?.indexOf(registration);
+      if (registrationIndex !== undefined && registrationIndex >= 0) {
+        orderedRegistrations?.splice(registrationIndex, 1);
+        if (orderedRegistrations?.length === 0) {
+          fieldRegistrationOrder.delete(registeredName);
+        }
+      }
       if (fieldGenerations.get(registeredName) !== generation) return;
       const registeredFields = untrack(() => fields);
       if (registeredFields.get(registeredName) !== field) return;
@@ -580,6 +596,18 @@ const formContext: SMRTFormContext = {
       registeredFields.delete(registeredName);
       fields = new Map(registeredFields);
     };
+  },
+  unregisterField(name: string) {
+    const registrations = fieldRegistrationOrder.get(name);
+    const registration = registrations?.shift();
+    if (registrations?.length === 0) fieldRegistrationOrder.delete(name);
+    if (!registration) return;
+    if (fieldGenerations.get(name) !== registration.generation) return;
+    const registeredFields = untrack(() => fields);
+    if (registeredFields.get(name) !== registration.field) return;
+    fieldGenerations.delete(name);
+    registeredFields.delete(name);
+    fields = new Map(registeredFields);
   },
   getFieldSchema() {
     return Array.from(fields.values());
@@ -762,7 +790,7 @@ function prepareInteractionValue(field: FieldDefinition, value: unknown) {
   ) {
     preparedValue = { ...preparedValue, unit: field.unit };
   }
-  return field.prepareValue?.(preparedValue) ?? preparedValue;
+  return field.prepareValue ? field.prepareValue(preparedValue) : preparedValue;
 }
 
 function formInputSchema(): Record<string, unknown> {
@@ -1007,13 +1035,16 @@ async function extractFields(text: string): Promise<Record<string, unknown>> {
 }
 
 // Apply extracted values to fields with cleanup
-function applyExtractedValues(values: Record<string, unknown>) {
+async function applyExtractedValues(values: Record<string, unknown>) {
   for (const [name, value] of Object.entries(values)) {
     const field = fields.get(name);
     if (field && value !== undefined && value !== null) {
       const cleanedValue = cleanValue(value, field.type);
       try {
-        field.setValue(field.prepareValue?.(cleanedValue) ?? cleanedValue);
+        const preparedValue = field.prepareExtractedValue
+          ? await field.prepareExtractedValue(cleanedValue)
+          : (field.prepareValue?.(cleanedValue) ?? cleanedValue);
+        field.setValue(preparedValue);
       } catch (error) {
         // One uncanonicalizable transcript fragment must not abort later
         // extracted fields or expose an internal preparation error to the UI.
@@ -1281,7 +1312,7 @@ async function stopFormListening() {
 
     try {
       const values = await extractFields(textToExtract);
-      applyExtractedValues(values);
+      await applyExtractedValues(values);
     } catch (err) {
       extractError =
         err instanceof Error ? err.message : 'Failed to extract fields';

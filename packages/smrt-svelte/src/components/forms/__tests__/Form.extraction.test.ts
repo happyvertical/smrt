@@ -52,4 +52,35 @@ describe('Form voice extraction', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText('staged_value_invalid')).not.toBeInTheDocument();
   });
+
+  it('parses a spoken date range and continues to a later field', async () => {
+    const datesChanged = vi.fn();
+    const textChanged = vi.fn();
+    render(FormExtractionValues, {
+      props: {
+        showDateRange: true,
+        ondateschange: datesChanged,
+        ontextchange: textChanged,
+      },
+    });
+
+    const listen = screen.getByRole('button', { name: 'Speak all fields' });
+    await userEvent.click(listen);
+    sttStub.lastResult =
+      'dates from January 15 2026 to January 20 2026 full name Grace Hopper';
+    await userEvent.click(listen);
+
+    await waitFor(() =>
+      expect(datesChanged).toHaveBeenLastCalledWith({
+        startDate: '2026-01-15',
+        endDate: '2026-01-20',
+      }),
+    );
+    expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue(
+      'Grace Hopper',
+    );
+    expect(textChanged).toHaveBeenLastCalledWith('Grace Hopper');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('staged_value_invalid')).not.toBeInTheDocument();
+  });
 });

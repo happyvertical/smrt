@@ -31,6 +31,7 @@ import FormRegistrationLifecycle from './form-registration-lifecycle.fixture.sve
 import FormWithFields from './form-with-fields.fixture.svelte';
 import FormWithPolicyField from './form-with-policy-field.fixture.svelte';
 import FormWithStructuredFields from './form-with-structured-fields.fixture.svelte';
+import LegacyFormContext from './legacy-form-context.fixture.svelte';
 
 afterEach(() => {
   delete document.modelContext;
@@ -157,6 +158,45 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(numberChanged).toHaveBeenLastCalledWith(42);
     expect(checkboxChanged).toHaveBeenLastCalledWith(false);
     expect(selectChanged).toHaveBeenLastCalledWith('first');
+  });
+
+  it('stages and applies a canonical null for an empty optional number', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const numberChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        numberValue: 42,
+        onnumberchange: numberChanged,
+        interactionRegistry: registry,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(await registered.at(-1)?.execute({ age: '' })).toBe(
+      'Staged 1 change for review',
+    );
+    const age = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'age');
+    expect(age?.state.staged).toMatchObject({ value: null, valid: true });
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Age' })).toHaveValue(null);
+    expect(numberChanged).toHaveBeenLastCalledWith(null);
   });
 
   it('returns focus to a rich field after applying its final proposal', async () => {
@@ -1330,13 +1370,19 @@ describe('Form WebMCP staged-edit intent', () => {
     }
     fieldset.disabled = true;
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled(),
+      expect(
+        screen.getByRole('button', { name: 'Apply Full name' }),
+      ).toBeDisabled(),
     );
-    expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Discard Full name' }),
+    ).not.toBeDisabled();
 
     fieldset.disabled = false;
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled(),
+      expect(
+        screen.getByRole('button', { name: 'Apply Full name' }),
+      ).not.toBeDisabled(),
     );
   });
 
@@ -1770,7 +1816,9 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 1 change for review',
     );
     expect(legacyRegistry.list()[0]?.state.staged?.value).toBe('Ada');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Full name' }),
+    );
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue(
         'Ada',
@@ -2169,9 +2217,13 @@ describe('Form WebMCP staged-edit intent', () => {
       expect(interactionRegistry.get(address.identity)?.state.disabled).toBe(
         true,
       );
-      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Apply Address' }),
+      ).toBeDisabled();
     });
-    expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Discard Address' }),
+    ).not.toBeDisabled();
   });
 
   it('does not let a colliding sibling name mask a disabled rich field', async () => {
@@ -2397,6 +2449,116 @@ describe('Form WebMCP staged-edit intent', () => {
         controlId: 'custom-shared',
       })?.metadata.label,
     ).toBe('Custom replacement');
+  });
+
+  it('supports ordinary legacy register and unregister cleanup', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        showFirst: false,
+        showCustomFirst: true,
+        legacyCustomCleanup: true,
+      },
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      }),
+    ).toBeDefined();
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      legacyCustomCleanup: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('does not let stale legacy unregister remove its replacement', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        showFirst: false,
+        showCustomFirst: true,
+        showCustomReplacement: false,
+        legacyCustomCleanup: true,
+      },
+    });
+    await tick();
+    await tick();
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: true,
+      showCustomReplacement: true,
+      legacyCustomCleanup: true,
+    });
+    await tick();
+    await tick();
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      showCustomReplacement: true,
+      legacyCustomCleanup: true,
+    });
+    await tick();
+    await tick();
+
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom replacement');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      showCustomReplacement: false,
+      legacyCustomCleanup: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      }),
+    ).toBeUndefined();
+  });
+
+  it('cleans up built-ins against a legacy void-returning context', async () => {
+    const registered = vi.fn();
+    const unregistered = vi.fn();
+    const view = render(LegacyFormContext, {
+      props: { onregister: registered, onunregister: unregistered },
+    });
+    await tick();
+    expect(registered).toHaveBeenCalledWith('legacy-field');
+
+    await view.rerender({
+      showField: false,
+      onregister: registered,
+      onunregister: unregistered,
+    });
+    await tick();
+    expect(unregistered).toHaveBeenCalledWith('legacy-field');
   });
 
   it('removes a smrt-mode date range when its fieldset becomes disabled', async () => {

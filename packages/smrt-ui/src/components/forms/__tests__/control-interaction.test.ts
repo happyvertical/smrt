@@ -1171,6 +1171,134 @@ describe('control interaction registry', () => {
     ).toMatchObject({ ok: false, reason: 'command_failed' });
   });
 
+  it('rejects an awaited same-control mutation invoked by a validator without deadlocking', async () => {
+    let nestedResult: Awaited<
+      ReturnType<ControlInteractionRegistry['execute']>
+    > | null = null;
+    let invokedNested = false;
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      validateValue: async () => {
+        if (!invokedNested) {
+          invokedNested = true;
+          await Promise.resolve();
+          nestedResult = await registry.execute(
+            { action: 'stage', identity, value: 'Nested' },
+            { source: 'agent' },
+          );
+        }
+        return true;
+      },
+    });
+
+    const outerResult = await registry.execute(
+      { action: 'stage', identity, value: 'Outer' },
+      { source: 'agent' },
+    );
+
+    expect(nestedResult).toMatchObject({
+      ok: false,
+      reason: 'reentrant_mutation',
+    });
+    expect(outerResult).toMatchObject({ ok: true });
+    expect(registry.get(identity)?.state.staged?.value).toBe('Outer');
+  });
+
+  it.each([
+    'policy',
+    'setValue',
+    'clear',
+    'restoreValue',
+    'validate',
+  ] as const)('rejects awaited same-control mutation reentrancy from %s', async (boundary) => {
+    let value = 'Ada';
+    let nestedResult: Awaited<
+      ReturnType<ControlInteractionRegistry['execute']>
+    > | null = null;
+    let attempted = false;
+    let registry: ControlInteractionRegistry;
+    const reenter = async () => {
+      if (attempted) return;
+      attempted = true;
+      await Promise.resolve();
+      nestedResult = await registry.execute(
+        { action: 'stage', identity, value: 'Nested' },
+        { source: 'agent' },
+      );
+    };
+    registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy:
+        boundary === 'policy'
+          ? async () => {
+              await reenter();
+              return { allowed: true };
+            }
+          : undefined,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: async (next) => {
+        if (boundary === 'setValue') await reenter();
+        value = String(next);
+      },
+      clear: async () => {
+        value = '';
+        if (boundary === 'clear') await reenter();
+        if (boundary === 'restoreValue') throw new Error('clear_failed');
+        return true;
+      },
+      restoreValue: async (next) => {
+        if (boundary === 'restoreValue') await reenter();
+        value = String(next);
+      },
+      validate: async () => {
+        if (boundary === 'validate') await reenter();
+        return true;
+      },
+    });
+
+    let outerResult: Awaited<ReturnType<ControlInteractionRegistry['execute']>>;
+    if (boundary === 'policy') {
+      outerResult = await registry.execute(
+        { action: 'stage', identity, value: 'Outer' },
+        { source: 'agent' },
+      );
+    } else if (boundary === 'clear' || boundary === 'restoreValue') {
+      outerResult = await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'clear', identity },
+          event,
+        ),
+      );
+    } else {
+      await registry.execute(
+        { action: 'stage', identity, value: 'Outer' },
+        { source: 'agent' },
+      );
+      outerResult = await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'apply', identity },
+          event,
+        ),
+      );
+    }
+
+    expect(nestedResult).toMatchObject({
+      ok: false,
+      reason: 'reentrant_mutation',
+    });
+    expect(outerResult.ok).toBe(boundary !== 'restoreValue');
+  });
+
   it('serializes asynchronous proposals so the newest command wins', async () => {
     let releaseFirst: (() => void) | undefined;
     let markFirstStarted: (() => void) | undefined;
@@ -1214,7 +1342,7 @@ describe('control interaction registry', () => {
     });
   });
 
-  it('serializes apply validation against a competing proposal', async () => {
+  it('rejects a competing proposal while apply validation is pending', async () => {
     let value = 'Ada';
     let blockApplyValidation = false;
     let releaseApply: (() => void) | undefined;
@@ -1263,13 +1391,12 @@ describe('control interaction registry', () => {
     releaseApply?.();
 
     expect((await apply).ok).toBe(true);
-    expect((await competingStage).ok).toBe(true);
-    expect(value).toBe('Grace');
-    expect(registry.get(identity)?.state.staged).toMatchObject({
-      value: 'Katherine',
-      revision: 2,
-      stale: false,
+    expect(await competingStage).toMatchObject({
+      ok: false,
+      reason: 'reentrant_mutation',
     });
+    expect(value).toBe('Grace');
+    expect(registry.get(identity)?.state.staged).toBeUndefined();
   });
 
   it('keeps a proposal when a control rejects its applied value', async () => {
@@ -1577,6 +1704,45 @@ describe('control interaction registry', () => {
       ),
     ).toMatchObject({ ok: true });
     expect(value).toBe('Ada');
+  });
+
+  it('bounds rollback replay when restoration advances the user-edit revision', async () => {
+    let value = 'Ada';
+    let userEdit = { revision: 0, value };
+    let restoreCalls = 0;
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      getUserEditSnapshot: () => userEdit,
+      setValue: (next) => {
+        value = String(next);
+      },
+      clear: () => {
+        value = '';
+        throw new Error('clear_failed');
+      },
+      restoreValue: () => {
+        restoreCalls += 1;
+        value = `human-${restoreCalls}`;
+        userEdit = { revision: restoreCalls, value };
+      },
+    });
+
+    const result = await dispatchLocalGesture((event) =>
+      executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        event,
+      ),
+    );
+
+    expect(result).toMatchObject({ ok: false, reason: 'clear_failed' });
+    expect(restoreCalls).toBe(8);
+    expect(value).toBe('human-8');
   });
 
   it('rolls back partial clear and undo mutations while retaining recovery state', async () => {

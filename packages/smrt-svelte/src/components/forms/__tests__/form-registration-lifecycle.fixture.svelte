@@ -11,6 +11,7 @@ let {
   showReplacement = false,
   showCustomFirst = false,
   showCustomReplacement = false,
+  legacyCustomCleanup = false,
 }: {
   interactionRegistry: ControlInteractionRegistry;
   firstName?: string;
@@ -18,6 +19,7 @@ let {
   showReplacement?: boolean;
   showCustomFirst?: boolean;
   showCustomReplacement?: boolean;
+  legacyCustomCleanup?: boolean;
 } = $props();
 </script>
 
@@ -29,9 +31,9 @@ let {
     <TextInput name="shared" label="Replacement field" />
   {/if}
   {#if showCustomFirst}
-    <CustomRegistrationField name="custom-shared" label="Custom first" />
+    <CustomRegistrationField name="custom-shared" label="Custom first" legacyCleanup={legacyCustomCleanup} />
   {/if}
   {#if showCustomReplacement}
-    <CustomRegistrationField name="custom-shared" label="Custom replacement" />
+    <CustomRegistrationField name="custom-shared" label="Custom replacement" legacyCleanup={legacyCustomCleanup} />
   {/if}
 </Form>

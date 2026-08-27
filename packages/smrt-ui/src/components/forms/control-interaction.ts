@@ -621,6 +621,7 @@ async function restoreRegistrationValue(
   previousUserEdit: ReturnType<
     NonNullable<ControlRegistration['getUserEditSnapshot']>
   > | null,
+  invokeExtension: <T>(invoke: () => T) => T,
 ): Promise<void> {
   let observedUserEdit =
     cloneValue(registration.getUserEditSnapshot?.()) ?? null;
@@ -630,11 +631,11 @@ async function restoreRegistrationValue(
     observedUserEdit.revision !== previousUserEdit.revision
       ? cloneValue(observedUserEdit.value)
       : previousValue;
-  for (;;) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     if (registration.restoreValue) {
-      await registration.restoreValue(value);
+      await invokeExtension(() => registration.restoreValue?.(value));
     } else {
-      await registration.setValue?.(value);
+      await invokeExtension(() => registration.setValue?.(value));
     }
     const latestUserEdit =
       cloneValue(registration.getUserEditSnapshot?.()) ?? null;
@@ -647,6 +648,7 @@ async function restoreRegistrationValue(
     }
     observedUserEdit = latestUserEdit;
     value = cloneValue(latestUserEdit.value);
+    if (attempt === 7) throw new Error('rollback_retry_exhausted');
   }
 }
 
@@ -725,6 +727,7 @@ export function createControlInteractionRegistry(
   const internallyQueuedContexts = new WeakSet<ControlCommandContext>();
   const consumedLocalGestureEvents = new WeakSet<Event>();
   const mutationQueues = new Map<string, Promise<void>>();
+  const invokingExtensionDepth = new Map<string, number>();
   let stagedRevision = 0;
 
   const editAwareRegistration = (
@@ -739,6 +742,37 @@ export function createControlInteractionRegistry(
         value: registration.getValue?.(),
       },
   });
+
+  const invokeExtension = <T>(key: string, invoke: () => T): T => {
+    invokingExtensionDepth.set(key, (invokingExtensionDepth.get(key) ?? 0) + 1);
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      const remaining = (invokingExtensionDepth.get(key) ?? 1) - 1;
+      if (remaining === 0) {
+        invokingExtensionDepth.delete(key);
+      } else {
+        invokingExtensionDepth.set(key, remaining);
+      }
+    };
+    try {
+      const returned = invoke();
+      if (
+        returned &&
+        (typeof returned === 'object' || typeof returned === 'function') &&
+        'then' in returned &&
+        typeof returned.then === 'function'
+      ) {
+        return Promise.resolve(returned).finally(release) as T;
+      }
+      release();
+      return returned;
+    } catch (error) {
+      release();
+      throw error;
+    }
+  };
 
   const reconcileSupersededRegistration = async (
     key: string,
@@ -759,6 +793,7 @@ export function createControlInteractionRegistry(
       currentWithEdits,
       cloneValue(baseline.value),
       cloneValue(baseline.userEdit),
+      (invoke) => invokeExtension(key, invoke),
     );
     return true;
   };
@@ -794,7 +829,7 @@ export function createControlInteractionRegistry(
     };
     try {
       activeValueMutations.set(key, activeMutation);
-      const pending = invoke();
+      const pending = invokeExtension(key, invoke);
       activeMutation.immediateValue = cloneValue(registration.getValue?.());
       return await pending;
     } finally {
@@ -996,6 +1031,20 @@ export function createControlInteractionRegistry(
         }
       }
       const key = identityKey(command.identity);
+      if (
+        isMutation(command.action) &&
+        (invokingExtensionDepth.get(key) ?? 0) > 0
+      ) {
+        const registration = registrations.get(key);
+        return result(
+          command,
+          false,
+          registration,
+          registration && redactsValue(registration)
+            ? 'command_failed'
+            : 'reentrant_mutation',
+        );
+      }
       const localGestureConfirmed = Boolean(
         localGrant &&
           localGrant.command === suppliedCommand &&
@@ -1040,6 +1089,7 @@ export function createControlInteractionRegistry(
           registrationWithEdits,
           previousValue,
           previousUserEdit,
+          (invoke) => invokeExtension(key, invoke),
         );
       };
       let publicCommand: ControlCommand =
@@ -1054,6 +1104,7 @@ export function createControlInteractionRegistry(
         actorId: context.actorId,
         sessionId: context.sessionId,
       };
+      const customPolicy = options.policy;
 
       try {
         let snapshot = snapshotOf(registration);
@@ -1082,18 +1133,22 @@ export function createControlInteractionRegistry(
             preparedStageBaseValue = cloneValue(registration.getValue?.());
             preparedStageValue = cloneValue(
               registration.prepareValue
-                ? registration.prepareValue(command.value)
+                ? invokeExtension(key, () =>
+                    registration.prepareValue?.(command.value),
+                  )
                 : command.value,
             );
             snapshot = snapshotOf(registration);
             publicCommand = redactsValue(registration)
               ? cloneValue({ ...command, value: undefined })
               : cloneValue({ ...command, value: preparedStageValue });
-            policyDecision = options.policy
-              ? await options.policy(
-                  cloneValue(publicCommand),
-                  cloneValue(publicContext),
-                  cloneValue(snapshot),
+            policyDecision = customPolicy
+              ? await invokeExtension(key, () =>
+                  customPolicy(
+                    cloneValue(publicCommand),
+                    cloneValue(publicContext),
+                    cloneValue(snapshot),
+                  ),
                 )
               : invariantDecision;
             if (registrationGenerations.get(key) !== generation) {
@@ -1115,11 +1170,13 @@ export function createControlInteractionRegistry(
             }
             if (attempt === 7) throw new Error('staged_value_stale');
           }
-        } else if (invariantDecision.allowed && options.policy) {
-          policyDecision = await options.policy(
-            cloneValue(publicCommand),
-            cloneValue(publicContext),
-            cloneValue(snapshot),
+        } else if (invariantDecision.allowed && customPolicy) {
+          policyDecision = await invokeExtension(key, () =>
+            customPolicy(
+              cloneValue(publicCommand),
+              cloneValue(publicContext),
+              cloneValue(snapshot),
+            ),
           );
         }
         if (registrationGenerations.get(key) !== generation) {
@@ -1186,7 +1243,7 @@ export function createControlInteractionRegistry(
           case 'explain':
             break;
           case 'validate':
-            await registration.validate?.();
+            await invokeExtension(key, () => registration.validate?.());
             break;
           case 'stage':
             stagedRevision += 1;
@@ -1207,9 +1264,8 @@ export function createControlInteractionRegistry(
               const previousEntry = staged.get(key);
               staged.set(key, entry);
               try {
-                const validation = await validateProposedValue(
-                  registration,
-                  preparedValue,
+                const validation = await invokeExtension(key, () =>
+                  validateProposedValue(registration, preparedValue),
                 );
                 if (
                   registrationGenerations.get(key) !== generation ||
@@ -1291,16 +1347,17 @@ export function createControlInteractionRegistry(
             const nextValue =
               'value' in command && command.value !== undefined
                 ? registration.prepareValue
-                  ? registration.prepareValue(command.value)
+                  ? invokeExtension(key, () =>
+                      registration.prepareValue?.(command.value),
+                    )
                   : command.value
                 : stagedEntry?.value;
             if (nextValue === undefined && !stagedEntry) {
               throw new Error('no_staged_value');
             }
             const authorizedValue = cloneValue(nextValue);
-            const proposedValidation = await validateProposedValue(
-              registration,
-              authorizedValue,
+            const proposedValidation = await invokeExtension(key, () =>
+              validateProposedValue(registration, authorizedValue),
             );
             if (registrationGenerations.get(key) !== generation) {
               throw new Error('staged_value_stale');
@@ -1373,7 +1430,9 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_rejected');
             }
             try {
-              const valid = await registration.validate?.();
+              const valid = await invokeExtension(key, () =>
+                registration.validate?.(),
+              );
               if (
                 registrationGenerations.get(key) !== generation ||
                 userEditSuperseded(registrationWithEdits, userEditSnapshot)

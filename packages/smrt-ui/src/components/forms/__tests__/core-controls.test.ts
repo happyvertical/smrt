@@ -71,8 +71,26 @@ describe('core controls', () => {
       { source: 'agent', confirmed: true },
     );
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('30');
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Volume' }));
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'settings', controlId: 'volume' },
+        value: '',
+      },
+      { source: 'agent' },
+    );
+    expect(
+      registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged
+        ?.value,
+    ).toBe(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Volume' }));
+    expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('0');
+    expect(
+      registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged,
+    ).toBeUndefined();
   });
 
   it('canonicalizes scalar proposals before exposing them for review', async () => {
@@ -109,7 +127,7 @@ describe('core controls', () => {
       registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged
         ?.value,
     ).toBe(55);
-    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Volume' }));
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
   });
 

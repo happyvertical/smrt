@@ -52,6 +52,7 @@ const text = $derived({
 });
 let snapshots = $state<ControlSnapshot[]>([]);
 let drafts = $state<Record<string, string>>({});
+let feedback = $state<Record<string, string>>({});
 let status = $state('');
 let reviewActivated = $state(false);
 let reviewElement = $state<HTMLElement | null>(null);
@@ -100,8 +101,13 @@ function refresh(): void {
   for (const key of Object.keys(next)) {
     if (!live.has(key)) delete next[key];
   }
+  const nextFeedback = { ...untrack(() => feedback) };
+  for (const key of Object.keys(nextFeedback)) {
+    if (!live.has(key)) delete nextFeedback[key];
+  }
   snapshots = nextSnapshots;
   drafts = next;
+  feedback = nextFeedback;
 }
 
 $effect(() => {
@@ -246,6 +252,18 @@ function failureStatus(reason?: string): string {
     : text.invalid;
 }
 
+function setFeedback(snapshot: ControlSnapshot, message: string): void {
+  feedback = { ...feedback, [draftKeyOf(snapshot)]: message };
+}
+
+function clearFeedback(snapshot: ControlSnapshot): void {
+  const key = draftKeyOf(snapshot);
+  if (!(key in feedback)) return;
+  const next = { ...feedback };
+  delete next[key];
+  feedback = next;
+}
+
 function commandFor(
   snapshot: ControlSnapshot,
   action: 'apply' | 'discard',
@@ -360,9 +378,15 @@ async function applyOne(
       event,
     );
     status = result.ok ? text.appliedStatus : failureStatus(result.reason);
-    if (result.ok) await restoreReviewFocus(snapshot, removedIndex);
+    if (result.ok) {
+      clearFeedback(snapshot);
+      await restoreReviewFocus(snapshot, removedIndex);
+    } else {
+      setFeedback(snapshot, failureStatus(result.reason));
+    }
   } catch {
     status = text.invalid;
+    setFeedback(snapshot, text.invalid);
   }
 }
 
@@ -379,50 +403,93 @@ async function discardOne(
     event,
   );
   status = result.ok ? text.discardedStatus : failureStatus(result.reason);
-  if (result.ok) await restoreReviewFocus(snapshot, removedIndex);
+  if (result.ok) {
+    clearFeedback(snapshot);
+    await restoreReviewFocus(snapshot, removedIndex);
+  } else {
+    setFeedback(snapshot, failureStatus(result.reason));
+  }
 }
 
 async function applyAll(event: MouseEvent): Promise<void> {
   const total = snapshots.length;
-  const eligible = snapshots.filter(
-    (snapshot) =>
-      !snapshot.state.disabled &&
-      !snapshot.state.readonly &&
-      !snapshot.state.staged?.stale &&
-      snapshot.state.staged?.valid !== false,
-  );
   const commands: ControlCommand[] = [];
-  for (const snapshot of eligible) {
+  const commandSnapshots: ControlSnapshot[] = [];
+  for (const snapshot of snapshots) {
+    if (
+      snapshot.state.disabled ||
+      snapshot.state.readonly ||
+      snapshot.state.staged?.stale
+    ) {
+      setFeedback(
+        snapshot,
+        snapshot.state.staged?.stale ? text.stale : text.invalid,
+      );
+      continue;
+    }
+    if (snapshot.state.staged?.valid === false) {
+      setFeedback(snapshot, text.invalid);
+      continue;
+    }
     try {
       commands.push(commandFor(snapshot, 'apply'));
+      commandSnapshots.push(snapshot);
     } catch {
-      // An invalid edit is reported by omission and remains staged for review.
+      setFeedback(snapshot, text.invalid);
     }
   }
   const batch = await executeLocalControlBatch(registry, commands, event);
+  const completedSnapshots: ControlSnapshot[] = [];
+  for (const [index, result] of batch.results.entries()) {
+    const snapshot = commandSnapshots[index];
+    if (!snapshot) continue;
+    if (result.ok) {
+      clearFeedback(snapshot);
+      completedSnapshots.push(snapshot);
+    } else {
+      setFeedback(snapshot, failureStatus(result.reason));
+    }
+  }
   const completed = batch.results.filter((result) => result.ok).length;
   status = text.batchStatus
     .replace('{completed}', String(completed))
     .replace('{total}', String(total));
-  if (completed > 0 && eligible[0]) await restoreReviewFocus(eligible[0], 0);
+  if (completedSnapshots[0]) await restoreReviewFocus(completedSnapshots[0], 0);
 }
 
 async function discardAll(event: MouseEvent): Promise<void> {
   const total = snapshots.length;
-  const eligible = snapshots.filter(
-    (snapshot) =>
-      !snapshot.state.staged?.stale && snapshot.state.staged?.valid !== false,
-  );
+  const eligible: ControlSnapshot[] = [];
+  for (const snapshot of snapshots) {
+    if (snapshot.state.staged?.stale) {
+      setFeedback(snapshot, text.stale);
+    } else if (snapshot.state.staged?.valid === false) {
+      setFeedback(snapshot, text.invalid);
+    } else {
+      eligible.push(snapshot);
+    }
+  }
   const batch = await executeLocalControlBatch(
     registry,
     eligible.map((snapshot) => commandFor(snapshot, 'discard')),
     event,
   );
+  const completedSnapshots: ControlSnapshot[] = [];
+  for (const [index, result] of batch.results.entries()) {
+    const snapshot = eligible[index];
+    if (!snapshot) continue;
+    if (result.ok) {
+      clearFeedback(snapshot);
+      completedSnapshots.push(snapshot);
+    } else {
+      setFeedback(snapshot, failureStatus(result.reason));
+    }
+  }
   const completed = batch.results.filter((result) => result.ok).length;
   status = text.batchStatus
     .replace('{completed}', String(completed))
     .replace('{total}', String(total));
-  if (completed > 0 && eligible[0]) await restoreReviewFocus(eligible[0], 0);
+  if (completedSnapshots[0]) await restoreReviewFocus(completedSnapshots[0], 0);
 }
 </script>
 
@@ -491,14 +558,16 @@ async function discardAll(event: MouseEvent): Promise<void> {
             </div>
           </dl>
           {#if staged?.stale}<p class="problem" role="alert">{text.stale}</p>{/if}
-          {#if staged?.valid === false}<p class="problem" role="alert">{staged.validationMessage ?? text.invalid}</p>{/if}
+          {#if staged?.valid === false}<p class="problem" role="alert">{text.invalid}</p>{/if}
+          {#if feedback[draftKeyOf(snapshot)]}<p class="problem" role="alert">{feedback[draftKeyOf(snapshot)]}</p>{/if}
           <div class="item-actions">
             <button
               type="button"
+              aria-label={`${text.apply} ${label}`}
               disabled={staged?.stale || snapshot.state.disabled || snapshot.state.readonly}
               onclick={(event) => applyOne(snapshot, event)}
             >{text.apply}</button>
-            <button type="button" class="secondary" onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
+            <button type="button" class="secondary" aria-label={`${text.discard} ${label}`} onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
           </div>
         </li>
       {/each}

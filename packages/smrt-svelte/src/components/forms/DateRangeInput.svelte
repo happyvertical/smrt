@@ -243,6 +243,16 @@ $effect(() => {
         }
         return candidate;
       },
+      prepareExtractedValue: async (candidate) => {
+        if (typeof candidate !== 'string') {
+          return invalidStagedValue();
+        }
+        const parsed = await parseNaturalLanguageRange(candidate);
+        if (!parsed) {
+          return invalidStagedValue();
+        }
+        return { startDate: parsed.start, endDate: parsed.end };
+      },
       clear: () => {
         updateValue('', '');
         return true;

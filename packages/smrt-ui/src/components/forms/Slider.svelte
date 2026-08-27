@@ -74,6 +74,10 @@ function setValue(next: unknown) {
   value = clamp(parsed);
   if (rangeEl) emitControlChange(rangeEl);
 }
+function prepareValue(next: unknown) {
+  const prepared = prepareNumberControlValue(next);
+  return prepared === '' ? clamp(0) : prepared;
+}
 function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
   value = Number(event.currentTarget.value);
 }
@@ -99,7 +103,7 @@ useControlRegistration(() => {
       unit,
     },
     getValue: () => value,
-    prepareValue: (next) => prepareNumberControlValue(next),
+    prepareValue,
     setValue,
     clear: () => {
       setValue(min);
