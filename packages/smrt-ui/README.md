@@ -52,6 +52,9 @@ Commerce currency fields can be passed directly. Codes are trimmed and
 uppercased before `Intl.NumberFormat` formatting; the default remains CAD.
 Malformed or unsupported codes render an accessible inline error instead of
 throwing and interrupting a surrounding collection render.
+With the default historical `unit="cents"` setting, amounts are interpreted as
+the selected currency's ISO minor units (for example, 0 digits for JPY and 3
+for BHD); `unit="dollars"` means the value is already in major units.
 
 ```svelte
 <script lang="ts">

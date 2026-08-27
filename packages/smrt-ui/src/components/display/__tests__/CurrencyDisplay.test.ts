@@ -21,9 +21,18 @@ function money(absDollars: number, currency = 'CAD'): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
   }).format(absDollars);
+}
+
+function minorUnits(amount: number, currency: string): number {
+  const formatter = new Intl.NumberFormat('en-CA', {
+    style: 'currency',
+    currency,
+  });
+  const digits = formatter.resolvedOptions().maximumFractionDigits;
+  if (digits === undefined)
+    throw new Error(`Missing minor-unit digits for ${currency}`);
+  return amount / 10 ** digits;
 }
 
 describe('CurrencyDisplay', () => {
@@ -63,6 +72,18 @@ describe('CurrencyDisplay', () => {
   });
 
   it.each([
+    ['JPY', 12345],
+    ['BHD', 12345],
+  ])('uses the ISO minor-unit scale for %s', (currency, amount) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount, currency },
+    });
+    expect(container.querySelector('span')?.textContent).toBe(
+      money(minorUnits(amount, currency), currency),
+    );
+  });
+
+  it.each([
     ['cad', 'CAD'],
     ['  eur  ', 'EUR'],
   ])('normalizes the currency code %j to %s', (currency, normalized) => {
@@ -74,6 +95,7 @@ describe('CurrencyDisplay', () => {
 
   it.each([
     'US',
+    'AAA',
     'ZZZ',
     '',
   ])('renders invalid code %j without throwing', (currency) => {

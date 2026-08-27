@@ -354,6 +354,9 @@ clears it.
 and uppercases ISO 4217 codes before formatting, defaults to CAD, and renders an
 accessible inline error for malformed or unsupported codes instead of throwing
 the surrounding collection render.
+The historical `unit="cents"` option means ISO minor units, so currencies with
+zero or three minor digits are scaled correctly; `unit="dollars"` means major
+units.
 
 **Feedback**: `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar`
 
