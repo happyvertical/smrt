@@ -14,6 +14,7 @@ import { defineMessages } from './registry.js';
 
 export const M = defineMessages({
   'ui.currency_display.invalid_code': 'Invalid currency code: {code}',
+  'ui.currency_display.invalid_minor_unit_amount': 'Invalid minor-unit amount',
   'ui.currency_display.no_minor_unit':
     'Currency code has no minor unit: {code}',
   'ui.data_table.select_all': 'Select all rows',

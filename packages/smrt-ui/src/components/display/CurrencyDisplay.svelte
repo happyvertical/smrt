@@ -47,11 +47,9 @@ function isStringNumericLiteral(
 function exactMajorUnitValue(
   amount: number,
   minorUnitDigits: number,
-): number | bigint | Intl.StringNumericLiteral {
+): bigint | Intl.StringNumericLiteral | null {
   const absoluteAmount = Math.abs(amount);
-  if (!Number.isSafeInteger(absoluteAmount)) {
-    return absoluteAmount / 10 ** minorUnitDigits;
-  }
+  if (!Number.isSafeInteger(absoluteAmount)) return null;
 
   const minorUnits = BigInt(absoluteAmount);
   if (minorUnitDigits === 0) return minorUnits;
@@ -60,9 +58,7 @@ function exactMajorUnitValue(
   const exactValue = `${minorUnits / scale}.${(minorUnits % scale)
     .toString()
     .padStart(minorUnitDigits, '0')}`;
-  return isStringNumericLiteral(exactValue)
-    ? exactValue
-    : absoluteAmount / 10 ** minorUnitDigits;
+  return isStringNumericLiteral(exactValue) ? exactValue : null;
 }
 </script>
 
@@ -87,7 +83,7 @@ export interface Props {
   amount: number;
   /** ISO 4217 currency code. Whitespace is trimmed and letters are uppercased. */
   currency?: string;
-  /** Whether amount is in ISO minor units or major units (default: cents/minor units) */
+  /** Whether amount is a safe integer of ISO minor units or a major-unit number */
   unit?: 'cents' | 'dollars';
   /** Show +/- sign for non-zero values */
   showSign?: boolean;
@@ -168,10 +164,17 @@ const formatted = $derived.by((): FormattedCurrency => {
         invalidCode: normalizedCurrency.code,
       };
     }
-    majorAmount = exactMajorUnitValue(
+    const exactAmount = exactMajorUnitValue(
       amount,
       normalizedCurrency.minorUnitDigits,
     );
+    if (exactAmount === null) {
+      return {
+        text: t(M['ui.currency_display.invalid_minor_unit_amount']),
+        invalidCode: normalizedCurrency.code,
+      };
+    }
+    majorAmount = exactAmount;
   }
   let display = formatter.format(majorAmount);
 

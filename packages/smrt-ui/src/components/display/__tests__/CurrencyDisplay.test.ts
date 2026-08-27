@@ -115,6 +115,32 @@ describe('CurrencyDisplay', () => {
   });
 
   it.each([
+    ['positive fractional', 1.5],
+    ['negative fractional', -1.5],
+    ['unsafe positive integer', Number.MAX_SAFE_INTEGER + 1],
+    ['unsafe negative integer', -(Number.MAX_SAFE_INTEGER + 1)],
+    ['NaN', Number.NaN],
+    ['positive infinity', Number.POSITIVE_INFINITY],
+    ['negative infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects a %s amount in minor-unit mode', (_scenario, amount) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount, currency: 'CAD' },
+    });
+    const display = container.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent('Invalid minor-unit amount');
+  });
+
+  it('preserves a negative safe integer through the exact string formatter path', () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: -Number.MAX_SAFE_INTEGER, currency: 'IQD' },
+    });
+    const text = container.querySelector('span')?.textContent;
+    expect(text).toContain('9,007,199,254,740.991');
+    expect(text?.startsWith('-IQD')).toBe(true);
+  });
+
+  it.each([
     ['cad', 'CAD'],
     ['  eur  ', 'EUR'],
     ['ved', 'VED'],
@@ -214,6 +240,7 @@ describe('CurrencyDisplay', () => {
     render(CurrencyDisplayI18nHarness);
     expect(screen.getByText('Code monétaire invalide : ZZZ')).toBeVisible();
     expect(screen.getByText('Devise sans unité mineure : XAU')).toBeVisible();
+    expect(screen.getByText('Montant en unité mineure invalide')).toBeVisible();
   });
 
   it('shows an explicit + sign for positive amounts when showSign is set', () => {
