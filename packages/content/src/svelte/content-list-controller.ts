@@ -861,12 +861,72 @@ function comparisonValue(
  * the same shared link means the same thing on a client-array list and a
  * server-backed one (#2452).
  */
+/**
+ * What an ABSENT value does to each operator, as the executor's SQL decides it.
+ *
+ * The flattened row reads an absent value as empty text, so comparing it as
+ * text answers a question about `''` rather than about absence — and the two
+ * differ for every operator once a BLANK comparand is involved. `author equals
+ * ''` matches an absent row as text and no row in SQL; `author notEquals ''`
+ * does the reverse. Deciding from the operator alone removes the text
+ * comparison from the picture entirely.
+ *
+ * The table is the SQL the executor emits (see `conditionToDnf`), not raw
+ * three-valued logic: `ne`/`notIn` union `IS NULL` unless a `null` is listed,
+ * which is why they read the way they do here.
+ */
+function matchesAbsentContentValue(filter: DataTableFilter): boolean {
+  const listsNull =
+    Array.isArray(filter.value) && filter.value.some((entry) => entry === null);
+  switch (filter.operator) {
+    // `eq v` is `= v`, true only when the caller named absence itself.
+    case 'equals':
+      return filter.value === null;
+    // `ne v` is `IS NULL OR <> v`; `ne null` is `IS NOT NULL`.
+    case 'notEquals':
+      return filter.value !== null;
+    // `in` matches an absent row only when the list carries a `null`.
+    case 'in':
+      return listsNull;
+    // `notIn` unions `IS NULL` unless a `null` is listed, which excludes it.
+    case 'notIn':
+      return !listsNull;
+    case 'isNull':
+      return true;
+    case 'isNotNull':
+      return false;
+    // `like` and every ordered comparison are UNKNOWN for NULL, so no row with
+    // no value takes part in one.
+    case 'contains':
+    case 'startsWith':
+    case 'endsWith':
+    case 'gt':
+    case 'gte':
+    case 'lt':
+    case 'lte':
+      return false;
+    // `notContains` has no server form — the executor refuses a negated
+    // `like` and the translator drops it — so there is nothing to align to.
+    // Keep the local set-complement reading.
+    case 'notContains':
+      return true;
+    default:
+      return false;
+  }
+}
+
 function matchesContentListFilter(
   row: ContentListRow,
   column: DataTableColumn<ContentListRow>,
   filter: DataTableFilter,
 ): boolean {
   if (column.filterable === false) return true;
+  // Absence is decided before any text comparison, because the flattened row
+  // cannot represent it. The arms below stay correct for a value that is
+  // present; none of them can see an absent one.
+  if (isAbsentContentValue(row, column)) {
+    return matchesAbsentContentValue(filter);
+  }
   const value = comparisonValue(row, column);
   const expected = filter.value;
   const valueText = textValue(value);

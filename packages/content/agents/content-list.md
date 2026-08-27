@@ -296,6 +296,23 @@ change is neither narrowing nor widening the filter is not sent at all:
 | a shortened scalar comparand (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`) | **neither** — `gt`/`gte` would widen, `lt`/`lte` would NARROW and hide rows, `eq`/`ne` would name a third row entirely | the filter is left out, reported as `filter-widened` |
 | page size, offset, projection count | does not add rows | reported as `out-of-range` |
 
+**Every path lands in one of FOUR states, and every one of them reports.** The
+partition is four-way, not three — an `in` list cut to its first hundred values
+is a genuine SUBSET, which is allowed and is not a widening:
+
+| State | Example | Reported as |
+|---|---|---|
+| applied exactly | anything within every bound | nothing to report |
+| applied as a true SUPERSET | a shortened `like` pattern | `filter-widened` |
+| applied as a true SUBSET | an `in` list past 100 values, or one carrying an entry that could not be used | `out-of-range` / `unsupported-value` |
+| not applied at all | a `notIn` that cannot be carried, a shed conjunct, a comparand too long to send | `filter-widened` |
+
+The fourth column is the point: a state without a report is a fifth state, and
+it is the one that hides. An unusable entry in an `in` list used to be exactly
+that — dropped silently, so the toolbar stated a three-value filter while the
+query asked for one and the rows the operator listed vanished without a word.
+Any new bound must land in one of the four rows above *and* report.
+
 **Never emit a value the caller did not name.** The list path already refused to
 send a shortened entry; the scalar path used to send one and merely relabel the
 report, which was affirmatively wrong for half the operators — telling an
@@ -350,6 +367,14 @@ reader and are accepted. A bare calendar day (`2026-02-01`) is accepted too —
 §5.6 permits it, and the value is canonicalized through `toISOString()` before
 it is sent, so the server only ever sees the strict upper-case form it insists
 on.
+
+**Canonicalize before parsing, too.** RFC 3339 §5.6 permits a lower-case
+`t`/`z`, but ECMA-262's Date Time String Format specifies the upper-case forms,
+so `new Date('2026-02-01t12:30z')` runs on engine-specific heuristics rather
+than the spec — the same objection that rules out the space separator. V8 reads
+it as UTC, which is luck rather than a guarantee, so the value is upper-cased
+before it reaches `Date`. `toUpperCase()` is locale-independent and this grammar
+has no other letters, so the canonical form means exactly what the input did.
 
 **Validate and parse the SAME string.** Checking `text.trim()` and then parsing
 `text` let `"2026-02-01 "` through, and V8's ISO parser rejects the whitespace
@@ -435,6 +460,16 @@ never-published row, and made `isNull` match nothing at all. The original
 `isAbsentContentValue()` consults it and the null-sensitive operators exclude an
 absent value exactly as SQL's three-valued logic does.
 
+**Absence is decided before any text comparison.** The flattened row reads an
+absent value as empty text, so comparing it as text answers a question about
+`''` rather than about absence — and the two differ for every operator once a
+BLANK comparand is involved (`author equals ''` matched an absent row locally
+and no row in SQL; `author notEquals ''` did the reverse).
+`matchesAbsentContentValue` decides from the operator alone, following the SQL
+the executor emits: `equals` matches only a null comparand, `notEquals` matches
+unless the comparand is null, `in`/`notIn` turn on whether the list carries a
+`null`, and `like` and every ordered comparison match nothing.
+
 **A display fallback is presentation, never data.** Two columns substitute a
 label when the content carries no value — `type` reads `content` and `title`
 reads `Untitled content`. Comparing the label made `?type=content` return every
@@ -480,6 +515,30 @@ organization, so a host calls `executeContentQuery(collection, body, { scope })`
 from its own route with conditions derived from the authenticated context —
 never from the request body.
 
+**`undefined` and `[]` mean OPPOSITE things, and getting that backwards is an
+authorization fail-open.** A host builds a scope from an allowed-resource list —
+the sites, workspaces, or organizations this principal may see:
+
+```ts
+const scope = permittedSiteIds.map((siteId) => ({ siteId }));
+```
+
+That list is empty exactly when the principal may see nothing. An empty array
+therefore means "the set of permitted conditions is empty" and matches no rows;
+omit the option entirely to mean "this deployment applies no application
+scope". Treating the empty array as absent turned *access to zero sites* into
+*access to every row in the tenant* — the precise failure the two-layer scope
+design exists to prevent, in the seam chosen as the application's scoping
+mechanism.
+
+An empty scope lowers to a predicate that matches nothing (`id IS NULL`, false
+for every row on every dialect) rather than throwing: "you may see nothing" is a
+legitimate authorization state, and answering it with a 500 would be wrong. It
+is ANDed into every branch like any other scope condition, so no caller filter
+shape can escape it, and it survives alongside tenancy rather than being
+replaced by it. A malformed condition — an empty OBJECT, which states no
+constraint at all — is still a programming error and still throws.
+
 ### Mirrored constants are self-enforcing
 
 Every number this package copies from the schema or from
@@ -507,10 +566,22 @@ vocabulary and search fields are asserted against the real
   `CONTENT_QUERY_MIN_RESULT_BYTES`. The row budget is that number minus the
   envelope reserve, so a smaller one leaves nothing for rows and every query
   answers with an empty page flagged `truncated` — indistinguishable from "no
-  content matched". `schema` is trusted adapter configuration rather than caller
-  input, so this is refused loudly at the boundary with a plain `Error` naming
-  the minimum, not per request with a `DataQueryValidationError` that would
-  surface as a 400 and blame the caller for the host's mistake.
+  content matched". It is refused with a plain `Error` naming the minimum
+  rather than a `DataQueryValidationError`, because `schema` is trusted adapter
+  configuration: a typed validation error would surface as a 400 and blame the
+  caller for the host's mistake.
+
+  **Where this actually runs:** `executeContentQuery` checks it on every
+  request, so a misconfigured schema can never serve a query — but through the
+  generated route an untyped error becomes an opaque 500, and the message
+  naming the minimum reaches only the server log. Call
+  `assertContentQuerySchema(schema)` once where the schema is configured to
+  fail next to the mistake instead. The check is applied uniformly across query
+  modes, `count` included: a schema too small to serve its own row mode is
+  misconfigured whatever this request asked for, and letting `count` through
+  would hide that until the first rows query. A zero or negative budget is
+  refused too — it previously meant "use the default" for rows and "zero
+  budget" for facets, which is two answers to one question.
 - A restored page size is clamped to `maxPageSize` (default
   `CONTENT_LIST_MAX_PAGE_SIZE`, 200, matching the schema's `maxPageLimit`), and
   the clamp is reported. The ceiling is resolved once and applied to **both**

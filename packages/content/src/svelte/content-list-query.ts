@@ -627,7 +627,14 @@ function expressibleInstantSource(text: string): string | undefined {
   const trimmed = text.trim();
   if (!isRealCalendarDate(trimmed)) return undefined;
   if (DATE_ONLY.test(trimmed)) return trimmed;
-  return RFC_3339_INSTANT_INPUT.test(trimmed) ? trimmed : undefined;
+  if (!RFC_3339_INSTANT_INPUT.test(trimmed)) return undefined;
+  // Upper-cased for the same reason the space separator is refused: ECMA-262's
+  // Date Time String Format specifies `T` and `Z`, so a lower-case `t`/`z`
+  // leaves the grammar and lands in engine-specific heuristics. V8 happens to
+  // read it as UTC — that is luck, not a guarantee. `toUpperCase()` is
+  // locale-independent and this grammar has no other letters, so the
+  // canonical form means exactly what the input did.
+  return trimmed.toUpperCase();
 }
 
 /**
@@ -834,7 +841,21 @@ function translateFilter(
       });
       return null;
     }
-    // Only `in` reaches here having lost anything, and losing narrows it.
+    // Only `in` reaches here having lost anything, and losing narrows it — so
+    // the filter is a genuine SUBSET of the one asked for, which is allowed
+    // but must still be reported. An entry that could not be coerced at all
+    // (`?updated.in=2026-02-01,soon`) is the case that used to vanish in
+    // silence: neither exact, nor superset, nor subset-and-reported, nor
+    // not-applied. `unsupported-value` is the accurate reason — the entry could
+    // not be used, rather than being out of some range.
+    if (unusableEntry) {
+      dropped.push({
+        scope: 'filter',
+        reason: 'unsupported-value',
+        columnId,
+        detail: filter.operator,
+      });
+    }
     if (overflowed) {
       dropped.push({
         scope: 'filter',

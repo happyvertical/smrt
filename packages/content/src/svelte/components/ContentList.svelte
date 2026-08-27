@@ -250,6 +250,16 @@ let resultNotices = $state<ContentListQueryNotices>({
   truncated: false,
   warnings: [],
 });
+/**
+ * The query signature the binding's rows and total currently describe.
+ *
+ * A total is only authoritative for the query that produced it. `remoteQuery`
+ * keeps serving the PREVIOUS query's total while a new request is in flight, so
+ * a saved view or a programmatic patch that changes the query AND restores a
+ * page past the old query's last one would have that page clamped away before
+ * its own total ever arrived.
+ */
+let settledSignature = $state<string | undefined>(undefined);
 
 function toSearchParams(
   input: URLSearchParams | string | null | undefined,
@@ -441,9 +451,11 @@ const totalRowCount = $derived(
 // would collapse every list to a single page.
 $effect(() => {
   const totalRows = totalRowCount;
-  // Before the first response there is no authoritative total; clamping to zero
-  // would reset a page restored from a link before it was ever queried.
-  if (serverBacked && serverTotal === undefined) return;
+  // Only ever clamp against a total that belongs to THIS query. That covers the
+  // pre-response case (nothing has settled yet, so a page restored from a link
+  // survives until its own count arrives) and the stale case (the binding still
+  // holds the previous query's total while the new request is in flight).
+  if (serverBacked && settledSignature !== querySignature) return;
   // Deliberately the TRUE total, not `pageableRowCount`: clamping to the
   // reachable ceiling here would silently move a crafted `?page=9000` before
   // the query effect ever sees it, and the operator would never be told why
@@ -602,6 +614,9 @@ $effect(() => {
         .then((result) => {
           // A newer query may have superseded this one while it was in flight.
           if (executedSignature !== signature) return;
+          // The binding's rows and total now describe THIS query, so the page
+          // may be clamped against them.
+          settledSignature = signature;
           resultNotices = readContentListQueryNotices(result);
         })
         .catch(() => undefined);

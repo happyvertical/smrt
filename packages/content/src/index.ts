@@ -229,6 +229,7 @@ export type {
   ContentQueryScope,
 } from './content-query';
 export {
+  assertContentQuerySchema,
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
   CONTENT_QUERY_CLASS_NAME,

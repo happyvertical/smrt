@@ -26,6 +26,7 @@ import {
   DataQueryValidationError,
   normalizeDataQueryRequest,
   normalizeDataQueryResult,
+  normalizeDataQuerySchema,
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
 import {
@@ -148,6 +149,11 @@ export const CONTENT_QUERY_MIN_RESULT_BYTES =
  * becomes a 400 and tells the caller they asked for something wrong, when the
  * fault is in the host's own schema. This mirrors how an unusable `scope` is
  * refused.
+ *
+ * Applied uniformly across query modes, including `count`, which returns no
+ * rows and would technically work. A schema too small to serve its own row
+ * mode is misconfigured whatever this particular request asked for, and letting
+ * `count` succeed would hide that until the first rows query.
  */
 function assertUsableResultBudget(schema: DataQuerySchema): void {
   const budget = schema.maxResultBytes ?? CONTENT_QUERY_MAX_RESULT_BYTES;
@@ -222,6 +228,12 @@ export interface ContentQueryOptions {
    * condition — scope conditions are ANDed into every branch of the caller's
    * filter, including inside `any`/`not` branches, so a request can only ever
    * narrow the result set. Never derive `scope` from client input.
+   *
+   * `undefined` and `[]` mean OPPOSITE things. Omit the option to apply no
+   * application scope; pass an empty array to say the principal is permitted
+   * nothing, which matches no rows. A host deriving the scope from an
+   * allowed-resource list gets the safe answer by construction: an empty list
+   * denies instead of unlocking the whole tenant.
    */
   scope?: ContentQueryScope;
   /**
@@ -231,6 +243,28 @@ export interface ContentQueryOptions {
    * class. Supplying a schema does NOT relax the collection-level field checks.
    */
   schema?: DataQuerySchema;
+}
+
+/**
+ * Validate a host-supplied schema before anything depends on it.
+ *
+ * `executeContentQuery` performs the same checks on every request, so a
+ * misconfigured schema can never actually serve a query — but a request-path
+ * failure reaches the caller as an opaque 500 through the generated route, with
+ * the message that names the minimum only in the server log. Call this once
+ * where the schema is configured, so the failure lands next to the mistake:
+ *
+ * ```ts
+ * const schema = buildAdminContentSchema();
+ * assertContentQuerySchema(schema); // at startup, not on the first request
+ * ```
+ *
+ * Covers core's own schema rules as well as this adapter's, so one call is
+ * enough.
+ */
+export function assertContentQuerySchema(schema: DataQuerySchema): void {
+  normalizeDataQuerySchema(schema);
+  assertUsableResultBudget(schema);
 }
 
 /**
@@ -667,6 +701,45 @@ function normalizeScopeConditions(
 }
 
 /**
+ * A scope condition no row can satisfy.
+ *
+ * `id` is the primary key, so it is never NULL and `id IS NULL` is false for
+ * every row on every dialect — the portable way to say "permit nothing" through
+ * a `where` clause rather than by special-casing the read path.
+ */
+const DENY_ALL_SCOPE_CONDITION: WhereCondition = Object.freeze({
+  [CONTENT_QUERY_IDENTITY_FIELD]: null,
+});
+
+/**
+ * Normalize the APPLICATION scope, where an explicitly empty set denies.
+ *
+ * The two absences are not the same thing, and conflating them is an
+ * authorization fail-open:
+ *
+ * - `undefined` means "this deployment applies no application scope" — read
+ *   the tenant, subject to tenancy alone.
+ * - `[]` means "the set of conditions this principal is permitted is EMPTY".
+ *   A host builds a scope from an allowed-resource list — the sites,
+ *   workspaces, or organizations this principal may see — and that list is
+ *   empty exactly when the principal may see nothing. Treating it as "no
+ *   scope" turns *access to zero sites* into *access to every row in the
+ *   tenant*, which is the failure the two-layer scope design exists to
+ *   prevent.
+ *
+ * An empty set is a legitimate authorization state, not a programming error, so
+ * it lowers to a predicate that matches nothing rather than throwing — a throw
+ * would answer a correct "you may see nothing" with a 500.
+ */
+function normalizeApplicationScope(
+  scope: ContentQueryScope | undefined,
+): WhereCondition[] {
+  if (scope === undefined) return [];
+  const conditions = normalizeScopeConditions(scope);
+  return conditions.length > 0 ? conditions : [{ ...DENY_ALL_SCOPE_CONDITION }];
+}
+
+/**
  * AND every trusted scope condition into every OR branch of the caller's
  * filter.
  *
@@ -678,12 +751,16 @@ function normalizeScopeConditions(
  *
  * Returns `undefined` only when there is neither a scope nor a filter, so the
  * collection sees a plain unfiltered read rather than an empty DNF branch.
+ *
+ * An explicitly EMPTY scope denies rather than passing through; see
+ * {@link normalizeApplicationScope}. Pass `undefined`, not `[]`, to mean "no
+ * application scope".
  */
 export function mergeContentQueryScope(
   scope: ContentQueryScope | undefined,
   callerWhere: WhereDnf | undefined,
 ): WhereDnf | undefined {
-  const scopeConditions = normalizeScopeConditions(scope);
+  const scopeConditions = normalizeApplicationScope(scope);
   const branches: WhereDnf =
     callerWhere && callerWhere.length > 0 ? callerWhere : [[]];
   const merged = branches.map((branch) => [...scopeConditions, ...branch]);
@@ -990,11 +1067,19 @@ export async function executeContentQuery(
     ? filterToDnf(request.filter, declared)
     : undefined;
   // Tenancy first, then the application scope: both are trusted, both narrow.
+  // An empty application scope contributes its deny-all condition here, so it
+  // survives the merge alongside tenancy rather than being mistaken for
+  // "unscoped" — an empty app scope plus a tenant scope must still deny.
   const scopeConditions = [
     ...normalizeScopeConditions(resolveContentTenantReadScope()),
-    ...normalizeScopeConditions(options.scope),
+    ...normalizeApplicationScope(options.scope),
   ];
-  const where = mergeContentQueryScope(scopeConditions, callerWhere);
+  // `undefined`, never `[]`: the aggregate is empty only when there genuinely
+  // is no scope, and `[]` now means the opposite.
+  const where = mergeContentQueryScope(
+    scopeConditions.length > 0 ? scopeConditions : undefined,
+    callerWhere,
+  );
   const countOptions = where === undefined ? undefined : { where };
 
   const warnings: string[] = [];

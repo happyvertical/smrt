@@ -33,6 +33,7 @@ import type {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  assertContentQuerySchema,
   buildContentQuerySchema,
   buildDataQuerySchemaForClass,
   CONTENT_QUERY_DEFAULT_PAGE_LIMIT,
@@ -1493,9 +1494,26 @@ describe('an unusable result byte budget is refused at the boundary', () => {
   it('is a configuration error, not a caller error', async () => {
     // A `DataQueryValidationError` would surface as a 400 and tell the caller
     // they asked for something wrong, when the fault is in the host's schema.
-    await expect(runWithBudget(512)).rejects.not.toBeInstanceOf(
-      DataQueryValidationError,
+    // `rejects.not.toBeInstanceOf` alone passes for ANY rejection, so pin the
+    // rejection value itself: an Error, of exactly the base class, naming the
+    // setting at fault.
+    const error = await runWithBudget(512).then(
+      () => undefined,
+      (reason: unknown) => reason,
     );
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(DataQueryValidationError);
+    expect((error as Error).constructor).toBe(Error);
+    expect((error as Error).message).toMatch(/maxResultBytes/);
+    // And it carries no `code`, which is what the route maps to a typed 4xx.
+    expect((error as { code?: unknown }).code).toBeUndefined();
+  });
+
+  it('refuses a zero or negative budget, which used to mean two things', async () => {
+    // `maxResultBytes: 0` previously meant "use the default" for rows and "zero
+    // budget" for facets. Refusing it is a deliberate behaviour change.
+    await expect(runWithBudget(0)).rejects.toThrow();
+    await expect(runWithBudget(-1)).rejects.toThrow();
   });
 
   it('still answers with a real page just above the floor', async () => {
@@ -1510,5 +1528,234 @@ describe('an unusable result byte budget is refused at the boundary', () => {
       CONTENT_QUERY_MIN_RESULT_BYTES,
     );
     await expect(runWithBudget(1_000_000)).resolves.toBeDefined();
+  });
+});
+
+describe('an empty application scope permits nothing (#2452)', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /**
+   * The shape a host actually writes: a scope derived from the resources this
+   * principal may see. When that list is EMPTY the correct answer is "nothing",
+   * and the failure this guards is that it used to mean "everything".
+   */
+  const scopeForPermittedSites = (permitted: readonly string[]) =>
+    permitted.map((site) => ({ source: site }));
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'alpha', title: 'Alpha', source: 'site-a' },
+      { name: 'beta', title: 'Beta', source: 'site-b' },
+      { name: 'orphan', title: 'Orphan', source: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    disableTenancy();
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const namesFor = async (
+    scope: Parameters<typeof executeContentQuery>[2] extends infer O
+      ? O extends { scope?: infer S }
+        ? S
+        : never
+      : never,
+    body: Record<string, unknown> = request({ projection: ['name'] }),
+  ) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      body,
+      { scope },
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  it('AUTHORIZATION: a principal permitted zero sites sees zero rows', async () => {
+    // The fail-open this closes: "access to no sites" used to read every row in
+    // the tenant, because an empty array was mistaken for "no scope at all".
+    const permitted: string[] = [];
+    expect(await namesFor(scopeForPermittedSites(permitted))).toEqual([]);
+  });
+
+  it('AUTHORIZATION: one permitted site still sees exactly that site', async () => {
+    expect(await namesFor(scopeForPermittedSites(['site-a']))).toEqual([
+      'alpha',
+    ]);
+  });
+
+  it('keeps `undefined` meaning unscoped, which is the other absence', async () => {
+    expect(await namesFor(undefined)).toEqual(['alpha', 'beta', 'orphan']);
+  });
+
+  it('cannot be widened by ANY caller filter shape', async () => {
+    const shapes: Array<Record<string, unknown>> = [
+      { kind: 'condition', field: 'name', operator: 'eq', value: 'alpha' },
+      {
+        kind: 'any',
+        filters: [
+          { kind: 'condition', field: 'name', operator: 'eq', value: 'alpha' },
+          { kind: 'condition', field: 'name', operator: 'eq', value: 'beta' },
+        ],
+      },
+      {
+        kind: 'not',
+        filter: {
+          kind: 'condition',
+          field: 'name',
+          operator: 'eq',
+          value: 'nothing-matches-this',
+        },
+      },
+      {
+        kind: 'any',
+        filters: [
+          {
+            kind: 'not',
+            filter: {
+              kind: 'condition',
+              field: 'source',
+              operator: 'eq',
+              value: 'site-a',
+            },
+          },
+          { kind: 'condition', field: 'source', operator: 'ne', value: null },
+        ],
+      },
+    ];
+    for (const filter of shapes) {
+      expect(
+        await namesFor([], request({ projection: ['name'], filter })),
+        JSON.stringify(filter),
+      ).toEqual([]);
+    }
+  });
+
+  it('denies for count and facet modes too, not just rows', async () => {
+    const counted = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ mode: 'count' }),
+      { scope: [] },
+    );
+    expect(counted.total).toEqual({ kind: 'exact', value: 0 });
+
+    const faceted = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ mode: 'facets', facets: [{ field: 'source', limit: 10 }] }),
+      { scope: [] },
+    );
+    expect(faceted.facets?.[0].values).toEqual([]);
+    expect(faceted.total).toEqual({ kind: 'exact', value: 0 });
+  });
+
+  it('denies alongside a tenant scope rather than falling back to it', async () => {
+    // The tenant scope alone would return the global rows; the empty app scope
+    // must still deny, so the two AND rather than one replacing the other.
+    enableTenancy({ mode: 'optional' });
+    try {
+      expect(await namesFor([])).toEqual([]);
+      // …and the same query without the app scope is not empty, so the empty
+      // result above is the scope talking, not tenancy.
+      expect(await namesFor(undefined)).toEqual(['alpha', 'beta', 'orphan']);
+    } finally {
+      disableTenancy();
+    }
+  });
+
+  it('is a query result, not an error: a legitimate authorization state', async () => {
+    await expect(
+      executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        request({ projection: ['name'] }),
+        { scope: [] },
+      ),
+    ).resolves.toMatchObject({ rows: [], total: { kind: 'exact', value: 0 } });
+  });
+
+  it('lowers to a predicate rather than special-casing the read path', () => {
+    // `mergeContentQueryScope` is the exported seam; an empty scope must deny
+    // there too, and the deny condition has to survive into every OR branch.
+    const merged = mergeContentQueryScope(
+      [],
+      [[{ name: 'alpha' }], [{ name: 'beta' }]],
+    );
+    expect(merged).toHaveLength(2);
+    for (const branch of merged ?? []) {
+      expect(branch).toContainEqual({ id: null });
+    }
+    // And `undefined` still means unscoped.
+    expect(mergeContentQueryScope(undefined, undefined)).toBeUndefined();
+  });
+
+  it('still refuses a malformed condition, which is not an authorization state', () => {
+    // An empty ARRAY is "permitted nothing"; an empty OBJECT is a condition
+    // with no constraints, which is a programming error and stays a throw.
+    expect(() => mergeContentQueryScope({}, undefined)).toThrow(
+      /non-empty plain objects/,
+    );
+    expect(() => mergeContentQueryScope([{}], undefined)).toThrow(
+      /non-empty plain objects/,
+    );
+  });
+});
+
+describe('a host can validate its schema before serving a request', () => {
+  let base: DataQuerySchema;
+
+  beforeEach(async () => {
+    base = await buildContentQuerySchema();
+  });
+
+  it('accepts the schema this package builds', () => {
+    expect(() => assertContentQuerySchema(base)).not.toThrow();
+  });
+
+  it('names the minimum, where the configuration lives', () => {
+    expect(() =>
+      assertContentQuerySchema({
+        ...base,
+        maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES - 1,
+      }),
+    ).toThrow(new RegExp(`at least ${CONTENT_QUERY_MIN_RESULT_BYTES}`));
+  });
+
+  it('covers core schema rules as well, so one call is enough', () => {
+    // Core refuses a non-positive budget itself; the helper surfaces that too
+    // rather than leaving a host to make two calls.
+    expect(() =>
+      assertContentQuerySchema({ ...base, maxResultBytes: 0 }),
+    ).toThrow(/positive safe integer/);
+    expect(() =>
+      assertContentQuerySchema({ ...base, identityField: 'nope' }),
+    ).toThrow();
+  });
+
+  it('agrees with what the request path enforces', async () => {
+    // The same schema must be refused in both places, or validating at startup
+    // would be a false reassurance.
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      const contents = await Contents.create({ db });
+      const schema = {
+        ...base,
+        maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES - 1,
+      };
+      expect(() => assertContentQuerySchema(schema)).toThrow();
+      await expect(
+        executeContentQuery(
+          contents as unknown as ContentQueryCollection,
+          request({ projection: ['id'] }),
+          { schema },
+        ),
+      ).rejects.toThrow(/maxResultBytes/);
+    } finally {
+      if (db && typeof db.close === 'function') await db.close();
+    }
   });
 });

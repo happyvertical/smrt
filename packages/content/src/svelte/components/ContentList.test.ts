@@ -2285,3 +2285,95 @@ describe('the unrepresentable-option sentinel survives HTML parsing', () => {
     );
   });
 });
+
+describe('a page is only clamped against its own query total', () => {
+  it('keeps a restored page when the previous total was smaller', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:stale-total',
+    });
+    await store.save({
+      name: 'Deep page',
+      snapshot: {
+        version: 3,
+        modes: { filtering: 'manual', sorting: 'manual', pagination: 'manual' },
+        state: {
+          search: 'zoning',
+          filters: [],
+          sorting: [],
+          page: 5,
+          pageSize: 10,
+          columnOrder: [],
+          columnVisibility: [],
+          columnWidths: [],
+          columnPinning: [],
+          selection: { scope: 'explicit', rowIds: [] },
+          selectedRowIds: [],
+          expandedRowIds: [],
+        },
+      } as never,
+    });
+
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      savedViews: store,
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+    });
+    await settle();
+
+    // The FIRST query settles with a small total — one page's worth.
+    query.resolve([serverRow('a', 'Alpha')], 3);
+    flushSync();
+
+    // Applying the view changes the query AND restores page 5.
+    const [saved] = await store.list();
+    const select = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Saved views"]',
+    );
+    if (!select) throw new Error('No saved-view select');
+    selectOption(select, saved.id);
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 40,
+      limit: 10,
+    });
+
+    // `remoteQuery` publishes rows and a total while the new request is still
+    // in flight — a cache hit, or the stale-while-revalidate path. That total
+    // belongs to the PREVIOUS query (3 rows, one page at this size), and
+    // clamping against it here resets a page the new query has not counted yet.
+    // No `settle()`: the response for the current query has not arrived.
+    query.resolve([serverRow('a', 'Alpha')], 3);
+    flushSync();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 40,
+      limit: 10,
+    });
+
+    // Once the current query does report its own total, the clamp applies.
+    await settle();
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 10,
+    });
+  });
+
+  it('still clamps once the current query reports its own total', async () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { params: 'page=5' },
+    });
+    expect(query.requests.at(-1)?.page).toMatchObject({ offset: 40 });
+
+    // The response for THAT query says there are only 12 rows — two pages — so
+    // page 5 is genuinely out of range and is clamped.
+    query.resolve([serverRow('a', 'Alpha')], 12);
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toMatchObject({ offset: 10 });
+  });
+});

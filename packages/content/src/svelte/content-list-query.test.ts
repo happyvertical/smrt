@@ -2537,3 +2537,294 @@ describe('a shortened pattern still matches a superset', () => {
     });
   });
 });
+
+describe('every lost list entry is reported', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'feb', title: 'Feb', publish_date: new Date('2026-02-01') },
+      { name: 'mar', title: 'Mar', publish_date: new Date('2026-03-01') },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  it('reports an unusable entry in a mixed `in` list', () => {
+    // `?publish.in=2026-02-01,soon,2026-02-31` — one usable value, one that
+    // cannot be parsed, one impossible calendar day. The filter is applied as a
+    // genuine SUBSET, which is allowed, but silence about it left the toolbar
+    // stating a three-value filter while the query asked for one.
+    const { request, dropped } = translate({
+      filters: [
+        {
+          columnId: 'publish',
+          operator: 'in',
+          value: ['2026-02-01', 'soon', '2026-02-31'],
+        },
+      ],
+    });
+    const condition = conditions(request.filter)[0];
+    expect(condition.value).toEqual(['2026-02-01T00:00:00.000Z']);
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'unsupported-value',
+      columnId: 'publish',
+      detail: 'in',
+    });
+  });
+
+  it('applies the surviving subset, end to end', async () => {
+    const { request } = contentListViewStateToDataQueryRequest(
+      viewState({
+        filters: [
+          {
+            columnId: 'publish',
+            operator: 'in',
+            value: ['2026-02-01', 'soon'],
+          },
+        ],
+      }),
+      { createRequestId: () => 'mixed-in', projection: ['id', 'name'] },
+    );
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request,
+    );
+    expect(result.rows.map((row) => String(row.name))).toEqual(['feb']);
+  });
+
+  it('reports nothing when every entry survives', () => {
+    const { dropped } = translate({
+      filters: [
+        {
+          columnId: 'publish',
+          operator: 'in',
+          value: ['2026-02-01', '2026-03-01'],
+        },
+      ],
+    });
+    expect(dropped).toEqual([]);
+  });
+
+  it('drops the whole `notIn` instead, because losing an entry widens it', () => {
+    const { request, dropped } = translate({
+      filters: [
+        {
+          columnId: 'publish',
+          operator: 'notIn',
+          value: ['2026-02-01', 'soon'],
+        },
+      ],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('leaves no lost entry unreported, for any list shape', () => {
+    // The invariant: applied exactly, applied as a true superset, applied as a
+    // true subset AND reported, or not applied. Never silently different.
+    const shapes: Array<[string, unknown[]]> = [
+      ['an unusable entry', ['2026-02-01', 'soon']],
+      ['an impossible day', ['2026-02-01', '2026-02-31']],
+      ['an offset-less time', ['2026-02-01', '2026-02-01T00:00']],
+    ];
+    for (const [label, value] of shapes) {
+      const { request, dropped } = translate({
+        filters: [{ columnId: 'publish', operator: 'in', value }],
+      });
+      const emitted = conditions(request.filter)[0]?.value as unknown[];
+      expect(emitted.length, label).toBeLessThan(value.length);
+      expect(dropped.length, `${label} went unreported`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('a lower-case instant is canonicalized before it is parsed', () => {
+  const dateFilter = (value: string) =>
+    translate({ filters: [{ columnId: 'updated', operator: 'gte', value }] });
+
+  /** Every string this translation hands to the `Date` constructor. */
+  function parsedStrings(run: () => void): string[] {
+    const seen: string[] = [];
+    const RealDate = globalThis.Date;
+    class RecordingDate extends RealDate {
+      constructor(...args: ConstructorParameters<typeof RealDate>) {
+        if (typeof args[0] === 'string') seen.push(args[0]);
+        super(...args);
+      }
+    }
+    vi.stubGlobal('Date', RecordingDate);
+    try {
+      run();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return seen;
+  }
+
+  it('hands `Date` a string inside the ECMA-262 grammar', () => {
+    // The mechanism, not the outcome. V8 happens to read a lower-case `t`/`z`
+    // as UTC, so asserting the parsed value passes either way — that is luck,
+    // not a guarantee, and another engine may use different heuristics. What
+    // has to hold is that the string REACHING `Date` never leaves the
+    // specified format in the first place.
+    const strict =
+      /^\d{4}-\d{2}-\d{2}(?:T([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/;
+    const seen = parsedStrings(() => {
+      dateFilter('2026-02-01t12:30:00z');
+      dateFilter('2026-02-01t12:30+09:00');
+      dateFilter('2026-02-01T12:30:00Z');
+      dateFilter('2026-02-01');
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const value of seen) {
+      expect(value, `${value} leaves the Date Time String Format`).toMatch(
+        strict,
+      );
+    }
+  });
+
+  it('still resolves to the instant the input named', () => {
+    expect(
+      conditions(dateFilter('2026-02-01t12:30:00z').request.filter)[0].value,
+    ).toBe('2026-02-01T12:30:00.000Z');
+  });
+
+  it('means the same as the upper-case input, in every timezone', () => {
+    const previous = process.env.TZ;
+    try {
+      for (const zone of ['UTC', 'Asia/Tokyo', 'America/Sao_Paulo']) {
+        process.env.TZ = zone;
+        expect(
+          conditions(dateFilter('2026-02-01t12:30:00z').request.filter)[0]
+            .value,
+          zone,
+        ).toBe(
+          conditions(dateFilter('2026-02-01T12:30:00Z').request.filter)[0]
+            .value,
+        );
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  it('canonicalizes a lower-case offset form too', () => {
+    expect(
+      conditions(dateFilter('2026-02-01t12:30+09:00').request.filter)[0].value,
+    ).toBe('2026-02-01T03:30:00.000Z');
+  });
+});
+
+describe('a blank comparand means the same thing in both modes', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /** `author` is nullable, so an absent value is a real SQL NULL. */
+  const rows = [
+    { name: 'named', title: 'Named', author: 'Ada Lovelace' },
+    { name: 'blank', title: 'Blank', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of rows) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const serverNames = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'blank-comparand',
+        projection: ['id', 'name', 'author'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  const localNames = (filter: DataTableFilter) =>
+    selectContentListRows(
+      toContentListRows(
+        rows.map((entry) => ({
+          id: entry.name,
+          title: entry.title,
+          author: entry.author,
+        })),
+      ),
+      { ...createContentListController().getState(), filters: [filter] },
+    )
+      .map((row) => String(row.content.id))
+      .sort();
+
+  const bothAgree = async (filter: DataTableFilter) => {
+    const [server, local] = [await serverNames(filter), localNames(filter)];
+    expect(server, JSON.stringify(filter)).toEqual(local);
+    return server;
+  };
+
+  it('does not match an absent value with `equals ""`', async () => {
+    // The flattened row reads an absent author as empty text, so comparing as
+    // text answered a question about `''` rather than about absence.
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'equals', value: '' }),
+    ).toEqual([]);
+  });
+
+  it('DOES match it with `notEquals ""`, because `ne` unions IS NULL', async () => {
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'notEquals', value: '' }),
+    ).toEqual(['blank', 'named']);
+  });
+
+  it('handles a blank entry in `in` and `notIn`', async () => {
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'in', value: [''] }),
+    ).toEqual([]);
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'notIn', value: [''] }),
+    ).toEqual(['blank', 'named']);
+  });
+
+  it('handles a blank pattern for every `like` operator', async () => {
+    for (const operator of ['contains', 'startsWith', 'endsWith'] as const) {
+      expect(
+        await bothAgree({ columnId: 'author', operator, value: '' }),
+      ).toEqual(['named']);
+    }
+  });
+
+  it('keeps agreeing for a non-blank comparand', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'equals',
+        value: 'Ada Lovelace',
+      }),
+    ).toEqual(['named']);
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'contains',
+        value: 'Ada',
+      }),
+    ).toEqual(['named']);
+  });
+});
