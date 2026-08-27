@@ -2062,3 +2062,122 @@ describe('ContentList type lock across a prop change (#2452 batch 4)', () => {
     expect(selectByLabel(target, 'Filter by type').value).toBe('document');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review batch 5 (#2452)
+// ---------------------------------------------------------------------------
+
+describe('ContentList toolbar never misstates the live predicate', () => {
+  /**
+   * The invariant: the select's displayed state either matches the live
+   * predicate exactly, or the operator is told it does not.
+   */
+  const cases: Array<{
+    name: string;
+    params: string;
+    /** What the select must NOT read as, because the query says otherwise. */
+    notDisplayed: string;
+    detail: string;
+  }> = [
+    {
+      name: 'a list value',
+      params: 'status.in=draft,review',
+      notDisplayed: '',
+      detail: 'in draft, review',
+    },
+    {
+      name: 'a valueless operator',
+      params: 'status.isNull=1',
+      notDisplayed: '',
+      detail: 'isNull',
+    },
+    {
+      name: 'an inverted operator',
+      params: 'status.notEquals=draft',
+      notDisplayed: 'draft',
+      detail: 'notEquals draft',
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(`reports ${testCase.name} rather than displaying a value it is not applying`, () => {
+      const target = renderList({ urlState: { params: testCase.params } });
+      const select = selectByLabel(target, 'Filter by status');
+
+      // Never the empty "All statuses", and never the inverse of the predicate.
+      expect(select.value).not.toBe(testCase.notDisplayed);
+      // The select shows the predicate itself …
+      expect(
+        Array.from(select.options)
+          .find((option) => option.value === select.value)
+          ?.textContent?.trim(),
+      ).toBe(testCase.detail);
+      // … and it cannot be re-chosen, only replaced.
+      expect(
+        Array.from(select.options).find(
+          (option) => option.value === select.value,
+        )?.disabled,
+      ).toBe(true);
+      // … and the operator is told.
+      expect(target.querySelector('.state-notice')?.textContent).toContain(
+        testCase.detail,
+      );
+    });
+  }
+
+  it('applies the same rule to the type select on an unlocked list', () => {
+    const target = renderList({
+      urlState: { params: 'type.notEquals=article' },
+    });
+    const select = selectByLabel(target, 'Filter by type');
+
+    expect(select.value).not.toBe('article');
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'notEquals article',
+    );
+  });
+
+  it('reports two filters on one column, which a single select cannot show', () => {
+    const target = renderList({
+      urlState: { params: 'status=draft&status.notEquals=archived' },
+    });
+    expect(selectByLabel(target, 'Filter by status').value).not.toBe('draft');
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'equals draft; notEquals archived',
+    );
+  });
+
+  it('lets the operator replace an unrepresentable filter from the select', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({
+      query: { bind: () => query.binding },
+      urlState: { params: 'status.in=draft,review' },
+    });
+    expect(target.querySelector('.state-notice')).not.toBeNull();
+
+    selectOption(selectByLabel(target, 'Filter by status'), 'published');
+
+    // Choosing a real option replaces every filter on the column.
+    const filter = JSON.stringify(query.requests.at(-1)?.filter);
+    expect(filter).toContain('"published"');
+    expect(filter).not.toContain('"draft"');
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('stays silent for a plain, representable, in-vocabulary filter', () => {
+    const target = renderList({ urlState: { params: 'status=draft' } });
+    expect(selectByLabel(target, 'Filter by status').value).toBe('draft');
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('says nothing about a locked type, which renders no select', () => {
+    const target = renderList({
+      type: 'article',
+      urlState: { params: 'status=draft' },
+    });
+    expect(
+      target.querySelector('select[aria-label="Filter by type"]'),
+    ).toBeNull();
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+});

@@ -1474,27 +1474,66 @@ describe('null-valued rows through both filter paths', () => {
     ).toEqual(['Other author', 'With author']);
   });
 
-  it('DOCUMENTED DIVERGENCE: `lt` excludes the null row server-side', async () => {
-    // Not aligned, deliberately. The local row model flattens an absent value
-    // to empty text and cannot tell "no author" from "empty author", so `lt`
-    // matches it locally; SQL excludes NULL from every ordered comparison.
-    // Unioning IS NULL server-side would make `publish_date lt X` match
-    // never-published rows, which is a worse answer than the divergence.
-    expect(
-      await serverTitles({
-        columnId: 'author',
-        operator: 'lt',
-        value: 'Zzz',
-      }),
-    ).toEqual(['Other author', 'With author']);
-    expect(
-      localTitles({ columnId: 'author', operator: 'lt', value: 'Zzz' }),
-    ).toEqual(['No author', 'Other author', 'With author']);
+  it('partitions the rows: a predicate and its negation, no overlap or gap', async () => {
+    const all = ['No author', 'Other author', 'With author'];
+    const pairs: Array<[DataTableFilter, DataTableFilter]> = [
+      [
+        { columnId: 'author', operator: 'equals', value: 'Ada Lovelace' },
+        { columnId: 'author', operator: 'notEquals', value: 'Ada Lovelace' },
+      ],
+      [
+        { columnId: 'author', operator: 'in', value: ['Ada Lovelace'] },
+        { columnId: 'author', operator: 'notIn', value: ['Ada Lovelace'] },
+      ],
+      [
+        { columnId: 'author', operator: 'isNull' },
+        { columnId: 'author', operator: 'isNotNull' },
+      ],
+    ];
+    for (const [predicate, negation] of pairs) {
+      const [yes, no] = [await bothAgree(predicate), await bothAgree(negation)];
+      expect(yes.filter((title) => no.includes(title))).toEqual([]);
+      expect([...yes, ...no].sort()).toEqual(all);
+    }
   });
 
-  it('`gt` and `gte` agree, so only `lt`/`lte` diverge', async () => {
+  it('excludes the authorless row from every ordered comparison', async () => {
+    // An absent value takes part in no ordered comparison, matching SQL. The
+    // local evaluator used to read it as empty text, which sorts below
+    // everything, so `lt` matched it and the two modes disagreed.
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'lt', value: 'Zzz' }),
+    ).toEqual(['Other author', 'With author']);
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'lte', value: 'Zzz' }),
+    ).toEqual(['Other author', 'With author']);
     await bothAgree({ columnId: 'author', operator: 'gt', value: 'Ada' });
     await bothAgree({ columnId: 'author', operator: 'gte', value: 'Ada' });
+  });
+
+  it('agrees for a blank comparand, the case that used to be unalignable', async () => {
+    // `?author.lt=` and `?author.gte=` both compare against the empty string,
+    // where an "absent reads as empty" model and SQL give opposite answers.
+    for (const operator of ['lt', 'lte', 'gt', 'gte'] as const) {
+      await bothAgree({ columnId: 'author', operator, value: '' });
+    }
+  });
+
+  it('agrees on isNull / isNotNull, which the flattened row used to miss', async () => {
+    expect(await bothAgree({ columnId: 'author', operator: 'isNull' })).toEqual(
+      ['No author'],
+    );
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'isNotNull' }),
+    ).toEqual(['Other author', 'With author']);
+  });
+
+  it('treats a column that stores empty text as present, in both modes', async () => {
+    // `title` defaults to `''` rather than NULL, so an ordered comparison must
+    // still include it — the null-awareness is about absence, not emptiness.
+    expect(
+      await bothAgree({ columnId: 'title', operator: 'gte', value: 'A' }),
+    ).toEqual(['No author', 'Other author', 'With author']);
   });
 });
 
@@ -1514,7 +1553,8 @@ describe('the OR-branch budget that the null union makes reachable', () => {
     }));
     const { request, dropped } = translate({ filters });
 
-    expect(conditions(request.filter).length).toBeLessThanOrEqual(7);
+    // 2^7 = 128 is exactly the ceiling; 2^8 would be refused.
+    expect(conditions(request.filter).length).toBe(7);
     expect(
       dropped.some(
         (drop) =>
@@ -1535,6 +1575,95 @@ describe('the OR-branch budget that the null union makes reachable', () => {
     const notEquals = conditions(request.filter).filter(
       (entry) => entry.operator === 'ne',
     );
-    expect(notEquals.length).toBeLessThanOrEqual(5);
+    // 3 * 2^5 = 96 fits; 3 * 2^6 = 192 does not.
+    expect(notEquals.length).toBe(5);
+  });
+});
+
+describe('the branch counter mirrors the executor exactly', () => {
+  /** Runs a filter through the real executor and reports whether it survived. */
+  const executorAccepts = async (
+    contents: Contents,
+    filter: unknown,
+  ): Promise<boolean> => {
+    try {
+      await executeContentQuery(contents as unknown as ContentQueryCollection, {
+        version: 1,
+        requestId: 'branch-parity',
+        mode: 'rows',
+        projection: ['id'],
+        filter,
+        page: { kind: 'offset', offset: 0, limit: 1 },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  it('sheds exactly at the boundary the executor refuses', async () => {
+    const build = (count: number) =>
+      translate({
+        filters: Array.from({ length: count }, (_, index) => ({
+          columnId: 'author' as const,
+          operator: 'notEquals' as const,
+          value: `person-${index}`,
+        })),
+      }).request.filter;
+
+    // What the translator emits is always accepted …
+    expect(await executorAccepts(contents, build(12))).toBe(true);
+    // … and one more doubling than it allows itself is not.
+    expect(
+      await executorAccepts(contents, {
+        kind: 'all',
+        filters: Array.from({ length: 8 }, (_, index) => ({
+          kind: 'condition',
+          field: 'author',
+          operator: 'ne',
+          value: `person-${index}`,
+        })),
+      }),
+    ).toBe(false);
+    // Exactly one fewer is accepted, so the mirror is not merely conservative.
+    expect(
+      await executorAccepts(contents, {
+        kind: 'all',
+        filters: Array.from({ length: 7 }, (_, index) => ({
+          kind: 'condition',
+          field: 'author',
+          operator: 'ne',
+          value: `person-${index}`,
+        })),
+      }),
+    ).toBe(true);
+  });
+
+  it('a listed null costs one branch, not two, in both layers', async () => {
+    // `notIn [x, null]` is a single AND group server-side, so eight of them fit
+    // where eight null-safe ones would not.
+    const filters = Array.from({ length: 8 }, (_, index) => ({
+      kind: 'condition' as const,
+      field: 'author',
+      operator: 'notIn' as const,
+      value: [`person-${index}`, null],
+    }));
+    expect(await executorAccepts(contents, { kind: 'all', filters })).toBe(
+      true,
+    );
   });
 });

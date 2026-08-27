@@ -470,17 +470,33 @@ function conditionToDnf(
 
   if (operator === 'notIn') {
     const values = (value as unknown[]) ?? [];
+    if (values.length === 0) {
+      // The normalizer refuses an empty list, so this is unreachable; failing
+      // is still the only safe answer, because "excludes nothing" would have to
+      // be an unbounded OR branch.
+      return queryFail(
+        'Content query notIn requires at least one value',
+        'DATA_QUERY_UNSUPPORTED',
+      );
+    }
     // `buildWhere()` has no NOT IN primitive. A bounded AND of inequalities has
     // the same null-safe semantics and stays fully validated by the collection.
     const inequalities = values
       .filter((entry) => entry !== null)
       .map((entry) => ({ [key('!=')]: entry }));
-    if (inequalities.length === 0) return single(key('!='), null);
-    // SQL's `<>` is UNKNOWN for NULL, so a bare AND of inequalities silently
-    // excludes rows with no value at all — while the caller-visible meaning of
-    // "not one of these" includes them, and the local evaluator agrees. Model
-    // that union explicitly, exactly as `in` does above, so the same shared
-    // link returns the same rows whether the list is server-backed or not.
+    if (values.some((entry) => entry === null)) {
+      // A listed `null` says "rows with no value are excluded too", so the
+      // null-safe union below must NOT be added — it would return exactly the
+      // rows the caller asked to exclude, and would make `in [x, null]` and its
+      // negation overlap. `{ field '!=': null }` is `IS NOT NULL`.
+      return [[...inequalities, { [key('!=')]: null }]];
+    }
+    // No `null` was listed. SQL's `<>` is UNKNOWN for NULL, so a bare AND of
+    // inequalities silently excludes rows with no value at all — while the
+    // caller-visible meaning of "not one of these" includes them, and the local
+    // evaluator agrees. Model that union explicitly, exactly as `in` does
+    // above, so the same shared link returns the same rows whether the list is
+    // server-backed or not.
     return [[{ [field]: null }], inequalities];
   }
 

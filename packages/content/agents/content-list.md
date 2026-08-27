@@ -292,35 +292,52 @@ Local mode is case-insensitive everywhere. Do not describe free-text filtering
 as uniform; a portable fix needs a case-insensitive operator at the collection
 boundary.
 
-### NULL semantics are aligned, with one documented exception
+### NULL semantics are aligned
 
 The same shared link must return the same rows whether the host passed a `query`
-or not. The local evaluator flattens an absent value to empty text, so a row
-with no author is *included* by `notEquals`/`notIn`; SQL's `<>` is UNKNOWN for
-NULL and would exclude it.
+or not, so every null-sensitive operator now agrees across the two modes. Two
+different alignments were needed, in opposite directions, because the *meaning*
+differs per operator:
 
-| Operator | Server lowering | Aligned? |
+| Operator | Server lowering | Alignment |
 |---|---|---|
-| `eq`, `in`, `like` (`contains`/`startsWith`/`endsWith`) | plain predicate | yes — both exclude a null row |
-| `in` with a null in the value list | `IS NULL OR IN (…)` | yes (pre-existing) |
-| `ne` | `IS NULL OR <> v` | **aligned** — union added |
-| `notIn` | `IS NULL OR (AND of <> v)` | **aligned** — union added |
-| `ne null` (`isNotNull`) | `IS NOT NULL` | untouched: unioning IS NULL would match every row |
-| `gt`, `gte` | plain predicate | yes, by construction (`'' > 'x'` is false locally, NULL excluded server-side) |
-| `lt`, `lte` | plain predicate | **NOT aligned — documented** |
+| `eq`, `in`, `like` (`contains`/`startsWith`/`endsWith`) | plain predicate | already agreed — both exclude an absent row |
+| `in` with a `null` listed | `IS NULL OR IN (…)` | already aligned |
+| `ne` (value ≠ null) | `IS NULL OR <> v` | server gained the union: "not v" includes rows with no value, as the local evaluator has always said |
+| `notIn` (no `null` listed) | `IS NULL OR (AND of <> v)` | same |
+| `notIn` WITH a `null` listed | `(AND of <> v) AND IS NOT NULL` | **no union**: a listed `null` says absent rows are excluded too |
+| `ne null` (`isNotNull`) | `IS NOT NULL` | untouched — a union would match every row |
+| `gt`, `gte`, `lt`, `lte` | plain predicate | the LOCAL evaluator gained null-awareness |
+| `isNull` / `isNotNull` | `IS NULL` / `IS NOT NULL` | the LOCAL evaluator gained null-awareness |
 
-`lt`/`lte` are the exception, deliberately. Locally an absent value reads as
-`''`, and `'' < 'x'` is true, so the null row matches; server-side it does not.
-Aligning would mean either unioning `IS NULL` server-side — which would make
-`publish_date lt X` match never-published rows, a worse answer than the
-divergence — or excluding empty values locally, which would then diverge for the
-columns that genuinely store `''` (`title`, `name`) rather than NULL. The local
-row model cannot tell "absent" from "empty", so the two cases cannot both be
-served. Prefer `isNull`/`isNotNull` when absence is what you mean.
+**A listed `null` inverts the rule, and getting that wrong is a data leak of the
+worst kind — a filter returning exactly the rows it was asked to exclude.**
+`notIn ['Ada', null]` means "not Ada, and not blank", so it must NOT gain the
+`IS NULL` union. It is reachable from the wire (`normalizeFilter` accepts a null
+list entry) and through `not(in ['Ada', null])`. Without the distinction,
+`in [x, null]` and its own negation both match the absent row: a predicate
+overlapping its negation. The executor tests assert every list shape
+(no null / with null / null-only / inverted) partitions the rows with no overlap
+and no gap.
+
+**The ordered comparisons were aligned on the LOCAL side, not the server's.**
+`ContentListRow` flattens every field to display text, so an absent value read
+as `''` — which sorts below everything, made `publish_date lt X` match every
+never-published row, and made `isNull` match nothing at all. The original
+`ContentData` still distinguishes absent from empty, so
+`isAbsentContentValue()` consults it and the null-sensitive operators exclude an
+absent value exactly as SQL's three-valued logic does. This is the direction the
+data means: "no publish date" is not "published before X". It also aligns the
+blank-comparand case (`?author.lt=`, `?author.gte=`), where the flattened `''`
+used to compare equal and the two modes disagreed, and it leaves a column that
+genuinely stores `''` (`title`, `name`) comparing as present in both modes.
 
 The `ne`/`notIn` union costs a second DNF branch each, and an `all` multiplies,
-so the translator now also mirrors `MAX_CONTENT_QUERY_OR_BRANCHES` (128) and
-drops filters before the executor would refuse the whole request.
+so the translator also mirrors `MAX_CONTENT_QUERY_OR_BRANCHES` (128) and drops
+filters before the executor would refuse the whole request. The mirror is exact
+rather than conservative — including the listed-`null` case, which costs one
+branch rather than two — and it handles De Morgan under `not`, so a future
+negating emitter cannot silently under-count.
 
 ### Scope is application-supplied and server-derived
 
@@ -457,6 +474,24 @@ Both selects handle it identically, and do two things rather than one:
 1. the value is rendered as an extra option, so the toolbar tells the truth
    about what is constraining the list and the operator can clear it;
 2. it is reported in the notice, so an empty result always has an explanation.
+
+A select can only offer a single `equals` value, though, and a link can restore
+much more than that. **INVARIANT: the select's displayed state either matches
+the live predicate exactly, or the operator is told it does not.** Three states,
+all reachable from a shared link:
+
+| Live filter | Select shows | Reported |
+|---|---|---|
+| `equals` with a listed value | the value | no |
+| `equals` with an unlisted value (`?status=embargoed`, a typo) | the value, as an extra option | yes |
+| anything else — a list value (`?status.in=draft,review`), a valueless operator (`?status.isNull=1`), an inverted one (`?status.notEquals=draft`), or two filters on one column | a DISABLED summary of the real predicate | yes |
+
+The third row is the one that matters: a value-only read reports nothing for a
+list value and reports `draft` for `notEquals draft` — the exact inverse of the
+query. `readContentListSelectFilter` is operator-aware and is the seam that
+keeps the control from misstating the query; `readContentListFilter` stays
+value-only and must not drive a control. Choosing any real option replaces every
+filter on that column, so the operator is never stuck.
 
 `review` is now offered outright. `deleted` is deliberately not: that is the
 trash lifecycle (#2454), and offering it here would imply a restore/purge

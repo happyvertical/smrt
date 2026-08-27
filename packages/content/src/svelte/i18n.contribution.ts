@@ -141,6 +141,8 @@ export const M = defineMessages({
     'that value was outside the allowed range',
   'content.content_list.drop_unlisted_value':
     'filtered by "{value}", which is not one of the listed options',
+  'content.content_list.drop_unrepresentable_filter':
+    '{target} is filtered by "{value}", which this control cannot show — pick an option to replace it',
   'content.content_list.drop_page_unreachable':
     'page {requested} cannot be loaded — the list stops at page {landed}, which is what is shown',
   'content.content_list.drop_unpaginated':

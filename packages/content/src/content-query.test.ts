@@ -1252,3 +1252,148 @@ describe('mirrored adapter constants are pinned to their source', () => {
     ).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review batch 5: the null-safe `ne`/`notIn` lowering (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * `ne` and `notIn` union `IS NULL` so their caller-visible meaning ("not one of
+ * these", which includes rows with no value) survives SQL's three-valued logic.
+ * A caller that lists `null` explicitly is saying the opposite — exclude absent
+ * rows too — and MUST NOT get the union, or the predicate would return exactly
+ * the rows it was asked to exclude and would overlap its own negation.
+ *
+ * These go through the raw wire shape, not the translator, because the
+ * translator never emits a null list entry while `normalizeFilter` does accept
+ * one and `not(in [...])` reaches the same lowering through `inverseOperator`.
+ */
+describe('null entries in a ne / notIn value list', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+  const ALL = ['Ada', 'Grace', 'none'];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'Ada', author: 'Ada Lovelace' },
+      { name: 'Grace', author: 'Grace Hopper' },
+      { name: 'none', author: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const names = async (filter: Record<string, unknown>) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ projection: ['name'], filter }),
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  const condition = (operator: string, value: unknown) => ({
+    kind: 'condition' as const,
+    field: 'author',
+    operator,
+    value,
+  });
+
+  it('notIn without a null in the list INCLUDES the authorless row', async () => {
+    expect(await names(condition('notIn', ['Ada Lovelace']))).toEqual([
+      'Grace',
+      'none',
+    ]);
+  });
+
+  it('notIn WITH a null in the list EXCLUDES it', async () => {
+    // The regression: an unconditional union returned `none` here — the very
+    // row the caller listed `null` to exclude.
+    expect(await names(condition('notIn', ['Ada Lovelace', null]))).toEqual([
+      'Grace',
+    ]);
+  });
+
+  it('notIn with a null-only list is IS NOT NULL', async () => {
+    expect(await names(condition('notIn', [null]))).toEqual(['Ada', 'Grace']);
+  });
+
+  it('ne without null includes it; ne null is IS NOT NULL', async () => {
+    expect(await names(condition('ne', 'Ada Lovelace'))).toEqual([
+      'Grace',
+      'none',
+    ]);
+    expect(await names(condition('ne', null))).toEqual(['Ada', 'Grace']);
+  });
+
+  it('reaches the same lowering through not(in […])', async () => {
+    const negate = (filter: Record<string, unknown>) => ({
+      kind: 'not' as const,
+      filter,
+    });
+    expect(await names(negate(condition('in', ['Ada Lovelace'])))).toEqual([
+      'Grace',
+      'none',
+    ]);
+    expect(
+      await names(negate(condition('in', ['Ada Lovelace', null]))),
+    ).toEqual(['Grace']);
+    expect(await names(negate(condition('in', [null])))).toEqual([
+      'Ada',
+      'Grace',
+    ]);
+  });
+
+  it('partitions the rows for every predicate/negation pair', async () => {
+    const pairs: Array<[Record<string, unknown>, Record<string, unknown>]> = [
+      [condition('eq', 'Ada Lovelace'), condition('ne', 'Ada Lovelace')],
+      [condition('eq', null), condition('ne', null)],
+      [condition('in', ['Ada Lovelace']), condition('notIn', ['Ada Lovelace'])],
+      // The pair that used to OVERLAP: both matched the authorless row.
+      [
+        condition('in', ['Ada Lovelace', null]),
+        condition('notIn', ['Ada Lovelace', null]),
+      ],
+      [condition('in', [null]), condition('notIn', [null])],
+    ];
+    for (const [predicate, negation] of pairs) {
+      const [yes, no] = [await names(predicate), await names(negation)];
+      expect(
+        yes.filter((name) => no.includes(name)),
+        `overlap for ${JSON.stringify(predicate)}`,
+      ).toEqual([]);
+      expect(
+        [...yes, ...no].sort(),
+        `gap for ${JSON.stringify(predicate)}`,
+      ).toEqual(ALL);
+    }
+  });
+
+  it('agrees with `not(in …)` for every list shape', async () => {
+    for (const value of [['Ada Lovelace'], ['Ada Lovelace', null], [null]]) {
+      expect(await names(condition('notIn', value))).toEqual(
+        await names({ kind: 'not', filter: condition('in', value) }),
+      );
+    }
+  });
+
+  it('still narrows inside a scope rather than escaping it', async () => {
+    // Every new OR branch is a non-empty condition group, so scope is prepended
+    // to each of them; a `notIn` cannot widen past the application scope.
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['name'],
+        filter: condition('notIn', ['Ada Lovelace']),
+      }),
+      { scope: { name: 'Grace' } },
+    );
+    expect(result.rows.map((row) => String(row.name))).toEqual(['Grace']);
+  });
+});

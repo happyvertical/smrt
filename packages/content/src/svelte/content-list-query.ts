@@ -57,11 +57,11 @@
  * - **Filters compare exactly.** The server compares the stored value. The
  *   adapter folds case only for the token columns (`type`, `status`, `state`),
  *   because free text has to reach the server as the operator typed it.
- * - **NULL semantics are aligned for `ne`/`notIn`** — both union `IS NULL`, as
- *   `in` already did, so a shared link returns the same rows in local and
- *   server mode. `lt`/`lte` are the documented exception: locally an absent
- *   value reads as empty text and matches, and neither alignment is correct for
- *   every column. See `agents/content-list.md`.
+ * - **NULL semantics are aligned end to end.** `ne`/`notIn` union `IS NULL`
+ *   server-side, as `in` already did — unless the caller listed `null`, which
+ *   inverts the meaning. The ordered comparisons and `isNull`/`isNotNull` were
+ *   aligned on the local side instead, by consulting the original `ContentData`
+ *   rather than the flattened display text. See `agents/content-list.md`.
  */
 
 import type {
@@ -398,6 +398,12 @@ export type ContentListQueryDropReason =
    * toolbar over an empty list.
    */
   | 'unlisted-value'
+  /**
+   * A live filter a single-select control cannot express at all — a non-`equals`
+   * operator, a list value, or a valueless one. Reported so the toolbar never
+   * silently states something other than the query being run.
+   */
+  | 'unrepresentable-filter'
   /**
    * An unpaginated view was requested, which a server query cannot express —
    * the endpoint always applies a page limit. Coerced to the page size.
@@ -910,33 +916,91 @@ function countFilterNodes(filter: ContentListQueryFilter): number {
 }
 
 /**
- * Counts the disjunctive-normal-form branches the executor will expand a filter
- * into, mirroring `conditionToDnf`/`crossProduct` in `content-query.ts`.
+ * The executor's operator inversion, mirroring `inverseOperator` in
+ * `content-query.ts`. `like` has no inverse there — a negated `like` is refused
+ * outright — so it is reported as unbounded, which makes the branch budget shed
+ * such a filter instead of letting the request 400.
+ */
+function invertedBranchOperator(
+  operator: ContentListQueryFilterOperator,
+): ContentListQueryFilterOperator | null {
+  switch (operator) {
+    case 'eq':
+      return 'ne';
+    case 'ne':
+      return 'eq';
+    case 'gt':
+      return 'lte';
+    case 'gte':
+      return 'lt';
+    case 'lt':
+      return 'gte';
+    case 'lte':
+      return 'gt';
+    case 'in':
+      return 'notIn';
+    case 'notIn':
+      return 'in';
+    case 'like':
+      return null;
+  }
+}
+
+function hasNullEntry(value: unknown): boolean {
+  return Array.isArray(value) && value.some((entry) => entry === null);
+}
+
+function hasNonNullEntry(value: unknown): boolean {
+  return Array.isArray(value) && value.some((entry) => entry !== null);
+}
+
+/**
+ * Counts the disjunctive-normal-form branches the executor expands a filter
+ * into, mirroring `conditionToDnf`, `filterToDnf` and `crossProduct` in
+ * `content-query.ts` — including De Morgan under `not`, where an `any` becomes
+ * a product and each condition's operator is inverted.
  *
  * `ne` and `notIn` lower to a UNION with `IS NULL` so their meaning matches the
- * local evaluator's, which costs a second branch each, and an `all` multiplies
- * its children. Past {@link CONTENT_LIST_QUERY_MAX_OR_BRANCHES} the executor
- * refuses the request outright, so the translator has to stop adding filters
- * before that rather than hand the operator an error panel.
+ * local evaluator's, which costs a second branch each unless the caller listed
+ * a `null` explicitly. An `all` multiplies its children. Past
+ * {@link CONTENT_LIST_QUERY_MAX_OR_BRANCHES} the executor refuses the request
+ * outright, so the translator has to stop adding filters before that rather
+ * than hand the operator an error panel.
+ *
+ * The translator itself emits only conditions, the search `any`, and the outer
+ * `all`; the negation arm exists so a future `not` emitter cannot silently
+ * under-count and trade shedding for a 400.
  */
-function countFilterBranches(filter: ContentListQueryFilter): number {
+function countFilterBranches(
+  filter: ContentListQueryFilter,
+  negate = false,
+): number {
   if (filter.kind === 'condition') {
-    if (filter.operator === 'ne') return filter.value === null ? 1 : 2;
-    if (filter.operator === 'notIn') return 2;
-    // `in` unions IS NULL only when the value list itself carries a null, which
-    // this translator never emits.
+    const operator = negate
+      ? invertedBranchOperator(filter.operator)
+      : filter.operator;
+    if (operator === null) return Number.POSITIVE_INFINITY;
+    // A listed null means "exclude absent rows too", which is one AND group.
+    if (operator === 'ne') return filter.value === null ? 1 : 2;
+    if (operator === 'notIn') return hasNullEntry(filter.value) ? 1 : 2;
+    // `in` splits only when the list mixes null and non-null entries.
+    if (operator === 'in') {
+      return hasNullEntry(filter.value) && hasNonNullEntry(filter.value)
+        ? 2
+        : 1;
+    }
     return 1;
   }
-  if (filter.kind === 'not') return countFilterBranches(filter.filter);
-  if (filter.kind === 'any') {
-    return filter.filters.reduce(
-      (total, child) => total + countFilterBranches(child),
-      0,
-    );
-  }
+  if (filter.kind === 'not') return countFilterBranches(filter.filter, !negate);
+  // De Morgan: a negated `any` behaves as an `all`, and vice versa.
+  const combineWithAnd =
+    (filter.kind === 'all' && !negate) || (filter.kind === 'any' && negate);
   return filter.filters.reduce(
-    (total, child) => total * countFilterBranches(child),
-    1,
+    (total, child) =>
+      combineWithAnd
+        ? total * countFilterBranches(child, negate)
+        : total + countFilterBranches(child, negate),
+    combineWithAnd ? 1 : 0,
   );
 }
 

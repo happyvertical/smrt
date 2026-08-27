@@ -596,7 +596,14 @@ export function contentListFilters(values: {
   return filters;
 }
 
-/** Reads one filter's value, or `null` when the filter is not applied. */
+/**
+ * Reads one filter's value, or `null` when the filter is not applied.
+ *
+ * Value-only, and therefore NOT enough to drive a single-select toolbar
+ * control: it reports the same string for `equals 'draft'` and
+ * `notEquals 'draft'`. Use {@link readContentListSelectFilter} for anything
+ * that displays the filter to an operator.
+ */
 export function readContentListFilter(
   state: DataTableViewState,
   columnId: string,
@@ -605,6 +612,71 @@ export function readContentListFilter(
     (candidate) => candidate.columnId === columnId,
   );
   return typeof filter?.value === 'string' ? filter.value : null;
+}
+
+/**
+ * The value a toolbar select carries while a live filter cannot be represented
+ * as one of its options. It is only ever set programmatically on a disabled
+ * option, so it can never be submitted; `applyContentListFilter` would replace
+ * every filter on the column anyway.
+ */
+export const CONTENT_LIST_UNREPRESENTABLE_OPTION = '\u0000unrepresentable';
+
+/** What a single-select toolbar control can honestly display for one column. */
+export interface ContentListSelectFilterState {
+  /** The value to display, or `''` when there is nothing to display. */
+  value: string;
+  /**
+   * False when a live filter exists on this column that a single select cannot
+   * express — a non-`equals` operator, a list value, a valueless operator, or
+   * more than one filter. The caller must then not render a plain value: it
+   * would state something other than the query being run.
+   */
+  representable: boolean;
+  /** A short, operator-facing summary of the live predicate when it is not. */
+  detail: string | null;
+}
+
+function describeContentListFilter(filter: DataTableFilter): string {
+  if (filter.value === undefined) return filter.operator;
+  const value = Array.isArray(filter.value)
+    ? filter.value.map(String).join(', ')
+    : String(filter.value);
+  return `${filter.operator} ${value}`;
+}
+
+/**
+ * Resolves what a toolbar select may show for one column.
+ *
+ * A select offers a single `equals` value, but the filter vocabulary a link or
+ * a saved view can restore is much wider. `?status.in=draft,review` and
+ * `?status.isNull=1` constrain the query while a value-only read reports
+ * nothing, and `?status.notEquals=draft` reports `draft` — the exact inverse of
+ * what is being applied. This is the seam that keeps the control from
+ * misstating the query: either it can show the predicate exactly, or the caller
+ * is told it cannot and reports it.
+ */
+export function readContentListSelectFilter(
+  state: DataTableViewState,
+  columnId: string,
+): ContentListSelectFilterState {
+  const applied = state.filters.filter(
+    (candidate) => candidate.columnId === columnId,
+  );
+  if (applied.length === 0) {
+    return { value: '', representable: true, detail: null };
+  }
+  const unrepresentable = (): ContentListSelectFilterState => ({
+    value: '',
+    representable: false,
+    detail: applied.map(describeContentListFilter).join('; '),
+  });
+  if (applied.length > 1) return unrepresentable();
+  const [filter] = applied;
+  if (filter.operator !== 'equals' || typeof filter.value !== 'string') {
+    return unrepresentable();
+  }
+  return { value: filter.value, representable: true, detail: null };
 }
 
 /**
@@ -713,9 +785,34 @@ function compareFilterValues(left: unknown, right: unknown): number {
 }
 
 /**
+ * True when the content behind a row carries no value at all for a column.
+ *
+ * `ContentListRow` flattens every field to display text, so an absent value and
+ * an empty one both read as `''` — which made every ordered comparison treat
+ * "no author" as the smallest possible author, and made `isNull` match nothing.
+ * The original `ContentData` still distinguishes them, so the null-sensitive
+ * operators consult it. A derived column such as `site` has no single source
+ * field and is never absent.
+ */
+function isAbsentContentValue(
+  row: ContentListRow,
+  column: DataTableColumn<ContentListRow>,
+): boolean {
+  const fieldName =
+    CONTENT_LIST_COLUMN_FIELD_NAMES[column.id as ContentListColumnId];
+  if (!fieldName) return false;
+  const source = (row.content as Record<string, unknown>)[fieldName];
+  return source === null || source === undefined;
+}
+
+/**
  * The single declarative-filter evaluator. It follows DataTable's operator
  * semantics so a persisted or agent-issued filter behaves the same here as it
  * would in a locally filtered table.
+ *
+ * The null-sensitive operators (`gt`/`gte`/`lt`/`lte`, `isNull`/`isNotNull`)
+ * additionally agree with SQL, so the same shared link means the same thing on
+ * a client-array list and a server-backed one (#2452).
  */
 function matchesContentListFilter(
   row: ContentListRow,
@@ -751,17 +848,32 @@ function matchesContentListFilter(
         !expected.some((entry) => sameFilterValue(value, entry))
       );
     case 'gt':
-      return compareFilterValues(value, expected) > 0;
     case 'gte':
-      return compareFilterValues(value, expected) >= 0;
     case 'lt':
-      return compareFilterValues(value, expected) < 0;
-    case 'lte':
-      return compareFilterValues(value, expected) <= 0;
+    case 'lte': {
+      // An absent value takes part in no ordered comparison, exactly as SQL
+      // yields UNKNOWN for NULL. Without this the flattened empty string sorts
+      // below everything, so `publish_date lt X` would match every row that was
+      // never published — and disagree with the server for the same link.
+      if (isAbsentContentValue(row, column)) return false;
+      const comparison = compareFilterValues(value, expected);
+      if (filter.operator === 'gt') return comparison > 0;
+      if (filter.operator === 'gte') return comparison >= 0;
+      if (filter.operator === 'lt') return comparison < 0;
+      return comparison <= 0;
+    }
     case 'isNull':
-      return value === null || value === undefined;
+      return (
+        isAbsentContentValue(row, column) ||
+        value === null ||
+        value === undefined
+      );
     case 'isNotNull':
-      return value !== null && value !== undefined;
+      return !(
+        isAbsentContentValue(row, column) ||
+        value === null ||
+        value === undefined
+      );
     default:
       return false;
   }

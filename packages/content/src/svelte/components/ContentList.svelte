@@ -61,10 +61,12 @@ import {
   createContentListController,
   CONTENT_LIST_STATUS_OPTIONS,
   CONTENT_LIST_TYPE_OPTIONS,
+  CONTENT_LIST_UNREPRESENTABLE_OPTION,
+  type ContentListSelectFilterState,
   isContentListFilterExactly,
   normalizeContentListTypeLock,
   paginateContentListRows,
-  readContentListFilter,
+  readContentListSelectFilter,
   resolveContentHref,
   selectableContentListRowIds,
   selectContentListRows,
@@ -668,56 +670,103 @@ $effect(() => {
   );
 });
 
+/**
+ * What each toolbar select may display, and whether it can display the live
+ * predicate at all.
+ *
+ * INVARIANT: the select's displayed state either matches the live predicate
+ * exactly, or the operator is told it does not. Three states, and all three are
+ * reachable from a shared link:
+ *
+ * - representable and inside the vocabulary — the select shows it, silently;
+ * - representable but outside the vocabulary (`?status=embargoed`, or a typo)
+ *   — the value is rendered as an extra option AND reported, so an empty list
+ *   always has an explanation;
+ * - not representable at all (`?status.in=draft,review`, `?status.isNull=1`,
+ *   `?status.notEquals=draft`) — the select shows a disabled summary of the
+ *   real predicate instead of a value it is not applying, and reports it.
+ *   Choosing any real option replaces every filter on that column, so the
+ *   operator is never stuck.
+ */
+const typeFilterState = $derived(
+  readContentListSelectFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID),
+);
+const statusFilterState = $derived(
+  readContentListSelectFilter(tableState, CONTENT_LIST_STATUS_FILTER_ID),
+);
 const selectedType = $derived(
-  readContentListFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID) ?? '',
+  typeFilterState.representable
+    ? typeFilterState.value
+    : CONTENT_LIST_UNREPRESENTABLE_OPTION,
 );
 const selectedStatus = $derived(
-  readContentListFilter(tableState, CONTENT_LIST_STATUS_FILTER_ID) ?? '',
+  statusFilterState.representable
+    ? statusFilterState.value
+    : CONTENT_LIST_UNREPRESENTABLE_OPTION,
 );
 
-/**
- * A live filter value the select cannot show, because it is outside the
- * published vocabulary — a real-but-unlisted token, or a typo in a link.
- *
- * Both selects handle it the same way, and handle it twice over: the value is
- * rendered as an extra option so the toolbar tells the truth about what is
- * constraining the list, AND it is reported in the notice so the operator knows
- * why the result may be empty. Silently showing an unfiltered-looking toolbar
- * over zero rows is the one outcome that must not happen.
- */
+/** A live, representable value the select has no option for. */
 const unlistedType = $derived(
-  selectedType &&
-    !(CONTENT_LIST_TYPE_OPTIONS as readonly string[]).includes(selectedType)
-    ? selectedType
+  typeFilterState.representable &&
+    typeFilterState.value &&
+    !(CONTENT_LIST_TYPE_OPTIONS as readonly string[]).includes(
+      typeFilterState.value,
+    )
+    ? typeFilterState.value
     : null,
 );
 const unlistedStatus = $derived(
-  selectedStatus &&
-    !(CONTENT_LIST_STATUS_OPTIONS as readonly string[]).includes(selectedStatus)
-    ? selectedStatus
+  statusFilterState.representable &&
+    statusFilterState.value &&
+    !(CONTENT_LIST_STATUS_OPTIONS as readonly string[]).includes(
+      statusFilterState.value,
+    )
+    ? statusFilterState.value
     : null,
 );
+
+function columnFilterDrops(
+  columnId: string,
+  unlisted: string | null,
+  filterState: ContentListSelectFilterState,
+): ContentListQueryDrop[] {
+  if (unlisted !== null) {
+    return [
+      {
+        scope: 'filter',
+        reason: 'unlisted-value',
+        columnId,
+        detail: unlisted,
+      },
+    ];
+  }
+  if (!filterState.representable) {
+    return [
+      {
+        scope: 'filter',
+        reason: 'unrepresentable-filter',
+        columnId,
+        detail: filterState.detail ?? '',
+      },
+    ];
+  }
+  return [];
+}
+
 const unlistedValueDrops = $derived<ContentListQueryDrop[]>([
-  ...(unlistedType === null || lockedType !== null
+  // A locked list renders no type select, so there is nothing to disagree with.
+  ...(lockedType !== null
     ? []
-    : [
-        {
-          scope: 'filter' as const,
-          reason: 'unlisted-value' as const,
-          columnId: CONTENT_LIST_TYPE_FILTER_ID,
-          detail: unlistedType,
-        },
-      ]),
-  ...(unlistedStatus === null
-    ? []
-    : [
-        {
-          scope: 'filter' as const,
-          reason: 'unlisted-value' as const,
-          columnId: CONTENT_LIST_STATUS_FILTER_ID,
-          detail: unlistedStatus,
-        },
-      ]),
+    : columnFilterDrops(
+        CONTENT_LIST_TYPE_FILTER_ID,
+        unlistedType,
+        typeFilterState,
+      )),
+  ...columnFilterDrops(
+    CONTENT_LIST_STATUS_FILTER_ID,
+    unlistedStatus,
+    statusFilterState,
+  ),
 ]);
 
 const surfaceOptions = $derived(
@@ -779,6 +828,8 @@ const DROP_REASON_MESSAGES: Record<
   malformed: M['content.content_list.drop_malformed'],
   'out-of-range': M['content.content_list.drop_out_of_range'],
   'unlisted-value': M['content.content_list.drop_unlisted_value'],
+  'unrepresentable-filter':
+    M['content.content_list.drop_unrepresentable_filter'],
   'unpaginated-unsupported': M['content.content_list.drop_unpaginated'],
 };
 
@@ -787,6 +838,12 @@ function dropNoticeText(drop: ContentListDropNotice): string {
   // needs to know which page they asked for and which one they are looking at.
   if (drop.reason === 'unlisted-value') {
     return t(M['content.content_list.drop_unlisted_value'], {
+      value: drop.detail ?? '',
+    });
+  }
+  if (drop.reason === 'unrepresentable-filter') {
+    return t(M['content.content_list.drop_unrepresentable_filter'], {
+      target: drop.columnId ?? drop.scope,
       value: drop.detail ?? '',
     });
   }
@@ -1125,6 +1182,12 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <!-- A live filter the vocabulary does not cover; showing it is what
                  keeps the toolbar honest about why the list may be empty. -->
             <option value={unlistedType}>{unlistedType}</option>
+          {:else if !typeFilterState.representable}
+            <!-- A live predicate no single option can express. Show the
+                 predicate rather than a value the query is not applying. -->
+            <option value={CONTENT_LIST_UNREPRESENTABLE_OPTION} disabled>
+              {typeFilterState.detail}
+            </option>
           {/if}
         </Select>
       {/if}
@@ -1145,6 +1208,10 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         <option value="archived">{t(M['content.content_list.status_archived'])}</option>
         {#if unlistedStatus}
           <option value={unlistedStatus}>{unlistedStatus}</option>
+        {:else if !statusFilterState.representable}
+          <option value={CONTENT_LIST_UNREPRESENTABLE_OPTION} disabled>
+            {statusFilterState.detail}
+          </option>
         {/if}
       </Select>
 
