@@ -39,6 +39,8 @@
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "devDependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
     "@types/node": "24.13.2",
     "fake-indexeddb": "^6.2.5",
     "typescript": "5.9.3",

@@ -2377,6 +2377,12 @@ importers:
         specifier: ^1.2.2
         version: 1.2.2
     devDependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)
@@ -2472,6 +2478,12 @@ importers:
         specifier: ^1.0.46
         version: 1.0.46(@tanstack/query-core@5.101.2)(typescript@5.9.3)
     devDependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2

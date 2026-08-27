@@ -5,7 +5,15 @@ import { smrtVitestPlugin } from '../vitest/src/index.ts';
 // the fork isolation the DB packages use. The plugin still runs for the shared
 // CI retry policy and workspace-alias conventions.
 export default defineConfig({
-  plugins: [smrtVitestPlugin({ verbose: true })],
+  // Fixture models live in integration test files. Keep the test manifest
+  // focused on package production models so this suite cannot make its
+  // decorated classes discoverable to later package tests.
+  plugins: [
+    smrtVitestPlugin({
+      verbose: true,
+      exclude: ['**/*.d.ts', '**/node_modules/**', '**/dist/**', '**/*.test.ts'],
+    }),
+  ],
   test: {
     globals: true,
     environment: 'node',

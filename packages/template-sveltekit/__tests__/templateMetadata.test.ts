@@ -36,12 +36,14 @@ describe('generated project metadata', () => {
     }
   });
 
-  it('ships the CLI directly and keeps browser data opt-in', () => {
+  it('ships the CLI directly and wires the browser WebMCP runtime', () => {
     expect(packageJson.devDependencies).toHaveProperty(
       '@happyvertical/smrt-cli',
     );
     expect(packageJson.dependencies['@happyvertical/smrt-cli']).toBeUndefined();
-    expect(packageJson.dependencies['@happyvertical/smrt-web']).toBeUndefined();
+    expect(packageJson.dependencies['@happyvertical/smrt-web']).toBe(
+      packageJson.dependencies['@happyvertical/smrt-core'],
+    );
   });
 
   it('keeps gnode metadata aligned with the generated package', () => {

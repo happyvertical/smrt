@@ -19,6 +19,13 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/web/webmcp-provider.ts` | Provider config for generated data/model WebMCP tools: definitions, effect policy, namespace, budget, legacy/canonical filters, and fetcher seams (#2520) | — |
 | `src/web/webmcp-ui.ts` | Fixed, low-cardinality WebMCP adapter over the Provider's mounted form-control and data-surface registries (#2521) | — |
 
+The composed WebMCP fixture in
+`src/web/__tests__/webmcp-composed.integration.svelte.test.ts` mounts a real
+Provider, rich Form, DataTable/DataSurface, and a bespoke `useWebMcpTool`
+component intent. Preserve its lifecycle assertions: SSR and missing
+`document.modelContext` are no-ops, mounted tools are fixed-cardinality, and
+all registrations abort when their owning component unmounts.
+
 ## The UI split — primitive-adoption contract (#1589)
 
 SMRT's shared UI primitives are split by concern: **`smrt-ui` owns the

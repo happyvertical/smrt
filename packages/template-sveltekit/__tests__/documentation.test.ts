@@ -14,8 +14,6 @@ const templateDirectory = join(__dirname, '..', 'template');
 const templatePackage = JSON.parse(
   readFileSync(join(templateDirectory, 'package.json'), 'utf8'),
 ) as { dependencies: Record<string, string> };
-const expectedWebMcpInstallCommand =
-  'pnpm add "@happyvertical/smrt-web@$(node -p "require(\'./package.json\').dependencies[\'@happyvertical/smrt-core\']")"';
 
 describe('practical documentation', () => {
   it.each([
@@ -30,13 +28,8 @@ describe('practical documentation', () => {
   it('documents current database and browser-tool behavior', () => {
     expect(projectReadme).toContain('pnpm db:migrate');
     expect(projectReadme).toContain('registerWebMcpTools');
-    expect(projectReadme).toContain('collectionDefinitions');
-    expect(packageReadme).toContain(
-      "dependencies['@happyvertical/smrt-core']",
-    );
-    expect(projectReadme).toContain(
-      "dependencies['@happyvertical/smrt-core']",
-    );
+    expect(projectReadme).toContain('webMcpToolDefinitions');
+    expect(packageReadme).toContain('registerWebMcpTools');
     expect(packageReadme).not.toMatch(/smrt-web@\^\d+\.\d+\.\d+/);
     expect(projectReadme).not.toMatch(/smrt-web@\^\d+\.\d+\.\d+/);
     expect(projectReadme).toContain(
@@ -50,17 +43,13 @@ describe('practical documentation', () => {
     expect(projectReadme).not.toMatch(/```bash[^`]*smrt db:setup/s);
   });
 
-  it.each([
-    ['package', packageReadme],
-    ['generated project', projectReadme],
-  ])('keeps the %s WebMCP install command on the synchronized release line', (
-    _name,
-    readme,
-  ) => {
-    const commands = readme
-      .split('\n')
-      .filter((line) => line.startsWith('pnpm add "@happyvertical/smrt-web@'));
-    expect(commands).toEqual([expectedWebMcpInstallCommand]);
+  it('wires WebMCP into the generated root layout on the synchronized release line', () => {
+    expect(templatePackage.dependencies['@happyvertical/smrt-web']).toMatch(
+      /^\^\d+\.\d+\.\d+$/,
+    );
+    expect(templatePackage.dependencies['@happyvertical/smrt-web']).toBe(
+      templatePackage.dependencies['@happyvertical/smrt-core'],
+    );
     expect(templatePackage.dependencies['@happyvertical/smrt-core']).toMatch(
       /^\^\d+\.\d+\.\d+$/,
     );

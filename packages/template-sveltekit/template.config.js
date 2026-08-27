@@ -26,6 +26,7 @@ export default {
     '@happyvertical/smrt-tenancy': '^0.43.4',
     '@happyvertical/smrt-ui': '^0.43.4',
     '@happyvertical/smrt-users': '^0.43.4',
+    '@happyvertical/smrt-web': '^0.43.4',
     '@modelcontextprotocol/server': '^2.0.0',
   },
 

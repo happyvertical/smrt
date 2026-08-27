@@ -249,31 +249,26 @@ Add the jobs package on the same release line as the other
 `@happyvertical/smrt-*` pins in `package.json`, then reinstall. Missing one of
 these fails at startup with `ERR_MODULE_NOT_FOUND` naming the package to add.
 
-WebMCP is opt-in per browser surface. First add the browser runtime, then put
-registration in a dedicated page that actually exposes tools:
-
-```bash
-pnpm add "@happyvertical/smrt-web@$(node -p "require('./package.json').dependencies['@happyvertical/smrt-core']")"
-```
-
-This derives the version from the generated project's synchronized s-m-r-t release
-pin, so the optional browser runtime stays on the same release line.
+WebMCP is wired at the root Provider as a read-only, authenticated browser
+surface. The template includes `@happyvertical/smrt-web` on the synchronized
+release line; keep the generated definitions page-owned when you need a
+narrower tool set.
 
 ```svelte
 <script lang="ts">
-  import { collectionDefinitions } from '@happyvertical/smrt-virt-web';
-  import { onMount } from 'svelte';
+  import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
+  import { Provider } from '@happyvertical/smrt-svelte';
 
-  onMount(() => {
-    let dispose = () => {};
-    void import('@happyvertical/smrt-web').then(({ registerWebMcpTools }) => {
-      dispose = registerWebMcpTools([collectionDefinitions.items], {
-        basePath: '/api',
-      });
-    });
-    return () => dispose();
-  });
+  const webmcp = $derived(
+    typeof document !== 'undefined' && 'modelContext' in document
+      ? { definitions: webMcpToolDefinitions, basePath: '/api', effects: ['read'] as const }
+      : false,
+  );
 </script>
+
+<Provider {webmcp}>
+  {@render children()}
+</Provider>
 ```
 
 `registerWebMcpTools()` feature-detects browser support and uses the current
@@ -287,8 +282,9 @@ closed as destructive.
 
 ## 9. Add optional live browser data
 
-Use this only on an interactive page. `@happyvertical/smrt-web` must be a direct
-dependency because the page imports it; the base starter does not need it.
+Use this only on an interactive page. The template already includes
+`@happyvertical/smrt-web` for the root Provider; no separate install is needed
+for WebMCP. Live browser collections remain opt-in per page.
 
 Keep the server load from section 7, then seed the browser collection from its
 hydrated rows so the first render does not issue a duplicate request:
