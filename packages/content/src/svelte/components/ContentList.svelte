@@ -830,6 +830,7 @@ const DROP_REASON_MESSAGES: Record<
   'unsupported-value': M['content.content_list.drop_unsupported_value'],
   malformed: M['content.content_list.drop_malformed'],
   'out-of-range': M['content.content_list.drop_out_of_range'],
+  'filter-widened': M['content.content_list.drop_filter_widened'],
   'unlisted-value': M['content.content_list.drop_unlisted_value'],
   'unrepresentable-filter':
     M['content.content_list.drop_unrepresentable_filter'],

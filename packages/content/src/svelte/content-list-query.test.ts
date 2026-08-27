@@ -772,7 +772,7 @@ describe('client-side caps mirroring the server limits', () => {
     // search = `any` + 3 conditions = 4 nodes, plus the outer `all` = 5.
     expect(conditions(request.filter).length).toBe(3 + 45);
     expect(
-      dropped.filter((drop) => drop.reason === 'out-of-range'),
+      dropped.filter((drop) => drop.reason === 'filter-widened'),
     ).toHaveLength(15);
   });
 
@@ -781,9 +781,10 @@ describe('client-side caps mirroring the server limits', () => {
     for (const condition of conditions(request.filter)) {
       expect((condition.value as string).length).toBeLessThanOrEqual(4_096);
     }
+    // Not a clamp: a shortened search matches MORE rows than the one typed.
     expect(dropped).toContainEqual({
       scope: 'search',
-      reason: 'out-of-range',
+      reason: 'filter-widened',
       detail: '5000',
     });
   });
@@ -804,7 +805,7 @@ describe('client-side caps mirroring the server limits', () => {
     expect((conditions(request.filter)[0].value as string).length).toBe(4_096);
     expect(dropped).toContainEqual({
       scope: 'filter',
-      reason: 'out-of-range',
+      reason: 'filter-widened',
       columnId: 'status',
       detail: 'equals',
     });
@@ -885,7 +886,7 @@ describe('bounding a value in the unit the server measures (finding 1)', () => {
       );
     }
     expect(dropped).toContainEqual(
-      expect.objectContaining({ scope: 'search', reason: 'out-of-range' }),
+      expect.objectContaining({ scope: 'search', reason: 'filter-widened' }),
     );
   });
 
@@ -1020,7 +1021,7 @@ describe('validity rules beyond the numeric caps (Shape B sweep)', () => {
     expect(
       dropped.some(
         (drop) =>
-          drop.reason === 'out-of-range' &&
+          drop.reason === 'filter-widened' &&
           drop.detail === String(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES),
       ),
     ).toBe(true);
@@ -1694,7 +1695,7 @@ describe('the OR-branch budget that the null union makes reachable', () => {
     expect(
       dropped.some(
         (drop) =>
-          drop.reason === 'out-of-range' &&
+          drop.reason === 'filter-widened' &&
           drop.detail === String(CONTENT_LIST_QUERY_MAX_OR_BRANCHES),
       ),
     ).toBe(true);
@@ -2111,5 +2112,266 @@ describe('absent values have one documented ordering', () => {
     // aligned here. See `agents/content-list.md`.
     expect(await serverOrder('asc')).toEqual(['none', 'alpha', 'beta']);
     expect(await serverOrder('desc')).toEqual(['beta', 'alpha', 'none']);
+  });
+});
+
+describe('truncation is only permissible when it narrows', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const authors = Array.from({ length: 120 }, (_, index) => `person-${index}`);
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'listed', title: 'Listed', author: 'person-0' },
+      { name: 'unlisted', title: 'Unlisted', author: 'someone-else' },
+      { name: 'none', title: 'None', author: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const listFilter = (
+    operator: 'in' | 'notIn',
+    values: unknown[],
+  ): DataTableFilter =>
+    ({ columnId: 'author', operator, value: values }) as DataTableFilter;
+
+  const serverNames = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'narrowing',
+        projection: ['id', 'name'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  it('sheds nothing from a `notIn` that fits', () => {
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', ['person-0', null])],
+    });
+    expect(dropped).toEqual([]);
+    expect(conditions(request.filter)[0].value).toEqual(['person-0', null]);
+  });
+
+  it('drops a `notIn` whose list overflows, rather than applying it partly', () => {
+    // The reported case: a literal null past the hundredth entry is the one the
+    // arrival-ordered cap sheds, which flips the executor onto its "no null
+    // listed" arm and unions `IS NULL` back in — handing back every authorless
+    // row the caller listed `null` to exclude.
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', [...authors, null])],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'filter-widened',
+      columnId: 'author',
+      detail: 'notIn',
+    });
+    // And never reported as a mere clamp.
+    expect(dropped.some((drop) => drop.reason === 'out-of-range')).toBe(false);
+  });
+
+  it('drops an overflowing `notIn` even with no null in the list', () => {
+    // Finding 2: shedding 20 of 120 exclusions returns the 20 shed rows.
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', authors)],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('drops a `notIn` carrying a value too long to send faithfully', () => {
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', ['person-0', 'x'.repeat(9_000)])],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('still caps an `in`, because losing a disjunct narrows', () => {
+    const { request, dropped } = translate({
+      filters: [listFilter('in', [...authors, null])],
+    });
+    const condition = conditions(request.filter)[0];
+    expect((condition.value as unknown[]).length).toBe(100);
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'out-of-range',
+      columnId: 'author',
+      detail: '121',
+    });
+  });
+
+  it('never returns a row a surviving `notIn` excluded, end to end', async () => {
+    // Whatever the translator emits, the rows it names must not come back.
+    const applied = await serverNames(listFilter('notIn', ['person-0', null]));
+    expect(applied).toEqual(['unlisted']);
+
+    // And when it cannot be applied, the operator is TOLD — the list is wider,
+    // not quietly wrong.
+    const overflow = translate({
+      filters: [listFilter('notIn', [...authors, null])],
+    });
+    expect(overflow.request.filter).toBeUndefined();
+    expect(await serverNames(listFilter('notIn', [...authors, null]))).toEqual([
+      'listed',
+      'none',
+      'unlisted',
+    ]);
+    expect(overflow.dropped[0].reason).toBe('filter-widened');
+  });
+
+  it('reports every widening drop as widening, never as a clamp', () => {
+    const widening = [
+      // A shed conjunct: the filter simply is not applied.
+      translate({
+        filters: Array.from({ length: 60 }, () => ({
+          columnId: 'title' as const,
+          operator: 'equals' as const,
+          value: 'x',
+        })),
+      }),
+      // A shortened `like` matches a superset.
+      translate({
+        filters: [
+          { columnId: 'title', operator: 'contains', value: 'y'.repeat(9_000) },
+        ],
+      }),
+      // A shortened search, likewise.
+      translate({ search: 'z'.repeat(9_000) }),
+    ];
+    for (const { dropped } of widening) {
+      expect(dropped.some((drop) => drop.reason === 'filter-widened')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('keeps reporting a genuine narrowing clamp as out-of-range', () => {
+    // Page size and the `in` cap both answer a subset of the question.
+    expect(translate({ page: 1, pageSize: 10_000 }).dropped).toContainEqual({
+      scope: 'pageSize',
+      reason: 'out-of-range',
+      detail: '10000',
+    });
+  });
+});
+
+describe('a datetime value means one instant for every reader', () => {
+  const withTimezone = <T>(zone: string, run: () => T): T => {
+    const previous = process.env.TZ;
+    process.env.TZ = zone;
+    try {
+      return run();
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  };
+
+  const dateFilter = (value: string) =>
+    translate({
+      filters: [{ columnId: 'updated', operator: 'gte', value }],
+    });
+
+  it('reproduces the hazard: an offset-less time is read as LOCAL time', () => {
+    // Why the guard exists — the same text, two different instants.
+    const utc = withTimezone('UTC', () =>
+      new Date('2026-02-01T00:00').toISOString(),
+    );
+    const tokyo = withTimezone('Asia/Tokyo', () =>
+      new Date('2026-02-01T00:00').toISOString(),
+    );
+    expect(utc).not.toBe(tokyo);
+  });
+
+  it.each([
+    ['no offset and no seconds', '2026-02-01T00:00'],
+    ['no offset', '2026-02-01T00:00:00'],
+    ['no offset with fractional seconds', '2026-02-01T00:00:00.000'],
+    ['a space separator', '2026-02-01 10:00:00Z'],
+  ])('drops a time-bearing value with %s', (_label, value) => {
+    const { request, dropped } = dateFilter(value);
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      scope: 'filter',
+      reason: 'unsupported-value',
+      columnId: 'updated',
+    });
+  });
+
+  it.each([
+    [
+      'a bare calendar day, read as UTC midnight',
+      '2026-02-01',
+      '2026-02-01T00:00:00.000Z',
+    ],
+    ['a Z instant', '2026-02-01T10:00:00Z', '2026-02-01T10:00:00.000Z'],
+    [
+      'fractional seconds',
+      '2026-02-01T10:00:00.500Z',
+      '2026-02-01T10:00:00.500Z',
+    ],
+    [
+      'lower-case t and z, which RFC 3339 permits',
+      '2026-02-01t10:00:00.000z',
+      '2026-02-01T10:00:00.000Z',
+    ],
+    [
+      'a positive offset',
+      '2026-02-01T10:00:00+05:00',
+      '2026-02-01T05:00:00.000Z',
+    ],
+    [
+      'a negative offset',
+      '2026-02-01T10:00:00-05:00',
+      '2026-02-01T15:00:00.000Z',
+    ],
+  ])('accepts %s', (_label, value, expected) => {
+    const { request, dropped } = dateFilter(value);
+    expect(dropped).toEqual([]);
+    expect(conditions(request.filter)[0].value).toBe(expected);
+  });
+
+  it('produces an identical request in two timezones, for every accepted shape', () => {
+    for (const value of [
+      '2026-02-01',
+      '2026-02-01T10:00:00Z',
+      '2026-02-01T10:00:00+05:00',
+      '2026-02-01t10:00:00.000z',
+    ]) {
+      const london = withTimezone('Europe/London', () => dateFilter(value));
+      const tokyo = withTimezone('Asia/Tokyo', () => dateFilter(value));
+      expect(
+        contentListQueryRequestKey(london.request),
+        `${value} differs by timezone`,
+      ).toBe(contentListQueryRequestKey(tokyo.request));
+    }
+  });
+
+  it('would have differed by timezone before the guard', () => {
+    // The value the guard now refuses is exactly the one that used to vary.
+    const london = withTimezone('Europe/London', () =>
+      dateFilter('2026-02-01T00:00:00'),
+    );
+    const tokyo = withTimezone('Asia/Tokyo', () =>
+      dateFilter('2026-02-01T00:00:00'),
+    );
+    // Both drop it, so both requests are identical AND carry no filter.
+    expect(london.request.filter).toBeUndefined();
+    expect(contentListQueryRequestKey(london.request)).toBe(
+      contentListQueryRequestKey(tokyo.request),
+    );
   });
 });

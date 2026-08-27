@@ -395,6 +395,18 @@ export type ContentListQueryDropReason =
   /** The value was clamped to stay inside a protocol or policy bound. */
   | 'out-of-range'
   /**
+   * A bound could not be met without changing which rows come back, and the
+   * change is one the operator did not ask for: a filter that had to be left
+   * out entirely, or one applied more loosely than requested.
+   *
+   * Kept distinct from `out-of-range` deliberately. A clamp that NARROWS — an
+   * `in` list cut to its first hundred values, a page size reduced — still
+   * answers a subset of the question. A filter that widens hands back rows the
+   * operator excluded, and calling that "clamped" tells them the opposite of
+   * what happened.
+   */
+  | 'filter-widened'
+  /**
    * The value is live and applied, but outside the vocabulary the toolbar can
    * display. Reported so an operator is never shown an apparently unfiltered
    * toolbar over an empty list.
@@ -552,6 +564,37 @@ function boundScalarText(text: string): { text: string; truncated: boolean } {
  */
 const CALENDAR_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ].*)?$/;
 
+/** A bare calendar day, which `Date` reads as UTC midnight. Unambiguous. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The full RFC 3339 instant, accepted case-insensitively.
+ *
+ * Deliberately looser than {@link RFC_3339_INSTANT} in exactly one way: RFC
+ * 3339 §5.6 permits a lower-case `t`/`z`, and the value is canonicalized
+ * through `toISOString()` before it is sent, so the server only ever sees the
+ * upper-case form it insists on.
+ */
+const RFC_3339_INSTANT_INPUT =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt]([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,9})?(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
+/**
+ * True when an input names ONE instant, the same one for every reader.
+ *
+ * A time without an offset is read as LOCAL time by `Date`, so
+ * `?updated.gte=2026-02-01T00:00` submits `00:00Z` from London and `15:00Z`
+ * the previous day from Tokyo — the identical link returning different rows
+ * per viewer. A time-bearing value must therefore carry `Z` or a numeric
+ * offset; a bare calendar day is unambiguous and stays accepted, widened to
+ * UTC midnight exactly as `Date` already reads it.
+ */
+function isExpressibleInstant(text: string): boolean {
+  const trimmed = text.trim();
+  if (!isRealCalendarDate(trimmed)) return false;
+  if (DATE_ONLY.test(trimmed)) return true;
+  return RFC_3339_INSTANT_INPUT.test(trimmed);
+}
+
 /**
  * True when the date part of an input names a real calendar day.
  *
@@ -604,7 +647,7 @@ function coerceValue(
     // would silently target a date the link never asked for. The server rejects
     // it (`normalizedInstant` re-derives the components and compares), so this
     // has to reject it too, and report the drop.
-    if (!isRealCalendarDate(text)) return undefined;
+    if (!isExpressibleInstant(text)) return undefined;
     const parsed = new Date(text);
     if (Number.isNaN(parsed.getTime())) return undefined;
     const instant = parsed.toISOString();
@@ -689,10 +732,27 @@ function translateFilter(
 
   if (mapping.operator === 'in' || mapping.operator === 'notIn') {
     const entries = Array.isArray(filter.value) ? filter.value : [];
+    // TRUNCATION IS ONLY PERMISSIBLE WHEN IT NARROWS.
+    //
+    // `in` is a union of equalities: losing an entry removes a disjunct, so the
+    // result can only shrink. Capping it answers a subset of the question,
+    // which is a defensible degradation.
+    //
+    // `notIn` is an intersection of inequalities: losing an entry removes an
+    // EXCLUSION, so the result grows to contain rows the operator asked not to
+    // see. The cap keeps arrival order, so a literal `null` past the hundredth
+    // entry is the one shed — and the executor then takes its "no null listed"
+    // arm and unions `IS NULL` back in, handing back every absent-valued row.
+    // A widening list operator is therefore never PARTIALLY applied: if any
+    // entry cannot be carried faithfully, the whole filter is left out and
+    // reported as such.
+    const widening = mapping.operator === 'notIn';
     const values: ContentListQueryScalar[] = [];
-    const truncated = { value: false };
     let overflowed = false;
+    let truncatedEntry = false;
+    let unusableEntry = false;
     for (const entry of entries) {
+      const truncated = { value: false };
       // A literal `null` is MEANINGFUL, not missing: in an `in` list it says
       // "or rows with no value", and in a `notIn` list it says "and not rows
       // with no value". `coerceValue` reports it as unusable, so it has to be
@@ -702,14 +762,32 @@ function translateFilter(
       // executor's own null-aware lowering.
       const coerced =
         entry === null ? null : coerceValue(field, entry, truncated);
-      if (coerced === undefined || values.includes(coerced)) continue;
+      if (coerced === undefined) {
+        unusableEntry = true;
+        continue;
+      }
+      // A shortened entry is not the value the caller named: it would exclude
+      // (or match) some other row. Never emit it — losing it narrows an `in`
+      // and disqualifies a `notIn`, both of which this handles.
+      if (truncated.value) {
+        truncatedEntry = true;
+        continue;
+      }
+      if (values.includes(coerced)) continue;
       if (values.length >= CONTENT_LIST_QUERY_MAX_IN_VALUES) {
-        // The normalizer refuses the whole request past this many values, so
-        // narrow the predicate rather than lose the entire list.
         overflowed = true;
         break;
       }
       values.push(coerced);
+    }
+    if (widening && (overflowed || truncatedEntry || unusableEntry)) {
+      dropped.push({
+        scope: 'filter',
+        reason: 'filter-widened',
+        columnId,
+        detail: filter.operator,
+      });
+      return null;
     }
     if (values.length === 0) {
       dropped.push({
@@ -720,6 +798,7 @@ function translateFilter(
       });
       return null;
     }
+    // Only `in` reaches here having lost anything, and losing narrows it.
     if (overflowed) {
       dropped.push({
         scope: 'filter',
@@ -728,7 +807,7 @@ function translateFilter(
         detail: String(entries.length),
       });
     }
-    if (truncated.value) {
+    if (truncatedEntry) {
       dropped.push({
         scope: 'filter',
         reason: 'out-of-range',
@@ -757,9 +836,10 @@ function translateFilter(
     }
     const pattern = likeValue(text, mapping.pattern);
     if (pattern.truncated) {
+      // A shortened `like` pattern matches a SUPERSET of what was asked for.
       dropped.push({
         scope: 'filter',
-        reason: 'out-of-range',
+        reason: 'filter-widened',
         columnId,
         detail: filter.operator,
       });
@@ -784,9 +864,11 @@ function translateFilter(
     return null;
   }
   if (truncated.value) {
+    // The comparison now names a value the caller did not, so the predicate is
+    // no longer the one requested.
     dropped.push({
       scope: 'filter',
-      reason: 'out-of-range',
+      reason: 'filter-widened',
       columnId,
       detail: filter.operator,
     });
@@ -819,7 +901,7 @@ function translateSearch(
     // otherwise 400 the whole list instead of searching a shorter term.
     dropped.push({
       scope: 'search',
-      reason: 'out-of-range',
+      reason: 'filter-widened',
       detail: String(trimmed.length),
     });
   }
@@ -1159,11 +1241,12 @@ export function contentListViewStateToDataQueryRequest(
     if (!translated) continue;
     const cost = countFilterNodes(translated);
     if (cost > nodeBudget) {
-      // Past this many nodes the normalizer refuses the entire request, so a
-      // narrower query beats an error panel.
+      // Past this many nodes the normalizer refuses the entire request. A
+      // partial query beats an error panel, but it is a WIDER one: every filter
+      // left out is a restriction the operator asked for and is not getting.
       dropped.push({
         scope: 'filter',
-        reason: 'out-of-range',
+        reason: 'filter-widened',
         columnId: filter.columnId,
         detail: String(CONTENT_LIST_QUERY_MAX_FILTER_NODES),
       });
@@ -1173,7 +1256,7 @@ export function contentListViewStateToDataQueryRequest(
     if (branchBudget * branchCost > CONTENT_LIST_QUERY_MAX_OR_BRANCHES) {
       dropped.push({
         scope: 'filter',
-        reason: 'out-of-range',
+        reason: 'filter-widened',
         columnId: filter.columnId,
         detail: String(CONTENT_LIST_QUERY_MAX_OR_BRANCHES),
       });
@@ -1219,7 +1302,7 @@ export function contentListViewStateToDataQueryRequest(
     kept.pop();
     dropped.push({
       scope: 'filter',
-      reason: 'out-of-range',
+      reason: 'filter-widened',
       detail: String(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES),
     });
     request = build(kept);

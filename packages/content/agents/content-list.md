@@ -277,6 +277,32 @@ the year/month/day and compares, exactly as `normalizedInstant` does server-side
 and drops the filter with a report. A date-only value (`2026-02-01`) is still
 accepted and widened to midnight UTC; only impossible days are refused.
 
+**Truncation is only permissible when it NARROWS.** Every cap above degrades a
+request rather than failing it, but degrading is only honest when the answer
+stays a subset of the question:
+
+| Bound hit | Effect on the result | What happens |
+|---|---|---|
+| `in` list past 100 values | narrows — a disjunct is removed | capped, reported as `out-of-range` |
+| `notIn` list past 100 values, or carrying an entry that cannot be sent faithfully | **widens** — an exclusion is removed | the whole filter is left out, reported as `filter-widened` |
+| filter-node, OR-branch, or request-byte budget | **widens** — a conjunct is shed | reported as `filter-widened` |
+| a shortened `like` pattern or search term | **widens** — a shorter pattern matches more | reported as `filter-widened` |
+| a shortened scalar comparand | names a value the caller did not | reported as `filter-widened` |
+| page size, offset, projection count | does not add rows | reported as `out-of-range` |
+
+A widening `notIn` is never PARTIALLY applied. The cap keeps arrival order, so a
+literal `null` past the hundredth entry is the entry shed — and the executor
+then takes its "no null listed" arm and unions `IS NULL` back in, returning
+every absent-valued row the caller listed `null` to exclude. Dropping the filter
+whole is wider still, but it is *honest*: the operator is told the filter is not
+being applied instead of being told it was "clamped", which would imply it still
+works.
+
+That distinction is the whole point of the `filter-widened` reason. An operator
+who is told a list was clamped reasonably assumes the answer is a subset of what
+they asked for. Telling them that when the truth is "this now returns rows you
+excluded" is worse than telling them nothing.
+
 **Measure in the server's unit.** `dataQueryScalar` tests `value.length`, which
 counts UTF-16 code units, so an astral character costs TWO. The bounders iterate
 by code point — never splitting a surrogate pair — but charge `character.length`
@@ -285,9 +311,20 @@ of 4093 ASCII characters plus one emoji measure 4094 client-side and 4097
 server-side: a hard 400 and a whole-list error panel.
 
 And mirror the normalizer's **validity rules**, not only its numeric caps. A
-datetime is checked against the server's exact RFC 3339 pattern rather than
-merely round-tripping through `Date`: a year outside the four-digit range
-serializes as `+275760-09-13T00:00:00.000Z` and is refused.
+datetime input is held to three separate checks before it is parsed, because
+`Date` will happily accept and silently reinterpret what fails each one:
+
+| Check | Refuses | Why |
+|---|---|---|
+| calendar round-trip | `2026-02-31` | `Date` rolls it to March 3, so the query targets a day the link never named |
+| RFC 3339 shape on a time-bearing value | `2026-02-01T00:00` | no offset means `Date` reads it as LOCAL time, so the identical link submits a different instant per viewer — nine hours apart between London and Tokyo |
+| four-digit year | `+275760-09-13` | serializes to an expanded-year form the server refuses outright |
+
+A bare calendar day (`2026-02-01`) stays accepted: `Date` reads it as UTC
+midnight for every reader, so it names one instant. Lower-case `t`/`z` is
+accepted too — RFC 3339 §5.6 permits it, and the value is canonicalized through
+`toISOString()` before it is sent, so the server only ever sees the upper-case
+form it insists on.
 
 ### Filter case: tokens are folded, free text is not
 

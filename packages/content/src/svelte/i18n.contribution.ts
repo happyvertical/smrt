@@ -139,6 +139,8 @@ export const M = defineMessages({
   'content.content_list.drop_malformed': 'that entry could not be read',
   'content.content_list.drop_out_of_range':
     'that value was outside the allowed range',
+  'content.content_list.drop_filter_widened':
+    'could not be applied exactly, so the list may include rows it would have excluded',
   'content.content_list.drop_unlisted_value':
     'filtered by "{value}", which is not one of the listed options',
   'content.content_list.drop_unrepresentable_filter':
