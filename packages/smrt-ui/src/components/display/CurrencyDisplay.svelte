@@ -1,31 +1,5 @@
 <script module lang="ts">
-function minorUnitEntries(
-  codes: string,
-  minorUnits: number | null,
-): Array<[string, number | null]> {
-  return codes.split(' ').map((code) => [code, minorUnits]);
-}
-
-// ISO 4217 List One, published by the ISO maintenance agency SIX on
-// 2026-01-01. Keeping both membership and minor-unit exponents here makes SSR
-// and browser rendering independent of their potentially different ICU data.
-// Source: https://www.six-group.com/dam/download/financial-information/data-center/iso-currrency/lists/list-one.xml
-const ISO_4217_MINOR_UNITS = new Map<string, number | null>([
-  ...minorUnitEntries(
-    'XOF BIF XAF CLP KMF DJF XPF GNF ISK JPY KRW PYG RWF UGX UYI VUV VND',
-    0,
-  ),
-  ...minorUnitEntries(
-    'AFN EUR ALL DZD USD AOA XCD XAD ARS AMD AWG AUD AZN BSD BDT BBD BYN BZD BMD INR BTN BOB BOV BAM BWP NOK BRL BND CVE KHR CAD KYD CNY COP COU CDF NZD CRC CUP XCG CZK DKK DOP EGP SVC ERN SZL ETB FKP FJD GMD GEL GHS GIP GTQ GBP GYD HTG HNL HKD HUF IDR IRR ILS JMD KZT KES KPW KGS LAK LBP LSL ZAR LRD CHF MOP MKD MGA MWK MYR MVR MRU MUR MXN MXV MDL MNT MAD MZN MMK NAD NPR NIO NGN PKR PAB PGK PEN PHP PLN QAR RON RUB SHP WST STN SAR RSD SCR SLE SGD SBD SOS SSP LKR SDG SRD SEK CHE CHW SYP TWD TJS TZS THB TOP TTD TRY TMT UAH AED USN UYU UZS VES VED YER ZMW ZWG',
-    2,
-  ),
-  ...minorUnitEntries('BHD IQD JOD KWD LYD OMR TND', 3),
-  ...minorUnitEntries('CLF UYW', 4),
-  ...minorUnitEntries(
-    'XDR XUA XSU XBA XBB XBC XBD XTS XXX XAU XPD XPT XAG',
-    null,
-  ),
-]);
+import { ISO_4217_MINOR_UNITS } from './currency-metadata.js';
 
 function normalizeCurrencyCode(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -38,6 +12,33 @@ function normalizeCurrencyCode(value: unknown): string | null {
 function invalidCurrencyCode(value: unknown): string {
   if (typeof value !== 'string') return '(non-string)';
   return value.trim().toUpperCase() || '(empty)';
+}
+
+function isStringNumericLiteral(
+  value: string,
+): value is Intl.StringNumericLiteral {
+  return /^(?:0|[1-9]\d*)\.\d+$/.test(value);
+}
+
+function exactMajorUnitValue(
+  amount: number,
+  minorUnitDigits: number,
+): number | bigint | Intl.StringNumericLiteral {
+  const absoluteAmount = Math.abs(amount);
+  if (!Number.isSafeInteger(absoluteAmount)) {
+    return absoluteAmount / 10 ** minorUnitDigits;
+  }
+
+  const minorUnits = BigInt(absoluteAmount);
+  if (minorUnitDigits === 0) return minorUnits;
+
+  const scale = 10n ** BigInt(minorUnitDigits);
+  const exactValue = `${minorUnits / scale}.${(minorUnits % scale)
+    .toString()
+    .padStart(minorUnitDigits, '0')}`;
+  return isStringNumericLiteral(exactValue)
+    ? exactValue
+    : absoluteAmount / 10 ** minorUnitDigits;
 }
 </script>
 
@@ -112,10 +113,9 @@ const formatted = $derived.by((): FormattedCurrency => {
     style: 'currency',
     currency: normalizedCurrency,
   };
-  if (minorUnitDigits !== null) {
-    formatOptions.minimumFractionDigits = minorUnitDigits;
-    formatOptions.maximumFractionDigits = minorUnitDigits;
-  }
+  const displayDigits = minorUnitDigits ?? 2;
+  formatOptions.minimumFractionDigits = displayDigits;
+  formatOptions.maximumFractionDigits = displayDigits;
 
   let formatter: Intl.NumberFormat;
   try {
@@ -127,7 +127,8 @@ const formatted = $derived.by((): FormattedCurrency => {
     };
   }
 
-  let majorAmount = amount;
+  let majorAmount: number | bigint | Intl.StringNumericLiteral =
+    Math.abs(amount);
   if (unit === 'cents') {
     if (minorUnitDigits == null) {
       return {
@@ -135,10 +136,9 @@ const formatted = $derived.by((): FormattedCurrency => {
         invalidCode: normalizedCurrency,
       };
     }
-    majorAmount = amount / 10 ** minorUnitDigits;
+    majorAmount = exactMajorUnitValue(amount, minorUnitDigits);
   }
-  const absValue = Math.abs(majorAmount);
-  let display = formatter.format(absValue);
+  let display = formatter.format(majorAmount);
 
   // Add sign if requested
   if (showSign && amount !== 0) {

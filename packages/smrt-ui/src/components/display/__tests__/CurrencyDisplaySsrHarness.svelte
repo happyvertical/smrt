@@ -4,3 +4,4 @@ import CurrencyDisplay from '../CurrencyDisplay.svelte';
 
 <CurrencyDisplay amount={12345} currency="EUR" />
 <CurrencyDisplay amount={12345} currency="ZZZ" />
+<CurrencyDisplay amount={12345} currency="XAU" />

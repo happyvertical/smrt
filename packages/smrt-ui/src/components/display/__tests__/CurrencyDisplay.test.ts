@@ -11,10 +11,37 @@
 
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { render, screen } from '@testing-library/svelte';
+import { hydrate, unmount } from 'svelte';
 import { createServer } from 'vite';
 import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import CurrencyDisplay from '../CurrencyDisplay.svelte';
+import { ISO_4217_MINOR_UNITS } from '../currency-metadata.js';
+import CurrencyDisplaySsrHarness from './CurrencyDisplaySsrHarness.svelte';
+
+function metadataEntries(
+  codes: string,
+  minorUnits: number | null,
+): Array<[string, number | null]> {
+  return codes.split(' ').map((code) => [code, minorUnits]);
+}
+
+const OFFICIAL_LIST_ONE_2026_01_01 = new Map<string, number | null>([
+  ...metadataEntries(
+    'XOF BIF XAF CLP KMF DJF XPF GNF ISK JPY KRW PYG RWF UGX UYI VUV VND',
+    0,
+  ),
+  ...metadataEntries(
+    'AFN EUR ALL DZD USD AOA XCD XAD ARS AMD AWG AUD AZN BSD BDT BBD BYN BZD BMD INR BTN BOB BOV BAM BWP NOK BRL BND CVE KHR CAD KYD CNY COP COU CDF NZD CRC CUP XCG CZK DKK DOP EGP SVC ERN SZL ETB FKP FJD GMD GEL GHS GIP GTQ GBP GYD HTG HNL HKD HUF IDR IRR ILS JMD KZT KES KPW KGS LAK LBP LSL ZAR LRD CHF MOP MKD MGA MWK MYR MVR MRU MUR MXN MXV MDL MNT MAD MZN MMK NAD NPR NIO NGN PKR PAB PGK PEN PHP PLN QAR RON RUB SHP WST STN SAR RSD SCR SLE SGD SBD SOS SSP LKR SDG SRD SEK CHE CHW SYP TWD TJS TZS THB TOP TTD TRY TMT UAH AED USN UYU UZS VES VED YER ZMW ZWG',
+    2,
+  ),
+  ...metadataEntries('BHD IQD JOD KWD LYD OMR TND', 3),
+  ...metadataEntries('CLF UYW', 4),
+  ...metadataEntries(
+    'XDR XUA XSU XBA XBB XBC XBD XTS XXX XAU XPD XPT XAG',
+    null,
+  ),
+]);
 
 /** Mirror the component's absolute-value currency formatting. */
 function money(
@@ -31,6 +58,10 @@ function money(
 }
 
 describe('CurrencyDisplay', () => {
+  it('matches all 178 codes and exponents in SIX List One 2026-01-01', () => {
+    expect(ISO_4217_MINOR_UNITS).toEqual(OFFICIAL_LIST_ONE_2026_01_01);
+  });
+
   it('formats cents into dollars by default', () => {
     render(CurrencyDisplay, { props: { amount: 12345 } }); // cents → $123.45
     expect(screen.getByText(money(123.45))).toBeInTheDocument();
@@ -67,16 +98,26 @@ describe('CurrencyDisplay', () => {
   });
 
   it.each([
-    ['JPY', 0, 12345],
-    ['BHD', 3, 12345],
-    ['IQD', 3, 12345],
-  ])('uses the ISO minor-unit scale for %s', (currency, digits, amount) => {
+    ['JPY', 12345, '12,345'],
+    ['BHD', 12345, '12.345'],
+    ['IQD', 12345, '12.345'],
+  ])('uses the ISO minor-unit scale for %s', (currency, amount, expected) => {
     const { container } = render(CurrencyDisplay, {
       props: { amount, currency },
     });
-    expect(container.querySelector('span')?.textContent).toBe(
-      money(amount / 10 ** digits, currency, digits),
-    );
+    expect(container.querySelector('span')?.textContent).toContain(expected);
+  });
+
+  it.each([
+    ['IQD', 3, '9,007,199,254,740.991'],
+    ['AFN', 2, '90,071,992,547,409.91'],
+  ])('preserves the least-significant minor unit for large safe %s values', (currency, digits, expected) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: Number.MAX_SAFE_INTEGER, currency },
+    });
+    const text = container.querySelector('span')?.textContent;
+    expect(text).toContain(expected);
+    expect(text?.split('.').at(-1)).toHaveLength(digits);
   });
 
   it.each([
@@ -140,7 +181,7 @@ describe('CurrencyDisplay', () => {
 
     await rerender({ amount: 12.5, currency: 'XAU', unit: 'dollars' });
     expect(document.querySelector('.currency-display')?.textContent).toBe(
-      money(12.5, 'XAU'),
+      money(12.5, 'XAU', 2),
     );
   });
 
@@ -228,7 +269,7 @@ describe('CurrencyDisplay', () => {
     await expectNoA11yViolations(container);
   });
 
-  it('renders valid and invalid currencies safely on the server', async () => {
+  it('renders and hydrates valid and invalid currencies safely', async () => {
     const vite = await createServer({
       appType: 'custom',
       configFile: false,
@@ -245,6 +286,18 @@ describe('CurrencyDisplay', () => {
       const result = renderSsr(SsrHarness);
       expect(result.body).toContain(money(123.45, 'EUR'));
       expect(result.body).toContain('Invalid currency code: ZZZ');
+
+      const host = document.createElement('div');
+      host.innerHTML = result.body;
+      document.body.append(host);
+      const instance = hydrate(CurrencyDisplaySsrHarness, { target: host });
+      expect(host.textContent).toContain(money(123.45, 'EUR'));
+      expect(host.textContent).toContain('Invalid currency code: ZZZ');
+      expect(host.textContent).toContain(
+        'Currency code has no minor unit: XAU',
+      );
+      await unmount(instance);
+      host.remove();
     } finally {
       await vite.close();
     }
