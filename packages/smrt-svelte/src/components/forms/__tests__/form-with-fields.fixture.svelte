@@ -93,6 +93,7 @@ let lastSubject: { type: string; id: string; label?: string } | undefined;
 let mutableSubject = $state<
   { type: string; id: string; label?: string } | undefined
 >(undefined);
+const mutateSubjectLabel = 'Mutate subject';
 $effect(() => {
   const nextSubject = formSubject;
   if (nextSubject !== lastSubject) {
@@ -151,7 +152,7 @@ function mutateSubject() {
 	{/if}
 	</fieldset>
 	{#if mutableSubject}
-		<button type="button" onclick={mutateSubject}>Mutate subject</button>
+		<button type="button" onclick={mutateSubject}>{mutateSubjectLabel}</button>
 	{/if}
 	<button type="submit">Submit</button>
 </Form>

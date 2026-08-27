@@ -10,13 +10,14 @@ let {
   writable?: boolean;
 } = $props();
 let value = $state('Ada');
+const policyLabel = 'Policy field';
 const formContext = tryGetFormContext();
 
 onMount(() => {
   formContext?.registerField({
     name: 'policy',
     type: 'text',
-    label: 'Policy field',
+    label: policyLabel,
     get sensitivity() {
       return sensitivity;
     },
@@ -33,4 +34,4 @@ onMount(() => {
 onDestroy(() => formContext?.unregisterField('policy'));
 </script>
 
-<input name="policy" aria-label="Policy field" bind:value />
+<input name="policy" aria-label={policyLabel} bind:value />
