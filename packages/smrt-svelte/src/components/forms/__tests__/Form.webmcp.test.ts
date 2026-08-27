@@ -845,7 +845,7 @@ describe('Form WebMCP staged-edit intent', () => {
     }
   });
 
-  it('stages the final appended textarea value before applying it once', async () => {
+  it('applies the reviewed appended textarea value exactly once from the mounted review', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
@@ -878,20 +878,9 @@ describe('Form WebMCP staged-edit intent', () => {
       .find((item) => item.identity.controlId === 'notes');
     expect(notes?.state.staged?.value).toBe('Existing\nProposed');
     expect(
-      await dispatchLocalGesture((event) =>
-        executeLocalControlBatch(
-          registry,
-          [
-            {
-              action: 'apply',
-              identity: notes?.identity ?? { formId: '', controlId: '' },
-              revision: notes?.state.staged?.revision,
-            },
-          ],
-          event,
-        ),
-      ),
-    ).toMatchObject({ ok: true });
+      screen.getByRole('textbox', { name: 'Edit proposed value for Notes' }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Notes' }));
     expect(
       registry.get(notes?.identity ?? { formId: '', controlId: '' })?.state
         .value,

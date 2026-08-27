@@ -1435,8 +1435,15 @@ export function createControlInteractionRegistry(
             ) {
               throw new Error('staged_value_stale');
             }
-            const nextValue =
-              'value' in command && command.value !== undefined
+            const suppliedValue =
+              'value' in command && command.value !== undefined;
+            const usesReviewedStagedValue =
+              suppliedValue &&
+              stagedEntry !== undefined &&
+              valuesEqual(command.value, stagedEntry.value);
+            const nextValue = usesReviewedStagedValue
+              ? stagedEntry.value
+              : suppliedValue
                 ? registration.prepareValue
                   ? invokeExtension(key, () =>
                       registration.prepareValue?.(command.value),

@@ -52,6 +52,7 @@ const text = $derived({
 });
 let snapshots = $state<ControlSnapshot[]>([]);
 let drafts = $state<Record<string, string>>({});
+let editedDrafts = $state<Record<string, boolean>>({});
 let feedback = $state<Record<string, string>>({});
 let status = $state('');
 let reviewActivated = $state(false);
@@ -122,12 +123,17 @@ function refresh(): void {
   for (const key of Object.keys(next)) {
     if (!live.has(key)) delete next[key];
   }
+  const nextEditedDrafts = { ...untrack(() => editedDrafts) };
+  for (const key of Object.keys(nextEditedDrafts)) {
+    if (!live.has(key)) delete nextEditedDrafts[key];
+  }
   const nextFeedback = { ...untrack(() => feedback) };
   for (const key of Object.keys(nextFeedback)) {
     if (!live.has(key)) delete nextFeedback[key];
   }
   snapshots = nextSnapshots;
   drafts = next;
+  editedDrafts = nextEditedDrafts;
   feedback = nextFeedback;
 }
 
@@ -296,7 +302,9 @@ function commandFor(
     action,
     identity: snapshot.identity,
     revision,
-    value: editedValue(snapshot),
+    value: editedDrafts[draftKeyOf(snapshot)]
+      ? editedValue(snapshot)
+      : snapshot.state.staged?.value,
   };
 }
 
@@ -555,6 +563,10 @@ async function discardAll(event: MouseEvent): Promise<void> {
                     aria-label={`${text.edit} ${actionName}`}
                     checked={(drafts[draftKeyOf(snapshot)] ?? 'false') === 'true'}
                     onchange={(event) => {
+                      editedDrafts = {
+                        ...editedDrafts,
+                        [draftKeyOf(snapshot)]: true,
+                      };
                       drafts = {
                         ...drafts,
                         [draftKeyOf(snapshot)]: String(event.currentTarget.checked),
@@ -569,6 +581,10 @@ async function discardAll(event: MouseEvent): Promise<void> {
                     aria-label={`${text.edit} ${actionName}`}
                     value={drafts[draftKeyOf(snapshot)] ?? ''}
                     oninput={(event) => {
+                      editedDrafts = {
+                        ...editedDrafts,
+                        [draftKeyOf(snapshot)]: true,
+                      };
                       drafts = { ...drafts, [draftKeyOf(snapshot)]: event.currentTarget.value };
                     }}
                     onkeydown={(event) => {

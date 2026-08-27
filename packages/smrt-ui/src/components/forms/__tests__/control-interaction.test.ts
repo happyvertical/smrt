@@ -506,6 +506,152 @@ describe('control interaction registry', () => {
     );
   });
 
+  it('applies an unchanged prepared proposal exactly and prepares an edited draft once', async () => {
+    let value = 'Existing';
+    const prepareValue = vi.fn(
+      (proposal: unknown) => `${value}\n${String(proposal)}`,
+    );
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'textarea' },
+      getValue: () => value,
+      prepareValue,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+
+    await registry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    const reviewedValue = registry.get(identity)?.state.staged?.value;
+    expect(reviewedValue).toBe('Existing\nProposed');
+    expect(prepareValue).toHaveBeenCalledTimes(1);
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1, value: reviewedValue },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('Existing\nProposed');
+    expect(prepareValue).toHaveBeenCalledTimes(1);
+
+    value = 'Existing';
+    await registry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 2, value: 'Edited' },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('Existing\nEdited');
+    expect(prepareValue).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps secret, redaction, and staleness protections for matching prepared proposals', async () => {
+    let sensitiveValue = 'private';
+    const sensitiveEvents: unknown[] = [];
+    const sensitivePolicyCommands: unknown[] = [];
+    const sensitiveRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: (command) => {
+        sensitivePolicyCommands.push(command);
+        return { allowed: true };
+      },
+    });
+    sensitiveRegistry.subscribe((event) => sensitiveEvents.push(event));
+    sensitiveRegistry.register({
+      identity,
+      metadata: { kind: 'textarea', sensitivity: 'sensitive' },
+      getValue: () => sensitiveValue,
+      prepareValue: (proposal) => `${sensitiveValue}\n${String(proposal)}`,
+      setValue: (next) => {
+        sensitiveValue = String(next);
+      },
+    });
+    await sensitiveRegistry.execute(
+      { action: 'stage', identity, value: 'replacement' },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        sensitiveRegistry,
+        {
+          action: 'apply',
+          identity,
+          revision: 1,
+          value: 'private\nreplacement',
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(sensitiveValue).toBe('private\nreplacement');
+    expect(JSON.stringify(sensitiveRegistry.get(identity))).not.toContain(
+      'replacement',
+    );
+    expect(JSON.stringify(sensitiveEvents)).not.toContain('replacement');
+    expect(JSON.stringify(sensitivePolicyCommands)).not.toContain(
+      'replacement',
+    );
+
+    let staleValue = 'Existing';
+    const staleRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    staleRegistry.register({
+      identity,
+      metadata: { kind: 'textarea' },
+      getValue: () => staleValue,
+      prepareValue: (proposal) => `${staleValue}\n${String(proposal)}`,
+      setValue: (next) => {
+        staleValue = String(next);
+      },
+    });
+    await staleRegistry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    staleValue = 'Human edit';
+    expect(
+      await executeLocalControlCommand(
+        staleRegistry,
+        {
+          action: 'apply',
+          identity,
+          revision: 1,
+          value: 'Existing\nProposed',
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: false, reason: 'staged_value_stale' });
+    expect(staleValue).toBe('Human edit');
+
+    const secretRegistry = createControlInteractionRegistry();
+    secretRegistry.register({
+      identity,
+      metadata: { kind: 'password', sensitivity: 'secret' },
+      getValue: () => 'token',
+      prepareValue: (proposal) => String(proposal),
+      setValue: () => undefined,
+    });
+    expect(
+      await secretRegistry.execute(
+        { action: 'stage', identity, value: 'replacement' },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: false, reason: 'sensitive_control' });
+  });
+
   it('isolates a prepared structured value throughout asynchronous policy', async () => {
     let releasePolicy: (() => void) | undefined;
     let policyStarted: (() => void) | undefined;

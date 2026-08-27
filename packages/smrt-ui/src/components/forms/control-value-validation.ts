@@ -195,9 +195,6 @@ export function snapSteppedNumber(
   if (!Number.isFinite(step) || step <= 0) {
     return Math.min(max, Math.max(min, next));
   }
-  if (next >= min && next <= max && numberMatchesStep(next, min, step)) {
-    return next;
-  }
   const snapped = min + Math.round((next - min) / step) * step;
   const precision = Math.max(
     decimalPlaces(min),

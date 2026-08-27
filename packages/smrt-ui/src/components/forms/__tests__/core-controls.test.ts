@@ -153,28 +153,68 @@ describe('core controls', () => {
       controlId: 'microscopic-range',
     };
 
+    const decimalDrift = 0.1 + 0.2;
     const validCases = [
-      { next: 0.3, min: 0.1, max: 1, step: 0.2 },
-      { next: 3e-16, min: 1e-16, max: 9e-16, step: 2e-16 },
-      { next: 3e-101, min: 1e-101, max: 9e-101, step: 2e-101 },
-      { next: 1.12e-101, min: 1e-101, max: 1.9e-101, step: 3e-103 },
+      { next: 0.3, expected: 0.3, min: 0.1, max: 1, step: 0.2 },
+      { next: decimalDrift, expected: 0.3, min: 0.1, max: 1, step: 0.2 },
+      {
+        next: 3e-16,
+        expected: 3e-16,
+        min: 1e-16,
+        max: 9e-16,
+        step: 2e-16,
+      },
+      {
+        next: 3e-101,
+        expected: 3e-101,
+        min: 1e-101,
+        max: 9e-101,
+        step: 2e-101,
+      },
+      {
+        next: 1.12e-101,
+        expected: 1.12e-101,
+        min: 1e-101,
+        max: 1.9e-101,
+        step: 3e-103,
+      },
       {
         next: Number.MIN_VALUE * 3,
+        expected: Number.MIN_VALUE * 3,
         min: Number.MIN_VALUE,
         max: Number.MIN_VALUE * 5,
         step: Number.MIN_VALUE,
       },
     ];
-    for (const { next, min, max, step } of validCases) {
+    for (const { next, expected, min, max, step } of validCases) {
       expect(validatesSteppedNumber(next, min, max, step)).toBe(true);
       const snapped = snapSteppedNumber(next, min, max, step);
-      expect(snapped).toBe(next);
+      expect(snapped).toBe(expected);
       expect(validatesSteppedNumber(snapped, min, max, step)).toBe(true);
       expect(snapSteppedNumber(snapped, min, max, step)).toBe(snapped);
     }
+    for (const { min, max, step } of [
+      { min: 0.1, max: 0.9, step: 0.2 },
+      { min: 1e-16, max: 9e-16, step: 2e-16 },
+      { min: 1e-101, max: 1.9e-101, step: 3e-103 },
+      {
+        min: Number.MIN_VALUE,
+        max: Number.MIN_VALUE * 5,
+        step: Number.MIN_VALUE,
+      },
+    ]) {
+      const lastIndex = Math.round((max - min) / step);
+      for (let index = 0; index <= lastIndex; index += 1) {
+        const validValue = min + index * step;
+        expect(validatesSteppedNumber(validValue, min, max, step)).toBe(true);
+        const canonical = snapSteppedNumber(validValue, min, max, step);
+        expect(validatesSteppedNumber(canonical, min, max, step)).toBe(true);
+        expect(snapSteppedNumber(canonical, min, max, step)).toBe(canonical);
+      }
+    }
 
     await registry.execute(
-      { action: 'stage', identity: valueIdentity, value: 0.3 },
+      { action: 'stage', identity: valueIdentity, value: decimalDrift },
       { source: 'agent' },
     );
     await registry.execute(
@@ -197,7 +237,7 @@ describe('core controls', () => {
       {
         action: 'stage',
         identity: rangeIdentity,
-        value: { min: 0.3, max: 0.5 },
+        value: { min: decimalDrift, max: 0.5 },
       },
       { source: 'agent' },
     );
@@ -253,6 +293,9 @@ describe('core controls', () => {
       registry.get(microscopicRangeIdentity)?.state.staged,
     ).toBeUndefined();
     expect(screen.getByRole('slider', { name: 'Value' })).toHaveValue('0.3');
+    expect(screen.getByRole('spinbutton', { name: 'Value value' })).toHaveValue(
+      0.3,
+    );
     expect(screen.getByRole('slider', { name: 'Minimum' })).toHaveValue('0.3');
     expect(screen.getByRole('slider', { name: 'Maximum' })).toHaveValue('0.5');
     expect(screen.getByRole('slider', { name: 'Tiny value' })).toHaveValue(
