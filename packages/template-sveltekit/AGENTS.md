@@ -16,7 +16,8 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - Node `>=24.18.0`; pnpm `10.34.4` via `packageManager` and `engines`.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
-  its binary. `@happyvertical/smrt-web` stays opt-in until a page imports it.
+  its binary. The template includes `@happyvertical/smrt-web` because the root
+  Provider wires the generated read-only WebMCP definitions for every page.
 - The generated MCP server resolves its imports from the scaffolded app, not
   from the CLI, so every specifier `generate-mcp` emits must be declared here.
   `@modelcontextprotocol/server` (plus its `/stdio` subpath),
@@ -50,8 +51,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
   exact permission snapshot.
 - The root layout uses Provider, the current smrt-ui ThemeProvider, AdminShell,
   and a small explicit TenantNav. Generated REST routes do not imply page routes.
-- WebMCP and live browser data examples are opt-in per page and must seed live
-  collections from SSR `initialData` to avoid a duplicate first request.
+- The root Provider registers generated WebMCP read tools with the authenticated
+  page session. Write/destructive effects require an explicit page-owned policy.
+  Live browser collections remain opt-in per page and must seed from SSR
+  `initialData` to avoid a duplicate first request.
 
 ## Tests
 

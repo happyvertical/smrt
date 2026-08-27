@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
+  import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
   import { Provider } from '@happyvertical/smrt-svelte';
   import {
     AdminShell,
@@ -34,7 +35,13 @@
   ];
 </script>
 
-<Provider>
+<Provider
+  webmcp={{
+    definitions: webMcpToolDefinitions,
+    basePath: '/api',
+    effects: ['read'],
+  }}
+>
   <ThemeProvider preset="smrt" colorScheme="system" persist={true}>
     <AdminShell
       title="s-m-r-t app"

@@ -11,6 +11,7 @@ const sidebars: SidebarsConfig = {
         { type: 'doc', id: 'data-compartmentalization' },
         { type: 'doc', id: 'dispatch' },
         { type: 'doc', id: 'field-policies' },
+        { type: 'doc', id: 'webmcp-integration' },
       ],
     },
     {

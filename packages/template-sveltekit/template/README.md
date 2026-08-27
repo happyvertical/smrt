@@ -249,31 +249,26 @@ Add the jobs package on the same release line as the other
 `@happyvertical/smrt-*` pins in `package.json`, then reinstall. Missing one of
 these fails at startup with `ERR_MODULE_NOT_FOUND` naming the package to add.
 
-WebMCP is opt-in per browser surface. First add the browser runtime, then put
-registration in a dedicated page that actually exposes tools:
-
-```bash
-pnpm add "@happyvertical/smrt-web@$(node -p "require('./package.json').dependencies['@happyvertical/smrt-core']")"
-```
-
-This derives the version from the generated project's synchronized s-m-r-t release
-pin, so the optional browser runtime stays on the same release line.
+WebMCP is wired at the root Provider as a read-only, authenticated browser
+surface. The template includes `@happyvertical/smrt-web` on the synchronized
+release line; keep the generated definitions page-owned when you need a
+narrower tool set.
 
 ```svelte
 <script lang="ts">
-  import { collectionDefinitions } from '@happyvertical/smrt-virt-web';
-  import { onMount } from 'svelte';
-
-  onMount(() => {
-    let dispose = () => {};
-    void import('@happyvertical/smrt-web').then(({ registerWebMcpTools }) => {
-      dispose = registerWebMcpTools([collectionDefinitions.items], {
-        basePath: '/api',
-      });
-    });
-    return () => dispose();
-  });
+  import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
+  import { Provider } from '@happyvertical/smrt-svelte';
 </script>
+
+<Provider
+  webmcp={{
+    definitions: webMcpToolDefinitions,
+    basePath: '/api',
+    effects: ['read'],
+  }}
+>
+  {@render children()}
+</Provider>
 ```
 
 `registerWebMcpTools()` feature-detects browser support and uses the current

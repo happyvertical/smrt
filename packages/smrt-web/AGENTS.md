@@ -107,3 +107,14 @@ different request id — before they reach a UI surface.
 
 `packages/products` consumes the runtime as its reference store across npm,
 federation, and standalone modes (see the smrt-web track, PRD #1755).
+
+## WebMCP integration fixture
+
+`src/webmcp-e2e.integration.test.ts` is the production-shaped composition
+fixture for generated WebMCP tools. It uses `smrtVitestPlugin()`, a real
+in-memory SQLite database, and generated REST handlers. Only the browser
+`document.modelContext` and external AI boundary are doubled. Keep this fixture
+focused on the WebMCP contract: auth failures, effect/exposure policy,
+tool-only fetches, custom actions, relationship cache invalidation, and
+registration disposal. The integration model is documented in
+`docs/content/webmcp-integration.md`.
