@@ -570,6 +570,50 @@ describe('ContentList bulk workflows', () => {
     expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
   });
 
+  it('keeps an identical intent locked when a succeeded job omits its action result', async () => {
+    const status = vi.fn().mockResolvedValue({
+      jobId: 'job-missing-result',
+      status: 'succeeded',
+    });
+    const workflow = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          background: true,
+          jobId: 'job-missing-result',
+        },
+      }),
+      status,
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Check job')[0]);
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain(
+        'completed without an action result; check the job runner before retrying',
+      ),
+    );
+    expect(target.textContent).toContain('1 selected');
+    expect(buttonsByText(target, 'Job queued')[0]?.disabled).toBe(true);
+    expect(buttonsByText(target, 'Check job')).toHaveLength(1);
+  });
+
   it('reuses one idempotency key when an apply response is lost and retried', async () => {
     const apply = vi
       .fn()

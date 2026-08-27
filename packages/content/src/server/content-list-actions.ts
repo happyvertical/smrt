@@ -117,80 +117,80 @@ const CONTENT_READ_OPERATION = {
 const GOVERNANCE_READ_OPERATIONS = [
   {
     id: 'content-governance-assignments:read',
-    collection: 'content_governance_assignments',
+    collection: 'contentgovernanceassignments',
     action: 'read',
   },
   {
     id: 'content-governance-policies:read',
-    collection: 'content_governance_policies',
+    collection: 'contentgovernancepolicies',
     action: 'read',
   },
   {
     id: 'content-governance-profiles:read',
-    collection: 'content_governance_profiles',
+    collection: 'contentgovernanceprofiles',
     action: 'read',
   },
 ] as const;
 
 const PUBLICATION_OPERATIONS = [
-  CONTENT_UPDATE_OPERATION,
   CONTENT_READ_OPERATION,
+  CONTENT_UPDATE_OPERATION,
   ...GOVERNANCE_READ_OPERATIONS,
   {
     id: 'content-references:read',
-    collection: 'content_references',
+    collection: 'contentreferences',
     action: 'read',
   },
   { id: 'facts:read', collection: 'facts', action: 'read' },
-  { id: 'fact-contents:read', collection: 'fact_contents', action: 'read' },
-  { id: 'fact-sources:read', collection: 'fact_sources', action: 'read' },
-  { id: 'content-reviews:read', collection: 'content_reviews', action: 'read' },
+  { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
+  { id: 'fact-sources:read', collection: 'factsources', action: 'read' },
+  { id: 'content-reviews:read', collection: 'contentreviews', action: 'read' },
   {
     id: 'content-corrections:read',
-    collection: 'content_corrections',
+    collection: 'contentcorrections',
     action: 'read',
   },
   {
     id: 'content-versions:read',
-    collection: 'content_versions',
+    collection: 'contentversions',
     action: 'read',
   },
   {
     id: 'content-versions:create',
-    collection: 'content_versions',
+    collection: 'contentversions',
     action: 'create',
   },
 ] as const;
 
 const AUTOMATED_REVIEW_OPERATIONS = [
-  CONTENT_UPDATE_OPERATION,
   CONTENT_READ_OPERATION,
+  CONTENT_UPDATE_OPERATION,
   ...GOVERNANCE_READ_OPERATIONS,
   {
     id: 'content-references:read',
-    collection: 'content_references',
+    collection: 'contentreferences',
     action: 'read',
   },
   { id: 'facts:read', collection: 'facts', action: 'read' },
-  { id: 'fact-contents:read', collection: 'fact_contents', action: 'read' },
+  { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
   {
     id: 'prompt-overrides:read',
-    collection: 'prompt_overrides',
+    collection: 'promptoverrides',
     action: 'read',
   },
   {
     id: 'content-versions:read',
-    collection: 'content_versions',
+    collection: 'contentversions',
     action: 'read',
   },
   {
     id: 'content-versions:create',
-    collection: 'content_versions',
+    collection: 'contentversions',
     action: 'create',
   },
   {
     id: 'content-reviews:create',
-    collection: 'content_reviews',
+    collection: 'contentreviews',
     action: 'create',
   },
 ] as const;
@@ -342,7 +342,7 @@ function workflow(
     eligibility: options.eligibility,
     permissionRequirements: options.permissionRequirements ?? {
       tool: `content.workflow.${id}`,
-      operations: [CONTENT_UPDATE_OPERATION, CONTENT_READ_OPERATION],
+      operations: [CONTENT_READ_OPERATION, CONTENT_UPDATE_OPERATION],
     },
     consequences: options.consequences,
     partialResult: {
@@ -907,12 +907,12 @@ export function createContentListActionAdapter(
           tool: entry.permissionRequirements.tool,
           operation:
             entry.permissionRequirements.operations[0] ??
-            CONTENT_UPDATE_OPERATION,
+            CONTENT_READ_OPERATION,
           authorize: async (invocation) => {
             const operations =
               entry.id === 'restore' &&
               payloadRecord(invocation.request.payload).status !== 'published'
-                ? entry.permissionRequirements.operations.slice(0, 1)
+                ? entry.permissionRequirements.operations.slice(0, 2)
                 : entry.permissionRequirements.operations;
             try {
               for (const operation of operations.slice(1)) {

@@ -1518,6 +1518,10 @@ async function checkWorkflowJob() {
       workflowError = `Job ${job.jobId} is still ${job.status}.`;
       return;
     }
+    if (job.status === 'succeeded' && !job.result) {
+      workflowError = `Job ${job.jobId} completed without an action result; check the job runner before retrying.`;
+      return;
+    }
     workflowQueuedJobs = workflowQueuedJobs.filter(
       (queued) => queued.jobId !== job.jobId,
     );

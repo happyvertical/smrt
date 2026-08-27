@@ -460,7 +460,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     const setup = harness({
       permissions: ['contents:update'],
       assertOperation: async (collection, action) => {
-        if (collection === 'content_versions' && action === 'create') {
+        if (collection === 'contentversions' && action === 'create') {
           throw new Error('operation denied');
         }
         return { allowed: true } as Awaited<
@@ -481,8 +481,13 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       ok: false,
       reason: 'denied',
     });
+    expect(setup.run.assertOperation).toHaveBeenNthCalledWith(
+      1,
+      'contents',
+      'read',
+    );
     expect(setup.run.assertOperation).toHaveBeenCalledWith(
-      'content_versions',
+      'contentversions',
       'create',
     );
     expect(setup.collection.saveCalls).toEqual([]);
