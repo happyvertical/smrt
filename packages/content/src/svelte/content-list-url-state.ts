@@ -100,18 +100,45 @@ const LIST_SEPARATOR = ',';
  */
 const LIST_ESCAPE = '\\';
 
-function escapeListEntry(value: string): string {
+/**
+ * The list entry that means the VALUE `null` — "and rows with no value at all".
+ *
+ * A query string carries text, and `null` has no natural text form: writing it
+ * as `null` would be indistinguishable from an author actually called "null".
+ * This token cannot collide with any real value, BY CONSTRUCTION rather than by
+ * being unlikely: {@link escapeListEntry} doubles every backslash a real value
+ * contains, so the only two-character sequences a real entry can begin with are
+ * `\\` and `\,`. A lone backslash followed by `0` is therefore unreachable
+ * from any string — including the literal two characters `\0`, which serialize
+ * as `\\0` and read back as themselves.
+ *
+ * It survives URL encoding: `URLSearchParams` writes the backslash as `%5C` and
+ * reads it back unchanged.
+ */
+const LIST_NULL_TOKEN = `${LIST_ESCAPE}0`;
+
+function escapeListEntry(value: string | null): string {
+  if (value === null) return LIST_NULL_TOKEN;
   return value.replace(/[\\,]/g, (character) => `${LIST_ESCAPE}${character}`);
 }
 
-/** Splits on unescaped separators only, unescaping each entry as it goes. */
-function splitListValue(raw: string): string[] {
-  const entries: string[] = [];
+/**
+ * Splits on unescaped separators only, unescaping each entry as it goes.
+ *
+ * Returns `null` for {@link LIST_NULL_TOKEN}, which is a value rather than an
+ * absence — an empty entry (`a,,b`) is the empty STRING and stays one.
+ */
+function splitListValue(raw: string): Array<string | null> {
+  const entries: Array<string | null> = [];
   let current = '';
+  let isNull = false;
   let escaped = false;
   for (const character of raw) {
     if (escaped) {
-      current += character;
+      // A backslash followed by `0` is the null token; every real backslash
+      // arrives doubled, so this sequence cannot come from a string.
+      if (character === '0' && current === '') isNull = true;
+      else current += character;
       escaped = false;
       continue;
     }
@@ -120,15 +147,16 @@ function splitListValue(raw: string): string[] {
       continue;
     }
     if (character === LIST_SEPARATOR) {
-      entries.push(current);
+      entries.push(isNull ? null : current);
       current = '';
+      isNull = false;
       continue;
     }
     current += character;
   }
   // A trailing lone escape is data, not a prefix: keep it rather than losing it.
   if (escaped) current += LIST_ESCAPE;
-  entries.push(current);
+  entries.push(isNull ? null : current);
   return entries;
 }
 
@@ -311,14 +339,34 @@ function filterText(value: unknown): string | null {
 }
 
 /**
- * Normalizes one scalar filter value the way the adapter does, so a filter
- * restored from a link compares equal to the same filter built by the toolbar.
- * A blank value clears the filter rather than becoming `equals ''`, matching
- * `applyContentListFilter`.
+ * Normalizes one filter value the way the adapter does, so a filter restored
+ * from a link compares equal to the same filter built by the toolbar.
+ *
+ * THREE outcomes, not two. Conflating the last two is what let a legitimate
+ * value be discarded in three separate layers: each test asked whether the
+ * value was PRESENT rather than whether it was VALID, and `null` reads as
+ * absent to any check written with truthiness.
+ *
+ * - a string — the normalized value;
+ * - `null` — the VALUE null, which names absence ("and rows with no value");
+ * - `undefined` — unusable, and the only case a caller may drop.
  */
-function normalizedFilterValue(columnId: string, raw: unknown): string | null {
+function normalizedFilterValue(
+  columnId: string,
+  raw: unknown,
+): string | null | undefined {
+  // A literal `null` is a value the caller wrote deliberately, not a missing
+  // one. The executor lowers it to `IS NULL` / `IS NOT NULL` and the local
+  // evaluator matches it through `isAbsentContentValue`; dropping it here
+  // persisted a WIDER filter than the one in memory, so copying the link
+  // brought back exactly the rows it excluded.
+  if (raw === null) return null;
   const text = filterText(raw);
-  if (text === null || text.trim() === '') return null;
+  if (text === null) return undefined;
+  // A blank SCALAR clears the filter, matching `applyContentListFilter`. A
+  // blank LIST entry is the empty string, which is a real value for a column
+  // that stores one — see `sanitizeFilter`.
+  if (text.trim() === '') return undefined;
   return normalizeContentListFilterValue(columnId, text);
 }
 
@@ -364,10 +412,16 @@ function sanitizeFilter(
       });
       return null;
     }
-    const values: string[] = [];
+    const values: Array<string | null> = [];
     for (const entry of raw.value) {
-      const normalized = normalizedFilterValue(columnId, entry);
-      if (normalized !== null && !values.includes(normalized)) {
+      // An empty entry is the empty STRING — a real value for a column that
+      // stores one, and one the list encoding round-trips natively (`a,,b`).
+      // Only `undefined` means unusable.
+      const normalized =
+        typeof entry === 'string' && entry.trim() === ''
+          ? ''
+          : normalizedFilterValue(columnId, entry);
+      if (normalized !== undefined && !values.includes(normalized)) {
         values.push(normalized);
       }
     }
@@ -383,7 +437,7 @@ function sanitizeFilter(
     return { columnId, operator: typedOperator, value: values };
   }
   const value = normalizedFilterValue(columnId, raw.value);
-  if (value === null) {
+  if (value === undefined) {
     drops.push({
       scope: 'filter',
       reason: 'unsupported-value',
@@ -776,21 +830,38 @@ export function contentListViewStateToSearchParams(
   }
 
   for (const filter of safe.filters ?? []) {
-    const name = filterParameterName(filter, prefix);
     if (VALUELESS_OPERATORS.has(filter.operator)) {
-      params.append(name, '1');
+      params.append(filterParameterName(filter, prefix), '1');
       continue;
     }
     if (Array.isArray(filter.value)) {
       params.append(
-        name,
+        filterParameterName(filter, prefix),
         filter.value
-          .map((entry) => escapeListEntry(String(entry)))
+          .map((entry) =>
+            escapeListEntry(entry === null ? null : String(entry)),
+          )
           .join(LIST_SEPARATOR),
       );
       continue;
     }
-    params.append(name, String(filter.value ?? ''));
+    if (filter.value === null) {
+      // `equals null` and `isNull` are the same predicate — both lower to
+      // `eq null`, and the local evaluator answers them identically. The
+      // valueless operator already has a query-string form, so the scalar null
+      // is written as that rather than inventing a second token for it.
+      const nullOperator =
+        filter.operator === 'notEquals' ? 'isNotNull' : 'isNull';
+      params.append(
+        filterParameterName({ ...filter, operator: nullOperator }, prefix),
+        '1',
+      );
+      continue;
+    }
+    params.append(
+      filterParameterName(filter, prefix),
+      String(filter.value ?? ''),
+    );
   }
 
   if (safe.sorting?.length) {
@@ -983,7 +1054,11 @@ export function readContentListViewStateFromSearchParams(
       ...(VALUELESS_OPERATORS.has(operator as DataTableFilterOperator)
         ? {}
         : LIST_OPERATORS.has(operator as DataTableFilterOperator)
-          ? { value: splitListValue(value) }
+          ? // An entirely empty parameter (`?status.in=`) is a list with no
+            // values, which the sanitizer refuses and reports. An empty entry
+            // WITHIN a list (`?status.in=a,`) is the empty string, which is a
+            // real value for a column that stores one.
+            { value: value === '' ? [] : splitListValue(value) }
           : { value }),
     });
   }

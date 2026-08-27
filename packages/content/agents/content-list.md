@@ -478,6 +478,53 @@ differs per operator:
 | `gt`, `gte`, `lt`, `lte` — reached through `not` | `IS NULL OR <predicate>` | server gained the union, so the negation is a true complement |
 | `isNull` / `isNotNull` | `IS NULL` / `IS NOT NULL` | the LOCAL evaluator gained null-awareness |
 
+### A value that reads as absent is still a value
+
+`null` in a filter list means "and rows with no value at all". It was silently
+discarded in THREE separate layers before this was tracked to one shape: each
+layer tested the value for PRESENCE rather than for VALIDITY, and `null` reads
+as absent to any check written with truthiness. `normalizedFilterValue` is the
+correction — it returns three outcomes, not two: a string, the value `null`, or
+`undefined` for genuinely unusable, which is the only case a caller may drop.
+
+Every layer a filter value crosses, and what each does with a `null` entry:
+
+| Layer | Behaviour |
+|---|---|
+| data-surface `set-filters` → controller | passes through unchanged |
+| `sanitizeContentListViewState` | **preserves** it (was: silently dropped) |
+| controller state (`setFilters` / `replaceState`) | passes through unchanged |
+| URL serialization | writes the `\0` token |
+| URL parse | reads the token back as `null` |
+| saved-view write (`hydrateDataTableSnapshot`) | JSON, so `null` is native |
+| saved-view read | native |
+| `restoreContentListSavedView` | preserves it (shares the sanitizer above) |
+| translator (`coerceValue`) | **preserves** it (fixed earlier) |
+| request → `normalizeFilter` | accepts a null scalar for `eq`/`ne` |
+| executor (`conditionToDnf`) | lowers a listed null to `IS NULL` / `IS NOT NULL` |
+| local evaluator | `matchesAbsentContentValue` answers the same predicate |
+
+**The URL token is collision-free by construction, not by being unlikely.**
+`escapeListEntry` doubles every backslash a real value contains, so the only
+two-character sequences a real entry can begin with are `\\` and `\,`. A LONE
+backslash followed by `0` is therefore unreachable from any string — including
+the literal two characters `\0`, which serialize as `\\0` and read back as
+themselves. It survives percent-encoding as `%5C0`. Writing `null` as the word
+would have been ambiguous with an author actually called "null".
+
+A **scalar** null comparand needs no token at all: `equals null` and `isNull`
+are the same predicate — both lower to `eq null`, and the local evaluator
+answers them identically — so it is written as the valueless operator, which
+already has a query-string form.
+
+**The bug was never really about `null`.** The same shape catches any value that
+a truthiness check reads as absent, so `0`, `false`, and the empty string are
+tested alongside it. An empty entry WITHIN a list (`?author.in=a,`) is the empty
+string, which is a real value for a column that stores one; an entirely empty
+parameter (`?author.in=`) is a list with no values and is still refused and
+reported. A blank SCALAR still clears the filter, matching
+`applyContentListFilter`.
+
 **A literal `null` has to survive the TRANSLATOR too.** `coerceValue` reports a
 null as unusable, which is right for a value that arrived as text and wrong for
 one a caller wrote deliberately: dropping it sent `notIn ['Ada']` for

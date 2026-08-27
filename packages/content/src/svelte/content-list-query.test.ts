@@ -66,7 +66,11 @@ import {
   readContentListQueryNotices,
   resolveContentListMaxPageSize,
 } from './content-list-query';
-import { CONTENT_LIST_MAX_PAGE_SIZE } from './content-list-url-state';
+import {
+  CONTENT_LIST_MAX_PAGE_SIZE,
+  contentListViewStateFromSearchParams,
+  contentListViewStateToSearchParams,
+} from './content-list-url-state';
 
 function viewState(
   overrides: Partial<DataTableViewState> = {},
@@ -2826,5 +2830,125 @@ describe('a blank comparand means the same thing in both modes', () => {
         value: 'Ada',
       }),
     ).toEqual(['named']);
+  });
+});
+
+describe('a shared link carries a null entry all the way to the rows', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const rows = [
+    { name: 'ada', title: 'Ada', author: 'Ada Lovelace' },
+    { name: 'grace', title: 'Grace', author: 'Grace Hopper' },
+    { name: 'none', title: 'None', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of rows) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  /** Live state → query string → restored state → request → executor → rows. */
+  const namesThroughLink = async (filter: DataTableFilter) => {
+    const params = contentListViewStateToSearchParams({ filters: [filter] });
+    const restored = contentListViewStateFromSearchParams(params);
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(restored), {
+        createRequestId: () => 'through-link',
+        projection: ['id', 'name'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  /** The same filter without the round trip, as the live view would run it. */
+  const namesDirect = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'direct',
+        projection: ['id', 'name'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  it('excludes the authorless row after a full persist and restore', async () => {
+    // The reported failure: the link came back WIDER than the view it was
+    // copied from, so the row the operator excluded reappeared.
+    const filter = {
+      columnId: 'author',
+      operator: 'notIn',
+      value: ['Ada Lovelace', null],
+    } as DataTableFilter;
+    expect(await namesThroughLink(filter)).toEqual(['grace']);
+    expect(await namesThroughLink(filter)).toEqual(await namesDirect(filter));
+  });
+
+  it('means the same thing through the link for every null-bearing shape', async () => {
+    const shapes: Array<[string, DataTableFilter]> = [
+      [
+        'notIn with a null',
+        {
+          columnId: 'author',
+          operator: 'notIn',
+          value: ['Ada Lovelace', null],
+        } as DataTableFilter,
+      ],
+      [
+        'in with a null',
+        {
+          columnId: 'author',
+          operator: 'in',
+          value: ['Ada Lovelace', null],
+        } as DataTableFilter,
+      ],
+      [
+        'null-only list',
+        {
+          columnId: 'author',
+          operator: 'in',
+          value: [null],
+        } as DataTableFilter,
+      ],
+      [
+        'scalar null comparand',
+        {
+          columnId: 'author',
+          operator: 'equals',
+          value: null,
+        } as unknown as DataTableFilter,
+      ],
+      [
+        'scalar not-null comparand',
+        {
+          columnId: 'author',
+          operator: 'notEquals',
+          value: null,
+        } as unknown as DataTableFilter,
+      ],
+      [
+        'a plain list, unaffected',
+        {
+          columnId: 'author',
+          operator: 'notIn',
+          value: ['Ada Lovelace'],
+        } as DataTableFilter,
+      ],
+    ];
+    for (const [label, filter] of shapes) {
+      expect(await namesThroughLink(filter), label).toEqual(
+        await namesDirect(filter),
+      );
+    }
   });
 });

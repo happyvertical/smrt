@@ -1,9 +1,16 @@
-import type { DataTableViewState } from '@happyvertical/smrt-ui/data';
+import type {
+  DataTableFilter,
+  DataTableViewState,
+} from '@happyvertical/smrt-ui/data';
 import { describe, expect, it } from 'vitest';
 import {
   createContentListController,
   normalizeContentListFilterValue,
 } from './content-list-controller.js';
+import {
+  createContentListMemorySavedViewStore,
+  restoreContentListSavedView,
+} from './content-list-saved-views.js';
 import {
   applyContentListViewState,
   CONTENT_LIST_MAX_PAGE_SIZE,
@@ -518,5 +525,195 @@ describe('applyContentListViewState validates its patch (#2452)', () => {
       },
     ]);
     expect(first.page).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 13: a value that reads as absent is still a value (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * `null` in a filter list means "and rows with no value at all". It has now
+ * been silently discarded in three separate layers — the translator, the local
+ * evaluator, and this one — because each layer asked whether the value was
+ * PRESENT rather than whether it was VALID, and `null` reads as absent to any
+ * check written with truthiness.
+ *
+ * Every layer a filter value passes through is asserted here or in the layer's
+ * own suite; see `agents/content-list.md` for the table.
+ */
+describe('a null list entry survives every persistence layer', () => {
+  const nullBearing = (
+    operator: 'in' | 'notIn' = 'notIn',
+  ): Partial<DataTableViewState> => ({
+    filters: [
+      { columnId: 'author', operator, value: ['Ada', null] },
+    ] as DataTableFilter[],
+  });
+
+  it('LAYER sanitizer: keeps the null rather than widening the filter', () => {
+    const { state, dropped } = sanitizeContentListViewState(nullBearing());
+    expect(state.filters?.[0].value).toEqual(['Ada', null]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('LAYER sanitizer: still refuses an entry that is genuinely unusable', () => {
+    const { state, dropped } = sanitizeContentListViewState({
+      filters: [
+        { columnId: 'author', operator: 'in', value: ['Ada', { bad: 1 }] },
+      ] as DataTableFilter[],
+    });
+    expect(state.filters?.[0].value).toEqual(['Ada']);
+    expect(dropped).toEqual([]);
+  });
+
+  it('LAYER URL write: encodes the null as a token, not as the word', () => {
+    const params = contentListViewStateToSearchParams(nullBearing());
+    // `null` written literally would be indistinguishable from an author
+    // actually called "null".
+    expect(params.get('author.notIn')).toBe('Ada,\\0');
+  });
+
+  it('LAYER URL read: decodes the token back to the value null', () => {
+    const restored = contentListViewStateFromSearchParams(
+      new URLSearchParams('author.notIn=Ada,\\0'),
+    );
+    expect(restored.filters?.[0].value).toEqual(['Ada', null]);
+  });
+
+  it('the token cannot collide with any real value, by construction', () => {
+    // Every real backslash is doubled on the way out, so a LONE backslash
+    // followed by `0` is unreachable from a string — including these.
+    const collisionCandidates = ['null', '\\0', '\\\\0', '0', '\\'];
+    const params = contentListViewStateToSearchParams({
+      filters: [
+        {
+          columnId: 'author',
+          operator: 'in',
+          value: [...collisionCandidates, null],
+        },
+      ] as DataTableFilter[],
+    });
+    const restored = contentListViewStateFromSearchParams(params);
+    expect(restored.filters?.[0].value).toEqual([...collisionCandidates, null]);
+  });
+
+  it('survives URL percent-encoding intact', () => {
+    const params = contentListViewStateToSearchParams(nullBearing());
+    // Through a real query string, not just the params object.
+    const encoded = params.toString();
+    expect(encoded).toContain('%5C0');
+    expect(
+      contentListViewStateFromSearchParams(new URLSearchParams(encoded))
+        .filters?.[0].value,
+    ).toEqual(['Ada', null]);
+  });
+
+  it('ROUND TRIP: a null-bearing filter means the same after persist/restore', () => {
+    for (const operator of ['in', 'notIn'] as const) {
+      const original = nullBearing(operator);
+      const restored = contentListViewStateFromSearchParams(
+        contentListViewStateToSearchParams(original),
+      );
+      expect(restored.filters, operator).toEqual(original.filters);
+      // …and it is stable, not merely equal on the first pass.
+      const again = contentListViewStateFromSearchParams(
+        contentListViewStateToSearchParams(restored),
+      );
+      expect(again.filters, operator).toEqual(original.filters);
+    }
+  });
+
+  it('ROUND TRIP: a scalar null becomes the valueless operator it equals', () => {
+    // `equals null` and `isNull` are the same predicate, and the valueless
+    // operator already has a query-string form — no second token needed.
+    for (const [operator, expected] of [
+      ['equals', 'isNull'],
+      ['notEquals', 'isNotNull'],
+    ] as const) {
+      const params = contentListViewStateToSearchParams({
+        filters: [{ columnId: 'author', operator, value: null }],
+      } as Partial<DataTableViewState>);
+      expect(params.get(`author.${expected}`), operator).toBe('1');
+      expect(contentListViewStateFromSearchParams(params).filters?.[0]).toEqual(
+        { columnId: 'author', operator: expected },
+      );
+    }
+  });
+
+  it('keeps an empty-string entry, which is a value for a column that stores one', () => {
+    const params = contentListViewStateToSearchParams({
+      filters: [
+        { columnId: 'author', operator: 'in', value: ['Ada', ''] },
+      ] as DataTableFilter[],
+    });
+    expect(params.get('author.in')).toBe('Ada,');
+    expect(
+      contentListViewStateFromSearchParams(params).filters?.[0].value,
+    ).toEqual(['Ada', '']);
+  });
+
+  it('still treats an entirely empty list parameter as no values', () => {
+    // `?author.in=` is a list with nothing in it, not a list containing the
+    // empty string — refused and reported, as before.
+    const reading = readContentListViewStateFromSearchParams(
+      new URLSearchParams('author.in='),
+    );
+    expect(reading.state.filters).toEqual([]);
+    expect(reading.dropped).toContainEqual(
+      expect.objectContaining({ scope: 'filter', reason: 'unsupported-value' }),
+    );
+  });
+
+  it('keeps `0` and `false`, which truthiness also discards', () => {
+    // The bug is not really about null: it is about any value a check written
+    // with truthiness reads as absent.
+    const restored = contentListViewStateFromSearchParams(
+      contentListViewStateToSearchParams({
+        filters: [
+          { columnId: 'author', operator: 'in', value: [0, false, null, ''] },
+        ] as unknown as DataTableFilter[],
+      }),
+    );
+    // Numbers and booleans normalize to their text form, as every filter value
+    // does; what matters is that none of them vanish.
+    expect(restored.filters?.[0].value).toEqual(['0', 'false', null, '']);
+  });
+});
+
+describe('a null list entry survives the saved-view layers', () => {
+  it('round-trips natively through JSON, where null needs no token', async () => {
+    const store = createContentListMemorySavedViewStore({
+      storageKey: 'test:content-list:null-entry',
+    });
+    const controller = createContentListController();
+    controller.dispatch({
+      type: 'setFilters',
+      filters: [
+        { columnId: 'author', operator: 'notIn', value: ['Ada', null] },
+      ] as DataTableFilter[],
+    });
+    await store.save({
+      name: 'Excludes Ada and the blanks',
+      snapshot: controller.snapshot(),
+    });
+
+    const [saved] = await store.list();
+    // The stored payload is raw, so the null is still there …
+    expect(saved.snapshot.state.filters?.[0].value).toEqual(['Ada', null]);
+    // … and the validated restoration keeps it too.
+    const { state, dropped } = restoreContentListSavedView(saved);
+    expect(state.filters?.[0].value).toEqual(['Ada', null]);
+    expect(dropped).toEqual([]);
+  });
+
+  it('applies it to a controller unchanged', () => {
+    const controller = createContentListController();
+    applyContentListViewState(controller, {
+      filters: [
+        { columnId: 'author', operator: 'notIn', value: ['Ada', null] },
+      ] as DataTableFilter[],
+    });
+    expect(controller.getState().filters[0].value).toEqual(['Ada', null]);
   });
 });
