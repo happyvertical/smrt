@@ -578,9 +578,18 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         referenced_column: string;
         ownership_comment: string | null;
       }>) {
+        const catalogForeignKey: ForeignKeyDefinition = {
+          column: row.column_name,
+          referencesTable: row.referenced_table,
+          referencesColumn: row.referenced_column,
+        };
+        const rendererOwned =
+          row.ownership_comment === ownershipComment ||
+          row.constraint_name ===
+            foreignKeyConstraintName(tableName, catalogForeignKey);
         const desired = expected.get(row.constraint_name);
         if (!desired) {
-          if (row.ownership_comment === ownershipComment) {
+          if (rendererOwned) {
             await schemaDb.query(
               renderForeignKeyConstraintDrop(tableName, row.constraint_name),
             );
@@ -602,7 +611,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
           row.confdeltype === actionCode(desired.foreignKey.onDelete) &&
           row.confupdtype === actionCode(desired.foreignKey.onUpdate);
         if (!definitionMatches) {
-          if (row.ownership_comment !== ownershipComment) {
+          if (!rendererOwned) {
             throw new Error(
               `Cannot reconcile manifest foreign key ${tableName}.${row.constraint_name}: an unowned constraint with that name has a different definition.`,
             );
@@ -616,6 +625,15 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         if (!row.convalidated) {
           await schemaDb.query(
             renderForeignKeyConstraintValidate(tableName, row.constraint_name),
+          );
+        }
+        if (row.ownership_comment !== ownershipComment) {
+          await schemaDb.query(
+            renderForeignKeyConstraintComment(
+              tableName,
+              row.constraint_name,
+              ownershipComment,
+            ),
           );
         }
         satisfied.add(row.constraint_name);

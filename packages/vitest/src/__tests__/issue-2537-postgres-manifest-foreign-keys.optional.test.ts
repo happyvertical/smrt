@@ -256,6 +256,9 @@ postgresDescribe(
       });
       try {
         await admin.query(
+          'COMMENT ON CONSTRAINT "i2537_owned_child_parent_id_i2537_owned_parent_id_fkey" ON "i2537_owned_child" IS NULL',
+        );
+        await admin.query(
           'ALTER TABLE "i2537_evolve_child" DROP CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey"',
         );
         await admin.query(
@@ -377,7 +380,8 @@ postgresDescribe(
       const beforeDb = await createIsolatedTestDbFromManifest({ manifestPath });
       const before = await beforeDb.db.query(
         `SELECT constraint_row.oid::text AS constraint_oid,
-                constraint_row.conname AS constraint_name
+                constraint_row.conname AS constraint_name,
+                obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
          FROM pg_constraint AS constraint_row
          JOIN pg_class AS child ON child.oid = constraint_row.conrelid
          WHERE child.relname = 'i2537_owned_child'
@@ -396,7 +400,8 @@ postgresDescribe(
         reopened = await createIsolatedTestDbFromManifest({ manifestPath });
         const after = await reopened.db.query(
           `SELECT constraint_row.oid::text AS constraint_oid,
-                  constraint_row.conname AS constraint_name
+                  constraint_row.conname AS constraint_name,
+                  obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
            FROM pg_constraint AS constraint_row
            JOIN pg_class AS child ON child.oid = constraint_row.conrelid
            WHERE child.relname = 'i2537_owned_child'
@@ -406,9 +411,76 @@ postgresDescribe(
              )
            ORDER BY constraint_row.conname`,
         );
-        expect(after.rows).toEqual(before.rows);
+        expect(after.rows).toEqual(
+          before.rows.map(
+            (row: {
+              constraint_oid: string;
+              constraint_name: string;
+              ownership_comment: string | null;
+            }) => ({
+              ...row,
+              ownership_comment:
+                row.constraint_name ===
+                'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey'
+                  ? 'smrt-vitest:manifest-foreign-key:v1'
+                  : null,
+            }),
+          ),
+        );
       } finally {
         await reopened?.cleanup();
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
+    it('reopens a legacy cached-DDL manifest with an inline foreign key', async () => {
+      await dropIssueTables('i2537_legacy_child', 'i2537_legacy_parent');
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-legacy-${randomUUID()}.json`,
+      );
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          objects: {
+            Parent: {
+              className: 'Parent',
+              schema: {
+                tableName: 'i2537_legacy_parent',
+                ddl: 'CREATE TABLE IF NOT EXISTS "i2537_legacy_parent" ("id" TEXT PRIMARY KEY)',
+              },
+            },
+            Child: {
+              className: 'Child',
+              schema: {
+                tableName: 'i2537_legacy_child',
+                ddl: 'CREATE TABLE IF NOT EXISTS "i2537_legacy_child" ("id" TEXT PRIMARY KEY, "parent_id" TEXT REFERENCES "i2537_legacy_parent" ("id"))',
+              },
+            },
+          },
+        }),
+      );
+
+      const first = await createIsolatedTestDbFromManifest({ manifestPath });
+      await first.cleanup();
+      const reopened = await createIsolatedTestDbFromManifest({ manifestPath });
+      try {
+        const constraints = await reopened.db.query(
+          `SELECT constraint_row.convalidated
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           WHERE child.relname = 'i2537_legacy_child'
+             AND constraint_row.contype = 'f'`,
+        );
+        expect(constraints.rows).toEqual([{ convalidated: true }]);
+        await expect(
+          reopened.db.insert('i2537_legacy_child', {
+            id: randomUUID(),
+            parent_id: randomUUID(),
+          }),
+        ).rejects.toThrow();
+      } finally {
+        await reopened.cleanup();
         rmSync(manifestPath, { force: true });
       }
     });
