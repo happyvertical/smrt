@@ -1,6 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
+import { onDestroy, onMount, untrack } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
@@ -80,6 +80,58 @@ let {
   onchange,
 }: Props = $props();
 
+function countryValues(): string[] {
+  return [...new Set(countries.map((option) => option.value))];
+}
+
+function provinceValues(): string[] {
+  return [
+    ...new Set([
+      ...(!required ? [''] : []),
+      ...provinces.map((option) => option.value),
+    ]),
+  ];
+}
+
+function schemaForField(field: AddressField): Record<string, unknown> {
+  if (field === 'country') return { type: 'string', enum: countryValues() };
+  if (field === 'province') return { type: 'string', enum: provinceValues() };
+  return { type: 'string' };
+}
+
+function validatesAddressCandidate(candidate: unknown): boolean {
+  if (candidate === null || candidate === undefined) return !required;
+  if (typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+  const address = candidate as Record<string, unknown>;
+  if (
+    ![Object.prototype, null].includes(Object.getPrototypeOf(address)) ||
+    !Object.keys(address).every((key) =>
+      fields.includes(key as AddressField),
+    ) ||
+    !fields.every(
+      (field) =>
+        !Object.hasOwn(address, field) || typeof address[field] === 'string',
+    )
+  ) {
+    return false;
+  }
+  if (
+    (Object.hasOwn(address, 'country') &&
+      !countryValues().includes(address.country as string)) ||
+    (Object.hasOwn(address, 'province') &&
+      !provinceValues().includes(address.province as string))
+  ) {
+    return false;
+  }
+  return (
+    !required ||
+    fields.every(
+      (field) =>
+        typeof address[field] === 'string' && address[field].trim().length > 0,
+    )
+  );
+}
+
 const app = useAppState();
 const formContext = tryGetFormContext();
 
@@ -90,7 +142,7 @@ let street = $state(value.street ?? '');
 let city = $state(value.city ?? '');
 let province = $state(value.province ?? '');
 let postalCode = $state(value.postalCode ?? '');
-let country = $state(value.country ?? 'CA');
+let country = $state(value.country ?? untrack(() => countries[0]?.value ?? ''));
 
 // Keep in sync with external value changes
 $effect(() => {
@@ -217,11 +269,11 @@ onMount(() => {
           city = '';
           province = '';
           postalCode = '';
-          country = 'CA';
+          country = countries[0]?.value ?? '';
           updateValue();
           return;
         }
-        if (typeof v === 'object' && v !== null) {
+        if (validatesAddressCandidate(v)) {
           const addr = v as Partial<AddressValue>;
           if (addr.street !== undefined) street = addr.street;
           if (addr.city !== undefined) city = addr.city;
@@ -248,7 +300,7 @@ onMount(() => {
         city = '';
         province = '';
         postalCode = '';
-        country = 'CA';
+        country = countries[0]?.value ?? '';
         updateValue();
         return true;
       },
@@ -261,42 +313,13 @@ onMount(() => {
           type: 'object',
           additionalProperties: false,
           properties: Object.fromEntries(
-            fields.map((field) => [field, { type: 'string' }]),
+            fields.map((field) => [field, schemaForField(field)]),
           ),
           ...(required ? { required: [...fields] } : {}),
         };
       },
-      validateValue: (candidate) => {
-        if (candidate === null || candidate === undefined) return !required;
-        if (typeof candidate !== 'object' || Array.isArray(candidate)) {
-          return false;
-        }
-        const address = candidate as Record<string, unknown>;
-        if (
-          ![Object.prototype, null].includes(Object.getPrototypeOf(address)) ||
-          !Object.keys(address).every((key) =>
-            fields.includes(key as AddressField),
-          ) ||
-          !fields.every(
-            (field) =>
-              !Object.hasOwn(address, field) ||
-              typeof address[field] === 'string',
-          )
-        ) {
-          return false;
-        }
-        return (
-          !required ||
-          fields.every(
-            (field) =>
-              typeof address[field] === 'string' &&
-              address[field].trim().length > 0,
-          )
-        );
-      },
-      validate: () =>
-        !required ||
-        fields.every((field) => String(value[field] ?? '').trim().length > 0),
+      validateValue: validatesAddressCandidate,
+      validate: () => validatesAddressCandidate(currentValue()),
     };
     formContext.registerField(fieldDef);
   }

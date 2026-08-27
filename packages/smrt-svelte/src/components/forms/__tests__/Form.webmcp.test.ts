@@ -1160,6 +1160,22 @@ describe('Form WebMCP staged-edit intent', () => {
       },
       required: ['street', 'city', 'province', 'postalCode', 'country'],
     });
+    expect(
+      (
+        schema.properties.address as {
+          properties: Record<string, Record<string, unknown>>;
+        }
+      ).properties.country.enum,
+    ).toEqual(['CA', 'US']);
+    expect(
+      (
+        schema.properties.address as {
+          properties: Record<string, Record<string, unknown>>;
+        }
+      ).properties.province.enum,
+    ).toEqual(
+      expect.arrayContaining(['AB', 'BC', 'ON', 'QC', 'US-CA', 'US-NY']),
+    );
 
     const values = {
       measurement: { value: 1.5, unit: 'm' },
@@ -1176,6 +1192,116 @@ describe('Form WebMCP staged-edit intent', () => {
       'Staged 3 changes for review',
     );
     expect(onsubmit).not.toHaveBeenCalled();
+  });
+
+  it('keeps address option schemas and validation live across rerenders', async () => {
+    const registered: Array<{
+      inputSchema: Record<string, unknown>;
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const addressChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const view = render(FormWithStructuredFields, {
+      props: {
+        webmcp: true,
+        structuredRequired: false,
+        addressFields: ['province', 'country'],
+        addressCountries: [{ value: 'CA', label: 'Canada' }],
+        addressProvinces: [{ value: 'AB', label: 'Alberta' }],
+        interactionRegistry: registry,
+        onaddresschange: addressChanged,
+      },
+    });
+    await tick();
+    await tick();
+
+    const addressProperties = () => {
+      const tool = registered.at(-1);
+      if (!tool) throw new Error('WebMCP tool was not registered');
+      return (
+        tool.inputSchema as {
+          properties: {
+            address: { properties: Record<string, Record<string, unknown>> };
+          };
+        }
+      ).properties.address.properties;
+    };
+    expect(addressProperties()).toEqual({
+      province: { type: 'string', enum: ['', 'AB'] },
+      country: { type: 'string', enum: ['CA'] },
+    });
+    await registered.at(-1)?.execute({
+      address: { province: 'AB', country: 'CA' },
+    });
+    const identity = { formId: 'structured-fields', controlId: 'address' };
+    expect(registry.get(identity)?.state.staged).toMatchObject({ valid: true });
+
+    await view.rerender({
+      webmcp: true,
+      structuredRequired: false,
+      addressFields: ['province', 'country'],
+      addressCountries: [{ value: 'FR', label: 'France' }],
+      addressProvinces: [{ value: 'IDF', label: 'Île-de-France' }],
+      interactionRegistry: registry,
+      onaddresschange: addressChanged,
+    });
+    await tick();
+    await tick();
+    expect(addressProperties()).toEqual({
+      province: { type: 'string', enum: ['', 'IDF'] },
+      country: { type: 'string', enum: ['FR'] },
+    });
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          {
+            action: 'apply',
+            identity,
+            revision: registry.get(identity)?.state.staged?.revision,
+          },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: false });
+    expect(addressChanged).not.toHaveBeenCalled();
+
+    await registered.at(-1)?.execute({
+      address: { province: 'IDF', country: 'FR' },
+    });
+    expect(registry.get(identity)?.state.staged).toMatchObject({ valid: true });
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          {
+            action: 'apply',
+            identity,
+            revision: registry.get(identity)?.state.staged?.revision,
+          },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(addressChanged).toHaveBeenLastCalledWith({
+      province: 'IDF',
+      country: 'FR',
+    });
+
+    await registered.at(-1)?.execute({
+      address: { province: 'XX', country: 'FR' },
+    });
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      valid: false,
+    });
   });
 
   it('omits zero-based multipleOf when measurement steps use a minimum offset', async () => {
@@ -1324,6 +1450,13 @@ describe('Form WebMCP staged-edit intent', () => {
       required: ['city', 'country'],
     });
     expect(schema.properties.address.properties).not.toHaveProperty('street');
+    expect(
+      (
+        schema.properties.address as {
+          properties: Record<string, Record<string, unknown>>;
+        }
+      ).properties.country.enum,
+    ).toEqual(['CA', 'US']);
 
     const values = {
       measurement: { value: 1.5, unit: 'm' },
@@ -1390,7 +1523,7 @@ describe('Form WebMCP staged-edit intent', () => {
       >;
     };
     expect(schema.properties.address.properties).toEqual({
-      country: { type: 'string' },
+      country: { type: 'string', enum: ['CA', 'US'] },
     });
     expect(schema.properties.measurement.properties.unit.enum).toEqual(['ft']);
     expect(schema.properties.measurement).toMatchObject({

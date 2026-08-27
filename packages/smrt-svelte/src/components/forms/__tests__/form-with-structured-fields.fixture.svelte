@@ -9,6 +9,8 @@ let {
   onsubmit = undefined,
   webmcp = false,
   addressFields = ['street', 'city', 'province', 'postalCode', 'country'],
+  addressCountries = undefined,
+  addressProvinces = undefined,
   structuredRequired = true,
   interactionRegistry = undefined,
   fieldsetDisabled = false,
@@ -31,6 +33,8 @@ let {
   addressFields?: Array<
     'street' | 'city' | 'province' | 'postalCode' | 'country'
   >;
+  addressCountries?: Array<{ value: string; label: string }>;
+  addressProvinces?: Array<{ value: string; label: string }>;
   structuredRequired?: boolean;
   interactionRegistry?: ControlInteractionRegistry;
   fieldsetDisabled?: boolean;
@@ -75,6 +79,8 @@ let {
 		name="address"
 		label="Address"
 		fields={addressFields}
+		countries={addressCountries}
+		provinces={addressProvinces}
 		required={structuredRequired}
 		onchange={onaddresschange}
 		/>
