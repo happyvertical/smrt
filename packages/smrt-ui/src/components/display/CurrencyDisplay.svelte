@@ -1,17 +1,43 @@
 <script module lang="ts">
-// Active ISO 4217 currency and fund codes. Keep validation independent of the
-// host's ICU data so server and browser rendering agree on the same input.
-const ISO_4217_CODES = new Set(
-  `AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VES VND VUV WST XAF XAG XAU XBA XBB XBC XBD XCD XCG XDR XOF XPD XPF XPT XSU XTS XUA XXX YER ZAR ZMW ZWG ZWL`.split(
-    ' ',
-  ),
-);
+function minorUnitEntries(
+  codes: string,
+  minorUnits: number | null,
+): Array<[string, number | null]> {
+  return codes.split(' ').map((code) => [code, minorUnits]);
+}
 
-function normalizeCurrencyCode(value: string): string | null {
+// ISO 4217 List One, published by the ISO maintenance agency SIX on
+// 2026-01-01. Keeping both membership and minor-unit exponents here makes SSR
+// and browser rendering independent of their potentially different ICU data.
+// Source: https://www.six-group.com/dam/download/financial-information/data-center/iso-currrency/lists/list-one.xml
+const ISO_4217_MINOR_UNITS = new Map<string, number | null>([
+  ...minorUnitEntries(
+    'XOF BIF XAF CLP KMF DJF XPF GNF ISK JPY KRW PYG RWF UGX UYI VUV VND',
+    0,
+  ),
+  ...minorUnitEntries(
+    'AFN EUR ALL DZD USD AOA XCD XAD ARS AMD AWG AUD AZN BSD BDT BBD BYN BZD BMD INR BTN BOB BOV BAM BWP NOK BRL BND CVE KHR CAD KYD CNY COP COU CDF NZD CRC CUP XCG CZK DKK DOP EGP SVC ERN SZL ETB FKP FJD GMD GEL GHS GIP GTQ GBP GYD HTG HNL HKD HUF IDR IRR ILS JMD KZT KES KPW KGS LAK LBP LSL ZAR LRD CHF MOP MKD MGA MWK MYR MVR MRU MUR MXN MXV MDL MNT MAD MZN MMK NAD NPR NIO NGN PKR PAB PGK PEN PHP PLN QAR RON RUB SHP WST STN SAR RSD SCR SLE SGD SBD SOS SSP LKR SDG SRD SEK CHE CHW SYP TWD TJS TZS THB TOP TTD TRY TMT UAH AED USN UYU UZS VES VED YER ZMW ZWG',
+    2,
+  ),
+  ...minorUnitEntries('BHD IQD JOD KWD LYD OMR TND', 3),
+  ...minorUnitEntries('CLF UYW', 4),
+  ...minorUnitEntries(
+    'XDR XUA XSU XBA XBB XBC XBD XTS XXX XAU XPD XPT XAG',
+    null,
+  ),
+]);
+
+function normalizeCurrencyCode(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
   const normalized = value.trim().toUpperCase();
   if (!/^[A-Z]{3}$/.test(normalized)) return null;
 
-  return ISO_4217_CODES.has(normalized) ? normalized : null;
+  return ISO_4217_MINOR_UNITS.has(normalized) ? normalized : null;
+}
+
+function invalidCurrencyCode(value: unknown): string {
+  if (typeof value !== 'string') return '(non-string)';
+  return value.trim().toUpperCase() || '(empty)';
 }
 </script>
 
@@ -67,7 +93,7 @@ interface FormattedCurrency {
 const formatted = $derived.by((): FormattedCurrency => {
   const normalizedCurrency = normalizeCurrencyCode(currency);
   if (!normalizedCurrency) {
-    const invalidCode = currency.trim().toUpperCase() || '(empty)';
+    const invalidCode = invalidCurrencyCode(currency);
     return {
       text: `Invalid currency code: ${invalidCode}`,
       invalidCode,
@@ -87,15 +113,17 @@ const formatted = $derived.by((): FormattedCurrency => {
     };
   }
 
-  const minorUnitDigits = formatter.resolvedOptions().maximumFractionDigits;
-  if (minorUnitDigits === undefined) {
-    return {
-      text: `Invalid currency code: ${normalizedCurrency}`,
-      invalidCode: normalizedCurrency,
-    };
+  const minorUnitDigits = ISO_4217_MINOR_UNITS.get(normalizedCurrency);
+  let majorAmount = amount;
+  if (unit === 'cents') {
+    if (minorUnitDigits == null) {
+      return {
+        text: `Currency code has no minor unit: ${normalizedCurrency}`,
+        invalidCode: normalizedCurrency,
+      };
+    }
+    majorAmount = amount / 10 ** minorUnitDigits;
   }
-  const majorAmount =
-    unit === 'cents' ? amount / 10 ** minorUnitDigits : amount;
   const absValue = Math.abs(majorAmount);
   let display = formatter.format(absValue);
 

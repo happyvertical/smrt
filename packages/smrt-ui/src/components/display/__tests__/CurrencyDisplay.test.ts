@@ -24,7 +24,7 @@ function money(absDollars: number, currency = 'CAD'): string {
   }).format(absDollars);
 }
 
-function minorUnits(amount: number, currency: string): number {
+function majorUnitsFromMinor(amount: number, currency: string): number {
   const formatter = new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
@@ -79,23 +79,33 @@ describe('CurrencyDisplay', () => {
       props: { amount, currency },
     });
     expect(container.querySelector('span')?.textContent).toBe(
-      money(minorUnits(amount, currency), currency),
+      money(majorUnitsFromMinor(amount, currency), currency),
     );
   });
 
   it.each([
     ['cad', 'CAD'],
     ['  eur  ', 'EUR'],
+    ['ved', 'VED'],
+    ['xad', 'XAD'],
   ])('normalizes the currency code %j to %s', (currency, normalized) => {
-    render(CurrencyDisplay, {
+    const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency },
     });
-    expect(screen.getByText(money(123.45, normalized))).toBeInTheDocument();
+    expect(container.querySelector('span')?.textContent).toBe(
+      money(123.45, normalized),
+    );
   });
 
   it.each([
     'US',
     'AAA',
+    'ANG',
+    'BGN',
+    'CUC',
+    'HRK',
+    'SLL',
+    'ZWL',
     'ZZZ',
     '',
   ])('renders invalid code %j without throwing', (currency) => {
@@ -108,6 +118,34 @@ describe('CurrencyDisplay', () => {
         name: `Invalid currency code: ${normalized}`,
       }),
     ).toHaveClass('invalid');
+  });
+
+  it('rejects a non-string currency from an untyped runtime caller without throwing', () => {
+    render(CurrencyDisplay, {
+      // @ts-expect-error JavaScript callers can pass values outside the public type.
+      props: { amount: 12345, currency: null },
+    });
+    expect(
+      screen.getByRole('status', {
+        name: 'Invalid currency code: (non-string)',
+      }),
+    ).toHaveClass('invalid');
+  });
+
+  it('requires major-unit input for ISO codes without a minor unit', async () => {
+    const { rerender } = render(CurrencyDisplay, {
+      props: { amount: 12.5, currency: 'XAU' },
+    });
+    expect(
+      screen.getByRole('status', {
+        name: 'Currency code has no minor unit: XAU',
+      }),
+    ).toHaveClass('invalid');
+
+    await rerender({ amount: 12.5, currency: 'XAU', unit: 'dollars' });
+    expect(document.querySelector('.currency-display')?.textContent).toBe(
+      money(12.5, 'XAU'),
+    );
   });
 
   it('shows an explicit + sign for positive amounts when showSign is set', () => {

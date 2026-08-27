@@ -55,6 +55,9 @@ throwing and interrupting a surrounding collection render.
 With the default historical `unit="cents"` setting, amounts are interpreted as
 the selected currency's ISO minor units (for example, 0 digits for JPY and 3
 for BHD); `unit="dollars"` means the value is already in major units.
+ISO fund, metal, test, and no-currency codes whose minor unit is `N.A.` require
+`unit="dollars"`; the default minor-unit mode renders an accessible inline
+error for those codes.
 
 ```svelte
 <script lang="ts">

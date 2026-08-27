@@ -357,6 +357,8 @@ the surrounding collection render.
 The historical `unit="cents"` option means ISO minor units, so currencies with
 zero or three minor digits are scaled correctly; `unit="dollars"` means major
 units.
+ISO codes whose minor unit is `N.A.` require `unit="dollars"`; minor-unit mode
+renders an accessible inline error for those codes.
 
 **Feedback**: `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar`
 
