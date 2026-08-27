@@ -47,9 +47,9 @@ import {
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
 import {
-  foreignKeyConstraintName,
   planForeignKeyCreation,
   renderDeferredForeignKeyAdd,
+  renderForeignKeyConstraintDrop,
   schemaForeignKeysForEngine,
 } from '@happyvertical/smrt-core/schema';
 import {
@@ -487,6 +487,7 @@ export async function createIsolatedTestDb(
 async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
   postSchemaStatements: readonly PostSchemaStatement[],
+  manifestTableNames: readonly string[] = [],
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -524,16 +525,28 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   const applyPostSchemaStatements = async (
     schemaDb: DatabaseInterfaceWithTransaction,
   ): Promise<void> => {
-    for (const deferred of postSchemaStatements) {
-      if (
-        await postgresConstraintExists(
-          schemaDb,
-          deferred.tableName,
-          deferred.constraintName,
-        )
-      ) {
-        continue;
+    for (const tableName of manifestTableNames) {
+      const result = await schemaDb.query(
+        `SELECT constraint_row.conname AS constraint_name
+         FROM pg_constraint AS constraint_row
+         JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+         JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+         WHERE table_row.relname = $1
+           AND namespace_row.nspname = current_schema()
+           AND constraint_row.contype = 'f'
+         ORDER BY constraint_row.conname`,
+        [tableName],
+      );
+      const rows = Array.isArray(result)
+        ? result
+        : ((result as { rows?: unknown[] }).rows ?? []);
+      for (const row of rows as Array<{ constraint_name: string }>) {
+        await schemaDb.query(
+          renderForeignKeyConstraintDrop(tableName, row.constraint_name),
+        );
       }
+    }
+    for (const deferred of postSchemaStatements) {
       await schemaDb.query(deferred.statement);
     }
   };
@@ -640,31 +653,6 @@ async function createIsolatedTestDbWithPostSchemaStatements(
 
 interface PostSchemaStatement {
   statement: string;
-  tableName: string;
-  constraintName: string;
-}
-
-async function postgresConstraintExists(
-  db: DatabaseInterfaceWithTransaction,
-  tableName: string,
-  constraintName: string,
-): Promise<boolean> {
-  const result = await db.query(
-    `SELECT 1
-     FROM pg_constraint AS constraint_row
-     JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
-     JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
-     WHERE table_row.relname = $1
-       AND namespace_row.nspname = current_schema()
-       AND constraint_row.conname = $2
-       AND constraint_row.contype = 'f'
-     LIMIT 1`,
-    [tableName, constraintName],
-  );
-  const rows = Array.isArray(result)
-    ? result
-    : ((result as { rows?: unknown[] }).rows ?? []);
-  return rows.length > 0;
 }
 
 // ============================================================================
@@ -1331,9 +1319,10 @@ export async function createIsolatedTestDbFromManifest(
           )
           .map(({ tableName, foreignKey }) => ({
             statement: renderDeferredForeignKeyAdd(tableName, foreignKey),
-            tableName,
-            constraintName: foreignKeyConstraintName(tableName, foreignKey),
           }))
+      : [],
+    adapter === 'postgres'
+      ? tables.map(({ tableName }) => tableName).sort()
       : [],
   );
 }

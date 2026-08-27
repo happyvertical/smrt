@@ -8,6 +8,7 @@ export * from './ddl/index.js';
 export {
   foreignKeyConstraintName,
   renderForeignKeyConstraint,
+  renderForeignKeyConstraintDrop,
   schemaForeignKeys,
   schemaForeignKeysForEngine,
 } from './foreign-key-ddl.js';

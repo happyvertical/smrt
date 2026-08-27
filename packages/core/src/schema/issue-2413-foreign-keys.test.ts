@@ -8,6 +8,7 @@ import {
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
+  renderForeignKeyConstraintDrop,
   schemaDependenciesForEngine,
   schemaForeignKeys,
 } from './foreign-key-ddl.js';
@@ -73,6 +74,12 @@ function withoutUpdateAction(input: SchemaDefinition): SchemaDefinition {
 }
 
 describe('same-package foreign-key policy (#2413)', () => {
+  it('quotes catalog-owned names when dropping a rendered constraint', () => {
+    expect(renderForeignKeyConstraintDrop('child"table', 'parent"fkey')).toBe(
+      'ALTER TABLE "child""table" DROP CONSTRAINT "parent""fkey";',
+    );
+  });
+
   it('maps declared actions, natural keys, ordinary references, and tenancy exclusions explicitly', () => {
     expect(resolveForeignKeyDeleteAction({ declared: 'SET NULL' }).action).toBe(
       'SET NULL',

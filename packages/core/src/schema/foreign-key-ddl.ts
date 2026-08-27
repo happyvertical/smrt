@@ -37,6 +37,14 @@ export function renderForeignKeyConstraint(
   return parts.join(' ');
 }
 
+/** Render a PostgreSQL DROP CONSTRAINT statement for a catalog-owned FK. */
+export function renderForeignKeyConstraintDrop(
+  tableName: string,
+  constraintName: string,
+): string {
+  return `ALTER TABLE ${quoteIdentifier(tableName)} DROP CONSTRAINT ${quoteIdentifier(constraintName)};`;
+}
+
 export function renderForeignKeyOrphanDetector(
   tableName: string,
   foreignKey: ForeignKeyDefinition,

@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { createIsolatedTestDbFromManifest } from '../test-db.js';
 
@@ -148,34 +149,68 @@ postgresDescribe(
       const initial = await createIsolatedTestDbFromManifest({ manifestPath });
       await initial.cleanup();
 
-      writeFileSync(
-        manifestPath,
-        JSON.stringify({
-          objects: {
-            ...baseObjects,
-            Child: {
-              ...baseObjects.Child,
-              schema: {
-                ...baseObjects.Child.schema,
-                columns: {
-                  ...baseObjects.Child.schema.columns,
-                  parent_id: {
-                    type: 'TEXT',
-                    referenceKind: 'foreignKey',
-                    foreignKey: {
-                      table: 'i2537_evolve_parent',
-                      column: 'id',
-                      onDelete: 'CASCADE',
-                      onUpdate: 'CASCADE',
-                    },
+      const relationshipObjects = (
+        referencesTable: string,
+        onDelete: 'CASCADE' | 'NO ACTION',
+      ) => ({
+        ...baseObjects,
+        ...(referencesTable === 'i2537_evolve_parent_alternate'
+          ? {
+              ParentAlternate: {
+                className: 'ParentAlternate',
+                schema: {
+                  tableName: 'i2537_evolve_parent_alternate',
+                  columns: {
+                    id: { type: 'TEXT', primaryKey: true, notNull: true },
                   },
-                  added_later: { type: 'TEXT' },
                 },
               },
+            }
+          : {}),
+        Child: {
+          ...baseObjects.Child,
+          schema: {
+            ...baseObjects.Child.schema,
+            columns: {
+              ...baseObjects.Child.schema.columns,
+              parent_id: {
+                type: 'TEXT',
+                referenceKind: 'foreignKey',
+                foreignKey: {
+                  table: referencesTable,
+                  column: 'id',
+                  onDelete,
+                  onUpdate: 'CASCADE',
+                },
+              },
+              added_later: { type: 'TEXT' },
             },
           },
-        }),
-      );
+        },
+      });
+      const writeObjects = (objects: Record<string, unknown>) =>
+        writeFileSync(manifestPath, JSON.stringify({ objects }));
+      writeObjects(relationshipObjects('i2537_evolve_parent', 'CASCADE'));
+
+      const readChildConstraints = async (
+        db: Awaited<ReturnType<typeof createIsolatedTestDbFromManifest>>['db'],
+      ) => {
+        const result = await db.query(
+          `SELECT constraint_row.conname AS constraint_name,
+                  constraint_row.convalidated,
+                  constraint_row.confdeltype,
+                  parent.relname AS referenced_table
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           JOIN pg_class AS parent ON parent.oid = constraint_row.confrelid
+           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+           WHERE namespace_row.nspname = current_schema()
+             AND child.relname = 'i2537_evolve_child'
+             AND constraint_row.contype = 'f'
+           ORDER BY constraint_row.conname`,
+        );
+        return result.rows;
+      };
 
       const evolved = await createIsolatedTestDbFromManifest({ manifestPath });
       try {
@@ -188,19 +223,13 @@ postgresDescribe(
         );
         expect(columnResult.rows).toEqual([{ column_name: 'added_later' }]);
 
-        const constraintResult = await evolved.db.query(
-          `SELECT constraint_row.conname AS constraint_name
-           FROM pg_constraint AS constraint_row
-           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
-           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
-           WHERE namespace_row.nspname = current_schema()
-             AND child.relname = 'i2537_evolve_child'
-             AND constraint_row.contype = 'f'`,
-        );
-        expect(constraintResult.rows).toEqual([
+        expect(await readChildConstraints(evolved.db)).toEqual([
           {
             constraint_name:
               'i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey',
+            convalidated: true,
+            confdeltype: 'c',
+            referenced_table: 'i2537_evolve_parent',
           },
         ]);
 
@@ -219,6 +248,68 @@ postgresDescribe(
         ).rejects.toThrow();
       } finally {
         await evolved.cleanup();
+      }
+
+      const admin = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+      try {
+        await admin.query(
+          'ALTER TABLE "i2537_evolve_child" DROP CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey"',
+        );
+        await admin.query(
+          'ALTER TABLE "i2537_evolve_child" ADD CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_evolve_parent" ("id") ON DELETE CASCADE ON UPDATE CASCADE NOT VALID',
+        );
+      } finally {
+        await admin.close();
+      }
+
+      const validated = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+      try {
+        expect(await readChildConstraints(validated.db)).toEqual([
+          expect.objectContaining({ convalidated: true }),
+        ]);
+      } finally {
+        await validated.cleanup();
+      }
+
+      writeObjects(relationshipObjects('i2537_evolve_parent', 'NO ACTION'));
+      const actionChanged = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+      try {
+        expect(await readChildConstraints(actionChanged.db)).toEqual([
+          expect.objectContaining({ confdeltype: 'a' }),
+        ]);
+      } finally {
+        await actionChanged.cleanup();
+      }
+
+      writeObjects(
+        relationshipObjects('i2537_evolve_parent_alternate', 'CASCADE'),
+      );
+      const targetChanged = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+      try {
+        expect(await readChildConstraints(targetChanged.db)).toEqual([
+          expect.objectContaining({
+            referenced_table: 'i2537_evolve_parent_alternate',
+          }),
+        ]);
+      } finally {
+        await targetChanged.cleanup();
+      }
+
+      writeObjects(baseObjects);
+      const removed = await createIsolatedTestDbFromManifest({ manifestPath });
+      try {
+        expect(await readChildConstraints(removed.db)).toEqual([]);
+      } finally {
+        await removed.cleanup();
         rmSync(manifestPath, { force: true });
       }
     });
