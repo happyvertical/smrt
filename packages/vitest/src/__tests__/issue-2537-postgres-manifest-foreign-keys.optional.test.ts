@@ -43,6 +43,93 @@ function selectObject(
 postgresDescribe(
   'PostgreSQL multi-package manifest foreign keys (#2537)',
   () => {
+    it('converges when concurrent factories add the same deferred cycle constraints', async () => {
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-cycle-${randomUUID()}.json`,
+      );
+      const relationship = (table: string) => ({
+        type: 'TEXT' as const,
+        referenceKind: 'foreignKey' as const,
+        foreignKey: {
+          table,
+          column: 'id',
+          onDelete: 'NO ACTION' as const,
+          onUpdate: 'CASCADE' as const,
+        },
+      });
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          objects: {
+            CycleA: {
+              className: 'CycleA',
+              schema: {
+                tableName: 'i2537_cycle_a',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  b_id: relationship('i2537_cycle_b'),
+                },
+              },
+            },
+            CycleB: {
+              className: 'CycleB',
+              schema: {
+                tableName: 'i2537_cycle_b',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  a_id: relationship('i2537_cycle_a'),
+                },
+              },
+            },
+          },
+        }),
+      );
+
+      const createCycleDb = () =>
+        createIsolatedTestDbFromManifest({ manifestPath });
+      const seed = await createCycleDb();
+      try {
+        // Leave the tables in place but remove both planner-deferred
+        // constraints so concurrent factories race on ADD CONSTRAINT rather
+        // than short-circuiting on the preflight existence check.
+        await seed.baseDb.query(
+          'ALTER TABLE "i2537_cycle_a" DROP CONSTRAINT "i2537_cycle_a_b_id_i2537_cycle_b_id_fkey"',
+        );
+        await seed.baseDb.query(
+          'ALTER TABLE "i2537_cycle_b" DROP CONSTRAINT "i2537_cycle_b_a_id_i2537_cycle_a_id_fkey"',
+        );
+      } finally {
+        await seed.cleanup();
+      }
+
+      const [left, right] = await Promise.all([
+        createCycleDb(),
+        createCycleDb(),
+      ]);
+      try {
+        const result = await left.db.query(
+          `SELECT child.relname AS table_name, count(*)::int AS constraint_count
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+           WHERE namespace_row.nspname = current_schema()
+             AND constraint_row.contype = 'f'
+             AND child.relname IN ('i2537_cycle_a', 'i2537_cycle_b')
+           GROUP BY child.relname
+           ORDER BY child.relname`,
+        );
+        expect(result.rows).toEqual([
+          { table_name: 'i2537_cycle_a', constraint_count: 1 },
+          { table_name: 'i2537_cycle_b', constraint_count: 1 },
+        ]);
+        expect(right.db.isActive()).toBe(true);
+      } finally {
+        await Promise.all([left.cleanup(), right.cleanup()]);
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
     it('reopens the schema and enforces the shipped campaign relationships', async () => {
       const commerce = readBuiltManifest(
         resolve('../commerce/dist/manifest.json'),
