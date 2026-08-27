@@ -1,73 +1,52 @@
 <script lang="ts">
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
-import {
-  type DataSurfaceDescriptor,
-  DataTable,
-} from '@happyvertical/smrt-ui/data';
-import type { WebMcpToolDefinition } from '@happyvertical/smrt-web';
-import Form from '../../components/forms/Form.svelte';
-import TextInput from '../../components/forms/TextInput.svelte';
+import type {
+  RegisterWebMcpToolsOptions,
+  WebMcpToolDefinition,
+} from '@happyvertical/smrt-web';
 import Provider from '../../Provider.svelte';
-import { useWebMcpTool } from '../webmcp.svelte.js';
+import type { WebMcpProviderConfig } from '../webmcp-provider.js';
+import Child from './webmcp-composed.child.fixture.svelte';
 
 let {
   dataSurfaceRegistry,
   generatedDefinitions = [],
+  fetchFn,
+  showChild = true,
 }: {
   dataSurfaceRegistry: DataSurfaceRegistry;
   generatedDefinitions?: readonly WebMcpToolDefinition[];
+  fetchFn?: RegisterWebMcpToolsOptions['fetchFn'];
+  showChild?: boolean;
 } = $props();
 
-useWebMcpTool(() => ({
-  name: 'fixture_component_preview',
-  description:
-    'Preview the composed fixture without changing application state.',
-  inputSchema: { type: 'object', properties: {} },
-  annotations: { readOnlyHint: true, openWorldHint: false },
-  execute: () => JSON.stringify({ ok: true, source: 'bespoke-component' }),
-}));
-
-const tableDescriptor: DataSurfaceDescriptor = {
-  version: 1,
-  identity: { surfaceId: 'fixture-items', kind: 'table' },
-  schemaVersion: 1,
-  label: 'Fixture items',
-  rowKey: 'id',
-  columns: [
-    { id: 'id', label: 'ID', capabilities: ['read', 'project'] },
-    {
-      id: 'name',
-      label: 'Name',
-      capabilities: ['read', 'search', 'filter', 'sort', 'project'],
-    },
-  ],
-  query: { modes: ['rows', 'count'], projectableColumnIds: ['id', 'name'] },
-  controls: ['set-search', 'toggle-sorting'].map((id) => ({ id, label: id })),
-  actions: [],
-  limits: { maxQueryRows: 50, maxQueryBytes: 10_000, maxSelectionSize: 10 },
-};
-
-const rows = [
-  { id: 'item-1', name: 'First' },
-  { id: 'item-2', name: 'Second' },
-];
-const columns = [
-  { id: 'id', label: 'ID', accessor: 'id' },
-  { id: 'name', label: 'Name', accessor: 'name', sortable: true },
-];
+let cachedDefinitions: readonly WebMcpToolDefinition[] | undefined;
+let cachedFetchFn: RegisterWebMcpToolsOptions['fetchFn'] | undefined;
+let cachedRegistry: DataSurfaceRegistry | undefined;
+let cachedWebmcp: WebMcpProviderConfig | undefined;
+const webmcp = $derived.by(() => {
+  if (
+    cachedWebmcp &&
+    cachedDefinitions === generatedDefinitions &&
+    cachedFetchFn === fetchFn &&
+    cachedRegistry === dataSurfaceRegistry
+  ) {
+    return cachedWebmcp;
+  }
+  cachedDefinitions = generatedDefinitions;
+  cachedFetchFn = fetchFn;
+  cachedRegistry = dataSurfaceRegistry;
+  cachedWebmcp = {
+    definitions: generatedDefinitions,
+    ...(fetchFn ? { fetchFn } : {}),
+    ui: { dataSurfaceRegistry },
+  };
+  return cachedWebmcp;
+});
 </script>
 
-<Provider
-  webmcp={{ definitions: generatedDefinitions, ui: { dataSurfaceRegistry } }}
->
-  <Form formId="fixture-form">
-    <TextInput name="title" label="Title" />
-  </Form>
-  <DataTable
-    data={rows}
-    {columns}
-    rowKey="id"
-    sortable={true}
-    dataSurface={{ registry: dataSurfaceRegistry, descriptor: tableDescriptor }}
-  />
+<Provider {webmcp}>
+  {#if showChild}
+    <Child {dataSurfaceRegistry} />
+  {/if}
 </Provider>

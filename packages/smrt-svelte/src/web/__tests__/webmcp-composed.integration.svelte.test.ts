@@ -7,13 +7,33 @@
  * value without a human gesture.
  */
 
+import {
+  APIGenerator,
+  field,
+  ObjectRegistry,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
+import { ManifestGenerator } from '@happyvertical/smrt-core/scanner';
+import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import type { WebMcpToolDefinition } from '@happyvertical/smrt-web';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { createServer } from 'vite';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { buildWebMcpToolDefinitions } from '../../../../core/src/vite-plugin/web-collections.js';
 import Fixture from './webmcp-composed.fixture.svelte';
 import SsrFixture from './webmcp-ssr.fixture.svelte';
 
@@ -23,29 +43,94 @@ type CapturedTool = {
   signal?: AbortSignal;
 };
 
+@smrt({ api: { include: ['get'] } })
+class WebMcpComposedFixtureItem extends SmrtObject {
+  @field({ type: 'text' })
+  name = '';
+}
+
+class WebMcpComposedFixtureItemCollection extends SmrtCollection<WebMcpComposedFixtureItem> {
+  static readonly _itemClass = WebMcpComposedFixtureItem;
+}
+
+ObjectRegistry.registerCollection(
+  'WebMcpComposedFixtureItem',
+  WebMcpComposedFixtureItemCollection,
+);
+
 afterEach(() => {
   delete document.modelContext;
 });
 
 describe('composed Provider WebMCP surface (#2523)', () => {
-  const generatedReadDefinition: WebMcpToolDefinition = {
-    collection: 'fixture-items',
-    objectRef: '@fixture/app:FixtureItem',
-    className: 'FixtureItem',
-    endpoint: '/fixture-items',
-    idField: 'id',
-    idType: 'text',
-    relationships: [],
-    action: 'get',
-    name: 'fixture_generated_read',
-    description: 'Read one fixture item.',
-    inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
-    readOnly: true,
-    effect: 'read',
-    idempotent: true,
-    openWorld: false,
-    route: { method: 'GET', scope: 'item', path: [] },
-  };
+  let generatedReadDefinition: WebMcpToolDefinition;
+  let generatedRowId = '';
+  let db: Awaited<ReturnType<typeof getTestDatabase>>;
+  let handler: (request: Request) => Promise<Response>;
+  const baseUrl = 'http://fixture.local/api/v1';
+
+  beforeAll(async () => {
+    const scanner = new OxcScanner({
+      cwd: process.cwd(),
+      include: ['src/web/__tests__/webmcp-composed.integration.svelte.test.ts'],
+      exclude: [],
+      followImports: true,
+      baseClasses: ['SmrtObject', 'SmrtCollection'],
+      includeStaticMethods: true,
+    });
+    const { results, resolved } = await scanner.scanAndResolve();
+    const manifest = new ManifestAdapter().toManifest(resolved, {
+      packageName: '@fixture/smrt-svelte',
+      typeAliases: results.typeAliases,
+    });
+    new ManifestGenerator().applyGenerationPasses(manifest, {
+      packageName: '@fixture/smrt-svelte',
+    });
+    const generated = buildWebMcpToolDefinitions(manifest).find(
+      (definition) =>
+        definition.className === 'WebMcpComposedFixtureItem' &&
+        definition.action === 'get',
+    );
+    if (!generated)
+      throw new Error('scanner did not emit the fixture get tool');
+    generatedReadDefinition = generated;
+
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['WebMcpComposedFixtureItem'],
+    });
+    const collection = await WebMcpComposedFixtureItemCollection.create({ db });
+    const row = await collection.create({ name: 'generated read' });
+    generatedRowId = row.id;
+    const api = new APIGenerator(
+      {
+        basePath: '/api/v1',
+        authMiddleware: () => async (request) => {
+          if (request.headers.get('authorization') !== 'Bearer fixture-user') {
+            return new Response('auth required', { status: 401 });
+          }
+          return request;
+        },
+      },
+      { db },
+    );
+    api.registerCollection('webmcpcomposedfixtureitems', collection);
+    handler = api.generateHandler();
+  });
+
+  afterAll(async () => {
+    await db?.close?.();
+  });
+
+  function authenticatedFetch(): typeof fetch {
+    return (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const requestUrl = new URL(String(input), `${baseUrl}/`);
+      const headers = new Headers(init?.headers);
+      headers.set('authorization', 'Bearer fixture-user');
+      return handler(new Request(requestUrl, { ...init, headers }));
+    }) as typeof fetch;
+  }
 
   it('keeps the composed UI render safe without browser modelContext support', async () => {
     const dataSurfaceRegistry = createDataSurfaceRegistry();
@@ -85,40 +170,54 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       },
     };
     const dataSurfaceRegistry = createDataSurfaceRegistry();
+    const fetchFn = authenticatedFetch();
+    const generatedDefinitions = [generatedReadDefinition];
     const view = render(Fixture, {
       props: {
         dataSurfaceRegistry,
-        generatedDefinitions: [generatedReadDefinition],
+        generatedDefinitions,
+        fetchFn,
       },
     });
     await tick();
     await tick();
     await vi.waitFor(() =>
       expect(registered.map((tool) => tool.name)).toContain(
-        'fixture_generated_read',
+        generatedReadDefinition.name,
       ),
     );
 
-    expect(registered.map((tool) => tool.name)).toEqual([
-      'smrt_ui_list_form_controls',
-      'smrt_ui_inspect_form_control',
-      'smrt_ui_execute_form_control',
-      'smrt_ui_list_data_surfaces',
-      'smrt_ui_inspect_data_surface',
-      'smrt_ui_execute_data_surface_control',
-      'fixture_component_preview',
-      'fixture_generated_read',
-    ]);
+    expect(registered.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'smrt_ui_list_form_controls',
+        'smrt_ui_inspect_form_control',
+        'smrt_ui_execute_form_control',
+        'smrt_ui_list_data_surfaces',
+        'smrt_ui_inspect_data_surface',
+        'smrt_ui_execute_data_surface_control',
+        'fixture_component_preview',
+        generatedReadDefinition.name,
+      ]),
+    );
+    expect(registered).toHaveLength(8);
     expect(dataSurfaceRegistry.list()).toHaveLength(1);
+    const titleInput = view.container.querySelector(
+      'input[name="title"]',
+    ) as HTMLInputElement | null;
+    expect(titleInput?.value).toBe('');
 
-    const listControls = registered[0];
+    const listControls = registered.find(
+      (tool) => tool.name === 'smrt_ui_list_form_controls',
+    );
     if (!listControls)
       throw new Error('list form-controls tool was not registered');
     expect(JSON.parse(await listControls.execute({}))).toMatchObject({
       ok: true,
       result: [{ identity: { formId: 'fixture-form', controlId: 'title' } }],
     });
-    const executeForm = registered[2];
+    const executeForm = registered.find(
+      (tool) => tool.name === 'smrt_ui_execute_form_control',
+    );
     if (!executeForm)
       throw new Error('execute form-control tool was not registered');
     const staged = JSON.parse(
@@ -129,6 +228,7 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       }),
     ) as { result?: { ok?: boolean; action?: string } };
     expect(staged).toMatchObject({ result: { ok: true, action: 'stage' } });
+    expect(titleInput?.value).toBe('');
 
     const applied = JSON.parse(
       await executeForm.execute({
@@ -139,36 +239,73 @@ describe('composed Provider WebMCP surface (#2523)', () => {
     expect(applied).toMatchObject({
       result: { ok: false, reason: 'human_confirmation_required' },
     });
+    expect(titleInput?.value).toBe('');
 
-    const bespoke = registered[6];
+    const generated = registered.find(
+      (tool) => tool.name === generatedReadDefinition.name,
+    );
+    if (!generated)
+      throw new Error('generated Provider tool was not registered');
+    expect(
+      JSON.parse(await generated.execute({ id: generatedRowId })),
+    ).toMatchObject({ name: 'generated read' });
+
+    const bespoke = registered.find(
+      (tool) => tool.name === 'fixture_component_preview',
+    );
     if (!bespoke) throw new Error('bespoke component tool was not registered');
     expect(JSON.parse(await bespoke.execute({}))).toEqual({
       ok: true,
       source: 'bespoke-component',
     });
 
-    view.unmount();
-    expect(dataSurfaceRegistry.list()).toEqual([]);
-
-    const firstRegistration = registered.slice();
-    expect(firstRegistration.every((tool) => tool.signal?.aborted)).toBe(true);
-
-    const remounted = render(Fixture, {
-      props: {
-        dataSurfaceRegistry,
-        generatedDefinitions: [generatedReadDefinition],
-      },
+    await view.rerender({
+      dataSurfaceRegistry,
+      generatedDefinitions,
+      fetchFn,
+      showChild: false,
     });
     await tick();
     await tick();
-    await vi.waitFor(() => expect(registered).toHaveLength(16));
+    expect(dataSurfaceRegistry.list()).toEqual([]);
 
-    const secondRegistration = registered.slice(firstRegistration.length);
-    expect(secondRegistration).toHaveLength(firstRegistration.length);
-    expect(secondRegistration.every((tool) => !tool.signal?.aborted)).toBe(
-      true,
-    );
-    remounted.unmount();
-    expect(secondRegistration.every((tool) => tool.signal?.aborted)).toBe(true);
+    const firstRegistration = registered.slice();
+    expect(
+      firstRegistration
+        .filter((tool) => !tool.signal?.aborted)
+        .map((tool) => tool.name),
+    ).toEqual([
+      'smrt_ui_list_form_controls',
+      'smrt_ui_inspect_form_control',
+      'smrt_ui_execute_form_control',
+      'smrt_ui_list_data_surfaces',
+      'smrt_ui_inspect_data_surface',
+      'smrt_ui_execute_data_surface_control',
+      generatedReadDefinition.name,
+    ]);
+
+    await view.rerender({
+      dataSurfaceRegistry,
+      generatedDefinitions,
+      fetchFn,
+      showChild: true,
+    });
+    await tick();
+    await tick();
+    await vi.waitFor(() => expect(registered).toHaveLength(9));
+
+    expect(dataSurfaceRegistry.list()).toHaveLength(1);
+    const secondBespoke = registered.filter(
+      (tool) => tool.name === 'fixture_component_preview',
+    )[1];
+    if (!secondBespoke)
+      throw new Error('remounted bespoke tool was not registered');
+    expect(secondBespoke.name).toBe('fixture_component_preview');
+    expect(secondBespoke.signal?.aborted).toBe(false);
+    expect(
+      registered.filter((tool) => tool.name === 'fixture_component_preview'),
+    ).toHaveLength(2);
+    view.unmount();
+    expect(registered.every((tool) => tool.signal?.aborted)).toBe(true);
   });
 });

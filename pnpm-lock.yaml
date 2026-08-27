@@ -2377,6 +2377,12 @@ importers:
         specifier: ^1.2.2
         version: 1.2.2
     devDependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@sveltejs/package':
         specifier: ^2.5.8
         version: 2.5.8(svelte@5.56.4)(typescript@5.9.3)
