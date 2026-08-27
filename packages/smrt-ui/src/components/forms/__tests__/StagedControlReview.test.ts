@@ -11,6 +11,7 @@ import CompositeUserEditFixture from './composite-user-edit.fixture.svelte';
 import SelectFixture from './select-interaction.fixture.svelte';
 import Fixture from './staged-review.fixture.svelte';
 import FieldsetFixture from './staged-review-fieldset.fixture.svelte';
+import OuterFieldsetFixture from './staged-review-outer-fieldset.fixture.svelte';
 
 const identity = { formId: 'profile', controlId: 'display-name' };
 const createReviewRegistry = () =>
@@ -179,6 +180,33 @@ describe('StagedControlReview', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled(),
     );
+  });
+
+  it('refreshes staged state when a fieldset wrapping the form changes state', async () => {
+    const registry = createReviewRegistry();
+    const { container } = render(OuterFieldsetFixture, {
+      props: { registry },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const fieldset = container.querySelector('fieldset');
+    if (!(fieldset instanceof HTMLFieldSetElement)) {
+      throw new Error('Expected outer form fieldset');
+    }
+    fieldset.disabled = true;
+    await waitFor(() =>
+      expect(registry.get(identity)?.state.disabled).toBe(true),
+    );
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+
+    fieldset.disabled = false;
+    await waitFor(() =>
+      expect(registry.get(identity)?.state.disabled).toBe(false),
+    );
+    expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled();
   });
 
   it('resets an edited draft when a replacement proposal has a new revision', async () => {

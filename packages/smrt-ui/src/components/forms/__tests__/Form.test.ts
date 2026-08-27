@@ -11,11 +11,35 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
+import { createControlInteractionRegistry } from '../control-interaction.js';
 import Form from '../Form.svelte';
 
 const children = createRawSnippet(() => ({
   render: () => '<button type="submit">Save</button>',
 }));
+
+const controlledInput = createRawSnippet(() => ({
+  render: () => '<input data-smrt-control="display-name" />',
+}));
+
+function dispatchTrusted(target: EventTarget, type: string): void {
+  const event = new Event(type, { bubbles: true });
+  const implementationSymbol = Object.getOwnPropertySymbols(event).find(
+    (symbol) => symbol.description === 'impl',
+  );
+  if (!implementationSymbol) throw new Error('missing JSDOM event internals');
+  target.addEventListener(
+    type,
+    (dispatched) => {
+      const implementation = (
+        dispatched as Event & Record<symbol, { isTrusted: boolean }>
+      )[implementationSymbol];
+      implementation.isTrusted = true;
+    },
+    { capture: true, once: true },
+  );
+  target.dispatchEvent(event);
+}
 
 describe('Form', () => {
   it('renders a <form> with forwarded attributes and its children', () => {
@@ -48,13 +72,32 @@ describe('Form', () => {
     );
   });
 
-  it('does not install a generic click-to-edit handler', () => {
-    const { container } = render(Form, { props: { children } });
+  it('records trusted value edits but not focus-only clicks', () => {
+    const registry = createControlInteractionRegistry();
+    const recordUserEdit = vi.spyOn(registry, 'recordUserEdit');
+    const { container } = render(Form, {
+      props: {
+        formId: 'profile',
+        interactionRegistry: registry,
+        children: controlledInput,
+      },
+    });
+    const input = container.querySelector('input');
+    if (!input) throw new Error('Expected controlled input');
 
     // A click can focus a field without changing it. Direct-edit tracking is
     // deliberately limited to input/change, while composite controls record
     // their successful mutations explicitly.
-    expect(container.querySelector('form')?.onclick).toBeNull();
+    dispatchTrusted(input, 'click');
+    expect(recordUserEdit).not.toHaveBeenCalled();
+
+    dispatchTrusted(input, 'input');
+    expect(recordUserEdit).toHaveBeenCalledOnce();
+    expect(recordUserEdit).toHaveBeenCalledWith({
+      formId: 'profile',
+      controlId: 'display-name',
+      subject: undefined,
+    });
   });
 
   it('is axe-clean', async () => {

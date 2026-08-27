@@ -169,6 +169,18 @@ $effect(() => {
     subtree: true,
     attributeFilter: ['disabled', 'readonly'],
   });
+  for (
+    let ancestor = element.parentElement;
+    ancestor;
+    ancestor = ancestor.parentElement
+  ) {
+    if (ancestor instanceof HTMLFieldSetElement) {
+      observer.observe(ancestor, {
+        attributes: true,
+        attributeFilter: ['disabled'],
+      });
+    }
+  }
   return () => observer.disconnect();
 });
 
