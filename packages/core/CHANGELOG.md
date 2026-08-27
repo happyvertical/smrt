@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.43.5
+
+### Patch Changes
+
+- ### Features
+
+  - add staged WebMCP edit review (#2528) (ui)
+  - add server-backed ContentList browsing, URL state, and saved views (#2531) (content)
+
+  ### Other Changes
+
+  - test: add WebMCP end-to-end integration fixture (#2533)
+  - @happyvertical/smrt-config@0.43.5
+  - @happyvertical/smrt-types@0.43.5
+  - @happyvertical/smrt-scanner@0.43.5
+
 ## 0.43.4
 
 ### Patch Changes
