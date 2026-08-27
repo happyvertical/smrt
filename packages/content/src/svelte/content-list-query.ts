@@ -54,10 +54,14 @@
  *   predicate, so the schema declares no filter operators for them.
  * - **No ETag/version slot.** The canonical envelope carries a
  *   `queryFingerprint` plus `freshness.asOf` instead.
- * - **Filters compare exactly.** Local mode compares case-insensitively; the
- *   server compares the stored value. Content stores lowercase `type`,
- *   `status`, and `state` tokens, which is why the adapter normalizes filter
- *   values to lowercase before they get here.
+ * - **Filters compare exactly.** The server compares the stored value. The
+ *   adapter folds case only for the token columns (`type`, `status`, `state`),
+ *   because free text has to reach the server as the operator typed it.
+ * - **NULL semantics are aligned for `ne`/`notIn`** — both union `IS NULL`, as
+ *   `in` already did, so a shared link returns the same rows in local and
+ *   server mode. `lt`/`lte` are the documented exception: locally an absent
+ *   value reads as empty text and matches, and neither alignment is correct for
+ *   every column. See `agents/content-list.md`.
  */
 
 import type {
@@ -292,6 +296,12 @@ export const CONTENT_LIST_QUERY_MAX_REQUEST_BYTES = 100_000;
 export const CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS = 50;
 /** `stringValue(object.requestId, …, 128)` — non-empty, at most 128 chars. */
 export const CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH = 128;
+/**
+ * `MAX_CONTENT_QUERY_OR_BRANCHES` — the executor's ceiling on the disjunctive
+ * normal form it lowers a filter into. Null-safe `ne`/`notIn` cost two branches
+ * each and an `all` multiplies, so this one is reachable from a crafted link.
+ */
+export const CONTENT_LIST_QUERY_MAX_OR_BRANCHES = 128;
 
 /**
  * The request normalizer's *validity* rules, as distinct from its numeric caps.
@@ -382,6 +392,12 @@ export type ContentListQueryDropReason =
   | 'unsupported-value'
   /** The value was clamped to stay inside a protocol or policy bound. */
   | 'out-of-range'
+  /**
+   * The value is live and applied, but outside the vocabulary the toolbar can
+   * display. Reported so an operator is never shown an apparently unfiltered
+   * toolbar over an empty list.
+   */
+  | 'unlisted-value'
   /**
    * An unpaginated view was requested, which a server query cannot express —
    * the endpoint always applies a page limit. Coerced to the page size.
@@ -894,6 +910,37 @@ function countFilterNodes(filter: ContentListQueryFilter): number {
 }
 
 /**
+ * Counts the disjunctive-normal-form branches the executor will expand a filter
+ * into, mirroring `conditionToDnf`/`crossProduct` in `content-query.ts`.
+ *
+ * `ne` and `notIn` lower to a UNION with `IS NULL` so their meaning matches the
+ * local evaluator's, which costs a second branch each, and an `all` multiplies
+ * its children. Past {@link CONTENT_LIST_QUERY_MAX_OR_BRANCHES} the executor
+ * refuses the request outright, so the translator has to stop adding filters
+ * before that rather than hand the operator an error panel.
+ */
+function countFilterBranches(filter: ContentListQueryFilter): number {
+  if (filter.kind === 'condition') {
+    if (filter.operator === 'ne') return filter.value === null ? 1 : 2;
+    if (filter.operator === 'notIn') return 2;
+    // `in` unions IS NULL only when the value list itself carries a null, which
+    // this translator never emits.
+    return 1;
+  }
+  if (filter.kind === 'not') return countFilterBranches(filter.filter);
+  if (filter.kind === 'any') {
+    return filter.filters.reduce(
+      (total, child) => total + countFilterBranches(child),
+      0,
+    );
+  }
+  return filter.filters.reduce(
+    (total, child) => total * countFilterBranches(child),
+    1,
+  );
+}
+
+/**
  * Translates a content-list view state into a bounded `DataQueryRequest`.
  *
  * Everything unmappable is dropped and reported rather than thrown: a stale
@@ -968,9 +1015,14 @@ export function contentListViewStateToDataQueryRequest(
   // it is the operator's most recent, most visible intent — then the
   // declarative filters. The outer `all` container costs a node too.
   let nodeBudget = CONTENT_LIST_QUERY_MAX_FILTER_NODES - 1;
+  // The executor lowers the filter to disjunctive normal form and refuses one
+  // that expands past its ceiling. The top-level `all` is a cross product, so
+  // this budget MULTIPLIES rather than subtracts.
+  let branchBudget = 1;
   if (search) {
     branches.push(search);
     nodeBudget -= countFilterNodes(search);
+    branchBudget *= countFilterBranches(search);
   }
   for (const filter of state.filters ?? []) {
     const translated = translateFilter(filter, dropped);
@@ -987,7 +1039,18 @@ export function contentListViewStateToDataQueryRequest(
       });
       continue;
     }
+    const branchCost = countFilterBranches(translated);
+    if (branchBudget * branchCost > CONTENT_LIST_QUERY_MAX_OR_BRANCHES) {
+      dropped.push({
+        scope: 'filter',
+        reason: 'out-of-range',
+        columnId: filter.columnId,
+        detail: String(CONTENT_LIST_QUERY_MAX_OR_BRANCHES),
+      });
+      continue;
+    }
     nodeBudget -= cost;
+    branchBudget *= branchCost;
     branches.push(translated);
   }
 

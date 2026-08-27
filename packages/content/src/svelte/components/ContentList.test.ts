@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentData } from '../../mock-smrt-client.js';
 import { ContentListQueryError } from '../content-list-query.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
+import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
 import ContentList from './ContentList.svelte';
 
@@ -1828,5 +1829,236 @@ describe('ContentList capped-offset reporting (#2452 batch 3)', () => {
       paginationNav(target)?.querySelectorAll('button') ?? [],
     ).map((button) => button.textContent?.trim() ?? '');
     expect(labels).toContain('5');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 4 (#2452)
+// ---------------------------------------------------------------------------
+
+function selectByLabel(target: HTMLElement, label: string): HTMLSelectElement {
+  const select = target.querySelector<HTMLSelectElement>(
+    `select[aria-label="${label}"]`,
+  );
+  if (!select) throw new Error(`No select labelled ${label}`);
+  return select;
+}
+
+function optionValues(select: HTMLSelectElement): string[] {
+  return Array.from(select.options).map((option) => option.value);
+}
+
+describe('ContentList toolbar vocabulary (#2452 batch 4)', () => {
+  const reviewContents: ContentData[] = [
+    {
+      id: 'content-3',
+      type: 'article',
+      title: 'Held for review',
+      author: 'Ada Lovelace',
+      status: 'review',
+      state: 'active',
+      updatedAt: '2026-02-02T10:00:00.000Z',
+    },
+    ...contents,
+  ];
+
+  it('offers the model status the governance flow actually produces', () => {
+    const target = renderList({ contents: reviewContents });
+    const select = selectByLabel(target, 'Filter by status');
+
+    // `review` is a real Content.status; `deleted` is the trash lifecycle
+    // (#2454) and is deliberately not offered here.
+    expect(optionValues(select)).toEqual([
+      '',
+      'published',
+      'draft',
+      'review',
+      'archived',
+    ]);
+  });
+
+  it('restores ?status=review with rows and a matching select', () => {
+    const target = renderList({
+      contents: reviewContents,
+      urlState: { params: 'status=review' },
+    });
+
+    expect(rowTitles(target)).toEqual(['Held for review']);
+    const select = selectByLabel(target, 'Filter by status');
+    expect(select.value).toBe('review');
+    expect(select.selectedIndex).toBeGreaterThanOrEqual(0);
+    // Nothing was refused, so nothing is reported.
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+
+  it('shows AND reports a status token the vocabulary does not cover', () => {
+    const target = renderList({ urlState: { params: 'status=embargoed' } });
+
+    // The toolbar tells the truth about what is constraining the list …
+    const select = selectByLabel(target, 'Filter by status');
+    expect(select.value).toBe('embargoed');
+    expect(optionValues(select)).toContain('embargoed');
+    // … and the operator is told why it is empty.
+    expect(rowTitles(target)).toEqual([]);
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'filtered by "embargoed", which is not one of the listed options',
+    );
+  });
+
+  it('shows AND reports a mistyped type token', () => {
+    const target = renderList({ urlState: { params: 'type=artcile' } });
+
+    const select = selectByLabel(target, 'Filter by type');
+    expect(select.value).toBe('artcile');
+    expect(rowTitles(target)).toEqual([]);
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'filtered by "artcile", which is not one of the listed options',
+    );
+  });
+
+  it('says nothing about a locked type, which has no select to disagree with', () => {
+    const target = renderList({ type: 'briefing' });
+    expect(
+      target.querySelector('select[aria-label="Filter by type"]'),
+    ).toBeNull();
+    expect(target.querySelector('.state-notice')).toBeNull();
+  });
+});
+
+describe('ContentList type lock and a restored page (#2452 batch 4)', () => {
+  it('keeps a restored page on a locked list whose link omits `type`', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      type: 'article',
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { params: 'page=3' },
+    });
+
+    // The lock's `setFilters` resets paging, so re-applying it after the
+    // restore would silently discard the page the same link just carried.
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+    // And the lock still won.
+    expect(JSON.stringify(query.requests.at(-1)?.filter)).toContain(
+      '"article"',
+    );
+  });
+
+  it('keeps a restored page when the link carries the locked type too', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      type: 'article',
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { params: 'type=article&page=3' },
+    });
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+  });
+
+  it('lets the lock override a conflicting restored type without losing the page', () => {
+    const query = createFakeContentListQuery();
+    renderList({
+      type: 'article',
+      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      urlState: { params: 'type=document&page=3' },
+    });
+    const filter = JSON.stringify(query.requests.at(-1)?.filter);
+    expect(filter).toContain('"article"');
+    expect(filter).not.toContain('"document"');
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 20,
+      limit: 10,
+    });
+  });
+});
+
+describe('ContentList type lock across a prop change (#2452 batch 4)', () => {
+  function mountHarness(type: string | undefined) {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    let setType = (_next: string | undefined) => {};
+    const component = mount(Harness, {
+      target,
+      props: {
+        contents,
+        type,
+        onEdit: vi.fn(),
+        onDelete: vi.fn(),
+        onAdd: vi.fn(),
+        onReady: (next: (value: string | undefined) => void) => {
+          setType = next;
+        },
+      },
+    });
+    mountedComponents.push(component);
+    flushSync();
+    return {
+      target,
+      setType: (next: string | undefined) => {
+        setType(next);
+        flushSync();
+      },
+    };
+  }
+
+  it('clears the filter when the lock is removed', () => {
+    const { target, setType } = mountHarness('article');
+
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+    // Locked lists render no type select at all.
+    expect(
+      target.querySelector('select[aria-label="Filter by type"]'),
+    ).toBeNull();
+
+    setType(undefined);
+
+    // The lock going away releases the filter rather than stranding it.
+    expect(rowTitles(target)).toEqual([
+      'Council budget explained',
+      'Zoning appendix',
+    ]);
+    expect(selectByLabel(target, 'Filter by type').value).toBe('');
+  });
+
+  it('re-applies the filter when the lock comes back', () => {
+    const { target, setType } = mountHarness('article');
+    setType(undefined);
+    setType('document');
+
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+    expect(
+      target.querySelector('select[aria-label="Filter by type"]'),
+    ).toBeNull();
+  });
+
+  it('drives article → undefined → article → undefined correctly', () => {
+    const { target, setType } = mountHarness('article');
+    for (const step of [undefined, 'article', undefined] as const) {
+      setType(step);
+      expect(rowTitles(target)).toEqual(
+        step === undefined
+          ? ['Council budget explained', 'Zoning appendix']
+          : ['Council budget explained'],
+      );
+    }
+  });
+
+  it('does not clear an operator filter on a list that never had a lock', () => {
+    const { target, setType } = mountHarness(undefined);
+
+    selectOption(selectByLabel(target, 'Filter by type'), 'document');
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+
+    // A re-render with the prop still absent must not touch the filter.
+    setType(undefined);
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
+    expect(selectByLabel(target, 'Filter by type').value).toBe('document');
   });
 });

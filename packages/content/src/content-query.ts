@@ -119,8 +119,14 @@ export const DATA_QUERY_FORBIDDEN_JSON_KEYS: ReadonlySet<string> = new Set([
  */
 const RESULT_ENVELOPE_RESERVE_BYTES = 4_096;
 
-/** Upper bound on OR branches handed to the collection query builder. */
-const MAX_CONTENT_QUERY_OR_BRANCHES = 128;
+/**
+ * Upper bound on OR branches handed to the collection query builder.
+ *
+ * Exported so a client can mirror it: the null-safe `ne`/`notIn` lowering below
+ * turns one predicate into two branches, and an `all` of them multiplies, so a
+ * caller has to be able to stop short of the ceiling rather than be refused.
+ */
+export const MAX_CONTENT_QUERY_OR_BRANCHES = 128;
 
 const encoder = new TextEncoder();
 
@@ -466,7 +472,22 @@ function conditionToDnf(
     const values = (value as unknown[]) ?? [];
     // `buildWhere()` has no NOT IN primitive. A bounded AND of inequalities has
     // the same null-safe semantics and stays fully validated by the collection.
-    return [values.map((entry) => ({ [key('!=')]: entry }))];
+    const inequalities = values
+      .filter((entry) => entry !== null)
+      .map((entry) => ({ [key('!=')]: entry }));
+    if (inequalities.length === 0) return single(key('!='), null);
+    // SQL's `<>` is UNKNOWN for NULL, so a bare AND of inequalities silently
+    // excludes rows with no value at all — while the caller-visible meaning of
+    // "not one of these" includes them, and the local evaluator agrees. Model
+    // that union explicitly, exactly as `in` does above, so the same shared
+    // link returns the same rows whether the list is server-backed or not.
+    return [[{ [field]: null }], inequalities];
+  }
+
+  if (operator === 'ne' && value !== null) {
+    // Same reasoning as `notIn`. A `ne null` is left alone: it is the
+    // `isNotNull` predicate, and unioning IS NULL into it would match every row.
+    return [[{ [field]: null }], [{ [key('!=')]: value }]];
   }
 
   const suffixes: Record<

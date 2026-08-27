@@ -247,6 +247,7 @@ export {
   DATA_QUERY_MAX_WARNING_LENGTH,
   DATA_QUERY_MAX_WARNINGS,
   executeContentQuery,
+  MAX_CONTENT_QUERY_OR_BRANCHES,
   mergeContentQueryScope,
   resolveContentTenantReadScope,
 } from './content-query';

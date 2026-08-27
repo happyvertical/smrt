@@ -48,7 +48,11 @@ Notes:
   implementation of that transform with a server query behind the same contract.
 - A `type` prop lock is enforced against live state, not just against the prop:
   a data-surface `set-filters` or `reset` command that drops the type filter is
-  re-applied by the lock effect (equality-guarded, so it settles).
+  re-applied by the lock effect (equality-guarded, so it settles). The unlocked
+  branch clears the filter only on an actual lock-REMOVAL transition — tracked
+  with a non-reactive `previousLockedType` — because clearing on every run would
+  also discard a type filter restored from a link or a saved view, and clearing
+  never would strand the old lock after the prop went away.
 - Selection may only address durable rows. All three presentations render a
   disabled, explained checkbox for `identified: false` rows, page select-all
   skips them, and a normalization effect re-dispatches `setSelectedRows` without
@@ -288,6 +292,36 @@ Local mode is case-insensitive everywhere. Do not describe free-text filtering
 as uniform; a portable fix needs a case-insensitive operator at the collection
 boundary.
 
+### NULL semantics are aligned, with one documented exception
+
+The same shared link must return the same rows whether the host passed a `query`
+or not. The local evaluator flattens an absent value to empty text, so a row
+with no author is *included* by `notEquals`/`notIn`; SQL's `<>` is UNKNOWN for
+NULL and would exclude it.
+
+| Operator | Server lowering | Aligned? |
+|---|---|---|
+| `eq`, `in`, `like` (`contains`/`startsWith`/`endsWith`) | plain predicate | yes — both exclude a null row |
+| `in` with a null in the value list | `IS NULL OR IN (…)` | yes (pre-existing) |
+| `ne` | `IS NULL OR <> v` | **aligned** — union added |
+| `notIn` | `IS NULL OR (AND of <> v)` | **aligned** — union added |
+| `ne null` (`isNotNull`) | `IS NOT NULL` | untouched: unioning IS NULL would match every row |
+| `gt`, `gte` | plain predicate | yes, by construction (`'' > 'x'` is false locally, NULL excluded server-side) |
+| `lt`, `lte` | plain predicate | **NOT aligned — documented** |
+
+`lt`/`lte` are the exception, deliberately. Locally an absent value reads as
+`''`, and `'' < 'x'` is true, so the null row matches; server-side it does not.
+Aligning would mean either unioning `IS NULL` server-side — which would make
+`publish_date lt X` match never-published rows, a worse answer than the
+divergence — or excluding empty values locally, which would then diverge for the
+columns that genuinely store `''` (`title`, `name`) rather than NULL. The local
+row model cannot tell "absent" from "empty", so the two cases cannot both be
+served. Prefer `isNull`/`isNotNull` when absence is what you mean.
+
+The `ne`/`notIn` union costs a second DNF branch each, and an `all` multiplies,
+so the translator now also mirrors `MAX_CONTENT_QUERY_OR_BRANCHES` (128) and
+drops filters before the executor would refuse the whole request.
+
 ### Scope is application-supplied and server-derived
 
 A `DataQueryRequest` carries no authority. Tenancy is applied inside
@@ -404,7 +438,30 @@ Two URL-serialization rules the round trip depends on:
 
 The `type` prop lock still wins after a restore: the lock effect enforces
 against live state, so a restored `?type=document` is replaced by the locked
-value.
+value. The lock is folded into the restored patch rather than re-applied
+afterwards, because the restore replaces the whole filter set and the lock's
+`setFilters` resets paging — a locked list opening `?page=3` would otherwise
+land on page 1, silently.
+
+### A restored value the toolbar cannot show
+
+The two toolbar selects publish a display vocabulary
+(`CONTENT_LIST_TYPE_OPTIONS`, `CONTENT_LIST_STATUS_OPTIONS`), but the sanitizer
+accepts any non-blank token, so a link can restore a filter the select has no
+option for — `?status=review` (a real `Content.status`), or a typo like
+`?type=artcile`. The select would show nothing while a live predicate emptied
+the list.
+
+Both selects handle it identically, and do two things rather than one:
+
+1. the value is rendered as an extra option, so the toolbar tells the truth
+   about what is constraining the list and the operator can clear it;
+2. it is reported in the notice, so an empty result always has an explanation.
+
+`review` is now offered outright. `deleted` is deliberately not: that is the
+trash lifecycle (#2454), and offering it here would imply a restore/purge
+affordance this list does not have. `Content.type` is freeform, so its option
+list is a display vocabulary rather than the model's domain.
 
 Everything a restore or a translation refused is reported in one dismissible
 notice rather than thrown — a stale link or an out-of-date saved view must still

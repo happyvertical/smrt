@@ -59,8 +59,10 @@ import {
   contentStateVariant,
   contentStatusVariant,
   createContentListController,
+  CONTENT_LIST_STATUS_OPTIONS,
+  CONTENT_LIST_TYPE_OPTIONS,
   isContentListFilterExactly,
-  normalizeContentType,
+  normalizeContentListTypeLock,
   paginateContentListRows,
   readContentListFilter,
   resolveContentHref,
@@ -263,7 +265,29 @@ if (initialUrlState?.params) {
     toSearchParams(initialUrlState.params),
     urlStateOptions,
   );
-  applyContentListViewState(controller, reading.state, restoreOptions);
+  // A restore REPLACES the filter set, including the type filter the controller
+  // was seeded with. On a locked list the lock effect would then re-apply it
+  // through `setFilters`, which resets paging — silently discarding a `?page=`
+  // the same link just restored. Folding the lock into the restored patch keeps
+  // it to one `replaceState`, and leaves the effect's first run a no-op.
+  const initialLockedType = normalizeContentListTypeLock(untrack(() => type));
+  const patch =
+    initialLockedType === null
+      ? reading.state
+      : {
+          ...reading.state,
+          filters: [
+            ...(reading.state.filters ?? []).filter(
+              (filter) => filter.columnId !== CONTENT_LIST_TYPE_FILTER_ID,
+            ),
+            {
+              columnId: CONTENT_LIST_TYPE_FILTER_ID,
+              operator: 'equals' as const,
+              value: initialLockedType,
+            },
+          ],
+        };
+  applyContentListViewState(controller, patch, restoreOptions);
   restoreDrops = reading.dropped;
 }
 
@@ -336,7 +360,7 @@ $effect(() => {
 });
 
 /** The normalized type the `type` prop locks the list to, if any. */
-const lockedType = $derived(type?.trim() ? normalizeContentType(type) : null);
+const lockedType = $derived(normalizeContentListTypeLock(type));
 
 // A `type` prop locks the type filter, exactly as the legacy select did. The
 // lock is enforced against the live state, not only against the prop, because a
@@ -651,6 +675,51 @@ const selectedStatus = $derived(
   readContentListFilter(tableState, CONTENT_LIST_STATUS_FILTER_ID) ?? '',
 );
 
+/**
+ * A live filter value the select cannot show, because it is outside the
+ * published vocabulary — a real-but-unlisted token, or a typo in a link.
+ *
+ * Both selects handle it the same way, and handle it twice over: the value is
+ * rendered as an extra option so the toolbar tells the truth about what is
+ * constraining the list, AND it is reported in the notice so the operator knows
+ * why the result may be empty. Silently showing an unfiltered-looking toolbar
+ * over zero rows is the one outcome that must not happen.
+ */
+const unlistedType = $derived(
+  selectedType &&
+    !(CONTENT_LIST_TYPE_OPTIONS as readonly string[]).includes(selectedType)
+    ? selectedType
+    : null,
+);
+const unlistedStatus = $derived(
+  selectedStatus &&
+    !(CONTENT_LIST_STATUS_OPTIONS as readonly string[]).includes(selectedStatus)
+    ? selectedStatus
+    : null,
+);
+const unlistedValueDrops = $derived<ContentListQueryDrop[]>([
+  ...(unlistedType === null || lockedType !== null
+    ? []
+    : [
+        {
+          scope: 'filter' as const,
+          reason: 'unlisted-value' as const,
+          columnId: CONTENT_LIST_TYPE_FILTER_ID,
+          detail: unlistedType,
+        },
+      ]),
+  ...(unlistedStatus === null
+    ? []
+    : [
+        {
+          scope: 'filter' as const,
+          reason: 'unlisted-value' as const,
+          columnId: CONTENT_LIST_STATUS_FILTER_ID,
+          detail: unlistedStatus,
+        },
+      ]),
+]);
+
 const surfaceOptions = $derived(
   dataSurface
     ? {
@@ -669,6 +738,7 @@ const surfaceOptions = $derived(
 const dropNotices = $derived<ContentListDropNotice[]>([
   ...restoreDrops,
   ...queryDrops,
+  ...unlistedValueDrops,
   ...(pageCapDrop === null ? [] : [pageCapDrop]),
 ]);
 /**
@@ -708,12 +778,18 @@ const DROP_REASON_MESSAGES: Record<
   'unsupported-value': M['content.content_list.drop_unsupported_value'],
   malformed: M['content.content_list.drop_malformed'],
   'out-of-range': M['content.content_list.drop_out_of_range'],
+  'unlisted-value': M['content.content_list.drop_unlisted_value'],
   'unpaginated-unsupported': M['content.content_list.drop_unpaginated'],
 };
 
 function dropNoticeText(drop: ContentListDropNotice): string {
   // A capped offset is a redirect, not merely a refused value: the operator
   // needs to know which page they asked for and which one they are looking at.
+  if (drop.reason === 'unlisted-value') {
+    return t(M['content.content_list.drop_unlisted_value'], {
+      value: drop.detail ?? '',
+    });
+  }
   if (drop.scope === 'page' && drop.reason === 'out-of-range') {
     return t(M['content.content_list.drop_page_unreachable'], {
       requested: drop.detail ?? '',
@@ -1045,6 +1121,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           <option value="article">{t(M['content.content_list.type_articles'])}</option>
           <option value="document">{t(M['content.content_list.type_documents'])}</option>
           <option value="mirror">{t(M['content.content_list.type_mirrors'])}</option>
+          {#if unlistedType}
+            <!-- A live filter the vocabulary does not cover; showing it is what
+                 keeps the toolbar honest about why the list may be empty. -->
+            <option value={unlistedType}>{unlistedType}</option>
+          {/if}
         </Select>
       {/if}
 
@@ -1060,7 +1141,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         <option value="">{t(M['content.content_list.all_statuses'])}</option>
         <option value="published">{t(M['content.content_list.status_published'])}</option>
         <option value="draft">{t(M['content.content_list.status_draft'])}</option>
+        <option value="review">{t(M['content.content_list.status_review'])}</option>
         <option value="archived">{t(M['content.content_list.status_archived'])}</option>
+        {#if unlistedStatus}
+          <option value={unlistedStatus}>{unlistedStatus}</option>
+        {/if}
       </Select>
 
       {#if savedViews}

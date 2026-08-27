@@ -14,19 +14,26 @@ import {
   MAX_DATA_QUERY_REQUEST_BYTES,
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
-import type { DataTableViewState } from '@happyvertical/smrt-ui/data';
+import type {
+  DataTableFilter,
+  DataTableViewState,
+} from '@happyvertical/smrt-ui/data';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildContentQuerySchema,
   type ContentQueryCollection,
   executeContentQuery,
+  MAX_CONTENT_QUERY_OR_BRANCHES,
 } from '../content-query';
 import { Contents } from '../contents';
 import {
   buildContentListColumns,
   CONTENT_LIST_COLUMN_IDS,
   CONTENT_LIST_VISIBLE_COLUMN_IDS,
+  createContentListController,
+  selectContentListRows,
+  toContentListRows,
 } from './content-list-controller';
 import {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
@@ -37,6 +44,7 @@ import {
   CONTENT_LIST_QUERY_MAX_FILTER_NODES,
   CONTENT_LIST_QUERY_MAX_IN_VALUES,
   CONTENT_LIST_QUERY_MAX_OFFSET,
+  CONTENT_LIST_QUERY_MAX_OR_BRANCHES,
   CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS,
   CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
   CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH,
@@ -1339,5 +1347,194 @@ describe('mirrored constants are pinned to their source', () => {
       expect(normalizedBytes).toBeLessThanOrEqual(clientBytes);
       expect(normalizedBytes).toBeLessThanOrEqual(MAX_DATA_QUERY_REQUEST_BYTES);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 4: NULL semantics agree between local and server mode (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * The same shared link must return the same rows whether the host passed a
+ * `query` or not. The local evaluator flattens an absent value to empty text,
+ * so `notEquals`/`notIn` INCLUDE a row with no value; SQL's `<>` is UNKNOWN for
+ * NULL and would exclude it. The executor therefore unions `IS NULL` into both,
+ * exactly as it already did for `in`.
+ */
+describe('null-valued rows through both filter paths', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const rows = [
+    { name: 'with-author', title: 'With author', author: 'Ada Lovelace' },
+    { name: 'other-author', title: 'Other author', author: 'Grace Hopper' },
+    { name: 'no-author', title: 'No author', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of rows) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  /** What the server-backed list renders. */
+  const serverTitles = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'null-semantics',
+        projection: ['id', 'title', 'author'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.title)).sort();
+  };
+
+  /** What the local list renders for the same view state. */
+  const localTitles = (filter: DataTableFilter) =>
+    selectContentListRows(
+      toContentListRows(
+        rows.map((entry) => ({
+          id: entry.name,
+          title: entry.title,
+          author: entry.author,
+        })),
+      ),
+      {
+        ...createContentListController().getState(),
+        filters: [filter],
+      },
+    )
+      .map((row) => row.title)
+      .sort();
+
+  const bothAgree = async (filter: DataTableFilter) => {
+    const [server, local] = [await serverTitles(filter), localTitles(filter)];
+    expect(server).toEqual(local);
+    return server;
+  };
+
+  it('includes the authorless row for `notEquals`, in both modes', async () => {
+    const titles = await bothAgree({
+      columnId: 'author',
+      operator: 'notEquals',
+      value: 'Ada Lovelace',
+    });
+    expect(titles).toEqual(['No author', 'Other author']);
+  });
+
+  it('includes the authorless row for `notIn`, in both modes', async () => {
+    const titles = await bothAgree({
+      columnId: 'author',
+      operator: 'notIn',
+      value: ['Ada Lovelace', 'Grace Hopper'],
+    });
+    expect(titles).toEqual(['No author']);
+  });
+
+  it('keeps `equals` and `in` excluding it, in both modes', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'equals',
+        value: 'Ada Lovelace',
+      }),
+    ).toEqual(['With author']);
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'in',
+        value: ['Ada Lovelace'],
+      }),
+    ).toEqual(['With author']);
+  });
+
+  it('keeps `contains` excluding it, in both modes', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'contains',
+        value: 'Lovelace',
+      }),
+    ).toEqual(['With author']);
+  });
+
+  it('still resolves isNull / isNotNull, which must NOT gain the union', async () => {
+    expect(
+      await serverTitles({ columnId: 'author', operator: 'isNull' }),
+    ).toEqual(['No author']);
+    expect(
+      await serverTitles({ columnId: 'author', operator: 'isNotNull' }),
+    ).toEqual(['Other author', 'With author']);
+  });
+
+  it('DOCUMENTED DIVERGENCE: `lt` excludes the null row server-side', async () => {
+    // Not aligned, deliberately. The local row model flattens an absent value
+    // to empty text and cannot tell "no author" from "empty author", so `lt`
+    // matches it locally; SQL excludes NULL from every ordered comparison.
+    // Unioning IS NULL server-side would make `publish_date lt X` match
+    // never-published rows, which is a worse answer than the divergence.
+    expect(
+      await serverTitles({
+        columnId: 'author',
+        operator: 'lt',
+        value: 'Zzz',
+      }),
+    ).toEqual(['Other author', 'With author']);
+    expect(
+      localTitles({ columnId: 'author', operator: 'lt', value: 'Zzz' }),
+    ).toEqual(['No author', 'Other author', 'With author']);
+  });
+
+  it('`gt` and `gte` agree, so only `lt`/`lte` diverge', async () => {
+    await bothAgree({ columnId: 'author', operator: 'gt', value: 'Ada' });
+    await bothAgree({ columnId: 'author', operator: 'gte', value: 'Ada' });
+  });
+});
+
+describe('the OR-branch budget that the null union makes reachable', () => {
+  it('mirrors the executor ceiling', () => {
+    expect(CONTENT_LIST_QUERY_MAX_OR_BRANCHES).toBe(
+      MAX_CONTENT_QUERY_OR_BRANCHES,
+    );
+  });
+
+  it('drops filters before the executor would refuse the request', () => {
+    // Each null-safe `notEquals` doubles the DNF; an `all` of them multiplies.
+    const filters = Array.from({ length: 12 }, (_, index) => ({
+      columnId: 'author' as const,
+      operator: 'notEquals' as const,
+      value: `person-${index}`,
+    }));
+    const { request, dropped } = translate({ filters });
+
+    expect(conditions(request.filter).length).toBeLessThanOrEqual(7);
+    expect(
+      dropped.some(
+        (drop) =>
+          drop.reason === 'out-of-range' &&
+          drop.detail === String(CONTENT_LIST_QUERY_MAX_OR_BRANCHES),
+      ),
+    ).toBe(true);
+  });
+
+  it('accounts for search, which is itself three branches', () => {
+    const filters = Array.from({ length: 12 }, (_, index) => ({
+      columnId: 'author' as const,
+      operator: 'notEquals' as const,
+      value: `person-${index}`,
+    }));
+    const { request } = translate({ search: 'budget', filters });
+    // 3 search branches leave room for 5 doublings (3 * 2^5 = 96 <= 128).
+    const notEquals = conditions(request.filter).filter(
+      (entry) => entry.operator === 'ne',
+    );
+    expect(notEquals.length).toBeLessThanOrEqual(5);
   });
 });

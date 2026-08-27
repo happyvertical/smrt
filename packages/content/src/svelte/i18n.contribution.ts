@@ -79,6 +79,7 @@ export const M = defineMessages({
   'content.content_list.type_mirrors': 'Mirrors',
   'content.content_list.status_published': 'Published',
   'content.content_list.status_draft': 'Draft',
+  'content.content_list.status_review': 'In review',
   'content.content_list.status_archived': 'Archived',
   'content.content_list.view_mode': 'View mode',
   'content.content_list.table_caption': 'Contents',
@@ -138,6 +139,8 @@ export const M = defineMessages({
   'content.content_list.drop_malformed': 'that entry could not be read',
   'content.content_list.drop_out_of_range':
     'that value was outside the allowed range',
+  'content.content_list.drop_unlisted_value':
+    'filtered by "{value}", which is not one of the listed options',
   'content.content_list.drop_page_unreachable':
     'page {requested} cannot be loaded — the list stops at page {landed}, which is what is shown',
   'content.content_list.drop_unpaginated':

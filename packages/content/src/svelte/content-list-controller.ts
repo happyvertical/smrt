@@ -268,6 +268,49 @@ export function normalizeContentToken(value: unknown): string {
   return getTextValue(value).trim().toLowerCase();
 }
 
+/**
+ * The type tokens the toolbar select offers.
+ *
+ * `Content.type` is freeform, so this is a display vocabulary rather than the
+ * model's domain: a value outside it is still a valid filter, and the list
+ * surfaces it rather than hiding it (see `ContentList`).
+ */
+export const CONTENT_LIST_TYPE_OPTIONS = [
+  'article',
+  'document',
+  'mirror',
+] as const;
+
+/**
+ * The status tokens the toolbar select offers.
+ *
+ * `Content.status` is `published | draft | review | archived | deleted`.
+ * `review` is offered because it is a real, reachable state that governance
+ * puts content into; omitting it meant `?status=review` restored a live
+ * predicate the toolbar could not show.
+ *
+ * `deleted` is deliberately NOT offered: it is the trash lifecycle, which is
+ * #2454's, and exposing it here would imply a restore/purge affordance this
+ * list does not have.
+ */
+export const CONTENT_LIST_STATUS_OPTIONS = [
+  'published',
+  'draft',
+  'review',
+  'archived',
+] as const;
+
+/**
+ * Resolves the normalized type a `type` prop locks the list to, or `null` when
+ * the list is unlocked. Shared so the lock effect and the initial restore
+ * cannot disagree about what "locked" means.
+ */
+export function normalizeContentListTypeLock(
+  value: string | null | undefined,
+): string | null {
+  return value?.trim() ? normalizeContentType(value) : null;
+}
+
 export function contentTypeLabel(value: unknown): string {
   switch (normalizeContentType(value)) {
     case 'article':
