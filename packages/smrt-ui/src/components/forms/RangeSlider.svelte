@@ -89,8 +89,7 @@ function setRange(next: unknown) {
   const high = snap(Number(candidate.max ?? value.max));
   value = { min: Math.min(low, high), max: Math.max(low, high) };
   onvaluechange?.(value);
-  if (minEl) emitControlChange(minEl);
-  if (maxEl) emitControlChange(maxEl);
+  if (rootEl) emitControlChange(rootEl);
 }
 function prepareRange(next: unknown): RangeSliderValue {
   if (!next || typeof next !== 'object' || Array.isArray(next)) {
@@ -107,7 +106,14 @@ function prepareRange(next: unknown): RangeSliderValue {
   if (!Number.isFinite(prepared.min) || !Number.isFinite(prepared.max)) {
     throw new Error('staged_value_invalid');
   }
-  return prepared;
+  return {
+    min: validatesSteppedNumber(prepared.min, min, max, step)
+      ? snap(prepared.min)
+      : prepared.min,
+    max: validatesSteppedNumber(prepared.max, min, max, step)
+      ? snap(prepared.max)
+      : prepared.max,
+  };
 }
 function setMin(next: number) {
   setRange({ min: Math.min(next, value.max), max: value.max });

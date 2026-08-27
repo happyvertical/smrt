@@ -5,8 +5,10 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import Progress from '../../feedback/Progress.svelte';
 import Spinner from '../../feedback/Spinner.svelte';
 import { createControlInteractionRegistry } from '../control-interaction.js';
+import { snapSteppedNumber } from '../control-value-validation.js';
 import ErrorSummary from '../ErrorSummary.svelte';
 import Fixture from './core-controls.fixture.svelte';
+import DecimalSlidersFixture from './decimal-sliders.fixture.svelte';
 
 describe('core controls', () => {
   it('provides distinct checkbox, switch, radio, slider, range, and segmented semantics', async () => {
@@ -129,6 +131,69 @@ describe('core controls', () => {
     ).toBe(55);
     await userEvent.click(screen.getByRole('button', { name: 'Apply Volume' }));
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
+  });
+
+  it('applies decimal-step slider proposals without floating-point drift', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(DecimalSlidersFixture, { props: { registry } });
+    const valueIdentity = { formId: 'decimal', controlId: 'value' };
+    const rangeIdentity = { formId: 'decimal', controlId: 'range' };
+    const tinyIdentity = { formId: 'decimal', controlId: 'tiny' };
+
+    expect(snapSteppedNumber(3e-16, 1e-16, 9e-16, 2e-16)).toBe(3e-16);
+    expect(snapSteppedNumber(3e-101, 1e-101, 9e-101, 2e-101)).toBe(3e-101);
+
+    await registry.execute(
+      { action: 'stage', identity: valueIdentity, value: 0.3 },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      { action: 'stage', identity: tinyIdentity, value: 3e-16 },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: rangeIdentity,
+        value: { min: 0.3, max: 0.5 },
+      },
+      { source: 'agent' },
+    );
+    expect(registry.get(valueIdentity)?.state.staged).toMatchObject({
+      value: 0.3,
+      valid: true,
+    });
+    expect(registry.get(rangeIdentity)?.state.staged).toMatchObject({
+      value: { min: 0.3, max: 0.5 },
+      valid: true,
+    });
+    expect(registry.get(tinyIdentity)?.state.staged).toMatchObject({
+      value: 3e-16,
+      valid: true,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Value' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Apply Range' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Tiny value' }),
+    );
+
+    expect(registry.get(valueIdentity)?.state).toMatchObject({ value: 0.3 });
+    expect(registry.get(rangeIdentity)?.state).toMatchObject({
+      value: { min: 0.3, max: 0.5 },
+    });
+    expect(registry.get(tinyIdentity)?.state).toMatchObject({ value: 3e-16 });
+    expect(registry.get(valueIdentity)?.state.staged).toBeUndefined();
+    expect(registry.get(rangeIdentity)?.state.staged).toBeUndefined();
+    expect(registry.get(tinyIdentity)?.state.staged).toBeUndefined();
+    expect(screen.getByRole('slider', { name: 'Value' })).toHaveValue('0.3');
+    expect(screen.getByRole('slider', { name: 'Minimum' })).toHaveValue('0.3');
+    expect(screen.getByRole('slider', { name: 'Maximum' })).toHaveValue('0.5');
+    expect(screen.getByRole('slider', { name: 'Tiny value' })).toHaveValue(
+      '3e-16',
+    );
   });
 
   it('marks constrained proposals invalid before the first valid-only batch', async () => {

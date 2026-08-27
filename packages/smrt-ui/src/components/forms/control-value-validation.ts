@@ -196,7 +196,45 @@ export function snapSteppedNumber(
     return Math.min(max, Math.max(min, next));
   }
   const snapped = min + Math.round((next - min) / step) * step;
-  return Math.min(max, Math.max(min, snapped));
+  const precision = Math.max(
+    decimalPlaces(min),
+    decimalPlaces(max),
+    decimalPlaces(step),
+  );
+  const stable =
+    precision <= 100
+      ? Number(snapped.toFixed(precision))
+      : Number(
+          snapped.toPrecision(
+            Math.min(
+              100,
+              Math.max(
+                significantDigits(min),
+                significantDigits(max),
+                significantDigits(step),
+              ),
+            ),
+          ),
+        );
+  return Math.min(max, Math.max(min, stable));
+}
+
+function significantDigits(value: number): number {
+  const coefficient = String(Math.abs(value)).toLowerCase().split('e')[0] ?? '';
+  const digits = coefficient.replace('.', '').replace(/^0+/, '');
+  return Math.max(1, digits.length);
+}
+
+function decimalPlaces(value: number): number {
+  const [coefficient = '', exponentText = '0'] = String(value)
+    .toLowerCase()
+    .split('e');
+  const fractionLength = coefficient.split('.')[1]?.length ?? 0;
+  const exponent = Number(exponentText);
+  return Math.max(
+    0,
+    fractionLength - (Number.isFinite(exponent) ? exponent : 0),
+  );
 }
 
 export function validatesStringArray(

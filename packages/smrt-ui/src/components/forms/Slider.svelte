@@ -76,13 +76,17 @@ function setValue(next: unknown) {
 }
 function prepareValue(next: unknown) {
   const prepared = prepareNumberControlValue(next);
-  return prepared === '' ? clamp(0) : prepared;
+  if (prepared === '') return clamp(0);
+  return typeof prepared === 'number' &&
+    validatesSteppedNumber(prepared, min, max, step)
+    ? clamp(prepared)
+    : prepared;
 }
 function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
-  value = Number(event.currentTarget.value);
+  value = clamp(Number(event.currentTarget.value));
 }
 function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
-  value = Number(event.currentTarget.value);
+  value = clamp(Number(event.currentTarget.value));
   onchange?.(event);
 }
 useControlRegistration(() => {
