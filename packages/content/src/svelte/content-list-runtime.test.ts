@@ -68,18 +68,52 @@ describe('ContentList background jobs', () => {
       error: 'worker unavailable',
     });
     const retryPromise = controller.retry(failed.jobId);
-    expect(controller.snapshot().jobs[0]).toMatchObject({
-      status: 'queued',
-      error: undefined,
-    });
+    expect(controller.snapshot().jobs).toEqual([
+      expect.objectContaining({ jobId: failed.jobId, status: 'failed' }),
+      expect.objectContaining({ status: 'queued', error: undefined }),
+    ]);
     await expect(retryPromise).resolves.toMatchObject({
       jobId: 'job-2',
       status: 'running',
     });
     expect(controller.snapshot().jobs).toEqual([
+      expect.objectContaining({ jobId: failed.jobId, status: 'failed' }),
       expect.objectContaining({ jobId: 'job-2', status: 'running' }),
     ]);
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a prior attempt terminal when its late success arrives during retry', async () => {
+    let rejectRetry!: (error: Error) => void;
+    const retry = vi.fn(
+      () =>
+        new Promise<ContentListJob>((_resolve, reject) => {
+          rejectRetry = reject;
+        }),
+    );
+    const controller = createContentListJobController({ retry });
+    controller.update(job({ status: 'failed', error: 'first failure' }));
+
+    const retryPromise = controller.retry('job-1');
+    controller.update(job({ status: 'succeeded' }));
+
+    expect(controller.snapshot().jobs).toEqual([
+      expect.objectContaining({ jobId: 'job-1', status: 'failed' }),
+      expect.objectContaining({
+        jobId: expect.stringContaining('content-list:retry:'),
+        status: 'queued',
+      }),
+    ]);
+
+    rejectRetry(new Error('retry failed'));
+    await expect(retryPromise).rejects.toThrow('retry failed');
+    expect(controller.snapshot().jobs).toEqual([
+      expect.objectContaining({ jobId: 'job-1', status: 'failed' }),
+      expect.objectContaining({ status: 'failed', error: 'retry failed' }),
+    ]);
+    expect(controller.snapshot().jobs).not.toContainEqual(
+      expect.objectContaining({ status: 'succeeded' }),
+    );
   });
 
   it('ignores out-of-order progress after a terminal result', () => {

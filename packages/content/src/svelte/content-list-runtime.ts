@@ -57,6 +57,7 @@ export interface ContentListJobController extends ContentListJobBinding {
 }
 
 export interface ContentListJobControllerOptions {
+  /** A retry starts a new attempt and must resolve with a distinct job id. */
   retry?: (job: ContentListJob) => Promise<ContentListJob>;
 }
 
@@ -216,8 +217,14 @@ export function createContentListJobController(
         new Error('No content job retry handler is configured.'),
       );
 
-    const pending = { ...current, status: 'queued' as const, error: undefined };
-    jobs.set(jobId, pending);
+    const retryId = `content-list:retry:${++provisionalSequence}`;
+    const pending = {
+      ...current,
+      jobId: retryId,
+      status: 'queued' as const,
+      error: undefined,
+    };
+    jobs.set(retryId, pending);
     settleActiveKey(pending);
     publish();
     let started: Promise<ContentListJob>;
@@ -228,19 +235,23 @@ export function createContentListJobController(
     }
     const promise = Promise.resolve(started)
       .then((next) => {
+        if (next.jobId === jobId)
+          throw new Error('A content job retry must use a distinct job id.');
         const retried = cloneJob({
           ...next,
           actionId: current.actionId,
           submissionKey: current.submissionKey,
           target: current.target,
         });
-        if (retried.jobId !== jobId) jobs.delete(jobId);
+        jobs.delete(retryId);
+        if (activeBySubmission.get(current.submissionKey) === retryId)
+          activeBySubmission.delete(current.submissionKey);
         update(retried);
         return cloneJob(retried);
       })
       .catch((error) => {
         const failed = {
-          ...current,
+          ...pending,
           status: 'failed' as const,
           error: errorMessage(error),
         };

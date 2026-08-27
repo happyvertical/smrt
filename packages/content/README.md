@@ -476,6 +476,10 @@ startup and seeds sample content (3 items) for immediate testing.
 | `ImageThumbnail` | `src`, `alt` | Thumbnail image display |
 | `Markdown` | `source` | Markdown renderer |
 
+`ContentList` retry handlers must return a new job attempt with a distinct
+`jobId`. The controller retains the failed attempt as immutable history so a
+late event from it cannot overwrite the retry result.
+
 Applications that compose their own article editor can use
 `createContentEditorState`, `getContentEditorAssetImageSource`, and
 `resolveContentEditorImageSelection` to share the same form normalization,
