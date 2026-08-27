@@ -55,7 +55,9 @@ export interface FakeContentListQuery {
   setEnvelope(envelope: unknown): void;
 }
 
-export function createFakeContentListQuery(): FakeContentListQuery {
+export function createFakeContentListQuery(
+  options: { requireRequestForLive?: boolean } = {},
+): FakeContentListQuery {
   let rows = $state<Array<Record<string, unknown>>>([]);
   let total = $state<ContentListQueryTotal | undefined>(undefined);
   let loading = $state(false);
@@ -115,6 +117,8 @@ export function createFakeContentListQuery(): FakeContentListQuery {
       return envelope;
     },
     subscribeLive() {
+      if (options.requireRequestForLive && requests.length === 0)
+        return undefined;
       liveSubscriptions += 1;
       return {
         reconnect() {

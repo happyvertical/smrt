@@ -764,7 +764,9 @@ $effect(() => {
 // the exact active query before resubscribing; without a live transport, the
 // same browser event falls back to an ordinary exact-query refresh.
 $effect(() => {
-  if (!queryBinding || typeof window === 'undefined') return;
+  const queryKey = activeQueryKey;
+  if (!queryBinding || queryKey === undefined || typeof window === 'undefined')
+    return;
   offline = typeof navigator !== 'undefined' && navigator.onLine === false;
   let live:
     | { unsubscribe(): void; reconnect?: () => void }

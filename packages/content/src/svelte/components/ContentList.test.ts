@@ -702,6 +702,18 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     }
   });
 
+  it('subscribes live after an initially capped query starts', () => {
+    const query = createFakeContentListQuery({ requireRequestForLive: true });
+    renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+      urlState: { params: 'page=9000' },
+    });
+    flushSync();
+
+    expect(query.requests).toHaveLength(1);
+    expect(query.liveSubscriptions).toBe(1);
+  });
+
   it('reconciles an external row change without losing query or selection', () => {
     const query = createFakeContentListQuery();
     const target = renderList({ query: { bind: () => query.binding } });
