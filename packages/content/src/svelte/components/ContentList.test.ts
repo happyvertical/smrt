@@ -1312,6 +1312,17 @@ describe('ContentList unpaginated state in server mode (#2452)', () => {
     expect(params.get('size')).toBeNull();
   });
 
+  it('restores configured defaults from an empty query string', () => {
+    // A bare path is a valid binding, not an absent one: the configured page
+    // size must apply exactly as it would with parameters present.
+    const target = renderList({
+      urlState: { params: '', options: { defaultPageSize: 1 } },
+    });
+
+    expect(rowTitles(target)).toHaveLength(1);
+    expect(paginationNav(target)).toBeTruthy();
+  });
+
   it('still allows an unpaginated local list', () => {
     const target = renderList({ urlState: { params: 'size=all' } });
 

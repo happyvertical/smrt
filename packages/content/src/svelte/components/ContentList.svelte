@@ -262,7 +262,10 @@ function toSearchParams(
 // render is already the restored view rather than a flash of the default one.
 // `applyContentListViewState` merges over current state instead of dispatching
 // `setSearch`/`setFilters`, which would reset the restored page.
-if (initialUrlState?.params) {
+// An empty query string is a valid binding, not an absent one: the reader
+// still applies the configured defaults, so a page opened at a bare path must
+// restore the same way one opened with parameters does.
+if (initialUrlState?.params !== undefined && initialUrlState?.params !== null) {
   const reading = readContentListViewStateFromSearchParams(
     toSearchParams(initialUrlState.params),
     urlStateOptions,
