@@ -1,7 +1,7 @@
 import type { DatabaseEngine } from './ddl/types.js';
 import { requireForeignKeyAction } from './foreign-key-policy.js';
 import { shortenIdentifier } from './index-utils.js';
-import { quoteIdentifier } from './sql-identifiers.js';
+import { quoteIdentifier, quoteStringLiteral } from './sql-identifiers.js';
 import type { ForeignKeyDefinition, SchemaDefinition } from './types.js';
 
 export function foreignKeyConstraintName(
@@ -43,6 +43,23 @@ export function renderForeignKeyConstraintDrop(
   constraintName: string,
 ): string {
   return `ALTER TABLE ${quoteIdentifier(tableName)} DROP CONSTRAINT ${quoteIdentifier(constraintName)};`;
+}
+
+/** Render a PostgreSQL VALIDATE CONSTRAINT statement. */
+export function renderForeignKeyConstraintValidate(
+  tableName: string,
+  constraintName: string,
+): string {
+  return `ALTER TABLE ${quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${quoteIdentifier(constraintName)};`;
+}
+
+/** Render a PostgreSQL constraint comment used to identify framework ownership. */
+export function renderForeignKeyConstraintComment(
+  tableName: string,
+  constraintName: string,
+  comment: string,
+): string {
+  return `COMMENT ON CONSTRAINT ${quoteIdentifier(constraintName)} ON ${quoteIdentifier(tableName)} IS ${quoteStringLiteral(comment)};`;
 }
 
 export function renderForeignKeyOrphanDetector(

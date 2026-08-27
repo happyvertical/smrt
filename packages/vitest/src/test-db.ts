@@ -46,10 +46,14 @@ import {
   isSmrtCollectionExtendsName,
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
+import type { ForeignKeyDefinition } from '@happyvertical/smrt-core/schema';
 import {
+  foreignKeyConstraintName,
   planForeignKeyCreation,
   renderDeferredForeignKeyAdd,
+  renderForeignKeyConstraintComment,
   renderForeignKeyConstraintDrop,
+  renderForeignKeyConstraintValidate,
   schemaForeignKeysForEngine,
 } from '@happyvertical/smrt-core/schema';
 import {
@@ -525,12 +529,34 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   const applyPostSchemaStatements = async (
     schemaDb: DatabaseInterfaceWithTransaction,
   ): Promise<void> => {
+    const ownershipComment = 'smrt-vitest:manifest-foreign-key:v1';
+    const expectedByTable = new Map<string, Map<string, PostSchemaStatement>>();
+    for (const deferred of postSchemaStatements) {
+      const tableConstraints =
+        expectedByTable.get(deferred.tableName) ?? new Map();
+      tableConstraints.set(deferred.constraintName, deferred);
+      expectedByTable.set(deferred.tableName, tableConstraints);
+    }
     for (const tableName of manifestTableNames) {
       const result = await schemaDb.query(
-        `SELECT constraint_row.conname AS constraint_name
+        `SELECT constraint_row.conname AS constraint_name,
+                constraint_row.convalidated,
+                constraint_row.confdeltype,
+                constraint_row.confupdtype,
+                parent_row.relname AS referenced_table,
+                child_column.attname AS column_name,
+                parent_column.attname AS referenced_column,
+                obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
          FROM pg_constraint AS constraint_row
          JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+         JOIN pg_class AS parent_row ON parent_row.oid = constraint_row.confrelid
          JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+         JOIN pg_attribute AS child_column
+           ON child_column.attrelid = constraint_row.conrelid
+          AND child_column.attnum = constraint_row.conkey[1]
+         JOIN pg_attribute AS parent_column
+           ON parent_column.attrelid = constraint_row.confrelid
+          AND parent_column.attnum = constraint_row.confkey[1]
          WHERE table_row.relname = $1
            AND namespace_row.nspname = current_schema()
            AND constraint_row.contype = 'f'
@@ -540,14 +566,71 @@ async function createIsolatedTestDbWithPostSchemaStatements(
       const rows = Array.isArray(result)
         ? result
         : ((result as { rows?: unknown[] }).rows ?? []);
-      for (const row of rows as Array<{ constraint_name: string }>) {
+      const expected = expectedByTable.get(tableName) ?? new Map();
+      const satisfied = new Set<string>();
+      for (const row of rows as Array<{
+        constraint_name: string;
+        convalidated: boolean;
+        confdeltype: string;
+        confupdtype: string;
+        referenced_table: string;
+        column_name: string;
+        referenced_column: string;
+        ownership_comment: string | null;
+      }>) {
+        const desired = expected.get(row.constraint_name);
+        if (!desired) {
+          if (row.ownership_comment === ownershipComment) {
+            await schemaDb.query(
+              renderForeignKeyConstraintDrop(tableName, row.constraint_name),
+            );
+          }
+          continue;
+        }
+
+        const actionCode = (action: ForeignKeyDefinition['onDelete']) =>
+          ({
+            CASCADE: 'c',
+            'SET NULL': 'n',
+            RESTRICT: 'r',
+            'NO ACTION': 'a',
+          })[action ?? 'NO ACTION'];
+        const definitionMatches =
+          row.column_name === desired.foreignKey.column &&
+          row.referenced_table === desired.foreignKey.referencesTable &&
+          row.referenced_column === desired.foreignKey.referencesColumn &&
+          row.confdeltype === actionCode(desired.foreignKey.onDelete) &&
+          row.confupdtype === actionCode(desired.foreignKey.onUpdate);
+        if (!definitionMatches) {
+          if (row.ownership_comment !== ownershipComment) {
+            throw new Error(
+              `Cannot reconcile manifest foreign key ${tableName}.${row.constraint_name}: an unowned constraint with that name has a different definition.`,
+            );
+          }
+          await schemaDb.query(
+            renderForeignKeyConstraintDrop(tableName, row.constraint_name),
+          );
+          continue;
+        }
+
+        if (!row.convalidated) {
+          await schemaDb.query(
+            renderForeignKeyConstraintValidate(tableName, row.constraint_name),
+          );
+        }
+        satisfied.add(row.constraint_name);
+      }
+      for (const deferred of expected.values()) {
+        if (satisfied.has(deferred.constraintName)) continue;
+        await schemaDb.query(deferred.statement);
         await schemaDb.query(
-          renderForeignKeyConstraintDrop(tableName, row.constraint_name),
+          renderForeignKeyConstraintComment(
+            deferred.tableName,
+            deferred.constraintName,
+            ownershipComment,
+          ),
         );
       }
-    }
-    for (const deferred of postSchemaStatements) {
-      await schemaDb.query(deferred.statement);
     }
   };
 
@@ -652,6 +735,9 @@ async function createIsolatedTestDbWithPostSchemaStatements(
 }
 
 interface PostSchemaStatement {
+  tableName: string;
+  constraintName: string;
+  foreignKey: ForeignKeyDefinition;
   statement: string;
 }
 
@@ -1318,6 +1404,9 @@ export async function createIsolatedTestDbFromManifest(
             ),
           )
           .map(({ tableName, foreignKey }) => ({
+            tableName,
+            constraintName: foreignKeyConstraintName(tableName, foreignKey),
+            foreignKey,
             statement: renderDeferredForeignKeyAdd(tableName, foreignKey),
           }))
       : [],

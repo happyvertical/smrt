@@ -18,33 +18,28 @@ const postgresDescribe = process.env.SMRT_TEST_POSTGRES_URL
   ? describe.sequential
   : describe.skip;
 
-interface BuiltManifest {
-  objects: Record<string, { className?: string }>;
-}
-
-function readBuiltManifest(path: string): BuiltManifest {
-  return JSON.parse(readFileSync(path, 'utf8')) as BuiltManifest;
-}
-
-function selectObject(
-  manifest: BuiltManifest,
-  className: string,
-): [string, BuiltManifest['objects'][string]] {
-  const entry = Object.entries(manifest.objects).find(
-    ([, object]) => object.className === className,
-  );
-  if (!entry) {
-    throw new Error(
-      `Built manifest is missing ${className}; build commerce and marketing before the PostgreSQL lane`,
-    );
+async function dropIssueTables(...tableNames: string[]): Promise<void> {
+  const admin = await getDatabase({
+    type: 'postgres',
+    url: process.env.DATABASE_URL as string,
+  });
+  try {
+    for (const tableName of tableNames) {
+      if (!/^i2537_[a-z_]+$/.test(tableName)) {
+        throw new Error(`Unsafe issue-table cleanup target: ${tableName}`);
+      }
+      await admin.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+    }
+  } finally {
+    await admin.close();
   }
-  return entry;
 }
 
 postgresDescribe(
   'PostgreSQL multi-package manifest foreign keys (#2537)',
   () => {
     it('converges when concurrent factories add the same deferred cycle constraints', async () => {
+      await dropIssueTables('i2537_cycle_a', 'i2537_cycle_b');
       const manifestPath = join(
         tmpdir(),
         `smrt-vitest-issue-2537-cycle-${randomUUID()}.json`,
@@ -119,6 +114,11 @@ postgresDescribe(
     });
 
     it('reconciles an existing table before adding a newly declared relationship', async () => {
+      await dropIssueTables(
+        'i2537_evolve_child',
+        'i2537_evolve_parent',
+        'i2537_evolve_parent_alternate',
+      );
       const manifestPath = join(
         tmpdir(),
         `smrt-vitest-issue-2537-evolve-${randomUUID()}.json`,
@@ -261,6 +261,9 @@ postgresDescribe(
         await admin.query(
           'ALTER TABLE "i2537_evolve_child" ADD CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_evolve_parent" ("id") ON DELETE CASCADE ON UPDATE CASCADE NOT VALID',
         );
+        await admin.query(
+          `COMMENT ON CONSTRAINT "i2537_evolve_child_parent_id_i2537_evolve_parent_id_fkey" ON "i2537_evolve_child" IS 'smrt-vitest:manifest-foreign-key:v1'`,
+        );
       } finally {
         await admin.close();
       }
@@ -314,24 +317,134 @@ postgresDescribe(
       }
     });
 
+    it('preserves unowned constraints and leaves unchanged owned constraints in place', async () => {
+      await dropIssueTables('i2537_owned_child', 'i2537_owned_parent');
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-owned-${randomUUID()}.json`,
+      );
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          objects: {
+            Parent: {
+              className: 'Parent',
+              schema: {
+                tableName: 'i2537_owned_parent',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                },
+              },
+            },
+            Child: {
+              className: 'Child',
+              schema: {
+                tableName: 'i2537_owned_child',
+                columns: {
+                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  parent_id: {
+                    type: 'TEXT',
+                    foreignKey: {
+                      table: 'i2537_owned_parent',
+                      column: 'id',
+                      onDelete: 'CASCADE',
+                      onUpdate: 'CASCADE',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+      );
+
+      const provisioned = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+      await provisioned.cleanup();
+      const admin = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+      try {
+        await admin.query(
+          'ALTER TABLE "i2537_owned_child" ADD CONSTRAINT "external_owned_child_parent_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_owned_parent" ("id")',
+        );
+      } finally {
+        await admin.close();
+      }
+
+      const beforeDb = await createIsolatedTestDbFromManifest({ manifestPath });
+      const before = await beforeDb.db.query(
+        `SELECT constraint_row.oid::text AS constraint_oid,
+                constraint_row.conname AS constraint_name
+         FROM pg_constraint AS constraint_row
+         JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+         WHERE child.relname = 'i2537_owned_child'
+           AND constraint_row.conname IN (
+             'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey',
+             'external_owned_child_parent_fkey'
+           )
+         ORDER BY constraint_row.conname`,
+      );
+      await beforeDb.cleanup();
+
+      let reopened:
+        | Awaited<ReturnType<typeof createIsolatedTestDbFromManifest>>
+        | undefined;
+      try {
+        reopened = await createIsolatedTestDbFromManifest({ manifestPath });
+        const after = await reopened.db.query(
+          `SELECT constraint_row.oid::text AS constraint_oid,
+                  constraint_row.conname AS constraint_name
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           WHERE child.relname = 'i2537_owned_child'
+             AND constraint_row.conname IN (
+               'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey',
+               'external_owned_child_parent_fkey'
+             )
+           ORDER BY constraint_row.conname`,
+        );
+        expect(after.rows).toEqual(before.rows);
+      } finally {
+        await reopened?.cleanup();
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
     it('reopens the schema and enforces the shipped campaign relationships', async () => {
-      const commerce = readBuiltManifest(
-        resolve('../commerce/dist/manifest.json'),
-      );
-      const marketing = readBuiltManifest(
-        resolve('../marketing/dist/manifest.json'),
-      );
-      const objects = Object.fromEntries([
-        selectObject(commerce, 'Customer'),
-        selectObject(marketing, 'Campaign'),
-        selectObject(marketing, 'CampaignChannel'),
-        selectObject(marketing, 'CampaignMetricSnapshot'),
-      ]);
+      const commerce = JSON.parse(
+        readFileSync(resolve('../commerce/dist/manifest.json'), 'utf8'),
+      ) as { objects: Record<string, { className?: string }> };
+      const marketing = JSON.parse(
+        readFileSync(resolve('../marketing/dist/manifest.json'), 'utf8'),
+      ) as { objects: Record<string, { className?: string }> };
+      const select = (
+        manifest: typeof commerce,
+        className: string,
+      ): [string, (typeof commerce.objects)[string]] => {
+        const entry = Object.entries(manifest.objects).find(
+          ([, object]) => object.className === className,
+        );
+        if (!entry) throw new Error(`Built manifest is missing ${className}`);
+        return entry;
+      };
       const manifestPath = join(
         tmpdir(),
         `smrt-vitest-issue-2537-${randomUUID()}.json`,
       );
-      writeFileSync(manifestPath, JSON.stringify({ objects }));
+      writeFileSync(
+        manifestPath,
+        JSON.stringify({
+          objects: Object.fromEntries([
+            select(commerce, 'Customer'),
+            select(marketing, 'Campaign'),
+            select(marketing, 'CampaignChannel'),
+            select(marketing, 'CampaignMetricSnapshot'),
+          ]),
+        }),
+      );
 
       // The original failure appeared when a later factory synchronized tables
       // whose renderer-owned named constraints already existed. Provision once,
@@ -343,10 +456,22 @@ postgresDescribe(
       try {
         const constraintsResult = await second.db.query(
           `SELECT child.relname AS table_name,
-                constraint_row.conname AS constraint_name
+                child_column.attname AS column_name,
+                parent.relname AS referenced_table,
+                parent_column.attname AS referenced_column,
+                constraint_row.confdeltype,
+                constraint_row.confupdtype,
+                constraint_row.convalidated
          FROM pg_constraint AS constraint_row
          JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+         JOIN pg_class AS parent ON parent.oid = constraint_row.confrelid
          JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+         JOIN pg_attribute AS child_column
+           ON child_column.attrelid = child.oid
+          AND child_column.attnum = constraint_row.conkey[1]
+         JOIN pg_attribute AS parent_column
+           ON parent_column.attrelid = parent.oid
+          AND parent_column.attnum = constraint_row.confkey[1]
          WHERE namespace_row.nspname = current_schema()
            AND constraint_row.contype = 'f'
            AND child.relname IN ('campaign_channels', 'campaign_metric_snapshots')
@@ -355,25 +480,35 @@ postgresDescribe(
         const constraints = Array.isArray(constraintsResult)
           ? constraintsResult
           : ((constraintsResult as { rows?: unknown[] }).rows ?? []);
-        expect(constraints).toEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              table_name: 'campaign_channels',
-              constraint_name:
-                'campaign_channels_campaign_id_campaigns_id_fkey',
-            }),
-            expect.objectContaining({
-              table_name: 'campaign_metric_snapshots',
-              constraint_name:
-                'campaign_metric_snapshots_campaign_id_campaigns_id_fkey',
-            }),
-            expect.objectContaining({
-              table_name: 'campaign_metric_snapshots',
-              constraint_name:
-                'campaign_metric_snapshots_campaign_channel_id_campai_beeca5aa9b',
-            }),
-          ]),
-        );
+        expect(constraints).toEqual([
+          {
+            table_name: 'campaign_channels',
+            column_name: 'campaign_id',
+            referenced_table: 'campaigns',
+            referenced_column: 'id',
+            confdeltype: 'c',
+            confupdtype: 'c',
+            convalidated: true,
+          },
+          {
+            table_name: 'campaign_metric_snapshots',
+            column_name: 'campaign_channel_id',
+            referenced_table: 'campaign_channels',
+            referenced_column: 'id',
+            confdeltype: 'a',
+            confupdtype: 'c',
+            convalidated: true,
+          },
+          {
+            table_name: 'campaign_metric_snapshots',
+            column_name: 'campaign_id',
+            referenced_table: 'campaigns',
+            referenced_column: 'id',
+            confdeltype: 'a',
+            confupdtype: 'c',
+            convalidated: true,
+          },
+        ]);
 
         const tenantId = randomUUID();
         const customerId = randomUUID();
@@ -426,6 +561,32 @@ postgresDescribe(
             campaign_id: randomUUID(),
             channel_kind: 'ad_group',
             channel_ref: `orphan-ref-${randomUUID()}`,
+          }),
+        ).rejects.toThrow();
+        await expect(
+          second.db.insert('campaign_metric_snapshots', {
+            id: randomUUID(),
+            slug: `orphan-campaign-${randomUUID()}`,
+            tenant_id: tenantId,
+            campaign_id: randomUUID(),
+            campaign_channel_id: channelId,
+            period_start: new Date('2026-08-01T00:00:00.000Z'),
+            period_end: new Date('2026-08-02T00:00:00.000Z'),
+            source: 'issue-2537',
+            dedupe_key: `orphan-campaign-${randomUUID()}`,
+          }),
+        ).rejects.toThrow();
+        await expect(
+          second.db.insert('campaign_metric_snapshots', {
+            id: randomUUID(),
+            slug: `orphan-channel-${randomUUID()}`,
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            campaign_channel_id: randomUUID(),
+            period_start: new Date('2026-08-01T00:00:00.000Z'),
+            period_end: new Date('2026-08-02T00:00:00.000Z'),
+            source: 'issue-2537',
+            dedupe_key: `orphan-channel-${randomUUID()}`,
           }),
         ).rejects.toThrow();
       } finally {

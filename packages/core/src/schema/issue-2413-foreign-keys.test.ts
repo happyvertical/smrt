@@ -8,7 +8,9 @@ import {
   foreignKeyConstraintName,
   foreignKeyRelationshipKey,
   renderForeignKeyConstraint,
+  renderForeignKeyConstraintComment,
   renderForeignKeyConstraintDrop,
+  renderForeignKeyConstraintValidate,
   schemaDependenciesForEngine,
   schemaForeignKeys,
 } from './foreign-key-ddl.js';
@@ -77,6 +79,21 @@ describe('same-package foreign-key policy (#2413)', () => {
   it('quotes catalog-owned names when dropping a rendered constraint', () => {
     expect(renderForeignKeyConstraintDrop('child"table', 'parent"fkey')).toBe(
       'ALTER TABLE "child""table" DROP CONSTRAINT "parent""fkey";',
+    );
+  });
+
+  it('quotes validation and ownership-comment statements', () => {
+    expect(
+      renderForeignKeyConstraintValidate('child"table', 'parent"fkey'),
+    ).toBe('ALTER TABLE "child""table" VALIDATE CONSTRAINT "parent""fkey";');
+    expect(
+      renderForeignKeyConstraintComment(
+        'child"table',
+        'parent"fkey',
+        "smrt's marker",
+      ),
+    ).toBe(
+      `COMMENT ON CONSTRAINT "parent""fkey" ON "child""table" IS 'smrt''s marker';`,
     );
   });
 
