@@ -13,7 +13,10 @@ import { createHash } from 'node:crypto';
 // catalog is registration-driven, so ensure those definitions exist even when
 // a host imports only the content server entry point.
 import '@happyvertical/smrt-facts';
-import type { PrincipalRun } from '@happyvertical/smrt-agents';
+import {
+  type PrincipalRun,
+  PrincipalToolNotAllowedError,
+} from '@happyvertical/smrt-agents';
 import {
   createDataSurfaceActionAdapter,
   type DataSurfaceActionAdapter,
@@ -1028,7 +1031,10 @@ export function createContentListActionAdapter(
         false,
         error instanceof ContentListActionError
           ? error.reason
-          : 'execution_failed',
+          : isPermissionDenied(error) ||
+              error instanceof PrincipalToolNotAllowedError
+            ? 'denied'
+            : 'execution_failed',
       );
     } finally {
       resolvedByRequest.delete(request);

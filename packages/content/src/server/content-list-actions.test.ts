@@ -2,6 +2,7 @@ import type {
   ExecuteAsPrincipalOptions,
   PrincipalRun,
 } from '@happyvertical/smrt-agents';
+import { PrincipalToolNotAllowedError } from '@happyvertical/smrt-agents';
 import {
   type DataSurfaceBackgroundActionJob,
   InMemoryDataSurfaceActionStateStore,
@@ -233,10 +234,11 @@ function harness(
     handlers?: Parameters<typeof createContentListActionAdapter>[0]['handlers'];
     assertOperation?: PrincipalRun['assertOperation'];
     revision?: Parameters<typeof createContentListActionAdapter>[0]['revision'];
+    allowedTools?: string[];
   } = {},
 ) {
   const collection = options.collection ?? new MemoryContentCollection(rows());
-  const allowedTools = [
+  const allowedTools = options.allowedTools ?? [
     'content.workflow.move-to-trash',
     'content.workflow.mark-draft',
     'content.workflow.submit-review',
@@ -540,6 +542,36 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       'create',
     );
     expect(setup.collection.saveCalls).toEqual([]);
+  });
+
+  it('reports primary operation and tool authorization failures as denial', async () => {
+    const primaryDenied = harness({
+      assertOperation: async () => {
+        throw permissionDeniedError();
+      },
+    });
+    const request = actionRequest(
+      'preview',
+      'categorize',
+      { scope: 'explicit-ids', rowIds: ['a'] },
+      { expectedCount: 1 },
+      { payload: { category: 'news' } },
+    );
+
+    await expect(
+      primaryDenied.adapter.preview(request, primaryDenied.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+
+    const toolDenied = harness({ allowedTools: [] });
+    toolDenied.run.assertToolAllowed = (tool) => {
+      throw new PrincipalToolNotAllowedError(tool);
+    };
+    await expect(
+      toolDenied.adapter.preview(
+        { ...request, requestId: 'preview-tool-denied' },
+        toolDenied.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
   });
 
   it('surfaces permission catalog failures instead of misreporting them as denial', async () => {
