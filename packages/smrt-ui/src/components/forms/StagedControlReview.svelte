@@ -157,7 +157,7 @@ $effect(() => {
   const controls = formElement.querySelectorAll<HTMLElement>(
     '[data-smrt-control]',
   );
-  for (const control of controls) {
+  controls.forEach((control) => {
     const controlKey = JSON.stringify([
       control.dataset.smrtControl ?? '',
       control.dataset.smrtSubjectType ?? null,
@@ -168,9 +168,11 @@ $effect(() => {
     } else {
       delete control.dataset.smrtStaged;
     }
-  }
+  });
   return () => {
-    for (const control of controls) delete control.dataset.smrtStaged;
+    controls.forEach((control) => {
+      delete control.dataset.smrtStaged;
+    });
   };
 });
 
