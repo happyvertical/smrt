@@ -1407,10 +1407,31 @@ function workflowPreviewMessage(): string {
     ? details.consequences.filter((entry): entry is string => typeof entry === 'string')
     : [];
   const skipped = typeof details.skipped === 'number' ? details.skipped : 0;
+  const resolvedScope =
+    typeof details.resolvedScope === 'string'
+      ? details.resolvedScope
+      : workflowSelection()?.scope;
+  const ineligible = Array.isArray(details.ineligible)
+    ? details.ineligible.flatMap((entry) => {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry))
+          return [];
+        const outcome = entry as Record<string, unknown>;
+        if (
+          typeof outcome.rowId !== 'string' &&
+          typeof outcome.rowId !== 'number'
+        )
+          return [];
+        const reason =
+          typeof outcome.reason === 'string' ? ` (${outcome.reason})` : '';
+        return [`${String(outcome.rowId)}${reason}`];
+      })
+    : [];
   return [
+    resolvedScope ? `Resolved scope: ${resolvedScope}.` : '',
     `${count} matching content item${count === 1 ? '' : 's'}.`,
     labels.length ? `Examples: ${labels.join(', ')}.` : '',
     skipped ? `${skipped} currently ineligible.` : '',
+    ineligible.length ? `Ineligible: ${ineligible.join(', ')}.` : '',
     ...consequences,
   ].filter(Boolean).join(' ');
 }
@@ -1502,12 +1523,16 @@ async function checkWorkflowJob() {
     );
     if (job.result) {
       workflowResult = job.result;
-      const retained = contentListWorkflowOutcomes(job.result)
-        .filter((outcome) => outcome.status !== 'accepted')
-        .map((outcome) => outcome.rowId);
-      controller.dispatch({ type: 'setSelectedRows', rowIds: retained });
+      if (!job.result.ok) {
+        workflowError = job.result.reason ?? `Job ${job.jobId} failed.`;
+      } else {
+        const retained = contentListWorkflowOutcomes(job.result)
+          .filter((outcome) => outcome.status !== 'accepted')
+          .map((outcome) => outcome.rowId);
+        controller.dispatch({ type: 'setSelectedRows', rowIds: retained });
+      }
     }
-    if (job.status !== 'succeeded') {
+    if (job.status !== 'succeeded' && !workflowError) {
       workflowError = job.reason ?? `Job ${job.jobId} ${job.status}.`;
     }
   } catch (error) {

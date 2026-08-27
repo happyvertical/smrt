@@ -73,7 +73,7 @@ export interface ContentListWorkflowDescriptor {
   eligibility: string[];
   permissionRequirements: {
     tool: string;
-    operation: { id: string; collection: string; action: string };
+    operations: Array<{ id: string; collection: string; action: string }>;
   };
   consequences: string[];
   partialResult: {
@@ -101,6 +101,99 @@ const OPTIONAL_REVIEW_INPUT: DataSurfaceJsonObject = {
     policyKey: { type: 'string', maxLength: 128 },
   },
 };
+
+const CONTENT_UPDATE_OPERATION = {
+  id: 'contents:update',
+  collection: 'contents',
+  action: 'update',
+};
+
+const CONTENT_READ_OPERATION = {
+  id: 'contents:read',
+  collection: 'contents',
+  action: 'read',
+};
+
+const GOVERNANCE_READ_OPERATIONS = [
+  {
+    id: 'content-governance-assignments:read',
+    collection: 'content_governance_assignments',
+    action: 'read',
+  },
+  {
+    id: 'content-governance-policies:read',
+    collection: 'content_governance_policies',
+    action: 'read',
+  },
+  {
+    id: 'content-governance-profiles:read',
+    collection: 'content_governance_profiles',
+    action: 'read',
+  },
+] as const;
+
+const PUBLICATION_OPERATIONS = [
+  CONTENT_UPDATE_OPERATION,
+  CONTENT_READ_OPERATION,
+  ...GOVERNANCE_READ_OPERATIONS,
+  {
+    id: 'content-references:read',
+    collection: 'content_references',
+    action: 'read',
+  },
+  { id: 'facts:read', collection: 'facts', action: 'read' },
+  { id: 'fact-contents:read', collection: 'fact_contents', action: 'read' },
+  { id: 'fact-sources:read', collection: 'fact_sources', action: 'read' },
+  { id: 'content-reviews:read', collection: 'content_reviews', action: 'read' },
+  {
+    id: 'content-corrections:read',
+    collection: 'content_corrections',
+    action: 'read',
+  },
+  {
+    id: 'content-versions:read',
+    collection: 'content_versions',
+    action: 'read',
+  },
+  {
+    id: 'content-versions:create',
+    collection: 'content_versions',
+    action: 'create',
+  },
+] as const;
+
+const AUTOMATED_REVIEW_OPERATIONS = [
+  CONTENT_UPDATE_OPERATION,
+  CONTENT_READ_OPERATION,
+  ...GOVERNANCE_READ_OPERATIONS,
+  {
+    id: 'content-references:read',
+    collection: 'content_references',
+    action: 'read',
+  },
+  { id: 'facts:read', collection: 'facts', action: 'read' },
+  { id: 'fact-contents:read', collection: 'fact_contents', action: 'read' },
+  {
+    id: 'prompt-overrides:read',
+    collection: 'prompt_overrides',
+    action: 'read',
+  },
+  {
+    id: 'content-versions:read',
+    collection: 'content_versions',
+    action: 'read',
+  },
+  {
+    id: 'content-versions:create',
+    collection: 'content_versions',
+    action: 'create',
+  },
+  {
+    id: 'content-reviews:create',
+    collection: 'content_reviews',
+    action: 'create',
+  },
+] as const;
 
 export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
   Object.freeze([
@@ -132,6 +225,10 @@ export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
       consequences: [
         'Content becomes public and may create a publication snapshot.',
       ],
+      permissionRequirements: {
+        tool: 'content.workflow.publish',
+        operations: [...PUBLICATION_OPERATIONS],
+      },
     }),
     workflow('archive', 'Archive', {
       description: 'Remove eligible content from active publication workflows.',
@@ -160,6 +257,10 @@ export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
         'Content leaves trash.',
         'Publishing makes content public.',
       ],
+      permissionRequirements: {
+        tool: 'content.workflow.restore',
+        operations: [...PUBLICATION_OPERATIONS],
+      },
     }),
     workflow('automated-review', 'Automated review', {
       description: 'Run the configured content governance review.',
@@ -172,6 +273,10 @@ export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
       consequences: [
         'Creates a review result and may create a review version.',
       ],
+      permissionRequirements: {
+        tool: 'content.workflow.automated-review',
+        operations: [...AUTOMATED_REVIEW_OPERATIONS],
+      },
     }),
     workflow('format-body', 'Format body', {
       description: 'Run the application-owned body-formatting workflow.',
@@ -237,11 +342,7 @@ function workflow(
     eligibility: options.eligibility,
     permissionRequirements: options.permissionRequirements ?? {
       tool: `content.workflow.${id}`,
-      operation: {
-        id: 'contents:update',
-        collection: 'contents',
-        action: 'update',
-      },
+      operations: [CONTENT_UPDATE_OPERATION, CONTENT_READ_OPERATION],
     },
     consequences: options.consequences,
     partialResult: {
@@ -804,9 +905,27 @@ export function createContentListActionAdapter(
           confirmation: entry.confirmation,
           execution: entry.execution,
           tool: entry.permissionRequirements.tool,
-          operation: entry.permissionRequirements.operation,
-          authorize: (invocation) =>
-            options.authorize?.(entry.id, invocation.run) ?? true,
+          operation:
+            entry.permissionRequirements.operations[0] ??
+            CONTENT_UPDATE_OPERATION,
+          authorize: async (invocation) => {
+            const operations =
+              entry.id === 'restore' &&
+              payloadRecord(invocation.request.payload).status !== 'published'
+                ? entry.permissionRequirements.operations.slice(0, 1)
+                : entry.permissionRequirements.operations;
+            try {
+              for (const operation of operations.slice(1)) {
+                await invocation.run.assertOperation(
+                  operation.collection,
+                  operation.action,
+                );
+              }
+            } catch {
+              return false;
+            }
+            return options.authorize?.(entry.id, invocation.run) ?? true;
+          },
           eligible: async (invocation, rowId) => {
             const content = await loadContent(invocation, rowId);
             if (!content)

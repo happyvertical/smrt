@@ -217,6 +217,7 @@ function harness(
       enqueue(job: DataSurfaceBackgroundActionJob): Promise<{ jobId: string }>;
     };
     handlers?: Parameters<typeof createContentListActionAdapter>[0]['handlers'];
+    assertOperation?: PrincipalRun['assertOperation'];
   } = {},
 ) {
   const collection = options.collection ?? new MemoryContentCollection(rows());
@@ -240,7 +241,7 @@ function harness(
     assertToolAllowed(tool) {
       if (!allowedTools.includes(tool)) throw new Error('tool denied');
     },
-    assertOperation: vi.fn(),
+    assertOperation: vi.fn(options.assertOperation),
   };
   const runAsPrincipal = (async <T>(
     _principalOptions: ExecuteAsPrincipalOptions,
@@ -453,6 +454,38 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       ok: true,
       details: { count: 1, representativeLabels: ['Alpha'] },
     });
+  });
+
+  it('fails closed when automated review lacks secondary collection permissions', async () => {
+    const setup = harness({
+      permissions: ['contents:update'],
+      assertOperation: async (collection, action) => {
+        if (collection === 'content_versions' && action === 'create') {
+          throw new Error('operation denied');
+        }
+        return { allowed: true } as Awaited<
+          ReturnType<PrincipalRun['assertOperation']>
+        >;
+      },
+    });
+    const request = actionRequest(
+      'preview',
+      'automated-review',
+      { scope: 'explicit-ids', rowIds: ['a'] },
+      { expectedCount: 1 },
+    );
+
+    await expect(
+      setup.adapter.preview(request, setup.context),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'denied',
+    });
+    expect(setup.run.assertOperation).toHaveBeenCalledWith(
+      'content_versions',
+      'create',
+    );
+    expect(setup.collection.saveCalls).toEqual([]);
   });
 
   it('reports accepted, skipped, and failed rows without leaking the failure', async () => {

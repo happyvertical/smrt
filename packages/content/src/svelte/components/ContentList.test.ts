@@ -358,12 +358,16 @@ describe('ContentList bulk workflows', () => {
         count: 1,
         representativeLabels: ['Council budget explained'],
         skipped: 1,
+        resolvedScope: 'explicit-ids',
+        ineligible: [
+          { rowId: 'content-2', status: 'skipped', reason: 'requires_draft' },
+        ],
         consequences: ['Published content is no longer public.'],
       },
     });
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(
-        'Examples: Council budget explained. 1 currently ineligible. Published content is no longer public.',
+        'Resolved scope: explicit-ids. 1 matching content item. Examples: Council budget explained. 1 currently ineligible. Ineligible: content-2 (requires_draft). Published content is no longer public.',
       ),
     );
   });
@@ -516,6 +520,54 @@ describe('ContentList bulk workflows', () => {
     );
     expect(second.textContent).toContain('1 selected');
     expect(buttonsByText(second, 'Preview workflow')[0]?.disabled).toBe(false);
+  });
+
+  it('preserves selection when a succeeded queue job carries a failed action result', async () => {
+    const status = vi.fn().mockResolvedValue({
+      jobId: 'job-failed-action',
+      status: 'succeeded',
+      result: {
+        ok: false,
+        reason: 'stale_preview',
+      },
+    });
+    const workflow = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          background: true,
+          jobId: 'job-failed-action',
+        },
+      }),
+      status,
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Check job')[0]);
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('stale_preview'),
+    );
+    expect(target.textContent).toContain('1 selected');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+    expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
   });
 
   it('reuses one idempotency key when an apply response is lost and retried', async () => {
