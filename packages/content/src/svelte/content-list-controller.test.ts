@@ -462,6 +462,33 @@ describe('content list data surface descriptor', () => {
     ]);
   });
 
+  it('publishes every bulk workflow with the same preview/confirmation scopes as the human UI', () => {
+    const descriptor = buildContentListSurfaceDescriptor();
+    const workflowIds = [
+      'move-to-trash',
+      'mark-draft',
+      'submit-review',
+      'publish',
+      'archive',
+      'restore',
+      'automated-review',
+      'format-body',
+      'categorize',
+      'optimize',
+    ];
+
+    expect(descriptor.schemaVersion).toBe(2);
+    expect(descriptor.limits.maxSelectionSize).toBe(10_000);
+    for (const id of workflowIds) {
+      expect(
+        descriptor.actions.find((action) => action.id === id),
+      ).toMatchObject({
+        requiresConfirmation: true,
+        selectionScopes: ['current-page', 'explicit-ids', 'all-matching'],
+      });
+    }
+  });
+
   it('accepts a host surface id, subject, and translated labels', () => {
     const descriptor = buildContentListSurfaceDescriptor({
       surfaceId: 'site-content-list',

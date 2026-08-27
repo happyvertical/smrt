@@ -2,6 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +18,10 @@ import {
 import { createContentListJobController } from '../content-list-runtime.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
 import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
+import type {
+  ContentListWorkflowBinding,
+  ContentListWorkflowRequest,
+} from '../content-list-workflows.js';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
 import RefreshCapabilityHarness from './__tests__/content-list-refresh-capability-harness.svelte';
@@ -121,6 +126,53 @@ function switchTo(target: HTMLElement, label: string) {
   click(buttonByLabel(target, label));
 }
 
+function workflowBinding(
+  options: {
+    preview?: (
+      request: ContentListWorkflowRequest,
+    ) => Promise<DataSurfaceActionResult>;
+    apply?: (
+      request: ContentListWorkflowRequest,
+    ) => Promise<DataSurfaceActionResult>;
+    status?: ContentListWorkflowBinding['client']['status'];
+  } = {},
+): ContentListWorkflowBinding & {
+  preview: ReturnType<typeof vi.fn>;
+  apply: ReturnType<typeof vi.fn>;
+} {
+  const preview = vi.fn(
+    options.preview ??
+      (async (request: ContentListWorkflowRequest) => ({
+        ...request,
+        ok: true,
+        confirmationToken: 'preview-token',
+        details: { count: request.target.expectedCount ?? 0 },
+      })),
+  );
+  const apply = vi.fn(
+    options.apply ??
+      (async (request: ContentListWorkflowRequest) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: request.target.expectedCount ?? 0,
+          skipped: 0,
+          failed: 0,
+        },
+      })),
+  );
+  return {
+    client: {
+      preview,
+      apply,
+      ...(options.status ? { status: options.status } : {}),
+    },
+    revision: 7,
+    preview,
+    apply,
+  };
+}
+
 /**
  * Presentations whose paging must be identical.
  *
@@ -222,6 +274,283 @@ describe('ContentList presentations', () => {
 
     expect(detailedRows).toEqual(gridRows);
     expect(compactRows).toEqual(gridRows);
+  });
+});
+
+describe('ContentList bulk workflows', () => {
+  it('binds an all-matching selection to the settled canonical query fingerprint', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-frozen-query',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(
+      [
+        {
+          id: 'content-1',
+          title: 'First',
+          status: 'draft',
+          updated_at: '2026-08-27T17:00:00.000Z',
+        },
+        {
+          id: 'content-2',
+          title: 'Second',
+          status: 'draft',
+          updated_at: '2026-08-27T17:01:00.000Z',
+        },
+      ],
+      5,
+    );
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 5 matching')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Select all 5 matching')[0]);
+    expect(target.textContent).toContain('5 selected');
+
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'mark-draft',
+      expectedRevision: 7,
+      selection: {
+        scope: 'all-matching',
+        queryFingerprint: 'dq1-frozen-query',
+      },
+      target: {
+        expectedCount: 5,
+        query: { version: 1, mode: 'rows' },
+      },
+    });
+  });
+
+  it('prevents duplicate preview calls and shows the resolved preview consequences', async () => {
+    let resolvePreview: ((value: unknown) => void) | undefined;
+    const workflow = workflowBinding({
+      preview: (request) =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const preview = buttonsByText(target, 'Preview workflow')[0];
+
+    click(preview);
+    click(preview);
+    expect(workflow.preview).toHaveBeenCalledTimes(1);
+    expect(preview.disabled).toBe(true);
+
+    const request = workflow.preview.mock
+      .calls[0]?.[0] as ContentListWorkflowRequest;
+    resolvePreview?.({
+      ...request,
+      ok: true,
+      confirmationToken: 'token-preview',
+      details: {
+        count: 1,
+        representativeLabels: ['Council budget explained'],
+        skipped: 1,
+        consequences: ['Published content is no longer public.'],
+      },
+    });
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        'Examples: Council budget explained. 1 currently ineligible. Published content is no longer public.',
+      ),
+    );
+  });
+
+  it('fails closed when an all-matching query changes after preview', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-query',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+    });
+    remote.resolve(
+      [
+        {
+          id: 'content-1',
+          title: 'First',
+          status: 'draft',
+          updated_at: '2026-08-27T17:00:00.000Z',
+        },
+      ],
+      4,
+    );
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 4 matching')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Select all 4 matching')[0]);
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+
+    typeText(searchInput(target), 'a changed query');
+    await vi.waitFor(() => expect(remote.requests.length).toBeGreaterThan(1));
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+
+    expect(workflow.apply).not.toHaveBeenCalled();
+    expect(target.textContent).toContain(
+      'The selection or query changed. Preview the workflow again.',
+    );
+    expect(target.textContent).toContain('0 selected');
+  });
+
+  it('retains skipped and failed rows after a partial apply', async () => {
+    const workflow = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          skipped: 1,
+          failed: 0,
+          outcomes: [
+            { rowId: 'content-1', status: 'accepted' },
+            { rowId: 'content-2', status: 'skipped', reason: 'requires_draft' },
+          ],
+        },
+      }),
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.apply).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(target.textContent).toContain('1 selected'));
+    expect(checkboxByLabel(target, 'Deselect Zoning appendix').checked).toBe(
+      true,
+    );
+    expect(
+      checkboxByLabel(target, 'Select Council budget explained').checked,
+    ).toBe(false);
+  });
+
+  it('does not clear selection on apply failure and exposes a background job handle', async () => {
+    const failed = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: false,
+        reason: 'stale_preview',
+      }),
+    });
+    const target = renderList({ workflows: failed });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('stale_preview'),
+    );
+    expect(target.textContent).toContain('1 selected');
+
+    const status = vi.fn().mockResolvedValue({
+      jobId: 'job-content-42',
+      status: 'failed',
+      reason: 'provider unavailable',
+    });
+    const background = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          skipped: 0,
+          failed: 0,
+          background: true,
+          jobId: 'job-content-42',
+        },
+      }),
+      status,
+    });
+    const second = renderList({ workflows: background });
+    click(checkboxByLabel(second, 'Select Council budget explained'));
+    const workflowSelect = second.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(second, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(background.preview).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(buttonsByText(second, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(second, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(second.textContent).toContain('Job job-content-42 queued.'),
+    );
+    expect(second.textContent).toContain(
+      '1 queued for background processing; results pending',
+    );
+    expect(second.textContent).not.toContain('1 accepted');
+    expect(second.textContent).toContain('1 selected');
+    expect(buttonsByText(second, 'Job queued')[0]?.disabled).toBe(true);
+    click(buttonsByText(second, 'Job queued')[0]);
+    expect(background.preview).toHaveBeenCalledTimes(1);
+    click(buttonsByText(second, 'Check job')[0]);
+    await vi.waitFor(() =>
+      expect(status).toHaveBeenCalledWith('job-content-42'),
+    );
+    await vi.waitFor(() =>
+      expect(second.textContent).toContain('provider unavailable'),
+    );
+    expect(second.textContent).toContain('1 selected');
+    expect(buttonsByText(second, 'Preview workflow')[0]?.disabled).toBe(false);
+  });
+
+  it('reuses one idempotency key when an apply response is lost and retried', async () => {
+    const apply = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockImplementation(async (request: ContentListWorkflowRequest) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          skipped: 0,
+          failed: 0,
+          outcomes: [{ rowId: 'content-1', status: 'accepted' }],
+        },
+      }));
+    const workflow = workflowBinding({ apply });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('response lost'),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
+
+    expect(apply.mock.calls[0]?.[0].idempotencyKey).toBeTruthy();
+    expect(apply.mock.calls[1]?.[0].idempotencyKey).toBe(
+      apply.mock.calls[0]?.[0].idempotencyKey,
+    );
   });
 });
 

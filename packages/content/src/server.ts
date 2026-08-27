@@ -46,4 +46,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   startServer().catch(console.error);
 }
 
+export * from './server/content-list-actions.js';
 export { startServer };

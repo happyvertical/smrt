@@ -36,12 +36,13 @@ import {
   getNestedValue,
 } from '@happyvertical/smrt-ui/data';
 import type { ContentData } from '../mock-smrt-client.js';
+import { CONTENT_LIST_WORKFLOW_OPTIONS } from './content-list-workflows.js';
 
 /** Stable surface identity for the default mounted content list. */
 export const CONTENT_LIST_SURFACE_ID = 'content-list';
 
 /** Descriptor and view-state schema version owned by this adapter. */
-export const CONTENT_LIST_SCHEMA_VERSION = 1;
+export const CONTENT_LIST_SCHEMA_VERSION = 2;
 
 /** Row identity column. Selection and expansion address rows by this value. */
 export const CONTENT_LIST_ROW_KEY = 'id';
@@ -235,7 +236,7 @@ const DEFAULT_ACTION_LABELS: Record<ContentListActionId, string> = {
 const DEFAULT_SURFACE_LIMITS: DataSurfaceLimits = {
   maxQueryRows: 200,
   maxQueryBytes: 50_000,
-  maxSelectionSize: 200,
+  maxSelectionSize: 10_000,
 };
 
 /** Local table commands a mounted content list accepts from a data surface. */
@@ -1168,6 +1169,17 @@ export function buildContentListSurfaceDescriptor(
       selectionScopes: ['explicit-ids', 'current-page'],
       requiresConfirmation: true,
     },
+    ...CONTENT_LIST_WORKFLOW_OPTIONS.map((workflow) => ({
+      id: workflow.id,
+      label: workflow.label,
+      sensitivity: workflow.sensitivity,
+      selectionScopes: [
+        'current-page' as const,
+        'explicit-ids' as const,
+        'all-matching' as const,
+      ],
+      requiresConfirmation: true,
+    })),
   ];
   return {
     version: 1,

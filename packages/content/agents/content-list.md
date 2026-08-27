@@ -43,6 +43,47 @@ visible with their error and retry affordance, so error recovery cannot report
 success or refresh as though the action applied. The tracker is exported from
 `@happyvertical/smrt-content/svelte` for the bulk-action slice to reuse rather
 than creating a second pending-state machine.
+## Cross-page bulk workflows (#2453)
+
+Server-backed lists can opt into one shared preview/apply workflow contract for
+human and agent callers. The browser integration is exported from
+`@happyvertical/smrt-content/svelte`; the principal-bound adapter is exported
+from `@happyvertical/smrt-content/server`.
+
+The supported workflows are move to trash, mark draft, submit for review,
+publish, archive, restore, automated review, body formatting, categorization,
+and optimization. Applications inject body-formatting and optimization
+handlers because those AI pipelines are application-owned; the content package
+does not guess a model or rewrite policy.
+
+Important invariants:
+
+- `all-matching` is the canonical server query plus its query fingerprint and
+  exact count. It is never expanded from the IDs loaded in the browser.
+- Preview is read-only and returns the resolved scope, exact count,
+  representative labels, eligibility outcomes, and consequences. Apply uses
+  the opaque preview token and an idempotency key.
+- Apply resolves the query again under the same principal and tenant scope,
+  rechecks tool/operation authorization and eligibility, and compares the
+  aggregate `updated_at` row revision. Query, count, membership, or row drift
+  returns a stale failure before mutation.
+- Automated review, formatting, and optimization are background actions. A
+  successful apply returns a job ID; the queue callback repeats the guarded
+  apply, and idempotency prevents duplicate execution. Hosts can configure the
+  authenticated `jobStatusPath` transport (or supply `client.status`) so the
+  list can keep an identical intent locked while queued/running, reconcile
+  terminal row outcomes, and unlock a failed or cancelled intent for retry.
+- Foreground results report accepted, skipped, and failed rows separately. The
+  client clears only accepted IDs; a failed request never reports success or
+  clears selection.
+
+`createContentListWorkflowTransport()` supplies the default JSON transport.
+Hosts that already have an RPC layer can instead provide a structural workflow
+client with the same `preview(request)` and `apply(request)` methods, plus the
+optional `status(jobId)` method when background progress is shown. Both paths
+must terminate at the same `createContentListActionAdapter()` instance used by
+agent actions; separate human-only mutation handlers would bypass the shared
+preview and authorization contract.
 
 ## ContentList migration (#2451)
 

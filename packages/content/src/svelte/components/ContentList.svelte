@@ -74,6 +74,7 @@ import {
 } from '../content-list-controller.js';
 import {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+  type ContentListDataQueryRequest,
   type ContentListQueryDrop,
   type ContentListQueryDropReason,
   type ContentListQueryNotices,
@@ -101,6 +102,13 @@ import {
   restoreContentListSavedView,
   toContentListSavedViewInput,
 } from '../content-list-saved-views.js';
+import {
+  type ContentListWorkflowBinding,
+  type ContentListWorkflowId,
+  type ContentListWorkflowRequest,
+  CONTENT_LIST_WORKFLOW_OPTIONS,
+  contentListWorkflowOutcomes,
+} from '../content-list-workflows.js';
 import {
   applyContentListViewState,
   type ContentListStateDrop,
@@ -153,6 +161,8 @@ interface Props {
   savedViews?: ContentListSavedViewStore;
   /** Shared background-workflow state. The same binding guards submissions. */
   jobs?: ContentListJobBinding;
+  /** Opt-in, authenticated preview/apply client for bulk workflows (#2453). */
+  workflows?: ContentListWorkflowBinding;
 }
 
 let {
@@ -173,6 +183,7 @@ let {
   urlState = undefined,
   savedViews = undefined,
   jobs = undefined,
+  workflows = undefined,
 }: Props = $props();
 
 const initialQuery = untrack(() => query);
@@ -391,6 +402,24 @@ $effect(() => {
     }
   });
 });
+let settledWorkflowQuery = $state<ContentListDataQueryRequest | null>(null);
+let settledWorkflowFingerprint = $state<string | null>(null);
+let settledWorkflowRevision = $state<string | null>(null);
+let selectedWorkflow = $state<ContentListWorkflowId>('mark-draft');
+let workflowCategory = $state('');
+let workflowRestoreStatus = $state<'draft' | 'review' | 'published'>('draft');
+let workflowFormat = $state<'markdown' | 'html'>('markdown');
+let workflowReviewKind = $state('');
+let workflowPolicyKey = $state('');
+let workflowInstructions = $state('');
+let workflowPending = $state(false);
+let workflowPreview = $state<import('@happyvertical/smrt-ui/data').DataSurfaceActionResult | null>(null);
+let workflowResult = $state<import('@happyvertical/smrt-ui/data').DataSurfaceActionResult | null>(null);
+let workflowError = $state<string | null>(null);
+let workflowConfirmOpen = $state(false);
+let workflowIntentAtPreview = '';
+let workflowIdempotencyKey = '';
+let workflowQueuedJobs = $state<Array<{ intent: string; jobId: string }>>([]);
 
 $effect(() =>
   controller.subscribe((transition) => {
@@ -736,6 +765,30 @@ $effect(() => {
           // may be clamped against them.
           settledSignature = signature;
           resultNotices = readContentListQueryNotices(result);
+          if (
+            result !== null &&
+            typeof result === 'object' &&
+            !Array.isArray(result)
+          ) {
+            const envelope = result as Record<string, unknown>;
+            settledWorkflowQuery = translated.request;
+            settledWorkflowFingerprint =
+              typeof envelope.queryFingerprint === 'string'
+                ? envelope.queryFingerprint
+                : null;
+            const freshness = envelope.freshness;
+            settledWorkflowRevision =
+              freshness !== null &&
+              typeof freshness === 'object' &&
+              !Array.isArray(freshness) &&
+              typeof (freshness as Record<string, unknown>).asOf === 'string'
+                ? String((freshness as Record<string, unknown>).asOf)
+                : null;
+          } else {
+            settledWorkflowQuery = null;
+            settledWorkflowFingerprint = null;
+            settledWorkflowRevision = null;
+          }
         })
         .catch(() => undefined);
     }
@@ -833,15 +886,46 @@ const identifiedRowKeys = $derived(
 const selectablePageRowIds = $derived(
   selectableContentListRowIds(pageRows.filter((row) => !rowPending(row))),
 );
+const allMatchingSelected = $derived(tableState.selection.scope === 'allMatching');
 const allPageSelected = $derived(
-  selectablePageRowIds.length > 0 &&
-    selectablePageRowIds.every((rowId) => selectedRowKeys.has(String(rowId))),
+  allMatchingSelected ||
+    (selectablePageRowIds.length > 0 &&
+      selectablePageRowIds.every((rowId) => selectedRowKeys.has(String(rowId)))),
 );
 const somePageSelected = $derived(
   !allPageSelected &&
     selectablePageRowIds.some((rowId) => selectedRowKeys.has(String(rowId))),
 );
-const selectedCount = $derived(tableState.selectedRowIds.length);
+const selectedCount = $derived(
+  tableState.selection.scope === 'allMatching'
+    ? tableState.selection.expectedCount
+    : tableState.selectedRowIds.length,
+);
+const exactMatchingCount = $derived(
+  settledSignature === querySignature
+    ? contentListQueryExactTotal(queryBinding?.total)
+    : undefined,
+);
+const canSelectAllMatching = $derived(
+  Boolean(
+    workflows &&
+      serverBacked &&
+      settledWorkflowQuery &&
+      settledWorkflowFingerprint &&
+      settledWorkflowRevision &&
+      exactMatchingCount !== undefined &&
+      exactMatchingCount > 0,
+  ),
+);
+const workflowPayloadValid = $derived(
+  selectedWorkflow !== 'categorize' || workflowCategory.trim().length > 0,
+);
+const workflowDuplicateQueued = $derived(
+  workflowQueuedJobs.some((job) => job.intent === workflowIntentSignature()),
+);
+const workflowQueuedJob = $derived(
+  workflowQueuedJobs.find((job) => job.intent === workflowIntentSignature()),
+);
 
 /** Synthetic ids the adapter minted for rows that carry no durable identity. */
 const unidentifiedRowKeys = $derived(
@@ -1154,7 +1238,7 @@ async function deleteSelectedView() {
 }
 
 function isSelected(row: ContentListRow): boolean {
-  return selectedRowKeys.has(String(row.id));
+  return allMatchingSelected || selectedRowKeys.has(String(row.id));
 }
 
 function rowPending(row: ContentListRow): boolean {
@@ -1185,11 +1269,15 @@ function formattedLastUpdated(value: number): string {
 }
 
 function toggleRow(row: ContentListRow) {
-  if (!row.identified || rowPending(row)) return;
+  if (!row.identified || rowPending(row) || allMatchingSelected) return;
   controller.dispatch({ type: 'toggleRowSelection', rowId: row.id });
 }
 
 function togglePageSelection() {
+  if (allMatchingSelected) {
+    clearSelection();
+    return;
+  }
   const remaining = tableState.selectedRowIds.filter(
     (rowId) =>
       !selectablePageRowIds.some(
@@ -1204,8 +1292,234 @@ function togglePageSelection() {
   });
 }
 
+function selectAllMatching() {
+  if (
+    !canSelectAllMatching ||
+    !settledWorkflowFingerprint ||
+    !settledWorkflowRevision ||
+    exactMatchingCount === undefined
+  ) return;
+  controller.dispatch({
+    type: 'selectAllMatching',
+    queryFingerprint: settledWorkflowFingerprint,
+    queryRevision: settledWorkflowRevision,
+    expectedCount: exactMatchingCount,
+  });
+}
+
 function clearSelection() {
   controller.dispatch({ type: 'setSelectedRows', rowIds: [] });
+}
+
+function workflowPayload(): Record<string, string> | undefined {
+  switch (selectedWorkflow) {
+    case 'categorize':
+      return { category: workflowCategory.trim() };
+    case 'restore':
+      return { status: workflowRestoreStatus };
+    case 'format-body':
+      return { format: workflowFormat };
+    case 'automated-review': {
+      const payload: Record<string, string> = {};
+      if (workflowReviewKind.trim()) payload.kind = workflowReviewKind.trim();
+      if (workflowPolicyKey.trim()) payload.policyKey = workflowPolicyKey.trim();
+      return payload;
+    }
+    case 'optimize':
+      return workflowInstructions.trim()
+        ? { instructions: workflowInstructions.trim() }
+        : {};
+    default:
+      return {};
+  }
+}
+
+function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
+  const selection = tableState.selection;
+  if (selection.scope === 'allMatching') {
+    return { scope: 'all-matching', queryFingerprint: selection.queryFingerprint };
+  }
+  if (selection.scope === 'page') return { scope: 'current-page' };
+  if (selection.rowIds.length === 0) return null;
+  return { scope: 'explicit-ids', rowIds: selection.rowIds };
+}
+
+function workflowIntentSignature(): string {
+  return JSON.stringify([
+    selectedWorkflow,
+    workflowPayload(),
+    tableState.selection,
+    settledWorkflowFingerprint,
+    querySignature,
+  ]);
+}
+
+function createWorkflowRequest(
+  phase: 'preview' | 'apply',
+): ContentListWorkflowRequest | null {
+  const selection = workflowSelection();
+  if (!selection) return null;
+  const queryRequired = selection.scope !== 'explicit-ids';
+  if (
+    queryRequired &&
+    (!settledWorkflowQuery || settledSignature !== querySignature)
+  ) return null;
+  if (
+    selection.scope === 'all-matching' &&
+    selection.queryFingerprint !== settledWorkflowFingerprint
+  ) return null;
+  return {
+    version: 1,
+    requestId: globalThis.crypto?.randomUUID?.() ?? `content-workflow-${Date.now()}`,
+    identity: workflows?.identity ?? { surfaceId: 'content-list', kind: 'table' },
+    actionId: selectedWorkflow,
+    phase,
+    selection,
+    payload: workflowPayload(),
+    expectedRevision: workflows?.revision ?? 0,
+    target: {
+      ...(queryRequired && settledWorkflowQuery
+        ? { query: settledWorkflowQuery }
+        : {}),
+      expectedCount: selectedCount,
+    },
+  };
+}
+
+function workflowResultMessage(result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult): string {
+  const details = result.details ?? {};
+  const accepted = typeof details.accepted === 'number' ? details.accepted : 0;
+  if (details.background === true) {
+    return `${accepted} queued for background processing; results pending`;
+  }
+  const skipped = typeof details.skipped === 'number' ? details.skipped : 0;
+  const failed = typeof details.failed === 'number' ? details.failed : 0;
+  return `${accepted} accepted, ${skipped} skipped, ${failed} failed`;
+}
+
+function workflowPreviewMessage(): string {
+  const details = workflowPreview?.details ?? {};
+  const count = typeof details.count === 'number' ? details.count : selectedCount;
+  const labels = Array.isArray(details.representativeLabels)
+    ? details.representativeLabels.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const consequences = Array.isArray(details.consequences)
+    ? details.consequences.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const skipped = typeof details.skipped === 'number' ? details.skipped : 0;
+  return [
+    `${count} matching content item${count === 1 ? '' : 's'}.`,
+    labels.length ? `Examples: ${labels.join(', ')}.` : '',
+    skipped ? `${skipped} currently ineligible.` : '',
+    ...consequences,
+  ].filter(Boolean).join(' ');
+}
+
+async function previewWorkflow() {
+  if (!workflows || workflowPending || workflowDuplicateQueued) return;
+  const request = createWorkflowRequest('preview');
+  if (!request) return;
+  workflowPending = true;
+  workflowError = null;
+  workflowResult = null;
+  workflowIdempotencyKey = '';
+  try {
+    const result = await workflows.client.preview(request);
+    if (!result.ok) {
+      workflowError = result.reason ?? 'Preview failed.';
+      return;
+    }
+    workflowPreview = result;
+    workflowIntentAtPreview = workflowIntentSignature();
+    workflowIdempotencyKey =
+      globalThis.crypto?.randomUUID?.() ?? `content-workflow-apply-${Date.now()}`;
+    workflowConfirmOpen = true;
+  } catch (error) {
+    workflowError = error instanceof Error ? error.message : String(error);
+  } finally {
+    workflowPending = false;
+  }
+}
+
+async function applyWorkflow() {
+  if (!workflows || workflowPending || !workflowPreview?.confirmationToken) return;
+  if (workflowIntentAtPreview !== workflowIntentSignature()) {
+    workflowConfirmOpen = false;
+    workflowPreview = null;
+    workflowIdempotencyKey = '';
+    workflowError = 'The selection or query changed. Preview the workflow again.';
+    return;
+  }
+  const request = createWorkflowRequest('apply');
+  if (!request) return;
+  request.confirmationToken = workflowPreview.confirmationToken;
+  request.idempotencyKey = workflowIdempotencyKey;
+  workflowPending = true;
+  workflowError = null;
+  try {
+    const result = await workflows.client.apply(request);
+    workflowResult = result;
+    if (!result.ok) {
+      workflowError = result.reason ?? 'Workflow failed.';
+      return;
+    }
+    if (result.details?.background !== true) {
+      const retained = contentListWorkflowOutcomes(result)
+        .filter((outcome) => outcome.status !== 'accepted')
+        .map((outcome) => outcome.rowId);
+      controller.dispatch({ type: 'setSelectedRows', rowIds: retained });
+    } else if (
+      typeof result.details.jobId === 'string' &&
+      !workflowQueuedJobs.some((job) => job.intent === workflowIntentAtPreview)
+    ) {
+      workflowQueuedJobs = [
+        ...workflowQueuedJobs,
+        { intent: workflowIntentAtPreview, jobId: result.details.jobId },
+      ];
+    }
+    workflowPreview = null;
+    workflowIdempotencyKey = '';
+    workflowConfirmOpen = false;
+  } catch (error) {
+    workflowError = error instanceof Error ? error.message : String(error);
+  } finally {
+    workflowPending = false;
+  }
+}
+
+async function checkWorkflowJob() {
+  if (!workflows?.client.status || !workflowQueuedJob || workflowPending) return;
+  workflowPending = true;
+  workflowError = null;
+  try {
+    const job = await workflows.client.status(workflowQueuedJob.jobId);
+    if (job.status === 'queued' || job.status === 'running') {
+      workflowError = `Job ${job.jobId} is still ${job.status}.`;
+      return;
+    }
+    workflowQueuedJobs = workflowQueuedJobs.filter(
+      (queued) => queued.jobId !== job.jobId,
+    );
+    if (job.result) {
+      workflowResult = job.result;
+      const retained = contentListWorkflowOutcomes(job.result)
+        .filter((outcome) => outcome.status !== 'accepted')
+        .map((outcome) => outcome.rowId);
+      controller.dispatch({ type: 'setSelectedRows', rowIds: retained });
+    }
+    if (job.status !== 'succeeded') {
+      workflowError = job.reason ?? `Job ${job.jobId} ${job.status}.`;
+    }
+  } catch (error) {
+    workflowError = error instanceof Error ? error.message : String(error);
+  } finally {
+    workflowPending = false;
+  }
+}
+
+function cancelWorkflowConfirmation() {
+  if (workflowPending) return;
+  workflowConfirmOpen = false;
 }
 
 function handlePageChange(page: number) {
@@ -1311,7 +1625,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 {#snippet selectCell({ row }: { row: ContentListRow })}
   <Checkbox
     checked={isSelected(row)}
-    disabled={!row.identified || rowPending(row)}
+    disabled={!row.identified || rowPending(row) || allMatchingSelected}
     aria-label={selectRowLabel(row)}
     title={row.identified
       ? rowPending(row)
@@ -1526,6 +1840,18 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
         </Button>
+
+        {#if workflowDuplicateQueued && workflows?.client.status}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            disabled={workflowPending}
+            onclick={() => void checkWorkflowJob()}
+          >
+            Check job
+          </Button>
+        {/if}
         <Button
           variant="ghost"
           size="sm"
@@ -1706,7 +2032,121 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             {t(M['content.content_list.clear_selection'])}
           </Button>
         {/if}
+        {#if canSelectAllMatching && !allMatchingSelected && exactMatchingCount !== undefined && exactMatchingCount > selectedCount}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="select-all-matching"
+            onclick={selectAllMatching}
+          >
+            Select all {exactMatchingCount} matching
+          </Button>
+        {/if}
       </div>
+    {/if}
+
+    {#if workflows && (selectedCount > 0 || workflowError || workflowResult)}
+      <section class="content-workflows" aria-label="Bulk content workflows">
+        <Select
+          aria-label="Bulk workflow"
+          value={selectedWorkflow}
+          disabled={workflowPending}
+          onchange={(event: Event) => {
+            selectedWorkflow = (event.currentTarget as HTMLSelectElement).value as ContentListWorkflowId;
+            workflowPreview = null;
+            workflowIdempotencyKey = '';
+            workflowResult = null;
+            workflowError = null;
+          }}
+        >
+          {#each CONTENT_LIST_WORKFLOW_OPTIONS as option (option.id)}
+            <option value={option.id}>{option.label}</option>
+          {/each}
+        </Select>
+
+        {#if selectedWorkflow === 'categorize'}
+          <Input
+            aria-label="Category path"
+            placeholder="Category path"
+            value={workflowCategory}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowCategory = (event.currentTarget as HTMLInputElement).value}
+          />
+        {:else if selectedWorkflow === 'restore'}
+          <Select
+            aria-label="Restore status"
+            value={workflowRestoreStatus}
+            disabled={workflowPending}
+            onchange={(event: Event) => workflowRestoreStatus = (event.currentTarget as HTMLSelectElement).value as typeof workflowRestoreStatus}
+          >
+            <option value="draft">Draft</option>
+            <option value="review">Review</option>
+            <option value="published">Published</option>
+          </Select>
+        {:else if selectedWorkflow === 'format-body'}
+          <Select
+            aria-label="Body format"
+            value={workflowFormat}
+            disabled={workflowPending}
+            onchange={(event: Event) => workflowFormat = (event.currentTarget as HTMLSelectElement).value as typeof workflowFormat}
+          >
+            <option value="markdown">Markdown</option>
+            <option value="html">HTML</option>
+          </Select>
+        {:else if selectedWorkflow === 'automated-review'}
+          <Input
+            aria-label="Review kind"
+            placeholder="Review kind (optional)"
+            value={workflowReviewKind}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowReviewKind = (event.currentTarget as HTMLInputElement).value}
+          />
+          <Input
+            aria-label="Review policy key"
+            placeholder="Policy key (optional)"
+            value={workflowPolicyKey}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowPolicyKey = (event.currentTarget as HTMLInputElement).value}
+          />
+        {:else if selectedWorkflow === 'optimize'}
+          <Input
+            aria-label="Optimization instructions"
+            placeholder="Optimization instructions (optional)"
+            value={workflowInstructions}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowInstructions = (event.currentTarget as HTMLInputElement).value}
+          />
+        {/if}
+
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          disabled={
+            workflowPending || !workflowPayloadValid || workflowDuplicateQueued
+          }
+          onclick={() => void previewWorkflow()}
+        >
+          {workflowPending
+            ? 'Working…'
+            : workflowDuplicateQueued
+              ? 'Job queued'
+              : 'Preview workflow'}
+        </Button>
+
+        {#if workflowError}
+          <p class="content-workflows__error" role="alert">{workflowError}</p>
+        {/if}
+        {#if workflowResult?.ok}
+          <p class="content-workflows__result" role="status">
+            {workflowResultMessage(workflowResult)}
+            {#if typeof workflowResult.details?.jobId === 'string'}
+              Job {workflowResult.details.jobId} queued. Progress is available from the job runner.
+            {/if}
+          </p>
+        {/if}
+      </section>
     {/if}
 
     {#if refreshing && viewMode !== 'compact'}
@@ -1754,7 +2194,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <div class="content-row__select">
               <Checkbox
                 checked={isSelected(row)}
-                disabled={!row.identified || rowPending(row)}
+                disabled={!row.identified || rowPending(row) || allMatchingSelected}
                 aria-label={selectRowLabel(row)}
                 title={row.identified
                   ? rowPending(row)
@@ -1848,7 +2288,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               <div class="content-header__eyebrow">
                 <Checkbox
                   checked={isSelected(row)}
-                  disabled={!row.identified || rowPending(row)}
+                  disabled={!row.identified || rowPending(row) || allMatchingSelected}
                   aria-label={selectRowLabel(row)}
                   title={row.identified
                     ? rowPending(row)
@@ -1943,6 +2383,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   destructive
   onconfirm={confirmDelete}
   oncancel={cancelDelete}
+/>
+
+<ConfirmDialog
+  open={workflowConfirmOpen}
+  title={`Confirm ${CONTENT_LIST_WORKFLOW_OPTIONS.find((option) => option.id === selectedWorkflow)?.label ?? 'workflow'}`}
+  message={workflowPreviewMessage()}
+  confirmLabel={workflowPending ? 'Applying…' : 'Apply workflow'}
+  cancelLabel="Cancel"
+  destructive={CONTENT_LIST_WORKFLOW_OPTIONS.find((option) => option.id === selectedWorkflow)?.sensitivity === 'sensitive'}
+  onconfirm={() => void applyWorkflow()}
+  oncancel={cancelWorkflowConfirmation}
 />
 
 <style>
@@ -2057,6 +2508,33 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
   .content-selection :global(input[type='checkbox']) {
     cursor: pointer;
+  }
+
+  .content-workflows {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.65rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+
+  .content-workflows__error,
+  .content-workflows__result {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+
+  .content-workflows__error {
+    color: var(--smrt-color-error);
+  }
+
+  .content-workflows__result {
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .content-header__eyebrow,

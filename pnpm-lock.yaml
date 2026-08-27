@@ -798,6 +798,9 @@ importers:
       '@happyvertical/pdf':
         specifier: ^0.65.9
         version: 0.65.9(@modelcontextprotocol/sdk@1.30.0(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@types/node@24.13.2)(ws@8.21.0)(zod@4.3.6)
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
