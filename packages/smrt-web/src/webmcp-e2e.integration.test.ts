@@ -284,6 +284,10 @@ describe('WebMCP application composition (#2523)', () => {
     } else {
       (globalThis as { document?: unknown }).document = originalDocument;
     }
+
+    expect((globalThis as { document?: unknown }).document).toBe(
+      originalDocument,
+    );
   });
 
   afterAll(async () => {
