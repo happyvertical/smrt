@@ -1125,6 +1125,48 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(screen.getByRole('textbox', { name: 'Full name' })).toBeDisabled();
   });
 
+  it('prevents apply and restores it when DOM ancestry disables the field', async () => {
+    const interactionRegistry = createControlInteractionRegistry();
+    const view = render(FormWithFields, {
+      props: {
+        interactionRegistry,
+        showAge: false,
+      },
+    });
+    await tick();
+    await tick();
+    const fullname = interactionRegistry.list().at(0);
+    if (!fullname) throw new Error('Expected registered full-name control');
+    await interactionRegistry.execute(
+      {
+        action: 'stage',
+        identity: fullname.identity,
+        value: 'Ada Lovelace',
+      },
+      { source: 'agent' },
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('region', { name: 'Review proposed changes' }),
+      ).toBeInTheDocument(),
+    );
+
+    const fieldset = view.container.querySelector('fieldset');
+    if (!(fieldset instanceof HTMLFieldSetElement)) {
+      throw new Error('Expected fieldset');
+    }
+    fieldset.disabled = true;
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled(),
+    );
+    expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+
+    fieldset.disabled = false;
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled(),
+    );
+  });
+
   it('uses the form subject for rich-field registration and staging', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;

@@ -345,7 +345,10 @@ async function applyAll(event: MouseEvent): Promise<void> {
   const total = snapshots.length;
   const eligible = snapshots.filter(
     (snapshot) =>
-      !snapshot.state.staged?.stale && snapshot.state.staged?.valid !== false,
+      !snapshot.state.disabled &&
+      !snapshot.state.readonly &&
+      !snapshot.state.staged?.stale &&
+      snapshot.state.staged?.valid !== false,
   );
   const commands: ControlCommand[] = [];
   for (const snapshot of eligible) {
@@ -383,7 +386,12 @@ async function discardAll(event: MouseEvent): Promise<void> {
 </script>
 
 {#if summary && snapshots.length > 0}
-  <section bind:this={reviewElement} class="staged-review" aria-label={text.region}>
+  <section
+    bind:this={reviewElement}
+    class="staged-review"
+    data-staged-control-review
+    aria-label={text.region}
+  >
     <header>
       <div>
         <h2>{text.heading}</h2>
@@ -444,7 +452,11 @@ async function discardAll(event: MouseEvent): Promise<void> {
           {#if staged?.stale}<p class="problem" role="alert">{text.stale}</p>{/if}
           {#if staged?.valid === false}<p class="problem" role="alert">{staged.validationMessage ?? text.invalid}</p>{/if}
           <div class="item-actions">
-            <button type="button" disabled={staged?.stale} onclick={(event) => applyOne(snapshot, event)}>{text.apply}</button>
+            <button
+              type="button"
+              disabled={staged?.stale || snapshot.state.disabled || snapshot.state.readonly}
+              onclick={(event) => applyOne(snapshot, event)}
+            >{text.apply}</button>
             <button type="button" class="secondary" onclick={(event) => discardOne(snapshot, event)}>{text.discard}</button>
           </div>
         </li>

@@ -533,6 +533,36 @@ $effect(() => {
   registry.refresh?.(currentFormId);
 });
 
+// Ancestor fieldsets can change a control's effective disabled state without
+// changing any child component prop. Observe those DOM attributes so registry
+// snapshots and the staged-review surface cannot retain an editable proposal
+// for a control the browser now considers disabled or readonly.
+$effect(() => {
+  const element = formElement;
+  const registry = resolvedInteractionRegistry;
+  const currentFormId = resolvedFormId;
+  const MutationObserverConstructor =
+    element?.ownerDocument.defaultView?.MutationObserver;
+  if (!element || !MutationObserverConstructor) return;
+  const observer = new MutationObserverConstructor((records) => {
+    if (
+      records.some(
+        ({ target }) =>
+          target instanceof Element &&
+          !target.closest('[data-staged-control-review]'),
+      )
+    ) {
+      registry.refresh?.(currentFormId);
+    }
+  });
+  observer.observe(element, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ['disabled', 'readonly'],
+  });
+  return () => observer.disconnect();
+});
+
 // Create form context
 const formContext: SMRTFormContext = {
   get mode() {
