@@ -1,11 +1,18 @@
 <script lang="ts">
 import { tick } from 'svelte';
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type {
   ControlInteractionOptions,
   ControlOption,
 } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
 import {
   normalizeCurrentOptionValues,
   normalizeEnabledOptions,
@@ -60,6 +67,12 @@ function toggle(option: ControlOption) {
     ? canonicalValues.filter((value) => !Object.is(value, option.value))
     : [...canonicalValues, option.value];
   onvalueschange?.(values);
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (rootEl) emitControlChange(rootEl);
 }
 function setValues(next: unknown) {
   const normalized = normalizeEnabledOptions(options, next);

@@ -1,7 +1,14 @@
 <script lang="ts">
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
 import { validatesEnabledOption } from './control-value-validation.js';
 import type { SegmentedControlOption } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
@@ -35,11 +42,20 @@ const controlId = $derived(
     ? undefined
     : (interaction?.id ?? name ?? `segment-${instanceId}`),
 );
-function setValue(next: unknown) {
+function setValue(next: unknown, userEdit = false) {
   const option = options.find((item) => String(item.value) === String(next));
   if (!option || option.disabled) return;
+  const changed = !Object.is(value, option.value);
   value = option.value;
   onvaluechange?.(option.value);
+  if (userEdit && changed) {
+    recordControlUserEdit(
+      interactionContext,
+      controlId,
+      interaction === false ? undefined : interaction?.subject,
+    );
+    if (rootEl) emitControlChange(rootEl);
+  }
 }
 useControlRegistration(() => {
   const root = rootEl;
@@ -81,7 +97,7 @@ useControlRegistration(() => {
   {#each options as option (option.value)}
     <button type="button" role="radio" aria-checked={value === option.value} disabled={disabled || option.disabled}
       tabindex={value === option.value || (value === undefined && option === options[0]) ? 0 : -1}
-      class:selected={value === option.value} onclick={() => setValue(option.value)}>{option.label}</button>
+      class:selected={value === option.value} onclick={() => setValue(option.value, true)}>{option.label}</button>
   {/each}
 </div>
 <style>

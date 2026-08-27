@@ -5,9 +5,12 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import {
   createControlInteractionRegistry,
   executeLocalControlBatch,
+  executeLocalControlCommand,
 } from '../control-interaction.js';
+import CompositeUserEditFixture from './composite-user-edit.fixture.svelte';
 import SelectFixture from './select-interaction.fixture.svelte';
 import Fixture from './staged-review.fixture.svelte';
+import FieldsetFixture from './staged-review-fieldset.fixture.svelte';
 
 const identity = { formId: 'profile', controlId: 'display-name' };
 const createReviewRegistry = () =>
@@ -31,6 +34,64 @@ function dispatchLocalGesture<T>(
 }
 
 describe('StagedControlReview', () => {
+  it('keeps a click-driven composite edit made during a failed async apply', async () => {
+    const registry = createReviewRegistry();
+    const onchange = vi.fn();
+    const modeState: { get?: () => string; set?: (next: string) => void } = {};
+    render(CompositeUserEditFixture, {
+      props: { registry, onchange, modeState },
+    });
+    const identity = registry
+      .list('profile')
+      .find((snapshot) => snapshot.identity.controlId === 'mode')?.identity;
+    if (!identity) throw new Error('mode was not registered');
+
+    const value = () => modeState.get?.();
+    const setValue = (next: unknown) => modeState.set?.(String(next));
+    let releaseSetter: (() => void) | undefined;
+    let setterStarted: (() => void) | undefined;
+    const setterBlocked = new Promise<void>((resolve) => {
+      releaseSetter = resolve;
+    });
+    const setterStartedPromise = new Promise<void>((resolve) => {
+      setterStarted = resolve;
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'segmented-control' },
+      getValue: value,
+      setValue: async (next) => {
+        setValue(next);
+        setterStarted?.();
+        await setterBlocked;
+        throw new Error('setter_failed');
+      },
+      restoreValue: setValue,
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'review' },
+      { source: 'agent' },
+    );
+
+    const applying = dispatchLocalGesture((event) =>
+      executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        event,
+      ),
+    );
+    await setterStartedPromise;
+    await userEvent.click(screen.getByRole('radio', { name: 'Published' }));
+    await waitFor(() => expect(onchange).toHaveBeenCalled());
+    releaseSetter?.();
+
+    expect(await applying).toMatchObject({
+      ok: false,
+      reason: 'setter_failed',
+    });
+    expect(value()).toBe('published');
+  });
+
   it('shows an adjacent indicator and applies an edited proposal only after a human click', async () => {
     const registry = createReviewRegistry();
     const { container } = render(Fixture, { props: { registry } });
@@ -94,6 +155,30 @@ describe('StagedControlReview', () => {
     );
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
     expect(submitted).not.toHaveBeenCalled();
+  });
+
+  it('disables apply and restores it when an ancestor fieldset changes state in a base Form', async () => {
+    const registry = createReviewRegistry();
+    const { container } = render(FieldsetFixture, { props: { registry } });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const fieldset = container.querySelector('fieldset');
+    if (!(fieldset instanceof HTMLFieldSetElement)) {
+      throw new Error('Expected form fieldset');
+    }
+    fieldset.disabled = true;
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled(),
+    );
+    expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+
+    fieldset.disabled = false;
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Apply' })).not.toBeDisabled(),
+    );
   });
 
   it('resets an edited draft when a replacement proposal has a new revision', async () => {

@@ -1,10 +1,17 @@
 <script lang="ts">
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type {
   ControlInteractionOptions,
   ControlOption,
 } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
 import { matchingOption } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
@@ -50,12 +57,21 @@ const filtered = $derived(
 const controlId = $derived(
   interaction === false ? undefined : (interaction?.id ?? name ?? inputId),
 );
-function commit(option: ControlOption) {
+function commit(option: ControlOption, userEdit = false) {
   if (option.disabled || disabled) return;
+  const changed = String(option.value) !== value;
   value = String(option.value);
   query = option.label;
   open = false;
   onvaluechange?.(value);
+  if (userEdit && changed) {
+    recordControlUserEdit(
+      interactionContext,
+      controlId,
+      interaction === false ? undefined : interaction?.subject,
+    );
+    if (rootEl) emitControlChange(rootEl);
+  }
 }
 function setValue(next: unknown) {
   const candidate = String(next ?? '');
@@ -95,7 +111,7 @@ function handleKeydown(event: KeyboardEvent) {
       enabled[(position - 1 + enabled.length) % enabled.length] ?? 0;
   } else if (event.key === 'Enter' && open && filtered[activeIndex]) {
     event.preventDefault();
-    commit(filtered[activeIndex]);
+    commit(filtered[activeIndex], true);
   } else if (event.key === 'Escape') {
     open = false;
   }
@@ -169,7 +185,7 @@ useControlRegistration(() => {
     aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={() => open = true} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
-      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option)}>{option.label}</button>{/each}</div>{/if}
+      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{option.label}</button>{/each}</div>{/if}
 </div>
 <style>
   .combobox { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }

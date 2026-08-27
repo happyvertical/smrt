@@ -114,11 +114,6 @@ function recordDirectUserEdit(event: Event) {
   });
 }
 
-function handleClick(event: MouseEvent & { currentTarget: HTMLFormElement }) {
-  recordDirectUserEdit(event);
-  onclick?.(event);
-}
-
 function handleInput(event: Event & { currentTarget: HTMLFormElement }) {
   recordDirectUserEdit(event);
   oninput?.(event);
@@ -137,7 +132,7 @@ function handleChange(event: Event & { currentTarget: HTMLFormElement }) {
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
-  onclick={handleClick}
+  {onclick}
   oninput={handleInput}
   onchange={handleChange}
   {...rest}

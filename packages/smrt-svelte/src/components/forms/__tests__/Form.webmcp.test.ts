@@ -1963,6 +1963,44 @@ describe('Form WebMCP staged-edit intent', () => {
     );
   });
 
+  it('prevents applying a staged address when any matched child control becomes disabled', async () => {
+    const interactionRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithStructuredFields, {
+      props: { interactionRegistry },
+    });
+    await tick();
+    await tick();
+    const address = interactionRegistry
+      .list('structured-fields')
+      .find((snapshot) => snapshot.identity.controlId === 'address');
+    if (!address) throw new Error('Expected registered address control');
+    await interactionRegistry.execute(
+      {
+        action: 'stage',
+        identity: address.identity,
+        value: { city: 'Edmonton' },
+      },
+      { source: 'agent' },
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('region', { name: 'Review proposed changes' }),
+      ).toBeInTheDocument(),
+    );
+
+    const city = screen.getByRole('textbox', { name: 'City' });
+    city.setAttribute('disabled', '');
+    await waitFor(() => {
+      expect(interactionRegistry.get(address.identity)?.state.disabled).toBe(
+        true,
+      );
+      expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+    });
+    expect(screen.getByRole('button', { name: 'Discard' })).not.toBeDisabled();
+  });
+
   it('does not let a colliding sibling name mask a disabled rich field', async () => {
     const registered: Array<{
       inputSchema: Record<string, unknown>;

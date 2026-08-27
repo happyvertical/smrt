@@ -16,7 +16,14 @@ const identity: ControlIdentity = {
 
 function localGestureEvent(): Event {
   const event = new Event('click');
-  Object.defineProperty(event, 'eventPhase', { value: Event.AT_TARGET });
+  const implementationSymbol = Object.getOwnPropertySymbols(event).find(
+    (symbol) => symbol.description === 'impl',
+  );
+  if (!implementationSymbol) throw new Error('missing JSDOM event internals');
+  const implementation = (
+    event as Event & Record<symbol, { eventPhase: number }>
+  )[implementationSymbol];
+  implementation.eventPhase = Event.AT_TARGET;
   return event;
 }
 
@@ -2885,6 +2892,46 @@ describe('control interaction registry', () => {
     expect(value).toBe('Ada');
   });
 
+  it('rejects forged and own-property-shadowed events in the factory path', async () => {
+    const execute = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: execute,
+    });
+    const forged = { isTrusted: true, eventPhase: Event.AT_TARGET } as Event;
+    const shadowed = new Event('click');
+    Object.defineProperty(shadowed, 'eventPhase', {
+      value: Event.AT_TARGET,
+    });
+
+    await expect(
+      executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        forged,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+    await expect(
+      executeLocalControlCommand(
+        registry,
+        { action: 'clear', identity },
+        shadowed,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'local_gesture_required',
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('dispatches a copied gesture executor through the supplied registry wrapper', async () => {
     let value = 'Ada';
     const baseRegistry = createControlInteractionRegistry({
@@ -3182,6 +3229,132 @@ describe('control interaction registry', () => {
       ),
     ).toMatchObject({ ok: false, reason: 'local_gesture_required' });
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects forged and own-property-shadowed events in the legacy path', async () => {
+    const execute = vi.fn(async (command: ControlCommand) => ({
+      ok: true,
+      action: command.action,
+      identity: command.identity,
+    }));
+    const legacyRegistry = { execute } as unknown as ControlInteractionRegistry;
+    const forged = { isTrusted: true, eventPhase: Event.AT_TARGET } as Event;
+    const shadowed = new Event('click');
+    Object.defineProperty(shadowed, 'eventPhase', {
+      value: Event.AT_TARGET,
+    });
+
+    for (const event of [forged, shadowed]) {
+      await expect(
+        executeLocalControlCommand(
+          legacyRegistry,
+          { action: 'clear', identity },
+          event,
+        ),
+      ).resolves.toMatchObject({
+        ok: false,
+        reason: 'local_gesture_required',
+      });
+    }
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps an older disposer from removing a reused registration generation', () => {
+    const registry = createControlInteractionRegistry();
+    const registration = {
+      identity,
+      metadata: { kind: 'text' as const },
+      getValue: () => 'Ada',
+    };
+    const disposeFirst = registry.register(registration);
+    registry.register(registration);
+
+    disposeFirst();
+
+    expect(registry.get(identity)?.state.value).toBe('Ada');
+  });
+
+  it('binds a local batch grant to the first use of a reused registration object', async () => {
+    const triggerIdentity = { ...identity, controlId: 'trigger' };
+    let targetValue = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const targetRegistration: Parameters<typeof registry.register>[0] = {
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => targetValue,
+      setValue: (next) => {
+        targetValue = String(next);
+      },
+    };
+    registry.register(targetRegistration);
+    registry.register({
+      identity: triggerIdentity,
+      metadata: { kind: 'text' },
+      getValue: () => 'armed',
+      clear: () => {
+        registry.register(targetRegistration);
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const batch = await dispatchLocalGesture((event) =>
+      executeLocalControlBatch(
+        registry,
+        [
+          { action: 'clear', identity: triggerIdentity },
+          { action: 'apply', identity, revision: 1 },
+        ],
+        event,
+      ),
+    );
+
+    expect(batch.results).toMatchObject([
+      { ok: true, action: 'clear' },
+      { ok: false, action: 'apply', reason: 'local_gesture_required' },
+    ]);
+    expect(targetValue).toBe('Ada');
+  });
+
+  it('rejects an in-flight mutation that reuses the same registration object', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const registration: Parameters<typeof registry.register>[0] = {
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+        registry.register(registration);
+      },
+    };
+    registry.register(registration);
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+
+    const result = await dispatchLocalGesture((event) =>
+      executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        event,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'staged_value_stale',
+    });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
   it('binds a local gesture to an immutable command snapshot', async () => {

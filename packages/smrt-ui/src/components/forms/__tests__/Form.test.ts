@@ -48,6 +48,15 @@ describe('Form', () => {
     );
   });
 
+  it('does not install a generic click-to-edit handler', () => {
+    const { container } = render(Form, { props: { children } });
+
+    // A click can focus a field without changing it. Direct-edit tracking is
+    // deliberately limited to input/change, while composite controls record
+    // their successful mutations explicitly.
+    expect(container.querySelector('form')?.onclick).toBeNull();
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(Form, {
       props: { 'aria-label': 'Profile form', children },

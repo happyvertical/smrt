@@ -143,6 +143,35 @@ $effect(() => {
   };
 });
 
+// A control can become effectively disabled when an ancestor fieldset changes,
+// even though the control's own attributes do not. Refresh the shared registry
+// from the shared review component so base and Provider-backed Forms agree on
+// the live DOM state. The review surface changes its own action-button state,
+// so ignore its mutations to avoid observing our own rendering feedback.
+$effect(() => {
+  const element = formElement;
+  const MutationObserverConstructor =
+    element?.ownerDocument.defaultView?.MutationObserver;
+  if (!element || !MutationObserverConstructor) return;
+  const observer = new MutationObserverConstructor((records) => {
+    if (
+      records.some(
+        ({ target }) =>
+          target instanceof Element &&
+          !target.closest('[data-staged-control-review]'),
+      )
+    ) {
+      registry.refresh?.(formId);
+    }
+  });
+  observer.observe(element, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ['disabled', 'readonly'],
+  });
+  return () => observer.disconnect();
+});
+
 $effect(() => {
   if (!formElement) return;
   const stagedKeys = new Set(

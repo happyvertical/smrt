@@ -170,7 +170,7 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
   const domState: ControlRuntimeState = {
     disabled:
       controls.length > 0
-        ? controls.every((control) => control.matches(':disabled'))
+        ? controls.some((control) => control.matches(':disabled'))
         : undefined,
     readonly:
       controls.some(
@@ -283,8 +283,12 @@ function recordDirectUserEdit(event: Event) {
 $effect(() => {
   const form = formElement;
   if (!form) return;
-  form.addEventListener('click', recordDirectUserEdit);
-  return () => form.removeEventListener('click', recordDirectUserEdit);
+  form.addEventListener('input', recordDirectUserEdit);
+  form.addEventListener('change', recordDirectUserEdit);
+  return () => {
+    form.removeEventListener('input', recordDirectUserEdit);
+    form.removeEventListener('change', recordDirectUserEdit);
+  };
 });
 
 function registerInteraction(
@@ -531,36 +535,6 @@ $effect(() => {
     void state.readonly;
   }
   registry.refresh?.(currentFormId);
-});
-
-// Ancestor fieldsets can change a control's effective disabled state without
-// changing any child component prop. Observe those DOM attributes so registry
-// snapshots and the staged-review surface cannot retain an editable proposal
-// for a control the browser now considers disabled or readonly.
-$effect(() => {
-  const element = formElement;
-  const registry = resolvedInteractionRegistry;
-  const currentFormId = resolvedFormId;
-  const MutationObserverConstructor =
-    element?.ownerDocument.defaultView?.MutationObserver;
-  if (!element || !MutationObserverConstructor) return;
-  const observer = new MutationObserverConstructor((records) => {
-    if (
-      records.some(
-        ({ target }) =>
-          target instanceof Element &&
-          !target.closest('[data-staged-control-review]'),
-      )
-    ) {
-      registry.refresh?.(currentFormId);
-    }
-  });
-  observer.observe(element, {
-    attributes: true,
-    subtree: true,
-    attributeFilter: ['disabled', 'readonly'],
-  });
-  return () => observer.disconnect();
 });
 
 // Create form context
@@ -1321,8 +1295,6 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   class="smrt-form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
-  oninput={recordDirectUserEdit}
-  onchange={recordDirectUserEdit}
   {method}
   {action}
 >

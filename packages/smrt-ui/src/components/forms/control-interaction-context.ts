@@ -1,5 +1,8 @@
 import { getContext, setContext } from 'svelte';
-import type { ControlInteractionRegistry } from './control-interaction.js';
+import type {
+  ControlInteractionRegistry,
+  ControlSubject,
+} from './control-interaction.js';
 
 const CONTROL_INTERACTION_KEY = Symbol('smrt-control-interaction');
 
@@ -30,4 +33,24 @@ export function getControlInteractionContext(): ControlInteractionContextValue {
     );
   }
   return context;
+}
+
+/**
+ * Records an edit made by a composite control's own user-event handler.
+ *
+ * Native inputs bubble trusted `input`/`change` events to their Form host.
+ * Composite controls must use this only after a user action has actually
+ * changed their value; programmatic setters deliberately do not call it.
+ */
+export function recordControlUserEdit(
+  context: ControlInteractionContextValue | undefined,
+  controlId: string | undefined,
+  subject: ControlSubject | undefined,
+): void {
+  if (!context || !controlId) return;
+  context.registry.recordUserEdit?.({
+    formId: context.formId,
+    controlId,
+    subject,
+  });
 }

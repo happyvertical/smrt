@@ -7,7 +7,10 @@ import {
   revealControl,
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLButtonAttributes, 'class'> {
@@ -41,6 +44,12 @@ function setPressed(next: unknown) {
 }
 function handleClick(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
   pressed = !pressed;
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (buttonEl) emitControlChange(buttonEl);
   onclick?.(event);
 }
 useControlRegistration(() => {

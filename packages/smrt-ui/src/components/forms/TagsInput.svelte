@@ -1,7 +1,14 @@
 <script lang="ts">
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
 import { validatesStringArray } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
@@ -49,10 +56,23 @@ function commit(raw: string) {
   values = [...values, tag];
   draft = '';
   onvalueschange?.(values);
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (rootEl) emitControlChange(rootEl);
 }
 function remove(index: number) {
+  if (index < 0 || index >= values.length) return;
   values = values.filter((_, candidate) => candidate !== index);
   onvalueschange?.(values);
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (rootEl) emitControlChange(rootEl);
 }
 function setValues(next: unknown) {
   if (!Array.isArray(next)) return;

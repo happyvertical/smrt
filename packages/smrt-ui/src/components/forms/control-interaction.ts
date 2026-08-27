@@ -299,8 +299,43 @@ const consumedFallbackGestureEvents = new WeakMap<
   WeakSet<Event>
 >();
 
-function isActivelyDispatching(event: Event): boolean {
-  return event.eventPhase !== 0;
+const eventIsTrustedGetter =
+  typeof Event === 'undefined'
+    ? undefined
+    : Object.getOwnPropertyDescriptor(Event.prototype, 'isTrusted')?.get;
+const eventPhaseGetter =
+  typeof Event === 'undefined'
+    ? undefined
+    : Object.getOwnPropertyDescriptor(Event.prototype, 'eventPhase')?.get;
+
+function nativeEventState(
+  event: Event,
+): { isTrusted: boolean; eventPhase: number } | undefined {
+  const ownIsTrusted = Object.getOwnPropertyDescriptor(event, 'isTrusted');
+  if (
+    !eventPhaseGetter ||
+    Object.hasOwn(event, 'eventPhase') ||
+    (eventIsTrustedGetter && ownIsTrusted) ||
+    (!eventIsTrustedGetter &&
+      (!ownIsTrusted || ownIsTrusted.configurable || ownIsTrusted.writable))
+  ) {
+    return undefined;
+  }
+  try {
+    return {
+      isTrusted: eventIsTrustedGetter
+        ? Boolean(eventIsTrustedGetter.call(event))
+        : Boolean(
+            ownIsTrusted && 'get' in ownIsTrusted
+              ? ownIsTrusted.get?.call(event)
+              : ownIsTrusted?.value,
+          ),
+      eventPhase: Number(eventPhaseGetter.call(event)),
+    };
+  } catch {
+    // Native prototype getters reject plain objects and incompatible receivers.
+    return undefined;
+  }
 }
 
 function cloneFailureResult(command: ControlCommand): ControlCommandResult {
@@ -380,9 +415,10 @@ export async function executeLocalControlBatch(
     const consumed =
       consumedFallbackGestureEvents.get(registry) ?? new WeakSet<Event>();
     consumedFallbackGestureEvents.set(registry, consumed);
+    const eventState = nativeEventState(event);
     if (
-      !event.isTrusted ||
-      !isActivelyDispatching(event) ||
+      !eventState?.isTrusted ||
+      eventState.eventPhase === 0 ||
       consumed.has(event)
     ) {
       return {
@@ -648,11 +684,12 @@ export function createControlInteractionRegistry(
   options: CreateControlInteractionRegistryOptions = {},
 ): ControlInteractionRegistry {
   const registrations = new Map<string, ControlRegistration>();
+  const registrationGenerations = new Map<string, object>();
   const staged = new Map<string, InternalStagedEntry>();
   const undo = new Map<string, InternalUndoEntry[]>();
   const userEdits = new Map<string, { revision: number; value: unknown }>();
   const registrationBaselines = new WeakMap<
-    ControlRegistration,
+    object,
     {
       value: unknown;
       userEdit: { revision: number; value: unknown } | null;
@@ -662,6 +699,7 @@ export function createControlInteractionRegistry(
     string,
     {
       registration: ControlRegistration;
+      generation: object;
       previousValue: unknown;
       immediateValue: unknown;
       previousUserEdit: { revision: number; value: unknown } | null;
@@ -678,7 +716,7 @@ export function createControlInteractionRegistry(
     {
       command: ControlCommand;
       snapshot: ControlCommand;
-      registration: ControlRegistration | undefined;
+      generation: object | undefined;
     }
   >();
   const internallyQueuedContexts = new WeakSet<ControlCommandContext>();
@@ -701,13 +739,16 @@ export function createControlInteractionRegistry(
 
   const reconcileSupersededRegistration = async (
     key: string,
-    registration: ControlRegistration,
+    generation: object,
     previousValue: unknown,
   ): Promise<boolean> => {
     const current = registrations.get(key);
-    if (!current || current === registration) return false;
+    const currentGeneration = registrationGenerations.get(key);
+    if (!current || !currentGeneration || currentGeneration === generation) {
+      return false;
+    }
     const currentWithEdits = editAwareRegistration(key, current);
-    const baseline = registrationBaselines.get(current) ?? {
+    const baseline = registrationBaselines.get(currentGeneration) ?? {
       value: previousValue,
       userEdit: { revision: 0, value: cloneValue(previousValue) },
     };
@@ -736,12 +777,14 @@ export function createControlInteractionRegistry(
   const invokeTrackedValueMutation = async <T>(
     key: string,
     registration: ControlRegistration,
+    generation: object,
     previousValue: unknown,
     previousUserEdit: { revision: number; value: unknown } | null,
     invoke: () => T | Promise<T>,
   ): Promise<T> => {
     const activeMutation = {
       registration,
+      generation,
       previousValue: cloneValue(previousValue),
       immediateValue: cloneValue(previousValue),
       previousUserEdit: cloneValue(previousUserEdit),
@@ -851,6 +894,7 @@ export function createControlInteractionRegistry(
   const registry: ControlInteractionRegistry = {
     register(registration) {
       const key = identityKey(registration.identity);
+      const generation = {};
       // Capture synchronously so an already-released superseded setter cannot
       // overwrite the replacement generation before its baseline is recorded.
       // `untrack` keeps this read out of a caller's reactive registration effect.
@@ -868,12 +912,13 @@ export function createControlInteractionRegistry(
               userEdit.revision !== activeMutation.previousUserEdit.revision);
           const value =
             activeMutation &&
-            registrations.get(key) === activeMutation.registration &&
-            valuesEqual(currentValue, activeMutation.immediateValue) &&
+            registrationGenerations.get(key) === activeMutation.generation &&
+            (registration === activeMutation.registration ||
+              valuesEqual(currentValue, activeMutation.immediateValue)) &&
             !newerUserEdit
               ? cloneValue(activeMutation.previousValue)
               : currentValue;
-          registrationBaselines.set(registration, {
+          registrationBaselines.set(generation, {
             value,
             userEdit: userEdit ?? { revision: 0, value: cloneValue(value) },
           });
@@ -882,10 +927,12 @@ export function createControlInteractionRegistry(
         }
       });
       registrations.set(key, registration);
+      registrationGenerations.set(key, generation);
       emit({ type: 'registered', identity: registration.identity });
       return () => {
-        if (registrations.get(key) !== registration) return;
+        if (registrationGenerations.get(key) !== generation) return;
         registrations.delete(key);
+        registrationGenerations.delete(key);
         staged.delete(key);
         undo.delete(key);
         userEdits.delete(key);
@@ -896,6 +943,7 @@ export function createControlInteractionRegistry(
     unregister(identity) {
       const key = identityKey(identity);
       if (!registrations.delete(key)) return;
+      registrationGenerations.delete(key);
       staged.delete(key);
       undo.delete(key);
       userEdits.delete(key);
@@ -949,7 +997,7 @@ export function createControlInteractionRegistry(
         localGrant &&
           localGrant.command === suppliedCommand &&
           valuesEqual(localGrant.snapshot, command) &&
-          localGrant.registration === registrations.get(key),
+          localGrant.generation === registrationGenerations.get(key),
       );
       if (
         isMutation(command.action) &&
@@ -962,7 +1010,7 @@ export function createControlInteractionRegistry(
           localConfirmationGrants.set(queuedContext, {
             command: commandSnapshot,
             snapshot: cloneValue(commandSnapshot),
-            registration: localGrant?.registration,
+            generation: localGrant?.generation,
           });
         }
         return enqueueMutation(key, () =>
@@ -971,6 +1019,8 @@ export function createControlInteractionRegistry(
       }
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
+      const generation = registrationGenerations.get(key);
+      if (!generation) return result(command, false, undefined, 'not_found');
       const registrationWithEdits = editAwareRegistration(key, registration);
       const restoreMutationValue = async (
         previousValue: unknown,
@@ -979,11 +1029,7 @@ export function createControlInteractionRegistry(
         > | null,
       ) => {
         if (
-          await reconcileSupersededRegistration(
-            key,
-            registration,
-            previousValue,
-          )
+          await reconcileSupersededRegistration(key, generation, previousValue)
         ) {
           return;
         }
@@ -1047,7 +1093,7 @@ export function createControlInteractionRegistry(
                   cloneValue(snapshot),
                 )
               : invariantDecision;
-            if (registrations.get(key) !== registration) {
+            if (registrationGenerations.get(key) !== generation) {
               throw new Error('staged_value_stale');
             }
             invariantDecision = defaultPolicy(
@@ -1073,7 +1119,7 @@ export function createControlInteractionRegistry(
             cloneValue(snapshot),
           );
         }
-        if (registrations.get(key) !== registration) {
+        if (registrationGenerations.get(key) !== generation) {
           throw new Error('staged_value_stale');
         }
         if (
@@ -1163,7 +1209,7 @@ export function createControlInteractionRegistry(
                   preparedValue,
                 );
                 if (
-                  registrations.get(key) !== registration ||
+                  registrationGenerations.get(key) !== generation ||
                   staged.get(key) !== entry
                 ) {
                   throw new Error('stale_revision');
@@ -1251,7 +1297,7 @@ export function createControlInteractionRegistry(
               registration,
               authorizedValue,
             );
-            if (registrations.get(key) !== registration) {
+            if (registrationGenerations.get(key) !== generation) {
               throw new Error('staged_value_stale');
             }
             if (
@@ -1292,6 +1338,7 @@ export function createControlInteractionRegistry(
               await invokeTrackedValueMutation(
                 key,
                 registration,
+                generation,
                 previousValue,
                 userEditSnapshot,
                 () => registration.setValue?.(cloneValue(authorizedValue)),
@@ -1305,7 +1352,7 @@ export function createControlInteractionRegistry(
               throw error;
             }
             if (
-              registrations.get(key) !== registration ||
+              registrationGenerations.get(key) !== generation ||
               userEditSuperseded(registrationWithEdits, userEditSnapshot)
             ) {
               await restoreMutationValue(previousValue, userEditSnapshot);
@@ -1321,7 +1368,7 @@ export function createControlInteractionRegistry(
             try {
               const valid = await registration.validate?.();
               if (
-                registrations.get(key) !== registration ||
+                registrationGenerations.get(key) !== generation ||
                 userEditSuperseded(registrationWithEdits, userEditSnapshot)
               ) {
                 throw new Error('staged_value_stale');
@@ -1384,6 +1431,7 @@ export function createControlInteractionRegistry(
               const decision = await invokeTrackedValueMutation(
                 key,
                 registration,
+                generation,
                 previousValue,
                 userEditSnapshot,
                 () =>
@@ -1406,7 +1454,7 @@ export function createControlInteractionRegistry(
               throw error;
             }
             if (
-              registrations.get(key) !== registration ||
+              registrationGenerations.get(key) !== generation ||
               userEditSuperseded(registrationWithEdits, userEditSnapshot)
             ) {
               await restoreMutationValue(previousValue, userEditSnapshot);
@@ -1454,6 +1502,7 @@ export function createControlInteractionRegistry(
               await invokeTrackedValueMutation(
                 key,
                 registration,
+                generation,
                 currentValue,
                 userEditSnapshot,
                 () =>
@@ -1468,7 +1517,7 @@ export function createControlInteractionRegistry(
               throw error;
             }
             if (
-              registrations.get(key) !== registration ||
+              registrationGenerations.get(key) !== generation ||
               userEditSuperseded(registrationWithEdits, userEditSnapshot)
             ) {
               await restoreMutationValue(currentValue, userEditSnapshot);
@@ -1554,11 +1603,13 @@ export function createControlInteractionRegistry(
     commands,
     event,
   ) => {
+    const eventState = nativeEventState(event);
     const isLocalGesture =
-      options.isLocalGesture ?? ((candidate: Event) => candidate.isTrusted);
+      options.isLocalGesture ?? (() => eventState?.isTrusted);
     if (
+      !eventState ||
       !isLocalGesture(event) ||
-      !isActivelyDispatching(event) ||
+      eventState.eventPhase === 0 ||
       consumedLocalGestureEvents.has(event)
     ) {
       return {
@@ -1577,8 +1628,8 @@ export function createControlInteractionRegistry(
     // Bind the entire already-snapshotted batch to the registration generations
     // present at gesture validation time. Earlier awaited commands must not be
     // able to authorize later commands against newly mounted replacements.
-    const gestureRegistrations = commands.map((command) =>
-      registrations.get(identityKey(command.identity)),
+    const gestureGenerations = commands.map((command) =>
+      registrationGenerations.get(identityKey(command.identity)),
     );
     const results: ControlCommandResult[] = [];
     for (const [index, command] of commands.entries()) {
@@ -1589,7 +1640,7 @@ export function createControlInteractionRegistry(
       localConfirmationGrants.set(context, {
         command,
         snapshot: cloneValue(command),
-        registration: gestureRegistrations[index],
+        generation: gestureGenerations[index],
       });
       try {
         results.push(await suppliedRegistry.execute(command, context));
