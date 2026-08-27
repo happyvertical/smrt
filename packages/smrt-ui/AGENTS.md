@@ -112,6 +112,39 @@ other text pairing clears WCAG AA in both schemes.
   interaction registry. Keep chat/voice transports outside this package;
   mutations must retain sensitivity checks and the stage → confirmed apply
   policy.
+- Agent-originated form values remain proposals: the registry records their
+  provenance, timestamp, and revision, while `StagedControlReview` is the shared
+  review/apply surface mounted by both base and rich Forms. Agents can stage but
+  cannot self-confirm; only a local human handler submits confirmed apply,
+  discard, clear, or undo commands after the registry validates a trusted DOM
+  gesture while its event is actively dispatching. Retained events are rejected,
+  and the complete command or batch is snapshotted synchronously before gesture
+  consumption. Serialized or programmatic `source: 'user', confirmed: true`
+  input is not confirmation.
+  `StagedControlReview` marks its complete edited Apply value with
+  `reviewedValueIsCanonical: true`, but the marker grants no authority and is
+  honored only for a current staged entry under the registry's exact local
+  gesture proof. A control with proposal-relative preparation implements
+  `prepareReviewedValue` to validate/canonicalize the complete displayed value;
+  without that hook, marked edits still pass through ordinary `prepareValue`.
+  Only an unchanged value exactly equal to the stored staged canonical value can
+  reuse that trusted stored value without either hook.
+  Secret controls never accept staging, and sensitive/secret
+  values stay redacted in snapshots, events, policy callbacks, and review UI.
+  Batch execution is ordered best-effort and returns one result per command;
+  review-surface batch actions exclude stale and invalid proposals, which remain
+  visible with per-field feedback.
+  `executeBatch` is additive and optional for injected legacy registries; the
+  framework falls back to ordered `execute` calls without weakening the private
+  one-shot gesture proof on factory-created registries.
+  Rejecting async custom setters and clear handlers roll back by default;
+  controls that accept concurrent direct edits expose a monotonic revision and
+  user value from `getUserEditSnapshot()` so rollback restores newer human input;
+  fallible async setters expose an infallible `restoreValue()` path. Async hooks
+  issue nested commands through their optional final `ControlExtensionContext`;
+  same-control mutations are rejected there without timing out unrelated queued
+  commands. Context-aware setters implement the additive `setValueWithContext`
+  hook; legacy `setValue` is always invoked with exactly one argument.
 
 ## Gotchas
 

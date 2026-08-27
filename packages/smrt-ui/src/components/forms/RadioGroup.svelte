@@ -7,6 +7,10 @@ import type {
   ControlOption,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  prepareEnabledOptionValue,
+  validatesEnabledOption,
+} from './control-value-validation.js';
 import { setRadioGroupContext } from './radio-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
@@ -90,6 +94,7 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue: (next) => String(prepareEnabledOptionValue(options, next)),
     setValue: (next) => {
       const candidate = String(next);
       if (
@@ -99,14 +104,18 @@ useControlRegistration(() => {
       )
         setValue(candidate);
     },
-    clear: () => setValue(''),
+    clear: () => {
+      setValue('');
+      return true;
+    },
     focus: () =>
       element.querySelector<HTMLInputElement>('input:not(:disabled)')?.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validatesEnabledOption(options, next),
     getState: () => ({
-      disabled,
+      disabled: element.matches(':disabled'),
       valid: !required || !!value,
       validationMessage: error,
     }),
@@ -114,7 +123,9 @@ useControlRegistration(() => {
 });
 </script>
 <fieldset bind:this={fieldsetEl} class="radio-group {className}" {disabled}
-  aria-describedby={description ? `${name}-description` : undefined} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+  aria-describedby={description ? `${name}-description` : undefined} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#if label}<legend>{label}{#if required}<span aria-hidden="true"> *</span>{/if}</legend>{/if}
   {#if description}<p id={`${name}-description`} class="description">{description}</p>{/if}
   <div class="options">{@render children()}</div>

@@ -1,12 +1,12 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -55,12 +55,18 @@ const formContext = tryGetFormContext();
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Validation
-const isInRange = $derived.by(() => {
-  if (value === null) return true;
-  if (min !== undefined && value < min) return false;
-  if (max !== undefined && value > max) return false;
+function numberIsInRange(candidate: number | null): boolean {
+  if (candidate === null) return true;
+  if (min !== undefined && candidate < min) return false;
+  if (max !== undefined && candidate > max) return false;
   return true;
-});
+}
+function numberMatchesStep(candidate: number): boolean {
+  if (!Number.isFinite(step) || step <= 0) return true;
+  const offset = (candidate - (min ?? 0)) / step;
+  return Math.abs(offset - Math.round(offset)) <= 1e-9;
+}
+const isInRange = $derived(numberIsInRange(value));
 const showInvalid = $derived(value !== null && !isInRange);
 
 function updateValue(newValue: number | null) {
@@ -143,22 +149,26 @@ function parseSpokenNumber(text: string): number | null {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
-    let rangeDesc = '';
-    if (min !== undefined && max !== undefined) {
-      rangeDesc = ` (between ${min} and ${max})`;
-    } else if (min !== undefined) {
-      rangeDesc = ` (minimum ${min})`;
-    } else if (max !== undefined) {
-      rangeDesc = ` (maximum ${max})`;
-    }
-
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'number',
-      label,
-      description: (description || 'A number') + rangeDesc,
+      get label() {
+        return label;
+      },
+      get description() {
+        let rangeDescription = '';
+        if (min !== undefined && max !== undefined) {
+          rangeDescription = ` (between ${min} and ${max})`;
+        } else if (min !== undefined) {
+          rangeDescription = ` (minimum ${min})`;
+        } else if (max !== undefined) {
+          rangeDescription = ` (maximum ${max})`;
+        }
+        return (description || 'A number') + rangeDescription;
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined || v === '') {
           updateValue(null);
@@ -175,17 +185,39 @@ onMount(() => {
         }
       },
       getValue: () => value,
-      constraints: { required, min, max, step },
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return null;
+        }
+        if (typeof candidate === 'number') {
+          return candidate;
+        }
+        if (typeof candidate !== 'string') return invalidStagedValue();
+        return parseSpokenNumber(candidate) ?? invalidStagedValue();
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required, min, max, step };
+      },
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return !required;
+        }
+        const proposed =
+          typeof candidate === 'number'
+            ? candidate
+            : parseSpokenNumber(String(candidate));
+        return (
+          proposed !== null &&
+          Number.isFinite(proposed) &&
+          numberIsInRange(proposed) &&
+          numberMatchesStep(proposed)
+        );
+      },
       validate: () =>
         value === null ? !required : Number.isFinite(value) && isInRange,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

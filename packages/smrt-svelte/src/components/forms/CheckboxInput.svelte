@@ -1,12 +1,12 @@
 <script lang="ts">
 import { ripple } from '@happyvertical/smrt-ui';
 import { parseSpokenBoolean } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 
 export interface Props {
   /** Field name */
@@ -46,13 +46,18 @@ function updateValue(newValue: boolean) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'checkbox',
-      label,
-      description: description || `Yes or no for ${label || name}`,
+      get label() {
+        return label;
+      },
+      get description() {
+        return description || `Yes or no for ${label || name}`;
+      },
       setValue: (v: unknown) => {
         if (typeof v === 'boolean') {
           updateValue(v);
@@ -64,16 +69,38 @@ onMount(() => {
         }
       },
       getValue: () => checked,
-      constraints: { required },
+      prepareValue: (candidate) => {
+        if (typeof candidate === 'boolean') return candidate;
+        if (
+          candidate !== null &&
+          candidate !== undefined &&
+          typeof candidate !== 'string' &&
+          typeof candidate !== 'number'
+        ) {
+          return invalidStagedValue();
+        }
+        return (
+          parseSpokenBoolean(String(candidate ?? '')) ?? invalidStagedValue()
+        );
+      },
+      clear: () => {
+        updateValue(false);
+        return true;
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      validateValue: (candidate) => {
+        const next =
+          typeof candidate === 'boolean'
+            ? candidate
+            : parseSpokenBoolean(String(candidate ?? ''));
+        return next !== null && (!required || next);
+      },
       validate: () => !required || checked,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

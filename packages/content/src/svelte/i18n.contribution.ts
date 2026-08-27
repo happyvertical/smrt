@@ -79,6 +79,7 @@ export const M = defineMessages({
   'content.content_list.type_mirrors': 'Mirrors',
   'content.content_list.status_published': 'Published',
   'content.content_list.status_draft': 'Draft',
+  'content.content_list.status_review': 'In review',
   'content.content_list.status_archived': 'Archived',
   'content.content_list.view_mode': 'View mode',
   'content.content_list.table_caption': 'Contents',
@@ -118,4 +119,44 @@ export const M = defineMessages({
   'content.content_list.source_material': 'Source material',
   'content.content_list.view_article': 'View article',
   'content.content_list.view_article_button': 'View Article',
+
+  // ContentList — restored view and server-query reporting (#2452)
+  'content.content_list.dropped_title':
+    'Part of this view could not be applied',
+  'content.content_list.dropped_item': '{target}: {reason}',
+  'content.content_list.dropped_dismiss': 'Dismiss',
+  'content.content_list.drop_unknown_column': 'that column no longer exists',
+  'content.content_list.drop_hidden_column':
+    'that column is not published by this list',
+  'content.content_list.drop_structural_column':
+    'that column carries no query state',
+  'content.content_list.drop_no_server_field':
+    'that column cannot be queried on the server',
+  'content.content_list.drop_unsupported_operator':
+    'that comparison is not supported',
+  'content.content_list.drop_unsupported_value':
+    'that value could not be used here',
+  'content.content_list.drop_malformed': 'that entry could not be read',
+  'content.content_list.drop_out_of_range':
+    'that value was outside the allowed range',
+  'content.content_list.drop_filter_widened':
+    'could not be applied exactly, so the list may include rows it would have excluded',
+  'content.content_list.drop_unlisted_value':
+    'filtered by "{value}", which is not one of the listed options',
+  'content.content_list.drop_unrepresentable_filter':
+    '{target} is filtered by "{value}", which this control cannot show — pick an option to replace it',
+  'content.content_list.drop_page_unreachable':
+    'page {requested} cannot be loaded — the list stops at page {landed}, which is what is shown',
+  'content.content_list.drop_unpaginated':
+    'an unpaginated list is not available from the server; the default page size is in use',
+  'content.content_list.result_truncated':
+    'The server shortened this answer to fit its size limit, so some rows are not shown. Narrow the list or use a smaller page size.',
+
+  // ContentList — saved views (#2452)
+  'content.content_list.saved_views': 'Saved views',
+  'content.content_list.saved_view_none': 'No saved view',
+  'content.content_list.saved_view_name': 'Name for this view',
+  'content.content_list.saved_view_name_placeholder': 'Name this view',
+  'content.content_list.saved_view_save': 'Save view',
+  'content.content_list.saved_view_delete': 'Delete view',
 });

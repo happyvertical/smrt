@@ -220,6 +220,39 @@ export {
   smrtContentReviewPrompt,
   smrtContentThumbnailAIGeneratePrompt,
 } from './content-prompts';
+// Bounded, tenant-safe content queries (#2452). `executeContentQuery` is the
+// seam a host calls directly when it needs to add a trusted, server-derived
+// `scope` (site, organization, workspace) that the framework does not model.
+export type {
+  ContentQueryCollection,
+  ContentQueryOptions,
+  ContentQueryScope,
+} from './content-query';
+export {
+  assertContentQuerySchema,
+  buildContentQuerySchema,
+  buildDataQuerySchemaForClass,
+  CONTENT_QUERY_CLASS_NAME,
+  CONTENT_QUERY_DEFAULT_PAGE_LIMIT,
+  CONTENT_QUERY_DEFAULT_SORT,
+  CONTENT_QUERY_EXCLUDED_FIELD_IDS,
+  CONTENT_QUERY_IDENTITY_FIELD,
+  CONTENT_QUERY_MAX_PAGE_LIMIT,
+  CONTENT_QUERY_MAX_RESULT_BYTES,
+  CONTENT_QUERY_MIN_RESULT_BYTES,
+  clearContentQuerySchemaCache,
+  DATA_QUERY_FORBIDDEN_JSON_KEYS,
+  DATA_QUERY_MAX_JSON_CONTAINER_ITEMS,
+  DATA_QUERY_MAX_JSON_DEPTH,
+  DATA_QUERY_MAX_JSON_STRING_LENGTH,
+  DATA_QUERY_MAX_STRING_LENGTH,
+  DATA_QUERY_MAX_WARNING_LENGTH,
+  DATA_QUERY_MAX_WARNINGS,
+  executeContentQuery,
+  MAX_CONTENT_QUERY_OR_BRANCHES,
+  mergeContentQueryScope,
+  resolveContentTenantReadScope,
+} from './content-query';
 export type { ContentReferenceOptions } from './content-reference';
 export { ContentReference } from './content-reference';
 export type { ContentReferencesOptions } from './content-references';

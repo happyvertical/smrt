@@ -7,7 +7,11 @@ import {
   revealControl,
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
+import { prepareBooleanControlValue } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLButtonAttributes, 'class'> {
@@ -41,6 +45,12 @@ function setPressed(next: unknown) {
 }
 function handleClick(event: MouseEvent & { currentTarget: HTMLButtonElement }) {
   pressed = !pressed;
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (buttonEl) emitControlChange(buttonEl);
   onclick?.(event);
 }
 useControlRegistration(() => {
@@ -58,17 +68,24 @@ useControlRegistration(() => {
       writable: interaction?.writable,
     },
     getValue: () => pressed,
+    prepareValue: prepareBooleanControlValue,
     setValue: setPressed,
-    clear: () => setPressed(false),
+    clear: () => {
+      setPressed(false);
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
-    getState: () => ({ disabled: element.disabled }),
+    validateValue: (next) => typeof next === 'boolean',
+    getState: () => ({ disabled: element.matches(':disabled') }),
   };
 });
 </script>
 <button bind:this={buttonEl} id={resolvedId} type="button" {name} {disabled} class="toggle-button {className}" class:pressed
   aria-pressed={pressed} aria-label={ariaLabel} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}
   onclick={handleClick} {...rest}>{@render children?.()}</button>
 <style>
   .toggle-button { display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; padding: 0 var(--smrt-spacing-4); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-full); background: var(--smrt-color-surface); color: var(--smrt-color-on-surface); cursor: pointer; }

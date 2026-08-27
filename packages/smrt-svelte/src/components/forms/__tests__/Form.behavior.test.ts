@@ -113,7 +113,7 @@ describe('Form — submit value collection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
     expect(onsubmit).toHaveBeenLastCalledWith({ fullname: 'Keep', age: 7 });
 
-    // Unmount the age field; Form.unregisterField drops it from the next submit.
+    // Unmount the age field; its generation-bound disposer drops it from submit.
     await rerender({
       onsubmit,
       textValue: 'Keep',

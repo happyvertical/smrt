@@ -99,10 +99,56 @@ without coupling controls to a transport:
 ```
 
 Controls publish serializable metadata, constraints, options, sensitivity, and
-capabilities. Adapters can focus, reveal, highlight, explain, validate, stage,
-apply, clear, or undo. Agent mutations are denied for secret/read-only controls
-and require explicit confirmation before apply, clear, or undo. Staging is
-separate so the UI can show a proposal before it changes user state.
+capabilities. Adapters can focus, reveal, highlight, explain, validate, and
+stage reviewable proposals. Agents cannot apply, discard, clear, or undo;
+those value-changing actions require a trusted local gesture handled by the
+framework review surface. Secret/read-only controls reject agent mutations.
+Staging remains separate so proposals never change user state before review.
+Custom local review controls can call `executeLocalControlCommand` or
+`executeLocalControlBatch` synchronously from their DOM handlers; the registry
+requires the event to still be actively dispatching, snapshots the complete
+command, and consumes the gesture before authorizing a value-changing command.
+Retaining an event for later use is rejected even when it remains trusted.
+Serialized or programmatic `source: 'user', confirmed: true` input is never
+confirmation. Sensitive and secret values, validation details, failures, and
+events remain redacted from every public surface.
+The shared review surface marks its complete edited Apply value with
+`reviewedValueIsCanonical: true`. That marker carries no authority: the registry
+honors it only for a current staged entry after validating the exact command
+under an actively dispatching local gesture. Controls with non-idempotent
+proposal preparation can implement `prepareReviewedValue(value)` to validate or
+canonicalize the complete displayed value without re-applying proposal-relative
+behavior. Controls without that hook route marked edits through their ordinary
+`prepareValue`, so a generic marker never bypasses custom normalization or
+rejection. An unchanged value exactly equal to the stored staged canonical value
+uses that trusted stored value directly.
+Registries expose optional `refresh(formId)` notification for hosts whose live
+metadata or runtime-state getters change without a registration event; it
+updates subscribers without discarding an internal staged proposal.
+`executeBatch` is an additive optional registry method; Forms fall back to
+ordered `execute` calls for older injected registries. Factory-created
+registries retain the framework's private, one-shot gesture proof, while an
+older custom registry remains responsible for its pre-existing execution
+policy and accepts review actions only from a trusted browser event.
+Custom controls whose clear operation is intentionally idempotent should return
+`true` from `clear()` to affirm that the unchanged cleared value was accepted.
+Async custom setters and clear handlers are rolled back when they reject. A
+control that permits direct edits while an async mutation is pending can expose
+`getUserEditSnapshot()` and update its revision and value only for direct user
+edits so rollback restores newer human input even if the handler mutates again
+before rejecting. A fallible async setter should also expose `restoreValue()` as
+an infallible state restoration path that does not repeat the external workflow.
+Async policy, validation, setter, clear, and restoration hooks receive an
+optional final `ControlExtensionContext`. Hooks that need to issue another
+control command should use `extension.execute()`; it rejects a mutation of the
+same control immediately, while commands from independent callers remain in
+the normal ordered queue regardless of how long the hook takes. Existing hooks
+that omit the additional argument remain compatible. Setters retain their exact
+legacy `setValue(value)` invocation; a setter that needs this context implements
+the additive `setValueWithContext(value, extension)` hook instead. A hook must
+not await a same-control mutation through a captured registry reference: that
+call is indistinguishable from an independent caller in browser runtimes and,
+like any hook that never settles, can hold the ordered queue indefinitely.
 
 ## DataTable controller
 

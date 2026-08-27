@@ -6,6 +6,10 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  snapSteppedNumber,
+  validatesSteppedNumber,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import type { RangeSliderValue } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
@@ -61,7 +65,22 @@ const controlId = $derived(
         `range-${instanceId}`),
 );
 function snap(next: number) {
-  return Math.min(max, Math.max(min, Math.round(next / step) * step));
+  return snapSteppedNumber(next, min, max, step);
+}
+function validateRange(next: unknown) {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) return false;
+  const candidate = next as Record<string, unknown>;
+  if (
+    !Object.hasOwn(candidate, 'min') ||
+    !Object.hasOwn(candidate, 'max') ||
+    Object.keys(candidate).some((key) => key !== 'min' && key !== 'max')
+  )
+    return false;
+  return (
+    validatesSteppedNumber(candidate.min, min, max, step) &&
+    validatesSteppedNumber(candidate.max, min, max, step) &&
+    Number(candidate.min) <= Number(candidate.max)
+  );
 }
 function setRange(next: unknown) {
   if (!next || typeof next !== 'object') return;
@@ -70,8 +89,31 @@ function setRange(next: unknown) {
   const high = snap(Number(candidate.max ?? value.max));
   value = { min: Math.min(low, high), max: Math.max(low, high) };
   onvaluechange?.(value);
-  if (minEl) emitControlChange(minEl);
-  if (maxEl) emitControlChange(maxEl);
+  if (rootEl) emitControlChange(rootEl);
+}
+function prepareRange(next: unknown): RangeSliderValue {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    throw new Error('staged_value_invalid');
+  }
+  const candidate = next as Partial<RangeSliderValue>;
+  if (
+    (typeof candidate.min !== 'number' && typeof candidate.min !== 'string') ||
+    (typeof candidate.max !== 'number' && typeof candidate.max !== 'string')
+  ) {
+    throw new Error('staged_value_invalid');
+  }
+  const prepared = { min: Number(candidate.min), max: Number(candidate.max) };
+  if (!Number.isFinite(prepared.min) || !Number.isFinite(prepared.max)) {
+    throw new Error('staged_value_invalid');
+  }
+  return {
+    min: validatesSteppedNumber(prepared.min, min, max, step)
+      ? snap(prepared.min)
+      : prepared.min,
+    max: validatesSteppedNumber(prepared.max, min, max, step)
+      ? snap(prepared.max)
+      : prepared.max,
+  };
 }
 function setMin(next: number) {
   setRange({ min: Math.min(next, value.max), max: value.max });
@@ -97,17 +139,30 @@ useControlRegistration(() => {
       unit,
     },
     getValue: () => ({ ...value }),
+    prepareValue: prepareRange,
     setValue: setRange,
-    clear: () => setRange({ min, max }),
+    clear: () => {
+      setRange({ min, max });
+      return true;
+    },
     focus: () => minEl?.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
     validate: () => value.min <= value.max,
-    getState: () => ({ disabled, valid: value.min <= value.max }),
+    validateValue: validateRange,
+    getState: () => ({
+      disabled:
+        disabled ||
+        minEl?.matches(':disabled') === true ||
+        maxEl?.matches(':disabled') === true,
+      valid: value.min <= value.max,
+    }),
   };
 });
 </script>
-<div bind:this={rootEl} class="range-slider {className}" class:disabled data-smrt-control={controlId} data-smrt-form={interactionContext?.formId} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'}>
+<div bind:this={rootEl} class="range-slider {className}" class:disabled data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id} role="group" aria-label={label ?? formGroup?.().label ?? 'Range'}>
   {#if label}<div class="range-slider__header"><span>{label}</span><output>{value.min}{unit ?? ''} – {value.max}{unit ?? ''}</output></div>{/if}
   <div class="range-slider__track">
     <input bind:this={minEl} id={minId} type="range" name={name ? `${name}[min]` : undefined} {min} max={value.max} {step} {disabled} value={value.min}

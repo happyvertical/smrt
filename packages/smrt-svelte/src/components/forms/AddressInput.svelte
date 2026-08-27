@@ -1,12 +1,16 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
+import { untrack } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import {
+  invalidStagedValue,
+  prepareTextFieldValue,
+} from './prepare-field-value.js';
 import type { AddressValue } from './types.js';
 
 const { t } = useI18n();
@@ -80,8 +84,66 @@ let {
   onchange,
 }: Props = $props();
 
+function countryValues(): string[] {
+  return [...new Set(countries.map((option) => option.value))];
+}
+
+function provinceValues(): string[] {
+  return [
+    ...new Set([
+      ...(!required ? [''] : []),
+      ...provinces.map((option) => option.value),
+    ]),
+  ];
+}
+
+function schemaForField(field: AddressField): Record<string, unknown> {
+  if (field === 'country') return { type: 'string', enum: countryValues() };
+  if (field === 'province') return { type: 'string', enum: provinceValues() };
+  return { type: 'string' };
+}
+
+function validatesAddressMembers(candidate: unknown): boolean {
+  if (typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+  const address = candidate as Record<string, unknown>;
+  if (
+    ![Object.prototype, null].includes(Object.getPrototypeOf(address)) ||
+    !Object.keys(address).every((key) =>
+      fields.includes(key as AddressField),
+    ) ||
+    !fields.every(
+      (field) =>
+        !Object.hasOwn(address, field) || typeof address[field] === 'string',
+    )
+  ) {
+    return false;
+  }
+  if (
+    (Object.hasOwn(address, 'country') &&
+      !countryValues().includes(address.country as string)) ||
+    (Object.hasOwn(address, 'province') &&
+      !provinceValues().includes(address.province as string))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function validatesAddressCandidate(candidate: unknown): boolean {
+  if (candidate === null || candidate === undefined) return !required;
+  if (!validatesAddressMembers(candidate)) return false;
+  if (!required) return true;
+  const address = candidate as Record<string, unknown>;
+  return fields.every(
+    (field) =>
+      typeof address[field] === 'string' && address[field].trim().length > 0,
+  );
+}
+
 const app = useAppState();
 const formContext = tryGetFormContext();
+const fieldOwnerId = $props.id();
+const fieldOwnerToken = `smrt-rich-field-${fieldOwnerId}`;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
@@ -90,7 +152,7 @@ let street = $state(value.street ?? '');
 let city = $state(value.city ?? '');
 let province = $state(value.province ?? '');
 let postalCode = $state(value.postalCode ?? '');
-let country = $state(value.country ?? 'CA');
+let country = $state(value.country ?? untrack(() => countries[0]?.value ?? ''));
 
 // Keep in sync with external value changes
 $effect(() => {
@@ -105,13 +167,18 @@ $effect(() => {
     country = value.country;
 });
 
-function updateValue() {
+function currentValue(): Partial<AddressValue> {
   const newValue: Partial<AddressValue> = {};
   if (fields.includes('street')) newValue.street = street;
   if (fields.includes('city')) newValue.city = city;
   if (fields.includes('province')) newValue.province = province;
   if (fields.includes('postalCode')) newValue.postalCode = postalCode;
   if (fields.includes('country')) newValue.country = country;
+  return newValue;
+}
+
+function updateValue() {
+  const newValue = currentValue();
   value = newValue;
   onchange?.(newValue);
 }
@@ -141,11 +208,16 @@ function parseSpokenAddress(text: string): Partial<AddressValue> {
     }
   }
 
-  // Try to extract country
-  if (/\bcanada\b/i.test(normalized)) {
-    result.country = 'CA';
-  } else if (/\bunited states\b|\busa\b|\bu\.?s\.?a?\.?\b/i.test(normalized)) {
-    result.country = 'US';
+  // Try to extract a currently configured country by its label or value.
+  for (const option of countries) {
+    const matches = [option.label, option.value].some((candidate) => {
+      const escaped = candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|\\W)${escaped}(?=$|\\W)`, 'i').test(normalized);
+    });
+    if (matches) {
+      result.country = option.value;
+      break;
+    }
   }
 
   // Common city extraction patterns
@@ -192,26 +264,33 @@ const primaryFieldId = $derived.by(() => {
 });
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
+      ownerToken: fieldOwnerToken,
       type: 'address',
-      label,
-      description:
-        description ||
-        'A mailing address with street, city, province, postal code, and country',
+      get label() {
+        return label;
+      },
+      get description() {
+        return (
+          description ||
+          'A mailing address with street, city, province, postal code, and country'
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined) {
           street = '';
           city = '';
           province = '';
           postalCode = '';
-          country = 'CA';
+          country = countries[0]?.value ?? '';
           updateValue();
           return;
         }
-        if (typeof v === 'object' && v !== null) {
+        if (validatesAddressMembers(v)) {
           const addr = v as Partial<AddressValue>;
           if (addr.street !== undefined) street = addr.street;
           if (addr.city !== undefined) city = addr.city;
@@ -222,36 +301,70 @@ onMount(() => {
           return;
         }
         // Try to parse spoken address
-        const parsed = parseSpokenAddress(String(v));
-        if (Object.keys(parsed).length > 0) {
-          if (parsed.street) street = parsed.street;
-          if (parsed.city) city = parsed.city;
-          if (parsed.province) province = parsed.province;
-          if (parsed.postalCode) postalCode = parsed.postalCode;
-          if (parsed.country) country = parsed.country;
+        const parsed = Object.fromEntries(
+          Object.entries(parseSpokenAddress(String(v))).filter(([field]) =>
+            fields.includes(field as AddressField),
+          ),
+        ) as Partial<AddressValue>;
+        if (Object.keys(parsed).length > 0 && validatesAddressMembers(parsed)) {
+          if (parsed.street !== undefined) street = parsed.street;
+          if (parsed.city !== undefined) city = parsed.city;
+          if (parsed.province !== undefined) province = parsed.province;
+          if (parsed.postalCode !== undefined) postalCode = parsed.postalCode;
+          if (parsed.country !== undefined) country = parsed.country;
           updateValue();
         }
       },
-      getValue: () => value,
-      constraints: { required },
-      webMcpSchema: {
-        type: 'object',
-        properties: Object.fromEntries(
-          fields.map((field) => [field, { type: 'string' }]),
-        ),
-        ...(required ? { required: [...fields] } : {}),
+      getValue: currentValue,
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined) {
+          return Object.fromEntries(
+            fields.map((field) => [
+              field,
+              field === 'country' ? (countries[0]?.value ?? '') : '',
+            ]),
+          );
+        }
+        if (typeof candidate === 'object' && !Array.isArray(candidate)) {
+          return candidate;
+        }
+        const parsed = parseSpokenAddress(prepareTextFieldValue(candidate));
+        const configured = Object.fromEntries(
+          Object.entries(parsed).filter(([field]) =>
+            fields.includes(field as AddressField),
+          ),
+        );
+        return Object.keys(configured).length > 0
+          ? { ...currentValue(), ...configured }
+          : invalidStagedValue();
       },
-      validate: () =>
-        !required ||
-        fields.every((field) => String(value[field] ?? '').trim().length > 0),
+      clear: () => {
+        street = '';
+        city = '';
+        province = '';
+        postalCode = '';
+        country = countries[0]?.value ?? '';
+        updateValue();
+        return true;
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      get webMcpSchema() {
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties: Object.fromEntries(
+            fields.map((field) => [field, schemaForField(field)]),
+          ),
+          ...(required ? { required: [...fields] } : {}),
+        };
+      },
+      validateValue: validatesAddressCandidate,
+      validate: () => validatesAddressCandidate(currentValue()),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 
@@ -281,7 +394,7 @@ function handleCountryChange(e: Event) {
 }
 </script>
 
-  <div class="smrt-address">
+  <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
     <label class="smrt-label" for={primaryFieldId}>
       {label}

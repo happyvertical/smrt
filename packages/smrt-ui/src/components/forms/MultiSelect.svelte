@@ -1,11 +1,24 @@
 <script lang="ts">
 import { tick } from 'svelte';
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type {
   ControlInteractionOptions,
   ControlOption,
 } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
+import {
+  normalizeCurrentOptionValues,
+  normalizeEnabledOptions,
+  prepareEnabledOptionValues,
+  validatesEnabledOptions,
+} from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -40,30 +53,32 @@ let open = $state(false);
 const controlId = $derived(
   interaction === false ? undefined : (interaction?.id ?? name ?? listId),
 );
+const canonicalValues = $derived(normalizeCurrentOptionValues(options, values));
 const selectedLabels = $derived(
   options
     .filter((option) =>
-      values.some((value) => String(value) === String(option.value)),
+      canonicalValues.some((value) => Object.is(value, option.value)),
     )
     .map((option) => option.label),
 );
 function toggle(option: ControlOption) {
   if (option.disabled || disabled) return;
-  const has = values.some((value) => String(value) === String(option.value));
+  const has = canonicalValues.some((value) => Object.is(value, option.value));
   values = has
-    ? values.filter((value) => String(value) !== String(option.value))
-    : [...values, option.value];
+    ? canonicalValues.filter((value) => !Object.is(value, option.value))
+    : [...canonicalValues, option.value];
   onvalueschange?.(values);
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (rootEl) emitControlChange(rootEl);
 }
 function setValues(next: unknown) {
-  if (!Array.isArray(next)) return;
-  values = options
-    .filter(
-      (option) =>
-        next.some((value) => String(value) === String(option.value)) &&
-        !option.disabled,
-    )
-    .map((option) => option.value);
+  const normalized = normalizeEnabledOptions(options, next);
+  if (!normalized) return;
+  values = normalized;
   onvalueschange?.(values);
 }
 async function openOptions(focusFirst = false) {
@@ -136,19 +151,26 @@ useControlRegistration(() => {
       writable: interaction?.writable,
       options,
     },
-    getValue: () => [...values],
+    getValue: () => [...canonicalValues],
+    prepareValue: (next) => prepareEnabledOptionValues(options, next),
     setValue: setValues,
-    clear: () => setValues([]),
+    clear: () => {
+      setValues([]);
+      return true;
+    },
     focus: () => trigger.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    validateValue: (next) => validatesEnabledOptions(options, next),
+    getState: () => ({ disabled: trigger.matches(':disabled') }),
   };
 });
 </script>
-<div bind:this={rootEl} class="multi-select {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div bind:this={rootEl} class="multi-select {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   <span class="label" id={`${listId}-label`}>{label}</span><button bind:this={triggerEl} id={triggerId} type="button" class="trigger" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-labelledby={`${listId}-label ${triggerId}`} onclick={() => open ? closeOptions() : openOptions()} onkeydown={handleTriggerKeydown}>{selectedLabels.length ? selectedLabels.join(', ') : placeholder}</button>
-  {#if open}<div id={listId} class="options" role="listbox" tabindex="-1" aria-multiselectable="true" aria-labelledby={`${listId}-label`} onkeydown={handleOptionsKeydown}>{#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" tabindex="-1" aria-selected={values.some((value) => String(value) === String(option.value))} disabled={option.disabled} onclick={() => toggle(option)}><span aria-hidden="true">{values.some((value) => String(value) === String(option.value)) ? '✓' : ''}</span>{option.label}</button>{/each}</div>{/if}
+  {#if open}<div id={listId} class="options" role="listbox" tabindex="-1" aria-multiselectable="true" aria-labelledby={`${listId}-label`} onkeydown={handleOptionsKeydown}>{#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" tabindex="-1" aria-selected={canonicalValues.some((value) => Object.is(value, option.value))} disabled={option.disabled} onclick={() => toggle(option)}><span aria-hidden="true">{canonicalValues.some((value) => Object.is(value, option.value)) ? '✓' : ''}</span>{option.label}</button>{/each}</div>{/if}
 </div>
 <style>
   .multi-select { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); } .label { font: var(--smrt-typography-label-large-font); }

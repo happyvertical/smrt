@@ -1,12 +1,12 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -216,22 +216,28 @@ function parseSpokenMoney(text: string): number | null {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
-    let rangeDesc = '';
-    if (min !== undefined && max !== undefined) {
-      rangeDesc = ` (between $${(min / 100).toFixed(2)} and $${(max / 100).toFixed(2)})`;
-    } else if (min !== undefined) {
-      rangeDesc = ` (minimum $${(min / 100).toFixed(2)})`;
-    } else if (max !== undefined) {
-      rangeDesc = ` (maximum $${(max / 100).toFixed(2)})`;
-    }
-
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'money',
-      label,
-      description: (description || 'A monetary amount in dollars') + rangeDesc,
+      get label() {
+        return label;
+      },
+      get description() {
+        let rangeDescription = '';
+        if (min !== undefined && max !== undefined) {
+          rangeDescription = ` (between $${(min / 100).toFixed(2)} and $${(max / 100).toFixed(2)})`;
+        } else if (min !== undefined) {
+          rangeDescription = ` (minimum $${(min / 100).toFixed(2)})`;
+        } else if (max !== undefined) {
+          rangeDescription = ` (maximum $${(max / 100).toFixed(2)})`;
+        }
+        return (
+          (description || 'A monetary amount in dollars') + rangeDescription
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined || v === '') {
           updateValue(null);
@@ -252,17 +258,30 @@ onMount(() => {
         }
       },
       getValue: () => value,
-      constraints: { required, min, max },
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return null;
+        }
+        if (typeof candidate === 'number') {
+          return candidate;
+        }
+        if (typeof candidate !== 'string') return invalidStagedValue();
+        return parseSpokenMoney(candidate) ?? invalidStagedValue();
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required, min, max };
+      },
+      validateValue: (candidate) =>
+        (candidate === null && !required) ||
+        (typeof candidate === 'number' &&
+          Number.isSafeInteger(candidate) &&
+          (min === undefined || candidate >= min) &&
+          (max === undefined || candidate <= max)),
       validate: () =>
-        value === null ? !required : Number.isFinite(value) && isInRange,
+        value === null ? !required : Number.isSafeInteger(value) && isInRange,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

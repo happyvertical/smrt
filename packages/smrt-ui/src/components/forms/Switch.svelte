@@ -7,6 +7,11 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  booleanControlValue,
+  prepareBooleanControlValue,
+  validateNativeCheckedValue,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
@@ -57,10 +62,7 @@ const controlId = $derived(
     : (resolvedInteraction.id ?? name ?? resolvedId),
 );
 function setChecked(next: unknown) {
-  checked =
-    typeof next === 'string'
-      ? ['true', '1', 'yes', 'on'].includes(next.toLowerCase())
-      : Boolean(next);
+  checked = booleanControlValue(next);
   if (inputEl) emitControlChange(inputEl);
 }
 function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
@@ -84,15 +86,20 @@ useControlRegistration(() => {
       constraints: { required: required === true },
     },
     getValue: () => checked,
+    prepareValue: prepareBooleanControlValue,
     setValue: setChecked,
-    clear: () => setChecked(false),
+    clear: () => {
+      setChecked(false);
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) =>
       highlightControl(element.closest('label') ?? element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validateNativeCheckedValue(element, next),
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
@@ -100,7 +107,9 @@ useControlRegistration(() => {
 });
 </script>
 
-<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<label class="switch switch--{size} {className}" class:switch--disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
   {#if label && labelPosition === 'left'}<span>{label}</span>{/if}
   <span class="switch__control">
     <input bind:this={inputEl} id={resolvedId} type="checkbox" role="switch" {name} {value} {disabled} {required} checked={checked}

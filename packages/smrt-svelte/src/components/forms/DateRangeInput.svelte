@@ -1,6 +1,5 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -9,6 +8,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 import type { DateRangeValue } from './types.js';
 
 const { t } = useI18n();
@@ -61,6 +61,8 @@ let {
 const app = useAppState();
 const stt = useSTT();
 const formContext = tryGetFormContext();
+const fieldOwnerId = $props.id();
+const fieldOwnerToken = `smrt-rich-field-${fieldOwnerId}`;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
@@ -68,6 +70,7 @@ let isRecording = $state(false);
 let isParsing = $state(false);
 let parseError = $state<string | null>(null);
 let recordingStartTime = 0;
+let primaryControl = $state<HTMLElement | null>(null);
 
 const MIN_HOLD_TIME = 500;
 const MIN_TRANSCRIPT_LENGTH = 2;
@@ -176,16 +179,37 @@ function formatToISO(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+function isCanonicalCalendarDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
+      ownerToken: fieldOwnerToken,
       type: 'daterange',
-      label,
-      description:
-        description ||
-        'A date range with start and end dates (say "from [start] to [end]")',
+      get label() {
+        return label;
+      },
+      get description() {
+        return (
+          description ||
+          'A date range with start and end dates (say "from [start] to [end]")'
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined) {
           updateValue('', '');
@@ -206,17 +230,102 @@ onMount(() => {
           .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
-      constraints: { required },
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined) {
+          return { startDate: '', endDate: '' };
+        }
+        if (
+          typeof candidate !== 'object' ||
+          Array.isArray(candidate) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(candidate))
+        ) {
+          return invalidStagedValue();
+        }
+        return candidate;
+      },
+      prepareExtractedValue: async (candidate) => {
+        if (typeof candidate !== 'string') {
+          return invalidStagedValue();
+        }
+        const parsed = await parseNaturalLanguageRange(candidate);
+        if (!parsed) {
+          return invalidStagedValue();
+        }
+        return { startDate: parsed.start, endDate: parsed.end };
+      },
+      clear: () => {
+        updateValue('', '');
+        return true;
+      },
+      getState: () => ({
+        disabled: disabled || primaryControl?.matches(':disabled') === true,
+      }),
+      get constraints() {
+        return { required };
+      },
+      focus: () => primaryControl?.focus(),
+      get webMcpSchema() {
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            startDate: {
+              type: 'string',
+              format: 'date',
+              ...(minDate ? { formatMinimum: minDate } : {}),
+              ...(maxDate ? { formatMaximum: maxDate } : {}),
+            },
+            endDate: {
+              type: 'string',
+              format: 'date',
+              ...(minDate ? { formatMinimum: minDate } : {}),
+              ...(maxDate ? { formatMaximum: maxDate } : {}),
+            },
+          },
+          ...(required ? { required: ['startDate', 'endDate'] } : {}),
+        };
+      },
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined) return !required;
+        if (
+          typeof candidate !== 'object' ||
+          Array.isArray(candidate) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(candidate))
+        ) {
+          return false;
+        }
+        const range = candidate as Record<string, unknown>;
+        if (
+          !Object.keys(range).every((key) =>
+            ['startDate', 'endDate'].includes(key),
+          ) ||
+          !Object.hasOwn(range, 'startDate') ||
+          !Object.hasOwn(range, 'endDate') ||
+          typeof range.startDate !== 'string' ||
+          typeof range.endDate !== 'string'
+        ) {
+          return false;
+        }
+        const start = range.startDate;
+        const end = range.endDate;
+        if (required && (!start || !end)) return false;
+        if (
+          (start && !isCanonicalCalendarDate(start)) ||
+          (end && !isCanonicalCalendarDate(end)) ||
+          (start && minDate && start < minDate) ||
+          (start && maxDate && start > maxDate) ||
+          (end && minDate && end < minDate) ||
+          (end && maxDate && end > maxDate) ||
+          (start && end && start > end)
+        ) {
+          return false;
+        }
+        return true;
+      },
       validate: () =>
         !required || (startDate.trim().length > 0 && endDate.trim().length > 0),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 
@@ -336,7 +445,12 @@ function handleMicKeydown(e: KeyboardEvent) {
 const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </script>
 
-<div class="smrt-daterange" class:listening={isRecording} class:parsing={isParsing}>
+<div
+  class="smrt-daterange"
+  class:listening={isRecording}
+  class:parsing={isParsing}
+  data-smrt-field-owner={fieldOwnerToken}
+>
   {#if label}
     <label class="smrt-label" for={primaryControlId}>
       {label}
@@ -363,6 +477,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
         </div>
 
         <button
+          bind:this={primaryControl}
           id={primaryControlId}
           type="button"
           class="mic-btn"
@@ -395,6 +510,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
         <div class="date-field">
           <label for="{name}_start" class="field-label">Start</label>
           <input
+            bind:this={primaryControl}
             id="{name}_start"
             name="{name}[startDate]"
             type="date"

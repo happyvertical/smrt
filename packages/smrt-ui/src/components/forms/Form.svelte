@@ -25,6 +25,7 @@ import {
   createControlInteractionRegistry,
 } from './control-interaction.js';
 import { setControlInteractionContext } from './control-interaction-context.js';
+import StagedControlReview from './StagedControlReview.svelte';
 
 export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   class?: string;
@@ -35,6 +36,8 @@ export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   interactionRegistry?: ControlInteractionRegistry;
   /** Receives registry lifecycle and command events. */
   oninteraction?: (event: ControlInteractionEvent) => void;
+  /** Render the built-in human review surface for staged changes. */
+  stagedReview?: boolean;
   children: Snippet;
 }
 
@@ -44,9 +47,13 @@ let {
   formId,
   interactionRegistry,
   oninteraction,
+  stagedReview = true,
   id,
   name,
   onsubmit,
+  onclick,
+  oninput,
+  onchange,
   children,
   ...rest
 }: Props = $props();
@@ -58,6 +65,7 @@ const resolvedFormId = $derived(formId ?? id ?? name ?? generatedFormId);
 const resolvedInteractionRegistry = $derived(
   interactionRegistry ?? localInteractionRegistry,
 );
+let formElement = $state<HTMLFormElement | null>(null);
 
 setControlInteractionContext({
   get formId() {
@@ -85,17 +93,66 @@ function handleSubmit(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
   if (preventDefault) event.preventDefault();
   onsubmit?.(event);
 }
+
+function recordDirectUserEdit(event: Event) {
+  if (!event.isTrusted) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const control = target.closest<HTMLElement>('[data-smrt-control]');
+  const controlId = control?.dataset.smrtControl;
+  if (!controlId) return;
+  resolvedInteractionRegistry.recordUserEdit?.({
+    formId: resolvedFormId,
+    controlId,
+    subject:
+      control.dataset.smrtSubjectType && control.dataset.smrtSubjectId
+        ? {
+            type: control.dataset.smrtSubjectType,
+            id: control.dataset.smrtSubjectId,
+          }
+        : undefined,
+  });
+}
+
+function handleInput(event: Event & { currentTarget: HTMLFormElement }) {
+  try {
+    oninput?.(event);
+  } finally {
+    // Consumer handlers may synchronously normalize the bound value. Capture
+    // that final human value even when the handler throws.
+    recordDirectUserEdit(event);
+  }
+}
+
+function handleChange(event: Event & { currentTarget: HTMLFormElement }) {
+  try {
+    onchange?.(event);
+  } finally {
+    // Match input semantics for controls that commit via change.
+    recordDirectUserEdit(event);
+  }
+}
 </script>
 
 <form
+  bind:this={formElement}
   id={id}
   name={name}
   class="form {className}"
   data-smrt-form={resolvedFormId}
   onsubmit={handleSubmit}
+  {onclick}
+  oninput={handleInput}
+  onchange={handleChange}
   {...rest}
 >
 	{@render children()}
+  <StagedControlReview
+    registry={resolvedInteractionRegistry}
+    formId={resolvedFormId}
+    {formElement}
+    summary={stagedReview}
+  />
 </form>
 
 <!--

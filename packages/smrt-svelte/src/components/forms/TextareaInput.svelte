@@ -2,7 +2,6 @@
 import { Icon, ripple } from '@happyvertical/smrt-ui';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { formatText } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -11,6 +10,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { prepareTextFieldValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -75,31 +75,38 @@ function updateValue(newValue: string) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'textarea',
-      label,
-      description,
+      get label() {
+        return label;
+      },
+      get description() {
+        return description;
+      },
       setValue: (v: unknown) => {
-        if (appendMode && value) {
-          updateValue(`${value}\n${String(v ?? '')}`);
-        } else {
-          updateValue(String(v ?? ''));
-        }
+        updateValue(String(v ?? ''));
       },
       getValue: () => value,
-      constraints: { required },
+      prepareValue: (candidate) => {
+        const next = prepareTextFieldValue(candidate);
+        return appendMode && value ? `${value}\n${next}` : next;
+      },
+      // The review editor contains the complete displayed text, not a new
+      // append intent. Canonicalize its scalar shape without appending again.
+      prepareReviewedValue: prepareTextFieldValue,
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      validateValue: (candidate) =>
+        !required || String(candidate ?? '').trim().length > 0,
       validate: () => !required || value.trim().length > 0,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

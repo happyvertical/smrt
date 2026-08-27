@@ -10,7 +10,12 @@ import type {
   ControlKind,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  prepareNumberControlValue,
+  prepareTextControlValue,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
+import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLInputAttributes, 'class' | 'value'> {
   value?: string | number;
@@ -83,23 +88,54 @@ function kindFromType(): ControlKind {
 
 function setControlValue(next: unknown) {
   value =
-    type === 'number' || type === 'range' ? Number(next) : String(next ?? '');
+    type === 'number' || type === 'range'
+      ? next === '' || next === null || next === undefined
+        ? ''
+        : Number(next)
+      : String(next ?? '');
   if (inputEl) emitControlChange(inputEl);
 }
 
-$effect(() => {
-  const context = controlInteraction;
+function validateControlValue(next: unknown) {
+  if (!inputEl) return true;
+  if (
+    (type === 'number' || type === 'range') &&
+    next !== '' &&
+    next !== null &&
+    next !== undefined &&
+    !Number.isFinite(typeof next === 'number' ? next : Number(next))
+  ) {
+    return { valid: false, message: 'invalid_number' };
+  }
+  const candidate = inputEl.cloneNode() as HTMLInputElement;
+  const proposedValue = String(next ?? '');
+  try {
+    candidate.value = proposedValue;
+  } catch {
+    return { valid: false, message: 'invalid_value' };
+  }
+  // Native inputs sanitize some assignments without making them invalid: an
+  // optional invalid date/time becomes empty and a range value can clamp to a
+  // bound. A staged proposal must never be marked applicable when the setter
+  // would apply a different value than the one reviewed.
+  if (candidate.value !== proposedValue) {
+    return { valid: false, message: 'invalid_value' };
+  }
+  return {
+    valid: candidate.checkValidity(),
+    message: candidate.validationMessage || undefined,
+  };
+}
+
+useControlRegistration(() => {
   const element = inputEl;
   const controlId = resolvedControlId;
   const options = resolvedInteraction;
-  if (!context || !element || !controlId || options === false) return;
+  if (!element || !controlId || options === false) return false;
 
-  return context.registry.register({
-    identity: {
-      formId: context.formId,
-      controlId,
-      subject: options.subject,
-    },
+  return {
+    controlId,
+    subject: options.subject,
     metadata: {
       kind: kindFromType(),
       label: formGroup?.().label ?? ariaLabel ?? undefined,
@@ -119,19 +155,27 @@ $effect(() => {
       },
     },
     getValue: () => value,
+    prepareValue: (next) =>
+      type === 'number' || type === 'range'
+        ? prepareNumberControlValue(next)
+        : prepareTextControlValue(next),
     setValue: setControlValue,
-    clear: () => setControlValue(''),
+    clear: () => {
+      setControlValue('');
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: validateControlValue,
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       readonly: element.readOnly,
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
-  });
+  };
 });
 
 export function focus(): void {
@@ -167,6 +211,8 @@ export function getElement(): HTMLInputElement | null {
 	class="input {className}"
 	data-smrt-control={resolvedControlId}
 	data-smrt-form={controlInteraction?.formId}
+	data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+	data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
 	{...rest}
 />
 
