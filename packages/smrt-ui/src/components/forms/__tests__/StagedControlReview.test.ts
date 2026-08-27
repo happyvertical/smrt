@@ -972,7 +972,68 @@ describe('StagedControlReview', () => {
     expect(screen.getByText('profile/display-name · record:one')).toBeVisible();
     expect(screen.getByText('profile/display-name · record:two')).toBeVisible();
     for (const subjectId of ['one', 'two']) {
-      const actionName = `Display name record:${subjectId}`;
+      const actionName = `Display name record:${subjectId} [identity:["profile","display-name","record","${subjectId}"]]`;
+      expect(
+        screen.getByRole('textbox', {
+          name: `Edit proposed value for ${actionName}`,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: `Apply ${actionName}` }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: `Discard ${actionName}` }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('keeps tagged action identities distinct when human and fallback subjects collide', async () => {
+    const registry = createReviewRegistry();
+    let secondValue = 'Ada';
+    registry.register({
+      identity: {
+        ...identity,
+        subject: { type: 'record', id: 'b' },
+      },
+      metadata: { kind: 'text', label: 'Display name' },
+      getValue: () => secondValue,
+      setValue: (next) => {
+        secondValue = String(next);
+      },
+    });
+    render(Fixture, {
+      props: {
+        registry,
+        subject: { type: 'record', id: 'a', label: 'record:b' },
+      },
+    });
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { ...identity, subject: { type: 'record', id: 'b' } },
+        value: 'Katherine',
+      },
+      { source: 'agent' },
+    );
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: {
+          ...identity,
+          subject: { type: 'record', id: 'a', label: 'record:b' },
+        },
+        value: 'Grace',
+      },
+      { source: 'agent' },
+    );
+
+    const first =
+      'Display name record:b [identity:["profile","display-name","record","a"]]';
+    const second =
+      'Display name record:b [identity:["profile","display-name","record","b"]]';
+    expect(first).not.toBe(second);
+    for (const actionName of [first, second]) {
       expect(
         screen.getByRole('textbox', {
           name: `Edit proposed value for ${actionName}`,

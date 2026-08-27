@@ -111,10 +111,15 @@ export interface SMRTFormContext {
  */
 export const SMRT_FORM_KEY = Symbol('smrt-form');
 
+// A facade is installed on the component that first reads the form context.
+// Retaining its identity lets a legacy field read the context again during
+// teardown without losing the registration it owns.
+const callerFormContextFacades = new WeakSet<SMRTFormContext>();
+
 function createFormContextFacade(ctx: SMRTFormContext): SMRTFormContext {
   const registrations = new Map<string, Set<() => void>>();
 
-  return {
+  const facade: SMRTFormContext = {
     get mode() {
       return ctx.mode;
     },
@@ -161,13 +166,15 @@ function createFormContextFacade(ctx: SMRTFormContext): SMRTFormContext {
       return ctx.formId;
     },
   };
+  callerFormContextFacades.add(facade);
+  return facade;
 }
 
 /**
  * Set form context (used by SMRTForm)
  */
 export function setFormContext(ctx: SMRTFormContext): void {
-  setContext(SMRT_FORM_KEY, createFormContextFacade(ctx));
+  setContext(SMRT_FORM_KEY, ctx);
 }
 
 /**
@@ -183,7 +190,13 @@ export function getFormContext(): SMRTFormContext {
     );
   }
 
-  return createFormContextFacade(ctx);
+  if (callerFormContextFacades.has(ctx)) return ctx;
+  // Context is inherited by value per component. Shadow the form context on
+  // this caller's component so repeated accessor calls share registration
+  // ownership, while sibling fields still receive separate facades.
+  const facade = createFormContextFacade(ctx);
+  setContext(SMRT_FORM_KEY, facade);
+  return facade;
 }
 
 /**
@@ -191,5 +204,11 @@ export function getFormContext(): SMRTFormContext {
  */
 export function tryGetFormContext(): SMRTFormContext | null {
   const ctx = getContext<SMRTFormContext>(SMRT_FORM_KEY);
-  return ctx ? createFormContextFacade(ctx) : null;
+  if (!ctx) return null;
+  if (callerFormContextFacades.has(ctx)) return ctx;
+  // See getFormContext(): the shadow gives a component one stable ownership
+  // boundary without collapsing sibling fields into a shared legacy cleanup.
+  const facade = createFormContextFacade(ctx);
+  setContext(SMRT_FORM_KEY, facade);
+  return facade;
 }

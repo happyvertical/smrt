@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type ControlCommand,
   type ControlCommandContext,
+  type ControlExtensionContext,
   type ControlIdentity,
   type ControlInteractionRegistry,
   createControlInteractionRegistry,
@@ -1176,22 +1177,21 @@ describe('control interaction registry', () => {
       ReturnType<ControlInteractionRegistry['execute']>
     > | null = null;
     let invokedNested = false;
-    const registry = createControlInteractionRegistry({
-      reentrantMutationTimeoutMs: 10,
-    });
+    const registry = createControlInteractionRegistry();
     registry.register({
       identity,
       metadata: { kind: 'text' },
       getValue: () => 'Ada',
       setValue: () => undefined,
-      validateValue: async () => {
+      validateValue: async (_value, extensionContext) => {
         if (!invokedNested) {
           invokedNested = true;
           await Promise.resolve();
-          nestedResult = await registry.execute(
-            { action: 'stage', identity, value: 'Nested' },
-            { source: 'agent' },
-          );
+          nestedResult =
+            (await extensionContext?.execute(
+              { action: 'stage', identity, value: 'Nested' },
+              { source: 'agent' },
+            )) ?? null;
         }
         return true;
       },
@@ -1211,9 +1211,46 @@ describe('control interaction registry', () => {
       reason: 'reentrant_mutation',
     });
     expect(outerResult).toMatchObject({ ok: true });
-    expect(taskRan).toBe(true);
+    expect(taskRan).toBe(false);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(taskRan).toBe(true);
     expect(registry.get(identity)?.state.staged?.value).toBe('Outer');
+  });
+
+  it('redacts extension-context reentrancy failures for sensitive controls', async () => {
+    let nestedResult: Awaited<
+      ReturnType<ControlInteractionRegistry['execute']>
+    > | null = null;
+    const registry = createControlInteractionRegistry();
+    registry.register({
+      identity,
+      metadata: { kind: 'text', sensitivity: 'sensitive' },
+      getValue: () => 'private',
+      setValue: () => undefined,
+      validateValue: async (_value, extensionContext) => {
+        nestedResult =
+          (await extensionContext?.execute(
+            { action: 'stage', identity, value: 'nested-private' },
+            { source: 'agent' },
+          )) ?? null;
+        return true;
+      },
+    });
+
+    expect(
+      await registry.execute(
+        { action: 'stage', identity, value: 'outer-private' },
+        { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: true });
+    expect(nestedResult).toMatchObject({
+      ok: false,
+      reason: 'command_failed',
+    });
+    expect(nestedResult?.snapshot?.state).toMatchObject({
+      valueRedacted: true,
+      stagedValueRedacted: true,
+    });
   });
 
   it.each([
@@ -1229,22 +1266,22 @@ describe('control interaction registry', () => {
     > | null = null;
     let attempted = false;
     let registry: ControlInteractionRegistry;
-    const reenter = async () => {
+    const reenter = async (extensionContext?: ControlExtensionContext) => {
       if (attempted) return;
       attempted = true;
       await Promise.resolve();
-      nestedResult = await registry.execute(
-        { action: 'stage', identity, value: 'Nested' },
-        { source: 'agent' },
-      );
+      nestedResult =
+        (await extensionContext?.execute(
+          { action: 'stage', identity, value: 'Nested' },
+          { source: 'agent' },
+        )) ?? null;
     };
     registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
-      reentrantMutationTimeoutMs: 10,
       policy:
         boundary === 'policy'
-          ? async () => {
-              await reenter();
+          ? async (_command, _context, _snapshot, extensionContext) => {
+              await reenter(extensionContext);
               return { allowed: true };
             }
           : undefined,
@@ -1253,22 +1290,22 @@ describe('control interaction registry', () => {
       identity,
       metadata: { kind: 'text' },
       getValue: () => value,
-      setValue: async (next) => {
-        if (boundary === 'setValue') await reenter();
+      setValueWithContext: async (next, extensionContext) => {
+        if (boundary === 'setValue') await reenter(extensionContext);
         value = String(next);
       },
-      clear: async () => {
+      clear: async (extensionContext) => {
         value = '';
-        if (boundary === 'clear') await reenter();
+        if (boundary === 'clear') await reenter(extensionContext);
         if (boundary === 'restoreValue') throw new Error('clear_failed');
         return true;
       },
-      restoreValue: async (next) => {
-        if (boundary === 'restoreValue') await reenter();
+      restoreValue: async (next, extensionContext) => {
+        if (boundary === 'restoreValue') await reenter(extensionContext);
         value = String(next);
       },
-      validate: async () => {
-        if (boundary === 'validate') await reenter();
+      validate: async (extensionContext) => {
+        if (boundary === 'validate') await reenter(extensionContext);
         return true;
       },
     });
@@ -1345,6 +1382,54 @@ describe('control interaction registry', () => {
 
     expect((await first).ok).toBe(true);
     expect((await second).ok).toBe(true);
+    expect(registry.get(identity)?.state.staged).toMatchObject({
+      value: 'Katherine',
+      revision: 2,
+    });
+  });
+
+  it('does not time out an independent command behind a slow same-control extension', async () => {
+    let releaseFirst: (() => void) | undefined;
+    let markFirstStarted: (() => void) | undefined;
+    const firstValidation = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve;
+    });
+    const registry = createControlInteractionRegistry({
+      // Retained as a compatibility no-op. Ordinary queue progress must not
+      // depend on this former deadlock heuristic.
+      reentrantMutationTimeoutMs: 10,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => 'Ada',
+      setValue: () => undefined,
+      validateValue: async (value) => {
+        if (value === 'Grace') {
+          markFirstStarted?.();
+          await firstValidation;
+        }
+        return true;
+      },
+    });
+
+    const first = registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    await firstStarted;
+    const second = registry.execute(
+      { action: 'stage', identity, value: 'Katherine' },
+      { source: 'agent' },
+    );
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    releaseFirst?.();
+
+    expect(await first).toMatchObject({ ok: true });
+    expect(await second).toMatchObject({ ok: true });
     expect(registry.get(identity)?.state.staged).toMatchObject({
       value: 'Katherine',
       revision: 2,
@@ -1729,8 +1814,8 @@ describe('control interaction registry', () => {
       metadata: { kind: 'text' },
       getValue: () => value,
       getUserEditSnapshot: () => userEdit,
-      setValue: (next) => {
-        value = String(next);
+      setValue: () => {
+        throw new Error('setter_failed');
       },
       clear: () => {
         value = '';
@@ -1739,8 +1824,10 @@ describe('control interaction registry', () => {
       restoreValue: async (next) => {
         await Promise.resolve();
         restoreCalls += 1;
-        value = `human-${restoreCalls}`;
-        userEdit = { revision: restoreCalls, value };
+        if (restoreCalls <= 8) {
+          value = `human-${restoreCalls}`;
+          userEdit = { revision: restoreCalls, value };
+        }
         await Promise.resolve();
         value = String(next);
       },
@@ -1755,7 +1842,7 @@ describe('control interaction registry', () => {
     );
 
     expect(result).toMatchObject({ ok: false, reason: 'clear_failed' });
-    expect(restoreCalls).toBe(8);
+    expect(restoreCalls).toBe(9);
     expect(value).toBe('human-8');
     expect(userEdit).toEqual({ revision: 8, value: 'human-8' });
   });

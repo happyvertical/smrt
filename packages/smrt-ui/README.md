@@ -128,6 +128,14 @@ control that permits direct edits while an async mutation is pending can expose
 edits so rollback restores newer human input even if the handler mutates again
 before rejecting. A fallible async setter should also expose `restoreValue()` as
 an infallible state restoration path that does not repeat the external workflow.
+Async policy, validation, setter, clear, and restoration hooks receive an
+optional final `ControlExtensionContext`. Hooks that need to issue another
+control command should use `extension.execute()`; it rejects a mutation of the
+same control immediately, while commands from independent callers remain in
+the normal ordered queue regardless of how long the hook takes. Existing hooks
+that omit the additional argument remain compatible. Setters retain their exact
+legacy `setValue(value)` invocation; a setter that needs this context implements
+the additive `setValueWithContext(value, extension)` hook instead.
 
 ## DataTable controller
 

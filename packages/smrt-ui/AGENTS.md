@@ -132,7 +132,11 @@ other text pairing clears WCAG AA in both schemes.
   Rejecting async custom setters and clear handlers roll back by default;
   controls that accept concurrent direct edits expose a monotonic revision and
   user value from `getUserEditSnapshot()` so rollback restores newer human input;
-  fallible async setters expose an infallible `restoreValue()` path.
+  fallible async setters expose an infallible `restoreValue()` path. Async hooks
+  issue nested commands through their optional final `ControlExtensionContext`;
+  same-control mutations are rejected there without timing out unrelated queued
+  commands. Context-aware setters implement the additive `setValueWithContext`
+  hook; legacy `setValue` is always invoked with exactly one argument.
 
 ## Gotchas
 

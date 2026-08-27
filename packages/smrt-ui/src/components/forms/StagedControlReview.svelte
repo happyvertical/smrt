@@ -94,17 +94,16 @@ function actionIdentity(snapshot: ControlSnapshot): string {
   if (sameLabel.length < 2) return label;
 
   const subject = snapshot.identity.subject;
-  if (!subject) return `${label} ${snapshot.identity.controlId}`;
-  const subjectLabelCount = subject.label
-    ? sameLabel.filter(
-        (candidate) => candidate.identity.subject?.label === subject.label,
-      ).length
-    : 0;
-  // Prefer a human-facing subject label when it is sufficient to distinguish
-  // this proposal. Fall back to the stable type/id only for actual collisions.
-  return subject.label && subjectLabelCount === 1
-    ? `${label} ${subject.label}`
-    : `${label} ${subject.type}:${subject.id}`;
+  const humanIdentity = subject?.label
+    ? subject.label
+    : subject
+      ? `${subject.type}:${subject.id}`
+      : snapshot.identity.controlId;
+  // The human-readable portion makes repeated field labels understandable, but
+  // cannot authorize a control: labels are mutable and user-provided. Append
+  // the immutable registry identity in a tagged, structurally delimited form
+  // so every review editor and command name remains collision-free.
+  return `${label} ${humanIdentity} [identity:${keyOf(snapshot)}]`;
 }
 
 function refresh(): void {

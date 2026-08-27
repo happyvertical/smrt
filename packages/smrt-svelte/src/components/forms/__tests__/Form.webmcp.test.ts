@@ -2596,6 +2596,43 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toBeUndefined();
   });
 
+  it('binds repeated context accessor cleanup to the same legacy registration', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        showFirst: false,
+        showCustomFirst: true,
+        legacyCustomCleanup: true,
+        separateLegacyCleanupContext: true,
+      },
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom first');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      legacyCustomCleanup: true,
+      separateLegacyCleanupContext: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      }),
+    ).toBeUndefined();
+  });
+
   it('cleans up built-ins against a legacy void-returning context', async () => {
     const registered = vi.fn();
     const unregistered = vi.fn();

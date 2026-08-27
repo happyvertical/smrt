@@ -153,22 +153,33 @@ export interface ControlRegistration {
    */
   getUserEditSnapshot?: () => { revision: number; value: unknown };
   setValue?: (value: unknown) => void | Promise<void>;
+  /** Context-aware alternative to setValue; legacy setters keep one argument. */
+  setValueWithContext?: (
+    value: unknown,
+    context: ControlExtensionContext,
+  ) => void | Promise<void>;
   /**
    * Resolve a staged intent against the current value without mutating it.
    * May throw when the control cannot represent the intent canonically.
    */
   prepareValue?: (value: unknown) => unknown;
   /** Restore a value without re-running a fallible async mutation workflow. */
-  restoreValue?: (value: unknown) => void | Promise<void>;
+  restoreValue?: (
+    value: unknown,
+    context?: ControlExtensionContext,
+  ) => void | Promise<void>;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
-  clear?: (() => void | Promise<void>) | (() => boolean | Promise<boolean>);
+  clear?:
+    | ((context?: ControlExtensionContext) => void | Promise<void>)
+    | ((context?: ControlExtensionContext) => boolean | Promise<boolean>);
   focus?: () => void | Promise<void>;
   reveal?: () => void | Promise<void>;
   highlight?: (durationMs?: number) => void | Promise<void>;
-  validate?: () => boolean | Promise<boolean>;
+  validate?: (context?: ControlExtensionContext) => boolean | Promise<boolean>;
   /** Validate a proposal without mutating the bound value. */
   validateValue?: (
     value: unknown,
+    context?: ControlExtensionContext,
   ) => ControlValueValidationResult | Promise<ControlValueValidationResult>;
   getState?: () => ControlRuntimeState;
 }
@@ -224,10 +235,23 @@ export interface ControlPolicyDecision {
   reason?: string;
 }
 
+/**
+ * Execution utilities supplied to registry extension hooks. Same-control
+ * mutations are rejected before queuing so an extension cannot await its own
+ * mutation and deadlock the ordered command queue.
+ */
+export interface ControlExtensionContext {
+  execute(
+    command: ControlCommand,
+    context?: ControlCommandContext,
+  ): Promise<ControlCommandResult>;
+}
+
 export type ControlInteractionPolicy = (
   command: ControlCommand,
   context: ControlCommandContext,
   snapshot: ControlSnapshot,
+  extensionContext?: ControlExtensionContext,
 ) => ControlPolicyDecision | Promise<ControlPolicyDecision>;
 
 export interface ControlCommandResult {
@@ -279,7 +303,7 @@ export interface CreateControlInteractionRegistryOptions {
   now?: () => number;
   /** Host/test trust hook. Active DOM dispatch is always required independently. */
   isLocalGesture?: (event: Event) => boolean;
-  /** Maximum wait used to break an extension awaiting its own queued mutation. */
+  /** @deprecated Reentrant mutations are rejected through ControlExtensionContext. */
   reentrantMutationTimeoutMs?: number;
 }
 
@@ -469,6 +493,20 @@ function isSecret(registration: ControlRegistration): boolean {
   return registration.metadata.sensitivity === 'secret';
 }
 
+function hasValueSetter(registration: ControlRegistration): boolean {
+  return Boolean(registration.setValueWithContext || registration.setValue);
+}
+
+function setRegistrationValue(
+  registration: ControlRegistration,
+  value: unknown,
+  context: ControlExtensionContext,
+): void | Promise<void> | undefined {
+  return registration.setValueWithContext
+    ? registration.setValueWithContext(value, context)
+    : registration.setValue?.(value);
+}
+
 function capabilitiesOf(
   registration: ControlRegistration,
 ): ControlCapability[] {
@@ -483,14 +521,14 @@ function capabilitiesOf(
     if (registration.reveal) capabilities.push('reveal');
     if (registration.highlight) capabilities.push('highlight');
     if (registration.validate) capabilities.push('validate');
-    if (registration.setValue) {
+    if (hasValueSetter(registration)) {
       capabilities.push('discard');
       if (registration.metadata.writable !== false) {
         capabilities.push('stage', 'apply', 'undo');
       }
     }
     if (
-      (registration.clear || registration.setValue) &&
+      (registration.clear || hasValueSetter(registration)) &&
       registration.metadata.writable !== false
     ) {
       capabilities.push('clear');
@@ -623,7 +661,7 @@ async function restoreRegistrationValue(
   previousUserEdit: ReturnType<
     NonNullable<ControlRegistration['getUserEditSnapshot']>
   > | null,
-  invokeExtension: <T>(invoke: () => T) => T,
+  invokeExtension: <T>(invoke: (context: ControlExtensionContext) => T) => T,
 ): Promise<void> {
   let observedUserEdit =
     cloneValue(registration.getUserEditSnapshot?.()) ?? null;
@@ -635,9 +673,13 @@ async function restoreRegistrationValue(
       : previousValue;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     if (registration.restoreValue) {
-      await invokeExtension(() => registration.restoreValue?.(value));
+      await invokeExtension((context) =>
+        registration.restoreValue?.(value, context),
+      );
     } else {
-      await invokeExtension(() => registration.setValue?.(value));
+      await invokeExtension((context) =>
+        setRegistrationValue(registration, value, context),
+      );
     }
     const latestUserEdit =
       cloneValue(registration.getUserEditSnapshot?.()) ?? null;
@@ -652,11 +694,18 @@ async function restoreRegistrationValue(
     value = cloneValue(latestUserEdit.value);
     if (attempt === 7) {
       // The bounded replay just observed a newer human value after the final
-      // restorer completed. Hand that value to the primitive setter once so a
-      // custom restore workflow cannot leave the prior replay in the control.
-      // This final handoff is intentionally not retried.
-      if (registration.setValue) {
-        await invokeExtension(() => registration.setValue?.(value));
+      // restorer completed. Hand that value to the control once more without
+      // retrying. Keep using the infallible restoration path when one was
+      // supplied: the ordinary setter may be the fallible workflow that
+      // triggered rollback in the first place.
+      if (registration.restoreValue) {
+        await invokeExtension((context) =>
+          registration.restoreValue?.(value, context),
+        );
+      } else if (hasValueSetter(registration)) {
+        await invokeExtension((context) =>
+          setRegistrationValue(registration, value, context),
+        );
       }
       return;
     }
@@ -680,11 +729,15 @@ function redactedFailureReason(reason: string): string {
 async function validateProposedValue(
   registration: ControlRegistration,
   value: unknown,
+  context: ControlExtensionContext,
 ): Promise<{ valid?: boolean; validationMessage?: string }> {
   if (!registration.validateValue) return {};
   // Validators are untrusted extension points. Never expose the registry's
   // stored proposal or the candidate that will later be passed to the setter.
-  const validation = await registration.validateValue(cloneValue(value));
+  const validation = await registration.validateValue(
+    cloneValue(value),
+    context,
+  );
   if (typeof validation === 'boolean') return { valid: validation };
   if (typeof validation === 'string') {
     return { valid: false, validationMessage: validation };
@@ -739,10 +792,6 @@ export function createControlInteractionRegistry(
   const consumedLocalGestureEvents = new WeakSet<Event>();
   const mutationQueues = new Map<string, Promise<void>>();
   const synchronousExtensionDepth = new Map<string, number>();
-  const pendingExtensionLeases = new Map<string, Set<object>>();
-  const reentrantMutationTimeoutMs =
-    options.reentrantMutationTimeoutMs ?? 1_000;
-  const reentrantMutationTimeout = {};
   let stagedRevision = 0;
 
   const editAwareRegistration = (
@@ -758,7 +807,10 @@ export function createControlInteractionRegistry(
       },
   });
 
-  const invokeExtension = <T>(key: string, invoke: () => T): T => {
+  const invokeExtension = <T>(
+    key: string,
+    invoke: (context: ControlExtensionContext) => T,
+  ): T => {
     synchronousExtensionDepth.set(
       key,
       (synchronousExtensionDepth.get(key) ?? 0) + 1,
@@ -771,29 +823,35 @@ export function createControlInteractionRegistry(
         depths.set(key, remaining);
       }
     };
+    const extensionContext: ControlExtensionContext = {
+      execute(command, context = { source: 'agent' }) {
+        if (
+          isMutation(command.action) &&
+          identityKey(command.identity) === key
+        ) {
+          const registration = registrations.get(key);
+          return Promise.resolve(
+            result(
+              command,
+              false,
+              registration,
+              registration && redactsValue(registration)
+                ? 'command_failed'
+                : 'reentrant_mutation',
+            ),
+          );
+        }
+        return registry.execute(command, context);
+      },
+    };
     let returned: T;
     try {
-      returned = invoke();
+      returned = invoke(extensionContext);
     } catch (error) {
       releaseDepth(synchronousExtensionDepth);
       throw error;
     }
     releaseDepth(synchronousExtensionDepth);
-    if (
-      returned &&
-      (typeof returned === 'object' || typeof returned === 'function') &&
-      'then' in returned &&
-      typeof returned.then === 'function'
-    ) {
-      const lease = {};
-      const leases = pendingExtensionLeases.get(key) ?? new Set<object>();
-      leases.add(lease);
-      pendingExtensionLeases.set(key, leases);
-      return Promise.resolve(returned).finally(() => {
-        leases.delete(lease);
-        if (leases.size === 0) pendingExtensionLeases.delete(key);
-      }) as T;
-    }
     return returned;
   };
 
@@ -823,31 +881,7 @@ export function createControlInteractionRegistry(
 
   const enqueueMutation = <T>(key: string, operation: () => Promise<T>) => {
     const previous = mutationQueues.get(key) ?? Promise.resolve();
-    let cancelled = false;
-    const pending = previous
-      .catch(() => undefined)
-      .then(() => {
-        if (cancelled) throw reentrantMutationTimeout;
-        return operation();
-      });
-    let publicResult = pending;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const blockingLeases = [...(pendingExtensionLeases.get(key) ?? [])];
-    if (blockingLeases.length > 0) {
-      const timeout = new Promise<never>((_resolve, reject) => {
-        timeoutId = setTimeout(() => {
-          const activeLeases = pendingExtensionLeases.get(key);
-          if (!blockingLeases.some((lease) => activeLeases?.has(lease))) return;
-          cancelled = true;
-          reject(reentrantMutationTimeout);
-        }, reentrantMutationTimeoutMs);
-      });
-      publicResult = Promise.race([pending, timeout]);
-      const clearMutationTimeout = () => {
-        if (timeoutId !== undefined) clearTimeout(timeoutId);
-      };
-      void publicResult.then(clearMutationTimeout, clearMutationTimeout);
-    }
+    const pending = previous.catch(() => undefined).then(operation);
     const settled = pending.then(
       () => undefined,
       () => undefined,
@@ -856,7 +890,7 @@ export function createControlInteractionRegistry(
     void settled.finally(() => {
       if (mutationQueues.get(key) === settled) mutationQueues.delete(key);
     });
-    return publicResult;
+    return pending;
   };
 
   const invokeTrackedValueMutation = async <T>(
@@ -865,7 +899,7 @@ export function createControlInteractionRegistry(
     generation: object,
     previousValue: unknown,
     previousUserEdit: { revision: number; value: unknown } | null,
-    invoke: () => T | Promise<T>,
+    invoke: (context: ControlExtensionContext) => T | Promise<T>,
   ): Promise<T> => {
     const activeMutation = {
       registration,
@@ -1112,22 +1146,9 @@ export function createControlInteractionRegistry(
             generation: localGrant?.generation,
           });
         }
-        try {
-          return await enqueueMutation(key, () =>
-            this.execute(commandSnapshot, queuedContext),
-          );
-        } catch (error) {
-          if (error !== reentrantMutationTimeout) throw error;
-          const registration = registrations.get(key);
-          return result(
-            commandSnapshot,
-            false,
-            registration,
-            registration && redactsValue(registration)
-              ? 'command_failed'
-              : 'reentrant_mutation',
-          );
-        }
+        return await enqueueMutation(key, () =>
+          this.execute(commandSnapshot, queuedContext),
+        );
       }
       const registration = registrations.get(key);
       if (!registration) return result(command, false, undefined, 'not_found');
@@ -1203,11 +1224,12 @@ export function createControlInteractionRegistry(
               ? cloneValue({ ...command, value: undefined })
               : cloneValue({ ...command, value: preparedStageValue });
             policyDecision = customPolicy
-              ? await invokeExtension(key, () =>
+              ? await invokeExtension(key, (extensionContext) =>
                   customPolicy(
                     cloneValue(publicCommand),
                     cloneValue(publicContext),
                     cloneValue(snapshot),
+                    extensionContext,
                   ),
                 )
               : invariantDecision;
@@ -1231,11 +1253,12 @@ export function createControlInteractionRegistry(
             if (attempt === 7) throw new Error('staged_value_stale');
           }
         } else if (invariantDecision.allowed && customPolicy) {
-          policyDecision = await invokeExtension(key, () =>
+          policyDecision = await invokeExtension(key, (extensionContext) =>
             customPolicy(
               cloneValue(publicCommand),
               cloneValue(publicContext),
               cloneValue(snapshot),
+              extensionContext,
             ),
           );
         }
@@ -1303,7 +1326,9 @@ export function createControlInteractionRegistry(
           case 'explain':
             break;
           case 'validate':
-            await invokeExtension(key, () => registration.validate?.());
+            await invokeExtension(key, (extensionContext) =>
+              registration.validate?.(extensionContext),
+            );
             break;
           case 'stage':
             stagedRevision += 1;
@@ -1324,8 +1349,14 @@ export function createControlInteractionRegistry(
               const previousEntry = staged.get(key);
               staged.set(key, entry);
               try {
-                const validation = await invokeExtension(key, () =>
-                  validateProposedValue(registration, preparedValue),
+                const validation = await invokeExtension(
+                  key,
+                  (extensionContext) =>
+                    validateProposedValue(
+                      registration,
+                      preparedValue,
+                      extensionContext,
+                    ),
                 );
                 if (
                   registrationGenerations.get(key) !== generation ||
@@ -1416,8 +1447,14 @@ export function createControlInteractionRegistry(
               throw new Error('no_staged_value');
             }
             const authorizedValue = cloneValue(nextValue);
-            const proposedValidation = await invokeExtension(key, () =>
-              validateProposedValue(registration, authorizedValue),
+            const proposedValidation = await invokeExtension(
+              key,
+              (extensionContext) =>
+                validateProposedValue(
+                  registration,
+                  authorizedValue,
+                  extensionContext,
+                ),
             );
             if (registrationGenerations.get(key) !== generation) {
               throw new Error('staged_value_stale');
@@ -1463,7 +1500,12 @@ export function createControlInteractionRegistry(
                 generation,
                 previousValue,
                 userEditSnapshot,
-                () => registration.setValue?.(cloneValue(authorizedValue)),
+                (extensionContext) =>
+                  setRegistrationValue(
+                    registration,
+                    cloneValue(authorizedValue),
+                    extensionContext,
+                  ),
               );
             } catch (error) {
               try {
@@ -1490,8 +1532,8 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_rejected');
             }
             try {
-              const valid = await invokeExtension(key, () =>
-                registration.validate?.(),
+              const valid = await invokeExtension(key, (extensionContext) =>
+                registration.validate?.(extensionContext),
               );
               if (
                 registrationGenerations.get(key) !== generation ||
@@ -1560,10 +1602,10 @@ export function createControlInteractionRegistry(
                 generation,
                 previousValue,
                 userEditSnapshot,
-                () =>
+                (extensionContext) =>
                   registration.clear
-                    ? registration.clear()
-                    : registration.setValue?.(''),
+                    ? registration.clear(extensionContext)
+                    : setRegistrationValue(registration, '', extensionContext),
               );
               clearDecision =
                 decision === true
@@ -1631,8 +1673,12 @@ export function createControlInteractionRegistry(
                 generation,
                 currentValue,
                 userEditSnapshot,
-                () =>
-                  registration.setValue?.(cloneValue(expectedPreviousValue)),
+                (extensionContext) =>
+                  setRegistrationValue(
+                    registration,
+                    cloneValue(expectedPreviousValue),
+                    extensionContext,
+                  ),
               );
             } catch (error) {
               try {
