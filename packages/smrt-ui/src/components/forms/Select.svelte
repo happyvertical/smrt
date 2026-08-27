@@ -8,6 +8,7 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import { prepareTextControlValue } from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
@@ -97,6 +98,7 @@ useControlRegistration(() => {
       })),
     },
     getValue: () => value,
+    prepareValue: prepareTextControlValue,
     setValue: setControlValue,
     clear: () => {
       setControlValue('');

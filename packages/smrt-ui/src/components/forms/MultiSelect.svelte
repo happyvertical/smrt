@@ -16,6 +16,7 @@ import {
 import {
   normalizeCurrentOptionValues,
   normalizeEnabledOptions,
+  prepareEnabledOptionValues,
   validatesEnabledOptions,
 } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
@@ -151,6 +152,7 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => [...canonicalValues],
+    prepareValue: (next) => prepareEnabledOptionValues(options, next),
     setValue: setValues,
     clear: () => {
       setValues([]);

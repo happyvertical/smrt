@@ -92,6 +92,23 @@ function setRange(next: unknown) {
   if (minEl) emitControlChange(minEl);
   if (maxEl) emitControlChange(maxEl);
 }
+function prepareRange(next: unknown): RangeSliderValue {
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    throw new Error('staged_value_invalid');
+  }
+  const candidate = next as Partial<RangeSliderValue>;
+  if (
+    (typeof candidate.min !== 'number' && typeof candidate.min !== 'string') ||
+    (typeof candidate.max !== 'number' && typeof candidate.max !== 'string')
+  ) {
+    throw new Error('staged_value_invalid');
+  }
+  const prepared = { min: Number(candidate.min), max: Number(candidate.max) };
+  if (!Number.isFinite(prepared.min) || !Number.isFinite(prepared.max)) {
+    throw new Error('staged_value_invalid');
+  }
+  return prepared;
+}
 function setMin(next: number) {
   setRange({ min: Math.min(next, value.max), max: value.max });
 }
@@ -116,6 +133,7 @@ useControlRegistration(() => {
       unit,
     },
     getValue: () => ({ ...value }),
+    prepareValue: prepareRange,
     setValue: setRange,
     clear: () => {
       setRange({ min, max });

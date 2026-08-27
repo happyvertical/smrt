@@ -7,7 +7,10 @@ import type {
   ControlOption,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
-import { validatesEnabledOption } from './control-value-validation.js';
+import {
+  prepareEnabledOptionValue,
+  validatesEnabledOption,
+} from './control-value-validation.js';
 import { setRadioGroupContext } from './radio-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
@@ -91,6 +94,7 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue: (next) => String(prepareEnabledOptionValue(options, next)),
     setValue: (next) => {
       const candidate = String(next);
       if (

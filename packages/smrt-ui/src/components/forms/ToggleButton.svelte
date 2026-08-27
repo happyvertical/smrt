@@ -11,6 +11,7 @@ import {
   recordControlUserEdit,
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
+import { prepareBooleanControlValue } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLButtonAttributes, 'class'> {
@@ -67,6 +68,7 @@ useControlRegistration(() => {
       writable: interaction?.writable,
     },
     getValue: () => pressed,
+    prepareValue: prepareBooleanControlValue,
     setValue: setPressed,
     clear: () => {
       setPressed(false);

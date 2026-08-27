@@ -1,6 +1,5 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
@@ -89,6 +88,8 @@ let {
 
 const app = useAppState();
 const formContext = tryGetFormContext();
+const fieldOwnerId = $props.id();
+const fieldOwnerToken = `smrt-rich-field-${fieldOwnerId}`;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
@@ -268,10 +269,12 @@ function parseSpokenMeasurement(text: string): MeasurementValue | null {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
+      ownerToken: fieldOwnerToken,
       type: 'measurement',
       get label() {
         return label;
@@ -384,13 +387,7 @@ onMount(() => {
       validate: () =>
         value === null ? !required : Number.isFinite(value) && isInRange,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 
@@ -412,7 +409,7 @@ function handleUnitChange(e: Event) {
 }
 </script>
 
-<div class="smrt-measurement">
+<div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
     <label for={name} class="smrt-label">
       {label}

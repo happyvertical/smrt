@@ -1,5 +1,8 @@
 <script lang="ts">
-import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
+import {
+  type ControlInteractionRegistry,
+  Input,
+} from '@happyvertical/smrt-ui/forms';
 import AddressInput from '../AddressInput.svelte';
 import DateRangeInput from '../DateRangeInput.svelte';
 import Form from '../Form.svelte';
@@ -29,6 +32,7 @@ let {
   measurementName = 'measurement',
   showCollidingSibling = false,
   showExactNameCollisions = false,
+  showBaseControlCollision = false,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   webmcp?: boolean;
@@ -54,6 +58,7 @@ let {
   measurementName?: string;
   showCollidingSibling?: boolean;
   showExactNameCollisions?: boolean;
+  showBaseControlCollision?: boolean;
 } = $props();
 </script>
 
@@ -91,6 +96,9 @@ let {
 	{#if showExactNameCollisions}
 		<TextInput name="address[city]" label="Exact address city" />
 		<TextInput name="{measurementName}_unit" label="Exact measurement unit" />
+	{/if}
+	{#if showBaseControlCollision}
+		<Input name="address[city]" data-testid="base-address-city" />
 	{/if}
 	{#if showCollidingSibling}<input name="{measurementName}_note" />{/if}
 	<button type="submit">Submit</button>

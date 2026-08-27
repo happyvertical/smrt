@@ -136,6 +136,7 @@ $effect(() => {
 
 // Internal state
 let fields = $state<Map<string, FieldDefinition>>(new Map());
+const fieldGenerations = new Map<string, symbol>();
 let isFormListening = $state(false);
 let isExtracting = $state(false);
 let spokenText = $state('');
@@ -188,8 +189,6 @@ function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
 }
 
 function fieldControls(field: FieldDefinition) {
-  const measurementUnitName =
-    field.type === 'measurement' ? `${field.name}_unit` : undefined;
   if (!formElement) return [];
   const controls = Array.from(formElement.elements).filter(
     (
@@ -200,22 +199,23 @@ function fieldControls(field: FieldDefinition) {
         control instanceof HTMLTextAreaElement) &&
       control.type !== 'hidden',
   );
+  if (field.ownerToken) {
+    return controls.filter(
+      (control) =>
+        control
+          .closest('[data-smrt-field-owner]')
+          ?.getAttribute('data-smrt-field-owner') === field.ownerToken,
+    );
+  }
+  // Custom registrations without an owner token retain exact-name support,
+  // but never claim composite-looking sibling controls heuristically.
   const exactControls = controls.filter(
     (control) => control.name === field.name,
   );
   const hasExactId = exactControls.some((control) => control.id === field.name);
-  return controls.filter((control) => {
-    if (control.name === field.name) {
-      return !hasExactId || control.id === field.name;
-    }
-    // Exact registered names take precedence over the address and measurement
-    // composite naming conventions.
-    if (fields.has(control.name)) return false;
-    return (
-      control.name.startsWith(`${field.name}[`) ||
-      control.name === measurementUnitName
-    );
-  });
+  return hasExactId
+    ? exactControls.filter((control) => control.id === field.name)
+    : exactControls;
 }
 
 function decorateFieldControls(
@@ -566,12 +566,25 @@ const formContext: SMRTFormContext = {
     return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
-    fields.set(field.name, field);
-    fields = new Map(fields); // Trigger reactivity
+    const generation = Symbol(field.name);
+    const currentFields = untrack(() => fields);
+    currentFields.set(field.name, field);
+    fieldGenerations.set(field.name, generation);
+    fields = new Map(currentFields); // Trigger reactivity
+    return () => {
+      if (fieldGenerations.get(field.name) !== generation) return;
+      const registeredFields = untrack(() => fields);
+      if (registeredFields.get(field.name) !== field) return;
+      fieldGenerations.delete(field.name);
+      registeredFields.delete(field.name);
+      fields = new Map(registeredFields);
+    };
   },
   unregisterField(name: string) {
-    fields.delete(name);
-    fields = new Map(fields);
+    const currentFields = untrack(() => fields);
+    fieldGenerations.delete(name);
+    currentFields.delete(name);
+    fields = new Map(currentFields);
   },
   getFieldSchema() {
     return Array.from(fields.values());

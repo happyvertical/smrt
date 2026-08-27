@@ -1,6 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount, untrack } from 'svelte';
+import { untrack } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
@@ -138,6 +138,8 @@ function validatesAddressCandidate(candidate: unknown): boolean {
 
 const app = useAppState();
 const formContext = tryGetFormContext();
+const fieldOwnerId = $props.id();
+const fieldOwnerToken = `smrt-rich-field-${fieldOwnerId}`;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
@@ -258,10 +260,12 @@ const primaryFieldId = $derived.by(() => {
 });
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
+      ownerToken: fieldOwnerToken,
       type: 'address',
       get label() {
         return label;
@@ -334,13 +338,7 @@ onMount(() => {
       validateValue: validatesAddressCandidate,
       validate: () => validatesAddressCandidate(currentValue()),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 
@@ -370,7 +368,7 @@ function handleCountryChange(e: Event) {
 }
 </script>
 
-  <div class="smrt-address">
+  <div class="smrt-address" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
     <label class="smrt-label" for={primaryFieldId}>
       {label}

@@ -1287,7 +1287,9 @@ export function createControlInteractionRegistry(
             }
             const nextValue =
               'value' in command && command.value !== undefined
-                ? command.value
+                ? registration.prepareValue
+                  ? registration.prepareValue(command.value)
+                  : command.value
                 : stagedEntry?.value;
             if (nextValue === undefined && !stagedEntry) {
               throw new Error('no_staged_value');
@@ -1359,10 +1361,12 @@ export function createControlInteractionRegistry(
               throw new Error('staged_value_stale');
             }
             const appliedValue = cloneValue(registration.getValue?.());
-            if (
-              valuesEqual(appliedValue, previousValue) &&
-              !valuesEqual(authorizedValue, previousValue)
-            ) {
+            if (!valuesEqual(appliedValue, authorizedValue)) {
+              try {
+                await restoreMutationValue(previousValue, userEditSnapshot);
+              } catch {
+                // Preserve the rejected apply result and retain its proposal.
+              }
               throw new Error('staged_value_rejected');
             }
             try {

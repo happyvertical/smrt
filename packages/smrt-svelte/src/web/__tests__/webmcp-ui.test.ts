@@ -161,6 +161,79 @@ describe('registerWebMcpUiTools', () => {
     expect(value).toBe('Ada');
   });
 
+  it('returns the canonical values staged by general form-control tools', async () => {
+    const browser = modelContext();
+    const controls = createControlInteractionRegistry();
+    const identities = {
+      checkbox: { formId: 'base', controlId: 'enabled' },
+      number: { formId: 'base', controlId: 'count' },
+      option: { formId: 'base', controlId: 'role' },
+    };
+    controls.register({
+      identity: identities.checkbox,
+      metadata: { kind: 'checkbox' },
+      getValue: () => false,
+      setValue: () => undefined,
+      prepareValue: (next) => {
+        if (typeof next !== 'boolean') throw new Error('staged_value_invalid');
+        return next;
+      },
+    });
+    controls.register({
+      identity: identities.number,
+      metadata: { kind: 'number' },
+      getValue: () => 0,
+      setValue: () => undefined,
+      prepareValue: (next) => Number(next),
+    });
+    controls.register({
+      identity: identities.option,
+      metadata: {
+        kind: 'listbox',
+        options: [{ value: 1, label: 'Admin' }],
+      },
+      getValue: () => 1,
+      setValue: () => undefined,
+      prepareValue: (next) => {
+        if (String(next) !== '1') throw new Error('staged_value_invalid');
+        return 1;
+      },
+    });
+    registerWebMcpUiTools({
+      controlRegistry: controls,
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+      document: browser.document,
+    });
+    const execute = findTool(
+      browser.registered,
+      'smrt_ui_execute_form_control',
+    );
+
+    expect(
+      await parse(
+        execute.execute({
+          action: 'stage',
+          identity: identities.checkbox,
+          value: {},
+        }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      result: { ok: false, reason: 'execution_failed' },
+    });
+    expect(controls.get(identities.checkbox)?.state.staged).toBeUndefined();
+    for (const [identity, value, staged] of [
+      [identities.number, '42', 42],
+      [identities.option, '1', 1],
+    ] as const) {
+      const response = await parse(
+        execute.execute({ action: 'stage', identity, value }),
+      );
+      expect(response).toMatchObject({ ok: true, result: { ok: true } });
+      expect(response.result.snapshot.state.staged.value).toEqual(staged);
+    }
+  });
+
   it('keeps secret values redacted from list, inspect, and execute responses', async () => {
     const browser = modelContext();
     const controls = createControlInteractionRegistry();

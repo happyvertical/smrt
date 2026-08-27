@@ -10,6 +10,10 @@ import type {
   ControlKind,
 } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  prepareNumberControlValue,
+  prepareTextControlValue,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
@@ -151,6 +155,10 @@ useControlRegistration(() => {
       },
     },
     getValue: () => value,
+    prepareValue: (next) =>
+      type === 'number' || type === 'range'
+        ? prepareNumberControlValue(next)
+        : prepareTextControlValue(next),
     setValue: setControlValue,
     clear: () => {
       setControlValue('');

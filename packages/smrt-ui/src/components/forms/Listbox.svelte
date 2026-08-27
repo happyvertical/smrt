@@ -12,7 +12,10 @@ import {
   recordControlUserEdit,
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
-import { validatesEnabledOption } from './control-value-validation.js';
+import {
+  prepareEnabledOptionValue,
+  validatesEnabledOption,
+} from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -90,6 +93,7 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue: (next) => prepareEnabledOptionValue(options, next),
     setValue: select,
     clear: () => {
       value = undefined;

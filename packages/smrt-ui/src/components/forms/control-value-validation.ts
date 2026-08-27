@@ -6,12 +6,58 @@ export function booleanControlValue(next: unknown): boolean {
     : Boolean(next);
 }
 
+export function prepareBooleanControlValue(next: unknown): unknown {
+  if (typeof next === 'boolean') return next;
+  if (next !== null && typeof next === 'object') {
+    throw new Error('staged_value_invalid');
+  }
+  return next;
+}
+
+export function prepareTextControlValue(next: unknown): unknown {
+  if (next === null || next === undefined) return next;
+  if (
+    typeof next === 'string' ||
+    typeof next === 'number' ||
+    typeof next === 'boolean'
+  ) {
+    return String(next);
+  }
+  throw new Error('staged_value_invalid');
+}
+
+export function prepareNumberControlValue(next: unknown): unknown {
+  if (next === '' || next === null || next === undefined) return '';
+  if (typeof next !== 'string' && typeof next !== 'number') {
+    throw new Error('staged_value_invalid');
+  }
+  const value = Number(next);
+  return Number.isFinite(value) ? value : next;
+}
+
+export function prepareEnabledOptionValue(
+  options: ControlOption[],
+  next: unknown,
+  matchLabel = false,
+): unknown {
+  const option = matchingOption(options, next, matchLabel);
+  return option?.value ?? next;
+}
+
+export function prepareEnabledOptionValues(
+  options: ControlOption[],
+  next: unknown,
+): unknown {
+  return normalizeEnabledOptions(options, next) ?? next;
+}
+
 export function validateNativeCheckedValue(
   element: HTMLInputElement,
   next: unknown,
 ): boolean {
+  if (typeof next !== 'boolean') return false;
   const candidate = element.cloneNode() as HTMLInputElement;
-  candidate.checked = booleanControlValue(next);
+  candidate.checked = next;
   return candidate.checkValidity();
 }
 
@@ -35,10 +81,13 @@ export function matchingOption(
   matchLabel = false,
 ): ControlOption | undefined {
   const candidate = String(next ?? '');
-  return options.find(
-    (option) =>
-      String(option.value) === candidate ||
-      (matchLabel && option.label === candidate),
+  return (
+    options.find((option) => Object.is(option.value, next)) ??
+    options.find(
+      (option) =>
+        String(option.value) === candidate ||
+        (matchLabel && option.label === candidate),
+    )
   );
 }
 

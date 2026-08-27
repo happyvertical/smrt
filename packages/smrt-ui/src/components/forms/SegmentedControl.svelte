@@ -9,7 +9,10 @@ import {
   recordControlUserEdit,
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
-import { validatesEnabledOption } from './control-value-validation.js';
+import {
+  prepareEnabledOptionValue,
+  validatesEnabledOption,
+} from './control-value-validation.js';
 import type { SegmentedControlOption } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
@@ -73,6 +76,7 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue: (next) => prepareEnabledOptionValue(options, next),
     setValue,
     clear: () => {
       value = undefined;

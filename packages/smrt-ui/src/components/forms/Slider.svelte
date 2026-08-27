@@ -8,6 +8,7 @@ import {
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
 import {
+  prepareNumberControlValue,
   snapSteppedNumber,
   validatesSteppedNumber,
 } from './control-value-validation.js';
@@ -98,6 +99,7 @@ useControlRegistration(() => {
       unit,
     },
     getValue: () => value,
+    prepareValue: (next) => prepareNumberControlValue(next),
     setValue,
     clear: () => {
       setValue(min);

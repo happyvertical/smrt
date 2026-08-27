@@ -1,7 +1,6 @@
 <script lang="ts">
 import { ripple } from '@happyvertical/smrt-ui';
 import { parseSpokenBoolean } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import {
   type FieldDefinition,
@@ -46,10 +45,11 @@ function updateValue(newValue: boolean) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'checkbox',
       get label() {
         return label;
@@ -85,13 +85,7 @@ onMount(() => {
       },
       validate: () => !required || checked,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

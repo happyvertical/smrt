@@ -5,7 +5,6 @@ import {
   formatEmail,
   formatText,
 } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -93,10 +92,11 @@ function updateValue(newValue: string) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       get type() {
         return type === 'email' ? 'email' : 'text';
       },
@@ -125,13 +125,7 @@ onMount(() => {
         (!required || value.trim().length > 0) &&
         (type !== 'email' || value.length === 0 || isValidEmail),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

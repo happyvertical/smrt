@@ -9,6 +9,7 @@ import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
 import {
   booleanControlValue,
+  prepareBooleanControlValue,
   validateNativeCheckedValue,
 } from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
@@ -92,6 +93,7 @@ useControlRegistration(() => {
       constraints: { required: required === true },
     },
     getValue: () => checked,
+    prepareValue: prepareBooleanControlValue,
     setValue: setChecked,
     clear: () => {
       setChecked(false);

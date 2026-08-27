@@ -1301,7 +1301,7 @@ describe('control interaction registry', () => {
     expect(registry.get(identity)?.state.staged?.value).toBe('Grace');
   });
 
-  it('records the actual normalized value accepted by a confirmed apply', async () => {
+  it('stages the prepared value that a confirmed apply will accept', async () => {
     let value = 1;
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,
@@ -1310,6 +1310,7 @@ describe('control interaction registry', () => {
       identity,
       metadata: { kind: 'number' },
       getValue: () => value,
+      prepareValue: (next) => Number(next),
       setValue: (next) => {
         value = Number(next);
       },
@@ -1318,6 +1319,7 @@ describe('control interaction registry', () => {
       { action: 'stage', identity, value: '42' },
       { source: 'agent' },
     );
+    expect(registry.get(identity)?.state.staged?.value).toBe(42);
 
     const applied = await executeLocalControlCommand(
       registry,
@@ -1328,6 +1330,38 @@ describe('control interaction registry', () => {
     expect(applied).toMatchObject({ ok: true });
     expect(value).toBe(42);
     expect(registry.get(identity)?.state.staged).toBeUndefined();
+  });
+
+  it('rolls back when a setter applies a value other than the reviewed value', async () => {
+    let value: string | number = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'text' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = Number(next);
+      },
+      restoreValue: (next) => {
+        value = next as string | number;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: '42' },
+      { source: 'agent' },
+    );
+
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        { action: 'apply', identity, revision: 1 },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: false, reason: 'staged_value_rejected' });
+    expect(value).toBe('Ada');
+    expect(registry.get(identity)?.state.staged?.value).toBe('42');
   });
 
   it('rolls back a partial mutation when an applied setter throws', async () => {

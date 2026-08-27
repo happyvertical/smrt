@@ -12,7 +12,10 @@ import {
   recordControlUserEdit,
   tryGetControlInteractionContext,
 } from './control-interaction-context.js';
-import { matchingOption } from './control-value-validation.js';
+import {
+  matchingOption,
+  prepareTextControlValue,
+} from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -82,6 +85,13 @@ function setValue(next: unknown) {
     query = candidate;
     onvaluechange?.(candidate);
   }
+}
+function prepareValue(next: unknown) {
+  const candidate = prepareTextControlValue(next);
+  const option = matchingOption(options, candidate, true);
+  if (option) return String(option.value);
+  if (allowCustom) return candidate;
+  return candidate;
 }
 function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
   query = event.currentTarget.value;
@@ -153,6 +163,7 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue,
     setValue,
     clear: () => {
       value = '';

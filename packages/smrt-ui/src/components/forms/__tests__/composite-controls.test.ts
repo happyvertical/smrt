@@ -134,6 +134,30 @@ describe('composite controls', () => {
     }
   });
 
+  it('stages the typed option value selected by a transport string', async () => {
+    const registry = createControlInteractionRegistry();
+    render(Fixture, {
+      props: {
+        registry,
+        collisionOptions: [{ value: 1, label: 'Number one' }],
+      },
+    });
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'profile', controlId: 'collision' },
+        value: ['1'],
+      },
+      { source: 'agent' },
+    );
+
+    expect(
+      registry.get({ formId: 'profile', controlId: 'collision' })?.state.staged
+        ?.value,
+    ).toEqual([1]);
+  });
+
   it('normalizes legacy string-bound selections for numeric options', async () => {
     const registry = createControlInteractionRegistry();
     const onValuesChange = vi.fn();

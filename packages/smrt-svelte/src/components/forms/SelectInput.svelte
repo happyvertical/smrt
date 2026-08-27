@@ -1,7 +1,6 @@
 <script lang="ts">
 import { Icon } from '@happyvertical/smrt-ui';
 import { matchOption } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import {
   type FieldDefinition,
@@ -55,10 +54,11 @@ function updateValue(newValue: string) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'select',
       get label() {
         return label;
@@ -105,13 +105,7 @@ onMount(() => {
       },
       validate: () => !required || value.trim().length > 0,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

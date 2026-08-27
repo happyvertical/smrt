@@ -1,6 +1,5 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -61,6 +60,8 @@ let {
 const app = useAppState();
 const stt = useSTT();
 const formContext = tryGetFormContext();
+const fieldOwnerId = $props.id();
+const fieldOwnerToken = `smrt-rich-field-${fieldOwnerId}`;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
@@ -192,10 +193,12 @@ function isCanonicalCalendarDate(value: string): boolean {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
+      ownerToken: fieldOwnerToken,
       type: 'daterange',
       get label() {
         return label;
@@ -298,13 +301,7 @@ onMount(() => {
       validate: () =>
         !required || (startDate.trim().length > 0 && endDate.trim().length > 0),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 
@@ -424,7 +421,12 @@ function handleMicKeydown(e: KeyboardEvent) {
 const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </script>
 
-<div class="smrt-daterange" class:listening={isRecording} class:parsing={isParsing}>
+<div
+  class="smrt-daterange"
+  class:listening={isRecording}
+  class:parsing={isParsing}
+  data-smrt-field-owner={fieldOwnerToken}
+>
   {#if label}
     <label class="smrt-label" for={primaryControlId}>
       {label}

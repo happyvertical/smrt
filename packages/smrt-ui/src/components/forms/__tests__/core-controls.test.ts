@@ -75,6 +75,44 @@ describe('core controls', () => {
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
   });
 
+  it('canonicalizes scalar proposals before exposing them for review', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(Fixture, { props: { registry } });
+
+    for (const controlId of ['accepted', 'notes']) {
+      expect(
+        await registry.execute(
+          {
+            action: 'stage',
+            identity: { formId: 'settings', controlId },
+            value: { malformed: true },
+          },
+          { source: 'agent' },
+        ),
+      ).toMatchObject({ ok: false, reason: 'staged_value_invalid' });
+      expect(
+        registry.get({ formId: 'settings', controlId })?.state.staged,
+      ).toBeUndefined();
+    }
+
+    await registry.execute(
+      {
+        action: 'stage',
+        identity: { formId: 'settings', controlId: 'volume' },
+        value: '55',
+      },
+      { source: 'agent' },
+    );
+    expect(
+      registry.get({ formId: 'settings', controlId: 'volume' })?.state.staged
+        ?.value,
+    ).toBe(55);
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('55');
+  });
+
   it('marks constrained proposals invalid before the first valid-only batch', async () => {
     const registry = createControlInteractionRegistry({
       isLocalGesture: () => true,

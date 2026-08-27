@@ -49,6 +49,8 @@ export interface FieldDefinition {
   prepareValue?: (value: unknown) => unknown;
   /** Optional richer interaction metadata and capabilities. */
   controlId?: string;
+  /** Immutable token identifying the DOM subtree owned by this field. */
+  ownerToken?: string;
   subject?: ControlSubject;
   interactionKind?: ControlKind;
   sensitivity?: ControlSensitivity;
@@ -60,7 +62,7 @@ export interface FieldDefinition {
   options?: ControlOption[];
   unit?: string;
   /** Return true to affirm an accepted idempotent clear; false rejects it. */
-  clear?: (() => void) | (() => boolean);
+  clear?: (() => void | Promise<void>) | (() => boolean | Promise<boolean>);
   focus?: () => void;
   reveal?: () => void;
   highlight?: (durationMs?: number) => void;
@@ -76,7 +78,7 @@ export interface SMRTFormContext {
   /** Current mode */
   readonly mode: 'smrt' | 'default';
   /** Register a field with the form */
-  registerField: (field: FieldDefinition) => void;
+  registerField: (field: FieldDefinition) => () => void;
   /** Unregister a field */
   unregisterField: (name: string) => void;
   /** Get all registered fields schema (for LLM prompt) */

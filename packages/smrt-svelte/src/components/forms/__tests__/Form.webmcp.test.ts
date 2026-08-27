@@ -27,6 +27,7 @@ vi.mock('../../../hooks/useSTT.svelte.js', () => ({
   }),
 }));
 
+import FormRegistrationLifecycle from './form-registration-lifecycle.fixture.svelte';
 import FormWithFields from './form-with-fields.fixture.svelte';
 import FormWithPolicyField from './form-with-policy-field.fixture.svelte';
 import FormWithStructuredFields from './form-with-structured-fields.fixture.svelte';
@@ -2172,8 +2173,9 @@ describe('Form WebMCP staged-edit intent', () => {
     });
     expect(exactAddress).toHaveAttribute('data-smrt-control', 'address[city]');
     expect(exactUnit).toHaveAttribute('data-smrt-control', 'weight_unit');
-    expect(screen.getByRole('textbox', { name: 'City' })).not.toHaveAttribute(
+    expect(screen.getByRole('textbox', { name: 'City' })).toHaveAttribute(
       'data-smrt-control',
+      'address',
     );
     expect(
       registry.get({
@@ -2187,6 +2189,103 @@ describe('Form WebMCP staged-edit intent', () => {
         controlId: 'weight_unit',
       })?.state.disabled,
     ).toBe(false);
+  });
+
+  it('keeps a base control with a composite-looking name outside rich ownership', async () => {
+    const registry = createControlInteractionRegistry();
+    render(FormWithStructuredFields, {
+      props: {
+        interactionRegistry: registry,
+        fieldsetDisabled: true,
+        showBaseControlCollision: true,
+      },
+    });
+    await tick();
+    await tick();
+
+    expect(
+      registry.get({ formId: 'structured-fields', controlId: 'address' })?.state
+        .disabled,
+    ).toBe(true);
+    expect(
+      registry.get({
+        formId: 'structured-fields',
+        controlId: 'address[city]',
+      })?.state.disabled,
+    ).toBe(false);
+    expect(screen.getByRole('textbox', { name: 'City' })).toHaveAttribute(
+      'data-smrt-control',
+      'address',
+    );
+    expect(screen.getByTestId('base-address-city')).toHaveAttribute(
+      'data-smrt-control',
+      'address[city]',
+    );
+  });
+
+  it('moves a built-in registration when its name changes', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: { interactionRegistry: registry, firstName: 'first' },
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({ formId: 'registration-lifecycle', controlId: 'first' }),
+    ).toBeDefined();
+
+    await view.rerender({
+      interactionRegistry: registry,
+      firstName: 'renamed',
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({ formId: 'registration-lifecycle', controlId: 'first' }),
+    ).toBeUndefined();
+    expect(
+      registry.get({ formId: 'registration-lifecycle', controlId: 'renamed' }),
+    ).toBeDefined();
+  });
+
+  it('does not let stale cleanup remove a same-name replacement', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        firstName: 'shared',
+        showFirst: true,
+        showReplacement: false,
+      },
+    });
+    await tick();
+    await tick();
+
+    await view.rerender({
+      interactionRegistry: registry,
+      firstName: 'shared',
+      showFirst: true,
+      showReplacement: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({ formId: 'registration-lifecycle', controlId: 'shared' })
+        ?.metadata.label,
+    ).toBe('Replacement field');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      firstName: 'shared',
+      showFirst: false,
+      showReplacement: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({ formId: 'registration-lifecycle', controlId: 'shared' })
+        ?.metadata.label,
+    ).toBe('Replacement field');
   });
 
   it('removes a smrt-mode date range when its fieldset becomes disabled', async () => {
