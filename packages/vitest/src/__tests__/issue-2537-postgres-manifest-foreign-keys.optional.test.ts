@@ -628,14 +628,14 @@ postgresDescribe(
               className: 'Parent',
               schema: {
                 tableName: 'i2537_legacy_parent',
-                ddl: 'CREATE TABLE IF NOT EXISTS "i2537_legacy_parent" ("id" TEXT PRIMARY KEY);',
+                ddl: 'CREATE TABLE "i2537_legacy_parent" ("id" TEXT PRIMARY KEY);',
               },
             },
             Child: {
               className: 'Child',
               schema: {
                 tableName: 'i2537_legacy_child',
-                ddl: 'CREATE TABLE IF NOT EXISTS "i2537_legacy_child" ("id" TEXT PRIMARY KEY, "parent_id" TEXT, CONSTRAINT "i2537_legacy_child_parent_id_i2537_legacy_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_legacy_parent" ("id"));',
+                ddl: 'CREATE TABLE "i2537_legacy_child" ("id" TEXT PRIMARY KEY, "parent_id" TEXT, CONSTRAINT "i2537_legacy_child_parent_id_i2537_legacy_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "i2537_legacy_parent" ("id"));',
               },
             },
           },

@@ -57,7 +57,11 @@ describe('SchemaManager', () => {
 
     expect(query).toHaveBeenNthCalledWith(
       1,
-      'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+      `SELECT attribute.attname AS column_name
+           FROM pg_attribute AS attribute
+           WHERE attribute.attrelid = to_regclass(format('%I', $1::text))
+             AND attribute.attnum > 0
+             AND NOT attribute.attisdropped`,
       'users',
     );
   });

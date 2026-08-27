@@ -223,7 +223,11 @@ export class SchemaManager {
     try {
       if (this.engine === 'postgres') {
         const result = await this.db.query(
-          'SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1',
+          `SELECT attribute.attname AS column_name
+           FROM pg_attribute AS attribute
+           WHERE attribute.attrelid = to_regclass(format('%I', $1::text))
+             AND attribute.attnum > 0
+             AND NOT attribute.attisdropped`,
           tableName,
         );
         const rows = extractRows<{ column_name: string }>(result);

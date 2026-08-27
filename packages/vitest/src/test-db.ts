@@ -674,7 +674,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // in a transaction-scoped advisory lock. The lock covers reconciliation,
   // FK installation, and framework system tables without leaking a session
   // lock through a pooled connection.
-  if (schema && config.type === 'postgres') {
+  if (schema && config.type === 'postgres' && postgresManifestPlan) {
     if (!baseDb.beginTransaction) {
       throw new Error(
         `Database adapter '${config.type}' does not support beginTransaction(). ` +
@@ -687,36 +687,31 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         'SELECT pg_advisory_xact_lock(hashtext($1))',
         ['smrt-vitest-manifest-schema'],
       );
-      if (postgresManifestPlan) {
-        // SDK syncSchema's PostgreSQL parser accepts only `\w+` identifiers.
-        // Execute the canonical renderer output first so valid delimited
-        // identifiers (including embedded quotes) are materialized exactly,
-        // then let SMRT's schema manager reconcile structured missing columns.
-        // Legacy cached DDL remains additive through syncSchema after its
-        // idempotent CREATE TABLE has been applied directly.
-        for (const statement of postgresManifestPlan.createTableStatements) {
-          await schemaTransaction.query(statement);
-        }
-        if (postgresManifestPlan.structuredDefinitions.length > 0) {
-          const schemaManager = new SchemaManager(schemaTransaction, {
-            engine: 'postgres',
-            skipTriggers: true,
-          });
-          await schemaManager.ensureTables([
-            ...postgresManifestPlan.structuredDefinitions,
-          ]);
-        }
-        if (postgresManifestPlan.legacySchema) {
-          await syncSchema({
-            db: schemaTransaction,
-            schema: postgresManifestPlan.legacySchema,
-          });
-        }
-        for (const statement of postgresManifestPlan.indexStatements) {
-          await schemaTransaction.query(statement);
-        }
-      } else {
-        await syncSchema({ db: schemaTransaction, schema });
+      // SDK syncSchema's PostgreSQL parser accepts only `\w+` identifiers.
+      // Execute canonical structured renderer output directly so valid
+      // delimited identifiers (including embedded quotes) are materialized
+      // exactly, then reconcile structured missing columns. Legacy cached DDL
+      // keeps the synchronizer's established table-existence guard.
+      for (const statement of postgresManifestPlan.createTableStatements) {
+        await schemaTransaction.query(statement);
+      }
+      if (postgresManifestPlan.structuredDefinitions.length > 0) {
+        const schemaManager = new SchemaManager(schemaTransaction, {
+          engine: 'postgres',
+          skipTriggers: true,
+        });
+        await schemaManager.ensureTables([
+          ...postgresManifestPlan.structuredDefinitions,
+        ]);
+      }
+      if (postgresManifestPlan.legacySchema) {
+        await syncSchema({
+          db: schemaTransaction,
+          schema: postgresManifestPlan.legacySchema,
+        });
+      }
+      for (const statement of postgresManifestPlan.indexStatements) {
+        await schemaTransaction.query(statement);
       }
       await applyPostSchemaStatements(schemaTransaction);
       await ensureSystemTables(schemaTransaction, config.type);
@@ -1507,6 +1502,7 @@ export async function createIsolatedTestDbFromManifest(
     adapter === 'postgres'
       ? {
           createTableStatements: rendered
+            .filter(({ structured }) => structured)
             .map(({ ddl }) => ddl.createTable)
             .filter(Boolean),
           structuredDefinitions: rendered
