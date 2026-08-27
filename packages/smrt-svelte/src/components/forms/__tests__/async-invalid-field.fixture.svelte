@@ -12,12 +12,13 @@ let {
 } = $props();
 
 const formContext = tryGetFormContext();
+const label = 'Async invalid field';
 
 onMount(() => {
   const field: FieldDefinition = {
     name: 'async-invalid',
     type: 'text',
-    label: 'Async invalid field',
+    label,
     getValue: () => 'proposal',
     setValue: () => {},
     validate,
@@ -26,4 +27,4 @@ onMount(() => {
 });
 </script>
 
-<input aria-label="Async invalid field" value="proposal" />
+<input aria-label={label} value="proposal" />
