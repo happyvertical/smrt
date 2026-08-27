@@ -64,7 +64,9 @@ state.
 
 Use the web binding when a table should render one remote page instead of
 hydrating its whole collection. It exposes `rows`, `page`, `total`,
-`loading`, `refreshing`, `stale`, `error`, `retry`, and `lastUpdated`.
+`loading`, `refreshing`, `stale`, `error`, `retry`, `lastUpdated`, and the
+latest applied `result`. The result getter also follows query-scoped live
+replacements, so consumers can keep envelope metadata in sync with the rows.
 
 ```svelte
 <script lang="ts">

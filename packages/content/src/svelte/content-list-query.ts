@@ -1668,6 +1668,8 @@ export interface ContentListQueryBinding {
   readonly error: unknown;
   /** Epoch milliseconds of the last successful answer. */
   readonly lastUpdated?: number;
+  /** Latest applied envelope, including query-scoped live replacements. */
+  readonly result?: unknown;
   /**
    * True when the server had to shorten the answer to fit its byte budget.
    * Optional because `RemoteQueryBinding` does not surface it; when a binding

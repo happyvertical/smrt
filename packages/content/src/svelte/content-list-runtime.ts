@@ -45,6 +45,8 @@ export interface ContentListJobSnapshot {
 export interface ContentListJobBinding {
   snapshot(): ContentListJobSnapshot;
   subscribe(listener: (snapshot: ContentListJobSnapshot) => void): () => void;
+  /** True only when this failed attempt can start one explicit successor. */
+  canRetry?(jobId: string): boolean;
   retry(jobId: string): Promise<ContentListJob>;
 }
 
@@ -119,6 +121,7 @@ export function createContentListJobController(
   const activeBySubmission = new Map<string, string>();
   const submissions = new Map<string, Promise<ContentListJob>>();
   const retrying = new Map<string, Promise<ContentListJob>>();
+  const retriedAttempts = new Set<string>();
   const listeners = new Set<(snapshot: ContentListJobSnapshot) => void>();
   let provisionalSequence = 0;
 
@@ -206,17 +209,22 @@ export function createContentListJobController(
 
   const retry = (jobId: string): Promise<ContentListJob> => {
     const current = jobs.get(jobId);
+    const existing = retrying.get(jobId);
+    if (existing) return existing;
     if (current?.status !== 'failed')
       return Promise.reject(
         new Error('Only a failed content job can be retried.'),
       );
-    const existing = retrying.get(jobId);
-    if (existing) return existing;
+    if (retriedAttempts.has(jobId))
+      return Promise.reject(
+        new Error('This content job attempt has already been retried.'),
+      );
     if (!options.retry)
       return Promise.reject(
         new Error('No content job retry handler is configured.'),
       );
 
+    retriedAttempts.add(jobId);
     const retryId = `content-list:retry:${++provisionalSequence}`;
     const pending = {
       ...current,
@@ -269,6 +277,14 @@ export function createContentListJobController(
       listeners.add(listener);
       listener(snapshotOf(jobs));
       return () => listeners.delete(listener);
+    },
+    canRetry: (jobId) => {
+      const job = jobs.get(jobId);
+      return (
+        options.retry !== undefined &&
+        job?.status === 'failed' &&
+        !retriedAttempts.has(jobId)
+      );
     },
     submit,
     update,

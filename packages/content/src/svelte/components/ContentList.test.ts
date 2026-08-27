@@ -839,6 +839,24 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     click(buttonsByText(target, 'Retry job')[0]);
     await settle();
     expect(retry).toHaveBeenCalledTimes(1);
+    expect(buttonsByText(target, 'Retry job')).toHaveLength(0);
+  });
+
+  it('does not advertise retry when the job binding cannot retry', () => {
+    const jobs = createContentListJobController();
+    const target = renderList({ jobs });
+    jobs.update({
+      jobId: 'job-no-retry',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'failed',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+      error: 'model unavailable',
+    });
+    flushSync();
+
+    expect(target.textContent).toContain('model unavailable');
+    expect(buttonsByText(target, 'Retry job')).toHaveLength(0);
   });
 
   it('refuses a delete confirmed after its row becomes pending', () => {
@@ -868,7 +886,7 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
 
   it('ships a reduced-motion override for refresh affordances', () => {
     const source = readFileSync(
-      resolve(process.cwd(), 'src/svelte/components/ContentList.svelte'),
+      resolve(import.meta.dirname, 'ContentList.svelte'),
       'utf8',
     );
     expect(source).toContain('@media (prefers-reduced-motion: reduce)');
@@ -1653,6 +1671,24 @@ describe('ContentList server completeness reporting (#2452)', () => {
 
     const notice = target.querySelector('.state-notice');
     expect(notice?.textContent).toContain('shortened over-long values');
+  });
+
+  it('updates completeness notices when a live result replaces the query', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    flushSync();
+    expect(target.querySelector('.state-notice')).toBeNull();
+
+    query.publishLive([serverRow('content-1', 'Council budget updated')], {
+      truncated: true,
+      warnings: ['live result was shortened'],
+    });
+    flushSync();
+
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'live result was shortened',
+    );
   });
 
   it('says nothing when the answer was complete', async () => {

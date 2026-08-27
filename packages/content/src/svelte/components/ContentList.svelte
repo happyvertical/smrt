@@ -356,9 +356,10 @@ $effect(() => {
   const binding = initialJobs;
   if (!binding) return;
   let initialized = false;
-  const statuses = new Map<string, ContentListJob['status']>();
+  let statuses = new Map<string, ContentListJob['status']>();
   return binding.subscribe((next) => {
     const completions: ContentListJob[] = [];
+    const nextStatuses = new Map<string, ContentListJob['status']>();
     for (const job of next.jobs) {
       const previous = statuses.get(job.jobId);
       if (
@@ -367,8 +368,9 @@ $effect(() => {
         previous !== 'succeeded'
       )
         completions.push(job);
-      statuses.set(job.jobId, job.status);
+      nextStatuses.set(job.jobId, job.status);
     }
+    statuses = nextStatuses;
     initialized = true;
     jobSnapshot = next;
     if (completions.length > 0)
@@ -972,11 +974,20 @@ const dropNotices = $derived<ContentListDropNotice[]>([
  * budget, and the next page is computed from `page * limit`, so those rows are
  * skipped on the following page too.
  */
+const boundResultNotices = $derived(
+  queryBinding?.result === undefined
+    ? undefined
+    : readContentListQueryNotices(queryBinding.result),
+);
 const queryTruncated = $derived(
-  queryBinding?.truncated ?? resultNotices.truncated,
+  queryBinding?.truncated ??
+    boundResultNotices?.truncated ??
+    resultNotices.truncated,
 );
 const queryWarnings = $derived<ReadonlyArray<string>>(
-  queryBinding?.warnings ?? resultNotices.warnings,
+  queryBinding?.warnings ??
+    boundResultNotices?.warnings ??
+    resultNotices.warnings,
 );
 /** Identity of the current set of refusals, so a dismissal is not permanent. */
 const dropNoticeKey = $derived(
@@ -1612,14 +1623,16 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             {#if job.message}<span>{job.message}</span>{/if}
             {#if job.status === 'failed'}
               {#if job.error}<span role="alert">{job.error}</span>{/if}
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                onclick={() => retryJob(job.jobId)}
-              >
-                {t(M['content.content_list.retry_job'])}
-              </Button>
+              {#if initialJobs?.canRetry?.(job.jobId) === true}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  onclick={() => retryJob(job.jobId)}
+                >
+                  {t(M['content.content_list.retry_job'])}
+                </Button>
+              {/if}
             {/if}
           </li>
         {/each}

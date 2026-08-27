@@ -68,6 +68,7 @@ describe('ContentList background jobs', () => {
       error: 'worker unavailable',
     });
     const retryPromise = controller.retry(failed.jobId);
+    expect(controller.canRetry?.(failed.jobId)).toBe(false);
     expect(controller.snapshot().jobs).toEqual([
       expect.objectContaining({ jobId: failed.jobId, status: 'failed' }),
       expect.objectContaining({ status: 'queued', error: undefined }),
@@ -80,6 +81,30 @@ describe('ContentList background jobs', () => {
       expect.objectContaining({ jobId: failed.jobId, status: 'failed' }),
       expect.objectContaining({ jobId: 'job-2', status: 'running' }),
     ]);
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces retries and never reopens the historical failure', async () => {
+    let resolveRetry!: (value: ContentListJob) => void;
+    const retry = vi.fn(
+      () =>
+        new Promise<ContentListJob>((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    const controller = createContentListJobController({ retry });
+    controller.update(job({ status: 'failed', error: 'first failure' }));
+
+    const first = controller.retry('job-1');
+    const duplicate = controller.retry('job-1');
+    expect(duplicate).toBe(first);
+    expect(controller.canRetry?.('job-1')).toBe(false);
+
+    resolveRetry(job({ jobId: 'job-2', status: 'running' }));
+    await expect(first).resolves.toMatchObject({ jobId: 'job-2' });
+    await expect(controller.retry('job-1')).rejects.toThrow(
+      'already been retried',
+    );
     expect(retry).toHaveBeenCalledTimes(1);
   });
 

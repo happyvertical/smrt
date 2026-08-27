@@ -41,6 +41,12 @@ export interface FakeContentListQuery {
   /** Toggle the busy flags independently of a request. */
   setBusy(options: { loading?: boolean; refreshing?: boolean }): void;
   setFreshness(options: { stale?: boolean; lastUpdated?: number }): void;
+  /** Publish a query-scoped live replacement and its completeness envelope. */
+  publishLive(
+    rows: Array<Record<string, unknown>>,
+    envelope: unknown,
+    total?: number,
+  ): void;
   /**
    * The envelope subsequent `execute` calls resolve with. `RemoteQueryBinding`
    * does not expose `truncated`/`warnings`, so this is the path the component
@@ -57,6 +63,7 @@ export function createFakeContentListQuery(): FakeContentListQuery {
   let error = $state<unknown>(null);
   let stale = $state(false);
   let lastUpdated = $state<number | undefined>(undefined);
+  let result = $state<unknown>(undefined);
   const requests: ContentListDataQueryRequest[] = [];
   let retries = 0;
   let refreshes = 0;
@@ -87,18 +94,24 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     get lastUpdated() {
       return lastUpdated;
     },
+    get result() {
+      return result;
+    },
     async execute(request) {
       requests.push(request);
+      result = envelope;
       return envelope;
     },
     async retry() {
       retries += 1;
       // `remoteQuery.retry()` resolves the refreshed envelope, and the
       // component reads the completeness flags off it.
+      result = envelope;
       return envelope;
     },
     async refresh() {
       refreshes += 1;
+      result = envelope;
       return envelope;
     },
     subscribeLive() {
@@ -140,6 +153,7 @@ export function createFakeContentListQuery(): FakeContentListQuery {
       error = null;
       stale = false;
       lastUpdated = Date.now();
+      result = envelope;
     },
     resolveWithTotal(nextRows, nextTotal) {
       rows = nextRows;
@@ -162,6 +176,16 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     setFreshness(options) {
       if (options.stale !== undefined) stale = options.stale;
       if (options.lastUpdated !== undefined) lastUpdated = options.lastUpdated;
+    },
+    publishLive(nextRows, nextEnvelope, nextTotal) {
+      rows = nextRows;
+      total = { kind: 'exact', value: nextTotal ?? nextRows.length };
+      loading = false;
+      refreshing = false;
+      error = null;
+      stale = false;
+      lastUpdated = Date.now();
+      result = nextEnvelope;
     },
     setEnvelope(next) {
       envelope = next;
