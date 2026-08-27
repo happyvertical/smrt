@@ -845,7 +845,7 @@ describe('Form WebMCP staged-edit intent', () => {
     }
   });
 
-  it('applies the reviewed appended textarea value exactly once from the mounted review', async () => {
+  it('applies an edited canonical append-mode value from the mounted review', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;
     }> = [];
@@ -877,14 +877,18 @@ describe('Form WebMCP staged-edit intent', () => {
       .list()
       .find((item) => item.identity.controlId === 'notes');
     expect(notes?.state.staged?.value).toBe('Existing\nProposed');
-    expect(
-      screen.getByRole('textbox', { name: 'Edit proposed value for Notes' }),
-    ).toBeInTheDocument();
+    const reviewEditor = screen.getByRole('textbox', {
+      name: 'Edit proposed value for Notes',
+    });
+    expect(reviewEditor).toHaveValue('Existing\nProposed');
+    await userEvent.clear(reviewEditor);
+    await userEvent.type(reviewEditor, 'Existing{enter}Edited');
+    expect(reviewEditor).toHaveValue('Existing\nEdited');
     await userEvent.click(screen.getByRole('button', { name: 'Apply Notes' }));
     expect(
       registry.get(notes?.identity ?? { formId: '', controlId: '' })?.state
         .value,
-    ).toBe('Existing\nProposed');
+    ).toBe('Existing\nEdited');
   });
 
   it('canonically applies a reverse-order measurement proposal from empty', async () => {

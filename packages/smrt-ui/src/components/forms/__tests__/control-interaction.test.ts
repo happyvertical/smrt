@@ -506,7 +506,7 @@ describe('control interaction registry', () => {
     );
   });
 
-  it('applies an unchanged prepared proposal exactly and prepares an edited draft once', async () => {
+  it('distinguishes unchanged and canonical review values from raw edited proposals', async () => {
     let value = 'Existing';
     const prepareValue = vi.fn(
       (proposal: unknown) => `${value}\n${String(proposal)}`,
@@ -556,6 +556,107 @@ describe('control interaction registry', () => {
     ).toMatchObject({ ok: true });
     expect(value).toBe('Existing\nEdited');
     expect(prepareValue).toHaveBeenCalledTimes(3);
+
+    value = 'Existing';
+    await registry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    expect(prepareValue).toHaveBeenCalledTimes(4);
+    expect(
+      await executeLocalControlCommand(
+        registry,
+        {
+          action: 'apply',
+          identity,
+          revision: 3,
+          value: 'Existing\nReviewed edit',
+          reviewedValueIsCanonical: true,
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(value).toBe('Existing\nReviewed edit');
+    expect(prepareValue).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not let a forged canonical-review marker supply local authority', async () => {
+    let value = 'Existing';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'textarea' },
+      getValue: () => value,
+      prepareValue: (proposal) => `${value}\n${String(proposal)}`,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    const forged = {
+      action: 'apply' as const,
+      identity,
+      revision: 1,
+      value: 'Forged final value',
+      reviewedValueIsCanonical: true as const,
+    };
+
+    expect(
+      await registry.execute(forged, {
+        source: 'agent',
+        confirmed: true,
+        localGesture: true,
+      }),
+    ).toMatchObject({ ok: false, reason: 'human_confirmation_required' });
+    expect(
+      await registry.execute(forged, {
+        source: 'user',
+        confirmed: true,
+        localGesture: true,
+      }),
+    ).toMatchObject({ ok: false, reason: 'local_gesture_required' });
+    expect(
+      await executeLocalControlCommand(registry, forged, new Event('click')),
+    ).toMatchObject({ ok: false, reason: 'local_gesture_required' });
+    expect(value).toBe('Existing');
+
+    let policyValue = 'Existing';
+    const policyRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+      policy: (command) =>
+        command.action === 'apply'
+          ? { allowed: false, reason: 'review_denied' }
+          : { allowed: true },
+    });
+    policyRegistry.register({
+      identity,
+      metadata: { kind: 'textarea' },
+      getValue: () => policyValue,
+      prepareValue: (proposal) => `${policyValue}\n${String(proposal)}`,
+      setValue: (next) => {
+        policyValue = String(next);
+      },
+    });
+    await policyRegistry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    expect(
+      await executeLocalControlCommand(
+        policyRegistry,
+        {
+          ...forged,
+          value: 'Existing\nReviewed edit',
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: false, reason: 'review_denied' });
+    expect(policyValue).toBe('Existing');
   });
 
   it('keeps secret, redaction, and staleness protections for matching prepared proposals', async () => {
@@ -630,13 +731,30 @@ describe('control interaction registry', () => {
           identity,
           revision: 1,
           value: 'Existing\nProposed',
+          reviewedValueIsCanonical: true,
         },
         localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'staged_value_stale' });
     expect(staleValue).toBe('Human edit');
 
-    const secretRegistry = createControlInteractionRegistry();
+    expect(
+      await executeLocalControlCommand(
+        staleRegistry,
+        {
+          action: 'apply',
+          identity,
+          revision: 9,
+          value: 'Human edit',
+          reviewedValueIsCanonical: true,
+        },
+        localGestureEvent(),
+      ),
+    ).toMatchObject({ ok: false, reason: 'stale_revision' });
+
+    const secretRegistry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
     secretRegistry.register({
       identity,
       metadata: { kind: 'password', sensitivity: 'secret' },
@@ -648,6 +766,19 @@ describe('control interaction registry', () => {
       await secretRegistry.execute(
         { action: 'stage', identity, value: 'replacement' },
         { source: 'agent' },
+      ),
+    ).toMatchObject({ ok: false, reason: 'sensitive_control' });
+    expect(
+      await executeLocalControlCommand(
+        secretRegistry,
+        {
+          action: 'apply',
+          identity,
+          revision: 1,
+          value: 'replacement',
+          reviewedValueIsCanonical: true,
+        },
+        localGestureEvent(),
       ),
     ).toMatchObject({ ok: false, reason: 'sensitive_control' });
   });
@@ -3837,6 +3968,65 @@ describe('control interaction registry', () => {
       identity,
     });
     expect(value).toEqual({ profile: { name: 'Grace' } });
+  });
+
+  it('snapshots a canonical-review marker with its batch value before awaiting', async () => {
+    let value = 'Existing';
+    let blockValidation = false;
+    let validationStarted: (() => void) | undefined;
+    let releaseValidation: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      validationStarted = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releaseValidation = resolve;
+    });
+    const prepareValue = vi.fn(
+      (proposal: unknown) => `${value}\n${String(proposal)}`,
+    );
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    registry.register({
+      identity,
+      metadata: { kind: 'textarea' },
+      getValue: () => value,
+      prepareValue,
+      setValue: (next) => {
+        value = String(next);
+      },
+      validateValue: async () => {
+        if (blockValidation) {
+          validationStarted?.();
+          await blocked;
+        }
+        return true;
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Proposed' },
+      { source: 'agent' },
+    );
+    blockValidation = true;
+    const command: ControlCommand = {
+      action: 'apply',
+      identity,
+      revision: 1,
+      value: 'Existing\nReviewed edit',
+      reviewedValueIsCanonical: true,
+    };
+
+    const pending = dispatchLocalGesture((event) =>
+      executeLocalControlBatch(registry, [command], event),
+    );
+    await started;
+    command.value = 'Forged raw proposal';
+    delete command.reviewedValueIsCanonical;
+    releaseValidation?.();
+
+    expect(await pending).toMatchObject({ ok: true });
+    expect(value).toBe('Existing\nReviewed edit');
+    expect(prepareValue).toHaveBeenCalledTimes(1);
   });
 
   it('snapshots every public batch command before awaiting the first', async () => {

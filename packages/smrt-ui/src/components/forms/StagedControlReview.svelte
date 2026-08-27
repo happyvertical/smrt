@@ -52,7 +52,6 @@ const text = $derived({
 });
 let snapshots = $state<ControlSnapshot[]>([]);
 let drafts = $state<Record<string, string>>({});
-let editedDrafts = $state<Record<string, boolean>>({});
 let feedback = $state<Record<string, string>>({});
 let status = $state('');
 let reviewActivated = $state(false);
@@ -123,17 +122,12 @@ function refresh(): void {
   for (const key of Object.keys(next)) {
     if (!live.has(key)) delete next[key];
   }
-  const nextEditedDrafts = { ...untrack(() => editedDrafts) };
-  for (const key of Object.keys(nextEditedDrafts)) {
-    if (!live.has(key)) delete nextEditedDrafts[key];
-  }
   const nextFeedback = { ...untrack(() => feedback) };
   for (const key of Object.keys(nextFeedback)) {
     if (!live.has(key)) delete nextFeedback[key];
   }
   snapshots = nextSnapshots;
   drafts = next;
-  editedDrafts = nextEditedDrafts;
   feedback = nextFeedback;
 }
 
@@ -302,9 +296,8 @@ function commandFor(
     action,
     identity: snapshot.identity,
     revision,
-    value: editedDrafts[draftKeyOf(snapshot)]
-      ? editedValue(snapshot)
-      : snapshot.state.staged?.value,
+    value: editedValue(snapshot),
+    reviewedValueIsCanonical: true,
   };
 }
 
@@ -563,10 +556,6 @@ async function discardAll(event: MouseEvent): Promise<void> {
                     aria-label={`${text.edit} ${actionName}`}
                     checked={(drafts[draftKeyOf(snapshot)] ?? 'false') === 'true'}
                     onchange={(event) => {
-                      editedDrafts = {
-                        ...editedDrafts,
-                        [draftKeyOf(snapshot)]: true,
-                      };
                       drafts = {
                         ...drafts,
                         [draftKeyOf(snapshot)]: String(event.currentTarget.checked),
@@ -576,15 +565,19 @@ async function discardAll(event: MouseEvent): Promise<void> {
                       if (event.key === 'Enter') event.preventDefault();
                     }}
                   />
+                {:else if typeof staged?.value === 'string' && staged.value.includes('\n')}
+                  <textarea
+                    aria-label={`${text.edit} ${actionName}`}
+                    value={drafts[draftKeyOf(snapshot)] ?? ''}
+                    oninput={(event) => {
+                      drafts = { ...drafts, [draftKeyOf(snapshot)]: event.currentTarget.value };
+                    }}
+                  ></textarea>
                 {:else}
                   <input
                     aria-label={`${text.edit} ${actionName}`}
                     value={drafts[draftKeyOf(snapshot)] ?? ''}
                     oninput={(event) => {
-                      editedDrafts = {
-                        ...editedDrafts,
-                        [draftKeyOf(snapshot)]: true,
-                      };
                       drafts = { ...drafts, [draftKeyOf(snapshot)]: event.currentTarget.value };
                     }}
                     onkeydown={(event) => {
@@ -630,11 +623,11 @@ async function discardAll(event: MouseEvent): Promise<void> {
   .proposal-heading { justify-content: space-between; }
   dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--smrt-spacing-3, .75rem); }
   dt { font-weight: 600; } dd { margin: .25rem 0 0; overflow-wrap: anywhere; }
-  input { width: 100%; box-sizing: border-box; padding: .4rem .5rem; color: inherit; background: var(--smrt-color-surface, #fff); border: 1px solid var(--smrt-color-outline, #64748b); border-radius: var(--smrt-radius-small, .375rem); }
+  input, textarea { width: 100%; box-sizing: border-box; padding: .4rem .5rem; color: inherit; background: var(--smrt-color-surface, #fff); border: 1px solid var(--smrt-color-outline, #64748b); border-radius: var(--smrt-radius-small, .375rem); }
   input[type="checkbox"] { width: auto; }
   button { min-height: 2.25rem; padding: .4rem .75rem; color: var(--smrt-color-on-primary, #fff); background: var(--smrt-color-primary, #005ac1); border: 1px solid transparent; border-radius: var(--smrt-radius-small, .375rem); cursor: pointer; }
   button.secondary { color: var(--smrt-color-primary, #005ac1); background: transparent; border-color: var(--smrt-color-outline, #64748b); }
-  button:focus-visible, input:focus-visible { outline: 2px solid var(--smrt-color-primary, #005ac1); outline-offset: 2px; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--smrt-color-primary, #005ac1); outline-offset: 2px; }
   button:disabled { cursor: not-allowed; opacity: .55; }
   .item-actions { margin-block-start: var(--smrt-spacing-3, .75rem); }
   .problem { margin-block-start: var(--smrt-spacing-2, .5rem); color: var(--smrt-color-error, #b3261e); }

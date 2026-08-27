@@ -207,6 +207,13 @@ export type ControlCommand =
       action: 'apply';
       identity: ControlIdentity;
       value?: unknown;
+      /**
+       * The supplied value is the complete canonical value edited in a local
+       * staged-review surface, rather than a raw proposal for prepareValue.
+       * Honored only for a current staged revision under a validated local
+       * gesture; it grants no confirmation or policy authority by itself.
+       */
+      reviewedValueIsCanonical?: true;
       /** Reject the command when this no longer matches the staged proposal. */
       revision?: number;
     }
@@ -1437,19 +1444,26 @@ export function createControlInteractionRegistry(
             }
             const suppliedValue =
               'value' in command && command.value !== undefined;
-            const usesReviewedStagedValue =
+            const usesExactStagedValue =
               suppliedValue &&
               stagedEntry !== undefined &&
               valuesEqual(command.value, stagedEntry.value);
-            const nextValue = usesReviewedStagedValue
+            const usesCanonicalReviewValue =
+              suppliedValue &&
+              stagedEntry !== undefined &&
+              command.reviewedValueIsCanonical === true &&
+              localGestureConfirmed;
+            const nextValue = usesExactStagedValue
               ? stagedEntry.value
-              : suppliedValue
-                ? registration.prepareValue
-                  ? invokeExtension(key, () =>
-                      registration.prepareValue?.(command.value),
-                    )
-                  : command.value
-                : stagedEntry?.value;
+              : usesCanonicalReviewValue
+                ? command.value
+                : suppliedValue
+                  ? registration.prepareValue
+                    ? invokeExtension(key, () =>
+                        registration.prepareValue?.(command.value),
+                      )
+                    : command.value
+                  : stagedEntry?.value;
             if (nextValue === undefined && !stagedEntry) {
               throw new Error('no_staged_value');
             }
