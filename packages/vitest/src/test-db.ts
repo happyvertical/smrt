@@ -491,7 +491,7 @@ export async function createIsolatedTestDb(
 async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
   postSchemaStatements: readonly PostSchemaStatement[],
-  manifestTableNames: readonly string[] = [],
+  manifestTables: readonly ManifestTableReconciliation[] = [],
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -537,20 +537,29 @@ async function createIsolatedTestDbWithPostSchemaStatements(
       tableConstraints.set(deferred.constraintName, deferred);
       expectedByTable.set(deferred.tableName, tableConstraints);
     }
-    for (const tableName of manifestTableNames) {
+    for (const manifestTable of manifestTables) {
+      const { tableName } = manifestTable;
       const result = await schemaDb.query(
         `SELECT constraint_row.conname AS constraint_name,
                 constraint_row.convalidated,
                 constraint_row.confdeltype,
                 constraint_row.confupdtype,
                 parent_row.relname AS referenced_table,
+                parent_namespace.nspname AS referenced_schema,
+                current_schema() AS expected_schema,
                 child_column.attname AS column_name,
                 parent_column.attname AS referenced_column,
+                cardinality(constraint_row.conkey) AS column_count,
+                cardinality(constraint_row.confkey) AS referenced_column_count,
+                constraint_row.condeferrable,
+                constraint_row.condeferred,
+                constraint_row.confmatchtype,
                 obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
          FROM pg_constraint AS constraint_row
          JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
          JOIN pg_class AS parent_row ON parent_row.oid = constraint_row.confrelid
          JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+         JOIN pg_namespace AS parent_namespace ON parent_namespace.oid = parent_row.relnamespace
          JOIN pg_attribute AS child_column
            ON child_column.attrelid = constraint_row.conrelid
           AND child_column.attnum = constraint_row.conkey[1]
@@ -574,8 +583,15 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         confdeltype: string;
         confupdtype: string;
         referenced_table: string;
+        referenced_schema: string;
+        expected_schema: string;
         column_name: string;
         referenced_column: string;
+        column_count: number;
+        referenced_column_count: number;
+        condeferrable: boolean;
+        condeferred: boolean;
+        confmatchtype: string;
         ownership_comment: string | null;
       }>) {
         const catalogForeignKey: ForeignKeyDefinition = {
@@ -589,7 +605,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
             foreignKeyConstraintName(tableName, catalogForeignKey);
         const desired = expected.get(row.constraint_name);
         if (!desired) {
-          if (rendererOwned) {
+          if (rendererOwned && manifestTable.pruneOwnedForeignKeys) {
             await schemaDb.query(
               renderForeignKeyConstraintDrop(tableName, row.constraint_name),
             );
@@ -607,7 +623,13 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         const definitionMatches =
           row.column_name === desired.foreignKey.column &&
           row.referenced_table === desired.foreignKey.referencesTable &&
+          row.referenced_schema === row.expected_schema &&
           row.referenced_column === desired.foreignKey.referencesColumn &&
+          row.column_count === 1 &&
+          row.referenced_column_count === 1 &&
+          !row.condeferrable &&
+          !row.condeferred &&
+          row.confmatchtype === 's' &&
           row.confdeltype === actionCode(desired.foreignKey.onDelete) &&
           row.confupdtype === actionCode(desired.foreignKey.onUpdate);
         if (!definitionMatches) {
@@ -757,6 +779,12 @@ interface PostSchemaStatement {
   constraintName: string;
   foreignKey: ForeignKeyDefinition;
   statement: string;
+}
+
+interface ManifestTableReconciliation {
+  tableName: string;
+  /** Full structured manifests are authoritative; partial/legacy inputs are additive. */
+  pruneOwnedForeignKeys: boolean;
 }
 
 // ============================================================================
@@ -1429,7 +1457,13 @@ export async function createIsolatedTestDbFromManifest(
           }))
       : [],
     adapter === 'postgres'
-      ? tables.map(({ tableName }) => tableName).sort()
+      ? tables
+          .map(({ tableName, table }) => ({
+            tableName,
+            pruneOwnedForeignKeys:
+              includeObjects === undefined && table.structured,
+          }))
+          .sort((a, b) => a.tableName.localeCompare(b.tableName))
       : [],
   );
 }
