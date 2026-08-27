@@ -83,7 +83,7 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       }),
     );
     expect(applied).toMatchObject({
-      result: { ok: false, reason: 'consent_required' },
+      result: { ok: false, reason: 'human_confirmation_required' },
     });
 
     const bespoke = registered[6];
