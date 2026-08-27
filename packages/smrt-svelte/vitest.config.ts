@@ -3,7 +3,17 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { smrtVitestPlugin } from '../vitest/src/index.ts';
 
 export default defineConfig({
-  plugins: [smrtVitestPlugin({ verbose: true }), svelte({ hot: false })],
+  plugins: [
+    smrtVitestPlugin({
+      verbose: true,
+      // The composed WebMCP fixture declares decorated test-only models. Keep
+      // them out of the package manifest so other workers cannot discover
+      // fixture classes; the integration test runs its own explicit scanner
+      // pass for the generated descriptor.
+      exclude: ['**/*.d.ts', '**/node_modules/**', '**/dist/**', '**/*.test.ts'],
+    }),
+    svelte({ hot: false }),
+  ],
   // Resolve Svelte's `browser` export condition so that `mount` / `unmount`
   // resolve to the client runtime under jsdom. Without this, `svelte`'s
   // package exports fall through to `default: index-server.js`, which makes
