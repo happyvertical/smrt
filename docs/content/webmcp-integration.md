@@ -41,7 +41,7 @@ The template wires the generated definitions into its root Provider:
 ```
 
 Omitting `effects` (or selecting `['read']`) exposes reads only. Add `write`
-or `destructive` only for a page that needs them, and bound the surface with a
+or `destructive` only for a page that needs them, and bind the surface with a
 namespace, `maxTools`, and a canonical `filterTool` where appropriate. Policy
 validation is atomic: duplicate names, malformed definitions, or a filter
 mismatch reject the prospective registration before any browser tool is

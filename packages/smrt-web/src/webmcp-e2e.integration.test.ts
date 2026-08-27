@@ -19,7 +19,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
   createDefinitionFetchers,
   createSmrtCollection,
@@ -241,6 +241,7 @@ const commandDefinition = canonicalDefinition({
 });
 
 describe('WebMCP application composition (#2523)', () => {
+  const originalDocument = (globalThis as { document?: unknown }).document;
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
   let handler: (request: Request) => Promise<Response>;
   let itemCollection: WebMcpFixtureItemCollection;
@@ -290,9 +291,16 @@ describe('WebMCP application composition (#2523)', () => {
     handler = api.generateHandler();
 
     // Assert the canonical test identifier is reachable without materializing
-    // the collection in the browser. The actual id is carried in the test via
-    // a private property to avoid making the fixture's data model special.
+    // the collection in the browser. The record remains local to this setup.
     expect(record.id).toEqual(expect.any(String));
+  });
+
+  afterEach(() => {
+    if (originalDocument === undefined) {
+      delete (globalThis as { document?: unknown }).document;
+    } else {
+      (globalThis as { document?: unknown }).document = originalDocument;
+    }
   });
 
   afterAll(async () => {
