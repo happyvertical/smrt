@@ -156,6 +156,15 @@ hidden data-surface columns are not serialized. Read responses are marked as
 untrusted content. Bespoke `useWebMcpTool` and `<Form webmcp>` tools retain their
 existing lifecycle and submit behavior.
 
+Custom rich fields may continue to call `registerField(field)` and later
+`unregisterField(name)`. New code should retain and invoke the disposer returned
+by `registerField`: it is bound to that exact registration, so cleanup cannot
+remove a same-name replacement. The return value is additive; legacy form
+contexts whose `registerField` returns `void` remain supported. Context accessors
+bind legacy name-based cleanup to registrations made by that caller, so
+overlapping same-name fields can unmount in either order without retaining a
+detached control.
+
 ### Form Components
 
 ```svelte

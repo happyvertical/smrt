@@ -5,7 +5,6 @@ import {
   formatEmail,
   formatText,
 } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -14,6 +13,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { prepareTextFieldValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -78,10 +78,12 @@ const isInitializing = $derived(stt.isInitializing);
 const downloadProgress = $derived(stt.downloadProgress);
 
 // Validation
-const isValidEmail = $derived.by(() => {
-  if (type !== 'email' || !value) return true;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-});
+function emailValueIsValid(candidate: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate);
+}
+const isValidEmail = $derived(
+  type !== 'email' || !value || emailValueIsValid(value),
+);
 const showInvalid = $derived(type === 'email' && value && !isValidEmail);
 
 // Helper to update value (works with $bindable)
@@ -91,29 +93,41 @@ function updateValue(newValue: string) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
-      type: type === 'email' ? 'email' : 'text',
-      label,
-      description,
+      name: registeredName,
+      get type() {
+        return type === 'email' ? 'email' : 'text';
+      },
+      get label() {
+        return label;
+      },
+      get description() {
+        return description;
+      },
       setValue: (v: unknown) => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
-      constraints: { required },
+      prepareValue: prepareTextFieldValue,
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      validateValue: (candidate) => {
+        const next = String(candidate ?? '');
+        return (
+          (!required || next.trim().length > 0) &&
+          (type !== 'email' || next.length === 0 || emailValueIsValid(next))
+        );
+      },
       validate: () =>
         (!required || value.trim().length > 0) &&
         (type !== 'email' || value.length === 0 || isValidEmail),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

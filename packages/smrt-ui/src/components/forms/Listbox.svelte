@@ -1,10 +1,21 @@
 <script lang="ts">
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type {
   ControlInteractionOptions,
   ControlOption,
 } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
+import {
+  prepareEnabledOptionValue,
+  validatesEnabledOption,
+} from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -35,11 +46,20 @@ const controlId = $derived(
     ? undefined
     : (interaction?.id ?? name ?? `listbox-${instanceId}`),
 );
-function select(next: unknown) {
+function select(next: unknown, userEdit = false) {
   const option = options.find((item) => String(item.value) === String(next));
   if (!option || option.disabled || disabled) return;
+  const changed = !Object.is(value, option.value);
   value = option.value;
   onvaluechange?.(option.value);
+  if (userEdit && changed) {
+    recordControlUserEdit(
+      interactionContext,
+      controlId,
+      interaction === false ? undefined : interaction?.subject,
+    );
+    if (rootEl) emitControlChange(rootEl);
+  }
 }
 function move(event: KeyboardEvent, index: number) {
   let next = index;
@@ -73,21 +93,28 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue: (next) => prepareEnabledOptionValue(options, next),
     setValue: select,
     clear: () => {
       value = undefined;
+      return true;
     },
     focus: () => optionEls.find((item) => item && !item.disabled)?.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    validateValue: (next) => validatesEnabledOption(options, next),
+    getState: () => ({
+      disabled: disabled || root.closest('fieldset:disabled') !== null,
+    }),
   };
 });
 </script>
-<div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div bind:this={rootEl} class="listbox {className}" role="listbox" aria-label={label} aria-disabled={disabled} data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#each options as option, index (option.value)}<button bind:this={optionEls[index]} type="button" role="option" aria-selected={value === option.value}
     disabled={disabled || option.disabled} tabindex={value === option.value || (value === undefined && index === 0) ? 0 : -1}
-    onkeydown={(event) => move(event, index)} onclick={() => select(option.value)}>{option.label}</button>{/each}
+    onkeydown={(event) => move(event, index)} onclick={() => select(option.value, true)}>{option.label}</button>{/each}
 </div>
 <style>
   .listbox { display: grid; padding: var(--smrt-spacing-1); border: 1px solid var(--smrt-color-outline); border-radius: var(--smrt-radius-small); background: var(--smrt-color-surface); }

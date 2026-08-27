@@ -1,14 +1,18 @@
 <script lang="ts">
 import {
+  type ControlIdentity,
   type ControlInteractionEvent,
   type ControlInteractionRegistry,
   type ControlKind,
+  type ControlRuntimeState,
+  type ControlSubject,
   createControlInteractionRegistry,
+  StagedControlReview,
   setControlInteractionContext,
 } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
-import { onDestroy } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -39,7 +43,7 @@ export interface Props {
   llmModel?: LLMModelId;
   /** Called when form is submitted (if provided, prevents native submission) */
   onsubmit?: (data: Record<string, unknown>) => void | Promise<void>;
-  /** Expose this form's submit intent to WebMCP. */
+  /** Let WebMCP propose field changes for local human review. */
   webmcp?: boolean | { name?: string; description?: string };
   /** Collection/model identity used when naming the generated intent. */
   collection?: string;
@@ -49,8 +53,12 @@ export interface Props {
   action?: string;
   /** Stable identity used by control/agent interaction adapters. */
   formId?: string;
+  /** Default record-qualified identity for registered fields. */
+  subject?: ControlSubject;
   interactionRegistry?: ControlInteractionRegistry;
   oninteraction?: (event: ControlInteractionEvent) => void;
+  /** Render the built-in human review surface for staged changes. */
+  stagedReview?: boolean;
   id?: string;
   name?: string;
   class?: string;
@@ -69,8 +77,10 @@ const {
   method,
   action,
   formId,
+  subject,
   interactionRegistry,
   oninteraction,
+  stagedReview = true,
   id,
   name,
   class: className = '',
@@ -90,12 +100,18 @@ const resolvedInteractionRegistry = $derived(
       : undefined) ??
     localInteractionRegistry,
 );
-const interactionDisposers = new Map<
-  string,
-  { field: FieldDefinition; dispose: () => void }
->();
+interface InteractionRegistration {
+  field: FieldDefinition;
+  subject: ControlSubject | undefined;
+  identity: ControlIdentity;
+  ownershipKey: string;
+  disposeRegistration: () => void;
+  restoreAttributes: () => void;
+}
+const interactionDisposers = new Map<string, InteractionRegistration>();
 let activeInteractionRegistry: ControlInteractionRegistry | undefined;
 let activeInteractionFormId: string | undefined;
+let formElement = $state<HTMLFormElement | null>(null);
 
 setControlInteractionContext({
   get formId() {
@@ -120,6 +136,11 @@ $effect(() => {
 
 // Internal state
 let fields = $state<Map<string, FieldDefinition>>(new Map());
+const fieldGenerations = new Map<string, symbol>();
+const fieldRegistrationOrder = new Map<
+  string,
+  Array<{ field: FieldDefinition; generation: symbol }>
+>();
 let isFormListening = $state(false);
 let isExtracting = $state(false);
 let spokenText = $state('');
@@ -150,41 +171,295 @@ function interactionKind(field: FieldDefinition): ControlKind {
   }
 }
 
+function fieldRuntimeState(field: FieldDefinition): ControlRuntimeState {
+  const controls = fieldControls(field);
+  const domState: ControlRuntimeState = {
+    disabled:
+      controls.length > 0
+        ? controls.some((control) => control.matches(':disabled'))
+        : undefined,
+    readonly:
+      controls.some(
+        (control) => 'readOnly' in control && control.readOnly === true,
+      ) || undefined,
+  };
+  const declaredState = field.getState?.() ?? {};
+  return {
+    ...domState,
+    ...declaredState,
+    disabled: domState.disabled === true || declaredState.disabled === true,
+    readonly: domState.readonly === true || declaredState.readonly === true,
+  };
+}
+
+function fieldControls(field: FieldDefinition) {
+  if (!formElement) return [];
+  const controls = Array.from(formElement.elements).filter(
+    (
+      control,
+    ): control is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement =>
+      (control instanceof HTMLInputElement ||
+        control instanceof HTMLSelectElement ||
+        control instanceof HTMLTextAreaElement) &&
+      control.type !== 'hidden',
+  );
+  if (field.ownerToken) {
+    return controls.filter(
+      (control) =>
+        control
+          .closest('[data-smrt-field-owner]')
+          ?.getAttribute('data-smrt-field-owner') === field.ownerToken,
+    );
+  }
+  // Custom registrations without an owner token retain exact-name support,
+  // but never claim composite-looking sibling controls heuristically.
+  const exactControls = controls.filter(
+    (control) => control.name === field.name,
+  );
+  const hasExactId = exactControls.some((control) => control.id === field.name);
+  return hasExactId
+    ? exactControls.filter((control) => control.id === field.name)
+    : exactControls;
+}
+
+function decorateFieldControls(
+  field: FieldDefinition,
+  currentFormId: string,
+  resolvedSubject: ControlSubject | undefined,
+): () => void {
+  const attributes = new Map<string, string | undefined>([
+    ['data-smrt-control', field.controlId ?? field.name],
+    ['data-smrt-form', currentFormId],
+    ['data-smrt-subject-type', resolvedSubject?.type],
+    ['data-smrt-subject-id', resolvedSubject?.id],
+  ]);
+  const controls = fieldControls(field).map((control) => ({
+    control,
+    previous: new Map(
+      Array.from(attributes.keys(), (attribute) => [
+        attribute,
+        control.getAttribute(attribute),
+      ]),
+    ),
+  }));
+  for (const { control } of controls) {
+    try {
+      for (const [attribute, next] of attributes) {
+        if (next === undefined) control.removeAttribute(attribute);
+        else control.setAttribute(attribute, next);
+      }
+    } catch (error) {
+      for (const { control: assignedControl, previous } of controls) {
+        for (const attribute of attributes.keys()) {
+          const original = previous.get(attribute);
+          if (original === null || original === undefined) {
+            assignedControl.removeAttribute(attribute);
+          } else {
+            assignedControl.setAttribute(attribute, original);
+          }
+        }
+      }
+      throw error;
+    }
+  }
+  return () => {
+    for (const { control, previous } of controls) {
+      for (const [attribute, assigned] of attributes) {
+        if (control.getAttribute(attribute) !== (assigned ?? null)) continue;
+        const original = previous.get(attribute);
+        if (original === null || original === undefined) {
+          control.removeAttribute(attribute);
+        } else {
+          control.setAttribute(attribute, original);
+        }
+      }
+    }
+  };
+}
+
+function recordDirectUserEdit(event: Event) {
+  if (!event.isTrusted) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const field = Array.from(fields.values()).find((candidate) =>
+    fieldControls(candidate).includes(
+      target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+    ),
+  );
+  if (!field) return;
+  resolvedInteractionRegistry.recordUserEdit?.({
+    formId: resolvedFormId,
+    controlId: field.controlId ?? field.name,
+    subject: resolvedFieldSubject(field),
+  });
+}
+
+$effect(() => {
+  const form = formElement;
+  if (!form) return;
+  form.addEventListener('input', recordDirectUserEdit);
+  form.addEventListener('change', recordDirectUserEdit);
+  return () => {
+    form.removeEventListener('input', recordDirectUserEdit);
+    form.removeEventListener('change', recordDirectUserEdit);
+  };
+});
+
 function registerInteraction(
   registry: ControlInteractionRegistry,
   currentFormId: string,
   field: FieldDefinition,
-): (() => void) | undefined {
+  resolvedSubject: ControlSubject | undefined,
+  previous?: InteractionRegistration,
+): InteractionRegistration | undefined {
   const identity = {
     formId: currentFormId,
     controlId: field.controlId ?? field.name,
+    subject: resolvedSubject,
   };
-  if (registry.get(identity)) {
+  const replacesOwnedIdentity =
+    previous !== undefined && sameRegistryIdentity(previous.identity, identity);
+  const ownershipKey = Array.from(fields.keys()).sort().join('\0');
+  if (registry.get(identity) && !replacesOwnedIdentity) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
     return undefined;
   }
-  return registry.register({
+  // Restore the old DOM decoration while its registry generation is still
+  // active. This makes either decoration or registration failure recoverable.
+  if (replacesOwnedIdentity) {
+    previous.restoreAttributes();
+  }
+  let restoreAttributes: () => void;
+  try {
+    restoreAttributes = decorateFieldControls(
+      field,
+      currentFormId,
+      resolvedSubject,
+    );
+  } catch (error) {
+    if (replacesOwnedIdentity) {
+      previous.restoreAttributes = decorateFieldControls(
+        previous.field,
+        previous.identity.formId,
+        previous.subject,
+      );
+    }
+    throw error;
+  }
+  let disposeRegistration: () => void;
+  try {
+    disposeRegistration = registry.register({
+      identity,
+      metadata: {
+        kind: interactionKind(field),
+        get label() {
+          return field.label;
+        },
+        get description() {
+          return field.description;
+        },
+        get sensitivity() {
+          return field.sensitivity ?? 'public';
+        },
+        get readable() {
+          return field.readable;
+        },
+        get writable() {
+          return field.writable;
+        },
+        get constraints() {
+          return field.constraints;
+        },
+        get options() {
+          return field.options;
+        },
+        get unit() {
+          return field.unit;
+        },
+      },
+      getValue: field.getValue,
+      setValue: field.setValue,
+      setValueWithContext: field.setValueWithContext,
+      // The registry calls this inside its stage retry loop, so partial
+      // structured proposals merge with the latest stable human value.
+      prepareValue: (value) => prepareInteractionValue(field, value),
+      prepareReviewedValue: field.prepareReviewedValue,
+      clear:
+        field.clear ??
+        (() => {
+          field.setValue('');
+        }),
+      focus:
+        field.focus ??
+        (() =>
+          fieldControls(field)
+            .find((control) => !control.disabled)
+            ?.focus()),
+      reveal: field.reveal,
+      highlight: field.highlight,
+      validate: field.validate,
+      validateValue: field.validateValue,
+      getState: () => fieldRuntimeState(field),
+    });
+  } catch (error) {
+    restoreAttributes();
+    if (replacesOwnedIdentity) {
+      previous.restoreAttributes = decorateFieldControls(
+        previous.field,
+        previous.identity.formId,
+        previous.subject,
+      );
+    }
+    throw error;
+  }
+  // Install the same-key replacement before retiring the old registry
+  // generation, making the old disposer a no-op and preserving internal state.
+  if (replacesOwnedIdentity) previous.disposeRegistration();
+  return {
+    field,
+    subject: resolvedSubject,
     identity,
-    metadata: {
-      kind: interactionKind(field),
-      label: field.label,
-      description: field.description,
-      sensitivity: field.sensitivity ?? 'public',
-      readable: field.readable,
-      writable: field.writable,
-      constraints: field.constraints,
-      options: field.options,
-      unit: field.unit,
-    },
-    getValue: field.getValue,
-    setValue: field.setValue,
-    clear: field.clear ?? (() => field.setValue('')),
-    focus: field.focus,
-    reveal: field.reveal,
-    highlight: field.highlight,
-    validate: field.validate,
-    getState: field.getState,
-  });
+    ownershipKey,
+    disposeRegistration,
+    restoreAttributes,
+  };
+}
+
+function disposeInteraction(registration: InteractionRegistration): void {
+  registration.disposeRegistration();
+  registration.restoreAttributes();
+}
+
+function sameRegistryIdentity(
+  left: ControlIdentity,
+  right: ControlIdentity,
+): boolean {
+  return (
+    left.formId === right.formId &&
+    left.controlId === right.controlId &&
+    left.subject?.type === right.subject?.type &&
+    left.subject?.id === right.subject?.id
+  );
+}
+
+function resolvedFieldSubject(
+  field: FieldDefinition,
+): ControlSubject | undefined {
+  const current = field.subject ?? subject;
+  return current
+    ? { type: current.type, id: current.id, label: current.label }
+    : undefined;
+}
+
+function sameSubject(
+  left: ControlSubject | undefined,
+  right: ControlSubject | undefined,
+): boolean {
+  return (
+    left?.type === right?.type &&
+    left?.id === right?.id &&
+    left?.label === right?.label
+  );
 }
 
 let interactionRegistryRevision = $state(0);
@@ -192,8 +467,13 @@ let interactionRegistryRevision = $state(0);
 $effect(() => {
   const registry = resolvedInteractionRegistry;
   return registry.subscribe((event) => {
-    if (event.type === 'registered' || event.type === 'unregistered') {
-      interactionRegistryRevision += 1;
+    if (
+      event.type === 'registered' ||
+      event.type === 'unregistered' ||
+      (event.type === 'refreshed' && event.identity.formId === resolvedFormId)
+    ) {
+      interactionRegistryRevision =
+        untrack(() => interactionRegistryRevision) + 1;
     }
   });
 });
@@ -202,40 +482,88 @@ $effect(() => {
   const registry = resolvedInteractionRegistry;
   const currentFormId = resolvedFormId;
   const currentFields = new Map(fields);
+  const currentOwnershipKey = Array.from(currentFields.keys())
+    .sort()
+    .join('\0');
   void interactionRegistryRevision;
   if (
     activeInteractionRegistry !== registry ||
     activeInteractionFormId !== currentFormId
   ) {
     for (const registration of interactionDisposers.values()) {
-      registration.dispose();
+      disposeInteraction(registration);
     }
     interactionDisposers.clear();
     activeInteractionRegistry = registry;
     activeInteractionFormId = currentFormId;
   }
   for (const [name, registration] of interactionDisposers) {
-    const identity = {
-      formId: currentFormId,
-      controlId: registration.field.controlId ?? registration.field.name,
-    };
+    const nextField = currentFields.get(name);
+    if (!nextField) {
+      disposeInteraction(registration);
+      interactionDisposers.delete(name);
+      continue;
+    }
+    const nextSubject = resolvedFieldSubject(nextField);
     if (
-      currentFields.get(name) !== registration.field ||
-      !registry.get(identity)
+      nextField === registration.field &&
+      sameSubject(registration.subject, nextSubject) &&
+      registry.get(registration.identity)
     ) {
-      registration.dispose();
+      continue;
+    }
+    const nextIdentity = {
+      formId: currentFormId,
+      controlId: nextField.controlId ?? nextField.name,
+      subject: nextSubject,
+    };
+    if (!sameRegistryIdentity(registration.identity, nextIdentity)) {
+      disposeInteraction(registration);
       interactionDisposers.delete(name);
     }
   }
   for (const [name, field] of currentFields) {
-    if (interactionDisposers.has(name)) continue;
-    const dispose = registerInteraction(registry, currentFormId, field);
-    if (!dispose) continue;
-    interactionDisposers.set(name, {
+    const previous = interactionDisposers.get(name);
+    if (
+      previous?.field === field &&
+      previous.ownershipKey === currentOwnershipKey &&
+      sameSubject(previous.subject, resolvedFieldSubject(field)) &&
+      registry.get(previous.identity)
+    )
+      continue;
+    const resolvedSubject = resolvedFieldSubject(field);
+    const registration = registerInteraction(
+      registry,
+      currentFormId,
       field,
-      dispose,
-    });
+      resolvedSubject,
+      previous,
+    );
+    if (!registration) continue;
+    interactionDisposers.set(name, registration);
   }
+});
+
+// Field metadata and DOM-backed runtime state are live getters. Notify review
+// consumers when either changes so hidden staged entries disappear immediately
+// without unregistering the internal proposal needed for trusted discard.
+$effect(() => {
+  const registry = resolvedInteractionRegistry;
+  const currentFormId = resolvedFormId;
+  for (const field of fields.values()) {
+    void field.label;
+    void field.description;
+    void field.sensitivity;
+    void field.readable;
+    void field.writable;
+    void field.constraints;
+    void field.options;
+    void field.unit;
+    const state = fieldRuntimeState(field);
+    void state.disabled;
+    void state.readonly;
+  }
+  registry.refresh?.(currentFormId);
 });
 
 // Create form context
@@ -244,12 +572,56 @@ const formContext: SMRTFormContext = {
     return app.state.mode === 'smrt' ? 'smrt' : 'default';
   },
   registerField(field: FieldDefinition) {
-    fields.set(field.name, field);
-    fields = new Map(fields); // Trigger reactivity
+    const registeredName = field.name;
+    const generation = Symbol(registeredName);
+    const registrations = fieldRegistrationOrder.get(registeredName) ?? [];
+    const registration = { field, generation };
+    registrations.push(registration);
+    fieldRegistrationOrder.set(registeredName, registrations);
+    const currentFields = untrack(() => fields);
+    currentFields.set(registeredName, field);
+    fieldGenerations.set(registeredName, generation);
+    fields = new Map(currentFields); // Trigger reactivity
+    return () => {
+      const orderedRegistrations = fieldRegistrationOrder.get(registeredName);
+      const registrationIndex = orderedRegistrations?.indexOf(registration);
+      if (registrationIndex !== undefined && registrationIndex >= 0) {
+        orderedRegistrations?.splice(registrationIndex, 1);
+        if (orderedRegistrations?.length === 0) {
+          fieldRegistrationOrder.delete(registeredName);
+        }
+      }
+      if (fieldGenerations.get(registeredName) !== generation) return;
+      const registeredFields = untrack(() => fields);
+      if (registeredFields.get(registeredName) !== field) return;
+      const previousRegistration = orderedRegistrations?.at(-1);
+      if (previousRegistration) {
+        fieldGenerations.set(registeredName, previousRegistration.generation);
+        registeredFields.set(registeredName, previousRegistration.field);
+      } else {
+        fieldGenerations.delete(registeredName);
+        registeredFields.delete(registeredName);
+      }
+      fields = new Map(registeredFields);
+    };
   },
   unregisterField(name: string) {
-    fields.delete(name);
-    fields = new Map(fields);
+    const registrations = fieldRegistrationOrder.get(name);
+    const registration = registrations?.pop();
+    if (registrations?.length === 0) fieldRegistrationOrder.delete(name);
+    if (!registration) return;
+    if (fieldGenerations.get(name) !== registration.generation) return;
+    const registeredFields = untrack(() => fields);
+    if (registeredFields.get(name) !== registration.field) return;
+    const previousRegistration = registrations?.at(-1);
+    if (previousRegistration) {
+      fieldGenerations.set(name, previousRegistration.generation);
+      registeredFields.set(name, previousRegistration.field);
+    } else {
+      fieldGenerations.delete(name);
+      registeredFields.delete(name);
+    }
+    fields = new Map(registeredFields);
   },
   getFieldSchema() {
     return Array.from(fields.values());
@@ -278,6 +650,7 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
       case 'measurement':
         schema = {
           type: 'object',
+          additionalProperties: false,
           properties: {
             value: {
               type: 'number',
@@ -301,6 +674,7 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
       case 'daterange':
         schema = {
           type: 'object',
+          additionalProperties: false,
           properties: {
             startDate: { type: 'string' },
             endDate: { type: 'string' },
@@ -313,6 +687,7 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
       case 'address':
         schema = {
           type: 'object',
+          additionalProperties: false,
           properties: {
             street: { type: 'string' },
             city: { type: 'string' },
@@ -334,8 +709,13 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
         };
         break;
       case 'number':
-      case 'money':
         schema = { type: 'number' };
+        break;
+      case 'money':
+        schema = {
+          type: 'integer',
+          description: 'Amount in minor currency units (cents)',
+        };
         break;
       case 'checkbox':
         schema = { type: 'boolean' };
@@ -346,14 +726,25 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
   }
 
   if (field.label) schema.title = field.label;
-  if (field.description) schema.description = field.description;
+  if (field.description) {
+    schema.description =
+      field.type === 'money'
+        ? `${field.description}. WebMCP values use integer minor units (cents).`
+        : field.description;
+  }
   if (field.options) {
     schema.enum = field.options.map((option) => option.value);
   }
-  if (schema.type === 'number' && field.constraints?.min !== undefined) {
+  if (
+    (schema.type === 'number' || schema.type === 'integer') &&
+    field.constraints?.min !== undefined
+  ) {
     schema.minimum = Number(field.constraints.min);
   }
-  if (schema.type === 'number' && field.constraints?.max !== undefined) {
+  if (
+    (schema.type === 'number' || schema.type === 'integer') &&
+    field.constraints?.max !== undefined
+  ) {
     schema.maximum = Number(field.constraints.max);
   }
   if (schema.type === 'string' && field.constraints?.minLength !== undefined) {
@@ -368,17 +759,75 @@ function webMcpFieldSchema(field: FieldDefinition): Record<string, unknown> {
   return schema;
 }
 
+function structuredProposalProperties(
+  field: FieldDefinition,
+): Record<string, unknown> | undefined {
+  return (
+    webMcpFieldSchema(field) as {
+      properties?: Record<string, unknown>;
+    }
+  ).properties;
+}
+
+function prepareInteractionValue(field: FieldDefinition, value: unknown) {
+  let preparedValue = value;
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    const properties = structuredProposalProperties(field);
+    if (properties) {
+      const currentValue = field.getValue();
+      const currentObject =
+        currentValue !== null &&
+        typeof currentValue === 'object' &&
+        !Array.isArray(currentValue)
+          ? (currentValue as Record<string, unknown>)
+          : undefined;
+      const projectedCurrent = currentObject
+        ? Object.fromEntries(
+            Object.entries(currentObject).filter(([key]) =>
+              Object.hasOwn(properties, key),
+            ),
+          )
+        : {};
+      // WebMCP sanitizes its transport payload before it enters the registry.
+      // Preserve unknown members from direct registry callers so the field's
+      // validator can reject them rather than silently laundering them away.
+      preparedValue = { ...projectedCurrent, ...value };
+    }
+  }
+  if (
+    field.type === 'measurement' &&
+    preparedValue !== null &&
+    typeof preparedValue === 'object' &&
+    !Array.isArray(preparedValue) &&
+    !('unit' in preparedValue) &&
+    field.unit
+  ) {
+    preparedValue = { ...preparedValue, unit: field.unit };
+  }
+  return field.prepareValue ? field.prepareValue(preparedValue) : preparedValue;
+}
+
 function formInputSchema(): Record<string, unknown> {
+  void interactionRegistryRevision;
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
   for (const field of fields.values()) {
+    const state = fieldRuntimeState(field);
+    if (
+      field.sensitivity === 'secret' ||
+      field.writable === false ||
+      state.disabled ||
+      state.readonly
+    )
+      continue;
     properties[field.name] = webMcpFieldSchema(field);
     if (field.constraints?.required) required.push(field.name);
   }
 
   return {
     type: 'object',
+    additionalProperties: false,
     properties,
     ...(required.length > 0 ? { required } : {}),
   };
@@ -387,16 +836,15 @@ function formInputSchema(): Record<string, unknown> {
 // Provide context to children
 setFormContext(formContext);
 
-async function submitForWebMcp(args: Record<string, unknown>): Promise<string> {
-  // Stage tool arguments through the same field setters used by native input
-  // controls, then run the shared validation and submit path.
-  for (const [name, value] of Object.entries(args)) {
-    fields.get(name)?.setValue(value);
-  }
-
+async function submitCurrentForm(): Promise<string> {
   const data: Record<string, unknown> = {};
   let valid = true;
-  for (const [name, field] of fields) {
+  const fieldSnapshot = Array.from(fields);
+
+  // Snapshot every field before running a validator: a validator may await,
+  // while the user can continue editing later controls. The submit handler must
+  // receive one coherent gesture-time payload, not a mixture of revisions.
+  for (const [name, field] of fieldSnapshot) {
     data[name] = field.getValue();
     if (
       field.constraints?.required &&
@@ -404,9 +852,15 @@ async function submitForWebMcp(args: Record<string, unknown>): Promise<string> {
     ) {
       valid = false;
     }
+  }
+
+  for (const [, field] of fieldSnapshot) {
     if (field.validate) {
       try {
-        valid = field.validate() && valid;
+        const validation = field.validate();
+        valid =
+          (typeof validation === 'boolean' ? validation : await validation) &&
+          valid;
       } catch {
         valid = false;
       }
@@ -419,17 +873,73 @@ async function submitForWebMcp(args: Record<string, unknown>): Promise<string> {
   return 'Submitted successfully';
 }
 
+async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
+  const commands = Object.entries(args).flatMap(([name, value]) => {
+    const field = fields.get(name);
+    const state = field ? fieldRuntimeState(field) : undefined;
+    if (
+      !field ||
+      field.sensitivity === 'secret' ||
+      field.writable === false ||
+      state?.disabled ||
+      state?.readonly
+    ) {
+      return [];
+    }
+    let sanitizedValue = value;
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const properties = structuredProposalProperties(field);
+      if (properties) {
+        sanitizedValue = Object.fromEntries(
+          Object.entries(value).filter(([key]) =>
+            Object.hasOwn(properties, key),
+          ),
+        );
+      }
+    }
+    return [
+      {
+        action: 'stage' as const,
+        identity: {
+          formId: resolvedFormId,
+          controlId: field.controlId ?? field.name,
+          subject: field.subject ?? subject,
+        },
+        value: sanitizedValue,
+      },
+    ];
+  });
+  if (commands.length === 0) return 'No reviewable changes provided';
+
+  const context = { source: 'agent' as const, actorId: 'webmcp' };
+  let batch;
+  if (resolvedInteractionRegistry.executeBatch) {
+    batch = await resolvedInteractionRegistry.executeBatch(commands, context);
+  } else {
+    const results = [];
+    for (const command of commands) {
+      results.push(await resolvedInteractionRegistry.execute(command, context));
+    }
+    batch = { ok: results.every((result) => result.ok), results };
+  }
+  const completed = batch.results.filter((result) => result.ok).length;
+  const rejected = batch.results.length - completed;
+  return rejected === 0
+    ? `Staged ${completed} change${completed === 1 ? '' : 's'} for review`
+    : `Staged ${completed} changes for review; ${rejected} rejected`;
+}
+
 useWebMcpTool(() => {
   if (!webmcp) return null;
   const options = typeof webmcp === 'object' ? webmcp : {};
   return {
-    name: options.name ?? `${collection ?? resolvedFormId}_submit`,
+    name: options.name ?? `${collection ?? resolvedFormId}_stage_changes`,
     description:
       options.description ??
-      `Submit the ${collection ?? name ?? resolvedFormId} form after validating its fields`,
+      `Propose changes to the ${collection ?? name ?? resolvedFormId} form for local human review`,
     inputSchema: formInputSchema(),
     annotations: { readOnlyHint: false },
-    execute: submitForWebMcp,
+    execute: stageForWebMcp,
   };
 });
 
@@ -550,12 +1060,24 @@ async function extractFields(text: string): Promise<Record<string, unknown>> {
 }
 
 // Apply extracted values to fields with cleanup
-function applyExtractedValues(values: Record<string, unknown>) {
+async function applyExtractedValues(values: Record<string, unknown>) {
   for (const [name, value] of Object.entries(values)) {
     const field = fields.get(name);
     if (field && value !== undefined && value !== null) {
       const cleanedValue = cleanValue(value, field.type);
-      field.setValue(cleanedValue);
+      try {
+        const preparedValue = field.prepareExtractedValue
+          ? await field.prepareExtractedValue(cleanedValue)
+          : (field.prepareValue?.(cleanedValue) ?? cleanedValue);
+        field.setValue(preparedValue);
+      } catch (error) {
+        // One uncanonicalizable transcript fragment must not abort later
+        // extracted fields or expose an internal preparation error to the UI.
+        logger.warn('Form: skipped invalid extracted field value', {
+          field: name,
+          error,
+        });
+      }
     }
   }
 }
@@ -815,7 +1337,7 @@ async function stopFormListening() {
 
     try {
       const values = await extractFields(textToExtract);
-      applyExtractedValues(values);
+      await applyExtractedValues(values);
     } catch (err) {
       extractError =
         err instanceof Error ? err.message : 'Failed to extract fields';
@@ -838,7 +1360,7 @@ onDestroy(() => {
   }
   stopAudioLevelMonitoring();
   for (const registration of interactionDisposers.values()) {
-    registration.dispose();
+    disposeInteraction(registration);
   }
   interactionDisposers.clear();
 });
@@ -853,7 +1375,7 @@ function handleSubmit(e: Event) {
   // This allows native form submission for SvelteKit form actions
   if (onsubmit) {
     e.preventDefault();
-    void submitForWebMcp({}).catch((error) => {
+    void submitCurrentForm().catch((error) => {
       logger.error('Form submit failed', { error });
     });
   }
@@ -874,6 +1396,7 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
 </script>
 
 <form
+  bind:this={formElement}
   {id}
   {name}
   class="smrt-form {className}"
@@ -984,6 +1507,12 @@ export function getInteractionRegistry(): ControlInteractionRegistry {
   <div class="form-fields">
     {@render children()}
   </div>
+  <StagedControlReview
+    registry={resolvedInteractionRegistry}
+    formId={resolvedFormId}
+    {formElement}
+    summary={stagedReview}
+  />
 </form>
 
 {#if isFormListening && spokenText}

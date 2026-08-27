@@ -1,12 +1,12 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 import type { MeasurementUnit, MeasurementValue } from './types.js';
 
 const { t } = useI18n();
@@ -89,16 +89,24 @@ let {
 
 const app = useAppState();
 const formContext = tryGetFormContext();
+const fieldOwnerId = $props.id();
+const fieldOwnerToken = `smrt-rich-field-${fieldOwnerId}`;
 
 const isSmrt = $derived(app.state.mode === 'smrt');
 
 // Validation
-const isInRange = $derived.by(() => {
-  if (value === null) return true;
-  if (min !== undefined && value < min) return false;
-  if (max !== undefined && value > max) return false;
+function measurementIsInRange(candidate: number | null): boolean {
+  if (candidate === null) return true;
+  if (min !== undefined && candidate < min) return false;
+  if (max !== undefined && candidate > max) return false;
   return true;
-});
+}
+function measurementMatchesStep(candidate: number): boolean {
+  if (!Number.isFinite(step) || step <= 0) return true;
+  const offset = (candidate - (min ?? 0)) / step;
+  return Math.abs(offset - Math.round(offset)) <= 1e-9;
+}
+const isInRange = $derived(measurementIsInRange(value));
 const showInvalid = $derived((value !== null && !isInRange) || !!error);
 
 function updateValue(newValue: number | null, newUnit?: MeasurementUnit) {
@@ -262,25 +270,31 @@ function parseSpokenMeasurement(text: string): MeasurementValue | null {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
-    let rangeDesc = '';
-    if (min !== undefined && max !== undefined) {
-      rangeDesc = ` (between ${min} and ${max})`;
-    } else if (min !== undefined) {
-      rangeDesc = ` (minimum ${min})`;
-    } else if (max !== undefined) {
-      rangeDesc = ` (maximum ${max})`;
-    }
-
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
+      ownerToken: fieldOwnerToken,
       type: 'measurement',
-      label,
-      description:
-        (description ||
-          'A measurement with value and unit (e.g., "12 feet 6 inches")') +
-        rangeDesc,
+      get label() {
+        return label;
+      },
+      get description() {
+        let rangeDescription = '';
+        if (min !== undefined && max !== undefined) {
+          rangeDescription = ` (between ${min} and ${max})`;
+        } else if (min !== undefined) {
+          rangeDescription = ` (minimum ${min})`;
+        } else if (max !== undefined) {
+          rangeDescription = ` (maximum ${max})`;
+        }
+        return (
+          (description ||
+            'A measurement with value and unit (e.g., "12 feet 6 inches")') +
+          rangeDescription
+        );
+      },
       setValue: (v: unknown) => {
         if (v === null || v === undefined || v === '') {
           updateValue(null);
@@ -302,17 +316,109 @@ onMount(() => {
         }
       },
       getValue: () => (value !== null ? { value, unit } : null),
-      constraints: { required, min, max },
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return null;
+        }
+        if (typeof candidate === 'number') {
+          return Number.isFinite(candidate)
+            ? { value: candidate, unit }
+            : invalidStagedValue();
+        }
+        if (typeof candidate === 'string') {
+          return parseSpokenMeasurement(candidate) ?? invalidStagedValue();
+        }
+        if (
+          typeof candidate !== 'object' ||
+          Array.isArray(candidate) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(candidate))
+        ) {
+          return invalidStagedValue();
+        }
+        const measurement = candidate as Record<string, unknown>;
+        return {
+          value: measurement.value,
+          unit: measurement.unit,
+          ...Object.fromEntries(
+            Object.entries(measurement).filter(
+              ([key]) => key !== 'value' && key !== 'unit',
+            ),
+          ),
+        };
+      },
+      clear: () => {
+        updateValue(null);
+        return true;
+      },
+      get unit() {
+        return unit;
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required, min, max, step };
+      },
+      get webMcpSchema() {
+        return {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            value: {
+              type: 'number',
+              ...(min !== undefined ? { minimum: min } : {}),
+              ...(max !== undefined ? { maximum: max } : {}),
+              ...(Number.isFinite(step) &&
+              step > 0 &&
+              (min === undefined || measurementMatchesStep(0))
+                ? { multipleOf: step }
+                : {}),
+            },
+            unit: { type: 'string', enum: [...units] },
+          },
+          ...(required ? { required: ['value', 'unit'] } : {}),
+        };
+      },
+      validateValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return !required;
+        }
+        let proposed: MeasurementValue | null = null;
+        if (
+          typeof candidate === 'object' &&
+          candidate !== null &&
+          !Array.isArray(candidate)
+        ) {
+          const measurement = candidate as Record<string, unknown>;
+          if (
+            [Object.prototype, null].includes(
+              Object.getPrototypeOf(measurement),
+            ) &&
+            Object.keys(measurement).every((key) =>
+              ['value', 'unit'].includes(key),
+            ) &&
+            Object.hasOwn(measurement, 'value') &&
+            Object.hasOwn(measurement, 'unit') &&
+            typeof measurement.value === 'number' &&
+            typeof measurement.unit === 'string'
+          ) {
+            proposed = measurement as unknown as MeasurementValue;
+          }
+        } else if (typeof candidate === 'number') {
+          proposed = { value: candidate, unit };
+        } else {
+          proposed = parseSpokenMeasurement(String(candidate));
+        }
+        return (
+          proposed !== null &&
+          Number.isFinite(proposed.value) &&
+          units.includes(proposed.unit) &&
+          measurementIsInRange(proposed.value) &&
+          measurementMatchesStep(proposed.value)
+        );
+      },
       validate: () =>
         value === null ? !required : Number.isFinite(value) && isInRange,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 
@@ -334,7 +440,7 @@ function handleUnitChange(e: Event) {
 }
 </script>
 
-<div class="smrt-measurement">
+<div class="smrt-measurement" data-smrt-field-owner={fieldOwnerToken}>
   {#if label}
     <label for={name} class="smrt-label">
       {label}

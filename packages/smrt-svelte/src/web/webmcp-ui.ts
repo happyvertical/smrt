@@ -10,6 +10,7 @@ import {
 import type {
   ControlCommand,
   ControlCommandAction,
+  ControlCommandResult,
   ControlIdentity,
   ControlInteractionRegistry,
   ControlSnapshot,
@@ -38,6 +39,7 @@ const PUBLIC_FAILURE_REASONS = new Set([
 const PUBLIC_CONTROL_RESULT_REASONS = new Set([
   'not_found',
   'consent_required',
+  'human_confirmation_required',
   'sensitive_control',
   'control_not_writable',
   'control_not_editable',
@@ -181,10 +183,21 @@ function dataSurfaceIdentity(value: unknown): DataSurfaceIdentity {
 }
 
 function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
-  const redactText =
-    snapshot.metadata.sensitivity === 'secret' || snapshot.state.valueRedacted;
-  const runtimeState = { ...snapshot.state };
-  delete runtimeState.validationMessage;
+  const sensitivityRedacted =
+    snapshot.metadata.sensitivity === 'sensitive' ||
+    snapshot.metadata.sensitivity === 'secret';
+  const redactValue = sensitivityRedacted || snapshot.state.valueRedacted;
+  const redactStagedValue =
+    sensitivityRedacted ||
+    snapshot.state.stagedValueRedacted ||
+    snapshot.state.staged?.valueRedacted === true;
+  const staged = snapshot.state.staged
+    ? {
+        ...snapshot.state.staged,
+        ...(redactStagedValue ? { value: undefined, valueRedacted: true } : {}),
+        validationMessage: undefined,
+      }
+    : undefined;
   return {
     ...snapshot,
     identity: { ...snapshot.identity },
@@ -196,14 +209,31 @@ function sanitizeControl(snapshot: ControlSnapshot): ControlSnapshot {
       options: snapshot.metadata.options?.map((option) => ({ ...option })),
     },
     state: {
-      ...(redactText ? runtimeState : snapshot.state),
-      ...(redactText || snapshot.state.valueRedacted
-        ? { value: undefined }
+      ...snapshot.state,
+      ...(redactValue ? { value: undefined, valueRedacted: true } : {}),
+      ...(redactStagedValue
+        ? { stagedValue: undefined, stagedValueRedacted: true }
         : {}),
-      ...(redactText || snapshot.state.stagedValueRedacted
-        ? { stagedValue: undefined }
-        : {}),
+      ...(staged ? { staged } : {}),
+      validationMessage: undefined,
     },
+  };
+}
+
+function sanitizeControlResult(
+  result: ControlCommandResult,
+): ControlCommandResult {
+  const reason = result.reason
+    ? PUBLIC_CONTROL_RESULT_REASONS.has(result.reason)
+      ? result.reason
+      : 'execution_failed'
+    : undefined;
+  return {
+    ok: result.ok,
+    action: result.action,
+    identity: { ...result.identity },
+    ...(reason ? { reason } : {}),
+    ...(result.snapshot ? { snapshot: sanitizeControl(result.snapshot) } : {}),
   };
 }
 
@@ -465,18 +495,7 @@ function tools(
           const result = await controlRegistry.execute(command, {
             source: 'agent',
           });
-          const reason = result.reason
-            ? PUBLIC_CONTROL_RESULT_REASONS.has(result.reason)
-              ? result.reason
-              : 'execution_failed'
-            : undefined;
-          return {
-            ...result,
-            ...(reason ? { reason } : { reason: undefined }),
-            ...(result.snapshot
-              ? { snapshot: sanitizeControl(result.snapshot) }
-              : {}),
-          };
+          return sanitizeControlResult(result);
         }),
     },
     readTool(
@@ -594,24 +613,29 @@ export function registerWebMcpUiTools(
 
   const controller = new AbortController();
   let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    controller.abort();
+    locks.delete(prefix);
+  };
   try {
     for (const tool of tools(
       prefix,
       options.controlRegistry,
       options.dataSurfaceRegistry,
     )) {
-      modelContext.registerTool(tool, { signal: controller.signal });
+      const registration = modelContext.registerTool(tool, {
+        signal: controller.signal,
+      });
+      if (registration) {
+        void Promise.resolve(registration).catch(dispose);
+      }
     }
   } catch (error) {
-    controller.abort();
-    locks.delete(prefix);
+    dispose();
     throw error;
   }
 
-  return () => {
-    if (disposed) return;
-    disposed = true;
-    controller.abort();
-    locks.delete(prefix);
-  };
+  return dispose;
 }

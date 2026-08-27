@@ -1,10 +1,21 @@
 <script lang="ts">
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type {
   ControlInteractionOptions,
   ControlOption,
 } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
+import {
+  matchingOption,
+  prepareTextControlValue,
+} from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   options: ControlOption[];
@@ -49,24 +60,38 @@ const filtered = $derived(
 const controlId = $derived(
   interaction === false ? undefined : (interaction?.id ?? name ?? inputId),
 );
-function commit(option: ControlOption) {
+function commit(option: ControlOption, userEdit = false) {
   if (option.disabled || disabled) return;
+  const changed = String(option.value) !== value;
   value = String(option.value);
   query = option.label;
   open = false;
   onvaluechange?.(value);
+  if (userEdit && changed) {
+    recordControlUserEdit(
+      interactionContext,
+      controlId,
+      interaction === false ? undefined : interaction?.subject,
+    );
+    if (rootEl) emitControlChange(rootEl);
+  }
 }
 function setValue(next: unknown) {
   const candidate = String(next ?? '');
-  const option = options.find(
-    (item) => String(item.value) === candidate || item.label === candidate,
-  );
+  const option = matchingOption(options, candidate, true);
   if (option) commit(option);
   else if (allowCustom) {
     value = candidate;
     query = candidate;
     onvaluechange?.(candidate);
   }
+}
+function prepareValue(next: unknown) {
+  const candidate = prepareTextControlValue(next);
+  const option = matchingOption(options, candidate, true);
+  if (option) return String(option.value);
+  if (allowCustom) return candidate;
+  return candidate;
 }
 function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
   query = event.currentTarget.value;
@@ -96,7 +121,7 @@ function handleKeydown(event: KeyboardEvent) {
       enabled[(position - 1 + enabled.length) % enabled.length] ?? 0;
   } else if (event.key === 'Enter' && open && filtered[activeIndex]) {
     event.preventDefault();
-    commit(filtered[activeIndex]);
+    commit(filtered[activeIndex], true);
   } else if (event.key === 'Escape') {
     open = false;
   }
@@ -138,30 +163,40 @@ useControlRegistration(() => {
       options,
     },
     getValue: () => value,
+    prepareValue,
     setValue,
     clear: () => {
       value = '';
       query = '';
       onvaluechange?.('');
+      return true;
     },
     focus: () => input.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
     validate: () => input.reportValidity(),
+    validateValue: (next) => {
+      const candidate = String(next ?? '');
+      const option = matchingOption(options, candidate, true);
+      if (option) return option.disabled !== true;
+      return allowCustom && (!required || candidate.length > 0);
+    },
     getState: () => ({
-      disabled,
+      disabled: input.matches(':disabled'),
       valid: input.validity.valid,
       validationMessage: input.validationMessage || undefined,
     }),
   };
 });
 </script>
-<div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div bind:this={rootEl} class="combobox {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   <label for={inputId}>{label}</label><input bind:this={inputEl} id={inputId} {name} role="combobox" autocomplete="off" {placeholder} {disabled} {required} value={query}
     aria-expanded={open} aria-controls={listId} aria-autocomplete="list" aria-activedescendant={open && filtered[activeIndex] ? `${listId}-${activeIndex}` : undefined}
     onfocus={() => open = true} oninput={handleInput} onkeydown={handleKeydown} />
   {#if open && filtered.length}<div id={listId} class="options" role="listbox">{#each filtered as option, index (option.value)}<button id={`${listId}-${index}`} type="button" role="option"
-      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option)}>{option.label}</button>{/each}</div>{/if}
+      aria-selected={String(option.value) === value} class:active={index === activeIndex} disabled={option.disabled} onpointerdown={(event) => event.preventDefault()} onclick={() => commit(option, true)}>{option.label}</button>{/each}</div>{/if}
 </div>
 <style>
   .combobox { position: relative; display: grid; gap: var(--smrt-spacing-1); color: var(--smrt-color-on-surface); }

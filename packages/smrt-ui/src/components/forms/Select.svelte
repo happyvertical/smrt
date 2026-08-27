@@ -8,7 +8,9 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import { prepareTextControlValue } from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
+import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
   value?: string;
@@ -59,14 +61,28 @@ function setControlValue(next: unknown) {
   if (selectEl) emitControlChange(selectEl);
 }
 
-$effect(() => {
-  const context = controlInteraction;
+function isOptionDisabled(option: HTMLOptionElement) {
+  return option.disabled || option.closest('optgroup')?.disabled === true;
+}
+
+function validateControlValue(next: unknown) {
+  const element = selectEl;
+  if (!element) return true;
+  const candidate = String(next ?? '');
+  if (candidate === '') return !required;
+  return Array.from(element.options).some(
+    (option) => option.value === candidate && !isOptionDisabled(option),
+  );
+}
+
+useControlRegistration(() => {
   const element = selectEl;
   const controlId = resolvedControlId;
   const options = resolvedInteraction;
-  if (!context || !element || !controlId || options === false) return;
-  return context.registry.register({
-    identity: { formId: context.formId, controlId, subject: options.subject },
+  if (!element || !controlId || options === false) return false;
+  return {
+    controlId,
+    subject: options.subject,
     metadata: {
       kind: 'select',
       label: formGroup?.().label ?? ariaLabel ?? undefined,
@@ -78,22 +94,27 @@ $effect(() => {
       options: Array.from(element.options).map((option) => ({
         value: option.value,
         label: option.label,
-        disabled: option.disabled,
+        disabled: isOptionDisabled(option),
       })),
     },
     getValue: () => value,
+    prepareValue: prepareTextControlValue,
     setValue: setControlValue,
-    clear: () => setControlValue(''),
+    clear: () => {
+      setControlValue('');
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: validateControlValue,
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
-  });
+  };
 });
 
 export function focus(): void {
@@ -118,6 +139,8 @@ export function getElement(): HTMLSelectElement | null {
 		class="select {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
+		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+		data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
 	{...rest}
 >
 	{@render children()}

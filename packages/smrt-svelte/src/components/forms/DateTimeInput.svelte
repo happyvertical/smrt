@@ -1,7 +1,6 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { importOptional } from '@happyvertical/smrt-ui/utils/import-optional.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -10,6 +9,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { prepareTextFieldValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -105,33 +105,67 @@ function formatForDisplay(isoValue: string): string {
   }
 }
 
+function isValidDateTimeValue(candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  if (candidate === '') return !required;
+  const match = includeTime
+    ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?$/.exec(
+        candidate,
+      )
+    : /^(\d{4})-(\d{2})-(\d{2})$/.exec(candidate);
+  if (!match) return false;
+  const [, year, month, day, hour = '0', minute = '0', second = '0'] = match;
+  const date = new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    ),
+  );
+  return (
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() === Number(month) - 1 &&
+    date.getUTCDate() === Number(day) &&
+    date.getUTCHours() === Number(hour) &&
+    date.getUTCMinutes() === Number(minute) &&
+    date.getUTCSeconds() === Number(second)
+  );
+}
+
 // Update display when value changes
 $effect(() => {
   displayValue = formatForDisplay(value);
 });
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'datetime',
-      label,
-      description: description ?? (includeTime ? 'Date and time' : 'Date'),
+      get label() {
+        return label;
+      },
+      get description() {
+        return description ?? (includeTime ? 'Date and time' : 'Date');
+      },
       setValue: (v: unknown) => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
-      constraints: { required },
-      validate: () => !required || value.trim().length > 0,
+      prepareValue: prepareTextFieldValue,
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      validateValue: isValidDateTimeValue,
+      validate: () => isValidDateTimeValue(value),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

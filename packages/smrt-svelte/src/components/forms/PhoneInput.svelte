@@ -1,6 +1,5 @@
 <script lang="ts">
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
@@ -9,6 +8,10 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import {
+  invalidStagedValue,
+  prepareTextFieldValue,
+} from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -60,11 +63,13 @@ const isInitializing = $derived(stt.isInitializing);
 const downloadProgress = $derived(stt.downloadProgress);
 
 // Phone validation (basic North American format)
-const isValidPhone = $derived.by(() => {
-  if (!value) return true;
-  const digits = value.replace(/\D/g, '');
-  return digits.length >= 10 && digits.length <= 11;
-});
+function isValidPhoneValue(candidate: unknown): boolean {
+  if (typeof candidate !== 'string') return false;
+  if (!candidate) return !required;
+  const digits = candidate.replace(/\D/g, '');
+  return digits.length === 10 || (digits.length === 11 && digits[0] === '1');
+}
+const isValidPhone = $derived.by(() => isValidPhoneValue(value));
 const showInvalid = $derived(value && !isValidPhone);
 
 function updateValue(newValue: string) {
@@ -91,7 +96,7 @@ function formatPhoneNumber(input: string): string {
 }
 
 // Parse spoken phone number
-function parseSpokenPhone(text: string): string {
+function extractSpokenPhoneDigits(text: string): string {
   const wordNumbers: Record<string, string> = {
     zero: '0',
     oh: '0',
@@ -130,35 +135,59 @@ function parseSpokenPhone(text: string): string {
   result = result.replace(/\btriple\s*(\d)/gi, '$1$1$1');
 
   // Extract just digits
-  const digits = result.replace(/\D/g, '');
+  return result.replace(/\D/g, '');
+}
 
-  return formatPhoneNumber(digits);
+function parseSpokenPhone(text: string): string {
+  return formatPhoneNumber(extractSpokenPhoneDigits(text));
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'phone',
-      label,
-      description: description || 'Phone number',
+      get label() {
+        return label;
+      },
+      get description() {
+        return description || 'Phone number';
+      },
       setValue: (v: unknown) => {
         const strVal = String(v ?? '');
         const formatted = parseSpokenPhone(strVal);
         updateValue(formatted);
       },
       getValue: () => value,
-      constraints: { required },
-      validate: () => !required || value.trim().length > 0,
+      prepareValue: (candidate) => {
+        const prepared = prepareTextFieldValue(candidate);
+        if (prepared === '') return '';
+        const digits = extractSpokenPhoneDigits(prepared);
+        if (
+          digits.length !== 10 &&
+          !(digits.length === 11 && digits[0] === '1')
+        ) {
+          return prepared;
+        }
+        return formatPhoneNumber(digits) || invalidStagedValue();
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      validateValue: (candidate) => {
+        if (typeof candidate !== 'string') return false;
+        if (candidate === '') return !required;
+        const digits = extractSpokenPhoneDigits(candidate);
+        return (
+          digits.length === 10 || (digits.length === 11 && digits[0] === '1')
+        );
+      },
+      validate: () => isValidPhoneValue(value),
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

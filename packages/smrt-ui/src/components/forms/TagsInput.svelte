@@ -1,7 +1,15 @@
 <script lang="ts">
-import { highlightControl, revealControl } from './control-dom.js';
+import {
+  emitControlChange,
+  highlightControl,
+  revealControl,
+} from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
-import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  recordControlUserEdit,
+  tryGetControlInteractionContext,
+} from './control-interaction-context.js';
+import { validatesStringArray } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
   values?: string[];
@@ -48,17 +56,30 @@ function commit(raw: string) {
   values = [...values, tag];
   draft = '';
   onvalueschange?.(values);
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (rootEl) emitControlChange(rootEl);
 }
 function remove(index: number) {
+  if (index < 0 || index >= values.length) return;
   values = values.filter((_, candidate) => candidate !== index);
   onvalueschange?.(values);
+  recordControlUserEdit(
+    interactionContext,
+    controlId,
+    interaction === false ? undefined : interaction?.subject,
+  );
+  if (rootEl) emitControlChange(rootEl);
 }
 function setValues(next: unknown) {
   if (!Array.isArray(next)) return;
-  values = next
+  const normalized = next
     .map(String)
-    .filter((tag, index, all) => allowDuplicates || all.indexOf(tag) === index)
-    .slice(0, maxTags);
+    .filter((tag, index, all) => allowDuplicates || all.indexOf(tag) === index);
+  values = maxTags === undefined ? normalized : normalized.slice(0, maxTags);
   onvalueschange?.(values);
 }
 function handleKeydown(event: KeyboardEvent) {
@@ -85,15 +106,22 @@ useControlRegistration(() => {
     },
     getValue: () => [...values],
     setValue: setValues,
-    clear: () => setValues([]),
+    clear: () => {
+      setValues([]);
+      return true;
+    },
     focus: () => input.focus(),
     reveal: () => revealControl(root),
     highlight: (durationMs) => highlightControl(root, durationMs),
-    getState: () => ({ disabled }),
+    validateValue: (next) =>
+      validatesStringArray(next, maxTags, allowDuplicates),
+    getState: () => ({ disabled: input.matches(':disabled') }),
   };
 });
 </script>
-<div class="tags-field {className}"><label for={inputId}>{label}</label><div bind:this={rootEl} class="tags" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div class="tags-field {className}"><label for={inputId}>{label}</label><div bind:this={rootEl} class="tags" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={interaction === false ? undefined : interaction?.subject?.type}
+  data-smrt-subject-id={interaction === false ? undefined : interaction?.subject?.id}>
   {#each values as tag, index}<span class="tag">{tag}<button type="button" disabled={disabled} aria-label={`Remove ${tag}`} onclick={() => remove(index)}>×</button><input type="hidden" name={name ? `${name}[]` : undefined} value={tag} /></span>{/each}
   <input bind:this={inputEl} id={inputId} {placeholder} {disabled} bind:value={draft} onkeydown={handleKeydown} onblur={() => commit(draft)} />
 </div></div>

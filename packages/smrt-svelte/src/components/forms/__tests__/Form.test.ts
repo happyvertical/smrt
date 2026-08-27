@@ -8,6 +8,7 @@
  * form element, children rendering, the onsubmit contract, and axe.
  */
 
+import { createControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
@@ -62,5 +63,40 @@ describe('Form', () => {
   it('is axe-clean', async () => {
     const { container } = render(Form, { props: { children: submitButton() } });
     await expectNoA11yViolations(container);
+  });
+
+  it('uses the shared staged-edit review contract for local human apply', async () => {
+    let value = 'Ada';
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const identity = { formId: 'profile', controlId: 'display-name' };
+    registry.register({
+      identity,
+      metadata: { kind: 'text', label: 'Display name' },
+      getValue: () => value,
+      setValue: (next) => {
+        value = String(next);
+      },
+    });
+    render(Form, {
+      props: {
+        children: submitButton(),
+        formId: 'profile',
+        interactionRegistry: registry,
+      },
+    });
+    await registry.execute(
+      { action: 'stage', identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    expect(value).toBe('Ada');
+    expect(
+      screen.getByRole('region', { name: 'Review proposed changes' }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Apply Display name' }),
+    );
+    expect(value).toBe('Grace');
   });
 });

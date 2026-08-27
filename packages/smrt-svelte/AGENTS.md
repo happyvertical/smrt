@@ -55,6 +55,17 @@ migration; flips strict per package as it adopts the primitives).
 
 Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and AI capabilities.
 
+The rich `Form` uses smrt-ui's shared staged-edit review contract. Agent
+proposals never mutate field bindings directly: they remain staged until a
+human applies or discards them in the form's local review surface. Keep this
+state machine in smrt-ui; smrt-svelte contributes Provider-backed field
+registration and consumes the shared component rather than duplicating it.
+The generated WebMCP form tool proposes registry stages; it never writes or
+submits field values directly.
+Rich `FieldDefinition` registrations may carry a `subject` for record-qualified
+identity. The Form bridge also folds live DOM disabled/read-only state into the
+registry and omits those fields from WebMCP schemas and staging.
+
 ```svelte
 <script>
   let { data, children } = $props();
@@ -99,6 +110,11 @@ adapter for a prefix; configure distinct prefixes for intentional coexistence.
 | `useTheme()` | Theme context from `ThemeProvider` |
 
 ## AI System
+
+- Rich Form WebMCP tools only stage review proposals. Structured payloads are
+  limited to published schema properties, money uses safe integer minor units,
+  and injected legacy registries without `executeBatch` use ordered `execute`
+  calls.
 
 - **Preload strategies**: `none`, `eager`, `idle` (recommended), `on-visible`
 - **Warm client cache**: module-level Map survives navigation/remounts -- avoids re-downloading WASM/models

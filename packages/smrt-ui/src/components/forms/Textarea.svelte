@@ -7,7 +7,12 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  prepareTextControlValue,
+  validateNativeTextValue,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
+import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLTextareaAttributes, 'class' | 'value'> {
   value?: string;
@@ -60,14 +65,14 @@ function setControlValue(next: unknown) {
   if (textareaEl) emitControlChange(textareaEl);
 }
 
-$effect(() => {
-  const context = controlInteraction;
+useControlRegistration(() => {
   const element = textareaEl;
   const controlId = resolvedControlId;
   const options = resolvedInteraction;
-  if (!context || !element || !controlId || options === false) return;
-  return context.registry.register({
-    identity: { formId: context.formId, controlId, subject: options.subject },
+  if (!element || !controlId || options === false) return false;
+  return {
+    controlId,
+    subject: options.subject,
     metadata: {
       kind: 'textarea',
       label: formGroup?.().label ?? ariaLabel ?? undefined,
@@ -82,19 +87,24 @@ $effect(() => {
       },
     },
     getValue: () => value,
+    prepareValue: prepareTextControlValue,
     setValue: setControlValue,
-    clear: () => setControlValue(''),
+    clear: () => {
+      setControlValue('');
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) => highlightControl(element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validateNativeTextValue(element, next),
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       readonly: element.readOnly,
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
-  });
+  };
 });
 
 export function focus(): void {
@@ -122,6 +132,8 @@ export function getElement(): HTMLTextAreaElement | null {
 		class="textarea {className}"
 		data-smrt-control={resolvedControlId}
 		data-smrt-form={controlInteraction?.formId}
+		data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+		data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}
 	{...rest}
 ></textarea>
 

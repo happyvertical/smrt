@@ -7,6 +7,11 @@ import {
 } from './control-dom.js';
 import type { ControlInteractionOptions } from './control-interaction.js';
 import { tryGetControlInteractionContext } from './control-interaction-context.js';
+import {
+  prepareNumberControlValue,
+  snapSteppedNumber,
+  validatesSteppedNumber,
+} from './control-value-validation.js';
 import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props
@@ -61,7 +66,7 @@ const controlId = $derived(
 );
 const percent = $derived(max === min ? 0 : ((value - min) / (max - min)) * 100);
 function clamp(next: number) {
-  return Math.min(max, Math.max(min, Math.round(next / step) * step));
+  return snapSteppedNumber(next, min, max, step);
 }
 function setValue(next: unknown) {
   const parsed = Number(next);
@@ -69,11 +74,19 @@ function setValue(next: unknown) {
   value = clamp(parsed);
   if (rangeEl) emitControlChange(rangeEl);
 }
+function prepareValue(next: unknown) {
+  const prepared = prepareNumberControlValue(next);
+  if (prepared === '') return clamp(0);
+  return typeof prepared === 'number' &&
+    validatesSteppedNumber(prepared, min, max, step)
+    ? clamp(prepared)
+    : prepared;
+}
 function handleInput(event: Event & { currentTarget: HTMLInputElement }) {
-  value = Number(event.currentTarget.value);
+  value = clamp(Number(event.currentTarget.value));
 }
 function handleChange(event: Event & { currentTarget: HTMLInputElement }) {
-  value = Number(event.currentTarget.value);
+  value = clamp(Number(event.currentTarget.value));
   onchange?.(event);
 }
 useControlRegistration(() => {
@@ -94,22 +107,29 @@ useControlRegistration(() => {
       unit,
     },
     getValue: () => value,
+    prepareValue,
     setValue,
-    clear: () => setValue(min),
+    clear: () => {
+      setValue(min);
+      return true;
+    },
     focus: () => element.focus(),
     reveal: () => revealControl(element),
     highlight: (durationMs) =>
       highlightControl(element.closest('.slider') ?? element, durationMs),
     validate: () => element.reportValidity(),
+    validateValue: (next) => validatesSteppedNumber(next, min, max, step),
     getState: () => ({
-      disabled: element.disabled,
+      disabled: element.matches(':disabled'),
       valid: element.validity.valid,
       validationMessage: element.validationMessage || undefined,
     }),
   };
 });
 </script>
-<div class="slider {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}>
+<div class="slider {className}" data-smrt-control={controlId} data-smrt-form={interactionContext?.formId}
+  data-smrt-subject-type={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.type}
+  data-smrt-subject-id={resolvedInteraction === false ? undefined : resolvedInteraction.subject?.id}>
   {#if label}<div class="slider__header"><label for={resolvedId}>{label}</label><output for={resolvedId}>{formatValue(value)}</output></div>{/if}
   <div class="slider__controls">
     <input bind:this={rangeEl} id={resolvedId} type="range" {name} {min} {max} {step} {disabled} value={value}

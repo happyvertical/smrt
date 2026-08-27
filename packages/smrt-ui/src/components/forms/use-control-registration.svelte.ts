@@ -1,3 +1,4 @@
+import { onDestroy, untrack } from 'svelte';
 import type {
   ControlRegistration,
   ControlSubject,
@@ -15,13 +16,36 @@ export function useControlRegistration(
   getDescriptor: () => ControlRegistrationDescriptor | false,
 ): void {
   const context = tryGetControlInteractionContext();
+  let disposeCurrent: (() => void) | undefined;
+
+  onDestroy(() => {
+    disposeCurrent?.();
+    disposeCurrent = undefined;
+  });
+
   $effect(() => {
     const descriptor = getDescriptor();
-    if (!context || descriptor === false || !descriptor.controlId) return;
+    if (!context || descriptor === false || !descriptor.controlId) {
+      disposeCurrent?.();
+      disposeCurrent = undefined;
+      return;
+    }
     const { controlId, subject, ...registration } = descriptor;
-    return context.registry.register({
-      ...registration,
-      identity: { formId: context.formId, controlId, subject },
-    });
+    const registry = context.registry;
+    const formId = context.formId;
+    const identitySubject = subject
+      ? { type: subject.type, id: subject.id, label: subject.label }
+      : undefined;
+    const previousDispose = disposeCurrent;
+    disposeCurrent = untrack(() =>
+      registry.register({
+        ...registration,
+        identity: { formId, controlId, subject: identitySubject },
+      }),
+    );
+    // Register the replacement before disposing the prior descriptor. For a
+    // same-identity reactive update the old disposer then becomes a no-op,
+    // preserving staged proposals, undo history, and user-edit snapshots.
+    previousDispose?.();
   });
 }

@@ -1,12 +1,12 @@
 <script lang="ts">
 import { Icon } from '@happyvertical/smrt-ui';
 import { matchOption } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
-import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { prepareTextFieldValue } from './prepare-field-value.js';
 import type { SelectOption } from './types.js';
 
 export interface Props {
@@ -55,18 +55,21 @@ function updateValue(newValue: string) {
 }
 
 // Register with form context
-onMount(() => {
+$effect(() => {
   if (formContext) {
-    const optionsDesc = options.map((o) => o.label).join(', ');
-    const fullDescription = description
-      ? `${description}. Options: ${optionsDesc}`
-      : `Options: ${optionsDesc}`;
-
+    const registeredName = name;
     const fieldDef: FieldDefinition = {
-      name,
+      name: registeredName,
       type: 'select',
-      label,
-      description: fullDescription,
+      get label() {
+        return label;
+      },
+      get description() {
+        const optionsDescription = options.map((o) => o.label).join(', ');
+        return description
+          ? `${description}. Options: ${optionsDescription}`
+          : `Options: ${optionsDescription}`;
+      },
       setValue: (v: unknown) => {
         const strVal = String(v ?? '');
         const matched = matchOption(strVal, options);
@@ -77,20 +80,33 @@ onMount(() => {
         }
       },
       getValue: () => value,
-      constraints: { required },
-      options: options.map((option) => ({
-        value: option.value,
-        label: option.label,
-      })),
+      prepareValue: (candidate) => {
+        const next = prepareTextFieldValue(candidate);
+        if (next.trim() === '') return next;
+        return matchOption(next, options) ?? next;
+      },
+      clear: () => {
+        updateValue('');
+        return true;
+      },
+      getState: () => ({ disabled }),
+      get constraints() {
+        return { required };
+      },
+      get options() {
+        return options.map((option) => ({
+          value: option.value,
+          label: option.label,
+        }));
+      },
+      validateValue: (candidate) => {
+        const next = String(candidate ?? '');
+        if (next === '') return !required;
+        return options.some((option) => option.value === next);
+      },
       validate: () => !required || value.trim().length > 0,
     };
-    formContext.registerField(fieldDef);
-  }
-});
-
-onDestroy(() => {
-  if (formContext) {
-    formContext.unregisterField(name);
+    return formContext.registerField(fieldDef);
   }
 });
 

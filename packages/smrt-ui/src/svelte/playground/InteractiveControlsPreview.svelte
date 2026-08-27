@@ -40,10 +40,9 @@ let tags = $state(['svelte', 'agents']);
 let region = $state<string | number>('west');
 let status = $state('Controls are ready for direct use or agent guidance.');
 
-async function command(command: ControlCommand, confirmed = false) {
+async function command(command: ControlCommand) {
   const result = await registry.execute(command, {
     source: 'agent',
-    confirmed,
   });
   status = result.ok
     ? `${command.action} completed for ${command.identity.controlId}.`
@@ -62,10 +61,10 @@ const identity = (controlId: string) => ({
     <div class="agent-actions">
       <Button size="sm" variant="secondary" onclick={() => command({ action: 'highlight', identity: identity('country') })}>Highlight country</Button>
       <Button size="sm" variant="secondary" onclick={() => command({ action: 'stage', identity: identity('volume'), value: 72 })}>Stage volume 72</Button>
-      <Button size="sm" onclick={() => command({ action: 'apply', identity: identity('volume') }, true)}>Confirm staged value</Button>
+      <Button size="sm" onclick={() => command({ action: 'stage', identity: identity('country'), value: 'us' })}>Stage country US</Button>
     </div>
   </header>
-  <p class="agent-status" aria-live="polite">Agent: {status}</p>
+  <p class="agent-status" aria-live="polite">Agent: {status} Review staged changes in the form before applying or discarding them.</p>
 
   <Form formId="foundation-demo" interactionRegistry={registry} aria-label="Foundation controls">
     <section><h5>Choice and state</h5><div class="grid compact">

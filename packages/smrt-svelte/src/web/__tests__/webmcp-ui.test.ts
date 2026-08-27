@@ -146,7 +146,7 @@ describe('registerWebMcpUiTools', () => {
     expect(value).toBe('Ada');
     expect(
       (await parse(execute.execute({ action: 'apply', identity }))).result,
-    ).toMatchObject({ ok: false, reason: 'consent_required' });
+    ).toMatchObject({ ok: false, reason: 'human_confirmation_required' });
     expect(value).toBe('Ada');
 
     expect(
@@ -159,6 +159,79 @@ describe('registerWebMcpUiTools', () => {
       ),
     ).toEqual({ ok: false, reason: 'invalid_request', details: 'confirmed' });
     expect(value).toBe('Ada');
+  });
+
+  it('returns the canonical values staged by general form-control tools', async () => {
+    const browser = modelContext();
+    const controls = createControlInteractionRegistry();
+    const identities = {
+      checkbox: { formId: 'base', controlId: 'enabled' },
+      number: { formId: 'base', controlId: 'count' },
+      option: { formId: 'base', controlId: 'role' },
+    };
+    controls.register({
+      identity: identities.checkbox,
+      metadata: { kind: 'checkbox' },
+      getValue: () => false,
+      setValue: () => undefined,
+      prepareValue: (next) => {
+        if (typeof next !== 'boolean') throw new Error('staged_value_invalid');
+        return next;
+      },
+    });
+    controls.register({
+      identity: identities.number,
+      metadata: { kind: 'number' },
+      getValue: () => 0,
+      setValue: () => undefined,
+      prepareValue: (next) => Number(next),
+    });
+    controls.register({
+      identity: identities.option,
+      metadata: {
+        kind: 'listbox',
+        options: [{ value: 1, label: 'Admin' }],
+      },
+      getValue: () => 1,
+      setValue: () => undefined,
+      prepareValue: (next) => {
+        if (String(next) !== '1') throw new Error('staged_value_invalid');
+        return 1;
+      },
+    });
+    registerWebMcpUiTools({
+      controlRegistry: controls,
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+      document: browser.document,
+    });
+    const execute = findTool(
+      browser.registered,
+      'smrt_ui_execute_form_control',
+    );
+
+    expect(
+      await parse(
+        execute.execute({
+          action: 'stage',
+          identity: identities.checkbox,
+          value: {},
+        }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      result: { ok: false, reason: 'execution_failed' },
+    });
+    expect(controls.get(identities.checkbox)?.state.staged).toBeUndefined();
+    for (const [identity, value, staged] of [
+      [identities.number, '42', 42],
+      [identities.option, '1', 1],
+    ] as const) {
+      const response = await parse(
+        execute.execute({ action: 'stage', identity, value }),
+      );
+      expect(response).toMatchObject({ ok: true, result: { ok: true } });
+      expect(response.result.snapshot.state.staged.value).toEqual(staged);
+    }
   });
 
   it('keeps secret values redacted from list, inspect, and execute responses', async () => {
@@ -248,41 +321,94 @@ describe('registerWebMcpUiTools', () => {
     expect(JSON.stringify(result)).not.toContain('customer 4711');
   });
 
-  it('redacts secret values from an injected registry even when its flags are inconsistent', async () => {
-    const browser = modelContext();
-    const snapshot = {
-      identity: { formId: 'injected', controlId: 'secret' },
-      metadata: { kind: 'password', sensitivity: 'secret' },
-      state: {
-        value: 'injected-secret-value',
-        valueRedacted: false,
-        stagedValue: 'injected-staged-secret',
-        stagedValueRedacted: false,
-      },
-    } satisfies ControlSnapshot;
-    const controls: ControlInteractionRegistry = {
-      register: () => () => {},
-      unregister: () => {},
-      list: () => [snapshot],
-      get: () => snapshot,
-      execute: async (command) => ({
-        ok: true,
-        action: command.action,
-        identity: command.identity,
-        snapshot,
-      }),
-      subscribe: () => () => {},
-    };
-    registerWebMcpUiTools({
-      controlRegistry: controls,
-      dataSurfaceRegistry: createDataSurfaceRegistry(),
-      document: browser.document,
-    });
+  it('redacts sensitive injected snapshots and result text despite inconsistent flags', async () => {
+    for (const sensitivity of ['secret', 'sensitive'] as const) {
+      const marker = `injected-${sensitivity}-value`;
+      const browser = modelContext();
+      const snapshot = {
+        identity: { formId: 'injected', controlId: sensitivity },
+        metadata: {
+          kind: 'password',
+          sensitivity,
+          capabilities: ['discard'],
+        },
+        state: {
+          value: marker,
+          valueRedacted: false,
+          stagedValue: `${marker}-staged`,
+          stagedValueRedacted: false,
+          validationMessage: `${marker} validation`,
+          staged: {
+            value: `${marker}-nested`,
+            valueRedacted: false,
+            provenance: { source: 'agent' as const },
+            stagedAt: 1,
+            revision: 1,
+            stale: false,
+            validationMessage: `${marker} nested validation`,
+          },
+        },
+      } satisfies ControlSnapshot;
+      const controls: ControlInteractionRegistry = {
+        register: () => () => {},
+        unregister: () => {},
+        list: () => [snapshot],
+        get: () => snapshot,
+        execute: async (command) => ({
+          ok: false,
+          action: command.action,
+          identity: command.identity,
+          reason: `${marker} reason`,
+          validationMessage: `${marker} result validation`,
+          snapshot,
+        }),
+        subscribe: () => () => {},
+      };
+      registerWebMcpUiTools({
+        controlRegistry: controls,
+        dataSurfaceRegistry: createDataSurfaceRegistry(),
+        document: browser.document,
+      });
 
-    const list = await parse(
-      findTool(browser.registered, 'smrt_ui_list_form_controls').execute({}),
-    );
-    expect(JSON.stringify(list)).not.toContain('injected-secret');
+      const identity = { formId: 'injected', controlId: sensitivity };
+      const list = await parse(
+        findTool(browser.registered, 'smrt_ui_list_form_controls').execute({}),
+      );
+      const inspect = await parse(
+        findTool(browser.registered, 'smrt_ui_inspect_form_control').execute({
+          identity,
+        }),
+      );
+      const executed = await parse(
+        findTool(browser.registered, 'smrt_ui_execute_form_control').execute({
+          action: 'focus',
+          identity,
+        }),
+      );
+
+      expect(JSON.stringify([list, inspect, executed])).not.toContain(marker);
+      for (const result of [
+        list.result[0],
+        inspect.result,
+        executed.result.snapshot,
+      ]) {
+        expect(result.metadata.capabilities).toEqual(['discard']);
+        expect(result.state).toMatchObject({
+          valueRedacted: true,
+          stagedValueRedacted: true,
+          staged: {
+            valueRedacted: true,
+          },
+        });
+        expect(result.state).not.toHaveProperty('value');
+        expect(result.state).not.toHaveProperty('stagedValue');
+        expect(result.state).not.toHaveProperty('validationMessage');
+        expect(result.state.staged).not.toHaveProperty('value');
+        expect(result.state.staged).not.toHaveProperty('validationMessage');
+      }
+      expect(executed.result.reason).toBe('execution_failed');
+      expect(executed.result).not.toHaveProperty('validationMessage');
+    }
   });
 
   it('filters hidden columns and preserves surface revision and replay failures', async () => {
@@ -527,5 +653,85 @@ describe('registerWebMcpUiTools', () => {
       registerWebMcpUiTools({ ...registries, document }),
     ).not.toThrow();
     expect(calls).toBe(6);
+  });
+
+  it('observes asynchronous host rejection, aborts tools, and releases only its own lock', async () => {
+    let rejectFirstRegistration: ((reason?: unknown) => void) | undefined;
+    const signals: AbortSignal[] = [];
+    let calls = 0;
+    const document = {
+      modelContext: {
+        registerTool(
+          _tool: WebMcpToolSpec,
+          options?: { signal?: AbortSignal },
+        ): void | PromiseLike<void> {
+          calls += 1;
+          if (options?.signal) signals.push(options.signal);
+          if (calls === 1) {
+            return new Promise<void>((_resolve, reject) => {
+              rejectFirstRegistration = reject;
+            });
+          }
+        },
+      },
+    };
+    const registries = {
+      controlRegistry: createControlInteractionRegistry(),
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+    };
+
+    const disposeFirst = registerWebMcpUiTools({ ...registries, document });
+    disposeFirst();
+    const disposeReplacement = registerWebMcpUiTools({
+      ...registries,
+      document,
+    });
+
+    rejectFirstRegistration?.(new Error('late host collision'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(signals.slice(0, 6).every((signal) => signal.aborted)).toBe(true);
+    expect(signals.slice(6).every((signal) => !signal.aborted)).toBe(true);
+    expect(() => registerWebMcpUiTools({ ...registries, document })).toThrow(
+      'already registered',
+    );
+
+    disposeReplacement();
+    expect(() =>
+      registerWebMcpUiTools({ ...registries, document }),
+    ).not.toThrow();
+  });
+
+  it('releases an active prefix when asynchronous host registration fails', async () => {
+    const signals: AbortSignal[] = [];
+    let rejectRegistration: ((reason?: unknown) => void) | undefined;
+    const document = {
+      modelContext: {
+        registerTool(
+          _tool: WebMcpToolSpec,
+          options?: { signal?: AbortSignal },
+        ): void | PromiseLike<void> {
+          if (options?.signal) signals.push(options.signal);
+          if (!rejectRegistration) {
+            return new Promise<void>((_resolve, reject) => {
+              rejectRegistration = reject;
+            });
+          }
+        },
+      },
+    };
+    const registries = {
+      controlRegistry: createControlInteractionRegistry(),
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+    };
+
+    registerWebMcpUiTools({ ...registries, document });
+    rejectRegistration?.(new Error('host collision'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect(() =>
+      registerWebMcpUiTools({ ...registries, document }),
+    ).not.toThrow();
   });
 });

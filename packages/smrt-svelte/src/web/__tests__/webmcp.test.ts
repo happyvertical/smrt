@@ -43,6 +43,29 @@ describe('useWebMcpTool', () => {
     expect(registered[1].signal?.aborted).toBe(true);
   });
 
+  it('observes asynchronous host rejection and aborts the failed registration', async () => {
+    let rejectRegistration: ((reason?: unknown) => void) | undefined;
+    let signal: AbortSignal | undefined;
+    document.modelContext = {
+      registerTool(_tool, options) {
+        signal = options?.signal;
+        return new Promise<void>((_resolve, reject) => {
+          rejectRegistration = reject;
+        });
+      },
+    };
+
+    const view = render(Harness);
+    await tick();
+    expect(signal?.aborted).toBe(false);
+
+    rejectRegistration?.(new Error('host collision'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(signal?.aborted).toBe(true);
+    view.unmount();
+  });
+
   it('is a no-op when WebMCP is unavailable', async () => {
     const view = render(Harness);
     await tick();
