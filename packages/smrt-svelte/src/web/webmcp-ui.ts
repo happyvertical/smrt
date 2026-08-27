@@ -600,9 +600,7 @@ export function registerWebMcpUiTools(
       options.controlRegistry,
       options.dataSurfaceRegistry,
     )) {
-      void Promise.resolve(
-        modelContext.registerTool(tool, { signal: controller.signal }),
-      ).catch(() => controller.abort());
+      modelContext.registerTool(tool, { signal: controller.signal });
     }
   } catch (error) {
     controller.abort();

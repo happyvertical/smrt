@@ -53,9 +53,7 @@ export function useWebMcpTool(
     const spec = factory();
     if (!spec) return;
     const controller = new AbortController();
-    void Promise.resolve(
-      context.registerTool(spec, { signal: controller.signal }),
-    ).catch(() => controller.abort());
+    context.registerTool(spec, { signal: controller.signal });
 
     return () => controller.abort();
   });

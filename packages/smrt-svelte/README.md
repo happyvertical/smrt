@@ -112,6 +112,10 @@ guards. The `effects`, `filter`, and `filterTool` policy applies to generated
 data/model tools only; the fixed mounted-UI adapter has the separate controls
 described below.
 
+WebMCP test doubles and polyfills should implement the browser's
+promise-returning `document.modelContext.registerTool()` contract; declare the
+function `async` when migrating older void-returning fixtures.
+
 ### Mounted UI through WebMCP
 
 `<Provider webmcp>` registers six fixed `smrt_ui_*` tools for the mounted UI:
