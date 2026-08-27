@@ -6,6 +6,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 import type { MeasurementUnit, MeasurementValue } from './types.js';
 
 const { t } = useI18n();
@@ -315,6 +316,27 @@ $effect(() => {
         }
       },
       getValue: () => (value !== null ? { value, unit } : null),
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return null;
+        }
+        if (typeof candidate === 'number') {
+          return Number.isFinite(candidate)
+            ? { value: candidate, unit }
+            : invalidStagedValue();
+        }
+        if (typeof candidate === 'string') {
+          return parseSpokenMeasurement(candidate) ?? invalidStagedValue();
+        }
+        if (
+          typeof candidate !== 'object' ||
+          Array.isArray(candidate) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(candidate))
+        ) {
+          return invalidStagedValue();
+        }
+        return candidate;
+      },
       clear: () => {
         updateValue(null);
         return true;

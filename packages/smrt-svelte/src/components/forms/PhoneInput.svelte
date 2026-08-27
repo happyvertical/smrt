@@ -8,6 +8,10 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import {
+  invalidStagedValue,
+  prepareTextFieldValue,
+} from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -157,6 +161,13 @@ $effect(() => {
         updateValue(formatted);
       },
       getValue: () => value,
+      prepareValue: (candidate) => {
+        const prepared = prepareTextFieldValue(candidate);
+        if (prepared === '') return '';
+        if (!isValidPhoneValue(prepared)) return prepared;
+        const formatted = parseSpokenPhone(prepared);
+        return formatted || invalidStagedValue();
+      },
       getState: () => ({ disabled }),
       get constraints() {
         return { required };

@@ -2,17 +2,22 @@
 import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import Form from '../Form.svelte';
 import TextInput from '../TextInput.svelte';
+import CustomRegistrationField from './custom-registration-field.fixture.svelte';
 
 let {
   interactionRegistry,
   firstName = 'first',
   showFirst = true,
   showReplacement = false,
+  showCustomFirst = false,
+  showCustomReplacement = false,
 }: {
   interactionRegistry: ControlInteractionRegistry;
   firstName?: string;
   showFirst?: boolean;
   showReplacement?: boolean;
+  showCustomFirst?: boolean;
+  showCustomReplacement?: boolean;
 } = $props();
 </script>
 
@@ -22,5 +27,11 @@ let {
   {/if}
   {#if showReplacement}
     <TextInput name="shared" label="Replacement field" />
+  {/if}
+  {#if showCustomFirst}
+    <CustomRegistrationField name="custom-shared" label="Custom first" />
+  {/if}
+  {#if showCustomReplacement}
+    <CustomRegistrationField name="custom-shared" label="Custom replacement" />
   {/if}
 </Form>

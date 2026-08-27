@@ -6,6 +6,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -257,6 +258,16 @@ $effect(() => {
         }
       },
       getValue: () => value,
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined || candidate === '') {
+          return null;
+        }
+        if (typeof candidate === 'number') {
+          return candidate;
+        }
+        if (typeof candidate !== 'string') return invalidStagedValue();
+        return parseSpokenMoney(candidate) ?? invalidStagedValue();
+      },
       getState: () => ({ disabled }),
       get constraints() {
         return { required, min, max };

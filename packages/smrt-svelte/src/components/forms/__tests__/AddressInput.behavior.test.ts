@@ -35,9 +35,6 @@ vi.mock('../../../state/form-context.js', () => ({
     registerField: (field: typeof formCapture.field) => {
       formCapture.field = field;
     },
-    unregisterField: () => {
-      formCapture.field = undefined;
-    },
   }),
 }));
 

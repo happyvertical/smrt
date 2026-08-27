@@ -6,6 +6,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 
 export interface Props {
   /** Field name */
@@ -68,6 +69,20 @@ $effect(() => {
         }
       },
       getValue: () => checked,
+      prepareValue: (candidate) => {
+        if (typeof candidate === 'boolean') return candidate;
+        if (
+          candidate !== null &&
+          candidate !== undefined &&
+          typeof candidate !== 'string' &&
+          typeof candidate !== 'number'
+        ) {
+          return invalidStagedValue();
+        }
+        return (
+          parseSpokenBoolean(String(candidate ?? '')) ?? invalidStagedValue()
+        );
+      },
       clear: () => {
         updateValue(false);
         return true;

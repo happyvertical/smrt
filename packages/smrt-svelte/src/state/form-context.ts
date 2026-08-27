@@ -79,8 +79,6 @@ export interface SMRTFormContext {
   readonly mode: 'smrt' | 'default';
   /** Register a field with the form */
   registerField: (field: FieldDefinition) => () => void;
-  /** Unregister a field */
-  unregisterField: (name: string) => void;
   /** Get all registered fields schema (for LLM prompt) */
   getFieldSchema: () => FieldDefinition[];
   /** Whether form-level listening is active */

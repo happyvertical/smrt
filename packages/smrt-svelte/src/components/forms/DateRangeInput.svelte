@@ -8,6 +8,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { invalidStagedValue } from './prepare-field-value.js';
 import type { DateRangeValue } from './types.js';
 
 const { t } = useI18n();
@@ -229,6 +230,19 @@ $effect(() => {
           .catch(() => {});
       },
       getValue: () => ({ startDate, endDate }),
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined) {
+          return { startDate: '', endDate: '' };
+        }
+        if (
+          typeof candidate !== 'object' ||
+          Array.isArray(candidate) ||
+          ![Object.prototype, null].includes(Object.getPrototypeOf(candidate))
+        ) {
+          return invalidStagedValue();
+        }
+        return candidate;
+      },
       clear: () => {
         updateValue('', '');
         return true;

@@ -7,6 +7,10 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import {
+  invalidStagedValue,
+  prepareTextFieldValue,
+} from './prepare-field-value.js';
 import type { AddressValue } from './types.js';
 
 const { t } = useI18n();
@@ -312,6 +316,28 @@ $effect(() => {
         }
       },
       getValue: currentValue,
+      prepareValue: (candidate) => {
+        if (candidate === null || candidate === undefined) {
+          return Object.fromEntries(
+            fields.map((field) => [
+              field,
+              field === 'country' ? (countries[0]?.value ?? '') : '',
+            ]),
+          );
+        }
+        if (typeof candidate === 'object' && !Array.isArray(candidate)) {
+          return candidate;
+        }
+        const parsed = parseSpokenAddress(prepareTextFieldValue(candidate));
+        const configured = Object.fromEntries(
+          Object.entries(parsed).filter(([field]) =>
+            fields.includes(field as AddressField),
+          ),
+        );
+        return Object.keys(configured).length > 0
+          ? { ...currentValue(), ...configured }
+          : invalidStagedValue();
+      },
       clear: () => {
         street = '';
         city = '';

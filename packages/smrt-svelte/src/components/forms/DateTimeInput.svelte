@@ -9,6 +9,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { prepareTextFieldValue } from './prepare-field-value.js';
 
 const { t } = useI18n();
 
@@ -156,6 +157,7 @@ $effect(() => {
         updateValue(String(v ?? ''));
       },
       getValue: () => value,
+      prepareValue: prepareTextFieldValue,
       getState: () => ({ disabled }),
       get constraints() {
         return { required };

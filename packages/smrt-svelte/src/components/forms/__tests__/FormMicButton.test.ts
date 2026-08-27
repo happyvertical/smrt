@@ -42,7 +42,6 @@ vi.mock('../../../state/form-context.js', () => ({
     },
     toggleListening,
     registerField: vi.fn(),
-    unregisterField: vi.fn(),
     getFieldSchema: () => [],
   }),
 }));

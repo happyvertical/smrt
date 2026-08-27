@@ -580,12 +580,6 @@ const formContext: SMRTFormContext = {
       fields = new Map(registeredFields);
     };
   },
-  unregisterField(name: string) {
-    const currentFields = untrack(() => fields);
-    fieldGenerations.delete(name);
-    currentFields.delete(name);
-    fields = new Map(currentFields);
-  },
   getFieldSchema() {
     return Array.from(fields.values());
   },

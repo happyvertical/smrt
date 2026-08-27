@@ -6,6 +6,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { prepareTextFieldValue } from './prepare-field-value.js';
 import type { SelectOption } from './types.js';
 
 export interface Props {
@@ -80,7 +81,7 @@ $effect(() => {
       },
       getValue: () => value,
       prepareValue: (candidate) => {
-        const next = String(candidate ?? '');
+        const next = prepareTextFieldValue(candidate);
         if (next.trim() === '') return next;
         return matchOption(next, options) ?? next;
       },

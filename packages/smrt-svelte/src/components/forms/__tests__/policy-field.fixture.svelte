@@ -1,5 +1,5 @@
 <script lang="ts">
-import { onDestroy, onMount } from 'svelte';
+import { onMount } from 'svelte';
 import { tryGetFormContext } from '../../../state/form-context.js';
 
 let {
@@ -14,7 +14,7 @@ const policyLabel = 'Policy field';
 const formContext = tryGetFormContext();
 
 onMount(() => {
-  formContext?.registerField({
+  return formContext?.registerField({
     name: 'policy',
     type: 'text',
     label: policyLabel,
@@ -30,8 +30,6 @@ onMount(() => {
     getValue: () => value,
   });
 });
-
-onDestroy(() => formContext?.unregisterField('policy'));
 </script>
 
 <input name="policy" aria-label={policyLabel} bind:value />

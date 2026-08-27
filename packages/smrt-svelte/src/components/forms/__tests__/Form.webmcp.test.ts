@@ -92,6 +92,73 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(screen.getByRole('textbox', { name: 'Full name' })).toHaveValue('');
   });
 
+  it('stages canonical rich values and rejects malformed text through WebMCP', async () => {
+    const registered: Array<{
+      execute: (args: Record<string, unknown>) => Promise<string>;
+    }> = [];
+    document.modelContext = {
+      registerTool(tool) {
+        registered.push(tool as (typeof registered)[number]);
+      },
+    };
+    const numberChanged = vi.fn();
+    const checkboxChanged = vi.fn();
+    const selectChanged = vi.fn();
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    render(FormWithFields, {
+      props: {
+        webmcp: true,
+        interactionRegistry: registry,
+        showClearFields: true,
+        onnumberchange: numberChanged,
+        oncheckboxchange: checkboxChanged,
+        onselectchange: selectChanged,
+      },
+    });
+    await tick();
+    await tick();
+    const tool = registered.at(-1);
+    if (!tool) throw new Error('WebMCP tool was not registered');
+
+    expect(await tool.execute({ fullname: { malformed: true } })).toBe(
+      'Staged 0 changes for review; 1 rejected',
+    );
+    expect(
+      registry.list().find((item) => item.identity.controlId === 'fullname')
+        ?.state.staged,
+    ).toBeUndefined();
+
+    expect(
+      await tool.execute({ age: '42', enabled: 'false', choice: 'First' }),
+    ).toBe('Staged 3 changes for review');
+    expect(
+      registry.list().find((item) => item.identity.controlId === 'age')?.state
+        .staged?.value,
+    ).toBe(42);
+    expect(
+      registry.list().find((item) => item.identity.controlId === 'enabled')
+        ?.state.staged?.value,
+    ).toBe(false);
+    expect(
+      registry.list().find((item) => item.identity.controlId === 'choice')
+        ?.state.staged?.value,
+    ).toBe('first');
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Apply valid changes' }),
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Age' })).toHaveValue(42);
+    expect(screen.getByRole('checkbox', { name: 'Enabled' })).not.toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Choice' })).toHaveValue(
+      'first',
+    );
+    expect(numberChanged).toHaveBeenLastCalledWith(42);
+    expect(checkboxChanged).toHaveBeenLastCalledWith(false);
+    expect(selectChanged).toHaveBeenLastCalledWith('first');
+  });
+
   it('returns focus to a rich field after applying its final proposal', async () => {
     const registered: Array<{
       execute: (args: Record<string, unknown>) => Promise<string>;
@@ -2286,6 +2353,50 @@ describe('Form WebMCP staged-edit intent', () => {
       registry.get({ formId: 'registration-lifecycle', controlId: 'shared' })
         ?.metadata.label,
     ).toBe('Replacement field');
+  });
+
+  it('does not let stale custom cleanup remove its replacement', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        showFirst: false,
+        showCustomFirst: true,
+        showCustomReplacement: false,
+      },
+    });
+    await tick();
+    await tick();
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: true,
+      showCustomReplacement: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom replacement');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      showCustomReplacement: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom replacement');
   });
 
   it('removes a smrt-mode date range when its fieldset becomes disabled', async () => {
