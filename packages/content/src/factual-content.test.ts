@@ -337,6 +337,67 @@ describe('Content governance', () => {
     }
   });
 
+  it('rolls back the review version and revision claim when review creation fails', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      configureContentGovernance({
+        assignments: [{ contentType: 'document', enabled: true }],
+      });
+      const content = new Content({
+        name: 'atomic-review-artifacts',
+        title: 'Atomic review artifacts',
+        body: 'Original body',
+        type: 'document',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              status: 'passed',
+              summary: 'Review should roll back',
+              findings: [],
+            }),
+          ),
+        },
+      });
+      await content.initialize();
+      await content.save();
+      const contentId = String(content.id);
+      const expectedUpdatedAt = content.updated_at;
+      const storedBefore = await db.get('contents', { id: contentId });
+
+      await db.query(`
+        CREATE TRIGGER fail_content_review_insert
+        BEFORE INSERT ON content_reviews
+        BEGIN
+          SELECT RAISE(ABORT, 'forced review insert failure');
+        END
+      `);
+
+      await expect(
+        content.runReview({
+          kind: 'custom',
+          expectedUpdatedAt: expectedUpdatedAt ?? undefined,
+        }),
+      ).rejects.toThrow();
+
+      expect(await db.list('content_versions', {})).toHaveLength(0);
+      expect(await db.list('content_reviews', {})).toHaveLength(0);
+      const storedAfter = await db.get('contents', { id: contentId });
+      expect((storedAfter as Record<string, unknown>).updated_at).toEqual(
+        (storedBefore as Record<string, unknown>).updated_at,
+      );
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('keeps plain Content publish/save compatible without governance tables', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',

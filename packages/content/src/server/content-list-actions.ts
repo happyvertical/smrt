@@ -43,6 +43,7 @@ import type {
   DataSurfaceJsonValue,
   DataSurfaceRowId,
 } from '@happyvertical/smrt-ui/data';
+import type { ContentBodyFormat } from '../body-format.js';
 import type { Content } from '../content.js';
 import {
   buildContentQuerySchema,
@@ -377,16 +378,49 @@ export interface ContentListActionCollection extends ContentQueryCollection {
   get(filter: string | Record<string, unknown>): Promise<Content | null>;
 }
 
+/**
+ * Persistence-free copy supplied to host format/optimize handlers.
+ *
+ * Only the explicitly copied mutable fields are applied back to Content before
+ * the adapter's revision-guarded save. Identity, tenancy, lifecycle state,
+ * relationship IDs, database handles, and Content persistence methods are
+ * deliberately absent.
+ */
+export interface ContentListWorkflowDraft {
+  readonly contentId: string;
+  readonly tenantId: string | null;
+  readonly type: string | null;
+  readonly variant: string | null;
+  readonly status: Content['status'];
+  readonly state: Content['state'];
+  fileKey: string | null;
+  author: string | null;
+  name: string;
+  title: string;
+  description: string | null;
+  body: string;
+  bodyFormat: ContentBodyFormat | null;
+  publish_date: Date | null;
+  url: string | null;
+  source: string | null;
+  original_url: string | null;
+  language: string | null;
+  tags: string[];
+  category: string | null;
+  metadata: Record<string, unknown>;
+  thumbnailAssetId: string | null;
+}
+
 export interface ContentListWorkflowHandlers {
-  /** Mutate the supplied object without saving it; the adapter persists by revision CAS. */
+  /** Mutate a persistence-free draft; the adapter applies it by revision CAS. */
   formatBody?: (
-    content: Content,
+    content: ContentListWorkflowDraft,
     payload: DataSurfaceJsonValue | undefined,
     run: PrincipalRun,
   ) => Promise<void>;
-  /** Mutate the supplied object without saving it; the adapter persists by revision CAS. */
+  /** Mutate a persistence-free draft; the adapter applies it by revision CAS. */
   optimize?: (
-    content: Content,
+    content: ContentListWorkflowDraft,
     payload: DataSurfaceJsonValue | undefined,
     run: PrincipalRun,
   ) => Promise<void>;
@@ -676,17 +710,56 @@ async function applyWorkflow(
 ): Promise<void> {
   const input = payloadRecord(payload);
   const save = () => content.save({ expectedUpdatedAt });
-  const mutationOnlyContent = () =>
-    new Proxy(content, {
-      get(target, property, receiver) {
-        if (property === 'save') {
-          return async () => {
-            throw new ContentListActionError('handler_persistence_forbidden');
-          };
-        }
-        return Reflect.get(target, property, receiver);
-      },
-    });
+  const mutationDraft = (): ContentListWorkflowDraft => ({
+    contentId: String(content.id),
+    tenantId: content.tenantId,
+    type: content.type,
+    variant: content.variant,
+    status: content.status,
+    state: content.state,
+    fileKey: content.fileKey,
+    author: content.author,
+    name: content.name,
+    title: content.title,
+    description: content.description,
+    body: content.body,
+    bodyFormat: content.bodyFormat,
+    publish_date: content.publish_date,
+    url: content.url,
+    source: content.source,
+    original_url: content.original_url,
+    language: content.language,
+    tags: [...(content.tags ?? [])],
+    category: content.category,
+    metadata: structuredClone(content.metadata ?? {}),
+    thumbnailAssetId: content.thumbnailAssetId,
+  });
+  const applyDraft = (draft: ContentListWorkflowDraft) => {
+    content.fileKey = draft.fileKey;
+    content.author = draft.author;
+    content.name = draft.name;
+    content.title = draft.title;
+    content.description = draft.description;
+    content.body = draft.body;
+    content.bodyFormat = draft.bodyFormat;
+    content.publish_date = draft.publish_date;
+    content.url = draft.url;
+    content.source = draft.source;
+    content.original_url = draft.original_url;
+    content.language = draft.language;
+    content.tags = [...draft.tags];
+    content.category = draft.category;
+    content.metadata = structuredClone(draft.metadata);
+    content.thumbnailAssetId = draft.thumbnailAssetId;
+  };
+  const runHandler = async (
+    handler: NonNullable<ContentListWorkflowHandlers['formatBody']>,
+  ) => {
+    const draft = mutationDraft();
+    await handler(draft, payload, run);
+    applyDraft(draft);
+    await save();
+  };
   switch (workflowId) {
     case 'move-to-trash':
       content.status = 'deleted';
@@ -725,8 +798,7 @@ async function applyWorkflow(
       return;
     case 'format-body':
       if (!handlers.formatBody) throw new Error('format handler unavailable');
-      await handlers.formatBody(mutationOnlyContent(), payload, run);
-      await save();
+      await runHandler(handlers.formatBody);
       return;
     case 'categorize':
       content.category = String(input.category).trim();
@@ -734,8 +806,7 @@ async function applyWorkflow(
       return;
     case 'optimize':
       if (!handlers.optimize) throw new Error('optimize handler unavailable');
-      await handlers.optimize(mutationOnlyContent(), payload, run);
-      await save();
+      await runHandler(handlers.optimize);
       return;
   }
 }

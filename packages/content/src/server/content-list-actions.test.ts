@@ -945,6 +945,11 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
       handlers: {
         formatBody: vi.fn(async (content) => {
+          expect('save' in content).toBe(false);
+          expect('createVersion' in content).toBe(false);
+          expect('addReference' in content).toBe(false);
+          expect('addAsset' in content).toBe(false);
+          expect('db' in content).toBe(false);
           content.title = 'formatted';
           setup.collection.rows[0].updated_at =
             '2026-01-01T00:00:00.000Z-concurrent';
