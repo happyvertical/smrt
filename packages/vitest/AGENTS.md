@@ -98,6 +98,12 @@ through the core FK renderer after all tables exist. Renderer-owned named
 constraints must never be fed back through the generic SQL schema parser.
 SQLite keeps its existing schema-template and synchronizer path.
 
+The package's PostgreSQL integration lane reads the built commerce and
+marketing manifests as multi-package fixtures. Its package-specific Turbo task
+therefore builds both fixture packages explicitly; do not rely on pre-existing
+`dist/manifest.json` files in a developer worktree or add dependency cycles to
+`@happyvertical/smrt-vitest`.
+
 On PostgreSQL, the isolated factories provision the canonical change-feed
 table and `_smrt_append_change` helper on the base connection before opening
 the test transaction. Transaction handles are treated as already initialized

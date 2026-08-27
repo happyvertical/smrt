@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   createDatabaseName,
@@ -54,4 +55,20 @@ test('exports the isolated URL for SMRT and libpq clients', () => {
   assert.equal(environment.PGDATABASE, 'smrt_ci_1');
   assert.equal(environment.PGSSLMODE, 'verify-full');
   assert.equal(environment.PGAPPNAME, 'smrt ci');
+});
+
+test('builds the vitest PostgreSQL lane manifest fixtures through Turbo', () => {
+  const turbo = JSON.parse(
+    readFileSync(new URL('../turbo.json', import.meta.url), 'utf8'),
+  );
+
+  assert.deepEqual(
+    turbo.tasks['@happyvertical/smrt-vitest#test:postgres'].dependsOn,
+    [
+      'build',
+      'generate:test',
+      '@happyvertical/smrt-commerce#build',
+      '@happyvertical/smrt-marketing#build',
+    ],
+  );
 });
