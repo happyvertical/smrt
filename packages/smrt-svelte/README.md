@@ -348,7 +348,20 @@ clears it.
 
 **UI**: `Badge`, `Button`, `Card`, `Pagination`
 
-**Display**: `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge`
+**Display** (from `@happyvertical/smrt-ui`): `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge`
+
+`CurrencyDisplay` accepts Commerce-compatible string currency fields. It trims
+and uppercases ISO 4217 codes before formatting, defaults to CAD, and renders an
+accessible inline error for malformed or unsupported codes instead of throwing
+and interrupting the surrounding collection render.
+The historical `unit="cents"` option means ISO minor units, so currencies with
+zero or three minor digits are scaled correctly. Minor-unit amounts must be
+finite safe integers; fractional or unsafe numeric values render an accessible
+inline error. `unit="dollars"` means major units.
+ISO codes whose minor unit is `N.A.` require `unit="dollars"`; minor-unit mode
+renders an accessible inline error for those codes, while major-unit mode uses
+a stable two-digit display policy. CAD and USD retain their symbol display;
+all other currencies render their ISO code for deterministic SSR hydration.
 
 **Feedback**: `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar`
 

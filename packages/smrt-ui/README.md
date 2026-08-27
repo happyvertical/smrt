@@ -45,6 +45,34 @@ Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters. The package root remains a compatibility
 barrel.
 
+### Currency display
+
+`CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted
+Commerce currency fields can be passed directly. Codes are trimmed and
+uppercased before `Intl.NumberFormat` formatting; the default remains CAD.
+Malformed or unsupported codes render an accessible inline error instead of
+throwing and interrupting a surrounding collection render.
+With the default historical `unit="cents"` setting, amounts are interpreted as
+the selected currency's ISO minor units (for example, 0 digits for JPY and 3
+for BHD). Minor-unit amounts must be finite safe integers; fractional or unsafe
+numeric values render an accessible inline error instead of being rounded.
+`unit="dollars"` means the value is already in major units.
+ISO fund, metal, test, and no-currency codes whose minor unit is `N.A.` require
+`unit="dollars"`; the default minor-unit mode renders an accessible inline
+error for those codes. Major-unit values for these codes use a stable two-digit
+display policy across server and browser runtimes. CAD and USD retain their
+symbol display; all other codes render their ISO code so SSR output does not
+depend on runtime-specific symbol data.
+
+```svelte
+<script lang="ts">
+  import { CurrencyDisplay } from '@happyvertical/smrt-ui';
+  let invoiceCurrency: string = 'eur';
+</script>
+
+<CurrencyDisplay amount={12345} currency={invoiceCurrency} />
+```
+
 ## Component standard
 
 Foundation components follow one contract:

@@ -8,22 +8,51 @@
  * code, sign handling (negative/zero/showSign), highlight classes, size
  * classes, and axe-cleanliness.
  */
+
+import { createHash } from 'node:crypto';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { render, screen } from '@testing-library/svelte';
+import { hydrate, unmount } from 'svelte';
+import { createServer } from 'vite';
 import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import CurrencyDisplay from '../CurrencyDisplay.svelte';
+import { ISO_4217_MINOR_UNITS } from '../currency-metadata.js';
+import CurrencyDisplayI18nHarness from './CurrencyDisplayI18nHarness.svelte';
+import CurrencyDisplaySsrHarness from './CurrencyDisplaySsrHarness.svelte';
+
+function metadataDigest(metadata: ReadonlyMap<string, number | null>): string {
+  const canonical = [...metadata.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([code, minorUnits]) => `${code}:${minorUnits ?? 'N.A.'}`)
+    .join('\n');
+  return createHash('sha256').update(canonical).digest('hex');
+}
 
 /** Mirror the component's absolute-value currency formatting. */
-function money(absDollars: number, currency: 'CAD' | 'USD' = 'CAD'): string {
+function money(
+  absDollars: number,
+  currency = 'CAD',
+  minorUnitDigits?: number,
+): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    currencyDisplay:
+      currency === 'CAD' || currency === 'USD' ? 'symbol' : 'code',
+    minimumFractionDigits: minorUnitDigits,
+    maximumFractionDigits: minorUnitDigits,
   }).format(absDollars);
 }
 
 describe('CurrencyDisplay', () => {
+  it('matches the canonical digest of SIX List One 2026-01-01', () => {
+    expect(ISO_4217_MINOR_UNITS.size).toBe(178);
+    expect(metadataDigest(ISO_4217_MINOR_UNITS)).toBe(
+      'e1a3c502511fa784b38dd7ac2b4056d00f3f1a9f5781df93b0f2352f8eedc976',
+    );
+  });
+
   it('formats cents into dollars by default', () => {
     render(CurrencyDisplay, { props: { amount: 12345 } }); // cents → $123.45
     expect(screen.getByText(money(123.45))).toBeInTheDocument();
@@ -49,6 +78,169 @@ describe('CurrencyDisplay', () => {
       props: { amount: 1000, unit: 'dollars', currency: 'USD' },
     });
     expect(screen.getByText(money(1000, 'USD'))).toBeInTheDocument();
+  });
+
+  it('formats an EUR amount through the public string currency prop', () => {
+    const commerceCurrency: string = 'EUR';
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: commerceCurrency },
+    });
+    expect(container.querySelector('span')?.textContent).toBe(
+      money(123.45, 'EUR'),
+    );
+  });
+
+  it.each([
+    ['JPY', 12345, '12,345'],
+    ['BHD', 12345, '12.345'],
+    ['IQD', 12345, '12.345'],
+  ])('uses the ISO minor-unit scale for %s', (currency, amount, expected) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount, currency },
+    });
+    expect(container.querySelector('span')?.textContent).toContain(expected);
+  });
+
+  it.each([
+    ['IQD', 3, '9,007,199,254,740.991'],
+    ['AFN', 2, '90,071,992,547,409.91'],
+    ['CLF', 4, '900,719,925,474.0991'],
+  ])('preserves the least-significant minor unit for large safe %s values', (currency, digits, expected) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: Number.MAX_SAFE_INTEGER, currency },
+    });
+    const text = container.querySelector('span')?.textContent;
+    expect(text).toContain(expected);
+    expect(text?.split('.').at(-1)).toHaveLength(digits);
+  });
+
+  it.each([
+    ['positive fractional', 1.5],
+    ['negative fractional', -1.5],
+    ['unsafe positive integer', Number.MAX_SAFE_INTEGER + 1],
+    ['unsafe negative integer', -(Number.MAX_SAFE_INTEGER + 1)],
+    ['NaN', Number.NaN],
+    ['positive infinity', Number.POSITIVE_INFINITY],
+    ['negative infinity', Number.NEGATIVE_INFINITY],
+  ])('rejects a %s amount in minor-unit mode', (_scenario, amount) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount, currency: 'CAD' },
+    });
+    const display = container.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent('Invalid minor-unit amount');
+  });
+
+  it('preserves a negative safe integer through the exact string formatter path', () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: -Number.MAX_SAFE_INTEGER, currency: 'IQD' },
+    });
+    const text = container.querySelector('span')?.textContent;
+    expect(text).toContain('9,007,199,254,740.991');
+    expect(text?.startsWith('-IQD')).toBe(true);
+  });
+
+  it.each([
+    ['cad', 'CAD'],
+    ['  eur  ', 'EUR'],
+    ['ved', 'VED'],
+    ['xad', 'XAD'],
+  ])('normalizes the currency code %j to %s', (currency, normalized) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency },
+    });
+    expect(container.querySelector('span')?.textContent).toBe(
+      money(123.45, normalized, 2),
+    );
+  });
+
+  it.each([
+    'US',
+    'AAA',
+    'ANG',
+    'BGN',
+    'CUC',
+    'HRK',
+    'SLL',
+    'ZWL',
+    'ZZZ',
+    '',
+  ])('renders invalid code %j without throwing', (currency) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency },
+    });
+    const normalized =
+      currency
+        .trim()
+        .replace(/[a-z]/g, (character) => character.toUpperCase()) || '(empty)';
+    const display = container.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent(`Invalid currency code: ${normalized}`);
+  });
+
+  it.each([
+    ['uſd', 'U\\u{17F}D'],
+    ['ıqd', '\\u{131}QD'],
+    ['ßp', '\\u{DF}P'],
+    ['U\u200bSD', 'U\\u{200B}SD'],
+    ['USD\u202e', 'USD\\u{202E}'],
+    ['U\u2066SD', 'U\\u{2066}SD'],
+  ])('renders rejected non-ASCII input %j visibly as %s', (currency, diagnostic) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency },
+    });
+    expect(container.querySelector('.currency-display')).toHaveTextContent(
+      `Invalid currency code: ${diagnostic}`,
+    );
+  });
+
+  it('bounds escaped astral input without splitting a code-point token', () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: '😀😀' },
+    });
+    expect(container.querySelector('.currency-display')).toHaveTextContent(
+      'Invalid currency code: \\u{1F600}…',
+    );
+  });
+
+  it('bounds malformed currency text so one row cannot force table overflow', () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: 'invalid-currency-code' },
+    });
+    expect(container.querySelector('.currency-display')).toHaveTextContent(
+      'Invalid currency code: INVALID-CURR…',
+    );
+  });
+
+  it('rejects a non-string currency from an untyped runtime caller without throwing', () => {
+    const { container } = render(CurrencyDisplay, {
+      // @ts-expect-error JavaScript callers can pass values outside the public type.
+      props: { amount: 12345, currency: null },
+    });
+    const display = container.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent('Invalid currency code: (non-string)');
+  });
+
+  it('requires major-unit input for ISO codes without a minor unit', async () => {
+    const { rerender } = render(CurrencyDisplay, {
+      props: { amount: 12.5, currency: 'XAU' },
+    });
+    const display = document.querySelector('.currency-display');
+    expect(display).toHaveClass('invalid');
+    expect(display).toHaveTextContent('Currency code has no minor unit: XAU');
+
+    await rerender({ amount: 12.5, currency: 'XAU', unit: 'dollars' });
+    expect(document.querySelector('.currency-display')?.textContent).toBe(
+      money(12.5, 'XAU', 2),
+    );
+  });
+
+  it('resolves invalid-code prose through the active i18n snapshot', () => {
+    render(CurrencyDisplayI18nHarness);
+    expect(screen.getByText('Code monétaire invalide : ZZZ')).toBeVisible();
+    expect(screen.getByText('Devise sans unité mineure : XAU')).toBeVisible();
+    expect(screen.getByText('Montant en unité mineure invalide')).toBeVisible();
   });
 
   it('shows an explicit + sign for positive amounts when showSign is set', () => {
@@ -126,5 +318,47 @@ describe('CurrencyDisplay', () => {
       props: { amount: -5000, highlightNegative: true },
     });
     await expectNoA11yViolations(container);
+  });
+
+  it('is axe-clean for an invalid currency code', async () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: 'ZZZ' },
+    });
+    await expectNoA11yViolations(container);
+  });
+
+  it('renders and hydrates valid and invalid currencies safely', async () => {
+    const vite = await createServer({
+      appType: 'custom',
+      configFile: false,
+      plugins: [svelte()],
+      root: process.cwd(),
+      server: { middlewareMode: true },
+    });
+
+    try {
+      const { default: SsrHarness } = await vite.ssrLoadModule(
+        '/src/components/display/__tests__/CurrencyDisplaySsrHarness.svelte',
+      );
+      const { render: renderSsr } = await vite.ssrLoadModule('svelte/server');
+      const result = renderSsr(SsrHarness);
+      expect(result.body).toContain(money(123.45, 'EUR'));
+      expect(result.body).toContain('Invalid currency code: ZZZ');
+      expect(result.body).toContain('Currency code has no minor unit: XAU');
+
+      const host = document.createElement('div');
+      host.innerHTML = result.body;
+      document.body.append(host);
+      const instance = hydrate(CurrencyDisplaySsrHarness, { target: host });
+      expect(host.textContent).toContain(money(123.45, 'EUR'));
+      expect(host.textContent).toContain('Invalid currency code: ZZZ');
+      expect(host.textContent).toContain(
+        'Currency code has no minor unit: XAU',
+      );
+      await unmount(instance);
+      host.remove();
+    } finally {
+      await vite.close();
+    }
   });
 });
