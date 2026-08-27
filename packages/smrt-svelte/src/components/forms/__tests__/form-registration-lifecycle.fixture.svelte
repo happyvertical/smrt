@@ -2,6 +2,7 @@
 import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import Form from '../Form.svelte';
 import TextInput from '../TextInput.svelte';
+import CompoundRegistrationWrapper from './compound-registration-wrapper.fixture.svelte';
 import CustomRegistrationField from './custom-registration-field.fixture.svelte';
 
 let {
@@ -13,6 +14,7 @@ let {
   showCustomReplacement = false,
   legacyCustomCleanup = false,
   separateLegacyCleanupContext = false,
+  compoundLegacyCustom = false,
 }: {
   interactionRegistry: ControlInteractionRegistry;
   firstName?: string;
@@ -22,6 +24,7 @@ let {
   showCustomReplacement?: boolean;
   legacyCustomCleanup?: boolean;
   separateLegacyCleanupContext?: boolean;
+  compoundLegacyCustom?: boolean;
 } = $props();
 </script>
 
@@ -32,10 +35,18 @@ let {
   {#if showReplacement}
     <TextInput name="shared" label="Replacement field" />
   {/if}
-  {#if showCustomFirst}
-    <CustomRegistrationField name="custom-shared" label="Custom first" legacyCleanup={legacyCustomCleanup} {separateLegacyCleanupContext} />
-  {/if}
-  {#if showCustomReplacement}
-    <CustomRegistrationField name="custom-shared" label="Custom replacement" legacyCleanup={legacyCustomCleanup} {separateLegacyCleanupContext} />
+  {#if compoundLegacyCustom}
+    <CompoundRegistrationWrapper
+      showFirst={showCustomFirst}
+      showReplacement={showCustomReplacement}
+      legacyCleanup={legacyCustomCleanup}
+    />
+  {:else}
+    {#if showCustomFirst}
+      <CustomRegistrationField name="custom-shared" label="Custom first" legacyCleanup={legacyCustomCleanup} {separateLegacyCleanupContext} />
+    {/if}
+    {#if showCustomReplacement}
+      <CustomRegistrationField name="custom-shared" label="Custom replacement" legacyCleanup={legacyCustomCleanup} {separateLegacyCleanupContext} />
+    {/if}
   {/if}
 </Form>

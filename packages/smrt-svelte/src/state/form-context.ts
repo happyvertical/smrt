@@ -12,7 +12,7 @@ import type {
   ControlSubject,
   ControlValueValidationResult,
 } from '@happyvertical/smrt-ui/forms';
-import { getContext, setContext } from 'svelte';
+import { getAllContexts, getContext, setContext } from 'svelte';
 
 /**
  * Field definition for form registration
@@ -111,10 +111,14 @@ export interface SMRTFormContext {
  */
 export const SMRT_FORM_KEY = Symbol('smrt-form');
 
-// A facade is installed on the component that first reads the form context.
-// Retaining its identity lets a legacy field read the context again during
-// teardown without losing the registration it owns.
-const callerFormContextFacades = new WeakSet<SMRTFormContext>();
+// Svelte gives every component its own context map, copying inherited values
+// into that map. Cache a facade by this map rather than by the inherited
+// context value: repeated calls from one component share ownership, while
+// descendants that inherit a facade receive their own ownership boundary.
+const callerFormContextFacades = new WeakMap<
+  Map<unknown, unknown>,
+  SMRTFormContext
+>();
 
 function createFormContextFacade(ctx: SMRTFormContext): SMRTFormContext {
   const registrations = new Map<string, Set<() => void>>();
@@ -166,7 +170,27 @@ function createFormContextFacade(ctx: SMRTFormContext): SMRTFormContext {
       return ctx.formId;
     },
   };
-  callerFormContextFacades.add(facade);
+  return facade;
+}
+
+function getCallerFormContext(required: true): SMRTFormContext;
+function getCallerFormContext(required: false): SMRTFormContext | null;
+function getCallerFormContext(required: boolean): SMRTFormContext | null {
+  const contextMap = getAllContexts();
+  const existingFacade = callerFormContextFacades.get(contextMap);
+  if (existingFacade) return existingFacade;
+
+  const ctx = getContext<SMRTFormContext>(SMRT_FORM_KEY);
+  if (!ctx) {
+    if (!required) return null;
+    throw new Error(
+      'Form context not found. Make sure to wrap your inputs with <SMRTForm>',
+    );
+  }
+
+  const facade = createFormContextFacade(ctx);
+  callerFormContextFacades.set(contextMap, facade);
+  setContext(SMRT_FORM_KEY, facade);
   return facade;
 }
 
@@ -182,33 +206,12 @@ export function setFormContext(ctx: SMRTFormContext): void {
  * @throws If called outside of SMRTForm
  */
 export function getFormContext(): SMRTFormContext {
-  const ctx = getContext<SMRTFormContext>(SMRT_FORM_KEY);
-
-  if (!ctx) {
-    throw new Error(
-      'Form context not found. Make sure to wrap your inputs with <SMRTForm>',
-    );
-  }
-
-  if (callerFormContextFacades.has(ctx)) return ctx;
-  // Context is inherited by value per component. Shadow the form context on
-  // this caller's component so repeated accessor calls share registration
-  // ownership, while sibling fields still receive separate facades.
-  const facade = createFormContextFacade(ctx);
-  setContext(SMRT_FORM_KEY, facade);
-  return facade;
+  return getCallerFormContext(true);
 }
 
 /**
  * Try to get form context (returns null if not available)
  */
 export function tryGetFormContext(): SMRTFormContext | null {
-  const ctx = getContext<SMRTFormContext>(SMRT_FORM_KEY);
-  if (!ctx) return null;
-  if (callerFormContextFacades.has(ctx)) return ctx;
-  // See getFormContext(): the shadow gives a component one stable ownership
-  // boundary without collapsing sibling fields into a shared legacy cleanup.
-  const facade = createFormContextFacade(ctx);
-  setContext(SMRT_FORM_KEY, facade);
-  return facade;
+  return getCallerFormContext(false);
 }

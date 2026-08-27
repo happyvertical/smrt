@@ -2633,6 +2633,62 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toBeUndefined();
   });
 
+  it('keeps descendant legacy cleanup isolated after a compound field reads context', async () => {
+    const registry = createControlInteractionRegistry();
+    const view = render(FormRegistrationLifecycle, {
+      props: {
+        interactionRegistry: registry,
+        showFirst: false,
+        showCustomFirst: true,
+        showCustomReplacement: true,
+        legacyCustomCleanup: true,
+        compoundLegacyCustom: true,
+      },
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom replacement');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: true,
+      showCustomReplacement: false,
+      legacyCustomCleanup: true,
+      compoundLegacyCustom: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      })?.metadata.label,
+    ).toBe('Custom first');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showFirst: false,
+      showCustomFirst: false,
+      showCustomReplacement: false,
+      legacyCustomCleanup: true,
+      compoundLegacyCustom: true,
+    });
+    await tick();
+    await tick();
+    expect(
+      registry.get({
+        formId: 'registration-lifecycle',
+        controlId: 'custom-shared',
+      }),
+    ).toBeUndefined();
+  });
+
   it('cleans up built-ins against a legacy void-returning context', async () => {
     const registered = vi.fn();
     const unregistered = vi.fn();
