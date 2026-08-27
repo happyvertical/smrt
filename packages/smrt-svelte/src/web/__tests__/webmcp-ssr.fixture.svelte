@@ -2,6 +2,6 @@
 import Provider from '../../Provider.svelte';
 </script>
 
-<Provider webmcp={false}>
+<Provider webmcp={{ definitions: [], basePath: '/api', effects: ['read'] }}>
   <span data-testid="webmcp-ssr-fixture"></span>
 </Provider>

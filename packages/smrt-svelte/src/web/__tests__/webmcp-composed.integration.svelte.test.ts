@@ -149,6 +149,26 @@ describe('composed Provider WebMCP surface (#2523)', () => {
 
     view.unmount();
     expect(dataSurfaceRegistry.list()).toEqual([]);
-    expect(registered.every((tool) => tool.signal?.aborted)).toBe(true);
+
+    const firstRegistration = registered.slice();
+    expect(firstRegistration.every((tool) => tool.signal?.aborted)).toBe(true);
+
+    const remounted = render(Fixture, {
+      props: {
+        dataSurfaceRegistry,
+        generatedDefinitions: [generatedReadDefinition],
+      },
+    });
+    await tick();
+    await tick();
+    await vi.waitFor(() => expect(registered).toHaveLength(16));
+
+    const secondRegistration = registered.slice(firstRegistration.length);
+    expect(secondRegistration).toHaveLength(firstRegistration.length);
+    expect(secondRegistration.every((tool) => !tool.signal?.aborted)).toBe(
+      true,
+    );
+    remounted.unmount();
+    expect(secondRegistration.every((tool) => tool.signal?.aborted)).toBe(true);
   });
 });

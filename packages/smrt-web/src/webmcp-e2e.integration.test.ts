@@ -102,6 +102,18 @@ class WebMcpFixtureGetOnlyCollection extends SmrtCollection<WebMcpFixtureGetOnly
   static readonly _itemClass = WebMcpFixtureGetOnly;
 }
 
+@smrt({ api: false })
+class WebMcpFixtureDisabled extends SmrtObject {
+  @field({ type: 'text' })
+  name = '';
+}
+
+@smrt({ api: { include: ['list', 'get'], exclude: ['list'] } })
+class WebMcpFixtureExcluded extends SmrtObject {
+  @field({ type: 'text' })
+  name = '';
+}
+
 @smrt({
   api: {
     include: ['run'],
@@ -194,6 +206,18 @@ describe('WebMCP application composition (#2523)', () => {
       (definition) => definition.name === 'webmcpfixturelabels',
     ) as SmrtWebCollectionDefinition;
     generatedDefinitions = buildWebMcpToolDefinitions(manifest);
+    expect(
+      generatedDefinitions.some(
+        (definition) => definition.className === 'WebMcpFixtureDisabled',
+      ),
+    ).toBe(false);
+    expect(
+      generatedDefinitions.some(
+        (definition) =>
+          definition.className === 'WebMcpFixtureExcluded' &&
+          definition.action === 'list',
+      ),
+    ).toBe(false);
     getDefinition = generatedDefinitions.find(
       (definition) =>
         definition.action === 'get' &&
@@ -316,7 +340,32 @@ describe('WebMCP application composition (#2523)', () => {
     );
 
     const { tools } = installModelContext();
-    const registration = registerWebMcpTools(
+    const forbiddenRegistration = registerWebMcpTools(
+      [
+        generatedDefinitions.find(
+          (definition) =>
+            definition.collection === 'webmcpfixtureitems' &&
+            definition.action === 'list',
+        ) as WebMcpToolDefinition,
+      ],
+      {
+        resolveToolFetchers: () =>
+          createDefinitionFetchers(
+            itemDefinition,
+            '/api/v1',
+            fetchWithAuthorization('Bearer another-user'),
+          ),
+      },
+    );
+    await forbiddenRegistration.ready;
+    const forbiddenList = tools.find((tool) => tool.name.endsWith('_list'));
+    if (!forbiddenList)
+      throw new Error('fixture forbidden list tool was not registered');
+    await expect(forbiddenList.execute({})).rejects.toThrow(/403/);
+    forbiddenRegistration();
+    tools.length = 0;
+
+    const unauthenticatedRegistration = registerWebMcpTools(
       [
         generatedDefinitions.find(
           (definition) =>
@@ -334,11 +383,11 @@ describe('WebMCP application composition (#2523)', () => {
           ),
       },
     );
-    await registration.ready;
+    await unauthenticatedRegistration.ready;
     const list = tools.find((tool) => tool.name.endsWith('_list'));
     if (!list) throw new Error('fixture list tool was not registered');
     await expect(list.execute({})).rejects.toThrow(/401/);
-    registration();
+    unauthenticatedRegistration();
   });
 
   it('executes generated list/create, get-only, and custom-action-only tools', async () => {
