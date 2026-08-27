@@ -141,6 +141,44 @@ describe('ContentList background jobs', () => {
     );
   });
 
+  it('bounds terminal history without evicting active or retrying work', async () => {
+    let resolveRetry!: (value: ContentListJob) => void;
+    const controller = createContentListJobController({
+      maxTerminalJobs: 2,
+      retry: () =>
+        new Promise<ContentListJob>((resolve) => {
+          resolveRetry = resolve;
+        }),
+    });
+    controller.update(job({ jobId: 'failed-source', status: 'failed' }));
+    const retryPromise = controller.retry('failed-source');
+
+    controller.update(job({ jobId: 'terminal-1', status: 'succeeded' }));
+    controller.update(job({ jobId: 'terminal-2', status: 'succeeded' }));
+    controller.update(job({ jobId: 'terminal-3', status: 'succeeded' }));
+    expect(controller.snapshot().jobs.map(({ jobId }) => jobId)).toEqual([
+      'failed-source',
+      expect.stringContaining('content-list:retry:'),
+      'terminal-2',
+      'terminal-3',
+    ]);
+
+    resolveRetry(job({ jobId: 'retry-active', status: 'running' }));
+    await retryPromise;
+    expect(controller.snapshot().jobs.map(({ jobId }) => jobId)).toEqual([
+      'terminal-2',
+      'terminal-3',
+      'retry-active',
+    ]);
+
+    // Eviction also releases the one-successor bookkeeping for an identifier
+    // that a bounded upstream service may eventually reuse.
+    controller.update(
+      job({ jobId: 'failed-source', status: 'failed', error: 'new attempt' }),
+    );
+    expect(controller.canRetry?.('failed-source')).toBe(true);
+  });
+
   it('ignores out-of-order progress after a terminal result', () => {
     const controller = createContentListJobController();
     controller.update(job({ status: 'succeeded' }));

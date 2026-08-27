@@ -61,12 +61,15 @@ export interface ContentListJobController extends ContentListJobBinding {
 export interface ContentListJobControllerOptions {
   /** A retry starts a new attempt and must resolve with a distinct job id. */
   retry?: (job: ContentListJob) => Promise<ContentListJob>;
+  /** Terminal attempts retained for status UI. Active work is never evicted. */
+  maxTerminalJobs?: number;
 }
 
 const ACTIVE_JOB_STATUSES = new Set<ContentListJobStatus>([
   'queued',
   'running',
 ]);
+const DEFAULT_MAX_TERMINAL_JOBS = 50;
 
 function isActive(job: ContentListJob): boolean {
   return ACTIVE_JOB_STATUSES.has(job.status);
@@ -122,10 +125,27 @@ export function createContentListJobController(
   const submissions = new Map<string, Promise<ContentListJob>>();
   const retrying = new Map<string, Promise<ContentListJob>>();
   const retriedAttempts = new Set<string>();
+  const retrySources = new Set<string>();
   const listeners = new Set<(snapshot: ContentListJobSnapshot) => void>();
+  const maxTerminalJobs =
+    options.maxTerminalJobs !== undefined &&
+    Number.isFinite(options.maxTerminalJobs)
+      ? Math.max(1, Math.floor(options.maxTerminalJobs))
+      : DEFAULT_MAX_TERMINAL_JOBS;
   let provisionalSequence = 0;
 
+  const pruneTerminalJobs = (): void => {
+    const removable = [...jobs.values()].filter(
+      (job) => !isActive(job) && !retrySources.has(job.jobId),
+    );
+    for (const job of removable.slice(0, -maxTerminalJobs)) {
+      jobs.delete(job.jobId);
+      retriedAttempts.delete(job.jobId);
+    }
+  };
+
   const publish = (): void => {
+    pruneTerminalJobs();
     const snapshot = snapshotOf(jobs);
     for (const listener of listeners) listener(snapshot);
   };
@@ -225,6 +245,7 @@ export function createContentListJobController(
       );
 
     retriedAttempts.add(jobId);
+    retrySources.add(jobId);
     const retryId = `content-list:retry:${++provisionalSequence}`;
     const pending = {
       ...current,
@@ -266,7 +287,13 @@ export function createContentListJobController(
         update(failed);
         throw error;
       })
-      .finally(() => retrying.delete(jobId));
+      .finally(() => {
+        retrying.delete(jobId);
+        retrySources.delete(jobId);
+        // The source attempt was protected while its retry was in flight. Once
+        // settled, restore the configured terminal-history bound.
+        publish();
+      });
     retrying.set(jobId, promise);
     return promise;
   };
