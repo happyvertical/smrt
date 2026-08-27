@@ -92,6 +92,30 @@ hydrating its whole collection. It exposes `rows`, `page`, `total`,
 </Provider>
 ```
 
+The Provider can own generated WebMCP tools for the same lifecycle. Its policy
+is identical to `registerWebMcpTools`; omitted `effects` exposes reads only:
+
+```svelte
+<Provider webmcp={{
+  definitions,
+  effects: ['read', 'write'],
+  namespace: 'workspace',
+  maxTools: 24
+}}>
+  {@render children()}
+</Provider>
+```
+
+This controls capability exposure, not authorization. Tool execution still
+crosses the authenticated REST boundary and must retain its auth and tenancy
+guards. The `effects`, `filter`, and `filterTool` policy applies to generated
+data/model tools only; the fixed mounted-UI adapter has the separate controls
+described below.
+
+WebMCP test doubles and polyfills should implement the browser's
+promise-returning `document.modelContext.registerTool()` contract; declare the
+function `async` when migrating older void-returning fixtures.
+
 ### Mounted UI through WebMCP
 
 `<Provider webmcp>` registers six fixed `smrt_ui_*` tools for the mounted UI:

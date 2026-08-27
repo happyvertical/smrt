@@ -133,6 +133,83 @@ core.
 | Version awareness | `createUpdateState` |
 | WebMCP | `registerWebMcpTools` |
 
+## WebMCP capability exposure
+
+`registerWebMcpTools()` is secure by default: omitting an exposure policy
+registers only `read` tools. CRUD effects are fixed (`list`/`get` are `read`,
+`create`/`update` are `write`, and `delete` is `destructive`). A custom action
+without declared metadata is treated as destructive, non-idempotent, and open
+world. Declare safer custom-action semantics in the route metadata only when
+they are true:
+
+```ts
+@smrt({
+  api: {
+    routes: {
+      preview: {
+        method: 'GET',
+        effect: 'read',
+        idempotent: true,
+        openWorld: false,
+      },
+    },
+  },
+})
+class Report extends SmrtObject {}
+```
+
+Opt into broader capabilities explicitly. `namespace` prevents cross-surface
+name collisions, an explicit `maxTools` bounds the selected set, and duplicate
+names or stable collection/action identities reject the entire call before the
+first browser registration. No implicit budget is applied to whole-manifest
+read registration:
+
+```ts
+registerWebMcpTools(definitions, {
+  effects: ['read', 'write', 'destructive'],
+  namespace: 'admin',
+  maxTools: 32,
+  filter: (collection, tool) => collection.fields.tenantId !== undefined,
+  filterTool: (tool) => tool.collection === 'reports',
+});
+```
+
+The returned disposer also exposes a `ready` promise. Await it when the host
+must report browser-side registration rejection; any rejected tool aborts all
+sibling registrations from that call before `ready` rejects.
+
+`filter` receives legacy collection metadata; `filterTool` receives canonical
+per-tool definitions. Configuring only one filter while registering definitions
+for the other filter kind fails closed; canonical tools do not carry complete
+collection field metadata, and legacy descriptors do not satisfy the canonical
+filter contract. Policy callbacks and fetcher resolvers receive isolated value
+snapshots; key host-side maps by stable values such as collection/action or tool
+name, not definition object identity.
+
+Do not concatenate complete legacy and canonical definition sets for the same
+collections. Their duplicate tool names or collection/action identities reject
+the registration atomically. Prefer the canonical set for complete generated
+coverage, or compose only disjoint legacy and canonical subsets.
+
+WebMCP policy controls which capabilities a page advertises; it is not an
+authorization boundary. Execution still uses the page's authenticated REST
+transport, whose auth, tenancy, writable-field, and sensitive-field guards must
+remain enabled. All application-derived tool results are annotated as untrusted
+content, including mutation responses.
+
+Policy only narrows the actions already exposed by the generated API metadata.
+Legacy descriptors outside their collection's `actions` set reject the whole
+registration, and intrinsic CRUD effects cannot be relabeled by caller data.
+
+Migration note: registrations that previously relied on every descriptor being
+exposed must now pass `effects: ['read', 'write', 'destructive']`. Prefer a
+narrower allowlist for each browser surface. Integrations that previously keyed
+filter or resolver state by definition object identity must migrate to stable
+name or collection/action keys. If both legacy and canonical definition arrays
+are available, select one complete source or remove overlaps before combining
+them. Set `maxTools` explicitly on surfaces that need a hard capability budget;
+overflow rejects the complete registration rather than truncating it.
+
 ## Development
 
 ```bash

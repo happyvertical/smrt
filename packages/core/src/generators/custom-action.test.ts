@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CustomActionMetadata } from './custom-action.js';
 import {
   buildCustomActionInputSchema,
   buildCustomActionInvocationArgs,
@@ -14,6 +15,19 @@ describe('custom action conformance', () => {
       { name: 'expectedVersion', type: 'number', optional: true },
     ],
   };
+
+  it('keeps legacy manually constructed metadata source-compatible', () => {
+    const legacy: CustomActionMetadata = {
+      scope: 'item',
+      idRequired: true,
+      isStatic: false,
+    };
+
+    expect(buildCustomActionInputSchema(legacy)).toMatchObject({
+      required: ['id'],
+      properties: { id: { type: 'string' }, options: { type: 'object' } },
+    });
+  });
 
   it('keeps an instance receiver item-scoped despite a collection route override', () => {
     const metadata = resolveCustomActionMetadata({
@@ -80,6 +94,11 @@ describe('custom action conformance', () => {
 
   it('preserves the legacy options bag when canonical method metadata is absent', () => {
     const metadata = resolveCustomActionMetadata({ actionName: 'legacy' });
+    expect(metadata).toMatchObject({
+      effect: 'destructive',
+      idempotent: false,
+      openWorld: true,
+    });
     expect(buildCustomActionInputSchema(metadata)).toMatchObject({
       properties: { id: { type: 'string' }, options: { type: 'object' } },
       required: ['id'],
@@ -90,6 +109,57 @@ describe('custom action conformance', () => {
         colour: 'blue',
       }),
     ).toEqual([{ colour: 'blue' }]);
+  });
+
+  it('reads explicit fail-closed tool semantics from custom route metadata', () => {
+    const metadata = resolveCustomActionMetadata({
+      actionName: 'preview',
+      method: { isStatic: true, parameters: [] },
+      apiConfig: {
+        routes: {
+          preview: {
+            method: 'GET',
+            effect: 'read',
+            idempotent: false,
+            openWorld: false,
+          },
+        },
+      },
+    });
+
+    expect(metadata).toMatchObject({
+      effect: 'read',
+      idempotent: false,
+      openWorld: false,
+    });
+  });
+
+  it('does not infer a safe effect from a custom route HTTP verb', () => {
+    const metadata = resolveCustomActionMetadata({
+      actionName: 'opaqueRead',
+      method: { isStatic: true, parameters: [] },
+      apiConfig: { routes: { opaqueRead: { method: 'GET' } } },
+    });
+
+    expect(metadata.effect).toBe('destructive');
+  });
+
+  it.each([
+    'PUT',
+    'PATCH',
+    'DELETE',
+  ] as const)('rejects a read effect on a mutating %s route', (httpMethod) => {
+    expect(() =>
+      resolveCustomActionMetadata({
+        actionName: 'purge',
+        method: { isStatic: true, parameters: [] },
+        apiConfig: {
+          routes: { purge: { method: httpMethod, effect: 'read' } },
+        },
+      }),
+    ).toThrow(
+      `Custom action purge cannot declare a read effect for a ${httpMethod} route`,
+    );
   });
 
   it('keeps an item receiver id distinct from an action id parameter', () => {

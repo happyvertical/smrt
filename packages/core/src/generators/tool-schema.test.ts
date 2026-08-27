@@ -214,6 +214,69 @@ describe('buildToolDescriptors', () => {
     expect(readOnly).toEqual(['list', 'get']);
   });
 
+  it('emits intrinsic CRUD effects and conservative custom defaults', () => {
+    expect(
+      descriptors.map(({ action, effect, idempotent, openWorld }) => ({
+        action,
+        effect,
+        idempotent,
+        openWorld,
+      })),
+    ).toEqual([
+      { action: 'list', effect: 'read', idempotent: true, openWorld: false },
+      { action: 'get', effect: 'read', idempotent: true, openWorld: false },
+      {
+        action: 'create',
+        effect: 'write',
+        idempotent: false,
+        openWorld: false,
+      },
+      {
+        action: 'update',
+        effect: 'write',
+        idempotent: true,
+        openWorld: false,
+      },
+      {
+        action: 'delete',
+        effect: 'destructive',
+        idempotent: true,
+        openWorld: false,
+      },
+      {
+        action: 'publish',
+        effect: 'destructive',
+        idempotent: false,
+        openWorld: true,
+      },
+    ]);
+  });
+
+  it('honors explicit custom-action semantics', () => {
+    const [descriptor] = buildToolDescriptors({
+      className: 'Product',
+      fields: PRODUCT_FIELDS,
+      actions: ['preview'],
+      customActions: {
+        preview: {
+          scope: 'collection',
+          idRequired: false,
+          isStatic: true,
+          effect: 'read',
+          idempotent: true,
+          openWorld: false,
+        },
+      },
+    });
+
+    expect(descriptor).toMatchObject({
+      readOnly: true,
+      effect: 'read',
+      idempotent: true,
+      openWorld: false,
+    });
+  });
+
   it('produces a complete, WebMCP-ready descriptor per action', () => {
     for (const d of descriptors) {
       expect(d.name).toBeTruthy();

@@ -17,7 +17,10 @@ function modelContext() {
   const signals: AbortSignal[] = [];
   const document = {
     modelContext: {
-      registerTool(tool: WebMcpToolSpec, options?: { signal?: AbortSignal }) {
+      async registerTool(
+        tool: WebMcpToolSpec,
+        options?: { signal?: AbortSignal },
+      ) {
         registered.push(tool);
         if (options?.signal) signals.push(options.signal);
       },
