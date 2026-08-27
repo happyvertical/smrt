@@ -488,6 +488,23 @@ describe('registerWebMcpTools', () => {
     expect(registry.tools).toEqual([]);
   });
 
+  it('rejects cyclic definition metadata clearly before registration', () => {
+    const registry = installModelContext();
+    const definition = canonicalTool('list');
+    const cyclicSchema: Record<string, unknown> = { type: 'object' };
+    cyclicSchema.self = cyclicSchema;
+    definition.inputSchema = cyclicSchema;
+    const resolveToolFetchers = vi.fn(() => mockFetchers());
+
+    expect(() =>
+      registerWebMcpToolsWithPolicy([definition], { resolveToolFetchers }),
+    ).toThrow(
+      '[smrt-web] WebMCP definitions must be acyclic (cycle at $.inputSchema.self)',
+    );
+    expect(registry.tools).toEqual([]);
+    expect(resolveToolFetchers).not.toHaveBeenCalled();
+  });
+
   it('fails closed when a canonical-only filter is used with legacy tools', () => {
     const registry = installModelContext();
     const resolveFetchers = vi.fn(() => mockFetchers());

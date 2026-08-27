@@ -530,18 +530,37 @@ function snapshotRoute(
   return route ? snapshotValue(route) : undefined;
 }
 
-function snapshotValue<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((entry) => snapshotValue(entry)) as T;
-  }
+function snapshotValue<T>(
+  value: T,
+  active = new WeakSet<object>(),
+  path = '$',
+): T {
   if (value && typeof value === 'object') {
-    const snapshot: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value)) {
-      snapshot[key] = snapshotValue(entry);
+    if (active.has(value)) {
+      throw new Error(
+        `[smrt-web] WebMCP definitions must be acyclic (cycle at ${path})`,
+      );
     }
-    return snapshot as T;
+    active.add(value);
   }
-  return value;
+
+  try {
+    if (Array.isArray(value)) {
+      return value.map((entry, index) =>
+        snapshotValue(entry, active, `${path}[${index}]`),
+      ) as T;
+    }
+    if (value && typeof value === 'object') {
+      const snapshot: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(value)) {
+        snapshot[key] = snapshotValue(entry, active, `${path}.${key}`);
+      }
+      return snapshot as T;
+    }
+    return value;
+  } finally {
+    if (value && typeof value === 'object') active.delete(value);
+  }
 }
 
 function snapshotLegacyDescriptor(
