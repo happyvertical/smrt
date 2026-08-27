@@ -59,9 +59,11 @@
  *   because free text has to reach the server as the operator typed it.
  * - **NULL semantics are aligned end to end.** `ne`/`notIn` union `IS NULL`
  *   server-side, as `in` already did — unless the caller listed `null`, which
- *   inverts the meaning. The ordered comparisons and `isNull`/`isNotNull` were
- *   aligned on the local side instead, by consulting the original `ContentData`
- *   rather than the flattened display text. See `agents/content-list.md`.
+ *   inverts the meaning, and a NEGATED ordered comparison unions so that a
+ *   predicate and its negation stay complements. The ordered comparisons,
+ *   `isNull`/`isNotNull`, and the `type`/`title` display fallbacks were aligned
+ *   on the local side instead, by consulting the original `ContentData` rather
+ *   than the flattened display text. See `agents/content-list.md`.
  */
 
 import type {
@@ -962,7 +964,8 @@ function hasNonNullEntry(value: unknown): boolean {
  *
  * `ne` and `notIn` lower to a UNION with `IS NULL` so their meaning matches the
  * local evaluator's, which costs a second branch each unless the caller listed
- * a `null` explicitly. An `all` multiplies its children. Past
+ * a `null` explicitly, and a NEGATED ordered comparison unions for the same
+ * reason. An `all` multiplies its children. Past
  * {@link CONTENT_LIST_QUERY_MAX_OR_BRANCHES} the executor refuses the request
  * outright, so the translator has to stop adding filters before that rather
  * than hand the operator an error panel.
@@ -980,6 +983,16 @@ function countFilterBranches(
       ? invertedBranchOperator(filter.operator)
       : filter.operator;
     if (operator === null) return Number.POSITIVE_INFINITY;
+    // The complement of an ordered comparison unions IS NULL, so it splits.
+    if (
+      negate &&
+      (operator === 'gt' ||
+        operator === 'gte' ||
+        operator === 'lt' ||
+        operator === 'lte')
+    ) {
+      return 2;
+    }
     // A listed null means "exclude absent rows too", which is one AND group.
     if (operator === 'ne') return filter.value === null ? 1 : 2;
     if (operator === 'notIn') return hasNullEntry(filter.value) ? 1 : 2;

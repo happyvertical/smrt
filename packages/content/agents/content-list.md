@@ -307,7 +307,8 @@ differs per operator:
 | `notIn` (no `null` listed) | `IS NULL OR (AND of <> v)` | same |
 | `notIn` WITH a `null` listed | `(AND of <> v) AND IS NOT NULL` | **no union**: a listed `null` says absent rows are excluded too |
 | `ne null` (`isNotNull`) | `IS NOT NULL` | untouched — a union would match every row |
-| `gt`, `gte`, `lt`, `lte` | plain predicate | the LOCAL evaluator gained null-awareness |
+| `gt`, `gte`, `lt`, `lte` — asked for directly | plain predicate | the LOCAL evaluator gained null-awareness |
+| `gt`, `gte`, `lt`, `lte` — reached through `not` | `IS NULL OR <predicate>` | server gained the union, so the negation is a true complement |
 | `isNull` / `isNotNull` | `IS NULL` / `IS NOT NULL` | the LOCAL evaluator gained null-awareness |
 
 **A listed `null` inverts the rule, and getting that wrong is a data leak of the
@@ -326,13 +327,38 @@ as `''` — which sorts below everything, made `publish_date lt X` match every
 never-published row, and made `isNull` match nothing at all. The original
 `ContentData` still distinguishes absent from empty, so
 `isAbsentContentValue()` consults it and the null-sensitive operators exclude an
-absent value exactly as SQL's three-valued logic does. This is the direction the
+absent value exactly as SQL's three-valued logic does.
+
+**A display fallback is presentation, never data.** Two columns substitute a
+label when the content carries no value — `type` reads `content` and `title`
+reads `Untitled content`. Comparing the label made `?type=content` return every
+untyped row on a client-array list and none on a server-backed one, and made a
+search for `untitled` find rows whose title is simply missing.
+`comparisonValue()` reads what is stored for those two columns instead: `null`
+when the content has no value, empty text when it is genuinely blank, and the
+flattened text otherwise, which is already faithful. Both local filtering and
+local search go through it. The label keeps rendering; `isNull` is how an
+operator asks for the rows behind it. This is the direction the
 data means: "no publish date" is not "published before X". It also aligns the
 blank-comparand case (`?author.lt=`, `?author.gte=`), where the flattened `''`
 used to compare equal and the two modes disagreed, and it leaves a column that
 genuinely stores `''` (`title`, `name`) comparing as present in both modes.
 
-The `ne`/`notIn` union costs a second DNF branch each, and an `all` multiplies,
+**A negation must be a complement.** `not` is part of the endpoint's accepted
+grammar even though the translator never emits one, and a direct HTTP consumer
+sending `not(gt 'B')` used to get a bare `<= 'B'` — leaving a row with no value
+matching NEITHER the predicate nor its negation. `conditionToDnf` therefore
+takes a `negated` flag: an ordered comparison reached through an odd number of
+`not`s unions `IS NULL`, while the same operator asked for directly does not.
+`eq` reached by negating `ne` gets no union, because the complement of
+"IS NULL OR <> v" is "= v", which excludes NULL by construction. The executor
+tests assert that **every** operator in the grammar partitions the rows against
+its own negation — no overlap, no gap — including through `all`/`any`
+containers and a double negation. `like` is the sole exclusion: negating one is
+refused outright.
+
+The `ne`/`notIn` union costs a second DNF branch each, a negated ordered
+comparison costs a second too, and an `all` multiplies,
 so the translator also mirrors `MAX_CONTENT_QUERY_OR_BRANCHES` (128) and drops
 filters before the executor would refuse the whole request. The mirror is exact
 rather than conservative — including the listed-`null` case, which costs one
@@ -485,6 +511,13 @@ all reachable from a shared link:
 | `equals` with a listed value | the value | no |
 | `equals` with an unlisted value (`?status=embargoed`, a typo) | the value, as an extra option | yes |
 | anything else — a list value (`?status.in=draft,review`), a valueless operator (`?status.isNull=1`), an inverted one (`?status.notEquals=draft`), or two filters on one column | a DISABLED summary of the real predicate | yes |
+
+The disabled summary carries a U+001F-prefixed sentinel value rather than a
+U+0000 one: the HTML tokenizer rewrites a NUL inside an attribute value to
+U+FFFD, so a server-rendered option would hydrate with a value the select was
+never given and read as no selection — the exact state the summary exists to
+prevent. A client-only mount bypasses attribute parsing, so only a parse
+round-trip test catches it.
 
 The third row is the one that matters: a value-only read reports nothing for a
 list value and reports `draft` for `notEquals draft` — the exact inverse of the

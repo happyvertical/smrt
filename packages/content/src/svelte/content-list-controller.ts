@@ -619,8 +619,19 @@ export function readContentListFilter(
  * as one of its options. It is only ever set programmatically on a disabled
  * option, so it can never be submitted; `applyContentListFilter` would replace
  * every filter on the column anyway.
+ *
+ * The prefix is U+001F rather than U+0000 deliberately. The HTML tokenizer
+ * rewrites a NUL inside an attribute value to U+FFFD, so a server-rendered
+ * option would come back with a different value than the select was given and
+ * hydrate to no selection at all — exactly the state this sentinel exists to
+ * prevent. U+001F passes through attribute parsing unchanged.
+ *
+ * A crafted filter value could still equal it — the normalizer only trims and
+ * lower-cases — and that is harmless: the representable and unrepresentable
+ * paths are mutually exclusive, and the representable one renders the value as
+ * a real, enabled option carrying the same value.
  */
-export const CONTENT_LIST_UNREPRESENTABLE_OPTION = '\u0000unrepresentable';
+export const CONTENT_LIST_UNREPRESENTABLE_OPTION = '\u001Funrepresentable';
 
 /** What a single-select toolbar control can honestly display for one column. */
 export interface ContentListSelectFilterState {
@@ -806,13 +817,49 @@ function isAbsentContentValue(
 }
 
 /**
+ * Columns whose flattened text is a LABEL when the content carries no value:
+ * `type` reads `content` and `title` reads `Untitled content`. Every other
+ * column flattens to empty text, which is what the stored column holds.
+ */
+const CONTENT_LIST_LABEL_FALLBACK_COLUMNS = new Set<string>(['type', 'title']);
+
+/**
+ * The value a local comparison reads for one column.
+ *
+ * A fallback label is presentation, not data. Comparing it makes
+ * `?type=content` match every untyped row locally and none server-side, and
+ * makes a search for `untitled` match rows whose title is simply missing — the
+ * same link returning different data depending on how the host configured the
+ * list. For those two columns the comparison reads what is stored: `null` when
+ * the content has no value at all (which compares false against everything,
+ * exactly as SQL does), empty text when the value is genuinely blank, and
+ * otherwise the flattened text, which is already faithful.
+ */
+function comparisonValue(
+  row: ContentListRow,
+  column: DataTableColumn<ContentListRow>,
+): unknown {
+  const value = getNestedValue(row, String(column.accessor ?? column.id));
+  if (!CONTENT_LIST_LABEL_FALLBACK_COLUMNS.has(column.id)) return value;
+  const fieldName =
+    CONTENT_LIST_COLUMN_FIELD_NAMES[column.id as ContentListColumnId];
+  const source = fieldName
+    ? (row.content as Record<string, unknown>)[fieldName]
+    : undefined;
+  if (source === null || source === undefined) return null;
+  if (typeof source === 'string' && source.trim() === '') return '';
+  return value;
+}
+
+/**
  * The single declarative-filter evaluator. It follows DataTable's operator
  * semantics so a persisted or agent-issued filter behaves the same here as it
  * would in a locally filtered table.
  *
  * The null-sensitive operators (`gt`/`gte`/`lt`/`lte`, `isNull`/`isNotNull`)
- * additionally agree with SQL, so the same shared link means the same thing on
- * a client-array list and a server-backed one (#2452).
+ * additionally agree with SQL, and no comparison reads a display fallback, so
+ * the same shared link means the same thing on a client-array list and a
+ * server-backed one (#2452).
  */
 function matchesContentListFilter(
   row: ContentListRow,
@@ -820,7 +867,7 @@ function matchesContentListFilter(
   filter: DataTableFilter,
 ): boolean {
   if (column.filterable === false) return true;
-  const value = getNestedValue(row, String(column.accessor ?? column.id));
+  const value = comparisonValue(row, column);
   const expected = filter.value;
   const valueText = textValue(value);
   const expectedText = textValue(expected);
@@ -896,9 +943,7 @@ export function selectContentListRows(
       !columns.some(
         (column) =>
           column.searchable !== false &&
-          textValue(
-            getNestedValue(row, String(column.accessor ?? column.id)),
-          ).includes(search),
+          textValue(comparisonValue(row, column)).includes(search),
       )
     ) {
       return false;

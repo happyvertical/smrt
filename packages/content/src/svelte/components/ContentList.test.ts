@@ -4,6 +4,10 @@ import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentData } from '../../mock-smrt-client.js';
+import {
+  CONTENT_LIST_UNREPRESENTABLE_OPTION,
+  normalizeContentToken,
+} from '../content-list-controller.js';
 import { ContentListQueryError } from '../content-list-query.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
 import Harness from './__tests__/content-list-props-harness.svelte';
@@ -2179,5 +2183,94 @@ describe('ContentList toolbar never misstates the live predicate', () => {
       target.querySelector('select[aria-label="Filter by type"]'),
     ).toBeNull();
     expect(target.querySelector('.state-notice')).toBeNull();
+  });
+});
+
+describe('the unrepresentable-option sentinel survives HTML parsing', () => {
+  /**
+   * A server-rendered option reaches the browser as markup, not as a
+   * `setAttribute` call, so its value goes through the HTML tokenizer. A NUL in
+   * an attribute value is rewritten to U+FFFD, which means the hydrated select
+   * finds no matching option, reports `selectedIndex === -1`, and reads as no
+   * selection — exactly the state the summary exists to prevent. A client-only
+   * mount bypasses parsing entirely, which is why mounting the component cannot
+   * catch this.
+   */
+  function parseAttributeValue(value: string): string {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = 'summary';
+    const select = document.createElement('select');
+    select.append(option);
+    const source = document.createElement('div');
+    source.append(select);
+    // Round-trip through serialization and parsing, as SSR + hydration does.
+    const parsed = document.createElement('div');
+    parsed.innerHTML = source.innerHTML;
+    return parsed.querySelector('option')?.value ?? '';
+  }
+
+  it('round-trips through the HTML parser unchanged', () => {
+    expect(parseAttributeValue(CONTENT_LIST_UNREPRESENTABLE_OPTION)).toBe(
+      CONTENT_LIST_UNREPRESENTABLE_OPTION,
+    );
+  });
+
+  it('proves the round-trip is a real check by failing for NUL', () => {
+    // The value this sentinel used to carry, and why it had to change.
+    expect(parseAttributeValue('\u0000unrepresentable')).not.toBe(
+      '\u0000unrepresentable',
+    );
+  });
+
+  it('contains no character the parser rewrites or would need escaped', () => {
+    expect(CONTENT_LIST_UNREPRESENTABLE_OPTION).not.toContain('\u0000');
+    expect(CONTENT_LIST_UNREPRESENTABLE_OPTION).not.toContain('\ufffd');
+    for (const character of ['<', '>', '&', '"', "'"]) {
+      expect(CONTENT_LIST_UNREPRESENTABLE_OPTION).not.toContain(character);
+    }
+  });
+
+  it('still selects after a parse round-trip, which NUL prevented', () => {
+    const host = document.createElement('div');
+    const option = document.createElement('option');
+    option.value = CONTENT_LIST_UNREPRESENTABLE_OPTION;
+    option.textContent = 'in draft, review';
+    const built = document.createElement('select');
+    built.append(option);
+    host.append(built);
+    const parsed = document.createElement('div');
+    parsed.innerHTML = host.innerHTML;
+
+    const select = parsed.querySelector('select');
+    if (!select) throw new Error('no select');
+    select.value = CONTENT_LIST_UNREPRESENTABLE_OPTION;
+    expect(select.selectedIndex).toBe(0);
+    expect(select.value).toBe(CONTENT_LIST_UNREPRESENTABLE_OPTION);
+  });
+
+  it('is harmless even if a filter value happens to equal it', () => {
+    // `normalizeContentToken` only trims and lower-cases, so a crafted value
+    // CAN equal the sentinel. It does not matter: the two states are mutually
+    // exclusive, and a representable value renders as a real, enabled option
+    // carrying that same value — so the select still shows what is applied.
+    expect(normalizeContentToken(CONTENT_LIST_UNREPRESENTABLE_OPTION)).toBe(
+      CONTENT_LIST_UNREPRESENTABLE_OPTION,
+    );
+    const target = renderList({
+      urlState: {
+        params: `status=${encodeURIComponent(CONTENT_LIST_UNREPRESENTABLE_OPTION)}`,
+      },
+    });
+    const select = selectByLabel(target, 'Filter by status');
+    const selected = Array.from(select.options).find(
+      (option) => option.value === select.value,
+    );
+    expect(select.value).toBe(CONTENT_LIST_UNREPRESENTABLE_OPTION);
+    // Enabled, i.e. the representable path — not the disabled summary.
+    expect(selected?.disabled).toBe(false);
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'is not one of the listed options',
+    );
   });
 });

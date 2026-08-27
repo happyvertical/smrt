@@ -1350,29 +1350,81 @@ describe('null entries in a ne / notIn value list', () => {
     ]);
   });
 
-  it('partitions the rows for every predicate/negation pair', async () => {
-    const pairs: Array<[Record<string, unknown>, Record<string, unknown>]> = [
-      [condition('eq', 'Ada Lovelace'), condition('ne', 'Ada Lovelace')],
-      [condition('eq', null), condition('ne', null)],
-      [condition('in', ['Ada Lovelace']), condition('notIn', ['Ada Lovelace'])],
-      // The pair that used to OVERLAP: both matched the authorless row.
-      [
-        condition('in', ['Ada Lovelace', null]),
-        condition('notIn', ['Ada Lovelace', null]),
-      ],
-      [condition('in', [null]), condition('notIn', [null])],
-    ];
-    for (const [predicate, negation] of pairs) {
-      const [yes, no] = [await names(predicate), await names(negation)];
+  /**
+   * EVERY operator in the accepted grammar, each paired with its `not`.
+   *
+   * A predicate and its negation must partition the table: no row in both, no
+   * row in neither. The class of bug this guards has now appeared twice — once
+   * for `notIn` with a listed null, once for the ordered comparisons — and both
+   * times it survived because the pair list was short. `like` is the only
+   * operator excluded, because the executor refuses to negate one outright.
+   */
+  const PARTITION_PAIRS: Array<[string, Record<string, unknown>]> = [
+    ['eq', condition('eq', 'Ada Lovelace')],
+    ['eq null', condition('eq', null)],
+    ['ne', condition('ne', 'Ada Lovelace')],
+    ['ne null', condition('ne', null)],
+    ['in', condition('in', ['Ada Lovelace'])],
+    ['in with null', condition('in', ['Ada Lovelace', null])],
+    ['in null-only', condition('in', [null])],
+    ['notIn', condition('notIn', ['Ada Lovelace'])],
+    ['notIn with null', condition('notIn', ['Ada Lovelace', null])],
+    ['notIn null-only', condition('notIn', [null])],
+    ['gt', condition('gt', 'B')],
+    ['gte', condition('gte', 'B')],
+    ['lt', condition('lt', 'B')],
+    ['lte', condition('lte', 'B')],
+    // A comparand no row can equal, and one every row sorts after.
+    ['gt blank', condition('gt', '')],
+    ['lte blank', condition('lte', '')],
+  ];
+
+  it.each(
+    PARTITION_PAIRS,
+  )('partitions the rows for %s and its negation', async (_label, predicate) => {
+    const yes = await names(predicate);
+    const no = await names({ kind: 'not', filter: predicate });
+    expect(
+      yes.filter((name) => no.includes(name)),
+      'overlap',
+    ).toEqual([]);
+    expect([...yes, ...no].sort(), 'gap').toEqual(ALL);
+  });
+
+  it('partitions an `all` and an `any` of mixed operators too', async () => {
+    // De Morgan through a container, so the negation reaches each condition.
+    for (const kind of ['all', 'any'] as const) {
+      const predicate = {
+        kind,
+        filters: [condition('gt', 'B'), condition('ne', 'Grace Hopper')],
+      };
+      const yes = await names(predicate);
+      const no = await names({ kind: 'not', filter: predicate });
       expect(
         yes.filter((name) => no.includes(name)),
-        `overlap for ${JSON.stringify(predicate)}`,
+        `overlap ${kind}`,
       ).toEqual([]);
-      expect(
-        [...yes, ...no].sort(),
-        `gap for ${JSON.stringify(predicate)}`,
-      ).toEqual(ALL);
+      expect([...yes, ...no].sort(), `gap ${kind}`).toEqual(ALL);
     }
+  });
+
+  it('leaves a directly-requested ordered comparison excluding NULL', async () => {
+    // Only the NEGATED form unions IS NULL. `lte 'B'` asked for directly must
+    // still exclude the authorless row, matching SQL and the local evaluator.
+    expect(await names(condition('lte', 'B'))).toEqual(['Ada']);
+    expect(await names({ kind: 'not', filter: condition('gt', 'B') })).toEqual([
+      'Ada',
+      'none',
+    ]);
+  });
+
+  it('does not double-negate: not(not(gt)) is the plain predicate', async () => {
+    expect(
+      await names({
+        kind: 'not',
+        filter: { kind: 'not', filter: condition('gt', 'B') },
+      }),
+    ).toEqual(await names(condition('gt', 'B')));
   });
 
   it('agrees with `not(in …)` for every list shape', async () => {

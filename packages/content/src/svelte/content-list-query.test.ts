@@ -1528,6 +1528,33 @@ describe('null-valued rows through both filter paths', () => {
     ).toEqual(['Other author', 'With author']);
   });
 
+  it('never matches a display fallback label, in either mode', async () => {
+    // `toContentListRows` renders `content` for an untyped row and `Untitled
+    // content` for one with no title. Both are presentation: a filter on the
+    // literal label matched every such row locally and none server-side.
+    expect(
+      await bothAgree({
+        columnId: 'type',
+        operator: 'equals',
+        value: 'content',
+      }),
+    ).toEqual([]);
+    expect(
+      await bothAgree({
+        columnId: 'title',
+        operator: 'equals',
+        value: 'Untitled content',
+      }),
+    ).toEqual([]);
+    expect(
+      await bothAgree({
+        columnId: 'title',
+        operator: 'contains',
+        value: 'Untitled',
+      }),
+    ).toEqual([]);
+  });
+
   it('treats a column that stores empty text as present, in both modes', async () => {
     // `title` defaults to `''` rather than NULL, so an ordered comparison must
     // still include it — the null-awareness is about absence, not emptiness.
@@ -1665,5 +1692,188 @@ describe('the branch counter mirrors the executor exactly', () => {
     expect(await executorAccepts(contents, { kind: 'all', filters })).toBe(
       true,
     );
+  });
+});
+
+describe('the branch counter tracks the negated ordered comparison', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const accepts = async (filter: unknown): Promise<boolean> => {
+    try {
+      await executeContentQuery(contents as unknown as ContentQueryCollection, {
+        version: 1,
+        requestId: 'negated-branch-parity',
+        mode: 'rows',
+        projection: ['id'],
+        filter,
+        page: { kind: 'offset', offset: 0, limit: 1 },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const negatedComparisons = (count: number) => ({
+    kind: 'all' as const,
+    filters: Array.from({ length: count }, (_, index) => ({
+      kind: 'not' as const,
+      filter: {
+        kind: 'condition' as const,
+        field: 'author',
+        operator: 'gt' as const,
+        value: `person-${index}`,
+      },
+    })),
+  });
+
+  it('costs two branches, exactly like the executor', async () => {
+    // A negated ordered comparison unions IS NULL, so seven fit and eight do
+    // not — the same boundary as `ne`. If the mirror still counted one, it
+    // would let fifteen through and the executor would refuse the request.
+    expect(await accepts(negatedComparisons(7))).toBe(true);
+    expect(await accepts(negatedComparisons(8))).toBe(false);
+  });
+
+  it('costs one branch when it is NOT negated', async () => {
+    const plain = (count: number) => ({
+      kind: 'all' as const,
+      filters: Array.from({ length: count }, (_, index) => ({
+        kind: 'condition' as const,
+        field: 'author',
+        operator: 'gt' as const,
+        value: `person-${index}`,
+      })),
+    });
+    expect(await accepts(plain(20))).toBe(true);
+  });
+});
+
+describe('display fallback labels are never compared', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /**
+   * One row with a real title and type, one with neither.
+   *
+   * The collection backfills a blank `title` from `name` on save, so the server
+   * row reads `bare`; the local fixture keeps the empty title, which is exactly
+   * the shape that triggers the `Untitled content` label. The local side is the
+   * one under test here — the server side is the control that says what the
+   * label must NOT match.
+   */
+  const fixtures = [
+    { name: 'typed', title: 'Council budget', type: 'article' },
+    { name: 'bare', title: '', type: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of fixtures) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const localRows = () =>
+    toContentListRows(
+      fixtures.map((entry) => ({
+        id: entry.name,
+        title: entry.title,
+        type: entry.type,
+      })),
+    );
+
+  const localNames = (state: Partial<DataTableViewState>) =>
+    selectContentListRows(localRows(), {
+      ...createContentListController().getState(),
+      ...state,
+    })
+      .map((row) => String(row.content.id))
+      .sort();
+
+  const serverNames = async (state: Partial<DataTableViewState>) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(state), {
+        createRequestId: () => 'fallback-label',
+        projection: ['id', 'name', 'title', 'type'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  const bothAgree = async (state: Partial<DataTableViewState>) => {
+    const [server, local] = [await serverNames(state), localNames(state)];
+    expect(server).toEqual(local);
+    return server;
+  };
+
+  it('renders the labels, so this is genuinely about presentation', () => {
+    const [, bare] = localRows();
+    expect(bare.typeLabel).toBe('Content');
+    expect(bare.type).toBe('content');
+    expect(bare.title).toBe('Untitled content');
+  });
+
+  it('does not match `type equals content` on an untyped row', async () => {
+    expect(
+      await bothAgree({
+        filters: [{ columnId: 'type', operator: 'equals', value: 'content' }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('does not match `title equals Untitled content` on an untitled row', async () => {
+    expect(
+      await bothAgree({
+        filters: [
+          {
+            columnId: 'title',
+            operator: 'equals',
+            value: 'Untitled content',
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('does not find an untitled row by searching for `untitled`', async () => {
+    expect(await bothAgree({ search: 'untitled' })).toEqual([]);
+  });
+
+  it('still matches the real values, and still finds them by search', async () => {
+    expect(
+      await bothAgree({
+        filters: [{ columnId: 'type', operator: 'equals', value: 'article' }],
+      }),
+    ).toEqual(['typed']);
+    expect(await bothAgree({ search: 'budget' })).toEqual(['typed']);
+  });
+
+  it('keeps `isNull` as the way to ask for an absent value', async () => {
+    // The recovery path for an operator who actually wanted the untyped rows.
+    expect(
+      await bothAgree({
+        filters: [{ columnId: 'type', operator: 'isNull' }],
+      }),
+    ).toEqual(['bare']);
   });
 });

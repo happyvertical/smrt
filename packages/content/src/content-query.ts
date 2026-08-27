@@ -449,10 +449,21 @@ function inverseOperator(
   }
 }
 
+/**
+ * Lower one condition to bounded DNF.
+ *
+ * `negated` says the condition was reached through an odd number of `not`s and
+ * its operator has already been inverted by {@link inverseOperator}. It matters
+ * only for the ordered comparisons: `lte` asked for directly must exclude a
+ * NULL row, exactly as SQL and the local evaluator both do, while the `lte`
+ * that `not(gt)` produces must INCLUDE it or the predicate and its negation are
+ * not complements and a row with no value falls through both.
+ */
 function conditionToDnf(
   field: string,
   operator: DataQueryFilterOperator,
   value: unknown,
+  negated = false,
 ): WhereDnf {
   const key = (suffix: string) => (suffix ? `${field} ${suffix}` : field);
   const single = (whereKey: string, whereValue: unknown): WhereDnf => [
@@ -518,6 +529,22 @@ function conditionToDnf(
     lte: '<=',
     like: 'like',
   };
+
+  if (
+    negated &&
+    (operator === 'gt' ||
+      operator === 'gte' ||
+      operator === 'lt' ||
+      operator === 'lte')
+  ) {
+    // The complement of an ordered comparison. SQL's `>`/`<` are UNKNOWN for
+    // NULL, so `not(gt v)` lowered as a bare `<= v` leaves a row with no value
+    // matching NEITHER side — the same gap `ne`/`notIn` close above. `eq`
+    // reached by negating `ne` gets no union: the complement of
+    // "IS NULL OR <> v" is "= v", which excludes NULL by construction.
+    return [[{ [field]: null }], [{ [key(suffixes[operator])]: value }]];
+  }
+
   return single(key(suffixes[operator]), value);
 }
 
@@ -551,6 +578,7 @@ function filterToDnf(
       filter.field,
       negate ? inverseOperator(filter.operator) : filter.operator,
       filter.value,
+      negate,
     );
   }
 
