@@ -30,6 +30,7 @@ export {
   customActionParameterInputName,
   normalizeCustomActionFailure,
   type ResolveCustomActionMetadataOptions,
+  type ResolvedCustomActionMetadata,
   resolveCustomActionMetadata,
   SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY,
   type ToolEffect,

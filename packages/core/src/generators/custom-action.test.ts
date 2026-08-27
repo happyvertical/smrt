@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { CustomActionMetadata } from './custom-action.js';
 import {
   buildCustomActionInputSchema,
   buildCustomActionInvocationArgs,
@@ -14,6 +15,19 @@ describe('custom action conformance', () => {
       { name: 'expectedVersion', type: 'number', optional: true },
     ],
   };
+
+  it('keeps legacy manually constructed metadata source-compatible', () => {
+    const legacy: CustomActionMetadata = {
+      scope: 'item',
+      idRequired: true,
+      isStatic: false,
+    };
+
+    expect(buildCustomActionInputSchema(legacy)).toMatchObject({
+      required: ['id'],
+      properties: { id: { type: 'string' }, options: { type: 'object' } },
+    });
+  });
 
   it('keeps an instance receiver item-scoped despite a collection route override', () => {
     const metadata = resolveCustomActionMetadata({

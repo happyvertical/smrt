@@ -245,6 +245,23 @@ describe('registerWebMcpTools', () => {
     expect(registry.tools.map((tool) => tool.name)).toEqual(['report_preview']);
   });
 
+  it('keeps legacy canonical literals source-compatible and fail-closed', () => {
+    const {
+      effect: _effect,
+      idempotent: _idempotent,
+      openWorld: _openWorld,
+      ...legacyCanonical
+    } = canonicalTool('refresh');
+    const definition: WebMcpToolDefinition = legacyCanonical;
+    const registry = installModelContext();
+
+    registerWebMcpToolsWithPolicy([definition], {
+      resolveToolFetchers: () => ({ custom: vi.fn() }),
+    });
+
+    expect(registry.tools).toEqual([]);
+  });
+
   it('opts into read, write, and destructive tools explicitly', () => {
     const registry = installModelContext();
     registerWebMcpToolsWithPolicy([PRODUCT_DEF, MUTATION_DEF], {

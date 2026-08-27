@@ -279,13 +279,10 @@ export interface SmrtWebToolRouteDescriptor {
 /**
  * Canonical data-only definition for one API-backed browser tool. Unlike a
  * collection definition, this does not imply that a list route or client cache
- * exists.
+ * exists. Generated definitions carry explicit semantics; manual legacy
+ * literals may omit them and register with fail-closed defaults.
  */
 export interface WebMcpToolDefinition extends WebToolDescriptor {
-  /** Canonical generated definitions always carry explicit semantics. */
-  effect: 'read' | 'write' | 'destructive';
-  idempotent: boolean;
-  openWorld: boolean;
   /** Stable definition identity is `(collection, action)`. */
   collection: string;
   /** Canonical qualified row-model identity. */

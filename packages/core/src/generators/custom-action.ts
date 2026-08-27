@@ -23,12 +23,16 @@ export interface CustomActionMetadata {
   /** Collection actions on a model class invoke its static method. */
   isStatic: boolean;
   /** Browser/agent-visible effect. Omitted declarations fail closed. */
-  effect: ToolEffect;
+  effect?: ToolEffect;
   /** Whether repeating the action with the same arguments is safe. */
-  idempotent: boolean;
+  idempotent?: boolean;
   /** Whether the opaque action may interact outside the SMRT application. */
-  openWorld: boolean;
+  openWorld?: boolean;
 }
+
+/** Fully resolved metadata returned by {@link resolveCustomActionMetadata}. */
+export type ResolvedCustomActionMetadata = CustomActionMetadata &
+  Required<Pick<CustomActionMetadata, 'effect' | 'idempotent' | 'openWorld'>>;
 
 /**
  * Return the transport field for a method parameter. Flat tool and CLI
@@ -64,7 +68,7 @@ type ToolArgs = Record<string, unknown>;
  */
 export function resolveCustomActionMetadata(
   options: ResolveCustomActionMetadataOptions,
-): CustomActionMetadata {
+): ResolvedCustomActionMetadata {
   const defaultScope =
     options.defaultScope ?? (options.method?.isStatic ? 'collection' : 'item');
   const requestedScope = readConfiguredScope(
