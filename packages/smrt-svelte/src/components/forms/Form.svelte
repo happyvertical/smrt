@@ -1,5 +1,6 @@
 <script lang="ts">
 import {
+  type ControlIdentity,
   type ControlInteractionEvent,
   type ControlInteractionRegistry,
   type ControlKind,
@@ -99,14 +100,14 @@ const resolvedInteractionRegistry = $derived(
       : undefined) ??
     localInteractionRegistry,
 );
-const interactionDisposers = new Map<
-  string,
-  {
-    field: FieldDefinition;
-    subject: ControlSubject | undefined;
-    dispose: () => void;
-  }
->();
+interface InteractionRegistration {
+  field: FieldDefinition;
+  subject: ControlSubject | undefined;
+  identity: ControlIdentity;
+  disposeRegistration: () => void;
+  restoreAttributes: () => void;
+}
+const interactionDisposers = new Map<string, InteractionRegistration>();
 let activeInteractionRegistry: ControlInteractionRegistry | undefined;
 let activeInteractionFormId: string | undefined;
 let formElement = $state<HTMLFormElement | null>(null);
@@ -228,9 +229,23 @@ function decorateFieldControls(
     ),
   }));
   for (const { control } of controls) {
-    for (const [attribute, next] of attributes) {
-      if (next === undefined) control.removeAttribute(attribute);
-      else control.setAttribute(attribute, next);
+    try {
+      for (const [attribute, next] of attributes) {
+        if (next === undefined) control.removeAttribute(attribute);
+        else control.setAttribute(attribute, next);
+      }
+    } catch (error) {
+      for (const { control: assignedControl, previous } of controls) {
+        for (const attribute of attributes.keys()) {
+          const original = previous.get(attribute);
+          if (original === null || original === undefined) {
+            assignedControl.removeAttribute(attribute);
+          } else {
+            assignedControl.setAttribute(attribute, original);
+          }
+        }
+      }
+      throw error;
     }
   }
   return () => {
@@ -277,23 +292,44 @@ function registerInteraction(
   currentFormId: string,
   field: FieldDefinition,
   resolvedSubject: ControlSubject | undefined,
-): (() => void) | undefined {
+  previous?: InteractionRegistration,
+): InteractionRegistration | undefined {
   const identity = {
     formId: currentFormId,
     controlId: field.controlId ?? field.name,
     subject: resolvedSubject,
   };
-  if (registry.get(identity)) {
+  const replacesOwnedIdentity =
+    previous !== undefined && sameRegistryIdentity(previous.identity, identity);
+  if (registry.get(identity) && !replacesOwnedIdentity) {
     logger.warn('Form: duplicate interaction identity rejected', { identity });
     return undefined;
   }
-  const restoreAttributes = decorateFieldControls(
-    field,
-    currentFormId,
-    resolvedSubject,
-  );
+  // Restore the old DOM decoration while its registry generation is still
+  // active. This makes either decoration or registration failure recoverable.
+  if (replacesOwnedIdentity) {
+    previous.restoreAttributes();
+  }
+  let restoreAttributes: () => void;
   try {
-    const dispose = registry.register({
+    restoreAttributes = decorateFieldControls(
+      field,
+      currentFormId,
+      resolvedSubject,
+    );
+  } catch (error) {
+    if (replacesOwnedIdentity) {
+      previous.restoreAttributes = decorateFieldControls(
+        previous.field,
+        previous.identity.formId,
+        previous.subject,
+      );
+    }
+    throw error;
+  }
+  let disposeRegistration: () => void;
+  try {
+    disposeRegistration = registry.register({
       identity,
       metadata: {
         kind: interactionKind(field),
@@ -342,14 +378,44 @@ function registerInteraction(
       validateValue: field.validateValue,
       getState: () => fieldRuntimeState(field),
     });
-    return () => {
-      dispose();
-      restoreAttributes();
-    };
   } catch (error) {
     restoreAttributes();
+    if (replacesOwnedIdentity) {
+      previous.restoreAttributes = decorateFieldControls(
+        previous.field,
+        previous.identity.formId,
+        previous.subject,
+      );
+    }
     throw error;
   }
+  // Install the same-key replacement before retiring the old registry
+  // generation, making the old disposer a no-op and preserving internal state.
+  if (replacesOwnedIdentity) previous.disposeRegistration();
+  return {
+    field,
+    subject: resolvedSubject,
+    identity,
+    disposeRegistration,
+    restoreAttributes,
+  };
+}
+
+function disposeInteraction(registration: InteractionRegistration): void {
+  registration.disposeRegistration();
+  registration.restoreAttributes();
+}
+
+function sameRegistryIdentity(
+  left: ControlIdentity,
+  right: ControlIdentity,
+): boolean {
+  return (
+    left.formId === right.formId &&
+    left.controlId === right.controlId &&
+    left.subject?.type === right.subject?.type &&
+    left.subject?.id === right.subject?.id
+  );
 }
 
 function resolvedFieldSubject(
@@ -393,43 +459,55 @@ $effect(() => {
     activeInteractionFormId !== currentFormId
   ) {
     for (const registration of interactionDisposers.values()) {
-      registration.dispose();
+      disposeInteraction(registration);
     }
     interactionDisposers.clear();
     activeInteractionRegistry = registry;
     activeInteractionFormId = currentFormId;
   }
   for (const [name, registration] of interactionDisposers) {
-    const nextSubject = resolvedFieldSubject(registration.field);
-    const identity = {
-      formId: currentFormId,
-      controlId: registration.field.controlId ?? registration.field.name,
-      subject: registration.subject,
-    };
+    const nextField = currentFields.get(name);
+    if (!nextField) {
+      disposeInteraction(registration);
+      interactionDisposers.delete(name);
+      continue;
+    }
+    const nextSubject = resolvedFieldSubject(nextField);
     if (
-      currentFields.get(name) !== registration.field ||
-      !sameSubject(registration.subject, nextSubject) ||
-      !registry.get(identity)
+      nextField === registration.field &&
+      sameSubject(registration.subject, nextSubject) &&
+      registry.get(registration.identity)
     ) {
-      registration.dispose();
+      continue;
+    }
+    const nextIdentity = {
+      formId: currentFormId,
+      controlId: nextField.controlId ?? nextField.name,
+      subject: nextSubject,
+    };
+    if (!sameRegistryIdentity(registration.identity, nextIdentity)) {
+      disposeInteraction(registration);
       interactionDisposers.delete(name);
     }
   }
   for (const [name, field] of currentFields) {
-    if (interactionDisposers.has(name)) continue;
+    const previous = interactionDisposers.get(name);
+    if (
+      previous?.field === field &&
+      sameSubject(previous.subject, resolvedFieldSubject(field)) &&
+      registry.get(previous.identity)
+    )
+      continue;
     const resolvedSubject = resolvedFieldSubject(field);
-    const dispose = registerInteraction(
+    const registration = registerInteraction(
       registry,
       currentFormId,
       field,
       resolvedSubject,
+      previous,
     );
-    if (!dispose) continue;
-    interactionDisposers.set(name, {
-      field,
-      subject: resolvedSubject,
-      dispose,
-    });
+    if (!registration) continue;
+    interactionDisposers.set(name, registration);
   }
 });
 
@@ -440,9 +518,14 @@ $effect(() => {
   const registry = resolvedInteractionRegistry;
   const currentFormId = resolvedFormId;
   for (const field of fields.values()) {
+    void field.label;
+    void field.description;
     void field.sensitivity;
     void field.readable;
     void field.writable;
+    void field.constraints;
+    void field.options;
+    void field.unit;
     const state = fieldRuntimeState(field);
     void state.disabled;
     void state.readonly;
@@ -1166,7 +1249,7 @@ onDestroy(() => {
   }
   stopAudioLevelMonitoring();
   for (const registration of interactionDisposers.values()) {
-    registration.dispose();
+    disposeInteraction(registration);
   }
   interactionDisposers.clear();
 });

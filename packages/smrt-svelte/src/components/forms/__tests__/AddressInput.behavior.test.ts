@@ -17,7 +17,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 const formCapture = vi.hoisted(() => ({
   field: undefined as
-    | { setValue: (value: unknown) => void; getValue: () => unknown }
+    | {
+        setValue: (value: unknown) => void;
+        getValue: () => unknown;
+        validate?: () => boolean;
+        validateValue?: (value: unknown) => boolean | string;
+        webMcpSchema?: Record<string, unknown>;
+      }
     | undefined,
 }));
 
@@ -195,6 +201,52 @@ describe('AddressInput — behavior', () => {
     expect(onchange).toHaveBeenLastCalledWith({ country: 'CA' });
     field.setValue('United States');
     expect(onchange).toHaveBeenLastCalledWith({ country: 'US' });
+  });
+
+  it('accepts valid incremental setters for a required address', async () => {
+    const onchange = vi.fn();
+    render(AddressInput, {
+      props: {
+        name: 'addr',
+        label: 'Address',
+        required: true,
+        countries: [{ value: 'FR', label: 'France' }],
+        onchange,
+      },
+    });
+    await tick();
+    const field = formCapture.field;
+    if (!field) throw new Error('AddressInput did not register its field');
+
+    field.setValue({ city: 'Paris' });
+    expect(onchange).toHaveBeenLastCalledWith({
+      street: '',
+      city: 'Paris',
+      province: '',
+      postalCode: '',
+      country: 'FR',
+    });
+    expect(field.validateValue?.({ city: 'Paris' })).toBe(false);
+    expect(field.validate?.()).toBe(false);
+    expect(field.webMcpSchema).toMatchObject({
+      required: ['street', 'city', 'province', 'postalCode', 'country'],
+    });
+
+    field.setValue('France');
+    expect(onchange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ city: 'Paris', country: 'FR' }),
+    );
+
+    onchange.mockClear();
+    field.setValue({ country: 'CA' });
+    expect(onchange).not.toHaveBeenCalled();
+    expect(field.getValue()).toEqual({
+      street: '',
+      city: 'Paris',
+      province: '',
+      postalCode: '',
+      country: 'FR',
+    });
   });
 
   it('marks every field invalid and links one alert when error is set', () => {

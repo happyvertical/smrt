@@ -99,8 +99,7 @@ function schemaForField(field: AddressField): Record<string, unknown> {
   return { type: 'string' };
 }
 
-function validatesAddressCandidate(candidate: unknown): boolean {
-  if (candidate === null || candidate === undefined) return !required;
+function validatesAddressMembers(candidate: unknown): boolean {
   if (typeof candidate !== 'object' || Array.isArray(candidate)) return false;
   const address = candidate as Record<string, unknown>;
   if (
@@ -123,12 +122,17 @@ function validatesAddressCandidate(candidate: unknown): boolean {
   ) {
     return false;
   }
-  return (
-    !required ||
-    fields.every(
-      (field) =>
-        typeof address[field] === 'string' && address[field].trim().length > 0,
-    )
+  return true;
+}
+
+function validatesAddressCandidate(candidate: unknown): boolean {
+  if (candidate === null || candidate === undefined) return !required;
+  if (!validatesAddressMembers(candidate)) return false;
+  if (!required) return true;
+  const address = candidate as Record<string, unknown>;
+  return fields.every(
+    (field) =>
+      typeof address[field] === 'string' && address[field].trim().length > 0,
   );
 }
 
@@ -278,7 +282,7 @@ onMount(() => {
           updateValue();
           return;
         }
-        if (validatesAddressCandidate(v)) {
+        if (validatesAddressMembers(v)) {
           const addr = v as Partial<AddressValue>;
           if (addr.street !== undefined) street = addr.street;
           if (addr.city !== undefined) city = addr.city;
@@ -294,11 +298,7 @@ onMount(() => {
             fields.includes(field as AddressField),
           ),
         ) as Partial<AddressValue>;
-        const nextValue = { ...currentValue(), ...parsed };
-        if (
-          Object.keys(parsed).length > 0 &&
-          validatesAddressCandidate(nextValue)
-        ) {
+        if (Object.keys(parsed).length > 0 && validatesAddressMembers(parsed)) {
           if (parsed.street !== undefined) street = parsed.street;
           if (parsed.city !== undefined) city = parsed.city;
           if (parsed.province !== undefined) province = parsed.province;

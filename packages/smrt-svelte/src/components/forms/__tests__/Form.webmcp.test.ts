@@ -309,6 +309,156 @@ describe('Form WebMCP staged-edit intent', () => {
     expect(registry.get(fullname.identity)?.state.value).toBe('');
   });
 
+  it('preserves staged and undo state across live field label changes', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const view = render(FormWithFields, {
+      props: {
+        interactionRegistry: registry,
+        ageLabel: 'Minimum age',
+      },
+    });
+    await tick();
+    const age = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'age');
+    if (!age) throw new Error('age was not registered');
+    await registry.execute(
+      { action: 'stage', identity: age.identity, value: 42 },
+      { source: 'agent' },
+    );
+    const revision = registry.get(age.identity)?.state.staged?.revision;
+
+    await view.rerender({
+      interactionRegistry: registry,
+      ageLabel: 'Maximum age',
+    });
+    await waitFor(() =>
+      expect(registry.get(age.identity)?.metadata.label).toBe('Maximum age'),
+    );
+    expect(registry.get(age.identity)?.state.staged).toMatchObject({
+      value: 42,
+      revision,
+    });
+    expect(
+      await screen.findByRole('textbox', {
+        name: 'Edit proposed value for Maximum age',
+      }),
+    ).toHaveValue('42');
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'apply', identity: age.identity, revision },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(age.identity)?.state.value).toBe(42);
+
+    await view.rerender({
+      interactionRegistry: registry,
+      ageLabel: 'Preferred age',
+    });
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          { action: 'undo', identity: age.identity },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(age.identity)?.state.value).toBeNull();
+  });
+
+  it('preserves state for subject-label replacements but not subject moves', async () => {
+    const registry = createControlInteractionRegistry({
+      isLocalGesture: () => true,
+    });
+    const view = render(FormWithFields, {
+      props: {
+        interactionRegistry: registry,
+        showAge: false,
+        formSubject: { type: 'person', id: 'person-1', label: 'Old label' },
+      },
+    });
+    await tick();
+    const original = registry
+      .list()
+      .find((snapshot) => snapshot.identity.controlId === 'fullname');
+    if (!original) throw new Error('fullname was not registered');
+    await registry.execute(
+      { action: 'stage', identity: original.identity, value: 'Grace' },
+      { source: 'agent' },
+    );
+    const revision = registry.get(original.identity)?.state.staged?.revision;
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showAge: false,
+      formSubject: { type: 'person', id: 'person-1', label: 'New label' },
+    });
+    await waitFor(() =>
+      expect(registry.get(original.identity)?.identity.subject?.label).toBe(
+        'New label',
+      ),
+    );
+    const replacement = registry.get(original.identity);
+    expect(replacement?.state.staged).toMatchObject({
+      value: 'Grace',
+      revision,
+    });
+    const fullname = screen.getByRole('textbox', { name: 'Full name' });
+    expect(fullname).toHaveAttribute('data-smrt-subject-type', 'person');
+    expect(fullname).toHaveAttribute('data-smrt-subject-id', 'person-1');
+
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          {
+            action: 'apply',
+            identity: replacement?.identity ?? original.identity,
+            revision,
+          },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(
+      await dispatchLocalGesture((event) =>
+        executeLocalControlCommand(
+          registry,
+          {
+            action: 'undo',
+            identity: replacement?.identity ?? original.identity,
+          },
+          event,
+        ),
+      ),
+    ).toMatchObject({ ok: true });
+    expect(registry.get(original.identity)?.state.value).toBe('');
+
+    await view.rerender({
+      interactionRegistry: registry,
+      showAge: false,
+      formSubject: { type: 'person', id: 'person-2', label: 'Moved' },
+    });
+    await waitFor(() =>
+      expect(registry.get(original.identity)).toBeUndefined(),
+    );
+    expect(
+      registry.get({
+        formId: original.identity.formId,
+        controlId: 'fullname',
+        subject: { type: 'person', id: 'person-2' },
+      })?.state.staged,
+    ).toBeUndefined();
+  });
+
   it('rejects invalid rich numeric proposals before mutation callbacks run', async () => {
     const numberChanged = vi.fn();
     const measurementChanged = vi.fn();
