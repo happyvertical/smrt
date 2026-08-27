@@ -45,6 +45,23 @@ Svelte-free `/data-surface` entry exposes the registry contracts and shared
 protocol limits for server adapters. The package root remains a compatibility
 barrel.
 
+### Currency display
+
+`CurrencyDisplay` accepts ISO 4217 codes as a public `string` prop so persisted
+Commerce currency fields can be passed directly. Codes are trimmed and
+uppercased before `Intl.NumberFormat` formatting; the default remains CAD.
+Malformed or unsupported codes render an accessible inline error instead of
+throwing and interrupting a surrounding collection render.
+
+```svelte
+<script lang="ts">
+  import { CurrencyDisplay } from '@happyvertical/smrt-ui';
+  let invoiceCurrency: string = 'eur';
+</script>
+
+<CurrencyDisplay amount={12345} currency={invoiceCurrency} />
+```
+
 ## Component standard
 
 Foundation components follow one contract:

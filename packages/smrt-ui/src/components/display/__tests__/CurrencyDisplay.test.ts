@@ -8,13 +8,16 @@
  * code, sign handling (negative/zero/showSign), highlight classes, size
  * classes, and axe-cleanliness.
  */
+
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { render, screen } from '@testing-library/svelte';
+import { createServer } from 'vite';
 import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import CurrencyDisplay from '../CurrencyDisplay.svelte';
 
 /** Mirror the component's absolute-value currency formatting. */
-function money(absDollars: number, currency: 'CAD' | 'USD' = 'CAD'): string {
+function money(absDollars: number, currency = 'CAD'): string {
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
@@ -49,6 +52,40 @@ describe('CurrencyDisplay', () => {
       props: { amount: 1000, unit: 'dollars', currency: 'USD' },
     });
     expect(screen.getByText(money(1000, 'USD'))).toBeInTheDocument();
+  });
+
+  it('formats an EUR amount through the public string currency prop', () => {
+    const commerceCurrency: string = 'EUR';
+    render(CurrencyDisplay, {
+      props: { amount: 12345, currency: commerceCurrency },
+    });
+    expect(screen.getByText(money(123.45, 'EUR'))).toBeInTheDocument();
+  });
+
+  it.each([
+    ['cad', 'CAD'],
+    ['  eur  ', 'EUR'],
+  ])('normalizes the currency code %j to %s', (currency, normalized) => {
+    render(CurrencyDisplay, {
+      props: { amount: 12345, currency },
+    });
+    expect(screen.getByText(money(123.45, normalized))).toBeInTheDocument();
+  });
+
+  it.each([
+    'US',
+    'ZZZ',
+    '',
+  ])('renders invalid code %j without throwing', (currency) => {
+    render(CurrencyDisplay, {
+      props: { amount: 12345, currency },
+    });
+    const normalized = currency.trim().toUpperCase() || '(empty)';
+    expect(
+      screen.getByRole('status', {
+        name: `Invalid currency code: ${normalized}`,
+      }),
+    ).toHaveClass('invalid');
   });
 
   it('shows an explicit + sign for positive amounts when showSign is set', () => {
@@ -126,5 +163,34 @@ describe('CurrencyDisplay', () => {
       props: { amount: -5000, highlightNegative: true },
     });
     await expectNoA11yViolations(container);
+  });
+
+  it('is axe-clean for an invalid currency code', async () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: 'ZZZ' },
+    });
+    await expectNoA11yViolations(container);
+  });
+
+  it('renders valid and invalid currencies safely on the server', async () => {
+    const vite = await createServer({
+      appType: 'custom',
+      configFile: false,
+      plugins: [svelte()],
+      root: process.cwd(),
+      server: { middlewareMode: true },
+    });
+
+    try {
+      const { default: SsrHarness } = await vite.ssrLoadModule(
+        '/src/components/display/__tests__/CurrencyDisplaySsrHarness.svelte',
+      );
+      const { render: renderSsr } = await vite.ssrLoadModule('svelte/server');
+      const result = renderSsr(SsrHarness);
+      expect(result.body).toContain(money(123.45, 'EUR'));
+      expect(result.body).toContain('Invalid currency code: ZZZ');
+    } finally {
+      await vite.close();
+    }
   });
 });

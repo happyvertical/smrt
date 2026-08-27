@@ -66,6 +66,14 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
         <CurrencyDisplay amount={9999} currency="USD" />
         <span class="label">$99.99 USD</span>
       </div>
+      <div class="demo-item">
+        <CurrencyDisplay amount={9999} currency=" eur " />
+        <span class="label">€99.99 EUR (normalized)</span>
+      </div>
+      <div class="demo-item">
+        <CurrencyDisplay amount={9999} currency="ZZZ" />
+        <span class="label">Unsupported code</span>
+      </div>
     </div>
   </div>
 

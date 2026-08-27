@@ -1,18 +1,47 @@
+<script module lang="ts">
+let currencyNames: Intl.DisplayNames | null | undefined;
+
+function normalizeCurrencyCode(value: string): string | null {
+  const normalized = value.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(normalized)) return null;
+
+  try {
+    if (currencyNames === undefined) {
+      currencyNames =
+        typeof Intl.DisplayNames === 'function'
+          ? new Intl.DisplayNames(['en'], {
+              type: 'currency',
+              fallback: 'none',
+            })
+          : null;
+    }
+    return !currencyNames || currencyNames.of(normalized) ? normalized : null;
+  } catch {
+    // NumberFormat remains the compatibility validator when DisplayNames is
+    // unavailable or the runtime does not ship currency-name locale data.
+    currencyNames = null;
+    return normalized;
+  }
+}
+</script>
+
 <script lang="ts">
 /**
  * CurrencyDisplay - Formats and displays monetary values
  *
  * Displays formatted currency with configurable unit.
  * Use `unit="cents"` (default) when amount is in cents, or `unit="dollars"` for dollar values.
- * Supports CAD/USD with appropriate symbols and locale formatting.
+ * Accepts ISO 4217 currency codes, normalized by trimming whitespace and
+ * uppercasing before locale formatting. Unsupported codes render an accessible
+ * inline error instead of throwing during a collection render.
  */
 
 /** Props for CurrencyDisplay component */
 export interface Props {
   /** Amount value */
   amount: number;
-  /** Currency code */
-  currency?: 'CAD' | 'USD';
+  /** ISO 4217 currency code. Whitespace is trimmed and letters are uppercased. */
+  currency?: string;
   /** Whether amount is in cents or dollars (default: cents) */
   unit?: 'cents' | 'dollars';
   /** Show +/- sign for non-zero values */
@@ -38,17 +67,39 @@ const {
   class: className = '',
 }: Props = $props();
 
-// Format amount using Intl.NumberFormat
-const formatted = $derived.by(() => {
+interface FormattedCurrency {
+  text: string;
+  invalidCode: string | null;
+}
+
+// Format amount using the platform's canonical currency formatter.
+const formatted = $derived.by((): FormattedCurrency => {
+  const normalizedCurrency = normalizeCurrencyCode(currency);
+  if (!normalizedCurrency) {
+    const invalidCode = currency.trim().toUpperCase() || '(empty)';
+    return {
+      text: `Invalid currency code: ${invalidCode}`,
+      invalidCode,
+    };
+  }
+
   const dollars = unit === 'cents' ? amount / 100 : amount;
   const absValue = Math.abs(dollars);
 
-  const formatter = new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  let formatter: Intl.NumberFormat;
+  try {
+    formatter = new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: normalizedCurrency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  } catch {
+    return {
+      text: `Invalid currency code: ${normalizedCurrency}`,
+      invalidCode: normalizedCurrency,
+    };
+  }
 
   let display = formatter.format(absValue);
 
@@ -60,7 +111,7 @@ const formatted = $derived.by(() => {
     display = `-${display}`;
   }
 
-  return display;
+  return { text: display, invalidCode: null };
 });
 
 // Determine color class
@@ -77,8 +128,11 @@ const colorClass = $derived.by(() => {
   class:lg={size === 'lg'}
   class:negative={colorClass === 'negative'}
   class:positive={colorClass === 'positive'}
+  class:invalid={formatted.invalidCode !== null}
+  role={formatted.invalidCode !== null ? 'status' : undefined}
+  aria-label={formatted.invalidCode !== null ? formatted.text : undefined}
 >
-  {formatted}
+  {formatted.text}
 </span>
 
 <style>
@@ -102,5 +156,9 @@ const colorClass = $derived.by(() => {
 
   .currency-display.positive {
     color: var(--smrt-color-tertiary, #16a34a);
+  }
+
+  .currency-display.invalid {
+    color: var(--smrt-color-error, #dc2626);
   }
 </style>

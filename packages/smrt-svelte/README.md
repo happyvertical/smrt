@@ -348,7 +348,12 @@ clears it.
 
 **UI**: `Badge`, `Button`, `Card`, `Pagination`
 
-**Display**: `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge`
+**Display** (from `@happyvertical/smrt-ui`): `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge`
+
+`CurrencyDisplay` accepts Commerce-compatible string currency fields. It trims
+and uppercases ISO 4217 codes before formatting, defaults to CAD, and renders an
+accessible inline error for malformed or unsupported codes instead of throwing
+the surrounding collection render.
 
 **Feedback**: `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar`
 
