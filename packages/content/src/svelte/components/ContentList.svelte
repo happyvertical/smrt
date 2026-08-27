@@ -914,7 +914,8 @@ const canSelectAllMatching = $derived(
       settledWorkflowFingerprint &&
       settledWorkflowRevision &&
       exactMatchingCount !== undefined &&
-      exactMatchingCount > 0,
+      exactMatchingCount > 0 &&
+      exactMatchingCount <= (workflows?.maxSelectionSize ?? 200),
   ),
 );
 const workflowPayloadValid = $derived(
@@ -1278,17 +1279,13 @@ function togglePageSelection() {
     clearSelection();
     return;
   }
-  const remaining = tableState.selectedRowIds.filter(
-    (rowId) =>
-      !selectablePageRowIds.some(
-        (pageRowId) => String(pageRowId) === String(rowId),
-      ),
-  );
+  if (allPageSelected) {
+    clearSelection();
+    return;
+  }
   controller.dispatch({
-    type: 'setSelectedRows',
-    rowIds: allPageSelected
-      ? remaining
-      : [...remaining, ...selectablePageRowIds],
+    type: serverBacked ? 'setPageSelection' : 'setSelectedRows',
+    rowIds: selectablePageRowIds,
   });
 }
 
@@ -1412,6 +1409,44 @@ function workflowResultMessage(result: import('@happyvertical/smrt-ui/data').Dat
   return `${accepted} accepted, ${skipped} skipped, ${failed} failed`;
 }
 
+function applyWorkflowSelectionOutcomes(
+  result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult,
+): boolean {
+  const outcomes = contentListWorkflowOutcomes(result);
+  const rowKey = (rowId: string | number) =>
+    `${typeof rowId}:${String(rowId)}`;
+  if (tableState.selection.scope === 'allMatching') {
+    const uniqueOutcomes = new Set(outcomes.map((outcome) => rowKey(outcome.rowId)));
+    if (
+      outcomes.length !== tableState.selection.expectedCount ||
+      uniqueOutcomes.size !== outcomes.length
+    ) {
+      workflowError =
+        'The workflow returned incomplete row outcomes; the selection was preserved.';
+      return false;
+    }
+    controller.dispatch({
+      type: 'setSelectedRows',
+      rowIds: outcomes
+        .filter((outcome) => outcome.status !== 'accepted')
+        .map((outcome) => outcome.rowId),
+    });
+    return true;
+  }
+  const accepted = new Set(
+    outcomes
+      .filter((outcome) => outcome.status === 'accepted')
+      .map((outcome) => rowKey(outcome.rowId)),
+  );
+  controller.dispatch({
+    type: 'setSelectedRows',
+    rowIds: tableState.selectedRowIds.filter(
+      (rowId) => !accepted.has(rowKey(rowId)),
+    ),
+  });
+  return true;
+}
+
 function workflowPreviewMessage(): string {
   const details = workflowPreview?.details ?? {};
   const count = typeof details.count === 'number' ? details.count : selectedCount;
@@ -1503,10 +1538,7 @@ async function applyWorkflow() {
       return;
     }
     if (result.details?.background !== true) {
-      const retained = contentListWorkflowOutcomes(result)
-        .filter((outcome) => outcome.status !== 'accepted')
-        .map((outcome) => outcome.rowId);
-      controller.dispatch({ type: 'setSelectedRows', rowIds: retained });
+      applyWorkflowSelectionOutcomes(result);
     } else if (
       typeof result.details.jobId === 'string' &&
       !workflowQueuedJobs.some((job) => job.intent === workflowIntentAtPreview)
@@ -1548,10 +1580,7 @@ async function checkWorkflowJob() {
       if (!job.result.ok) {
         workflowError = job.result.reason ?? `Job ${job.jobId} failed.`;
       } else {
-        const retained = contentListWorkflowOutcomes(job.result)
-          .filter((outcome) => outcome.status !== 'accepted')
-          .map((outcome) => outcome.rowId);
-        controller.dispatch({ type: 'setSelectedRows', rowIds: retained });
+        applyWorkflowSelectionOutcomes(job.result);
       }
     }
     if (job.status !== 'succeeded' && !workflowError) {

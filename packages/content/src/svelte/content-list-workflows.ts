@@ -100,6 +100,8 @@ export interface ContentListWorkflowBinding {
   client: ContentListWorkflowClient;
   /** Server-owned surface revision expected by preview/apply. Defaults to zero. */
   revision?: number;
+  /** Server action-selection cap used to gate all-matching UI. Defaults to 200. */
+  maxSelectionSize?: number;
   /** Override the default mounted identity when the host uses another surface. */
   identity?: DataSurfaceIdentity;
 }

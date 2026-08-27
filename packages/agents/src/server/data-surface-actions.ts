@@ -300,7 +300,7 @@ export interface DataSurfaceActionAdapterOptions {
   requestFingerprintExtension?(
     request: DataSurfaceServerActionRequest,
   ): DataSurfaceJsonValue | undefined;
-  /** Maps domain failures from deferred execution into the shared result contract. */
+  /** Maps terminal domain failures; return undefined to preserve queue retries. */
   mapError?(
     error: unknown,
     request: DataSurfaceServerActionRequest,
@@ -348,6 +348,13 @@ function isBoundedJsonValue(
       !FORBIDDEN_JSON_KEYS.has(key) &&
       isBoundedJsonValue(item, depth + 1, seen),
   );
+}
+
+/** Validates untrusted extension values before they enter canonical hashing. */
+export function isBoundedDataSurfaceJsonValue(
+  value: unknown,
+): value is DataSurfaceJsonValue {
+  return isBoundedJsonValue(value);
 }
 
 function validIdentifier(value: unknown): value is string {
@@ -718,11 +725,11 @@ export function createDataSurfaceActionAdapter(
         }
         await invocation.action.apply(invocation, rowId);
         outcomes.push({ rowId, status: 'accepted' });
-      } catch {
+      } catch (error) {
         outcomes.push({
           rowId,
           status: 'failed',
-          reason: 'execution_failed',
+          reason: options.mapError?.(error, request) ?? 'execution_failed',
         });
       }
     }
@@ -773,11 +780,12 @@ export function createDataSurfaceActionAdapter(
         try {
           executed = await authorizedApply(request, context, token, false);
         } catch (error) {
-          executed = result(
-            request,
-            false,
-            options.mapError?.(error, request) ?? 'execution_failed',
-          );
+          const reason = options.mapError?.(error, request);
+          if (!reason) {
+            await state.releaseIdempotency(executionScope, ownerToken);
+            throw error;
+          }
+          executed = result(request, false, reason);
         }
         if (
           !(await state.completeIdempotency(

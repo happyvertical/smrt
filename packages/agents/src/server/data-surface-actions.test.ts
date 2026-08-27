@@ -832,4 +832,32 @@ describe('data-surface action adapter', () => {
       reason: 'domain_drifted',
     });
   });
+
+  it('releases unexpected deferred failures so the queue can retry', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let authorizationChecks = 0;
+    const setup = harness({
+      execution: 'background',
+      authorize: () => {
+        authorizationChecks += 1;
+        if (authorizationChecks === 3) throw new Error('transient outage');
+        return true;
+      },
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-retry' };
+      },
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).rejects.toThrow('transient outage');
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: true,
+      details: { accepted: 2 },
+    });
+  });
 });

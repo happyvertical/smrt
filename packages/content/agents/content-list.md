@@ -65,8 +65,21 @@ Important invariants:
   the opaque preview token and an idempotency key.
 - Apply resolves the query again under the same principal and tenant scope,
   rechecks tool/operation authorization and eligibility, and compares the
-  aggregate `updated_at` row revision. Query, count, membership, or row drift
-  returns a stale failure before mutation.
+  aggregate `updated_at` row revision. Every content save also includes that
+  revision in its database `UPDATE`, so an edit racing the final write fails
+  atomically instead of being overwritten. Application formatting/optimization
+  handlers mutate the supplied object but must not call `save()`; the adapter
+  owns the guarded save. Query, count, membership, or row drift returns a stale
+  failure before mutation.
+- Workflow queries must project `id`, `title`, `status`, and `updated_at` so the
+  server can bind labels, eligibility, and row revisions. The standard
+  ContentList query projection already includes them; a host-supplied projection
+  override must retain them.
+- The default workflow cap is 200 rows across explicit, current-page, and
+  all-matching scopes. Set the same `maxSelectionSize` on the server adapter and
+  browser workflow binding when overriding it. The UI does not offer
+  all-matching selection above that cap, and the server returns
+  `limit_exceeded` for forged or agent requests above it.
 - Automated review, formatting, and optimization are background actions. A
   successful apply returns a job ID; the queue callback repeats the guarded
   apply, and idempotency prevents duplicate execution. Hosts can configure the

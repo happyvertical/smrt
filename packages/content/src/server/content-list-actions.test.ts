@@ -92,11 +92,20 @@ class MemoryContentCollection implements ContentListActionCollection {
           isGoverned: false,
           enforcePublishReadiness: false,
         }),
-        save: async () => {
+        save: async (options?: { expectedUpdatedAt?: Date | string }) => {
           this.saveCalls.push(row.id);
           if (this.failOnSave.has(row.id))
             throw new Error('private persistence failure');
+          if (
+            options?.expectedUpdatedAt !== undefined &&
+            String(options.expectedUpdatedAt) !== String(row.updated_at)
+          ) {
+            throw Object.assign(new Error('revision conflict'), {
+              code: 'RUNTIME_REVISION_CONFLICT',
+            });
+          }
           row.status = content.status;
+          row.category = content.category;
           row.updated_at = `${row.updated_at}-saved`;
         },
       } as unknown as Content;
@@ -425,8 +434,35 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(count).not.toHaveBeenCalled();
   });
 
+  it('reports an oversized all-matching selection as limit exceeded', async () => {
+    const setup = harness({ maxSelectionSize: 2 });
+    const targetQuery = query();
+
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'categorize',
+          {
+            scope: 'all-matching',
+            rowIds: [],
+            queryFingerprint: await fingerprint(targetQuery),
+            expectedCount: 3,
+          } as never,
+          { query: targetQuery, expectedCount: 3 },
+          { payload: { category: 'news' } },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'limit_exceeded' });
+  });
+
   it('rejects malformed requests and non-string restore statuses', async () => {
     const setup = harness();
+    let deeplyNestedQuery: Record<string, unknown> = {};
+    for (let depth = 0; depth < 18; depth += 1) {
+      deeplyNestedQuery = { nested: deeplyNestedQuery };
+    }
 
     await expect(
       setup.adapter.preview(null as never, setup.context),
@@ -457,6 +493,42 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
         setup.context,
       ),
     ).resolves.toMatchObject({ ok: false, reason: 'invalid_payload' });
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'format-body',
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { expectedCount: 1 },
+          { payload: 'markdown' as never },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_payload' });
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'automated-review',
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { expectedCount: 1 },
+          { payload: { kind: 'x'.repeat(65) } },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_payload' });
+    await expect(
+      setup.adapter.apply(
+        actionRequest(
+          'apply',
+          'categorize',
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { query: deeplyNestedQuery as never, expectedCount: 1 },
+          { payload: { category: 'news' }, idempotencyKey: 'deep-query' },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
   });
 
   it('previews without writes, requires confirmation, and rejects row revision drift at apply', async () => {
@@ -602,6 +674,101 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       'read',
     );
     expect(setup.collection.saveCalls).toEqual([]);
+  });
+
+  it('rechecks publish readiness and configured automated-review policies', async () => {
+    const setup = harness();
+    const content = await setup.collection.get('a');
+    if (!content) throw new Error('expected content');
+    const evaluateReviewProfile = vi.fn(async () => ({ ready: false }));
+    Object.assign(content, {
+      resolveGovernance: async () => ({
+        isGoverned: true,
+        enforcePublishReadiness: true,
+        publicationProfileKey: 'publication',
+        reviewPolicies: [{ key: 'facts', kind: 'facts' }],
+      }),
+      evaluateReviewProfile,
+    });
+
+    const publish = await setup.adapter.preview(
+      actionRequest(
+        'preview',
+        'publish',
+        { scope: 'explicit-ids', rowIds: ['a'] },
+        { expectedCount: 1 },
+      ),
+      setup.context,
+    );
+    expect(publish).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        skipped: 1,
+        outcomes: [
+          {
+            rowId: 'a',
+            status: 'skipped',
+            reason: 'publish_readiness_failed',
+          },
+        ],
+      },
+    });
+    expect(evaluateReviewProfile).toHaveBeenCalledWith('publication');
+
+    const unknownPolicy = await setup.adapter.preview(
+      actionRequest(
+        'preview',
+        'automated-review',
+        { scope: 'explicit-ids', rowIds: ['a'] },
+        { expectedCount: 1 },
+        { payload: { kind: 'custom', policyKey: 'unknown' } },
+      ),
+      setup.context,
+    );
+    expect(unknownPolicy).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        outcomes: [
+          {
+            rowId: 'a',
+            status: 'skipped',
+            reason: 'review_policy_unavailable',
+          },
+        ],
+      },
+    });
+  });
+
+  it('requires publication permissions only for restore-to-published', async () => {
+    const setup = harness();
+    const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
+    const target = { expectedCount: 1 };
+
+    await setup.adapter.preview(
+      actionRequest('preview', 'restore', selection, target, {
+        payload: { status: 'draft' },
+      }),
+      setup.context,
+    );
+    const draftOperations = vi
+      .mocked(setup.run.assertOperation)
+      .mock.calls.map(([collection, action]) => `${collection}:${action}`);
+    expect(draftOperations).toEqual(['contents:read', 'contents:update']);
+
+    vi.mocked(setup.run.assertOperation).mockClear();
+    await setup.adapter.preview(
+      actionRequest('preview', 'restore', selection, target, {
+        payload: { status: 'published' },
+      }),
+      setup.context,
+    );
+    const publishedOperations = vi
+      .mocked(setup.run.assertOperation)
+      .mock.calls.map(([collection, action]) => `${collection}:${action}`);
+    expect(publishedOperations).toContain('contentreferences:read');
+    expect(publishedOperations).toContain('contentversions:create');
   });
 
   it('reports primary operation and tool authorization failures as denial', async () => {
@@ -753,11 +920,64 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
         accepted: 0,
         failed: 1,
         outcomes: [
-          { rowId: 'a', status: 'failed', reason: 'execution_failed' },
+          { rowId: 'a', status: 'failed', reason: 'row_revision_drifted' },
         ],
       },
     });
     expect(collection.saveCalls).toEqual([]);
+  });
+
+  it('uses an atomic revision guard for long-running handler mutations', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const setup = harness({
+      backgroundQueue: {
+        enqueue: async (job) => {
+          queued = job;
+          return { jobId: 'format-cas-job' };
+        },
+      },
+      handlers: {
+        formatBody: vi.fn(async (content) => {
+          content.title = 'formatted';
+          setup.collection.rows[0].updated_at =
+            '2026-01-01T00:00:00.000Z-concurrent';
+        }),
+      },
+    });
+    const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
+    const target = { expectedCount: 1 };
+    const preview = await setup.adapter.preview(
+      actionRequest('preview', 'format-body', selection, target, {
+        payload: { format: 'markdown' },
+      }),
+      setup.context,
+    );
+
+    const accepted = await setup.adapter.apply(
+      actionRequest('apply', 'format-body', selection, target, {
+        payload: { format: 'markdown' },
+        confirmationToken: preview.confirmationToken,
+        idempotencyKey: 'format-cas',
+      }),
+      setup.context,
+    );
+    expect(accepted).toMatchObject({
+      ok: true,
+      details: { background: true },
+    });
+
+    const result = await queued?.run();
+    expect(result).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        failed: 1,
+        outcomes: [
+          { rowId: 'a', status: 'failed', reason: 'row_revision_drifted' },
+        ],
+      },
+    });
+    expect(setup.collection.rows[0].title).toBe('Alpha');
   });
 
   it('binds the content target into idempotent retries', async () => {

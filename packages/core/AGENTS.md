@@ -27,6 +27,10 @@ subsystem you are editing. This file keeps what holds across all of them.
 
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
+- `save({ expectedUpdatedAt })`: optimistic-concurrency variant for persisted
+  objects. The expected revision is included in the database `UPDATE`; zero
+  affected rows throws `RUNTIME_REVISION_CONFLICT` without overwriting the
+  newer row.
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id

@@ -25,6 +25,7 @@ import {
   type DataSurfaceServerActionContext,
   type DataSurfaceServerActionDefinition,
   type DataSurfaceServerActionRequest,
+  isBoundedDataSurfaceJsonValue,
 } from '@happyvertical/smrt-agents/server';
 import {
   createDataQueryFingerprint,
@@ -377,11 +378,13 @@ export interface ContentListActionCollection extends ContentQueryCollection {
 }
 
 export interface ContentListWorkflowHandlers {
+  /** Mutate the supplied object without saving it; the adapter persists by revision CAS. */
   formatBody?: (
     content: Content,
     payload: DataSurfaceJsonValue | undefined,
     run: PrincipalRun,
   ) => Promise<void>;
+  /** Mutate the supplied object without saving it; the adapter persists by revision CAS. */
   optimize?: (
     content: Content,
     payload: DataSurfaceJsonValue | undefined,
@@ -461,6 +464,7 @@ function validPayload(
   workflowId: ContentListWorkflowId,
   payload: DataSurfaceJsonValue | undefined,
 ): boolean {
+  if (payload !== undefined && !isRecord(payload)) return false;
   const value = payloadRecord(payload);
   const keys = Object.keys(value);
   switch (workflowId) {
@@ -480,13 +484,15 @@ function validPayload(
     case 'automated-review':
       return (
         keys.every((key) => ['kind', 'policyKey'].includes(key)) &&
-        [value.kind, value.policyKey].every(
-          (entry) =>
-            entry === undefined ||
-            (typeof entry === 'string' &&
-              entry.length > 0 &&
-              entry.length <= 128),
-        )
+        (value.kind === undefined ||
+          (typeof value.kind === 'string' &&
+            ['facts', 'safety', 'custom'].includes(value.kind) &&
+            value.kind.length > 0 &&
+            value.kind.length <= 64)) &&
+        (value.policyKey === undefined ||
+          (typeof value.policyKey === 'string' &&
+            value.policyKey.length > 0 &&
+            value.policyKey.length <= 128))
       );
     case 'format-body':
       return (
@@ -563,6 +569,12 @@ function validateTarget(request: unknown): string | undefined {
   ) {
     return 'invalid_request';
   }
+  if (
+    request.target.query !== undefined &&
+    !isBoundedDataSurfaceJsonValue(request.target.query)
+  ) {
+    return 'invalid_request';
+  }
   return undefined;
 }
 
@@ -618,10 +630,27 @@ async function eligibility(
       return status === 'archived'
         ? { eligible: false, reason: 'already_archived' }
         : { eligible: true };
-    case 'automated-review':
-      return (await content.resolveGovernance()).isGoverned
-        ? { eligible: true }
-        : { eligible: false, reason: 'governance_unavailable' };
+    case 'automated-review': {
+      const governance = await content.resolveGovernance();
+      if (!governance.isGoverned)
+        return { eligible: false, reason: 'governance_unavailable' };
+      const input = payloadRecord(payload);
+      const policy =
+        typeof input.policyKey === 'string'
+          ? governance.reviewPolicies.find(
+              (entry) => entry.key === input.policyKey,
+            )
+          : undefined;
+      if (typeof input.policyKey === 'string' && !policy)
+        return { eligible: false, reason: 'review_policy_unavailable' };
+      if (
+        typeof input.kind === 'string' &&
+        policy &&
+        policy.kind !== input.kind
+      )
+        return { eligible: false, reason: 'review_kind_mismatch' };
+      return { eligible: true };
+    }
     case 'format-body':
       return handlers.formatBody
         ? { eligible: true }
@@ -640,35 +669,48 @@ async function eligibility(
 async function applyWorkflow(
   workflowId: ContentListWorkflowId,
   content: Content,
+  expectedUpdatedAt: Date | string,
   payload: DataSurfaceJsonValue | undefined,
   run: PrincipalRun,
   handlers: ContentListWorkflowHandlers,
 ): Promise<void> {
   const input = payloadRecord(payload);
+  const save = () => content.save({ expectedUpdatedAt });
+  const mutationOnlyContent = () =>
+    new Proxy(content, {
+      get(target, property, receiver) {
+        if (property === 'save') {
+          return async () => {
+            throw new ContentListActionError('handler_persistence_forbidden');
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
   switch (workflowId) {
     case 'move-to-trash':
       content.status = 'deleted';
-      await content.save();
+      await save();
       return;
     case 'mark-draft':
       content.status = 'draft';
-      await content.save();
+      await save();
       return;
     case 'submit-review':
       content.status = 'review';
-      await content.save();
+      await save();
       return;
     case 'publish':
       content.status = 'published';
-      await content.save();
+      await save();
       return;
     case 'archive':
       content.status = 'archived';
-      await content.save();
+      await save();
       return;
     case 'restore':
       content.status = input.status as Content['status'];
-      await content.save();
+      await save();
       return;
     case 'automated-review':
       await content.runReviewAction({
@@ -682,15 +724,17 @@ async function applyWorkflow(
       return;
     case 'format-body':
       if (!handlers.formatBody) throw new Error('format handler unavailable');
-      await handlers.formatBody(content, payload, run);
+      await handlers.formatBody(mutationOnlyContent(), payload, run);
+      await save();
       return;
     case 'categorize':
       content.category = String(input.category).trim();
-      await content.save();
+      await save();
       return;
     case 'optimize':
       if (!handlers.optimize) throw new Error('optimize handler unavailable');
-      await handlers.optimize(content, payload, run);
+      await handlers.optimize(mutationOnlyContent(), payload, run);
+      await save();
       return;
   }
 }
@@ -800,6 +844,11 @@ async function resolveQuerySelection(
         authoritativeTotal = result.total.value;
       if (result.total.value !== authoritativeTotal)
         throw new ContentListActionError('matching_count_drifted');
+      if (
+        selection.scope === 'all-matching' &&
+        authoritativeTotal > maxSelectionSize
+      )
+        throw new ContentListActionError('limit_exceeded');
       rows.push(...result.rows);
       if (selection.scope === 'current-page' || !result.page?.hasMore) break;
       offset += pageLimit;
@@ -894,10 +943,17 @@ export function createContentListActionAdapter(
 ): ContentListActionAdapter {
   const handlers = options.handlers ?? {};
   const maxSelectionSize =
-    options.maxSelectionSize ?? DEFAULT_MAX_SELECTION_SIZE;
+    options.maxSelectionSize ??
+    options.descriptor?.limits.maxSelectionSize ??
+    DEFAULT_MAX_SELECTION_SIZE;
   const representativeLimit =
     options.representativeLimit ?? DEFAULT_REPRESENTATIVE_LIMIT;
   const descriptor = options.descriptor ?? defaultDescriptor(maxSelectionSize);
+  if (descriptor.limits.maxSelectionSize !== maxSelectionSize) {
+    throw new Error(
+      'ContentList descriptor maxSelectionSize must match the server selection cap',
+    );
+  }
   const resolvedByRequest = new WeakMap<object, ResolvedContentSelection>();
   async function loadContent(
     invocation: { run: PrincipalRun; request: DataSurfaceServerActionRequest },
@@ -923,10 +979,12 @@ export function createContentListActionAdapter(
   const mapActionError = (error: unknown) =>
     error instanceof ContentListActionError
       ? error.reason
-      : isPermissionDenied(error) ||
-          error instanceof PrincipalToolNotAllowedError
-        ? 'denied'
-        : 'execution_failed';
+      : isRecord(error) && error.code === 'RUNTIME_REVISION_CONFLICT'
+        ? 'row_revision_drifted'
+        : isPermissionDenied(error) ||
+            error instanceof PrincipalToolNotAllowedError
+          ? 'denied'
+          : undefined;
 
   const definitions = Object.fromEntries(
     CONTENT_LIST_WORKFLOWS.map(
@@ -985,9 +1043,17 @@ export function createContentListActionAdapter(
           apply: async (invocation, rowId) => {
             const content = await loadContent(invocation, rowId);
             if (!content) throw new Error('content not found');
+            const expectedUpdatedAt = content.updated_at;
+            if (
+              !(expectedUpdatedAt instanceof Date) &&
+              typeof expectedUpdatedAt !== 'string'
+            ) {
+              throw new ContentListActionError('row_revision_drifted');
+            }
             await applyWorkflow(
               entry.id,
               content,
+              expectedUpdatedAt,
               invocation.request.payload,
               invocation.run,
               handlers,
@@ -1065,7 +1131,11 @@ export function createContentListActionAdapter(
         },
       };
     } catch (error) {
-      return actionResult(request, false, mapActionError(error));
+      return actionResult(
+        request,
+        false,
+        mapActionError(error) ?? 'execution_failed',
+      );
     } finally {
       resolvedByRequest.delete(request);
     }

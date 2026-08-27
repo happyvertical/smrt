@@ -135,6 +135,7 @@ function workflowBinding(
       request: ContentListWorkflowRequest,
     ) => Promise<DataSurfaceActionResult>;
     status?: ContentListWorkflowBinding['client']['status'];
+    maxSelectionSize?: number;
   } = {},
 ): ContentListWorkflowBinding & {
   preview: ReturnType<typeof vi.fn>;
@@ -168,6 +169,9 @@ function workflowBinding(
       ...(options.status ? { status: options.status } : {}),
     },
     revision: 7,
+    ...(options.maxSelectionSize !== undefined
+      ? { maxSelectionSize: options.maxSelectionSize }
+      : {}),
     preview,
     apply,
   };
@@ -331,6 +335,51 @@ describe('ContentList bulk workflows', () => {
     });
   });
 
+  it('does not offer all-matching selection above the server workflow cap', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-large-query',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 201);
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflowBinding({ maxSelectionSize: 200 }),
+    });
+
+    await vi.waitFor(() => expect(remote.requests.length).toBeGreaterThan(0));
+    expect(buttonsByText(target, 'Select all 201 matching')).toHaveLength(0);
+  });
+
+  it('binds server page select-all to the frozen current-page query', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-current-page',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 2);
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 2 matching')).toHaveLength(1),
+    );
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      selection: { scope: 'current-page' },
+      target: { expectedCount: 2, query: { version: 1, mode: 'rows' } },
+    });
+  });
+
   it('prevents duplicate preview calls and shows the resolved preview consequences', async () => {
     let resolvePreview: ((value: unknown) => void) | undefined;
     const workflow = workflowBinding({
@@ -462,7 +511,6 @@ describe('ContentList bulk workflows', () => {
     await vi.waitFor(() =>
       expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
     );
-
     typeText(searchInput(target), 'a changed query');
     await vi.waitFor(() => expect(remote.requests.length).toBeGreaterThan(1));
     click(buttonsByText(document.body, 'Apply workflow')[0]);
@@ -496,6 +544,9 @@ describe('ContentList bulk workflows', () => {
     await vi.waitFor(() =>
       expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
     );
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      selection: { scope: 'explicit-ids' },
+    });
     click(buttonsByText(document.body, 'Apply workflow')[0]);
 
     await vi.waitFor(() => expect(workflow.apply).toHaveBeenCalledTimes(1));
@@ -506,6 +557,32 @@ describe('ContentList bulk workflows', () => {
     expect(
       checkboxByLabel(target, 'Select Council budget explained').checked,
     ).toBe(false);
+  });
+
+  it('preserves unreported rows in an incomplete successful result', async () => {
+    const workflow = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: { accepted: 1, skipped: 0, failed: 0 },
+      }),
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.apply).toHaveBeenCalledTimes(1));
+    expect(target.textContent).toContain('2 selected');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+    expect(checkboxByLabel(target, 'Deselect Zoning appendix').checked).toBe(
+      true,
+    );
   });
 
   it('does not clear selection on apply failure and exposes a background job handle', async () => {

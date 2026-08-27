@@ -1,5 +1,8 @@
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtObjectOptions,
+  SmrtSaveOptions,
+} from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
   field,
@@ -965,7 +968,7 @@ export class Content
     );
   }
 
-  override async save() {
+  override async save(options: SmrtSaveOptions = {}) {
     const shouldConsiderPublicationSnapshot = this.status === 'published';
 
     let governance: ResolvedContentGovernance | null = null;
@@ -982,7 +985,7 @@ export class Content
       }
     }
 
-    await super.save();
+    await super.save(options);
     await this.syncPendingReferenceIds();
     await this.syncPendingAssetIds();
 

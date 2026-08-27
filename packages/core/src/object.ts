@@ -69,6 +69,15 @@ const logger = createLogger({
  */
 const AI_PROMPT_DATA_MAX_LENGTH = 100_000;
 
+/** Optional optimistic-concurrency guard for persisted-object saves. */
+export interface SmrtSaveOptions {
+  /**
+   * Update only when the stored row still has this revision. A mismatch throws
+   * `RUNTIME_REVISION_CONFLICT` without writing the row.
+   */
+  expectedUpdatedAt?: Date | string;
+}
+
 /**
  * Validate that _meta_type matches the expected class (Issue #713)
  *
@@ -1861,10 +1870,17 @@ export class SmrtObject extends SmrtClass {
    * await product.save();
    * ```
    */
-  async save() {
+  async save(options: SmrtSaveOptions = {}) {
     const className = this.getResolvedClassName();
+    const expectedUpdatedAt = options.expectedUpdatedAt;
 
     try {
+      if (expectedUpdatedAt !== undefined && (!this._persisted || !this.id)) {
+        throw RuntimeError.invalidState(
+          'A revision-guarded save requires a persisted object',
+          { className },
+        );
+      }
       // Validate object state before saving
       await this.validateBeforeSave();
 
@@ -2005,22 +2021,46 @@ export class SmrtObject extends SmrtClass {
       // change-feed append on the root connection.
       const serializeEmbeddedWrite =
         writePlan.type !== 'updateById' &&
+        expectedUpdatedAt === undefined &&
         !(this._insertOnly && !this._persisted) &&
         isEmbeddedDatabase(this.db) &&
         upsertConflictColumns.some((column) => data[column] == null);
 
+      let revisionMatched = true;
       await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
         ErrorUtils.withRetry(
           async () => {
             try {
-              if (writePlan.type === 'updateById') {
+              if (
+                writePlan.type === 'updateById' ||
+                expectedUpdatedAt !== undefined
+              ) {
                 const { id: _id, ...updateData } = data;
-                await this.db.update(
+                const updateResult = await this.db.update(
                   this.tableName,
-                  { id: data.id },
+                  {
+                    id: data.id,
+                    ...(expectedUpdatedAt !== undefined
+                      ? {
+                          updated_at:
+                            expectedUpdatedAt instanceof Date
+                              ? expectedUpdatedAt.toISOString()
+                              : expectedUpdatedAt,
+                        }
+                      : {}),
+                  },
                   updateData,
                 );
-                this.setMetaType(writePlan.qualifiedMetaType);
+                if (
+                  expectedUpdatedAt !== undefined &&
+                  updateResult.affected !== 1
+                ) {
+                  revisionMatched = false;
+                  return;
+                }
+                if (writePlan.type === 'updateById') {
+                  this.setMetaType(writePlan.qualifiedMetaType);
+                }
               } else if (this._insertOnly && !this._persisted) {
                 // Strict-insert mode (#1759): row identity is an explicit
                 // client-supplied id, so never adopt an existing row via
@@ -2062,7 +2102,8 @@ export class SmrtObject extends SmrtClass {
                   throw ValidationError.requiredField(field, className);
                 }
                 const operation =
-                  writePlan.type === 'updateById'
+                  writePlan.type === 'updateById' ||
+                  expectedUpdatedAt !== undefined
                     ? `UPDATE ${this.tableName} (id-targeted)`
                     : this._insertOnly && !this._persisted
                       ? `INSERT INTO ${this.tableName}`
@@ -2076,6 +2117,14 @@ export class SmrtObject extends SmrtClass {
           500,
         ),
       );
+
+      if (!revisionMatched) {
+        throw new RuntimeError(
+          `Revision conflict while saving ${className}`,
+          'RUNTIME_REVISION_CONFLICT',
+          { className, id: this.id },
+        );
+      }
 
       // The row now exists, so any further save() must update it by primary
       // key even if natural-key fields change afterwards (issue #1472).
