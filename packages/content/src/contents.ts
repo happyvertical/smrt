@@ -8,6 +8,7 @@ import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { queryGlobal, queryWithGlobals } from '@happyvertical/smrt-tenancy';
+import type { DataQueryResult } from '@happyvertical/smrt-types';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { htmlToMarkdown, resolveBodyFormat } from './body-format';
@@ -17,6 +18,10 @@ import {
   loadPersistedContentGovernanceDefinitions,
   resolveEffectiveContentGovernance,
 } from './content-governance';
+import {
+  type ContentQueryCollection,
+  executeContentQuery,
+} from './content-query';
 import {
   type ResolveHostname,
   redactUrlCredentials,
@@ -110,8 +115,14 @@ function isAIClientOptions(
       'getBySlug',
       'getGovernanceDefinitionsAction',
       'resolveGovernanceAction',
+      'queryAction',
     ],
     routes: {
+      queryAction: {
+        scope: 'collection',
+        method: 'POST',
+        path: 'query',
+      },
       browseFacts: {
         scope: 'collection',
         method: 'GET',
@@ -193,6 +204,33 @@ export class Contents extends SmrtCollection<Content> {
   private async getFactCollection() {
     const { FactCollection } = await import('@happyvertical/smrt-facts');
     return FactCollection.create(this.options);
+  }
+
+  /**
+   * Bounded, tenant-safe content query (`POST /api/v1/contents/query`).
+   *
+   * Accepts the canonical `DataQueryRequest` envelope (#2444) and returns a
+   * normalized `DataQueryResult`, so a list surface can filter, sort, page,
+   * count, and facet server-side instead of hydrating the whole collection.
+   *
+   * The request body carries no authority: only schema-declared field ids are
+   * accepted, and tenant scoping is applied by `executeContentQuery` itself
+   * (fail-closed to global rows when tenancy is enabled with no active tenant
+   * context). Applications that need additional site/organization scoping call
+   * `executeContentQuery` directly with a trusted `scope`.
+   *
+   * The parameter is named `options` deliberately: the route generator passes
+   * the raw request body straight through as a single `options` argument, so
+   * the wire body IS the `DataQueryRequest` rather than a wrapper object.
+   *
+   * @param options Untrusted `DataQueryRequest` from the caller.
+   * @returns A validated, bounded `DataQueryResult`.
+   */
+  public async queryAction(options: unknown): Promise<DataQueryResult> {
+    return executeContentQuery(
+      this as unknown as ContentQueryCollection,
+      options,
+    );
   }
 
   public async browseFacts(

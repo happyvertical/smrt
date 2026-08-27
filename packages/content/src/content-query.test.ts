@@ -1,0 +1,2285 @@
+/**
+ * Bounded, tenant-safe content query endpoint (#2452) over the canonical
+ * data-query protocol (#2444).
+ *
+ * Real in-memory SQLite throughout, per `.claude/rules/testing.md` — the
+ * database is the subject here (projection, paging, counts, facets, and the
+ * collection's own field-policy refusals), so nothing about it is mocked.
+ */
+
+import {
+  createDataQueryFingerprint,
+  DataQueryValidationError,
+  field,
+  getTestDatabase,
+  MAX_DATA_QUERY_RESULT_BYTES,
+  MAX_DATA_QUERY_WARNINGS,
+  normalizeDataQueryRequest,
+  normalizeDataQueryResult,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
+import {
+  disableTenancy,
+  enableTenancy,
+  withSystemContext,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
+import type {
+  DataQueryFieldDescriptor,
+  DataQueryRequest,
+  DataQuerySchema,
+} from '@happyvertical/smrt-types';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  allocateRowBytes,
+  assertContentQuerySchema,
+  boundRowBytes,
+  buildContentQuerySchema,
+  buildDataQuerySchemaForClass,
+  CONTENT_QUERY_DEFAULT_PAGE_LIMIT,
+  CONTENT_QUERY_DEFAULT_SORT,
+  CONTENT_QUERY_IDENTITY_FIELD,
+  CONTENT_QUERY_MAX_PAGE_LIMIT,
+  CONTENT_QUERY_MAX_RESULT_BYTES,
+  CONTENT_QUERY_MIN_RESULT_BYTES,
+  type ContentQueryCollection,
+  DATA_QUERY_FORBIDDEN_JSON_KEYS,
+  DATA_QUERY_MAX_JSON_CONTAINER_ITEMS,
+  DATA_QUERY_MAX_JSON_DEPTH,
+  DATA_QUERY_MAX_JSON_STRING_LENGTH,
+  DATA_QUERY_MAX_STRING_LENGTH,
+  DATA_QUERY_MAX_WARNING_LENGTH,
+  DATA_QUERY_MAX_WARNINGS,
+  executeContentQuery,
+  mergeContentQueryScope,
+  RESULT_ENVELOPE_RESERVE_BYTES,
+} from './content-query';
+import { Contents } from './contents';
+import { POST as queryRoute } from './routes/api/v1/contents/query/+server';
+
+let routeContents: Contents | undefined;
+
+vi.mock('$lib/server/smrt', () => ({
+  getCollection: async () => {
+    if (!routeContents) throw new Error('Test collection not initialized');
+    return routeContents;
+  },
+}));
+
+vi.mock('@sveltejs/kit', () => ({
+  json: (data: unknown, init?: { status?: number }) =>
+    new Response(JSON.stringify(data), {
+      status: init?.status ?? 200,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  error: (status: number, body?: unknown) =>
+    Object.assign(new Error(String(body ?? 'Error')), { status, body }),
+}));
+
+// A field-policy fixture: `Content` itself declares no sensitive or
+// permission-gated field, so the exposure boundary needs a class that does.
+// The name is unique to avoid AST-scanner collisions (issue #543).
+@smrt({ idType: 'text' })
+class ContentQueryProbe extends SmrtObject {
+  label: string = '';
+
+  @field({ type: 'text', sensitive: true })
+  apiSecret: string = '';
+
+  @field({ type: 'text', readPermission: 'content.probe.read' })
+  internalNote: string = '';
+}
+
+class ContentQueryProbeCollection extends SmrtCollection<ContentQueryProbe> {
+  static readonly _itemClass = ContentQueryProbe;
+}
+
+type PartialRequest = Partial<DataQueryRequest> & Record<string, unknown>;
+
+function request(overrides: PartialRequest = {}): Record<string, unknown> {
+  return {
+    version: 1,
+    requestId: 'test-request',
+    mode: 'rows',
+    ...overrides,
+  };
+}
+
+async function seed(
+  contents: Contents,
+  entries: Array<Record<string, unknown>>,
+): Promise<void> {
+  for (const entry of entries) {
+    const item = await contents.create(entry);
+    await item.save();
+  }
+}
+
+describe('content data-query schema (#2452)', () => {
+  it('declares column-backed content fields with an id identity', async () => {
+    const schema = await buildContentQuerySchema();
+    const ids = schema.fields.map((entry) => entry.id);
+
+    expect(schema.version).toBe(1);
+    expect(schema.identityField).toBe('id');
+    expect(ids).toEqual(
+      expect.arrayContaining(['id', 'name', 'title', 'status']),
+    );
+    expect(schema.defaultSort).toEqual([
+      { field: 'updated_at', direction: 'desc' },
+      { field: 'id', direction: 'asc' },
+    ]);
+    expect(schema.maxPageLimit).toBe(CONTENT_QUERY_MAX_PAGE_LIMIT);
+    expect(schema.supports).toEqual({
+      cursorPagination: false,
+      consistency: false,
+      facets: true,
+    });
+  });
+
+  it('never declares the tenant field, so no caller can name it', async () => {
+    const schema = await buildContentQuerySchema();
+    const ids = schema.fields.map((entry) => entry.id);
+
+    expect(ids).not.toContain('tenantId');
+    expect(ids).not.toContain('tenant_id');
+  });
+
+  it('excludes sensitive and readPermission-gated fields', async () => {
+    const schema = await buildDataQuerySchemaForClass('ContentQueryProbe');
+    const ids = schema.fields.map((entry) => entry.id);
+
+    expect(ids).toContain('label');
+    expect(ids).not.toContain('apiSecret');
+    expect(ids).not.toContain('internalNote');
+  });
+
+  it('is memoized rather than rebuilt per request', async () => {
+    const first = await buildContentQuerySchema();
+    const second = await buildContentQuerySchema();
+
+    expect(second).toBe(first);
+  });
+
+  it('keeps JSON fields unsortable, unfilterable, and unfacetable', async () => {
+    const schema = await buildContentQuerySchema();
+    const metadata = schema.fields.find((entry) => entry.id === 'metadata');
+
+    expect(metadata).toMatchObject({
+      type: 'json',
+      projectable: true,
+      sortable: false,
+      facetable: false,
+    });
+    expect(metadata?.filterOperators).toBeUndefined();
+  });
+});
+
+describe('mergeContentQueryScope', () => {
+  it('returns undefined when there is neither scope nor filter', () => {
+    expect(mergeContentQueryScope(undefined, undefined)).toBeUndefined();
+  });
+
+  it('ANDs every scope condition into every OR branch', () => {
+    const merged = mergeContentQueryScope({ tenantId: null }, [
+      [{ status: 'published' }],
+      [{ status: 'review' }],
+    ]);
+
+    expect(merged).toEqual([
+      [{ tenantId: null }, { status: 'published' }],
+      [{ tenantId: null }, { status: 'review' }],
+    ]);
+  });
+
+  it('rejects an unbounded OR branch', () => {
+    expect(() =>
+      mergeContentQueryScope(undefined, [[{ status: 'draft' }], []]),
+    ).toThrow(/unbounded OR branch/);
+  });
+
+  it('refuses a scope condition that is not a plain object', () => {
+    expect(() =>
+      mergeContentQueryScope('status = published' as never, undefined),
+    ).toThrow(/plain objects/);
+  });
+});
+
+describe('executeContentQuery', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+  });
+
+  afterEach(async () => {
+    disableTenancy();
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  const collectionOf = (value: unknown) => value as ContentQueryCollection;
+
+  it('returns an empty, well-formed envelope for an empty collection', async () => {
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['title'] }),
+    );
+
+    expect(result.rows).toEqual([]);
+    expect(result.total).toEqual({ kind: 'exact', value: 0 });
+    expect(result.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 50,
+      hasMore: false,
+    });
+    expect(result.identityField).toBe('id');
+    expect(result.queryFingerprint).toMatch(/^dq1_/);
+    expect(result.freshness.state).toBe('fresh');
+    expect(result.truncated).toBe(false);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('projects only the requested fields plus the identity field', async () => {
+    await seed(contents, [{ name: 'alpha', title: 'Alpha', status: 'draft' }]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['title'] }),
+    );
+
+    expect(result.rows).toHaveLength(1);
+    expect(Object.keys(result.rows[0]).sort()).toEqual(['id', 'title']);
+    expect(result.rows[0].title).toBe('Alpha');
+  });
+
+  it('serializes datetime and JSON fields as JSON-safe values', async () => {
+    await seed(contents, [
+      {
+        name: 'alpha',
+        title: 'Alpha',
+        publish_date: new Date('2026-01-02T03:04:05.000Z'),
+        tags: ['news', 'local'],
+        metadata: { section: 'front' },
+      },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['publish_date', 'tags', 'metadata'] }),
+    );
+
+    expect(result.rows[0].publish_date).toBe('2026-01-02T03:04:05.000Z');
+    expect(result.rows[0].tags).toEqual(['news', 'local']);
+    expect(result.rows[0].metadata).toEqual({ section: 'front' });
+  });
+
+  it('counts without returning rows in count mode', async () => {
+    await seed(contents, [
+      { name: 'a', status: 'draft' },
+      { name: 'b', status: 'published' },
+      { name: 'c', status: 'published' },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        mode: 'count',
+        filter: {
+          kind: 'condition',
+          field: 'status',
+          operator: 'eq',
+          value: 'published',
+        },
+      }),
+    );
+
+    expect(result.rows).toEqual([]);
+    expect(result.page).toBeUndefined();
+    expect(result.total).toEqual({ kind: 'exact', value: 2 });
+  });
+
+  it('returns bounded facets and reports conservative truncation', async () => {
+    await seed(contents, [
+      { name: 'a', status: 'draft' },
+      { name: 'b', status: 'published' },
+      { name: 'c', status: 'published' },
+    ]);
+
+    const full = await executeContentQuery(
+      collectionOf(contents),
+      request({ mode: 'facets', facets: [{ field: 'status', limit: 10 }] }),
+    );
+    expect(full.facets?.[0].field).toBe('status');
+    expect(
+      [...(full.facets?.[0].values ?? [])].sort((left, right) =>
+        String(left.value).localeCompare(String(right.value)),
+      ),
+    ).toEqual([
+      { value: 'draft', count: 1 },
+      { value: 'published', count: 2 },
+    ]);
+    expect(full.facets?.[0].truncated).toBe(false);
+    expect(full.total).toEqual({ kind: 'exact', value: 3 });
+
+    const bounded = await executeContentQuery(
+      collectionOf(contents),
+      request({ mode: 'facets', facets: [{ field: 'status', limit: 1 }] }),
+    );
+    expect(bounded.facets?.[0].values).toHaveLength(1);
+    expect(bounded.facets?.[0].truncated).toBe(true);
+    expect(bounded.truncated).toBe(true);
+  });
+
+  it('holds facet payloads to the shared result byte budget', async () => {
+    // Two text facets of 200 distinct 4096-character values are inside every
+    // per-value cap and still several times the 1 MB result limit, which would
+    // make the normalizer reject an otherwise valid response.
+    const filler = 'f'.repeat(DATA_QUERY_MAX_STRING_LENGTH);
+    await seed(
+      contents,
+      Array.from({ length: 200 }, (_, index) => ({
+        name: `facet-${String(index).padStart(3, '0')}`,
+        title: `${index}-${filler}`,
+        author: `${index}-${filler}`,
+      })),
+    );
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        mode: 'facets',
+        facets: [
+          { field: 'title', limit: 200 },
+          { field: 'author', limit: 200 },
+        ],
+      }),
+    );
+
+    // The response is valid rather than refused, and says it was cut short.
+    expect(result.truncated).toBe(true);
+    expect(result.facets?.some((facet) => facet.truncated)).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/facets were truncated/);
+    const bytes = new TextEncoder().encode(JSON.stringify(result)).byteLength;
+    expect(bytes).toBeLessThanOrEqual(CONTENT_QUERY_MAX_RESULT_BYTES);
+    // The count still reflects the whole query.
+    expect(result.total).toEqual({ kind: 'exact', value: 200 });
+  });
+
+  it('clamps an oversized page limit to the schema maximum', async () => {
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['title'],
+        page: { kind: 'offset', offset: 0, limit: 5_000 },
+      }),
+    );
+
+    expect(result.page).toMatchObject({ limit: CONTENT_QUERY_MAX_PAGE_LIMIT });
+  });
+
+  it('never declares the body field, which the envelope could not carry', async () => {
+    const schema = await buildContentQuerySchema();
+
+    expect(schema.fields.map((entry) => entry.id)).not.toContain('body');
+    await expect(
+      executeContentQuery(
+        collectionOf(contents),
+        request({ projection: ['body'] }),
+      ),
+    ).rejects.toThrow(/projection field is not allowed: body/);
+  });
+
+  it('shortens a value over the protocol scalar cap instead of failing', async () => {
+    await seed(contents, [
+      {
+        name: 'long',
+        description: 'd'.repeat(DATA_QUERY_MAX_STRING_LENGTH + 10),
+      },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['description'] }),
+    );
+
+    expect(String(result.rows[0].description)).toHaveLength(
+      DATA_QUERY_MAX_STRING_LENGTH,
+    );
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/shortened over-long values/);
+  });
+
+  it('bounds a nested JSON value instead of failing the whole result', async () => {
+    // `canonicalJson` REJECTS the entire result when a nested string passes the
+    // JSON string limit, so one large metadata blob would otherwise fail an
+    // otherwise valid page.
+    await seed(contents, [
+      {
+        name: 'deep-metadata',
+        metadata: {
+          note: 'n'.repeat(DATA_QUERY_MAX_JSON_STRING_LENGTH + 100),
+          tags: Array.from(
+            { length: DATA_QUERY_MAX_JSON_CONTAINER_ITEMS + 50 },
+            (_, index) => `tag-${index}`,
+          ),
+        },
+      },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    const metadata = result.rows[0].metadata as {
+      note: string;
+      tags: string[];
+    };
+    expect(metadata.note).toHaveLength(DATA_QUERY_MAX_JSON_STRING_LENGTH);
+    expect(metadata.tags).toHaveLength(DATA_QUERY_MAX_JSON_CONTAINER_ITEMS);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/shortened over-long values/);
+  });
+
+  it('bounds over-deep nesting and a non-finite number in a JSON value', async () => {
+    let deep: Record<string, unknown> = { leaf: 'bottom' };
+    for (let level = 0; level < DATA_QUERY_MAX_JSON_DEPTH + 4; level += 1) {
+      deep = { nested: deep };
+    }
+    await seed(contents, [{ name: 'deep-nesting', metadata: deep }]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    // The row survives; only the sub-document past the limit is dropped.
+    expect(result.rows).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+    let cursor = result.rows[0].metadata as Record<string, unknown> | null;
+    let depth = 0;
+    while (cursor && typeof cursor === 'object' && 'nested' in cursor) {
+      cursor = cursor.nested as Record<string, unknown> | null;
+      depth += 1;
+    }
+    expect(depth).toBeLessThanOrEqual(DATA_QUERY_MAX_JSON_DEPTH);
+  });
+
+  it('does not apply the scalar cap to a JSON document', async () => {
+    // A json field is validated as a document with much larger limits; capping
+    // it at the scalar length would corrupt a legitimate payload.
+    const note = 'n'.repeat(DATA_QUERY_MAX_STRING_LENGTH + 500);
+    await seed(contents, [{ name: 'json-scalar', metadata: { note } }]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    expect((result.rows[0].metadata as { note: string }).note).toHaveLength(
+      note.length,
+    );
+    expect(result.truncated).toBe(false);
+  });
+
+  it('survives a metadata key the result validator forbids', async () => {
+    // `plainObject` rejects the WHOLE result for one of these keys, and
+    // `JSON.parse` of the stored column creates an own `__proto__` property, so
+    // one row could otherwise 400 every query projecting metadata, forever.
+    await seed(contents, [
+      { name: 'forbidden-keys', title: 'Poisoned' },
+      { name: 'clean', title: 'Clean' },
+    ]);
+    for (const key of [...DATA_QUERY_FORBIDDEN_JSON_KEYS]) {
+      const poisoned = await contents.get({ name: 'forbidden-keys' });
+      if (!poisoned) throw new Error('missing fixture');
+      // Written the way a REST caller or `mirror()` ingestion would.
+      poisoned.metadata = JSON.parse(
+        `{"${key}": {"nested": "value"}, "section": "front"}`,
+      );
+      await poisoned.save();
+
+      const result = await executeContentQuery(
+        collectionOf(contents),
+        request({ projection: ['title', 'metadata'] }),
+      );
+
+      // The page still reads, both rows included.
+      expect(result.rows).toHaveLength(2);
+      const row = result.rows.find((entry) => entry.title === 'Poisoned');
+      expect(row?.metadata).toEqual({ section: 'front' });
+      expect(result.truncated).toBe(true);
+    }
+  });
+
+  it('does not let a forbidden key change the bounded object prototype', async () => {
+    await seed(contents, [{ name: 'proto', title: 'Proto' }]);
+    const item = await contents.get({ name: 'proto' });
+    if (!item) throw new Error('missing fixture');
+    item.metadata = JSON.parse('{"__proto__": {"polluted": true}, "ok": 1}');
+    await item.save();
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({ projection: ['metadata'] }),
+    );
+
+    const metadata = result.rows[0].metadata as Record<string, unknown>;
+    expect(metadata).toEqual({ ok: 1 });
+    expect(Object.hasOwn(metadata, '__proto__')).toBe(false);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it('shortens a large result to the byte budget WITHOUT dropping a row', async () => {
+    const filler = 'x'.repeat(4_000);
+    const rowCount = 100;
+    await seed(
+      contents,
+      Array.from({ length: rowCount }, (_, index) => ({
+        name: `bulk-${String(index).padStart(3, '0')}`,
+        title: filler,
+        description: filler,
+        url: filler,
+      })),
+    );
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name', 'title', 'description', 'url'],
+        sort: [{ field: 'name', direction: 'asc' }],
+        page: { kind: 'offset', offset: 0, limit: rowCount },
+      }),
+    );
+
+    // Every row asked for is returned. Dropping the tail was silent, permanent
+    // data loss: offset paging advances by the requested LIMIT, so the next
+    // page starts past the dropped rows and skips them forever.
+    expect(result.rows).toHaveLength(rowCount);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/maximum result bytes/);
+    expect(result.total).toEqual({ kind: 'exact', value: rowCount });
+    // The page is exactly the rows the offset asked for, so `hasMore` is a
+    // plain positional fact again.
+    expect(result.page).toMatchObject({ hasMore: false });
+    // …and it really does fit.
+    expect(
+      new TextEncoder().encode(JSON.stringify(result)).byteLength,
+    ).toBeLessThanOrEqual(CONTENT_QUERY_MAX_RESULT_BYTES);
+  });
+
+  it('returns an oversized row shortened rather than omitting it', async () => {
+    // One row far too large for the budget, among ordinary ones.
+    await seed(contents, [
+      { name: 'small-a', title: 'A' },
+      {
+        name: 'huge',
+        title: 'H',
+        description: 'd'.repeat(200_000),
+        metadata: { blob: 'm'.repeat(200_000) },
+      },
+      { name: 'small-b', title: 'B' },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name', 'title', 'description', 'metadata'],
+        sort: [{ field: 'name', direction: 'asc' }],
+        page: { kind: 'offset', offset: 0, limit: 10 },
+      }),
+      {
+        schema: { ...(await buildContentQuerySchema()), maxResultBytes: 8_192 },
+      },
+    );
+
+    expect(result.rows.map((row) => String(row.name))).toEqual([
+      'huge',
+      'small-a',
+      'small-b',
+    ]);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/shortened/);
+    // Max-min fair: the ordinary rows keep their real titles; only the row that
+    // caused the overflow gives way.
+    const small = result.rows.find((row) => row.name === 'small-a');
+    expect(small?.title).toBe('A');
+  });
+
+  it('PROPERTY: paging across a shortened row reaches every row exactly once', async () => {
+    const filler = 'x'.repeat(6_000);
+    const rowCount = 25;
+    const pageSize = 5;
+    await seed(
+      contents,
+      Array.from({ length: rowCount }, (_, index) => ({
+        name: `page-${String(index).padStart(3, '0')}`,
+        title: filler,
+        description: filler,
+      })),
+    );
+
+    const schema = {
+      ...(await buildContentQuerySchema()),
+      maxResultBytes: 16_384,
+    };
+    const seen: string[] = [];
+    for (let offset = 0; offset < rowCount; offset += pageSize) {
+      const page = await executeContentQuery(
+        collectionOf(contents),
+        request({
+          projection: ['name', 'title', 'description'],
+          sort: [{ field: 'name', direction: 'asc' }],
+          page: { kind: 'offset', offset, limit: pageSize },
+        }),
+        { schema },
+      );
+      // Each page returns exactly what the offset asked for — the invariant
+      // that makes offset paging sound.
+      expect(page.rows, `offset ${offset}`).toHaveLength(pageSize);
+      seen.push(...page.rows.map((row) => String(row.name)));
+    }
+
+    const expected = Array.from(
+      { length: rowCount },
+      (_, index) => `page-${String(index).padStart(3, '0')}`,
+    );
+    // No skips …
+    expect(seen.sort()).toEqual(expected);
+    // … and no repeats.
+    expect(new Set(seen).size).toBe(rowCount);
+  });
+
+  it('fails loudly rather than omitting a row it cannot fit', async () => {
+    // A projection whose field NAMES alone overrun the per-row share: the one
+    // case shortening cannot solve, and the one case where answering with a
+    // short page would hide rows.
+    await seed(
+      contents,
+      Array.from({ length: 40 }, (_, index) => ({
+        name: `dense-${index}`,
+        title: 't',
+      })),
+    );
+    const base = await buildContentQuerySchema();
+    await expect(
+      executeContentQuery(
+        collectionOf(contents),
+        request({
+          projection: base.fields
+            .filter((field) => field.projectable)
+            .map((field) => field.id),
+          page: { kind: 'offset', offset: 0, limit: 40 },
+        }),
+        { schema: { ...base, maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES } },
+      ),
+    ).rejects.toMatchObject({ code: 'DATA_QUERY_RESULT_TOO_LARGE' });
+  });
+
+  it('pages deterministically across a tie-broken sort', async () => {
+    await seed(contents, [
+      { name: 'a', status: 'draft' },
+      { name: 'b', status: 'draft' },
+      { name: 'c', status: 'draft' },
+      { name: 'd', status: 'published' },
+      { name: 'e', status: 'published' },
+    ]);
+    const sort = [{ field: 'status', direction: 'asc' as const }];
+
+    const everything = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name'],
+        sort,
+        page: { kind: 'offset', offset: 0, limit: 5 },
+      }),
+    );
+    const paged: string[] = [];
+    for (const offset of [0, 2, 4]) {
+      const page = await executeContentQuery(
+        collectionOf(contents),
+        request({
+          projection: ['name'],
+          sort,
+          page: { kind: 'offset', offset, limit: 2 },
+        }),
+      );
+      paged.push(...page.rows.map((row) => String(row.name)));
+      expect(page.page).toMatchObject({ offset, limit: 2 });
+    }
+
+    expect(paged).toEqual(everything.rows.map((row) => String(row.name)));
+    expect(new Set(paged).size).toBe(paged.length);
+  });
+
+  it('documents that live offset paging is not a snapshot', async () => {
+    // Offset paging reads the live table; `supports.consistency` is false and no
+    // stability guarantee is offered ACROSS page reads. A row inserted between
+    // two reads shifts the window, so a row already returned can reappear. What
+    // IS guaranteed: ordering is deterministic within a read, and the total
+    // reflects the state at that read.
+    await seed(
+      contents,
+      ['c1', 'c2', 'c3', 'c4', 'c5'].map((name) => ({ name })),
+    );
+    const sort = [{ field: 'name', direction: 'asc' as const }];
+    const page = (offset: number) =>
+      executeContentQuery(
+        collectionOf(contents),
+        request({
+          projection: ['name'],
+          sort,
+          page: { kind: 'offset', offset, limit: 2 },
+        }),
+      );
+
+    const first = await page(0);
+    expect(first.rows.map((row) => row.name)).toEqual(['c1', 'c2']);
+    expect(first.total).toEqual({ kind: 'exact', value: 5 });
+
+    await seed(contents, [{ name: 'c0' }]);
+
+    const second = await page(2);
+    expect(second.rows.map((row) => row.name)).toEqual(['c2', 'c3']);
+    expect(second.total).toEqual({ kind: 'exact', value: 6 });
+    // The documented consequence: 'c2' appears on both reads.
+    expect(second.rows[0].name).toBe(first.rows[1].name);
+  });
+
+  it('applies an application scope that a caller filter cannot widen', async () => {
+    await seed(contents, [
+      { name: 'a', status: 'draft' },
+      { name: 'b', status: 'published' },
+      { name: 'c', status: 'published' },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name'],
+        filter: {
+          kind: 'any',
+          filters: [
+            {
+              kind: 'condition',
+              field: 'status',
+              operator: 'eq',
+              value: 'draft',
+            },
+            {
+              kind: 'condition',
+              field: 'status',
+              operator: 'eq',
+              value: 'published',
+            },
+          ],
+        },
+        page: { kind: 'offset', offset: 0, limit: 50 },
+      }),
+      { scope: { status: 'published' } },
+    );
+
+    expect(result.rows.map((row) => row.name).sort()).toEqual(['b', 'c']);
+  });
+
+  it('cannot be widened by a negated filter branch either', async () => {
+    await seed(contents, [
+      { name: 'a', status: 'draft' },
+      { name: 'b', status: 'published' },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name'],
+        filter: {
+          kind: 'not',
+          filter: {
+            kind: 'condition',
+            field: 'status',
+            operator: 'eq',
+            value: 'archived',
+          },
+        },
+      }),
+      { scope: { status: 'published' } },
+    );
+
+    expect(result.rows.map((row) => row.name)).toEqual(['b']);
+  });
+});
+
+describe('executeContentQuery field policy', () => {
+  let db: DatabaseInterface;
+  let probes: ContentQueryProbeCollection;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['ContentQueryProbe'],
+    });
+    probes = await ContentQueryProbeCollection.create({ db });
+    const probe = await probes.create({
+      label: 'visible',
+      apiSecret: 'super-secret',
+      internalNote: 'internal',
+    });
+    await probe.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  /** A schema a buggy or malicious adapter might build: policy fields declared. */
+  const forgedSchema: DataQuerySchema = {
+    version: 1,
+    identityField: 'id',
+    fields: [
+      {
+        id: 'id',
+        type: 'string',
+        projectable: true,
+        sortable: true,
+        facetable: false,
+        filterOperators: ['eq'],
+      },
+      {
+        id: 'label',
+        type: 'string',
+        projectable: true,
+        sortable: true,
+        facetable: true,
+        filterOperators: ['eq'],
+      },
+      {
+        id: 'apiSecret',
+        type: 'string',
+        projectable: true,
+        sortable: true,
+        facetable: true,
+        filterOperators: ['eq'],
+      },
+      {
+        id: 'internalNote',
+        type: 'string',
+        projectable: true,
+        sortable: true,
+        facetable: true,
+        filterOperators: ['eq'],
+      },
+    ],
+    supports: { cursorPagination: false, consistency: false, facets: true },
+  };
+
+  it('layer 1: the schema rejects a projection of a policy field', async () => {
+    const schema = await buildDataQuerySchemaForClass('ContentQueryProbe');
+
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({ projection: ['apiSecret'] }),
+        { schema },
+      ),
+    ).rejects.toThrow(/projection field is not allowed: apiSecret/);
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({ projection: ['internalNote'] }),
+        { schema },
+      ),
+    ).rejects.toThrow(/projection field is not allowed: internalNote/);
+  });
+
+  it('layer 1: the schema rejects sorting and filtering on a policy field', async () => {
+    const schema = await buildDataQuerySchemaForClass('ContentQueryProbe');
+
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({ sort: [{ field: 'apiSecret', direction: 'asc' }] }),
+        { schema },
+      ),
+    ).rejects.toThrow(/sort field is not allowed: apiSecret/);
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({
+          filter: {
+            kind: 'condition',
+            field: 'internalNote',
+            operator: 'eq',
+            value: 'internal',
+          },
+        }),
+        { schema },
+      ),
+    ).rejects.toThrow(/field is not declared: internalNote/);
+  });
+
+  it('layer 2: the collection still refuses a projection the schema wrongly allowed', async () => {
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({ projection: ['apiSecret'] }),
+        { schema: forgedSchema },
+      ),
+    ).rejects.toThrow(/sensitive/);
+
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({ projection: ['internalNote'] }),
+        { schema: forgedSchema },
+      ),
+    ).rejects.toThrow(/readPermission/);
+  });
+
+  it('layer 2: the collection still refuses a sort the schema wrongly allowed', async () => {
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({
+          projection: ['label'],
+          sort: [{ field: 'apiSecret', direction: 'asc' }],
+        }),
+        { schema: forgedSchema },
+      ),
+    ).rejects.toThrow(/apiSecret/);
+  });
+
+  it('layer 2: the collection still refuses a filter the schema wrongly allowed', async () => {
+    await expect(
+      executeContentQuery(
+        probes as unknown as ContentQueryCollection,
+        request({
+          projection: ['label'],
+          filter: {
+            kind: 'condition',
+            field: 'apiSecret',
+            operator: 'eq',
+            value: 'super-secret',
+          },
+        }),
+        { schema: forgedSchema },
+      ),
+    ).rejects.toThrow(/apiSecret/);
+  });
+});
+
+describe('executeContentQuery tenant scoping', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    // Tenancy must be on BEFORE seeding: the interceptor is what populates
+    // `tenantId` on save, so rows created with it off are all global.
+    enableTenancy();
+    await withTenant({ tenantId: 'tenant-1' }, async () => {
+      await (await contents.create({ name: 'tenant-1-content' })).save();
+    });
+    await withTenant({ tenantId: 'tenant-2' }, async () => {
+      await (await contents.create({ name: 'tenant-2-content' })).save();
+    });
+    await withSystemContext(async () => {
+      await (await contents.create({ name: 'global-content' })).save();
+    });
+  });
+
+  afterEach(async () => {
+    disableTenancy();
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  const names = (rows: Array<Record<string, unknown>>) =>
+    rows.map((row) => String(row.name)).sort();
+
+  it('fails closed to global rows when there is no tenant context', async () => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ projection: ['name'] }),
+    );
+
+    expect(names(result.rows)).toEqual(['global-content']);
+    expect(result.total).toEqual({ kind: 'exact', value: 1 });
+  });
+
+  it('scopes to the active tenant', async () => {
+    const result = await withTenant({ tenantId: 'tenant-1' }, () =>
+      executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        request({ projection: ['name'] }),
+      ),
+    );
+
+    expect(names(result.rows)).toEqual(['tenant-1-content']);
+  });
+
+  it('rejects a caller-supplied tenant filter instead of honoring it', async () => {
+    for (const tenantField of ['tenantId', 'tenant_id']) {
+      await expect(
+        executeContentQuery(
+          contents as unknown as ContentQueryCollection,
+          request({
+            projection: ['name'],
+            filter: {
+              kind: 'condition',
+              field: tenantField,
+              operator: 'eq',
+              value: 'tenant-2',
+            },
+          }),
+        ),
+      ).rejects.toThrow(/is not declared/);
+    }
+  });
+
+  it('cannot be widened past the tenant scope by any filter shape', async () => {
+    const result = await withTenant({ tenantId: 'tenant-1' }, () =>
+      executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        request({
+          projection: ['name'],
+          filter: {
+            kind: 'any',
+            filters: [
+              {
+                kind: 'condition',
+                field: 'name',
+                operator: 'eq',
+                value: 'tenant-2-content',
+              },
+              {
+                kind: 'condition',
+                field: 'name',
+                operator: 'eq',
+                value: 'global-content',
+              },
+              {
+                kind: 'not',
+                filter: {
+                  kind: 'condition',
+                  field: 'name',
+                  operator: 'eq',
+                  value: 'nothing',
+                },
+              },
+            ],
+          },
+        }),
+      ),
+    );
+
+    expect(names(result.rows)).toEqual(['tenant-1-content']);
+  });
+
+  it('counts and facets are tenant-scoped too', async () => {
+    const counted = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ mode: 'count' }),
+    );
+    expect(counted.total).toEqual({ kind: 'exact', value: 1 });
+
+    const faceted = await withTenant({ tenantId: 'tenant-2' }, () =>
+      executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        request({ mode: 'facets', facets: [{ field: 'name', limit: 10 }] }),
+      ),
+    );
+    expect(faceted.facets?.[0].values).toEqual([
+      { value: 'tenant-2-content', count: 1 },
+    ]);
+  });
+});
+
+describe('Contents.queryAction', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+  });
+
+  afterEach(async () => {
+    disableTenancy();
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  it('answers a request body with a normalized result envelope', async () => {
+    await seed(contents, [{ name: 'a', title: 'A' }]);
+
+    const result = await contents.queryAction(
+      request({ projection: ['title'] }),
+    );
+
+    expect(result.version).toBe(1);
+    expect(result.requestId).toBe('test-request');
+    expect(result.rows).toEqual([{ id: expect.any(String), title: 'A' }]);
+  });
+
+  it('rejects a malformed request body with a typed 400-class error', async () => {
+    await expect(contents.queryAction({ version: 2 })).rejects.toMatchObject({
+      status: 400,
+    });
+    await expect(
+      contents.queryAction(request({ mode: 'sql' })),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe('POST /api/v1/contents/query (generated route)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    routeContents = await Contents.create({ db });
+    await seed(routeContents, [{ name: 'a', title: 'A' }]);
+  });
+
+  afterEach(async () => {
+    routeContents = undefined;
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  const call = (body: unknown) =>
+    queryRoute({
+      // The generated handler reads the raw body text, so the whole POST body
+      // is the DataQueryRequest — no wrapper object.
+      request: {
+        url: new URL('http://localhost/api/v1/contents/query'),
+        headers: new Headers(),
+        text: async () => JSON.stringify(body),
+      },
+      locals: { smrtAuth: true },
+    } as never) as Promise<Response>;
+
+  it('returns { action, result } with the normalized envelope', async () => {
+    const response = await call(request({ projection: ['title'] }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.action).toBe('queryAction');
+    expect(payload.result).toMatchObject({
+      version: 1,
+      requestId: 'test-request',
+      identityField: 'id',
+      total: { kind: 'exact', value: 1 },
+      truncated: false,
+    });
+    expect(payload.result.rows).toEqual([
+      { id: expect.any(String), title: 'A' },
+    ]);
+    expect(payload.result.page).toMatchObject({
+      kind: 'offset',
+      hasMore: false,
+    });
+    expect(payload.result.queryFingerprint).toMatch(/^dq1_/);
+  });
+
+  it('answers a policy-rejected field with a typed 400 error body', async () => {
+    const response = await call(request({ projection: ['tenantId'] }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toMatchObject({
+      ok: false,
+      status: 400,
+      code: 'DATA_QUERY_PROJECTION_NOT_ALLOWED',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 3: the adapter's mirrored constants are self-enforcing (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * `content-query.ts` mirrors several limits that belong to
+ * `@happyvertical/smrt-core`'s result normalizer. Where core exports the
+ * constant the mirror is asserted directly; where it does not (the JSON
+ * document rules, the scalar cap, the warning rules) the mirror is pinned to
+ * what `normalizeDataQueryResult` actually accepts and refuses, so a change in
+ * core breaks a test here rather than a production query.
+ */
+describe('mirrored adapter constants are pinned to their source', () => {
+  let schema: DataQuerySchema;
+
+  beforeEach(async () => {
+    schema = await buildContentQuerySchema();
+  });
+
+  const resultFor = (
+    overrides: Record<string, unknown>,
+    projection: string[],
+  ) => {
+    const req = {
+      version: 1 as const,
+      requestId: 'pin',
+      mode: 'rows' as const,
+      projection,
+      page: { kind: 'offset' as const, offset: 0, limit: 1 },
+    };
+    const normalizedRequest = normalizeDataQueryRequest(req, schema);
+    return () =>
+      normalizeDataQueryResult(
+        {
+          version: 1 as const,
+          requestId: normalizedRequest.requestId,
+          queryFingerprint: createDataQueryFingerprint(
+            normalizedRequest,
+            schema,
+          ),
+          identityField: schema.identityField,
+          rows: [],
+          page: { kind: 'offset', offset: 0, limit: 1, hasMore: false },
+          total: { kind: 'exact', value: 0 },
+          freshness: { state: 'fresh' },
+          warnings: [],
+          truncated: false,
+          ...overrides,
+        },
+        normalizedRequest,
+        schema,
+      );
+  };
+
+  it('the schema constants match the schema they build', () => {
+    expect(schema.maxPageLimit).toBe(CONTENT_QUERY_MAX_PAGE_LIMIT);
+    expect(schema.defaultPageLimit).toBe(CONTENT_QUERY_DEFAULT_PAGE_LIMIT);
+    expect(schema.maxResultBytes).toBe(CONTENT_QUERY_MAX_RESULT_BYTES);
+    expect(schema.identityField).toBe(CONTENT_QUERY_IDENTITY_FIELD);
+    expect(schema.defaultSort).toEqual(CONTENT_QUERY_DEFAULT_SORT);
+  });
+
+  it('the result byte and warning counts match core', () => {
+    expect(CONTENT_QUERY_MAX_RESULT_BYTES).toBeLessThanOrEqual(
+      MAX_DATA_QUERY_RESULT_BYTES,
+    );
+    expect(DATA_QUERY_MAX_WARNINGS).toBe(MAX_DATA_QUERY_WARNINGS);
+  });
+
+  it('DATA_QUERY_MAX_STRING_LENGTH is the largest scalar core accepts', () => {
+    const row = (length: number) => [{ id: 'a', title: 't'.repeat(length) }];
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_STRING_LENGTH) }, ['id', 'title']),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_STRING_LENGTH + 1) }, [
+        'id',
+        'title',
+      ]),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_WARNING_LENGTH is the largest warning core accepts', () => {
+    const warn = (length: number) => ({ warnings: ['w'.repeat(length)] });
+    expect(
+      resultFor(warn(DATA_QUERY_MAX_WARNING_LENGTH), ['id']),
+    ).not.toThrow();
+    expect(
+      resultFor(warn(DATA_QUERY_MAX_WARNING_LENGTH + 1), ['id']),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_JSON_STRING_LENGTH is core’s JSON string limit', () => {
+    const row = (length: number) => [
+      { id: 'a', metadata: { note: 'n'.repeat(length) } },
+    ];
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_STRING_LENGTH) }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_STRING_LENGTH + 1) }, [
+        'id',
+        'metadata',
+      ]),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_JSON_CONTAINER_ITEMS is core’s container limit', () => {
+    const row = (count: number) => [
+      { id: 'a', metadata: { list: Array.from({ length: count }, () => 1) } },
+    ];
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_CONTAINER_ITEMS) }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: row(DATA_QUERY_MAX_JSON_CONTAINER_ITEMS + 1) }, [
+        'id',
+        'metadata',
+      ]),
+    ).toThrow();
+  });
+
+  it('DATA_QUERY_MAX_JSON_DEPTH is core’s nesting limit', () => {
+    const nest = (levels: number) => {
+      let value: Record<string, unknown> = { leaf: 1 };
+      for (let index = 0; index < levels; index += 1) value = { n: value };
+      return [{ id: 'a', metadata: value }];
+    };
+    // Core counts the field value as depth 0 and refuses past
+    // MAX_DATA_QUERY_JSON_DEPTH, so the deepest accepted document has
+    // `DATA_QUERY_MAX_JSON_DEPTH - 1` wrappers. The adapter cuts at
+    // `>= DATA_QUERY_MAX_JSON_DEPTH`, one level shallower, so everything it
+    // emits is accepted — this pins the boundary that has to stay true.
+    expect(
+      resultFor({ rows: nest(DATA_QUERY_MAX_JSON_DEPTH - 1) }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+    expect(
+      resultFor({ rows: nest(DATA_QUERY_MAX_JSON_DEPTH) }, ['id', 'metadata']),
+    ).toThrow(/JSON depth limit/);
+  });
+
+  it('DATA_QUERY_FORBIDDEN_JSON_KEYS is exactly what core refuses', () => {
+    for (const key of DATA_QUERY_FORBIDDEN_JSON_KEYS) {
+      const metadata = JSON.parse(`{"${key}": 1}`);
+      expect(
+        resultFor({ rows: [{ id: 'a', metadata }] }, ['id', 'metadata']),
+        `core no longer refuses ${key}`,
+      ).toThrow();
+    }
+    expect(
+      resultFor({ rows: [{ id: 'a', metadata: { ordinary: 1 } }] }, [
+        'id',
+        'metadata',
+      ]),
+    ).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 5: the null-safe `ne`/`notIn` lowering (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * `ne` and `notIn` union `IS NULL` so their caller-visible meaning ("not one of
+ * these", which includes rows with no value) survives SQL's three-valued logic.
+ * A caller that lists `null` explicitly is saying the opposite — exclude absent
+ * rows too — and MUST NOT get the union, or the predicate would return exactly
+ * the rows it was asked to exclude and would overlap its own negation.
+ *
+ * These go through the raw wire shape, not the translator, because the
+ * translator never emits a null list entry while `normalizeFilter` does accept
+ * one and `not(in [...])` reaches the same lowering through `inverseOperator`.
+ */
+describe('null entries in a ne / notIn value list', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+  const ALL = ['Ada', 'Grace', 'none'];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'Ada', author: 'Ada Lovelace' },
+      { name: 'Grace', author: 'Grace Hopper' },
+      { name: 'none', author: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const names = async (filter: Record<string, unknown>) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ projection: ['name'], filter }),
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  const condition = (operator: string, value: unknown) => ({
+    kind: 'condition' as const,
+    field: 'author',
+    operator,
+    value,
+  });
+
+  it('notIn without a null in the list INCLUDES the authorless row', async () => {
+    expect(await names(condition('notIn', ['Ada Lovelace']))).toEqual([
+      'Grace',
+      'none',
+    ]);
+  });
+
+  it('notIn WITH a null in the list EXCLUDES it', async () => {
+    // The regression: an unconditional union returned `none` here — the very
+    // row the caller listed `null` to exclude.
+    expect(await names(condition('notIn', ['Ada Lovelace', null]))).toEqual([
+      'Grace',
+    ]);
+  });
+
+  it('notIn with a null-only list is IS NOT NULL', async () => {
+    expect(await names(condition('notIn', [null]))).toEqual(['Ada', 'Grace']);
+  });
+
+  it('ne without null includes it; ne null is IS NOT NULL', async () => {
+    expect(await names(condition('ne', 'Ada Lovelace'))).toEqual([
+      'Grace',
+      'none',
+    ]);
+    expect(await names(condition('ne', null))).toEqual(['Ada', 'Grace']);
+  });
+
+  it('reaches the same lowering through not(in […])', async () => {
+    const negate = (filter: Record<string, unknown>) => ({
+      kind: 'not' as const,
+      filter,
+    });
+    expect(await names(negate(condition('in', ['Ada Lovelace'])))).toEqual([
+      'Grace',
+      'none',
+    ]);
+    expect(
+      await names(negate(condition('in', ['Ada Lovelace', null]))),
+    ).toEqual(['Grace']);
+    expect(await names(negate(condition('in', [null])))).toEqual([
+      'Ada',
+      'Grace',
+    ]);
+  });
+
+  /**
+   * EVERY operator in the accepted grammar, each paired with its `not`.
+   *
+   * A predicate and its negation must partition the table: no row in both, no
+   * row in neither. The class of bug this guards has now appeared twice — once
+   * for `notIn` with a listed null, once for the ordered comparisons — and both
+   * times it survived because the pair list was short. `like` is the only
+   * operator excluded, because the executor refuses to negate one outright.
+   */
+  const PARTITION_PAIRS: Array<[string, Record<string, unknown>]> = [
+    ['eq', condition('eq', 'Ada Lovelace')],
+    ['eq null', condition('eq', null)],
+    ['ne', condition('ne', 'Ada Lovelace')],
+    ['ne null', condition('ne', null)],
+    ['in', condition('in', ['Ada Lovelace'])],
+    ['in with null', condition('in', ['Ada Lovelace', null])],
+    ['in null-only', condition('in', [null])],
+    ['notIn', condition('notIn', ['Ada Lovelace'])],
+    ['notIn with null', condition('notIn', ['Ada Lovelace', null])],
+    ['notIn null-only', condition('notIn', [null])],
+    ['gt', condition('gt', 'B')],
+    ['gte', condition('gte', 'B')],
+    ['lt', condition('lt', 'B')],
+    ['lte', condition('lte', 'B')],
+    // A comparand no row can equal, and one every row sorts after.
+    ['gt blank', condition('gt', '')],
+    ['lte blank', condition('lte', '')],
+  ];
+
+  it.each(
+    PARTITION_PAIRS,
+  )('partitions the rows for %s and its negation', async (_label, predicate) => {
+    const yes = await names(predicate);
+    const no = await names({ kind: 'not', filter: predicate });
+    expect(
+      yes.filter((name) => no.includes(name)),
+      'overlap',
+    ).toEqual([]);
+    expect([...yes, ...no].sort(), 'gap').toEqual(ALL);
+  });
+
+  it('partitions an `all` and an `any` of mixed operators too', async () => {
+    // De Morgan through a container, so the negation reaches each condition.
+    for (const kind of ['all', 'any'] as const) {
+      const predicate = {
+        kind,
+        filters: [condition('gt', 'B'), condition('ne', 'Grace Hopper')],
+      };
+      const yes = await names(predicate);
+      const no = await names({ kind: 'not', filter: predicate });
+      expect(
+        yes.filter((name) => no.includes(name)),
+        `overlap ${kind}`,
+      ).toEqual([]);
+      expect([...yes, ...no].sort(), `gap ${kind}`).toEqual(ALL);
+    }
+  });
+
+  it('leaves a directly-requested ordered comparison excluding NULL', async () => {
+    // Only the NEGATED form unions IS NULL. `lte 'B'` asked for directly must
+    // still exclude the authorless row, matching SQL and the local evaluator.
+    expect(await names(condition('lte', 'B'))).toEqual(['Ada']);
+    expect(await names({ kind: 'not', filter: condition('gt', 'B') })).toEqual([
+      'Ada',
+      'none',
+    ]);
+  });
+
+  it('does not double-negate: not(not(gt)) is the plain predicate', async () => {
+    expect(
+      await names({
+        kind: 'not',
+        filter: { kind: 'not', filter: condition('gt', 'B') },
+      }),
+    ).toEqual(await names(condition('gt', 'B')));
+  });
+
+  it('agrees with `not(in …)` for every list shape', async () => {
+    for (const value of [['Ada Lovelace'], ['Ada Lovelace', null], [null]]) {
+      expect(await names(condition('notIn', value))).toEqual(
+        await names({ kind: 'not', filter: condition('in', value) }),
+      );
+    }
+  });
+
+  it('still narrows inside a scope rather than escaping it', async () => {
+    // Every new OR branch is a non-empty condition group, so scope is prepended
+    // to each of them; a `notIn` cannot widen past the application scope.
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['name'],
+        filter: condition('notIn', ['Ada Lovelace']),
+      }),
+      { scope: { name: 'Grace' } },
+    );
+    expect(result.rows.map((row) => String(row.name))).toEqual(['Grace']);
+  });
+});
+
+describe('an unusable result byte budget is refused at the boundary', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+  let base: DataQuerySchema;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+    base = await buildContentQuerySchema();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const runWithBudget = (maxResultBytes: number) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['id', 'title'],
+        page: { kind: 'offset', offset: 0, limit: 10 },
+      }),
+      { schema: { ...base, maxResultBytes } },
+    );
+
+  it('refuses a budget below the floor, naming the minimum', async () => {
+    // Below the floor the row allowance is zero or negative, so EVERY query
+    // would answer with an empty page flagged `truncated` — indistinguishable
+    // from "no content matched". `schema` is trusted host configuration, so
+    // this is a deployment mistake and fails loudly rather than per-request.
+    await expect(
+      runWithBudget(CONTENT_QUERY_MIN_RESULT_BYTES - 1),
+    ).rejects.toThrow(new RegExp(`at least ${CONTENT_QUERY_MIN_RESULT_BYTES}`));
+    await expect(runWithBudget(512)).rejects.toThrow(/maxResultBytes/);
+  });
+
+  it('is a configuration error, not a caller error', async () => {
+    // A `DataQueryValidationError` would surface as a 400 and tell the caller
+    // they asked for something wrong, when the fault is in the host's schema.
+    // `rejects.not.toBeInstanceOf` alone passes for ANY rejection, so pin the
+    // rejection value itself: an Error, of exactly the base class, naming the
+    // setting at fault.
+    const error = await runWithBudget(512).then(
+      () => undefined,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(DataQueryValidationError);
+    expect((error as Error).constructor).toBe(Error);
+    expect((error as Error).message).toMatch(/maxResultBytes/);
+    // And it carries no `code`, which is what the route maps to a typed 4xx.
+    expect((error as { code?: unknown }).code).toBeUndefined();
+  });
+
+  it('refuses a zero or negative budget, which used to mean two things', async () => {
+    // `maxResultBytes: 0` previously meant "use the default" for rows and "zero
+    // budget" for facets. Refusing it is a deliberate behaviour change.
+    await expect(runWithBudget(0)).rejects.toThrow();
+    await expect(runWithBudget(-1)).rejects.toThrow();
+  });
+
+  it('still answers with a real page just above the floor', async () => {
+    const result = await runWithBudget(CONTENT_QUERY_MIN_RESULT_BYTES);
+    expect(result.rows).toHaveLength(1);
+    expect(result.truncated).toBe(false);
+    expect(result.total).toEqual({ kind: 'exact', value: 1 });
+  });
+
+  it('leaves the default schema, and any generous budget, untouched', async () => {
+    expect(base.maxResultBytes).toBeGreaterThanOrEqual(
+      CONTENT_QUERY_MIN_RESULT_BYTES,
+    );
+    await expect(runWithBudget(1_000_000)).resolves.toBeDefined();
+  });
+});
+
+describe('an empty application scope permits nothing (#2452)', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /**
+   * The shape a host actually writes: a scope derived from the resources this
+   * principal may see. When that list is EMPTY the correct answer is "nothing",
+   * and the failure this guards is that it used to mean "everything".
+   */
+  const scopeForPermittedSites = (permitted: readonly string[]) =>
+    permitted.map((site) => ({ source: site }));
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'alpha', title: 'Alpha', source: 'site-a' },
+      { name: 'beta', title: 'Beta', source: 'site-b' },
+      { name: 'orphan', title: 'Orphan', source: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    disableTenancy();
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const namesFor = async (
+    scope: Parameters<typeof executeContentQuery>[2] extends infer O
+      ? O extends { scope?: infer S }
+        ? S
+        : never
+      : never,
+    body: Record<string, unknown> = request({ projection: ['name'] }),
+  ) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      body,
+      { scope },
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  it('AUTHORIZATION: a principal permitted zero sites sees zero rows', async () => {
+    // The fail-open this closes: "access to no sites" used to read every row in
+    // the tenant, because an empty array was mistaken for "no scope at all".
+    const permitted: string[] = [];
+    expect(await namesFor(scopeForPermittedSites(permitted))).toEqual([]);
+  });
+
+  it('AUTHORIZATION: one permitted site still sees exactly that site', async () => {
+    expect(await namesFor(scopeForPermittedSites(['site-a']))).toEqual([
+      'alpha',
+    ]);
+  });
+
+  it('keeps `undefined` meaning unscoped, which is the other absence', async () => {
+    expect(await namesFor(undefined)).toEqual(['alpha', 'beta', 'orphan']);
+  });
+
+  it('cannot be widened by ANY caller filter shape', async () => {
+    const shapes: Array<Record<string, unknown>> = [
+      { kind: 'condition', field: 'name', operator: 'eq', value: 'alpha' },
+      {
+        kind: 'any',
+        filters: [
+          { kind: 'condition', field: 'name', operator: 'eq', value: 'alpha' },
+          { kind: 'condition', field: 'name', operator: 'eq', value: 'beta' },
+        ],
+      },
+      {
+        kind: 'not',
+        filter: {
+          kind: 'condition',
+          field: 'name',
+          operator: 'eq',
+          value: 'nothing-matches-this',
+        },
+      },
+      {
+        kind: 'any',
+        filters: [
+          {
+            kind: 'not',
+            filter: {
+              kind: 'condition',
+              field: 'source',
+              operator: 'eq',
+              value: 'site-a',
+            },
+          },
+          { kind: 'condition', field: 'source', operator: 'ne', value: null },
+        ],
+      },
+    ];
+    for (const filter of shapes) {
+      expect(
+        await namesFor([], request({ projection: ['name'], filter })),
+        JSON.stringify(filter),
+      ).toEqual([]);
+    }
+  });
+
+  it('denies for count and facet modes too, not just rows', async () => {
+    const counted = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ mode: 'count' }),
+      { scope: [] },
+    );
+    expect(counted.total).toEqual({ kind: 'exact', value: 0 });
+
+    const faceted = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({ mode: 'facets', facets: [{ field: 'source', limit: 10 }] }),
+      { scope: [] },
+    );
+    expect(faceted.facets?.[0].values).toEqual([]);
+    expect(faceted.total).toEqual({ kind: 'exact', value: 0 });
+  });
+
+  it('denies alongside a tenant scope rather than falling back to it', async () => {
+    // The tenant scope alone would return the global rows; the empty app scope
+    // must still deny, so the two AND rather than one replacing the other.
+    enableTenancy({ mode: 'optional' });
+    try {
+      expect(await namesFor([])).toEqual([]);
+      // …and the same query without the app scope is not empty, so the empty
+      // result above is the scope talking, not tenancy.
+      expect(await namesFor(undefined)).toEqual(['alpha', 'beta', 'orphan']);
+    } finally {
+      disableTenancy();
+    }
+  });
+
+  it('is a query result, not an error: a legitimate authorization state', async () => {
+    await expect(
+      executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        request({ projection: ['name'] }),
+        { scope: [] },
+      ),
+    ).resolves.toMatchObject({ rows: [], total: { kind: 'exact', value: 0 } });
+  });
+
+  it('lowers to a predicate rather than special-casing the read path', () => {
+    // `mergeContentQueryScope` is the exported seam; an empty scope must deny
+    // there too, and the deny condition has to survive into every OR branch.
+    const merged = mergeContentQueryScope(
+      [],
+      [[{ name: 'alpha' }], [{ name: 'beta' }]],
+    );
+    expect(merged).toHaveLength(2);
+    for (const branch of merged ?? []) {
+      expect(branch).toContainEqual({ id: null });
+    }
+    // And `undefined` still means unscoped.
+    expect(mergeContentQueryScope(undefined, undefined)).toBeUndefined();
+  });
+
+  it('still refuses a malformed condition, which is not an authorization state', () => {
+    // An empty ARRAY is "permitted nothing"; an empty OBJECT is a condition
+    // with no constraints, which is a programming error and stays a throw.
+    expect(() => mergeContentQueryScope({}, undefined)).toThrow(
+      /non-empty plain objects/,
+    );
+    expect(() => mergeContentQueryScope([{}], undefined)).toThrow(
+      /non-empty plain objects/,
+    );
+  });
+});
+
+describe('a host can validate its schema before serving a request', () => {
+  let base: DataQuerySchema;
+
+  beforeEach(async () => {
+    base = await buildContentQuerySchema();
+  });
+
+  it('accepts the schema this package builds', () => {
+    expect(() => assertContentQuerySchema(base)).not.toThrow();
+  });
+
+  it('names the minimum, where the configuration lives', () => {
+    expect(() =>
+      assertContentQuerySchema({
+        ...base,
+        maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES - 1,
+      }),
+    ).toThrow(new RegExp(`at least ${CONTENT_QUERY_MIN_RESULT_BYTES}`));
+  });
+
+  it('covers core schema rules as well, so one call is enough', () => {
+    // Core refuses a non-positive budget itself; the helper surfaces that too
+    // rather than leaving a host to make two calls.
+    expect(() =>
+      assertContentQuerySchema({ ...base, maxResultBytes: 0 }),
+    ).toThrow(/positive safe integer/);
+    expect(() =>
+      assertContentQuerySchema({ ...base, identityField: 'nope' }),
+    ).toThrow();
+  });
+
+  it('agrees with what the request path enforces', async () => {
+    // The same schema must be refused in both places, or validating at startup
+    // would be a false reassurance.
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    try {
+      const contents = await Contents.create({ db });
+      const schema = {
+        ...base,
+        maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES - 1,
+      };
+      expect(() => assertContentQuerySchema(schema)).toThrow();
+      await expect(
+        executeContentQuery(
+          contents as unknown as ContentQueryCollection,
+          request({ projection: ['id'] }),
+          { schema },
+        ),
+      ).rejects.toThrow(/maxResultBytes/);
+    } finally {
+      if (db && typeof db.close === 'function') await db.close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Shortening a row to fit the byte budget must never produce a value that
+ * violates the field type the schema declared (#2452 round 14).
+ */
+describe('row shortening respects declared field formats', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+  let base: DataQuerySchema;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (let index = 0; index < 5; index += 1) {
+      const item = await contents.create({
+        name: `row-${index}`,
+        title: 'x'.repeat(500),
+        description: 'y'.repeat(500),
+      });
+      await item.save();
+    }
+    base = await buildContentQuerySchema();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const runWithBudget = (maxResultBytes: number) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['id', 'name', 'title', 'description', 'updated_at'],
+        page: { kind: 'offset', offset: 0, limit: 5 },
+      }),
+      { schema: { ...base, maxResultBytes } },
+    );
+
+  // No PREFIX of an RFC 3339 instant is itself a valid instant, so a `datetime`
+  // that is shortened rather than dropped makes the adapter emit a value that
+  // breaks the type it declared. The normalizer then rejects the whole page
+  // with `must be an RFC 3339 instant` — blaming the caller for a malformed
+  // shape the adapter produced, and taking down every request in the band of
+  // budgets where the timestamp happened to be the field that gave way.
+  it.each([
+    4_650, 4_700, 4_750, 4_800, 4_900, 5_000, 5_200,
+  ])('returns a whole instant or null, never a prefix, at %i bytes', async (maxResultBytes) => {
+    const result = await runWithBudget(maxResultBytes);
+
+    expect(result.rows).toHaveLength(5);
+    for (const row of result.rows) {
+      const stamp = row.updated_at;
+      if (stamp === null) continue;
+      expect(typeof stamp).toBe('string');
+      // A prefix such as `2026-08-27T04:0` parses as NaN and fails to round
+      // trip; a whole instant does both.
+      expect(Number.isNaN(Date.parse(stamp as string))).toBe(false);
+      expect(stamp).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/,
+      );
+    }
+  });
+
+  // The property above is a consequence of a general rule, so assert the rule
+  // rather than only the one type that broke: a value may be shortened only
+  // when its type accepts arbitrary prefixes. Any OTHER declared type must come
+  // back either untouched or null.
+  it('shortens only free-text fields, whatever the declared type', async () => {
+    const declared = new Map(
+      base.fields.map((field) => [field.id, field.type] as const),
+    );
+    const whole = await runWithBudget(base.maxResultBytes ?? 1_048_576);
+    const wholeById = new Map(
+      whole.rows.map((row) => [String(row.id), row] as const),
+    );
+
+    const changed = new Set<string>();
+    for (const maxResultBytes of [4_650, 4_800, 5_000, 6_000, 8_000]) {
+      const shortened = await runWithBudget(maxResultBytes);
+      for (const row of shortened.rows) {
+        const original = wholeById.get(String(row.id));
+        expect(original).toBeDefined();
+        for (const [field, value] of Object.entries(row)) {
+          if (value === (original as DataQueryRow)[field]) continue;
+          changed.add(field);
+          const type = declared.get(field);
+          if (type === 'string') continue;
+          // Non-string types are all-or-nothing: null is the only other state.
+          expect({ field, type, value }).toEqual({ field, type, value: null });
+        }
+      }
+    }
+    // Guard the guard: if nothing was ever shortened the loop above proves
+    // nothing at all.
+    expect(changed.size).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * Byte-budget allocation across rows: every page whose irreducible floors fit
+ * must be produced, and producing it must stay cheap (#2452 round 14).
+ */
+describe('result byte budget is shared across rows', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  // Allocating by CURRENT cost lets a small row take more than it can use while
+  // a large one is starved below its own floor, so the request fails as
+  // impossible even though the floors fit the budget with room to spare. Here
+  // one row is nearly all identity (irreducible) and the others carry long text
+  // that can be levelled away, which is exactly that shape.
+  it('serves a page whose floors fit even when the rows are lopsided', async () => {
+    const wide = await contents.create({
+      name: 'w',
+      title: 'x'.repeat(4_000),
+      description: 'y'.repeat(4_000),
+    });
+    await wide.save();
+    for (let index = 0; index < 3; index += 1) {
+      const narrow = await contents.create({ name: `n${index}`, title: 'T' });
+      await narrow.save();
+    }
+    const base = await buildContentQuerySchema();
+
+    // Just above the floor of the whole page: too small for the real values,
+    // large enough for every row's irreducible minimum.
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['id', 'name', 'title', 'description'],
+        page: { kind: 'offset', offset: 0, limit: 4 },
+      }),
+      { schema: { ...base, maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES } },
+    );
+
+    // No row is dropped for size — offset paging would skip the dropped rows on
+    // every subsequent page.
+    expect(result.rows).toHaveLength(4);
+    expect(result.truncated).toBe(true);
+    for (const row of result.rows) {
+      expect(typeof row.id).toBe('string');
+      expect(String(row.id)).not.toBe('');
+    }
+  });
+
+  // A row's floor is the size it can be reduced TO, so the smallest budget at
+  // which a page is producible must equal the size of that page fully reduced —
+  // no larger (the floor would be overstating, refusing pages that fit) and no
+  // smaller (the allocation would be promising bytes it cannot deliver).
+  describe('the declared floor is the true floor', () => {
+    const descriptors = new Map<string, DataQueryFieldDescriptor>([
+      [
+        'id',
+        { id: 'id', label: 'Id', type: 'string' } as DataQueryFieldDescriptor,
+      ],
+      [
+        'title',
+        {
+          id: 'title',
+          label: 'Title',
+          type: 'string',
+        } as DataQueryFieldDescriptor,
+      ],
+      [
+        'metadata',
+        {
+          id: 'metadata',
+          label: 'Meta',
+          type: 'json',
+        } as DataQueryFieldDescriptor,
+      ],
+      [
+        'tags',
+        { id: 'tags', label: 'Tags', type: 'json' } as DataQueryFieldDescriptor,
+      ],
+    ]);
+    // `{}` and `[]` serialize to TWO bytes, so nulling them costs four and makes
+    // the row bigger. Taking the reduced size as the floor unconditionally
+    // therefore overstates it by two bytes per such field per row.
+    const page = (): DataQueryRow[] =>
+      Array.from({ length: 7 }, (_, index) => ({
+        id: `row-${index}`,
+        title: 'x'.repeat(40),
+        metadata: {},
+        tags: [],
+      }));
+
+    const bound = (budget: number) =>
+      boundRowBytes(
+        page(),
+        budget + RESULT_ENVELOPE_RESERVE_BYTES,
+        descriptors,
+        'id',
+        {
+          fields: new Set<string>(),
+        },
+      );
+
+    it('accepts every budget down to the fully reduced size, and no lower', () => {
+      // Reduced independently of the implementation: strings accept prefixes so
+      // they go to empty; nothing else can shrink without growing.
+      const reduced = page().map((row) => ({ ...row, title: '' }));
+      const trueFloor = Buffer.byteLength(JSON.stringify(reduced), 'utf8');
+
+      let smallest = Number.MAX_SAFE_INTEGER;
+      for (let budget = trueFloor - 40; budget <= trueFloor + 40; budget += 1) {
+        try {
+          bound(budget);
+          smallest = Math.min(smallest, budget);
+        } catch {
+          // Below the floor the page cannot be produced; keep scanning.
+        }
+      }
+
+      expect(smallest).toBe(trueFloor);
+    });
+
+    it('never enlarges a field in the name of shrinking it', () => {
+      const reduced = page().map((row) => ({ ...row, title: '' }));
+      const bounded = bound(Buffer.byteLength(JSON.stringify(reduced), 'utf8'));
+
+      for (const row of bounded.rows) {
+        // `null` here would be two bytes MORE than the value it replaced.
+        expect({ metadata: row.metadata, tags: row.tags }).toEqual({
+          metadata: {},
+          tags: [],
+        });
+      }
+    });
+  });
+
+  // The integration test above cannot fail on revert: a row's floor is
+  // dominated by the projection's key bytes, which are identical across the
+  // rows of one page, so the floor disparity that breaks cost-first ordering is
+  // not reachable through `executeContentQuery`. The guarantee is a property of
+  // the allocation arithmetic, so it is asserted there.
+  describe('allocateRowBytes', () => {
+    // One row that is nearly all irreducible (310 bytes, none of it reducible)
+    // beside one that is mostly text (81 bytes, floor 21), against a budget of
+    // 339. The floors sum to 331, so the page fits. Allocating max-min fair
+    // over CURRENT costs hands the small row its whole 81 and leaves the large
+    // one 258 — below its own 310-byte floor — and the request fails.
+    it('seats every floor when the floors fit, whatever the costs', () => {
+      const allowances = allocateRowBytes([310, 21], [310, 81], 339);
+
+      expect(allowances[0]).toBeGreaterThanOrEqual(310);
+      expect(allowances[1]).toBeGreaterThanOrEqual(21);
+      expect(allowances[0] + allowances[1]).toBeLessThanOrEqual(339);
+    });
+
+    // `measureRow` guarantees `floor <= cost`, but that guarantee used to be an
+    // accident of a caller's short-circuit rather than a stated invariant. Hold
+    // the allocator to the floor even when the precondition is broken, so a
+    // future measure bug degrades into a slightly roomy page instead of a row
+    // starved below the size it can be reduced to.
+    it('seats the floor even when a caller violates floor <= cost', () => {
+      // Cost 6 against floor 10: the row claims it can shrink below its own
+      // current size. Allocating `cost - floor` unclamped hands it -4, which
+      // leaks four bytes to its neighbour and leaves it under its floor.
+      expect(allocateRowBytes([10, 10], [6, 100], 40)).toEqual([10, 30]);
+    });
+
+    // The same guarantee, not just the one counterexample: across a spread of
+    // shapes, no row is ever left below its floor when the floors fit.
+    it.each([
+      { floors: [310, 21], costs: [310, 81], budget: 339 },
+      { floors: [1, 1, 1, 500], costs: [900, 900, 900, 500], budget: 600 },
+      { floors: [100, 100], costs: [100, 10_000], budget: 205 },
+      { floors: [50, 50, 50], costs: [50, 50, 50], budget: 150 },
+      { floors: [0, 400], costs: [9_000, 400], budget: 401 },
+    ])('never starves a row below its floor: %j', ({
+      floors,
+      costs,
+      budget,
+    }) => {
+      const allowances = allocateRowBytes(floors, costs, budget);
+
+      for (const [index, floor] of floors.entries()) {
+        expect({ index, allowed: allowances[index] >= floor }).toEqual({
+          index,
+          allowed: true,
+        });
+      }
+      const granted = allowances.reduce((sum, value) => sum + value, 0);
+      expect(granted).toBeLessThanOrEqual(budget);
+      for (const [index, cost] of costs.entries()) {
+        // A floor is a size the row can be reduced TO, so it can never exceed
+        // the size the row already is. `Math.max(cost, floor)` here would
+        // tolerate a floor that overstates — the exact defect that made nulling
+        // an empty `{}` look like a saving.
+        expect(floors[index]).toBeLessThanOrEqual(cost);
+        // And nothing is handed more than it can use.
+        expect(allowances[index]).toBeLessThanOrEqual(cost);
+      }
+    });
+  });
+
+  // Shortening used to re-serialize the row AND every field on every step of a
+  // halving search, which turned an ordinary wide page at the default budget
+  // into seconds of blocked event loop — a denial of service reachable by any
+  // caller who asks for the whole projection.
+  //
+  // This times the BOUNDING PASS, not `executeContentQuery`. Timing the whole
+  // request buries the cost: the SQLite read of a multi-megabyte page dominates
+  // both sides, so a 2-3x regression in the shortening itself would pass
+  // unnoticed. `boundRowBytes` is a pure function of the rows, so it can be
+  // called on the same fixture directly.
+  it('bounds a wide page for a small constant number of page walks', () => {
+    const descriptors = new Map<string, DataQueryFieldDescriptor>(
+      Array.from({ length: 12 }, (_, index) => [
+        `field_${index}`,
+        {
+          id: `field_${index}`,
+          label: `Field ${index}`,
+          type: 'string',
+        } as DataQueryFieldDescriptor,
+      ]),
+    );
+    descriptors.set('id', {
+      id: 'id',
+      label: 'Id',
+      type: 'string',
+    } as DataQueryFieldDescriptor);
+
+    const page = (count: number): DataQueryRow[] =>
+      Array.from({ length: count }, (_, row) => {
+        const entry: DataQueryRow = { id: `row-${row}` };
+        for (let index = 0; index < 12; index += 1) {
+          entry[`field_${index}`] = String.fromCharCode(97 + index).repeat(
+            2_000,
+          );
+        }
+        return entry;
+      });
+
+    const timeBounding = (count: number): number => {
+      const rows = page(count);
+      const budget = Math.floor(
+        Buffer.byteLength(JSON.stringify(rows), 'utf8') / 4,
+      );
+      // Copy per iteration so every run shortens full-length values.
+      const runs = 5;
+      const samples: number[] = [];
+      for (let run = 0; run < runs; run += 1) {
+        const input = page(count);
+        const started = performance.now();
+        const bounded = boundRowBytes(
+          input,
+          budget + RESULT_ENVELOPE_RESERVE_BYTES,
+          descriptors,
+          'id',
+          { fields: new Set<string>() },
+        );
+        samples.push(performance.now() - started);
+        expect(bounded.truncated).toBe(true);
+      }
+      samples.sort((left, right) => left - right);
+      return samples[Math.floor(runs / 2)];
+    };
+
+    // The denominator is serializing the SAME page once. Bounding is
+    // serialization-shaped work on the same data, so the ratio is a count of
+    // "how many times over does bounding walk this page" — machine-independent,
+    // unlike a millisecond threshold, and not swamped by an unrelated database
+    // read. Measured: 3.4 page walks with the arithmetic pass, 35 with the
+    // halving search restored. The bound sits between them, well clear of both.
+    const timeStringify = (count: number): number => {
+      const rows = page(count);
+      const samples: number[] = [];
+      for (let run = 0; run < 5; run += 1) {
+        const started = performance.now();
+        JSON.stringify(rows);
+        samples.push(performance.now() - started);
+      }
+      samples.sort((left, right) => left - right);
+      return samples[2];
+    };
+
+    timeBounding(50); // warm both paths
+    timeStringify(50);
+    const bounding = timeBounding(200);
+    const serializing = timeStringify(200);
+
+    expect(bounding).toBeLessThan(serializing * 12);
+
+    // AND the per-row cost must not grow with the page, which is the separate
+    // signature of a super-linear search returning.
+    const large = timeBounding(800);
+    expect(large / 800).toBeLessThan((bounding / 200) * 3);
+  }, 120_000);
+});

@@ -1,0 +1,2954 @@
+/**
+ * ContentList → server query translation and transport (#2452).
+ *
+ * The column → server-field map is asserted against the *real*
+ * `buildContentQuerySchema()`, so renaming a `Content` field breaks a test
+ * here rather than a production query.
+ */
+
+import {
+  getTestDatabase,
+  MAX_DATA_QUERY_FILTERS,
+  MAX_DATA_QUERY_IN_VALUES,
+  MAX_DATA_QUERY_OFFSET,
+  MAX_DATA_QUERY_REQUEST_BYTES,
+  normalizeDataQueryRequest,
+} from '@happyvertical/smrt-core';
+import type {
+  DataTableFilter,
+  DataTableViewState,
+} from '@happyvertical/smrt-ui/data';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  buildContentQuerySchema,
+  type ContentQueryCollection,
+  executeContentQuery,
+  MAX_CONTENT_QUERY_OR_BRANCHES,
+} from '../content-query';
+import { Contents } from '../contents';
+import {
+  buildContentListColumns,
+  CONTENT_LIST_COLUMN_IDS,
+  CONTENT_LIST_VISIBLE_COLUMN_IDS,
+  createContentListController,
+  selectContentListRows,
+  toContentListRows,
+} from './content-list-controller';
+import {
+  CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+  CONTENT_LIST_QUERY_DEFAULT_SORT,
+  CONTENT_LIST_QUERY_FIELDS,
+  CONTENT_LIST_QUERY_IDENTITY_FIELD,
+  CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH,
+  CONTENT_LIST_QUERY_MAX_FILTER_NODES,
+  CONTENT_LIST_QUERY_MAX_IN_VALUES,
+  CONTENT_LIST_QUERY_MAX_OFFSET,
+  CONTENT_LIST_QUERY_MAX_OR_BRANCHES,
+  CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS,
+  CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
+  CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH,
+  CONTENT_LIST_QUERY_MAX_VALUE_LENGTH,
+  CONTENT_LIST_QUERY_PROJECTABLE_FIELDS,
+  CONTENT_LIST_QUERY_PROJECTION,
+  CONTENT_LIST_QUERY_SEARCH_FIELDS,
+  type ContentListDataQueryRequest,
+  ContentListQueryError,
+  type ContentListQueryFilter,
+  contentFromContentListQueryRow,
+  contentListQueryErrorMessage,
+  contentListQueryRequestKey,
+  contentListQueryRowsToContents,
+  contentListQueryTotalValue,
+  contentListViewStateToDataQueryRequest,
+  createContentListQueryTransport,
+  escapeContentListQueryLikeValue,
+  readContentListQueryNotices,
+  resolveContentListMaxPageSize,
+} from './content-list-query';
+import {
+  CONTENT_LIST_MAX_PAGE_SIZE,
+  contentListViewStateFromSearchParams,
+  contentListViewStateToSearchParams,
+} from './content-list-url-state';
+
+function viewState(
+  overrides: Partial<DataTableViewState> = {},
+): Partial<DataTableViewState> {
+  return { search: '', filters: [], sorting: [], page: 1, ...overrides };
+}
+
+function translate(overrides: Partial<DataTableViewState> = {}) {
+  return contentListViewStateToDataQueryRequest(viewState(overrides), {
+    createRequestId: () => 'fixed-request',
+  });
+}
+
+function conditions(
+  filter: ContentListQueryFilter | undefined,
+): Array<Extract<ContentListQueryFilter, { kind: 'condition' }>> {
+  if (!filter) return [];
+  if (filter.kind === 'condition') return [filter];
+  if (filter.kind === 'not') return conditions(filter.filter);
+  return filter.filters.flatMap((child) => conditions(child));
+}
+
+describe('the column to server-field map (H1)', () => {
+  it('names only fields the content query schema declares', async () => {
+    const schema = await buildContentQuerySchema();
+    const declared = new Map(schema.fields.map((field) => [field.id, field]));
+
+    for (const columnId of CONTENT_LIST_COLUMN_IDS) {
+      const mapped = CONTENT_LIST_QUERY_FIELDS[columnId];
+      if (mapped === null) continue;
+      const descriptor = declared.get(mapped.field);
+      expect(
+        descriptor,
+        `column ${columnId} maps to undeclared server field ${mapped.field}`,
+      ).toBeDefined();
+      expect(descriptor?.type).toBe(mapped.type);
+    }
+  });
+
+  it('declares every adapter column, so a new column cannot be forgotten', () => {
+    for (const columnId of CONTENT_LIST_COLUMN_IDS) {
+      expect(Object.hasOwn(CONTENT_LIST_QUERY_FIELDS, columnId)).toBe(true);
+    }
+  });
+
+  it('bridges the `updated` / `updatedAt` / `updated_at` namespaces', () => {
+    expect(CONTENT_LIST_QUERY_FIELDS.updated?.field).toBe('updated_at');
+    expect(CONTENT_LIST_QUERY_FIELDS.publish?.field).toBe('publish_date');
+  });
+
+  it('leaves the derived `site` column without a server field', () => {
+    expect(CONTENT_LIST_QUERY_FIELDS.site).toBeNull();
+    // `site` is still a published, locally sortable column.
+    expect(CONTENT_LIST_VISIBLE_COLUMN_IDS).toContain('site');
+  });
+
+  it('projects only fields the schema declares as projectable', async () => {
+    const schema = await buildContentQuerySchema();
+    const declared = new Map(schema.fields.map((field) => [field.id, field]));
+    for (const field of CONTENT_LIST_QUERY_PROJECTION) {
+      expect(
+        declared.get(field),
+        `undeclared projection field ${field}`,
+      ).toBeDefined();
+      expect(declared.get(field)?.projectable).toBe(true);
+    }
+    expect(CONTENT_LIST_QUERY_PROJECTION).toContain(
+      CONTENT_LIST_QUERY_IDENTITY_FIELD,
+    );
+    // `body` is deliberately unqueryable — a document, not list data.
+    expect(CONTENT_LIST_QUERY_PROJECTION).not.toContain('body');
+  });
+
+  it('searches exactly the columns the adapter marks searchable', async () => {
+    const searchableColumns = buildContentListColumns()
+      .filter((column) => column.searchable !== false)
+      .map((column) => CONTENT_LIST_QUERY_FIELDS[column.id]?.field)
+      .filter((field): field is string => Boolean(field));
+    expect([...CONTENT_LIST_QUERY_SEARCH_FIELDS].sort()).toEqual(
+      searchableColumns.sort(),
+    );
+
+    const schema = await buildContentQuerySchema();
+    const declared = new Map(schema.fields.map((field) => [field.id, field]));
+    for (const field of CONTENT_LIST_QUERY_SEARCH_FIELDS) {
+      // `like` is string-only in the normalizer; a datetime search field would
+      // fail the whole request.
+      expect(declared.get(field)?.type).toBe('string');
+      expect(declared.get(field)?.filterOperators).toContain('like');
+    }
+  });
+
+  it('only emits operators the schema declares for that field type', async () => {
+    const schema = await buildContentQuerySchema();
+    const declared = new Map(schema.fields.map((field) => [field.id, field]));
+    const cases: Array<[string, string, unknown]> = [
+      ['status', 'equals', 'published'],
+      ['title', 'contains', 'budget'],
+      ['updated', 'gte', '2026-02-01T00:00:00.000Z'],
+      ['type', 'in', ['article', 'mirror']],
+      ['publish', 'lt', '2026-02-01T00:00:00.000Z'],
+    ];
+    for (const [columnId, operator, value] of cases) {
+      const { request, dropped } = translate({
+        filters: [
+          { columnId, operator: operator as never, value: value as never },
+        ],
+      });
+      expect(dropped, `${columnId}.${operator} was dropped`).toEqual([]);
+      const emitted = conditions(request.filter);
+      expect(emitted).toHaveLength(1);
+      expect(
+        declared.get(emitted[0].field)?.filterOperators,
+        `${emitted[0].field} does not declare ${emitted[0].operator}`,
+      ).toContain(emitted[0].operator);
+    }
+  });
+});
+
+describe('translating filters', () => {
+  it('maps the toolbar filters onto server fields', () => {
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'type', operator: 'equals', value: 'article' },
+        { columnId: 'status', operator: 'equals', value: 'published' },
+      ],
+    });
+    expect(dropped).toEqual([]);
+    expect(conditions(request.filter)).toEqual([
+      { kind: 'condition', field: 'type', operator: 'eq', value: 'article' },
+      {
+        kind: 'condition',
+        field: 'status',
+        operator: 'eq',
+        value: 'published',
+      },
+    ]);
+  });
+
+  it('drops a filter on the derived `site` column and says why', () => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'site', operator: 'equals', value: 'example.com' }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped).toEqual([
+      { scope: 'filter', reason: 'no-server-field', columnId: 'site' },
+    ]);
+  });
+
+  it('drops `notContains`, the one operator with no server expression', () => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'title', operator: 'notContains', value: 'x' }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped).toEqual([
+      {
+        scope: 'filter',
+        reason: 'unsupported-operator',
+        columnId: 'title',
+        detail: 'notContains',
+      },
+    ]);
+  });
+
+  it('maps the null predicates onto a null-valued eq/ne', () => {
+    const isNull = translate({
+      filters: [{ columnId: 'author', operator: 'isNull' }],
+    });
+    expect(isNull.dropped).toEqual([]);
+    expect(conditions(isNull.request.filter)[0]).toEqual({
+      kind: 'condition',
+      field: 'author',
+      operator: 'eq',
+      value: null,
+    });
+
+    const isNotNull = translate({
+      filters: [{ columnId: 'publish', operator: 'isNotNull' }],
+    });
+    expect(isNotNull.dropped).toEqual([]);
+    expect(conditions(isNotNull.request.filter)[0]).toEqual({
+      kind: 'condition',
+      field: 'publish_date',
+      operator: 'ne',
+      value: null,
+    });
+  });
+
+  it('drops a `contains` on a datetime column, which the server refuses', () => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'updated', operator: 'contains', value: '2026' }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      reason: 'unsupported-operator',
+      columnId: 'updated',
+    });
+  });
+
+  it('normalizes a datetime filter to an RFC 3339 instant', () => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'publish', operator: 'gte', value: '2026-02-01' }],
+    });
+    expect(dropped).toEqual([]);
+    expect(conditions(request.filter)[0]).toEqual({
+      kind: 'condition',
+      field: 'publish_date',
+      operator: 'gte',
+      value: '2026-02-01T00:00:00.000Z',
+    });
+  });
+
+  it('drops an unparseable datetime rather than failing the whole query', () => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'updated', operator: 'gte', value: 'yesterday' }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      reason: 'unsupported-value',
+      columnId: 'updated',
+    });
+  });
+
+  it('drops an unknown column', () => {
+    const { dropped } = translate({
+      filters: [{ columnId: 'nope', operator: 'equals', value: 'x' }],
+    });
+    expect(dropped).toEqual([
+      { scope: 'filter', reason: 'unknown-column', columnId: 'nope' },
+    ]);
+  });
+
+  it('maps `in` to a de-duplicated non-empty value list', () => {
+    const { request } = translate({
+      filters: [
+        {
+          columnId: 'status',
+          operator: 'in',
+          value: ['draft', 'published', 'draft'],
+        },
+      ],
+    });
+    expect(conditions(request.filter)[0]).toEqual({
+      kind: 'condition',
+      field: 'status',
+      operator: 'in',
+      value: ['draft', 'published'],
+    });
+  });
+
+  it('drops an `in` whose values are all unusable', () => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'status', operator: 'in', value: [] }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'unsupported-value' });
+  });
+
+  it('ANDs search with the declarative filters', () => {
+    const { request } = translate({
+      search: 'budget',
+      filters: [{ columnId: 'status', operator: 'equals', value: 'published' }],
+    });
+    expect(request.filter?.kind).toBe('all');
+    expect(conditions(request.filter).map((entry) => entry.field)).toEqual([
+      'title',
+      'description',
+      'author',
+      'status',
+    ]);
+  });
+});
+
+describe('translating search (H4)', () => {
+  it('becomes an `any` of wildcard `like` predicates', () => {
+    const { request } = translate({ search: '  budget  ' });
+    expect(request.filter).toEqual({
+      kind: 'any',
+      filters: [
+        {
+          kind: 'condition',
+          field: 'title',
+          operator: 'like',
+          value: '%budget%',
+        },
+        {
+          kind: 'condition',
+          field: 'description',
+          operator: 'like',
+          value: '%budget%',
+        },
+        {
+          kind: 'condition',
+          field: 'author',
+          operator: 'like',
+          value: '%budget%',
+        },
+      ],
+    });
+  });
+
+  it('escapes a `%` so it is matched literally, not as a wildcard', () => {
+    const { request } = translate({ search: '50% off' });
+    for (const condition of conditions(request.filter)) {
+      expect(condition.value).toBe('%50\\% off%');
+    }
+  });
+
+  it('escapes `_` and the escape character itself', () => {
+    expect(escapeContentListQueryLikeValue('a_b')).toBe('a\\_b');
+    expect(escapeContentListQueryLikeValue('a\\b')).toBe('a\\\\b');
+    expect(escapeContentListQueryLikeValue('100%')).toBe('100\\%');
+  });
+
+  it('escapes the pattern operators too', () => {
+    const { request } = translate({
+      filters: [{ columnId: 'title', operator: 'startsWith', value: '%draft' }],
+    });
+    expect(conditions(request.filter)[0].value).toBe('\\%draft%');
+  });
+
+  it('omits the filter entirely for a blank search', () => {
+    expect(translate({ search: '   ' }).request.filter).toBeUndefined();
+  });
+});
+
+describe('translating sorting', () => {
+  it('appends a deterministic id tie-break', () => {
+    const { request } = translate({
+      sorting: [{ columnId: 'title', direction: 'asc' }],
+    });
+    expect(request.sort).toEqual([
+      { field: 'title', direction: 'asc' },
+      { field: 'id', direction: 'asc' },
+    ]);
+  });
+
+  it('drops a sort on the derived `site` column', () => {
+    const { request, dropped } = translate({
+      sorting: [
+        { columnId: 'site', direction: 'asc' },
+        { columnId: 'updated', direction: 'desc' },
+      ],
+    });
+    expect(request.sort).toEqual([
+      { field: 'updated_at', direction: 'desc' },
+      { field: 'id', direction: 'asc' },
+    ]);
+    expect(dropped).toContainEqual({
+      scope: 'sorting',
+      reason: 'no-server-field',
+      columnId: 'site',
+    });
+  });
+
+  it('emits the schema default explicitly when nothing is sortable', () => {
+    // Explicit rather than omitted: the normalizer injects `defaultSort` when
+    // the key is absent and then measures the NORMALIZED request against the
+    // byte limit, so omitting it makes the client under-measure by 84 bytes.
+    const { request } = translate({
+      sorting: [{ columnId: 'site', direction: 'asc' }],
+    });
+    expect(request.sort).toEqual([...CONTENT_LIST_QUERY_DEFAULT_SORT]);
+  });
+});
+
+describe('translating paging (H5)', () => {
+  it('uses an offset page derived from page and page size', () => {
+    const { request } = translate({ page: 3, pageSize: 25 });
+    expect(request.page).toEqual({ kind: 'offset', offset: 50, limit: 25 });
+  });
+
+  it('falls back to the shared default page size when there is none', () => {
+    const { request } = translate({ page: 1, pageSize: null });
+    expect(request.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+    });
+  });
+
+  it('clamps a restored page size above the surface ceiling and reports it', () => {
+    const { request, dropped } = translate({ page: 1, pageSize: 10_000 });
+    expect(request.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: CONTENT_LIST_MAX_PAGE_SIZE,
+    });
+    expect(dropped).toContainEqual({
+      scope: 'pageSize',
+      reason: 'out-of-range',
+      detail: '10000',
+    });
+  });
+
+  it('clamps an offset beyond the protocol maximum', () => {
+    const { request, dropped } = translate({ page: 10_000_000, pageSize: 50 });
+    const page = request.page as { offset: number; limit: number };
+    expect(page.offset).toBeLessThanOrEqual(1_000_000);
+    expect(dropped).toContainEqual({
+      scope: 'page',
+      reason: 'out-of-range',
+      detail: '10000000',
+    });
+  });
+});
+
+describe('request identity', () => {
+  it('emits a request id and excludes it from the semantic key', () => {
+    const first = contentListViewStateToDataQueryRequest(viewState());
+    const second = contentListViewStateToDataQueryRequest(viewState());
+    expect(first.request.requestId).not.toBe(second.request.requestId);
+    expect(contentListQueryRequestKey(first.request)).toBe(
+      contentListQueryRequestKey(second.request),
+    );
+  });
+
+  it('changes the semantic key when the query changes', () => {
+    const base = contentListQueryRequestKey(translate().request);
+    const searched = contentListQueryRequestKey(
+      translate({ search: 'budget' }).request,
+    );
+    expect(searched).not.toBe(base);
+  });
+});
+
+describe('mapping result rows onto ContentData', () => {
+  it('renames the server fields the client shape spells differently', () => {
+    const content = contentFromContentListQueryRow({
+      id: 'content-1',
+      title: 'Budget',
+      updated_at: '2026-02-01T10:00:00.000Z',
+      created_at: '2026-01-01T10:00:00.000Z',
+      publish_date: '2026-01-15T10:00:00.000Z',
+    });
+    expect(content).toEqual({
+      id: 'content-1',
+      title: 'Budget',
+      updatedAt: '2026-02-01T10:00:00.000Z',
+      createdAt: '2026-01-01T10:00:00.000Z',
+      publish_date: '2026-01-15T10:00:00.000Z',
+    });
+  });
+
+  it('omits null and unknown fields rather than inventing values', () => {
+    const content = contentFromContentListQueryRow({
+      id: 'content-1',
+      author: null,
+      tenantId: 'tenant-1',
+    });
+    expect(content).toEqual({ id: 'content-1' });
+  });
+
+  it('preserves server order across a page', () => {
+    const contents = contentListQueryRowsToContents([
+      { id: 'b' },
+      { id: 'a' },
+      { id: 'c' },
+    ]);
+    expect(contents.map((content) => content.id)).toEqual(['b', 'a', 'c']);
+  });
+
+  it('reads a total, and reports an unavailable one as undefined', () => {
+    expect(contentListQueryTotalValue({ kind: 'exact', value: 42 })).toBe(42);
+    expect(contentListQueryTotalValue({ kind: 'unavailable' })).toBeUndefined();
+    expect(contentListQueryTotalValue(undefined)).toBeUndefined();
+  });
+});
+
+describe('the fetch transport', () => {
+  const request: ContentListDataQueryRequest = {
+    version: 1,
+    requestId: 'r1',
+    mode: 'rows',
+    page: { kind: 'offset', offset: 0, limit: 10 },
+  };
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('unwraps the generated { action, result } envelope', async () => {
+    const result = { version: 1, requestId: 'r1', rows: [{ id: 'a' }] };
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ action: 'queryAction', result }),
+    );
+    const transport = createContentListQueryTransport({
+      apiBaseUrl: '/api/v1',
+      fetch: fetchImpl as unknown as typeof globalThis.fetch,
+    });
+    await expect(transport.query(request)).resolves.toEqual(result);
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/v1/contents/query');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual(request);
+  });
+
+  it('accepts a bare envelope from a host gateway', async () => {
+    const transport = createContentListQueryTransport({
+      fetch: (async () =>
+        jsonResponse({ version: 1, requestId: 'r1', rows: [] })) as never,
+    });
+    await expect(transport.query(request)).resolves.toMatchObject({
+      version: 1,
+    });
+  });
+
+  it('throws a coded error for the refusal envelope', async () => {
+    const transport = createContentListQueryTransport({
+      fetch: (async () =>
+        jsonResponse(
+          {
+            error: {
+              ok: false,
+              status: 400,
+              code: 'DATA_QUERY_FILTER_NOT_ALLOWED',
+              message: 'Content query filter field is not declared: secret',
+            },
+          },
+          400,
+        )) as never,
+    });
+    await expect(transport.query(request)).rejects.toMatchObject({
+      name: 'ContentListQueryError',
+      code: 'DATA_QUERY_FILTER_NOT_ALLOWED',
+      status: 400,
+      message: 'Content query filter field is not declared: secret',
+    });
+  });
+
+  it('does not swallow an HTTP failure without an envelope', async () => {
+    const transport = createContentListQueryTransport({
+      fetch: (async () =>
+        new Response('<html>gateway</html>', { status: 502 })) as never,
+    });
+    await expect(transport.query(request)).rejects.toMatchObject({
+      code: 'CONTENT_QUERY_HTTP_ERROR',
+      status: 502,
+    });
+  });
+
+  it('does not swallow a 200 with a non-JSON body', async () => {
+    const transport = createContentListQueryTransport({
+      fetch: (async () => new Response('not json', { status: 200 })) as never,
+    });
+    await expect(transport.query(request)).rejects.toMatchObject({
+      code: 'CONTENT_QUERY_INVALID_RESPONSE',
+    });
+  });
+
+  it('forwards the abort signal and propagates the abort untouched', async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(init.signal).toBe(controller.signal);
+      const abort = new Error('The operation was aborted');
+      abort.name = 'AbortError';
+      throw abort;
+    });
+    const transport = createContentListQueryTransport({
+      fetch: fetchImpl as never,
+    });
+    controller.abort();
+    await expect(
+      transport.query(request, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('resolves caller headers per request', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ action: 'queryAction', result: { rows: [] } }),
+    );
+    const transport = createContentListQueryTransport({
+      fetch: fetchImpl as never,
+      headers: () => ({ 'x-tenant': 'acme' }),
+    });
+    await transport.query(request);
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(headers.get('x-tenant')).toBe('acme');
+    expect(headers.get('content-type')).toBe('application/json');
+  });
+
+  it('refuses to build where there is no fetch at all', () => {
+    vi.stubGlobal('fetch', undefined);
+    try {
+      expect(() => createContentListQueryTransport()).toThrow(TypeError);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('error messages', () => {
+  it('appends the server code to a coded failure', () => {
+    expect(
+      contentListQueryErrorMessage(
+        new ContentListQueryError('Refused', {
+          code: 'DATA_QUERY_UNSUPPORTED',
+        }),
+      ),
+    ).toBe('Refused (DATA_QUERY_UNSUPPORTED)');
+  });
+
+  it('passes a plain error through and reports no error as null', () => {
+    expect(contentListQueryErrorMessage(new Error('boom'))).toBe('boom');
+    expect(contentListQueryErrorMessage(null)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch #2452: caps, null predicates, and the completeness flags
+// ---------------------------------------------------------------------------
+
+describe('translating the null predicates end to end', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      {
+        name: 'with-author',
+        title: 'With author',
+        author: 'Ada Lovelace',
+        publish_date: new Date('2026-02-01T00:00:00.000Z'),
+      },
+      { name: 'no-author', title: 'No author', author: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const run = (state: Partial<DataTableViewState>) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(state), {
+        createRequestId: () => 'null-predicate-request',
+        projection: ['id', 'title', 'author'],
+      }).request,
+    );
+
+  it('resolves `isNull` to IS NULL through the collection', async () => {
+    const result = await run({
+      filters: [{ columnId: 'author', operator: 'isNull' }],
+    });
+    expect(result.rows.map((row) => row.title)).toEqual(['No author']);
+  });
+
+  it('resolves `isNotNull` to IS NOT NULL, not a NULL comparison', async () => {
+    const result = await run({
+      filters: [{ columnId: 'author', operator: 'isNotNull' }],
+    });
+    expect(result.rows.map((row) => row.title)).toEqual(['With author']);
+  });
+
+  it('works for a datetime column too', async () => {
+    const missing = await run({
+      filters: [{ columnId: 'publish', operator: 'isNull' }],
+    });
+    expect(missing.rows.map((row) => row.title)).toEqual(['No author']);
+
+    const present = await run({
+      filters: [{ columnId: 'publish', operator: 'isNotNull' }],
+    });
+    expect(present.rows.map((row) => row.title)).toEqual(['With author']);
+  });
+});
+
+describe('client-side caps mirroring the server limits', () => {
+  it('caps an `in` list at the protocol maximum and reports it', () => {
+    const values = Array.from({ length: 150 }, (_, index) => `v${index}`);
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'status', operator: 'in', value: values }],
+    });
+    const condition = conditions(request.filter)[0];
+    expect((condition.value as string[]).length).toBe(100);
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'out-of-range',
+      columnId: 'status',
+      detail: '150',
+    });
+  });
+
+  it('caps the total filter-node count so the request is never refused', () => {
+    const filters = Array.from({ length: 60 }, () => ({
+      columnId: 'title' as const,
+      operator: 'equals' as const,
+      value: 'x',
+    }));
+    const { request, dropped } = translate({ search: 'budget', filters });
+
+    // search = `any` + 3 conditions = 4 nodes, plus the outer `all` = 5.
+    expect(conditions(request.filter).length).toBe(3 + 45);
+    expect(
+      dropped.filter((drop) => drop.reason === 'filter-widened'),
+    ).toHaveLength(15);
+  });
+
+  it('trims an over-long search so it stays inside the scalar cap', () => {
+    const { request, dropped } = translate({ search: 'a'.repeat(5_000) });
+    for (const condition of conditions(request.filter)) {
+      expect((condition.value as string).length).toBeLessThanOrEqual(4_096);
+    }
+    // Not a clamp: a shortened search matches MORE rows than the one typed.
+    expect(dropped).toContainEqual({
+      scope: 'search',
+      reason: 'filter-widened',
+      detail: '5000',
+    });
+  });
+
+  it('accounts for escaping when trimming, so escaped output still fits', () => {
+    const { request } = translate({ search: '%'.repeat(5_000) });
+    for (const condition of conditions(request.filter)) {
+      expect((condition.value as string).length).toBeLessThanOrEqual(4_096);
+    }
+  });
+
+  it('drops an over-long filter value rather than sending a shortened one', () => {
+    // A shortened comparand names a different row: `gt`/`gte` would widen,
+    // `lt`/`lte` would NARROW and hide rows, `eq`/`ne` would name some third
+    // row. There is no honest label for that, so the filter is not applied.
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'status', operator: 'equals', value: 'b'.repeat(9_000) },
+      ],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'filter-widened',
+      columnId: 'status',
+      detail: 'equals',
+    });
+  });
+
+  it.each([
+    'equals',
+    'notEquals',
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+  ] as const)('drops an over-long comparand for %s, whichever way it would have moved', (operator) => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'status', operator, value: 'b'.repeat(9_000) }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+});
+
+describe('an unpaginated view state in server mode', () => {
+  it('coerces null to the default page size and reports it', () => {
+    const { request, dropped } = contentListViewStateToDataQueryRequest(
+      viewState({ pageSize: null }),
+      { createRequestId: () => 'fixed', defaultPageSize: 25 },
+    );
+    expect(request.page).toEqual({ kind: 'offset', offset: 0, limit: 25 });
+    expect(dropped).toContainEqual({
+      scope: 'pageSize',
+      reason: 'unpaginated-unsupported',
+    });
+  });
+
+  it('reports nothing when the state simply carries no page size', () => {
+    const { dropped } = contentListViewStateToDataQueryRequest(
+      { search: '', filters: [], sorting: [], page: 1 },
+      { createRequestId: () => 'fixed' },
+    );
+    expect(dropped).toEqual([]);
+  });
+});
+
+describe('reading the completeness flags off a result', () => {
+  it('reads truncated and warnings', () => {
+    expect(
+      readContentListQueryNotices({
+        truncated: true,
+        warnings: ['Content query result was truncated', 42],
+      }),
+    ).toEqual({
+      truncated: true,
+      warnings: ['Content query result was truncated'],
+    });
+  });
+
+  it('defaults defensively for a non-envelope value', () => {
+    expect(readContentListQueryNotices(null)).toEqual({
+      truncated: false,
+      warnings: [],
+    });
+    expect(readContentListQueryNotices('nope')).toEqual({
+      truncated: false,
+      warnings: [],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 2 (#2452)
+// ---------------------------------------------------------------------------
+
+describe('bounding a value in the unit the server measures (finding 1)', () => {
+  /** Exactly what `dataQueryScalar` tests: UTF-16 code units. */
+  const serverLength = (value: string) => value.length;
+
+  it('counts an astral character as TWO, the way core does', () => {
+    // 4093 ASCII + one emoji: 4094 code points, 4095 UTF-16 units. Adding the
+    // two wildcards lands on 4097 server-side unless the emoji costs two.
+    const { request } = translate({ search: `${'x'.repeat(4093)}😀` });
+    for (const condition of conditions(request.filter)) {
+      expect(serverLength(condition.value as string)).toBeLessThanOrEqual(
+        4_096,
+      );
+    }
+  });
+
+  it('bounds a value that is entirely astral characters', () => {
+    const { request, dropped } = translate({ search: '😀'.repeat(4_094) });
+    for (const condition of conditions(request.filter)) {
+      expect(serverLength(condition.value as string)).toBeLessThanOrEqual(
+        4_096,
+      );
+    }
+    expect(dropped).toContainEqual(
+      expect.objectContaining({ scope: 'search', reason: 'filter-widened' }),
+    );
+  });
+
+  it('never splits a surrogate pair', () => {
+    const { request } = translate({ search: '😀'.repeat(4_094) });
+    const value = conditions(request.filter)[0].value as string;
+    // A lone surrogate would survive a round trip through JSON as U+FFFD.
+    expect(JSON.parse(JSON.stringify(value))).toBe(value);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(value)).toBe(false);
+    expect(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value)).toBe(false);
+  });
+
+  it('still lands exactly on the cap for pure ASCII and metacharacters', () => {
+    const ascii = translate({ search: 'a'.repeat(9_000) });
+    expect(
+      serverLength(conditions(ascii.request.filter)[0].value as string),
+    ).toBe(4_096);
+    const meta = translate({ search: '%'.repeat(9_000) });
+    expect(
+      serverLength(conditions(meta.request.filter)[0].value as string),
+    ).toBe(4_096);
+  });
+
+  it('drops an astral filter value rather than sending a shortened one', () => {
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'status', operator: 'equals', value: '😀'.repeat(9_000) },
+      ],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('still bounds the pattern operators, which stay applied', () => {
+    // A `like` CAN be shortened honestly, because a shorter pattern matches a
+    // superset — so those keep being sent, bounded in the server's unit.
+    for (const operator of ['contains', 'startsWith', 'endsWith'] as const) {
+      const { request } = translate({
+        filters: [{ columnId: 'title', operator, value: '😀'.repeat(9_000) }],
+      });
+      expect(
+        serverLength(conditions(request.filter)[0].value as string),
+        operator,
+      ).toBeLessThanOrEqual(4_096);
+    }
+  });
+});
+
+describe('one resolved page-size ceiling (findings 3, 4, 5)', () => {
+  it('takes the narrowest configured limit, never the loosest', () => {
+    expect(resolveContentListMaxPageSize(200, 25)).toBe(25);
+    expect(resolveContentListMaxPageSize(25, 200)).toBe(25);
+    expect(resolveContentListMaxPageSize(undefined, 25)).toBe(25);
+    expect(resolveContentListMaxPageSize(25, undefined)).toBe(25);
+  });
+
+  it('can never exceed the schema limit, whatever a host asks for', () => {
+    expect(resolveContentListMaxPageSize(10_000, 5_000)).toBe(
+      CONTENT_LIST_MAX_PAGE_SIZE,
+    );
+    expect(resolveContentListMaxPageSize()).toBe(CONTENT_LIST_MAX_PAGE_SIZE);
+  });
+
+  it('ignores nonsense candidates rather than collapsing to them', () => {
+    expect(resolveContentListMaxPageSize(0, Number.NaN, -5)).toBe(
+      CONTENT_LIST_MAX_PAGE_SIZE,
+    );
+  });
+
+  it('clamps a default page size above the ceiling', () => {
+    const { request } = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'fixed',
+      defaultPageSize: 201,
+    });
+    expect(request.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: CONTENT_LIST_MAX_PAGE_SIZE,
+    });
+  });
+});
+
+describe('the effective page when an offset is capped (finding 7)', () => {
+  it('reports the page the request actually reads', () => {
+    const { request, effectivePage } = contentListViewStateToDataQueryRequest(
+      viewState({ page: 10_000, pageSize: 200 }),
+      { createRequestId: () => 'fixed' },
+    );
+    const page = request.page as { offset: number; limit: number };
+    expect(page.offset).toBeLessThanOrEqual(1_000_000);
+    expect(effectivePage).toBe(page.offset / page.limit + 1);
+    expect(effectivePage).toBeLessThan(10_000);
+  });
+
+  it('reports the requested page unchanged when nothing was capped', () => {
+    const { effectivePage } = contentListViewStateToDataQueryRequest(
+      viewState({ page: 3, pageSize: 25 }),
+      { createRequestId: () => 'fixed' },
+    );
+    expect(effectivePage).toBe(3);
+  });
+});
+
+describe('validity rules beyond the numeric caps (Shape B sweep)', () => {
+  it('drops a date outside the RFC 3339 four-digit year range', () => {
+    // `new Date('+275760-09-13')` parses and `toISOString()` round-trips, but
+    // the server's instant pattern refuses the expanded-year form.
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'updated', operator: 'gte', value: '+275760-09-13' },
+      ],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      reason: 'unsupported-value',
+      columnId: 'updated',
+    });
+  });
+
+  it('drops a negative-year date for the same reason', () => {
+    const { dropped } = translate({
+      filters: [
+        { columnId: 'publish', operator: 'lt', value: '-000001-01-01' },
+      ],
+    });
+    expect(dropped[0]).toMatchObject({ reason: 'unsupported-value' });
+  });
+
+  it('keeps the whole request inside the request byte budget', () => {
+    // 100 values of 4096 characters is inside every per-value cap and five
+    // times the request limit.
+    const values = Array.from({ length: 100 }, (_, index) =>
+      `${index}`.padEnd(4_000, 'v'),
+    );
+    const { request, dropped } = translate({
+      filters: [
+        { columnId: 'status', operator: 'in', value: values },
+        { columnId: 'author', operator: 'in', value: values },
+        { columnId: 'title', operator: 'in', value: values },
+      ],
+    });
+    expect(
+      new TextEncoder().encode(JSON.stringify(request)).byteLength,
+    ).toBeLessThanOrEqual(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES);
+    expect(
+      dropped.some(
+        (drop) =>
+          drop.reason === 'filter-widened' &&
+          drop.detail === String(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES),
+      ),
+    ).toBe(true);
+  });
+
+  it('bounds a caller-supplied request id to the normalizer rule', () => {
+    const long = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'r'.repeat(500),
+    });
+    expect(long.request.requestId.length).toBe(128);
+
+    const empty = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => '',
+    });
+    expect(empty.request.requestId.length).toBeGreaterThan(0);
+    expect(empty.request.requestId.length).toBeLessThanOrEqual(128);
+  });
+
+  it('drops a projection field the schema does not declare projectable', async () => {
+    const schema = await buildContentQuerySchema();
+    const projectable = new Set(
+      schema.fields.filter((field) => field.projectable).map((f) => f.id),
+    );
+
+    const { request, dropped } = contentListViewStateToDataQueryRequest(
+      viewState(),
+      {
+        createRequestId: () => 'fixed',
+        // A typo, a withheld document field, and the tenant field the schema
+        // never declares — each a 400 for the whole list if it were sent.
+        projection: ['titel', 'body', 'tenantId', 'title'],
+      },
+    );
+
+    expect(request.projection).toEqual(['id', 'title']);
+    for (const field of request.projection ?? []) {
+      expect(projectable.has(field)).toBe(true);
+    }
+    expect(
+      dropped.filter((drop) => drop.reason === 'unsupported-value'),
+    ).toHaveLength(3);
+  });
+
+  it('drops a projection entry that is not a usable field id', () => {
+    const { request, dropped } = contentListViewStateToDataQueryRequest(
+      viewState(),
+      {
+        createRequestId: () => 'fixed',
+        projection: ['', 'x'.repeat(300), 'title'],
+      },
+    );
+    expect(request.projection).toEqual(['id', 'title']);
+    expect(
+      dropped.filter((drop) => drop.reason === 'unsupported-value'),
+    ).toHaveLength(2);
+  });
+
+  it('de-duplicates and always projects the identity field', () => {
+    const deduped = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'fixed',
+      projection: ['title', 'title'],
+    });
+    expect(deduped.request.projection).toEqual(['id', 'title']);
+  });
+
+  it('caps the projection count at the normalizer limit', async () => {
+    const schema = await buildContentQuerySchema();
+    const projectable = schema.fields
+      .filter((field) => field.projectable)
+      .map((field) => field.id);
+    // Every declared field, so the cap is exercised with REAL ids only.
+    const { request } = contentListViewStateToDataQueryRequest(viewState(), {
+      createRequestId: () => 'fixed',
+      projection: projectable,
+    });
+    expect(request.projection?.length).toBe(
+      Math.min(projectable.length, CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS),
+    );
+  });
+});
+
+describe('the bounded request survives the real normalizer', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const execute = (state: Partial<DataTableViewState>) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(state), {
+        createRequestId: () => 'bounded-request',
+        projection: ['id', 'title'],
+      }).request,
+    );
+
+  it('accepts a search of 4093 characters plus one emoji', async () => {
+    // Reproduces the reported 400: this is 4095 UTF-16 units before wildcards.
+    await expect(
+      execute({ search: `${'x'.repeat(4093)}😀` }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts an all-astral search', async () => {
+    await expect(
+      execute({ search: '😀'.repeat(4_094) }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts a filter list far past every per-value cap', async () => {
+    const values = Array.from({ length: 400 }, (_, index) =>
+      `${index}`.padEnd(5_000, 'v'),
+    );
+    await expect(
+      execute({
+        search: '😀'.repeat(3_000),
+        filters: [
+          { columnId: 'status', operator: 'in', value: values },
+          { columnId: 'author', operator: 'in', value: values },
+        ],
+      }),
+    ).resolves.toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 3: every mirrored constant is self-enforcing (#2452 finding 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * The client mirrors numbers that live in the schema and in
+ * `@happyvertical/smrt-core`. A hand-copied number that silently drifts is the
+ * defect class this whole issue has been chasing: lowering the server's page
+ * limit while the client keeps seeding and paging by the old one strands rows
+ * with every existing test still green.
+ *
+ * Each assertion below binds one mirrored constant to its source. Where core
+ * exports the constant, the assertion is direct; where it does not, the
+ * assertion is against core's observable BEHAVIOUR (the largest value it
+ * accepts, and the smallest it refuses) rather than being skipped.
+ */
+describe('mirrored constants are pinned to their source', () => {
+  const schemaFor = () => buildContentQuerySchema();
+
+  it('CONTENT_LIST_MAX_PAGE_SIZE === schema.maxPageLimit', async () => {
+    expect(CONTENT_LIST_MAX_PAGE_SIZE).toBe((await schemaFor()).maxPageLimit);
+  });
+
+  it('CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE === schema.defaultPageLimit', async () => {
+    expect(CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE).toBe(
+      (await schemaFor()).defaultPageLimit,
+    );
+  });
+
+  it('CONTENT_LIST_QUERY_IDENTITY_FIELD === schema.identityField', async () => {
+    expect(CONTENT_LIST_QUERY_IDENTITY_FIELD).toBe(
+      (await schemaFor()).identityField,
+    );
+  });
+
+  it('CONTENT_LIST_QUERY_DEFAULT_SORT === schema.defaultSort', async () => {
+    expect([...CONTENT_LIST_QUERY_DEFAULT_SORT]).toEqual(
+      (await schemaFor()).defaultSort,
+    );
+  });
+
+  it('CONTENT_LIST_QUERY_PROJECTABLE_FIELDS === the schema projectable ids', async () => {
+    const schema = await schemaFor();
+    expect([...CONTENT_LIST_QUERY_PROJECTABLE_FIELDS].sort()).toEqual(
+      schema.fields
+        .filter((field) => field.projectable)
+        .map((field) => field.id)
+        .sort(),
+    );
+  });
+
+  it('the offset, filter, in-value and request-byte caps === core', () => {
+    expect(CONTENT_LIST_QUERY_MAX_OFFSET).toBe(MAX_DATA_QUERY_OFFSET);
+    expect(CONTENT_LIST_QUERY_MAX_FILTER_NODES).toBe(MAX_DATA_QUERY_FILTERS);
+    expect(CONTENT_LIST_QUERY_MAX_PROJECTION_FIELDS).toBe(
+      MAX_DATA_QUERY_FILTERS,
+    );
+    expect(CONTENT_LIST_QUERY_MAX_IN_VALUES).toBe(MAX_DATA_QUERY_IN_VALUES);
+    expect(CONTENT_LIST_QUERY_MAX_REQUEST_BYTES).toBe(
+      MAX_DATA_QUERY_REQUEST_BYTES,
+    );
+  });
+
+  // The remaining limits are literals inside core with no export, so they are
+  // pinned to what core actually accepts and refuses.
+  describe('constants core does not export, pinned to its behaviour', () => {
+    let schema: Awaited<ReturnType<typeof buildContentQuerySchema>>;
+
+    beforeEach(async () => {
+      schema = await buildContentQuerySchema();
+    });
+
+    const withFilterValue = (value: string) => ({
+      version: 1 as const,
+      requestId: 'pin',
+      mode: 'rows' as const,
+      filter: {
+        kind: 'condition' as const,
+        field: 'title',
+        operator: 'eq' as const,
+        value,
+      },
+    });
+
+    it('CONTENT_LIST_QUERY_MAX_VALUE_LENGTH is the largest scalar core takes', () => {
+      const atCap = 'a'.repeat(CONTENT_LIST_QUERY_MAX_VALUE_LENGTH);
+      expect(() =>
+        normalizeDataQueryRequest(withFilterValue(atCap), schema),
+      ).not.toThrow();
+      expect(() =>
+        normalizeDataQueryRequest(withFilterValue(`${atCap}a`), schema),
+      ).toThrow();
+    });
+
+    it('CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH is the largest id core takes', () => {
+      const request = (length: number) => ({
+        version: 1 as const,
+        requestId: 'r'.repeat(length),
+        mode: 'count' as const,
+      });
+      expect(() =>
+        normalizeDataQueryRequest(
+          request(CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH),
+          schema,
+        ),
+      ).not.toThrow();
+      expect(() =>
+        normalizeDataQueryRequest(
+          request(CONTENT_LIST_QUERY_MAX_REQUEST_ID_LENGTH + 1),
+          schema,
+        ),
+      ).toThrow();
+    });
+
+    it('CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH is the largest field id core takes', () => {
+      // A field id at the cap is refused for being undeclared, not for its
+      // length; one over the cap is refused for its length. The two error
+      // messages distinguish the rules.
+      const project = (length: number) => ({
+        version: 1 as const,
+        requestId: 'pin',
+        mode: 'rows' as const,
+        projection: ['f'.repeat(length)],
+      });
+      expect(() =>
+        normalizeDataQueryRequest(
+          project(CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH),
+          schema,
+        ),
+      ).toThrow(/projection field is not allowed/);
+      expect(() =>
+        normalizeDataQueryRequest(
+          project(CONTENT_LIST_QUERY_MAX_FIELD_ID_LENGTH + 1),
+          schema,
+        ),
+      ).toThrow(/must be a non-empty string up to/);
+    });
+
+    it('the client byte bound is never smaller than core\u2019s, with or without a sort', () => {
+      // The default view carries no sorting at all: the case where the
+      // normalizer used to inject 84 bytes the client had not counted.
+      for (const state of [
+        viewState(),
+        viewState({ sorting: [{ columnId: 'title', direction: 'asc' }] }),
+        viewState({ search: 'budget', page: 4, pageSize: 25 }),
+      ]) {
+        const { request } = contentListViewStateToDataQueryRequest(state, {
+          createRequestId: () => 'byte-parity',
+        });
+        const clientBytes = new TextEncoder().encode(
+          JSON.stringify(request),
+        ).byteLength;
+        const normalizedBytes = new TextEncoder().encode(
+          JSON.stringify(normalizeDataQueryRequest(request, schema)),
+        ).byteLength;
+        expect(normalizedBytes).toBeLessThanOrEqual(clientBytes);
+      }
+    });
+
+    it('the request byte bound is measured the way core measures it', () => {
+      // The whole point of finding 3: core measures the NORMALIZED request.
+      // A translator-shaped request at the client cap must survive core.
+      const values = Array.from({ length: 100 }, (_, index) =>
+        `${index}`.padEnd(4_000, 'v'),
+      );
+      const { request } = contentListViewStateToDataQueryRequest(
+        viewState({
+          filters: [
+            { columnId: 'status', operator: 'in', value: values },
+            { columnId: 'author', operator: 'in', value: values },
+            { columnId: 'title', operator: 'in', value: values },
+          ],
+        }),
+        { createRequestId: () => 'byte-bound' },
+      );
+      const clientBytes = new TextEncoder().encode(
+        JSON.stringify(request),
+      ).byteLength;
+      expect(clientBytes).toBeLessThanOrEqual(
+        CONTENT_LIST_QUERY_MAX_REQUEST_BYTES,
+      );
+      // The invariant finding 3 was about: core measures the NORMALIZED
+      // request, so the client's measurement is only meaningful if it can
+      // never come out SMALLER. Omitting `sort` breaks this by exactly the 84
+      // bytes core injects, which is why the translator always emits it.
+      const normalized = normalizeDataQueryRequest(request, schema);
+      const normalizedBytes = new TextEncoder().encode(
+        JSON.stringify(normalized),
+      ).byteLength;
+      expect(normalizedBytes).toBeLessThanOrEqual(clientBytes);
+      expect(normalizedBytes).toBeLessThanOrEqual(MAX_DATA_QUERY_REQUEST_BYTES);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review batch 4: NULL semantics agree between local and server mode (#2452)
+// ---------------------------------------------------------------------------
+
+/**
+ * The same shared link must return the same rows whether the host passed a
+ * `query` or not. The local evaluator flattens an absent value to empty text,
+ * so `notEquals`/`notIn` INCLUDE a row with no value; SQL's `<>` is UNKNOWN for
+ * NULL and would exclude it. The executor therefore unions `IS NULL` into both,
+ * exactly as it already did for `in`.
+ */
+describe('null-valued rows through both filter paths', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const rows = [
+    { name: 'with-author', title: 'With author', author: 'Ada Lovelace' },
+    { name: 'other-author', title: 'Other author', author: 'Grace Hopper' },
+    { name: 'no-author', title: 'No author', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of rows) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  /** What the server-backed list renders. */
+  const serverTitles = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'null-semantics',
+        projection: ['id', 'title', 'author'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.title)).sort();
+  };
+
+  /** What the local list renders for the same view state. */
+  const localTitles = (filter: DataTableFilter) =>
+    selectContentListRows(
+      toContentListRows(
+        rows.map((entry) => ({
+          id: entry.name,
+          title: entry.title,
+          author: entry.author,
+        })),
+      ),
+      {
+        ...createContentListController().getState(),
+        filters: [filter],
+      },
+    )
+      .map((row) => row.title)
+      .sort();
+
+  const bothAgree = async (filter: DataTableFilter) => {
+    const [server, local] = [await serverTitles(filter), localTitles(filter)];
+    expect(server).toEqual(local);
+    return server;
+  };
+
+  it('includes the authorless row for `notEquals`, in both modes', async () => {
+    const titles = await bothAgree({
+      columnId: 'author',
+      operator: 'notEquals',
+      value: 'Ada Lovelace',
+    });
+    expect(titles).toEqual(['No author', 'Other author']);
+  });
+
+  it('includes the authorless row for `notIn`, in both modes', async () => {
+    const titles = await bothAgree({
+      columnId: 'author',
+      operator: 'notIn',
+      value: ['Ada Lovelace', 'Grace Hopper'],
+    });
+    expect(titles).toEqual(['No author']);
+  });
+
+  it('keeps `equals` and `in` excluding it, in both modes', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'equals',
+        value: 'Ada Lovelace',
+      }),
+    ).toEqual(['With author']);
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'in',
+        value: ['Ada Lovelace'],
+      }),
+    ).toEqual(['With author']);
+  });
+
+  it('keeps `contains` excluding it, in both modes', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'contains',
+        value: 'Lovelace',
+      }),
+    ).toEqual(['With author']);
+  });
+
+  it('still resolves isNull / isNotNull, which must NOT gain the union', async () => {
+    expect(
+      await serverTitles({ columnId: 'author', operator: 'isNull' }),
+    ).toEqual(['No author']);
+    expect(
+      await serverTitles({ columnId: 'author', operator: 'isNotNull' }),
+    ).toEqual(['Other author', 'With author']);
+  });
+
+  /**
+   * A literal `null` in a filter list names ABSENCE.
+   *
+   * These run the DataTable filter through the TRANSLATOR and then the real
+   * executor against a real database. The earlier partition tests build the
+   * request by hand, which is why a translator that silently stripped the null
+   * entry — sending `notIn ['Ada']` for `notIn ['Ada', null]` and returning
+   * exactly the rows the caller excluded — survived six review rounds.
+   */
+  const listedNull = (
+    operator: 'in' | 'notIn',
+    values: unknown[],
+  ): DataTableFilter =>
+    ({ columnId: 'author', operator, value: values }) as DataTableFilter;
+
+  it('carries a literal null through the translator, not around it', () => {
+    const { request } = contentListViewStateToDataQueryRequest(
+      viewState({ filters: [listedNull('notIn', ['Ada Lovelace', null])] }),
+      { createRequestId: () => 'listed-null' },
+    );
+    const condition = conditions(request.filter)[0];
+    expect(condition.operator).toBe('notIn');
+    expect(condition.value).toEqual(['Ada Lovelace', null]);
+  });
+
+  it('excludes the authorless row for `notIn` WITH a listed null', async () => {
+    expect(
+      await bothAgree(listedNull('notIn', ['Ada Lovelace', null])),
+    ).toEqual(['Other author']);
+  });
+
+  it('includes it for `in` WITH a listed null', async () => {
+    expect(await bothAgree(listedNull('in', ['Ada Lovelace', null]))).toEqual([
+      'No author',
+      'With author',
+    ]);
+  });
+
+  it('resolves a null-only list to absence, in both modes', async () => {
+    expect(await bothAgree(listedNull('in', [null]))).toEqual(['No author']);
+    expect(await bothAgree(listedNull('notIn', [null]))).toEqual([
+      'Other author',
+      'With author',
+    ]);
+  });
+
+  it('resolves a literal null comparand for equals / notEquals', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'equals',
+        value: null,
+      } as DataTableFilter),
+    ).toEqual(['No author']);
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'notEquals',
+        value: null,
+      } as DataTableFilter),
+    ).toEqual(['Other author', 'With author']);
+  });
+
+  it('partitions every list shape end to end, through the translator', async () => {
+    const pairs: Array<[string, DataTableFilter, DataTableFilter]> = [
+      [
+        'plain list',
+        listedNull('in', ['Ada Lovelace']),
+        listedNull('notIn', ['Ada Lovelace']),
+      ],
+      [
+        'list with a null',
+        listedNull('in', ['Ada Lovelace', null]),
+        listedNull('notIn', ['Ada Lovelace', null]),
+      ],
+      ['null-only list', listedNull('in', [null]), listedNull('notIn', [null])],
+    ];
+    const all = ['No author', 'Other author', 'With author'];
+    for (const [label, predicate, negation] of pairs) {
+      const yes = await bothAgree(predicate);
+      const no = await bothAgree(negation);
+      expect(
+        yes.filter((title) => no.includes(title)),
+        `overlap ${label}`,
+      ).toEqual([]);
+      expect([...yes, ...no].sort(), `gap ${label}`).toEqual(all);
+    }
+  });
+
+  it('leaves the absent row out of BOTH sides of an ordered pair, in both modes', async () => {
+    // `gt` and `lte` are not complements for an absent value, deliberately:
+    // absence takes part in no ordered comparison. What matters is that the two
+    // modes agree about it, which the pair below asserts.
+    const above = await bothAgree({
+      columnId: 'author',
+      operator: 'gt',
+      value: 'B',
+    });
+    const below = await bothAgree({
+      columnId: 'author',
+      operator: 'lte',
+      value: 'B',
+    });
+    expect([...above, ...below].sort()).toEqual([
+      'Other author',
+      'With author',
+    ]);
+  });
+
+  it('partitions the rows: a predicate and its negation, no overlap or gap', async () => {
+    const all = ['No author', 'Other author', 'With author'];
+    const pairs: Array<[DataTableFilter, DataTableFilter]> = [
+      [
+        { columnId: 'author', operator: 'equals', value: 'Ada Lovelace' },
+        { columnId: 'author', operator: 'notEquals', value: 'Ada Lovelace' },
+      ],
+      [
+        { columnId: 'author', operator: 'in', value: ['Ada Lovelace'] },
+        { columnId: 'author', operator: 'notIn', value: ['Ada Lovelace'] },
+      ],
+      [
+        { columnId: 'author', operator: 'isNull' },
+        { columnId: 'author', operator: 'isNotNull' },
+      ],
+    ];
+    for (const [predicate, negation] of pairs) {
+      const [yes, no] = [await bothAgree(predicate), await bothAgree(negation)];
+      expect(yes.filter((title) => no.includes(title))).toEqual([]);
+      expect([...yes, ...no].sort()).toEqual(all);
+    }
+  });
+
+  it('excludes the authorless row from every ordered comparison', async () => {
+    // An absent value takes part in no ordered comparison, matching SQL. The
+    // local evaluator used to read it as empty text, which sorts below
+    // everything, so `lt` matched it and the two modes disagreed.
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'lt', value: 'Zzz' }),
+    ).toEqual(['Other author', 'With author']);
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'lte', value: 'Zzz' }),
+    ).toEqual(['Other author', 'With author']);
+    await bothAgree({ columnId: 'author', operator: 'gt', value: 'Ada' });
+    await bothAgree({ columnId: 'author', operator: 'gte', value: 'Ada' });
+  });
+
+  it('agrees for a blank comparand, the case that used to be unalignable', async () => {
+    // `?author.lt=` and `?author.gte=` both compare against the empty string,
+    // where an "absent reads as empty" model and SQL give opposite answers.
+    for (const operator of ['lt', 'lte', 'gt', 'gte'] as const) {
+      await bothAgree({ columnId: 'author', operator, value: '' });
+    }
+  });
+
+  it('agrees on isNull / isNotNull, which the flattened row used to miss', async () => {
+    expect(await bothAgree({ columnId: 'author', operator: 'isNull' })).toEqual(
+      ['No author'],
+    );
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'isNotNull' }),
+    ).toEqual(['Other author', 'With author']);
+  });
+
+  it('never matches a display fallback label, in either mode', async () => {
+    // `toContentListRows` renders `content` for an untyped row and `Untitled
+    // content` for one with no title. Both are presentation: a filter on the
+    // literal label matched every such row locally and none server-side.
+    expect(
+      await bothAgree({
+        columnId: 'type',
+        operator: 'equals',
+        value: 'content',
+      }),
+    ).toEqual([]);
+    expect(
+      await bothAgree({
+        columnId: 'title',
+        operator: 'equals',
+        value: 'Untitled content',
+      }),
+    ).toEqual([]);
+    expect(
+      await bothAgree({
+        columnId: 'title',
+        operator: 'contains',
+        value: 'Untitled',
+      }),
+    ).toEqual([]);
+  });
+
+  it('treats a column that stores empty text as present, in both modes', async () => {
+    // `title` defaults to `''` rather than NULL, so an ordered comparison must
+    // still include it — the null-awareness is about absence, not emptiness.
+    expect(
+      await bothAgree({ columnId: 'title', operator: 'gte', value: 'A' }),
+    ).toEqual(['No author', 'Other author', 'With author']);
+  });
+});
+
+describe('the OR-branch budget that the null union makes reachable', () => {
+  it('mirrors the executor ceiling', () => {
+    expect(CONTENT_LIST_QUERY_MAX_OR_BRANCHES).toBe(
+      MAX_CONTENT_QUERY_OR_BRANCHES,
+    );
+  });
+
+  it('drops filters before the executor would refuse the request', () => {
+    // Each null-safe `notEquals` doubles the DNF; an `all` of them multiplies.
+    const filters = Array.from({ length: 12 }, (_, index) => ({
+      columnId: 'author' as const,
+      operator: 'notEquals' as const,
+      value: `person-${index}`,
+    }));
+    const { request, dropped } = translate({ filters });
+
+    // 2^7 = 128 is exactly the ceiling; 2^8 would be refused.
+    expect(conditions(request.filter).length).toBe(7);
+    expect(
+      dropped.some(
+        (drop) =>
+          drop.reason === 'filter-widened' &&
+          drop.detail === String(CONTENT_LIST_QUERY_MAX_OR_BRANCHES),
+      ),
+    ).toBe(true);
+  });
+
+  it('accounts for search, which is itself three branches', () => {
+    const filters = Array.from({ length: 12 }, (_, index) => ({
+      columnId: 'author' as const,
+      operator: 'notEquals' as const,
+      value: `person-${index}`,
+    }));
+    const { request } = translate({ search: 'budget', filters });
+    // 3 search branches leave room for 5 doublings (3 * 2^5 = 96 <= 128).
+    const notEquals = conditions(request.filter).filter(
+      (entry) => entry.operator === 'ne',
+    );
+    // 3 * 2^5 = 96 fits; 3 * 2^6 = 192 does not.
+    expect(notEquals.length).toBe(5);
+  });
+});
+
+describe('the branch counter mirrors the executor exactly', () => {
+  /** Runs a filter through the real executor and reports whether it survived. */
+  const executorAccepts = async (
+    contents: Contents,
+    filter: unknown,
+  ): Promise<boolean> => {
+    try {
+      await executeContentQuery(contents as unknown as ContentQueryCollection, {
+        version: 1,
+        requestId: 'branch-parity',
+        mode: 'rows',
+        projection: ['id'],
+        filter,
+        page: { kind: 'offset', offset: 0, limit: 1 },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  it('sheds exactly at the boundary the executor refuses', async () => {
+    const build = (count: number) =>
+      translate({
+        filters: Array.from({ length: count }, (_, index) => ({
+          columnId: 'author' as const,
+          operator: 'notEquals' as const,
+          value: `person-${index}`,
+        })),
+      }).request.filter;
+
+    // What the translator emits is always accepted …
+    expect(await executorAccepts(contents, build(12))).toBe(true);
+    // … and one more doubling than it allows itself is not.
+    expect(
+      await executorAccepts(contents, {
+        kind: 'all',
+        filters: Array.from({ length: 8 }, (_, index) => ({
+          kind: 'condition',
+          field: 'author',
+          operator: 'ne',
+          value: `person-${index}`,
+        })),
+      }),
+    ).toBe(false);
+    // Exactly one fewer is accepted, so the mirror is not merely conservative.
+    expect(
+      await executorAccepts(contents, {
+        kind: 'all',
+        filters: Array.from({ length: 7 }, (_, index) => ({
+          kind: 'condition',
+          field: 'author',
+          operator: 'ne',
+          value: `person-${index}`,
+        })),
+      }),
+    ).toBe(true);
+  });
+
+  it('a listed null costs one branch, not two, in both layers', async () => {
+    // `notIn [x, null]` is a single AND group server-side, so eight of them fit
+    // where eight null-safe ones would not.
+    const filters = Array.from({ length: 8 }, (_, index) => ({
+      kind: 'condition' as const,
+      field: 'author',
+      operator: 'notIn' as const,
+      value: [`person-${index}`, null],
+    }));
+    expect(await executorAccepts(contents, { kind: 'all', filters })).toBe(
+      true,
+    );
+  });
+});
+
+describe('the branch counter tracks the negated ordered comparison', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const accepts = async (filter: unknown): Promise<boolean> => {
+    try {
+      await executeContentQuery(contents as unknown as ContentQueryCollection, {
+        version: 1,
+        requestId: 'negated-branch-parity',
+        mode: 'rows',
+        projection: ['id'],
+        filter,
+        page: { kind: 'offset', offset: 0, limit: 1 },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const negatedComparisons = (count: number) => ({
+    kind: 'all' as const,
+    filters: Array.from({ length: count }, (_, index) => ({
+      kind: 'not' as const,
+      filter: {
+        kind: 'condition' as const,
+        field: 'author',
+        operator: 'gt' as const,
+        value: `person-${index}`,
+      },
+    })),
+  });
+
+  it('costs two branches, exactly like the executor', async () => {
+    // A negated ordered comparison unions IS NULL, so seven fit and eight do
+    // not — the same boundary as `ne`. If the mirror still counted one, it
+    // would let fifteen through and the executor would refuse the request.
+    expect(await accepts(negatedComparisons(7))).toBe(true);
+    expect(await accepts(negatedComparisons(8))).toBe(false);
+  });
+
+  it('costs one branch when it is NOT negated', async () => {
+    const plain = (count: number) => ({
+      kind: 'all' as const,
+      filters: Array.from({ length: count }, (_, index) => ({
+        kind: 'condition' as const,
+        field: 'author',
+        operator: 'gt' as const,
+        value: `person-${index}`,
+      })),
+    });
+    expect(await accepts(plain(20))).toBe(true);
+  });
+});
+
+describe('display fallback labels are never compared', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /**
+   * One row with a real title and type, one with neither.
+   *
+   * The collection backfills a blank `title` from `name` on save, so the server
+   * row reads `bare`; the local fixture keeps the empty title, which is exactly
+   * the shape that triggers the `Untitled content` label. The local side is the
+   * one under test here — the server side is the control that says what the
+   * label must NOT match.
+   */
+  const fixtures = [
+    { name: 'typed', title: 'Council budget', type: 'article' },
+    { name: 'bare', title: '', type: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of fixtures) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const localRows = () =>
+    toContentListRows(
+      fixtures.map((entry) => ({
+        id: entry.name,
+        title: entry.title,
+        type: entry.type,
+      })),
+    );
+
+  const localNames = (state: Partial<DataTableViewState>) =>
+    selectContentListRows(localRows(), {
+      ...createContentListController().getState(),
+      ...state,
+    })
+      .map((row) => String(row.content.id))
+      .sort();
+
+  const serverNames = async (state: Partial<DataTableViewState>) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(state), {
+        createRequestId: () => 'fallback-label',
+        projection: ['id', 'name', 'title', 'type'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  const bothAgree = async (state: Partial<DataTableViewState>) => {
+    const [server, local] = [await serverNames(state), localNames(state)];
+    expect(server).toEqual(local);
+    return server;
+  };
+
+  it('renders the labels, so this is genuinely about presentation', () => {
+    const [, bare] = localRows();
+    expect(bare.typeLabel).toBe('Content');
+    expect(bare.type).toBe('content');
+    expect(bare.title).toBe('Untitled content');
+  });
+
+  it('does not match `type equals content` on an untyped row', async () => {
+    expect(
+      await bothAgree({
+        filters: [{ columnId: 'type', operator: 'equals', value: 'content' }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('does not match `title equals Untitled content` on an untitled row', async () => {
+    expect(
+      await bothAgree({
+        filters: [
+          {
+            columnId: 'title',
+            operator: 'equals',
+            value: 'Untitled content',
+          },
+        ],
+      }),
+    ).toEqual([]);
+  });
+
+  it('does not find an untitled row by searching for `untitled`', async () => {
+    expect(await bothAgree({ search: 'untitled' })).toEqual([]);
+  });
+
+  it('still matches the real values, and still finds them by search', async () => {
+    expect(
+      await bothAgree({
+        filters: [{ columnId: 'type', operator: 'equals', value: 'article' }],
+      }),
+    ).toEqual(['typed']);
+    expect(await bothAgree({ search: 'budget' })).toEqual(['typed']);
+  });
+
+  it('keeps `isNull` as the way to ask for an absent value', async () => {
+    // The recovery path for an operator who actually wanted the untyped rows.
+    expect(
+      await bothAgree({
+        filters: [{ columnId: 'type', operator: 'isNull' }],
+      }),
+    ).toEqual(['bare']);
+  });
+});
+
+describe('an impossible calendar date is refused, not rolled forward', () => {
+  const dateFilter = (value: string) =>
+    translate({
+      filters: [{ columnId: 'publish', operator: 'gte', value }],
+    });
+
+  it('drops 2026-02-31 rather than silently querying 2026-03-03', () => {
+    // `new Date('2026-02-31')` IS a valid Date — it rolls forward — so
+    // validating the produced instant reports nothing and the query targets a
+    // day the link never named.
+    expect(new Date('2026-02-31T00:00:00Z').toISOString()).toBe(
+      '2026-03-03T00:00:00.000Z',
+    );
+
+    const { request, dropped } = dateFilter('2026-02-31');
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      scope: 'filter',
+      reason: 'unsupported-value',
+      columnId: 'publish',
+    });
+  });
+
+  it.each([
+    ['a 31st of a 30-day month', '2026-04-31'],
+    ['a 13th month', '2026-13-01'],
+    ['a zero day', '2026-01-00'],
+    ['a leap day in a common year', '2026-02-29'],
+    ['a rolled-forward instant', '2026-02-31T10:00:00.000Z'],
+  ])('drops %s', (_label, value) => {
+    expect(dateFilter(value).request.filter).toBeUndefined();
+  });
+
+  it('keeps every shape a real link carries', () => {
+    for (const [input, expected] of [
+      ['2026-02-01', '2026-02-01T00:00:00.000Z'],
+      ['2026-02-28', '2026-02-28T00:00:00.000Z'],
+      // A real leap day in a leap year.
+      ['2024-02-29', '2024-02-29T00:00:00.000Z'],
+      ['2026-02-01T10:00:00.000Z', '2026-02-01T10:00:00.000Z'],
+      ['2026-02-01t10:00:00.000z', '2026-02-01T10:00:00.000Z'],
+    ] as const) {
+      const { request, dropped } = dateFilter(input);
+      expect(dropped, `dropped ${input}`).toEqual([]);
+      expect(conditions(request.filter)[0]?.value, input).toBe(expected);
+    }
+  });
+
+  it('still drops the out-of-range and unparseable inputs', () => {
+    expect(dateFilter('+275760-09-13').request.filter).toBeUndefined();
+    expect(dateFilter('yesterday').request.filter).toBeUndefined();
+  });
+});
+
+describe('absent values have one documented ordering', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const fixtures = [
+    { name: 'alpha', title: 'Alpha', author: 'Ada' },
+    { name: 'beta', title: 'Beta', author: 'Zoe' },
+    { name: 'none', title: 'None', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of fixtures) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const localOrder = (direction: 'asc' | 'desc') =>
+    selectContentListRows(
+      toContentListRows(
+        fixtures.map((entry) => ({
+          id: entry.name,
+          title: entry.title,
+          author: entry.author,
+        })),
+      ),
+      {
+        ...createContentListController().getState(),
+        sorting: [{ columnId: 'author', direction }],
+      },
+    ).map((row) => String(row.content.id));
+
+  const serverOrder = async (direction: 'asc' | 'desc') => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(
+        viewState({ sorting: [{ columnId: 'author', direction }] }),
+        { createRequestId: () => 'null-order', projection: ['id', 'name'] },
+      ).request,
+    );
+    return result.rows.map((row) => String(row.name));
+  };
+
+  it('sorts an absent value LAST ascending, matching the SQL standard', () => {
+    expect(localOrder('asc')).toEqual(['alpha', 'beta', 'none']);
+  });
+
+  it('sorts an absent value FIRST descending', () => {
+    expect(localOrder('desc')).toEqual(['none', 'beta', 'alpha']);
+  });
+
+  it('keeps present values in their own order either way', () => {
+    expect(localOrder('asc').slice(0, 2)).toEqual(['alpha', 'beta']);
+    expect(localOrder('desc').slice(1)).toEqual(['beta', 'alpha']);
+  });
+
+  it('DIALECT DIVERGENCE: SQLite places an absent value first ascending', async () => {
+    // Pinned to observed behaviour so the documented divergence cannot rot.
+    // `orderBy` carries only `<field> <ASC|DESC>` — `buildOrderBySql` splits on
+    // whitespace and discards anything after the direction — so NULLS
+    // FIRST/LAST is not expressible from this package, and this cannot be
+    // aligned here. See `agents/content-list.md`.
+    expect(await serverOrder('asc')).toEqual(['none', 'alpha', 'beta']);
+    expect(await serverOrder('desc')).toEqual(['beta', 'alpha', 'none']);
+  });
+});
+
+describe('truncation is only permissible when it narrows', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const authors = Array.from({ length: 120 }, (_, index) => `person-${index}`);
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'listed', title: 'Listed', author: 'person-0' },
+      { name: 'unlisted', title: 'Unlisted', author: 'someone-else' },
+      { name: 'none', title: 'None', author: null },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const listFilter = (
+    operator: 'in' | 'notIn',
+    values: unknown[],
+  ): DataTableFilter =>
+    ({ columnId: 'author', operator, value: values }) as DataTableFilter;
+
+  const serverNames = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'narrowing',
+        projection: ['id', 'name'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  it('sheds nothing from a `notIn` that fits', () => {
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', ['person-0', null])],
+    });
+    expect(dropped).toEqual([]);
+    expect(conditions(request.filter)[0].value).toEqual(['person-0', null]);
+  });
+
+  it('drops a `notIn` whose list overflows, rather than applying it partly', () => {
+    // The reported case: a literal null past the hundredth entry is the one the
+    // arrival-ordered cap sheds, which flips the executor onto its "no null
+    // listed" arm and unions `IS NULL` back in — handing back every authorless
+    // row the caller listed `null` to exclude.
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', [...authors, null])],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'filter-widened',
+      columnId: 'author',
+      detail: 'notIn',
+    });
+    // And never reported as a mere clamp.
+    expect(dropped.some((drop) => drop.reason === 'out-of-range')).toBe(false);
+  });
+
+  it('drops an overflowing `notIn` even with no null in the list', () => {
+    // Finding 2: shedding 20 of 120 exclusions returns the 20 shed rows.
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', authors)],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('drops a `notIn` carrying a value too long to send faithfully', () => {
+    const { request, dropped } = translate({
+      filters: [listFilter('notIn', ['person-0', 'x'.repeat(9_000)])],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('still caps an `in`, because losing a disjunct narrows', () => {
+    const { request, dropped } = translate({
+      filters: [listFilter('in', [...authors, null])],
+    });
+    const condition = conditions(request.filter)[0];
+    expect((condition.value as unknown[]).length).toBe(100);
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'out-of-range',
+      columnId: 'author',
+      detail: '121',
+    });
+  });
+
+  it('never returns a row a surviving `notIn` excluded, end to end', async () => {
+    // Whatever the translator emits, the rows it names must not come back.
+    const applied = await serverNames(listFilter('notIn', ['person-0', null]));
+    expect(applied).toEqual(['unlisted']);
+
+    // And when it cannot be applied, the operator is TOLD — the list is wider,
+    // not quietly wrong.
+    const overflow = translate({
+      filters: [listFilter('notIn', [...authors, null])],
+    });
+    expect(overflow.request.filter).toBeUndefined();
+    expect(await serverNames(listFilter('notIn', [...authors, null]))).toEqual([
+      'listed',
+      'none',
+      'unlisted',
+    ]);
+    expect(overflow.dropped[0].reason).toBe('filter-widened');
+  });
+
+  it('reports every widening drop as widening, never as a clamp', () => {
+    const widening = [
+      // A shed conjunct: the filter simply is not applied.
+      translate({
+        filters: Array.from({ length: 60 }, () => ({
+          columnId: 'title' as const,
+          operator: 'equals' as const,
+          value: 'x',
+        })),
+      }),
+      // A shortened `like` matches a superset.
+      translate({
+        filters: [
+          { columnId: 'title', operator: 'contains', value: 'y'.repeat(9_000) },
+        ],
+      }),
+      // A shortened search, likewise.
+      translate({ search: 'z'.repeat(9_000) }),
+    ];
+    for (const { dropped } of widening) {
+      expect(dropped.some((drop) => drop.reason === 'filter-widened')).toBe(
+        true,
+      );
+    }
+  });
+
+  it('keeps reporting a genuine narrowing clamp as out-of-range', () => {
+    // Page size and the `in` cap both answer a subset of the question.
+    expect(translate({ page: 1, pageSize: 10_000 }).dropped).toContainEqual({
+      scope: 'pageSize',
+      reason: 'out-of-range',
+      detail: '10000',
+    });
+  });
+});
+
+describe('a datetime value means one instant for every reader', () => {
+  const withTimezone = <T>(zone: string, run: () => T): T => {
+    const previous = process.env.TZ;
+    process.env.TZ = zone;
+    try {
+      return run();
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  };
+
+  const dateFilter = (value: string) =>
+    translate({
+      filters: [{ columnId: 'updated', operator: 'gte', value }],
+    });
+
+  it('reproduces the hazard: an offset-less time is read as LOCAL time', () => {
+    // Why the guard exists — the same text, two different instants.
+    const utc = withTimezone('UTC', () =>
+      new Date('2026-02-01T00:00').toISOString(),
+    );
+    const tokyo = withTimezone('Asia/Tokyo', () =>
+      new Date('2026-02-01T00:00').toISOString(),
+    );
+    expect(utc).not.toBe(tokyo);
+  });
+
+  it.each([
+    ['no offset and no seconds', '2026-02-01T00:00'],
+    ['no offset', '2026-02-01T00:00:00'],
+    ['no offset with fractional seconds', '2026-02-01T00:00:00.000'],
+  ])('drops a time-bearing value with %s', (_label, value) => {
+    const { request, dropped } = dateFilter(value);
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({
+      scope: 'filter',
+      reason: 'unsupported-value',
+      columnId: 'updated',
+    });
+  });
+
+  it('drops a space-separated value, which leaves the ISO grammar', () => {
+    // RFC 3339 5.6 permits a space by mutual agreement, but `Date` then falls
+    // through to its implementation-defined legacy parser — the same "one text,
+    // two instants" hazard moved from timezone to engine. Refused on purpose,
+    // and NOT for the reason the seconds rule was: this one carries an offset.
+    const { request, dropped } = dateFilter('2026-02-01 10:00:00Z');
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'unsupported-value' });
+  });
+
+  it('validates and parses the SAME string', () => {
+    // Validating `text.trim()` and then parsing `text` let a trailing space
+    // through: V8's ISO parser rejects whitespace and falls back to the legacy
+    // parser, which reads a bare date as LOCAL midnight.
+    expect(
+      withTimezone('Europe/London', () =>
+        new Date('2026-02-01 ').toISOString(),
+      ),
+    ).not.toBe(
+      withTimezone('Asia/Tokyo', () => new Date('2026-02-01 ').toISOString()),
+    );
+
+    for (const value of [
+      '2026-02-01 ',
+      ' 2026-02-01',
+      '  2026-02-01T10:00:00Z  ',
+    ]) {
+      const london = withTimezone('Europe/London', () => dateFilter(value));
+      const tokyo = withTimezone('Asia/Tokyo', () => dateFilter(value));
+      expect(london.dropped, JSON.stringify(value)).toEqual([]);
+      expect(
+        conditions(london.request.filter)[0]?.value,
+        `${JSON.stringify(value)} differs by timezone`,
+      ).toBe(conditions(tokyo.request.filter)[0]?.value);
+    }
+    // And a padded value means exactly what the unpadded one does.
+    expect(conditions(dateFilter('2026-02-01 ').request.filter)[0].value).toBe(
+      conditions(dateFilter('2026-02-01').request.filter)[0].value,
+    );
+  });
+
+  it.each([
+    [
+      'a bare calendar day, read as UTC midnight',
+      '2026-02-01',
+      '2026-02-01T00:00:00.000Z',
+    ],
+    ['a Z instant', '2026-02-01T10:00:00Z', '2026-02-01T10:00:00.000Z'],
+    [
+      'fractional seconds',
+      '2026-02-01T10:00:00.500Z',
+      '2026-02-01T10:00:00.500Z',
+    ],
+    [
+      'lower-case t and z, which RFC 3339 permits',
+      '2026-02-01t10:00:00.000z',
+      '2026-02-01T10:00:00.000Z',
+    ],
+    [
+      'a positive offset',
+      '2026-02-01T10:00:00+05:00',
+      '2026-02-01T05:00:00.000Z',
+    ],
+    [
+      'a negative offset',
+      '2026-02-01T10:00:00-05:00',
+      '2026-02-01T15:00:00.000Z',
+    ],
+    // Seconds are optional: these carry an offset, so they name one instant.
+    ['Z with no seconds', '2026-02-01T12:30Z', '2026-02-01T12:30:00.000Z'],
+    [
+      'an offset with no seconds',
+      '2026-02-01T12:30+09:00',
+      '2026-02-01T03:30:00.000Z',
+    ],
+    [
+      'a single fractional digit',
+      '2026-02-01T12:30:45.5Z',
+      '2026-02-01T12:30:45.500Z',
+    ],
+  ])('accepts %s', (_label, value, expected) => {
+    const { request, dropped } = dateFilter(value);
+    expect(dropped).toEqual([]);
+    expect(conditions(request.filter)[0].value).toBe(expected);
+  });
+
+  it('produces an identical request in two timezones, for every accepted shape', () => {
+    for (const value of [
+      '2026-02-01',
+      '2026-02-01 ',
+      '2026-02-01T10:00:00Z',
+      '2026-02-01T10:00:00+05:00',
+      '2026-02-01t10:00:00.000z',
+      '2026-02-01T12:30Z',
+      '2026-02-01T12:30+09:00',
+    ]) {
+      const london = withTimezone('Europe/London', () => dateFilter(value));
+      const tokyo = withTimezone('Asia/Tokyo', () => dateFilter(value));
+      expect(
+        contentListQueryRequestKey(london.request),
+        `${value} differs by timezone`,
+      ).toBe(contentListQueryRequestKey(tokyo.request));
+    }
+  });
+
+  it('would have differed by timezone before the guard', () => {
+    // The value the guard now refuses is exactly the one that used to vary.
+    const london = withTimezone('Europe/London', () =>
+      dateFilter('2026-02-01T00:00:00'),
+    );
+    const tokyo = withTimezone('Asia/Tokyo', () =>
+      dateFilter('2026-02-01T00:00:00'),
+    );
+    // Both drop it, so both requests are identical AND carry no filter.
+    expect(london.request.filter).toBeUndefined();
+    expect(contentListQueryRequestKey(london.request)).toBe(
+      contentListQueryRequestKey(tokyo.request),
+    );
+  });
+});
+
+describe('a shortened pattern still matches a superset', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /** The row the operator names, whose title ends in a distinctive marker. */
+  const longTitle = `${'A'.repeat(4_094)}END`;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'named', title: longTitle },
+      { name: 'other', title: `${'A'.repeat(4_094)}OTHER` },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const patternFor = (operator: 'contains' | 'startsWith' | 'endsWith') =>
+    conditions(
+      translate({
+        filters: [{ columnId: 'title', operator, value: longTitle }],
+      }).request.filter,
+    )[0].value as string;
+
+  it('keeps the TRAILING characters for `endsWith`', () => {
+    // Keeping the leading characters turns `%…END` into `%AAAA…`, which names a
+    // different ending: the row the operator asked for stops matching while
+    // unrelated rows start. Neither superset nor subset — so not a widening,
+    // and not something `filter-widened` could honestly describe.
+    const pattern = patternFor('endsWith');
+    expect(pattern.startsWith('%')).toBe(true);
+    expect(pattern.endsWith('END')).toBe(true);
+  });
+
+  it('keeps the LEADING characters for `startsWith` and `contains`', () => {
+    expect(patternFor('startsWith').startsWith('A')).toBe(true);
+    expect(patternFor('contains').startsWith('%A')).toBe(true);
+  });
+
+  it('still matches the named row after truncation, in every direction', async () => {
+    for (const operator of ['contains', 'startsWith', 'endsWith'] as const) {
+      const result = await executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        contentListViewStateToDataQueryRequest(
+          viewState({
+            filters: [{ columnId: 'title', operator, value: longTitle }],
+          }),
+          { createRequestId: () => 'superset', projection: ['id', 'name'] },
+        ).request,
+      );
+      const names = result.rows.map((row) => String(row.name));
+      // The superset property: whatever else comes back, the row the operator
+      // named must be in it.
+      expect(names, operator).toContain('named');
+    }
+  });
+
+  it('reports the shortened pattern as a widening, which it now truly is', () => {
+    const { dropped } = translate({
+      filters: [{ columnId: 'title', operator: 'endsWith', value: longTitle }],
+    });
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'filter-widened',
+      columnId: 'title',
+      detail: 'endsWith',
+    });
+  });
+});
+
+describe('every lost list entry is reported', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'feb', title: 'Feb', publish_date: new Date('2026-02-01') },
+      { name: 'mar', title: 'Mar', publish_date: new Date('2026-03-01') },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  it('reports an unusable entry in a mixed `in` list', () => {
+    // `?publish.in=2026-02-01,soon,2026-02-31` — one usable value, one that
+    // cannot be parsed, one impossible calendar day. The filter is applied as a
+    // genuine SUBSET, which is allowed, but silence about it left the toolbar
+    // stating a three-value filter while the query asked for one.
+    const { request, dropped } = translate({
+      filters: [
+        {
+          columnId: 'publish',
+          operator: 'in',
+          value: ['2026-02-01', 'soon', '2026-02-31'],
+        },
+      ],
+    });
+    const condition = conditions(request.filter)[0];
+    expect(condition.value).toEqual(['2026-02-01T00:00:00.000Z']);
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'unsupported-value',
+      columnId: 'publish',
+      detail: 'in',
+    });
+  });
+
+  it('applies the surviving subset, end to end', async () => {
+    const { request } = contentListViewStateToDataQueryRequest(
+      viewState({
+        filters: [
+          {
+            columnId: 'publish',
+            operator: 'in',
+            value: ['2026-02-01', 'soon'],
+          },
+        ],
+      }),
+      { createRequestId: () => 'mixed-in', projection: ['id', 'name'] },
+    );
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request,
+    );
+    expect(result.rows.map((row) => String(row.name))).toEqual(['feb']);
+  });
+
+  it('reports nothing when every entry survives', () => {
+    const { dropped } = translate({
+      filters: [
+        {
+          columnId: 'publish',
+          operator: 'in',
+          value: ['2026-02-01', '2026-03-01'],
+        },
+      ],
+    });
+    expect(dropped).toEqual([]);
+  });
+
+  it('drops the whole `notIn` instead, because losing an entry widens it', () => {
+    const { request, dropped } = translate({
+      filters: [
+        {
+          columnId: 'publish',
+          operator: 'notIn',
+          value: ['2026-02-01', 'soon'],
+        },
+      ],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('leaves no lost entry unreported, for any list shape', () => {
+    // The invariant: applied exactly, applied as a true superset, applied as a
+    // true subset AND reported, or not applied. Never silently different.
+    const shapes: Array<[string, unknown[]]> = [
+      ['an unusable entry', ['2026-02-01', 'soon']],
+      ['an impossible day', ['2026-02-01', '2026-02-31']],
+      ['an offset-less time', ['2026-02-01', '2026-02-01T00:00']],
+    ];
+    for (const [label, value] of shapes) {
+      const { request, dropped } = translate({
+        filters: [{ columnId: 'publish', operator: 'in', value }],
+      });
+      const emitted = conditions(request.filter)[0]?.value as unknown[];
+      expect(emitted.length, label).toBeLessThan(value.length);
+      expect(dropped.length, `${label} went unreported`).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('a lower-case instant is canonicalized before it is parsed', () => {
+  const dateFilter = (value: string) =>
+    translate({ filters: [{ columnId: 'updated', operator: 'gte', value }] });
+
+  /** Every string this translation hands to the `Date` constructor. */
+  function parsedStrings(run: () => void): string[] {
+    const seen: string[] = [];
+    const RealDate = globalThis.Date;
+    class RecordingDate extends RealDate {
+      constructor(...args: ConstructorParameters<typeof RealDate>) {
+        if (typeof args[0] === 'string') seen.push(args[0]);
+        super(...args);
+      }
+    }
+    vi.stubGlobal('Date', RecordingDate);
+    try {
+      run();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return seen;
+  }
+
+  it('hands `Date` a string inside the ECMA-262 grammar', () => {
+    // The mechanism, not the outcome. V8 happens to read a lower-case `t`/`z`
+    // as UTC, so asserting the parsed value passes either way — that is luck,
+    // not a guarantee, and another engine may use different heuristics. What
+    // has to hold is that the string REACHING `Date` never leaves the
+    // specified format in the first place.
+    const strict =
+      /^\d{4}-\d{2}-\d{2}(?:T([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d))?$/;
+    const seen = parsedStrings(() => {
+      dateFilter('2026-02-01t12:30:00z');
+      dateFilter('2026-02-01t12:30+09:00');
+      dateFilter('2026-02-01T12:30:00Z');
+      dateFilter('2026-02-01');
+    });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const value of seen) {
+      expect(value, `${value} leaves the Date Time String Format`).toMatch(
+        strict,
+      );
+    }
+  });
+
+  it('still resolves to the instant the input named', () => {
+    expect(
+      conditions(dateFilter('2026-02-01t12:30:00z').request.filter)[0].value,
+    ).toBe('2026-02-01T12:30:00.000Z');
+  });
+
+  it('means the same as the upper-case input, in every timezone', () => {
+    const previous = process.env.TZ;
+    try {
+      for (const zone of ['UTC', 'Asia/Tokyo', 'America/Sao_Paulo']) {
+        process.env.TZ = zone;
+        expect(
+          conditions(dateFilter('2026-02-01t12:30:00z').request.filter)[0]
+            .value,
+          zone,
+        ).toBe(
+          conditions(dateFilter('2026-02-01T12:30:00Z').request.filter)[0]
+            .value,
+        );
+      }
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  it('canonicalizes a lower-case offset form too', () => {
+    expect(
+      conditions(dateFilter('2026-02-01t12:30+09:00').request.filter)[0].value,
+    ).toBe('2026-02-01T03:30:00.000Z');
+  });
+});
+
+describe('a blank comparand means the same thing in both modes', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /** `author` is nullable, so an absent value is a real SQL NULL. */
+  const rows = [
+    { name: 'named', title: 'Named', author: 'Ada Lovelace' },
+    { name: 'blank', title: 'Blank', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of rows) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const serverNames = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'blank-comparand',
+        projection: ['id', 'name', 'author'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  const localNames = (filter: DataTableFilter) =>
+    selectContentListRows(
+      toContentListRows(
+        rows.map((entry) => ({
+          id: entry.name,
+          title: entry.title,
+          author: entry.author,
+        })),
+      ),
+      { ...createContentListController().getState(), filters: [filter] },
+    )
+      .map((row) => String(row.content.id))
+      .sort();
+
+  const bothAgree = async (filter: DataTableFilter) => {
+    const [server, local] = [await serverNames(filter), localNames(filter)];
+    expect(server, JSON.stringify(filter)).toEqual(local);
+    return server;
+  };
+
+  it('does not match an absent value with `equals ""`', async () => {
+    // The flattened row reads an absent author as empty text, so comparing as
+    // text answered a question about `''` rather than about absence.
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'equals', value: '' }),
+    ).toEqual([]);
+  });
+
+  it('DOES match it with `notEquals ""`, because `ne` unions IS NULL', async () => {
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'notEquals', value: '' }),
+    ).toEqual(['blank', 'named']);
+  });
+
+  it('handles a blank entry in `in` and `notIn`', async () => {
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'in', value: [''] }),
+    ).toEqual([]);
+    expect(
+      await bothAgree({ columnId: 'author', operator: 'notIn', value: [''] }),
+    ).toEqual(['blank', 'named']);
+  });
+
+  it('handles a blank pattern for every `like` operator', async () => {
+    for (const operator of ['contains', 'startsWith', 'endsWith'] as const) {
+      expect(
+        await bothAgree({ columnId: 'author', operator, value: '' }),
+      ).toEqual(['named']);
+    }
+  });
+
+  it('keeps agreeing for a non-blank comparand', async () => {
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'equals',
+        value: 'Ada Lovelace',
+      }),
+    ).toEqual(['named']);
+    expect(
+      await bothAgree({
+        columnId: 'author',
+        operator: 'contains',
+        value: 'Ada',
+      }),
+    ).toEqual(['named']);
+  });
+});
+
+describe('a shared link carries a null entry all the way to the rows', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  const rows = [
+    { name: 'ada', title: 'Ada', author: 'Ada Lovelace' },
+    { name: 'grace', title: 'Grace', author: 'Grace Hopper' },
+    { name: 'none', title: 'None', author: null },
+  ];
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of rows) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  /** Live state → query string → restored state → request → executor → rows. */
+  const namesThroughLink = async (filter: DataTableFilter) => {
+    const params = contentListViewStateToSearchParams({ filters: [filter] });
+    const restored = contentListViewStateFromSearchParams(params);
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState(restored), {
+        createRequestId: () => 'through-link',
+        projection: ['id', 'name'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  /** The same filter without the round trip, as the live view would run it. */
+  const namesDirect = async (filter: DataTableFilter) => {
+    const result = await executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      contentListViewStateToDataQueryRequest(viewState({ filters: [filter] }), {
+        createRequestId: () => 'direct',
+        projection: ['id', 'name'],
+      }).request,
+    );
+    return result.rows.map((row) => String(row.name)).sort();
+  };
+
+  it('excludes the authorless row after a full persist and restore', async () => {
+    // The reported failure: the link came back WIDER than the view it was
+    // copied from, so the row the operator excluded reappeared.
+    const filter = {
+      columnId: 'author',
+      operator: 'notIn',
+      value: ['Ada Lovelace', null],
+    } as DataTableFilter;
+    expect(await namesThroughLink(filter)).toEqual(['grace']);
+    expect(await namesThroughLink(filter)).toEqual(await namesDirect(filter));
+  });
+
+  it('means the same thing through the link for every null-bearing shape', async () => {
+    const shapes: Array<[string, DataTableFilter]> = [
+      [
+        'notIn with a null',
+        {
+          columnId: 'author',
+          operator: 'notIn',
+          value: ['Ada Lovelace', null],
+        } as DataTableFilter,
+      ],
+      [
+        'in with a null',
+        {
+          columnId: 'author',
+          operator: 'in',
+          value: ['Ada Lovelace', null],
+        } as DataTableFilter,
+      ],
+      [
+        'null-only list',
+        {
+          columnId: 'author',
+          operator: 'in',
+          value: [null],
+        } as DataTableFilter,
+      ],
+      [
+        'scalar null comparand',
+        {
+          columnId: 'author',
+          operator: 'equals',
+          value: null,
+        } as unknown as DataTableFilter,
+      ],
+      [
+        'scalar not-null comparand',
+        {
+          columnId: 'author',
+          operator: 'notEquals',
+          value: null,
+        } as unknown as DataTableFilter,
+      ],
+      [
+        'a plain list, unaffected',
+        {
+          columnId: 'author',
+          operator: 'notIn',
+          value: ['Ada Lovelace'],
+        } as DataTableFilter,
+      ],
+    ];
+    for (const [label, filter] of shapes) {
+      expect(await namesThroughLink(filter), label).toEqual(
+        await namesDirect(filter),
+      );
+    }
+  });
+});

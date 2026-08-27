@@ -87,6 +87,7 @@ src/routes/api/v1/contents/by-slug/+server.ts
 src/routes/api/v1/contents/facts/+server.ts
 src/routes/api/v1/contents/governance/+server.ts
 src/routes/api/v1/contents/governance/resolve/+server.ts
+src/routes/api/v1/contents/query/+server.ts
 src/routes/api/v1/contentversions/\[id\]/+server.ts
 src/routes/api/v1/contentversions/\[id\]/transparency/+server.ts
 src/routes/api/v1/contentversions/+server.ts

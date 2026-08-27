@@ -1,5 +1,41 @@
+<script module lang="ts">
+import type { DataTableViewState as ContentListDataTableViewState } from '@happyvertical/smrt-ui/data';
+import type { ContentListUrlStateOptions } from '../content-list-url-state.js';
+
+/**
+ * Optional, router-agnostic URL state (#2452).
+ *
+ * `ContentList` never imports a router: it reads `params` once during
+ * initialization and hands the merged parameters back through `onChange`, so a
+ * SvelteKit host calls `replaceState`, a hash router rewrites the fragment, and
+ * a test passes a plain `URLSearchParams`.
+ */
+export interface ContentListUrlStateBinding {
+  /**
+   * Query parameters to restore the view from. Read once, at initialization —
+   * later navigation is the host's to drive (re-key the component to re-read).
+   */
+  params?: URLSearchParams | string | null;
+  /**
+   * Receives the full merged parameter set — every foreign parameter
+   * preserved — whenever the query-affecting state changes. Never called for
+   * the initial restore.
+   */
+  onChange?: (
+    params: URLSearchParams,
+    state: ContentListDataTableViewState,
+  ) => void;
+  /** Prefix and default page size, forwarded to the URL-state module. */
+  options?: ContentListUrlStateOptions;
+}
+</script>
+
 <script lang="ts">
-import { DataTable, type DataTableColumn } from '@happyvertical/smrt-ui/data';
+import {
+  DataTable,
+  type DataTableColumn,
+  type DataTableViewState,
+} from '@happyvertical/smrt-ui/data';
 import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
 import { Checkbox, Input, Select } from '@happyvertical/smrt-ui/forms';
 import { useI18n } from '@happyvertical/smrt-ui/i18n';
@@ -23,23 +59,65 @@ import {
   contentStateVariant,
   contentStatusVariant,
   createContentListController,
+  CONTENT_LIST_STATUS_OPTIONS,
+  CONTENT_LIST_TYPE_OPTIONS,
+  CONTENT_LIST_UNREPRESENTABLE_OPTION,
+  type ContentListSelectFilterState,
   isContentListFilterExactly,
-  normalizeContentType,
+  normalizeContentListTypeLock,
   paginateContentListRows,
-  readContentListFilter,
+  readContentListSelectFilter,
   resolveContentHref,
   selectableContentListRowIds,
   selectContentListRows,
   toContentListRows,
 } from '../content-list-controller.js';
+import {
+  CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+  type ContentListQueryDrop,
+  type ContentListQueryDropReason,
+  type ContentListQueryNotices,
+  type ContentListQueryRequestOptions,
+  type ContentListQuerySource,
+  contentListQueryErrorMessage,
+  contentListQueryExactTotal,
+  contentListQueryRowsToContents,
+  contentListQueryTotalValue,
+  CONTENT_LIST_QUERY_MAX_OFFSET,
+  contentListViewStateToDataQueryRequest,
+  readContentListQueryNotices,
+  resolveContentListMaxPageSize,
+} from '../content-list-query.js';
+import {
+  type ContentListSavedView,
+  type ContentListSavedViewStore,
+  restoreContentListSavedView,
+  toContentListSavedViewInput,
+} from '../content-list-saved-views.js';
+import {
+  applyContentListViewState,
+  type ContentListStateDrop,
+  type ContentListStateDropReason,
+  type ContentListStateValidationOptions,
+  mergeContentListViewStateIntoSearchParams,
+  readContentListViewStateFromSearchParams,
+} from '../content-list-url-state.js';
 import { M } from '../i18n.contribution.js';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
 
+/** One reported refusal, from a restore or from the query translation. */
+type ContentListDropNotice = ContentListStateDrop | ContentListQueryDrop;
+
 interface Props {
   apiBaseUrl?: string;
-  contents: ContentData[];
+  /**
+   * Client-side rows. Ignored when `query` is supplied — the server then owns
+   * filtering, sorting, and paging, and these rows would be a second, disagreeing
+   * source of truth.
+   */
+  contents?: ContentData[];
   type?: string;
   defaultViewMode?: ContentListViewMode;
   onEdit: (content: ContentData) => void;
@@ -55,11 +133,22 @@ interface Props {
   onRetry?: () => void;
   /** Opt-in agent addressability. Non-table presentations land with #2456. */
   dataSurface?: ContentListDataSurface;
+  /**
+   * Opt-in server-backed rows (#2452). `bind()` is called exactly once, during
+   * initialization, so a `remoteQuery(...)` binding is disposed with this
+   * component. Supplying it switches the list into server mode: `contents` is
+   * ignored and the local select/paginate transform never runs.
+   */
+  query?: ContentListQuerySource;
+  /** Opt-in shareable URL state. The host owns navigation. */
+  urlState?: ContentListUrlStateBinding;
+  /** Opt-in saved views. `createContentListSavedViewStore()` is the default store. */
+  savedViews?: ContentListSavedViewStore;
 }
 
 let {
   apiBaseUrl = '/api/v1',
-  contents,
+  contents = [],
   type = undefined,
   defaultViewMode = 'grid',
   onEdit,
@@ -71,19 +160,175 @@ let {
   error = null,
   onRetry = undefined,
   dataSurface = undefined,
+  query = undefined,
+  urlState = undefined,
+  savedViews = undefined,
 }: Props = $props();
+
+const initialQuery = untrack(() => query);
 
 // One controller owns search, filters, sorting, paging, and selection for
 // every presentation. The view mode lives beside it, so switching presentation
 // never touches query or selection state.
 // The seed is intentionally the initial `type`; the effect below keeps the
 // locked filter in sync afterwards.
+const initialUrlState = untrack(() => urlState);
+
+/**
+ * THE page-size ceiling. Resolved once, from every configured limit, and used
+ * by the controller seed, the URL sanitizer, the saved-view sanitizer and the
+ * translator — so the size the UI pages by and the size the server applies are
+ * the same number by construction rather than by coincidence.
+ *
+ * Every candidate narrows (`Math.min`, inside `resolveContentListMaxPageSize`):
+ * a host that sets `query.request.maxPageSize` as a server row budget must not
+ * have it discarded because a looser `urlState.options.maxPageSize` also exists.
+ */
+const maxPageSize = resolveContentListMaxPageSize(
+  initialUrlState?.options?.maxPageSize,
+  initialQuery?.request?.maxPageSize,
+);
+
+/**
+ * The page size a server-backed list runs at, clamped to that ceiling.
+ *
+ * `null` (unpaginated) is only expressible locally: the query endpoint always
+ * applies a limit, so an unpaginated server list would render one silent page
+ * with no controls. This value is the seed, the URL layer's notion of the
+ * default (so a link without `size` restores it rather than wiping it), and the
+ * translator's fallback — one number in all three places. Clamping the seed
+ * matters on its own: a `defaultPageSize` above the ceiling would seed a page
+ * size the request then silently reduces, and `totalPages` would compute 1.
+ */
+const serverPageSize = initialQuery
+  ? Math.min(
+      Math.max(
+        1,
+        Math.floor(
+          initialQuery.request?.defaultPageSize ??
+            CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+        ),
+      ),
+      maxPageSize,
+    )
+  : null;
+
+/** Validation options shared by the URL and saved-view restore paths. */
+const restoreOptions: ContentListStateValidationOptions = { maxPageSize };
+
+/**
+ * URL options with the server page size filled in as the default, so a link
+ * that omits `size` restores the seed instead of the local `null`, and a link
+ * this list writes omits `size` while the list is at its default.
+ */
+const urlStateOptions: ContentListUrlStateOptions = {
+  ...initialUrlState?.options,
+  maxPageSize,
+  ...(serverPageSize !== null &&
+  initialUrlState?.options?.defaultPageSize === undefined
+    ? { defaultPageSize: serverPageSize }
+    : {}),
+};
+
 const controller = createContentListController({
   type: untrack(() => type),
+  // Local mode keeps the historical unpaginated list.
+  ...(serverPageSize === null ? {} : { pageSize: serverPageSize }),
 });
+
+/** Everything a restore or a translation refused, surfaced as one notice. */
+let restoreDrops = $state<ContentListDropNotice[]>([]);
+let queryDrops = $state<ContentListQueryDrop[]>([]);
+/**
+ * A capped-offset redirect, held apart from `queryDrops` so it survives the
+ * corrective re-translation that immediately follows it.
+ */
+let pageCapDrop = $state<ContentListQueryDrop | null>(null);
+/** Which page the last offset cap redirected to. Named in the notice. */
+let pageCapCorrectedTo = $state<number | undefined>(undefined);
+let dismissedDropKey = $state('');
+let resultNotices = $state<ContentListQueryNotices>({
+  truncated: false,
+  warnings: [],
+});
+/**
+ * The query signature the binding's rows and total currently describe.
+ *
+ * A total is only authoritative for the query that produced it. `remoteQuery`
+ * keeps serving the PREVIOUS query's total while a new request is in flight, so
+ * a saved view or a programmatic patch that changes the query AND restores a
+ * page past the old query's last one would have that page clamped away before
+ * its own total ever arrived.
+ */
+let settledSignature = $state<string | undefined>(undefined);
+
+function toSearchParams(
+  input: URLSearchParams | string | null | undefined,
+): URLSearchParams {
+  if (!input) return new URLSearchParams();
+  return new URLSearchParams(input);
+}
+
+// The URL restore runs before the first snapshot is taken, so the initial
+// render is already the restored view rather than a flash of the default one.
+// `applyContentListViewState` merges over current state instead of dispatching
+// `setSearch`/`setFilters`, which would reset the restored page.
+// An empty query string is a valid binding, not an absent one: the reader
+// still applies the configured defaults, so a page opened at a bare path must
+// restore the same way one opened with parameters does.
+if (initialUrlState?.params !== undefined && initialUrlState?.params !== null) {
+  const reading = readContentListViewStateFromSearchParams(
+    toSearchParams(initialUrlState.params),
+    urlStateOptions,
+  );
+  // A restore REPLACES the filter set, including the type filter the controller
+  // was seeded with. On a locked list the lock effect would then re-apply it
+  // through `setFilters`, which resets paging — silently discarding a `?page=`
+  // the same link just restored. Folding the lock into the restored patch keeps
+  // it to one `replaceState`, and leaves the effect's first run a no-op.
+  const initialLockedType = normalizeContentListTypeLock(untrack(() => type));
+  const patch =
+    initialLockedType === null
+      ? reading.state
+      : {
+          ...reading.state,
+          filters: [
+            ...(reading.state.filters ?? []).filter(
+              (filter) => filter.columnId !== CONTENT_LIST_TYPE_FILTER_ID,
+            ),
+            {
+              columnId: CONTENT_LIST_TYPE_FILTER_ID,
+              operator: 'equals' as const,
+              value: initialLockedType,
+            },
+          ],
+        };
+  applyContentListViewState(controller, patch, restoreOptions);
+  restoreDrops = reading.dropped;
+}
+
+/**
+ * The server-query binding, created once. `bind()` runs inside this
+ * component's initialization, so a binding that registers an `$effect` teardown
+ * (as `remoteQuery` does) is disposed when this component is.
+ */
+const queryBinding = initialQuery?.bind();
+const queryRequestOptions: ContentListQueryRequestOptions | undefined =
+  initialQuery
+    ? {
+        ...initialQuery.request,
+        maxPageSize,
+        ...(serverPageSize === null ? {} : { defaultPageSize: serverPageSize }),
+      }
+    : undefined;
+const serverBacked = queryBinding !== undefined;
+
 let snapshot = $state(controller.snapshot());
 let viewMode: ContentListViewMode = $state(untrack(() => defaultViewMode));
 let pendingDelete = $state<ContentListRow | null>(null);
+let savedViewList = $state<ContentListSavedView[]>([]);
+let selectedSavedViewId = $state('');
+let savedViewName = $state('');
 
 $effect(() =>
   controller.subscribe((transition) => {
@@ -93,23 +338,70 @@ $effect(() =>
 
 const tableState = $derived(snapshot.state);
 
+// In server mode the controller's page size must be a number the request can
+// actually carry, or `totalPages` and `showPagination` describe a page the
+// server never returned and rows are stranded behind a plausible-looking single
+// page. Two ways in, both enforced against LIVE state because a saved view, a
+// link, and a data-surface `set-page-size` all arrive after mount:
+//
+//   null          → unpaginated, which the endpoint cannot express;
+//   > maxPageSize → the translator clamps the request, so leaving the
+//                   controller above the ceiling makes the two disagree.
+//
+// `setPageSize` also resets the page, which is correct: a different page size
+// means the old page number addresses different rows.
+$effect(() => {
+  if (serverPageSize === null) return;
+  const current = tableState.pageSize;
+  if (current !== null && current <= maxPageSize) return;
+  const next = current === null ? serverPageSize : maxPageSize;
+  const reason: ContentListQueryDropReason =
+    current === null ? 'unpaginated-unsupported' : 'out-of-range';
+  untrack(() => {
+    controller.dispatch({ type: 'setPageSize', pageSize: next });
+    restoreDrops = [
+      ...restoreDrops.filter(
+        (drop) =>
+          drop.scope !== 'pageSize' ||
+          (drop.reason !== 'unpaginated-unsupported' &&
+            drop.reason !== 'out-of-range'),
+      ),
+      {
+        scope: 'pageSize',
+        reason,
+        ...(current === null ? {} : { detail: String(current) }),
+      },
+    ];
+  });
+});
+
 /** The normalized type the `type` prop locks the list to, if any. */
-const lockedType = $derived(type?.trim() ? normalizeContentType(type) : null);
+const lockedType = $derived(normalizeContentListTypeLock(type));
 
 // A `type` prop locks the type filter, exactly as the legacy select did. The
 // lock is enforced against the live state, not only against the prop, because a
 // data-surface `set-filters` or `reset` command can otherwise replace or clear
 // it. The equality guard keeps the effect from dispatching in a loop.
+// Tracks the previous prop so an unlocked list can tell "the lock was just
+// removed" from "there was never a lock". A plain binding, so writing it here
+// cannot re-trigger the effect.
+let previousLockedType: string | null = untrack(() => lockedType);
+
 $effect(() => {
   const locked = lockedType;
   if (locked === null) {
-    // Unlocked: the toolbar select owns the filter. Only reading `type` here
-    // keeps the legacy behaviour of clearing it when the prop is removed.
+    const lockWasRemoved = previousLockedType !== null;
+    previousLockedType = null;
+    // Unlocked: the toolbar select owns the filter. Clear it only when the prop
+    // actually went away, because clearing on every run would also discard a
+    // type filter restored from a link or a saved view.
+    if (!lockWasRemoved) return;
     untrack(() =>
       applyContentListFilter(controller, CONTENT_LIST_TYPE_FILTER_ID, null),
     );
     return;
   }
+  previousLockedType = locked;
   if (
     isContentListFilterExactly(tableState, CONTENT_LIST_TYPE_FILTER_ID, locked)
   )
@@ -131,31 +423,256 @@ const columnLabels = $derived({
 });
 
 const queryColumns = $derived(buildContentListColumns(columnLabels));
-const rows = $derived(toContentListRows(contents));
-const queryRows = $derived(
-  selectContentListRows(rows, tableState, queryColumns),
+const sourceContents = $derived(
+  queryBinding ? contentListQueryRowsToContents(queryBinding.rows) : contents,
 );
-const pageRows = $derived(paginateContentListRows(queryRows, tableState));
+const rows = $derived(toContentListRows(sourceContents));
+// In server mode the returned rows ARE the answer: the server already applied
+// the search, the filters, the sort, and the page. Running the local transform
+// over them again would re-filter with subtly different semantics (untrimmed
+// search, case-insensitive comparison, a `site` predicate the server never saw)
+// and could hide rows the server deliberately returned.
+const queryRows = $derived(
+  serverBacked ? rows : selectContentListRows(rows, tableState, queryColumns),
+);
+const pageRows = $derived(
+  serverBacked ? rows : paginateContentListRows(queryRows, tableState),
+);
+/** Server row count for the whole query, not just the rendered page. */
+const serverTotal = $derived(
+  queryBinding ? contentListQueryTotalValue(queryBinding.total) : undefined,
+);
+const totalRowCount = $derived(
+  serverBacked ? (serverTotal ?? rows.length) : queryRows.length,
+);
+
+/**
+ * The row count the current page may be clamped against, or `undefined` when
+ * no authoritative count exists.
+ *
+ * Clamping MOVES the operator, so every input has to be judged on whether it is
+ * exactly right — twice now a clamp has acted on a number that was not the
+ * total. The complete set:
+ *
+ * | Input | Authoritative? |
+ * |---|---|
+ * | local mode row count | yes — the supplied array IS the whole result set |
+ * | server total, `exact` | yes |
+ * | server total, `estimated` | NO — clamping on an approximation can hide a page that really exists |
+ * | server total, `unavailable` | NO — the count is unknown, and `rows.length` is the page, not the total |
+ * | no response yet for this query | NO — a page restored from a link must survive until its own count arrives |
+ * | a settled response for a DIFFERENT query | NO — the binding still holds the previous query's total while a new request is in flight |
+ * | a page-size change | n/a — `setPageSize` resets the page itself, so it can never strand an out-of-range one |
+ *
+ * `pageableRowCount` deliberately keeps using the looser
+ * `contentListQueryTotalValue`: an estimate is fine for SHOWING a pager, and
+ * over-offering a page is visible and self-correcting where hiding one is not.
+ */
+const clampableRowCount = $derived(
+  serverBacked
+    ? contentListQueryExactTotal(queryBinding?.total)
+    : queryRows.length,
+);
 
 // The adapter owns filtering, sorting, and paging, so the controller's page has
-// to be clamped against the adapter's result count rather than DataTable's.
+// to be clamped against the result count rather than DataTable's. In server
+// mode that count is the server's total — clamping against the page length
+// would collapse every list to a single page.
 $effect(() => {
-  const totalRows = queryRows.length;
+  const totalRows = clampableRowCount;
+  // Both signatures are read as dependencies on purpose: the effect must re-run
+  // when the SETTLED query changes even if the new query's count happens to
+  // equal the old one's, or a stale page survives on a coincidence.
+  const settled = settledSignature;
+  const signature = querySignature;
+  if (totalRows === undefined) return;
+  if (serverBacked && settled !== signature) return;
+  // Deliberately the TRUE total, not `pageableRowCount`: clamping to the
+  // reachable ceiling here would silently move a crafted `?page=9000` before
+  // the query effect ever sees it, and the operator would never be told why
+  // they landed somewhere else.
   untrack(() => controller.clampPage(totalRows));
 });
 
-// The card presentations have to render their own page controls: DataTable —
-// and with it the page navigation — is only mounted in compact mode, so a page
-// size set from a saved view or a surface command would otherwise strand the
-// operator on page one.
+/**
+ * The last page a server query can actually fetch.
+ *
+ * Offset paging stops at `CONTENT_LIST_QUERY_MAX_OFFSET`, so on a very large
+ * list the arithmetic total implies pages the endpoint will never return.
+ * Advertising them is worse than not offering them: every click past the
+ * boundary silently lands back on the same page.
+ */
+const maxReachablePage = $derived(
+  serverBacked && tableState.pageSize
+    ? Math.floor(CONTENT_LIST_QUERY_MAX_OFFSET / tableState.pageSize) + 1
+    : Number.POSITIVE_INFINITY,
+);
+/**
+ * The row count the pagers may page over. DataTable derives its own page count
+ * from `totalRows` and takes no ceiling, so the ceiling has to be applied to
+ * the number handed to it. `clampPage` deliberately keeps using the true total
+ * (see below).
+ */
+const pageableRowCount = $derived(
+  tableState.pageSize
+    ? Math.min(totalRowCount, maxReachablePage * tableState.pageSize)
+    : totalRowCount,
+);
+// EVERY presentation renders its own page controls, compact included, and
+// `totalRows` is deliberately never handed to DataTable.
+//
+// DataTable runs its own `clampPage(totalRows)` effect against the SAME
+// controller, with no authority rule and no notion of which query a total
+// belongs to. One prop cannot serve both purposes: it drives that clamp AND
+// DataTable's pager, so any total authoritative enough to clamp against is also
+// the only total the pager can show, and vice versa. Passing an
+// authoritative-only total silences the clamp correctly but leaves compact with
+// no pager on an `estimated` total while the card modes still show one — the
+// two modes would then disagree about which pages exist, which is a worse bug
+// than the one being fixed.
+//
+// So ContentList owns paging outright: one clamp (the effect above, with the
+// authority rule) and one pager (below, driven by `pageableRowCount`, which
+// accepts an estimate because SHOWING a page is a different question from
+// MOVING the operator). The same reasoning already made the selection column
+// content-owned in compact mode.
 const totalPages = $derived(
   tableState.pageSize
-    ? Math.max(1, Math.ceil(queryRows.length / tableState.pageSize))
+    ? Math.max(1, Math.ceil(pageableRowCount / tableState.pageSize))
     : 1,
 );
 const showPagination = $derived(Boolean(tableState.pageSize) && totalPages > 1);
+const queryErrorMessage = $derived(
+  queryBinding ? contentListQueryErrorMessage(queryBinding.error) : null,
+);
+/** A host-supplied error still wins: it describes the surrounding page load. */
+const activeError = $derived(error ?? queryErrorMessage);
+const isLoading = $derived(loading || (queryBinding?.loading ?? false));
 /** Rows are already rendered, so a load is a refresh rather than a first fill. */
-const refreshing = $derived(loading && pageRows.length > 0);
+const refreshing = $derived(
+  (queryBinding?.refreshing ?? false) || (isLoading && pageRows.length > 0),
+);
+/**
+ * A retry re-reads the same query, so its answer replaces the rendered rows —
+ * and therefore has to replace the completeness flags that describe them too.
+ * Discarding the envelope here is what left a "rows are missing" notice
+ * standing over a page that came back complete (and the inverse after a
+ * transient error). The signature does not change on a retry, so the query
+ * effect never re-runs and this is the only place that can refresh them.
+ */
+function retryQuery(): void {
+  if (!queryBinding) return;
+  const signature = executedSignature;
+  void queryBinding
+    .retry()
+    .then((result) => {
+      // `retry()` resolves undefined when there is no request to repeat, and a
+      // newer query may have superseded this one while it was in flight.
+      if (result === undefined || executedSignature !== signature) return;
+      resultNotices = readContentListQueryNotices(result);
+    })
+    .catch(() => undefined);
+}
+
+const retryHandler = $derived(
+  onRetry ?? (queryBinding ? retryQuery : undefined),
+);
+
+/**
+ * A signature of exactly the query-affecting state. Selection and expansion are
+ * excluded on purpose: checking a row must not re-run the server query. The
+ * value is a primitive, so an unrelated transition that leaves the query
+ * unchanged does not propagate.
+ */
+const querySignature = $derived(
+  JSON.stringify([
+    tableState.search,
+    tableState.filters,
+    tableState.sorting,
+    tableState.page,
+    tableState.pageSize,
+  ]),
+);
+
+let executedSignature: string | undefined;
+let publishedUrlSignature: string | undefined;
+
+
+$effect(() => {
+  const signature = querySignature;
+  untrack(() => {
+    const state = controller.getState();
+    if (queryBinding && signature !== executedSignature) {
+      executedSignature = signature;
+      const translated = contentListViewStateToDataQueryRequest(
+        state,
+        queryRequestOptions,
+      );
+      // The page-cap drop is held separately because it must OUTLIVE this
+      // translation: the corrective dispatch below re-enters this effect, and
+      // the second translation caps nothing, so a drop stored here would be
+      // overwritten in the same flush and the redirect would be silent.
+      queryDrops = translated.dropped.filter((drop) => drop.scope !== 'page');
+      if (translated.effectivePage !== state.page) {
+        // The offset had to be capped. Move the controller's page marker to the
+        // page the request actually reads, or the UI labels this answer with a
+        // page number the server never saw. The dispatch re-enters this effect
+        // with the corrected signature, which then executes.
+        pageCapDrop = {
+          scope: 'page',
+          reason: 'out-of-range',
+          detail: String(state.page),
+        };
+        pageCapCorrectedTo = translated.effectivePage;
+        controller.dispatch({
+          type: 'setPage',
+          page: translated.effectivePage,
+        });
+        return;
+      }
+      // The redirect notice stands until the operator moves off the page they
+      // were redirected to; clearing it on the corrective re-run would be the
+      // same silence by a different route.
+      if (pageCapDrop !== null && state.page !== pageCapCorrectedTo) {
+        pageCapDrop = null;
+        pageCapCorrectedTo = undefined;
+      }
+      // The binding owns cancellation of a superseded run and already reflects
+      // a failure in its error state, so a rejection here is not also an
+      // unhandled one. The resolved envelope carries the server's completeness
+      // flags, which the binding itself does not expose.
+      void queryBinding
+        .execute(translated.request)
+        .then((result) => {
+          // A newer query may have superseded this one while it was in flight.
+          if (executedSignature !== signature) return;
+          // The binding's rows and total now describe THIS query, so the page
+          // may be clamped against them.
+          settledSignature = signature;
+          resultNotices = readContentListQueryNotices(result);
+        })
+        .catch(() => undefined);
+    }
+    if (publishedUrlSignature === undefined) {
+      // The first pass adopts whatever the restore produced without pushing it
+      // back at the host as a navigation.
+      publishedUrlSignature = signature;
+      return;
+    }
+    if (signature === publishedUrlSignature) return;
+    publishedUrlSignature = signature;
+    const binding = urlState;
+    if (!binding?.onChange) return;
+    binding.onChange(
+      mergeContentListViewStateIntoSearchParams(
+        toSearchParams(binding.params),
+        state,
+        urlStateOptions,
+      ),
+      state as DataTableViewState,
+    );
+  });
+});
 
 const selectedRowKeys = $derived(
   new Set(tableState.selectedRowIds.map((rowId) => String(rowId))),
@@ -175,13 +692,27 @@ const somePageSelected = $derived(
 );
 const selectedCount = $derived(tableState.selectedRowIds.length);
 
+/** Synthetic ids the adapter minted for rows that carry no durable identity. */
+const unidentifiedRowKeys = $derived(
+  new Set(
+    rows.filter((row) => !row.identified).map((row) => String(row.id)),
+  ),
+);
+
 // DataTable's own selection column and data-surface commands can both introduce
 // ids for rows that carry no durable identity. Normalizing here covers every
 // path at once; re-dispatching only on a real difference keeps it settling.
+//
+// In server mode `rows` is only the current page, so membership cannot be the
+// test: it would silently clear the whole selection on every page change. Only
+// the synthetic ids are stripped there, which keeps a selection addressable
+// across pages while still refusing an unaddressable row.
 $effect(() => {
   const selected = tableState.selectedRowIds;
   const durable = selected.filter((rowId) =>
-    identifiedRowKeys.has(String(rowId)),
+    serverBacked
+      ? !unidentifiedRowKeys.has(String(rowId))
+      : identifiedRowKeys.has(String(rowId)),
   );
   if (durable.length === selected.length) return;
   untrack(() =>
@@ -189,12 +720,104 @@ $effect(() => {
   );
 });
 
+/**
+ * What each toolbar select may display, and whether it can display the live
+ * predicate at all.
+ *
+ * INVARIANT: the select's displayed state either matches the live predicate
+ * exactly, or the operator is told it does not. Three states, and all three are
+ * reachable from a shared link:
+ *
+ * - representable and inside the vocabulary — the select shows it, silently;
+ * - representable but outside the vocabulary (`?status=embargoed`, or a typo)
+ *   — the value is rendered as an extra option AND reported, so an empty list
+ *   always has an explanation;
+ * - not representable at all (`?status.in=draft,review`, `?status.isNull=1`,
+ *   `?status.notEquals=draft`) — the select shows a disabled summary of the
+ *   real predicate instead of a value it is not applying, and reports it.
+ *   Choosing any real option replaces every filter on that column, so the
+ *   operator is never stuck.
+ */
+const typeFilterState = $derived(
+  readContentListSelectFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID),
+);
+const statusFilterState = $derived(
+  readContentListSelectFilter(tableState, CONTENT_LIST_STATUS_FILTER_ID),
+);
 const selectedType = $derived(
-  readContentListFilter(tableState, CONTENT_LIST_TYPE_FILTER_ID) ?? '',
+  typeFilterState.representable
+    ? typeFilterState.value
+    : CONTENT_LIST_UNREPRESENTABLE_OPTION,
 );
 const selectedStatus = $derived(
-  readContentListFilter(tableState, CONTENT_LIST_STATUS_FILTER_ID) ?? '',
+  statusFilterState.representable
+    ? statusFilterState.value
+    : CONTENT_LIST_UNREPRESENTABLE_OPTION,
 );
+
+/** A live, representable value the select has no option for. */
+const unlistedType = $derived(
+  typeFilterState.representable &&
+    typeFilterState.value &&
+    !(CONTENT_LIST_TYPE_OPTIONS as readonly string[]).includes(
+      typeFilterState.value,
+    )
+    ? typeFilterState.value
+    : null,
+);
+const unlistedStatus = $derived(
+  statusFilterState.representable &&
+    statusFilterState.value &&
+    !(CONTENT_LIST_STATUS_OPTIONS as readonly string[]).includes(
+      statusFilterState.value,
+    )
+    ? statusFilterState.value
+    : null,
+);
+
+function columnFilterDrops(
+  columnId: string,
+  unlisted: string | null,
+  filterState: ContentListSelectFilterState,
+): ContentListQueryDrop[] {
+  if (unlisted !== null) {
+    return [
+      {
+        scope: 'filter',
+        reason: 'unlisted-value',
+        columnId,
+        detail: unlisted,
+      },
+    ];
+  }
+  if (!filterState.representable) {
+    return [
+      {
+        scope: 'filter',
+        reason: 'unrepresentable-filter',
+        columnId,
+        detail: filterState.detail ?? '',
+      },
+    ];
+  }
+  return [];
+}
+
+const unlistedValueDrops = $derived<ContentListQueryDrop[]>([
+  // A locked list renders no type select, so there is nothing to disagree with.
+  ...(lockedType !== null
+    ? []
+    : columnFilterDrops(
+        CONTENT_LIST_TYPE_FILTER_ID,
+        unlistedType,
+        typeFilterState,
+      )),
+  ...columnFilterDrops(
+    CONTENT_LIST_STATUS_FILTER_ID,
+    unlistedStatus,
+    statusFilterState,
+  ),
+]);
 
 const surfaceOptions = $derived(
   dataSurface
@@ -206,6 +829,169 @@ const surfaceOptions = $derived(
       }
     : undefined,
 );
+
+// ---------------------------------------------------------------------------
+// Restore reporting
+// ---------------------------------------------------------------------------
+
+const dropNotices = $derived<ContentListDropNotice[]>([
+  ...restoreDrops,
+  ...queryDrops,
+  ...unlistedValueDrops,
+  ...(pageCapDrop === null ? [] : [pageCapDrop]),
+]);
+/**
+ * What the server said about the completeness of the answer.
+ *
+ * A binding may expose the flags directly; `remoteQuery` does not, so the
+ * component falls back to the envelope its own `execute` resolved. Either way
+ * the operator has to be told: the server drops trailing rows to fit its byte
+ * budget, and the next page is computed from `page * limit`, so those rows are
+ * skipped on the following page too.
+ */
+const queryTruncated = $derived(
+  queryBinding?.truncated ?? resultNotices.truncated,
+);
+const queryWarnings = $derived<ReadonlyArray<string>>(
+  queryBinding?.warnings ?? resultNotices.warnings,
+);
+/** Identity of the current set of refusals, so a dismissal is not permanent. */
+const dropNoticeKey = $derived(
+  dropNotices.length > 0 || queryTruncated || queryWarnings.length > 0
+    ? JSON.stringify([dropNotices, queryTruncated, queryWarnings])
+    : '',
+);
+const showDropNotice = $derived(
+  dropNoticeKey !== '' && dropNoticeKey !== dismissedDropKey,
+);
+
+const DROP_REASON_MESSAGES: Record<
+  ContentListStateDropReason | ContentListQueryDropReason,
+  string
+> = {
+  'unknown-column': M['content.content_list.drop_unknown_column'],
+  'hidden-column': M['content.content_list.drop_hidden_column'],
+  'structural-column': M['content.content_list.drop_structural_column'],
+  'no-server-field': M['content.content_list.drop_no_server_field'],
+  'unsupported-operator': M['content.content_list.drop_unsupported_operator'],
+  'unsupported-value': M['content.content_list.drop_unsupported_value'],
+  malformed: M['content.content_list.drop_malformed'],
+  'out-of-range': M['content.content_list.drop_out_of_range'],
+  'filter-widened': M['content.content_list.drop_filter_widened'],
+  'unlisted-value': M['content.content_list.drop_unlisted_value'],
+  'unrepresentable-filter':
+    M['content.content_list.drop_unrepresentable_filter'],
+  'unpaginated-unsupported': M['content.content_list.drop_unpaginated'],
+};
+
+function dropNoticeText(drop: ContentListDropNotice): string {
+  // A capped offset is a redirect, not merely a refused value: the operator
+  // needs to know which page they asked for and which one they are looking at.
+  if (drop.reason === 'unlisted-value') {
+    return t(M['content.content_list.drop_unlisted_value'], {
+      value: drop.detail ?? '',
+    });
+  }
+  if (drop.reason === 'unrepresentable-filter') {
+    return t(M['content.content_list.drop_unrepresentable_filter'], {
+      target: drop.columnId ?? drop.scope,
+      value: drop.detail ?? '',
+    });
+  }
+  if (drop.scope === 'page' && drop.reason === 'out-of-range') {
+    return t(M['content.content_list.drop_page_unreachable'], {
+      requested: drop.detail ?? '',
+      landed: String(pageCapCorrectedTo ?? ''),
+    });
+  }
+  return t(M['content.content_list.dropped_item'], {
+    target: drop.columnId ?? drop.scope,
+    reason: t(DROP_REASON_MESSAGES[drop.reason]),
+  });
+}
+
+function dismissDropNotice() {
+  dismissedDropKey = dropNoticeKey;
+}
+
+// ---------------------------------------------------------------------------
+// Saved views
+// ---------------------------------------------------------------------------
+
+$effect(() => {
+  const store = savedViews;
+  if (!store) {
+    savedViewList = [];
+    return;
+  }
+  let cancelled = false;
+  void store
+    .list()
+    .then((views) => {
+      if (!cancelled) savedViewList = views;
+    })
+    .catch(() => {
+      // An unreadable store is an empty store; the list still opens.
+      if (!cancelled) savedViewList = [];
+    });
+  return () => {
+    cancelled = true;
+  };
+});
+
+async function reloadSavedViews() {
+  if (!savedViews) return;
+  try {
+    savedViewList = await savedViews.list();
+  } catch {
+    savedViewList = [];
+  }
+}
+
+function applySavedView(id: string) {
+  selectedSavedViewId = id;
+  const view = savedViewList.find((entry) => entry.id === id);
+  if (!view) return;
+  try {
+    // The same validator, AND the same limits, the URL path uses: a stored view
+    // must not be a way around a `maxPageSize` the host configured for links. A
+    // stale view restores its valid remainder rather than refusing to open.
+    const restoration = restoreContentListSavedView(view, restoreOptions);
+    applyContentListViewState(controller, restoration.state, restoreOptions);
+    restoreDrops = restoration.dropped;
+  } catch {
+    restoreDrops = [{ scope: 'state', reason: 'malformed' }];
+  }
+}
+
+async function saveCurrentView() {
+  const store = savedViews;
+  const name = savedViewName.trim();
+  if (!store || !name) return;
+  try {
+    const saved = await store.save(
+      toContentListSavedViewInput(name, controller.snapshot()),
+    );
+    savedViewName = '';
+    selectedSavedViewId = saved.id;
+    await reloadSavedViews();
+  } catch {
+    // Keep the operator's text so the save can be retried.
+  }
+}
+
+async function deleteSelectedView() {
+  const store = savedViews;
+  const id = selectedSavedViewId;
+  if (!store || !id) return;
+  try {
+    await store.delete(id);
+    selectedSavedViewId = '';
+    await reloadSavedViews();
+  } catch {
+    // Nothing to undo; the list is reloaded on the next mount.
+  }
+}
 
 function isSelected(row: ContentListRow): boolean {
   return selectedRowKeys.has(String(row.id));
@@ -443,6 +1229,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           <option value="article">{t(M['content.content_list.type_articles'])}</option>
           <option value="document">{t(M['content.content_list.type_documents'])}</option>
           <option value="mirror">{t(M['content.content_list.type_mirrors'])}</option>
+          {#if unlistedType}
+            <!-- A live filter the vocabulary does not cover; showing it is what
+                 keeps the toolbar honest about why the list may be empty. -->
+            <option value={unlistedType}>{unlistedType}</option>
+          {:else if !typeFilterState.representable}
+            <!-- A live predicate no single option can express. Show the
+                 predicate rather than a value the query is not applying. -->
+            <option value={CONTENT_LIST_UNREPRESENTABLE_OPTION} disabled>
+              {typeFilterState.detail}
+            </option>
+          {/if}
         </Select>
       {/if}
 
@@ -458,8 +1255,60 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         <option value="">{t(M['content.content_list.all_statuses'])}</option>
         <option value="published">{t(M['content.content_list.status_published'])}</option>
         <option value="draft">{t(M['content.content_list.status_draft'])}</option>
+        <option value="review">{t(M['content.content_list.status_review'])}</option>
         <option value="archived">{t(M['content.content_list.status_archived'])}</option>
+        {#if unlistedStatus}
+          <option value={unlistedStatus}>{unlistedStatus}</option>
+        {:else if !statusFilterState.representable}
+          <option value={CONTENT_LIST_UNREPRESENTABLE_OPTION} disabled>
+            {statusFilterState.detail}
+          </option>
+        {/if}
       </Select>
+
+      {#if savedViews}
+        <div class="saved-views" role="group" aria-label={t(M['content.content_list.saved_views'])}>
+          <Select
+            aria-label={t(M['content.content_list.saved_views'])}
+            value={selectedSavedViewId}
+            onchange={(event: Event) =>
+              applySavedView((event.currentTarget as HTMLSelectElement).value)}
+          >
+            <option value="">{t(M['content.content_list.saved_view_none'])}</option>
+            {#each savedViewList as view (view.id)}
+              <option value={view.id}>{view.name}</option>
+            {/each}
+          </Select>
+          <Input
+            type="text"
+            aria-label={t(M['content.content_list.saved_view_name'])}
+            placeholder={t(M['content.content_list.saved_view_name_placeholder'])}
+            value={savedViewName}
+            oninput={(event: Event) => {
+              savedViewName = (event.currentTarget as HTMLInputElement).value;
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            disabled={savedViewName.trim().length === 0}
+            onclick={() => void saveCurrentView()}
+          >
+            {t(M['content.content_list.saved_view_save'])}
+          </Button>
+          {#if selectedSavedViewId}
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onclick={() => void deleteSelectedView()}
+            >
+              {t(M['content.content_list.saved_view_delete'])}
+            </Button>
+          {/if}
+        </div>
+      {/if}
 
       {#if controls}
         {@render controls()}
@@ -532,12 +1381,38 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     </div>
   </div>
 
-  {#if error}
+  {#if showDropNotice}
+    <div class="state-notice" role="status">
+      <p class="state-notice__title">{t(M['content.content_list.dropped_title'])}</p>
+      <ul class="state-notice__list">
+        {#each dropNotices as drop, index (index)}
+          <li>{dropNoticeText(drop)}</li>
+        {/each}
+        {#if queryTruncated}
+          <li>{t(M['content.content_list.result_truncated'])}</li>
+        {/if}
+        {#each queryWarnings as warning, index (index)}
+          <li>{warning}</li>
+        {/each}
+      </ul>
+      <Button
+        variant="ghost"
+        size="sm"
+        type="button"
+        class="state-notice__dismiss"
+        onclick={dismissDropNotice}
+      >
+        {t(M['content.content_list.dropped_dismiss'])}
+      </Button>
+    </div>
+  {/if}
+
+  {#if activeError}
     <div class="state-panel state-panel--error" role="alert">
       <p class="state-panel__title">{t(M['content.content_list.error_title'])}</p>
-      <p class="state-panel__detail">{error}</p>
-      {#if onRetry}
-        <Button variant="ghost" type="button" class="retry-button" onclick={() => onRetry?.()}>
+      <p class="state-panel__detail">{activeError}</p>
+      {#if retryHandler}
+        <Button variant="ghost" type="button" class="retry-button" onclick={() => retryHandler?.()}>
           {t(M['content.content_list.retry'])}
         </Button>
       {/if}
@@ -580,20 +1455,19 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       <div class="content-table-wrapper">
         <DataTable
           data={pageRows}
-          totalRows={queryRows.length}
           columns={tableColumns}
           rowKey={CONTENT_LIST_ROW_KEY}
           {controller}
           sortable
           agentAddressable
-          {loading}
+          loading={isLoading}
           caption={t(M['content.content_list.table_caption'])}
           rowLabel={(row: ContentListRow) => row.title}
           dataSurface={surfaceOptions}
           empty={tableEmptyState}
         />
       </div>
-    {:else if loading && pageRows.length === 0}
+    {:else if isLoading && pageRows.length === 0}
       <div class="state-panel" role="status">
         {t(M['content.content_list.loading'])}
       </div>
@@ -751,7 +1625,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       </div>
     {/if}
 
-    {#if showPagination && viewMode !== 'compact'}
+    {#if showPagination}
       <div class="content-pagination">
         <Pagination
           currentPage={tableState.page}
@@ -1251,6 +2125,43 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
   .actions-cell :global(.delete-icon:hover) {
     background: var(--smrt-color-error-container);
+  }
+
+  /* Saved views live beside the search and filters they name. */
+  .saved-views {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  /* Reports what a restored link, saved view, or server query discarded. */
+  .state-notice {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+
+  .state-notice__title {
+    margin: 0 0 0.35rem;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface);
+  }
+
+  .state-notice__list {
+    margin: 0 0 0.5rem;
+    padding-left: 1.25rem;
+  }
+
+  .state-notice :global(.state-notice__dismiss) {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
   }
 
   /* Shared empty, loading, and error presentation. */
