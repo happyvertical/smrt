@@ -132,20 +132,15 @@ additionally requires a compiled JavaScript project entry point.
 
 ## 9. Add optional live browser data
 
-`@happyvertical/smrt-web` is intentionally not a base direct dependency. A
-consumer adds it only when a page imports the live collection or WebMCP runtime:
-
-```bash
-pnpm add "@happyvertical/smrt-web@$(node -p "require('./package.json').dependencies['@happyvertical/smrt-core']")"
-```
-
-Run this inside the generated project. It keeps `smrt-web` on the same release
-line as the template's synchronized `smrt-core` dependency.
+`@happyvertical/smrt-web` is included on the synchronized release line because
+the root Provider loads the generated WebMCP definitions. No separate install
+is needed for WebMCP. Live browser collections remain opt-in per page; import
+the collection helpers only on pages that need interactive client data.
 
 The generated-project README shows the current hydration pattern:
 `createSmrtCollection(getCollectionDefinition('items'), { initialData,
-basePath: '/api' })` followed by `liveCollection()`. The root layout does not
-load the browser engine.
+basePath: '/api' })` followed by `liveCollection()`. The root layout's
+read-only WebMCP registration does not materialize live collections.
 
 ## 10. Graduate to smrt-saas-starter
 

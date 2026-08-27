@@ -30,9 +30,6 @@ describe('practical documentation', () => {
     expect(projectReadme).toContain('registerWebMcpTools');
     expect(projectReadme).toContain('webMcpToolDefinitions');
     expect(packageReadme).toContain('registerWebMcpTools');
-    expect(packageReadme).toContain(
-      "dependencies['@happyvertical/smrt-core']",
-    );
     expect(packageReadme).not.toMatch(/smrt-web@\^\d+\.\d+\.\d+/);
     expect(projectReadme).not.toMatch(/smrt-web@\^\d+\.\d+\.\d+/);
     expect(projectReadme).toContain(
