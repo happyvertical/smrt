@@ -18,7 +18,11 @@ function normalizeCurrencyCode(value: unknown): NormalizedCurrency | null {
 
 function invalidCurrencyCode(value: unknown): string {
   if (typeof value !== 'string') return '(non-string)';
-  const normalized = value.trim().toUpperCase();
+  // Keep rejected non-ASCII characters intact so malformed input cannot be
+  // presented as a different, valid-looking ISO code after Unicode folding.
+  const normalized = value
+    .trim()
+    .replace(/[a-z]/g, (character) => character.toUpperCase());
   if (!normalized) return '(empty)';
   const characters = Array.from(normalized);
   return characters.length > 12

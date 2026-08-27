@@ -145,10 +145,26 @@ describe('CurrencyDisplay', () => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency },
     });
-    const normalized = currency.trim().toUpperCase() || '(empty)';
+    const normalized =
+      currency
+        .trim()
+        .replace(/[a-z]/g, (character) => character.toUpperCase()) || '(empty)';
     const display = container.querySelector('.currency-display');
     expect(display).toHaveClass('invalid');
     expect(display).toHaveTextContent(`Invalid currency code: ${normalized}`);
+  });
+
+  it.each([
+    ['uſd', 'UſD'],
+    ['ıqd', 'ıQD'],
+    ['ßp', 'ßP'],
+  ])('preserves rejected non-ASCII input %j in its diagnostic as %s', (currency, diagnostic) => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency },
+    });
+    expect(container.querySelector('.currency-display')).toHaveTextContent(
+      `Invalid currency code: ${diagnostic}`,
+    );
   });
 
   it('bounds malformed currency text so one row cannot force table overflow', () => {
