@@ -146,7 +146,12 @@ they are true:
 @smrt({
   api: {
     routes: {
-      preview: { effect: 'read', idempotent: true, openWorld: false },
+      preview: {
+        method: 'GET',
+        effect: 'read',
+        idempotent: true,
+        openWorld: false,
+      },
     },
   },
 })

@@ -274,6 +274,16 @@ function readConfiguredToolMetadata(
     route.effect === 'destructive'
       ? route.effect
       : undefined;
+  if (
+    effect === 'read' &&
+    (route.method === 'PUT' ||
+      route.method === 'PATCH' ||
+      route.method === 'DELETE')
+  ) {
+    throw new Error(
+      `Custom action ${actionName} cannot declare a read effect for a ${route.method} route`,
+    );
+  }
   return {
     ...(effect ? { effect } : {}),
     ...(typeof route.idempotent === 'boolean'

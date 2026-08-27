@@ -130,6 +130,24 @@ describe('custom action conformance', () => {
     expect(metadata.effect).toBe('destructive');
   });
 
+  it.each([
+    'PUT',
+    'PATCH',
+    'DELETE',
+  ] as const)('rejects a read effect on a mutating %s route', (httpMethod) => {
+    expect(() =>
+      resolveCustomActionMetadata({
+        actionName: 'purge',
+        method: { isStatic: true, parameters: [] },
+        apiConfig: {
+          routes: { purge: { method: httpMethod, effect: 'read' } },
+        },
+      }),
+    ).toThrow(
+      `Custom action purge cannot declare a read effect for a ${httpMethod} route`,
+    );
+  });
+
   it('keeps an item receiver id distinct from an action id parameter', () => {
     const metadata = resolveCustomActionMetadata({
       actionName: 'move',
