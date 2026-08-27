@@ -545,7 +545,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // in a transaction-scoped advisory lock. The lock covers reconciliation,
   // FK installation, and framework system tables without leaking a session
   // lock through a pooled connection.
-  if (schema && config.type !== 'sqlite') {
+  if (schema && config.type === 'postgres') {
     if (!baseDb.beginTransaction) {
       throw new Error(
         `Database adapter '${config.type}' does not support beginTransaction(). ` +
@@ -569,6 +569,8 @@ async function createIsolatedTestDbWithPostSchemaStatements(
       }
       throw error;
     }
+  } else if (schema && config.type !== 'sqlite') {
+    await syncSchema({ db: baseDb, schema });
   }
 
   // Transaction handles are passed to SMRT objects as already-initialized
