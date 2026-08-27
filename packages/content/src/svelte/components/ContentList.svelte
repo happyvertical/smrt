@@ -176,7 +176,6 @@ let {
 }: Props = $props();
 
 const initialQuery = untrack(() => query);
-const initialJobs = untrack(() => jobs);
 
 // One controller owns search, filters, sorting, paging, and selection for
 // every presentation. The view mode lives beside it, so switching presentation
@@ -353,8 +352,16 @@ let activeQueryKey = $state<string | undefined>(undefined);
 // Only transitions observed after the initial snapshot are completion events;
 // old successful history must not refresh every newly-mounted list.
 $effect(() => {
-  const binding = initialJobs;
-  if (!binding) return;
+  const binding = jobs;
+  completedJobs = [];
+  if (!binding) {
+    jobSnapshot = {
+      jobs: [],
+      pendingRowIds: new Set(),
+      pendingQueryKeys: new Set(),
+    };
+    return;
+  }
   let initialized = false;
   let statuses = new Map<string, ContentListJob['status']>();
   return binding.subscribe((next) => {
@@ -1140,7 +1147,7 @@ function rowPending(row: ContentListRow): boolean {
 }
 
 function retryJob(jobId: string): void {
-  void initialJobs?.retry(jobId).catch(() => undefined);
+  void jobs?.retry(jobId).catch(() => undefined);
 }
 
 function jobStatusLabel(job: ContentListJob): string {
@@ -1623,7 +1630,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             {#if job.message}<span>{job.message}</span>{/if}
             {#if job.status === 'failed'}
               {#if job.error}<span role="alert">{job.error}</span>{/if}
-              {#if initialJobs?.canRetry?.(job.jobId) === true}
+              {#if jobs?.canRetry?.(job.jobId) === true}
                 <Button
                   variant="ghost"
                   size="sm"

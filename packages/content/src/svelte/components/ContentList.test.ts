@@ -16,6 +16,7 @@ import {
 } from '../content-list-query.js';
 import { createContentListJobController } from '../content-list-runtime.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
+import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
 import ContentList from './ContentList.svelte';
@@ -857,6 +858,58 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
 
     expect(target.textContent).toContain('model unavailable');
     expect(buttonsByText(target, 'Retry job')).toHaveLength(0);
+  });
+
+  it('subscribes to a late job binding and replaces it reactively', () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    let setJobs!: (
+      next: ReturnType<typeof createContentListJobController> | undefined,
+    ) => void;
+    const component = mount(JobsHarness, {
+      target,
+      props: {
+        contents,
+        onReady: (setter) => {
+          setJobs = setter;
+        },
+      },
+    });
+    mountedComponents.push(component);
+    const first = createContentListJobController();
+    const replacement = createContentListJobController();
+
+    setJobs(first);
+    flushSync();
+    first.update({
+      jobId: 'job-first',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    flushSync();
+    expect(target.textContent).toContain('Job job-first');
+
+    setJobs(replacement);
+    flushSync();
+    expect(target.textContent).not.toContain('Job job-first');
+    replacement.update({
+      jobId: 'job-replacement',
+      actionId: 'review',
+      submissionKey: 'review:content-2',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-2'] },
+    });
+    flushSync();
+    expect(target.textContent).toContain('Job job-replacement');
+
+    first.update({
+      ...first.snapshot().jobs[0],
+      status: 'succeeded',
+    });
+    flushSync();
+    expect(target.textContent).not.toContain('Job job-first');
   });
 
   it('refuses a delete confirmed after its row becomes pending', () => {
