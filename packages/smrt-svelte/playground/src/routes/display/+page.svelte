@@ -54,7 +54,7 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
 <section>
   <h2>CurrencyDisplay</h2>
-  <p class="section-desc">Formats monetary values with proper locale formatting. Amounts are in cents.</p>
+  <p class="section-desc">Formats monetary values with proper locale formatting. Amounts use ISO minor units by default.</p>
 
   <div class="demo-col">
     <div class="demo-row">
@@ -68,7 +68,7 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       </div>
       <div class="demo-item">
         <CurrencyDisplay amount={9999} currency=" eur " />
-        <span class="label">€99.99 EUR (normalized)</span>
+        <span class="label">EUR 99.99 (normalized)</span>
       </div>
       <div class="demo-item">
         <CurrencyDisplay amount={9999} currency="ZZZ" />
@@ -253,8 +253,9 @@ const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
       <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
     </thead>
     <tbody>
-      <tr><td><code>amount</code></td><td><code>number</code></td><td>required</td><td>Amount in cents</td></tr>
-      <tr><td><code>currency</code></td><td><code>'CAD' | 'USD'</code></td><td><code>'CAD'</code></td><td>Currency code</td></tr>
+      <tr><td><code>amount</code></td><td><code>number</code></td><td>required</td><td>ISO minor units by default</td></tr>
+      <tr><td><code>currency</code></td><td><code>string</code></td><td><code>'CAD'</code></td><td>Active ISO 4217 currency code</td></tr>
+      <tr><td><code>unit</code></td><td><code>'cents' | 'dollars'</code></td><td><code>'cents'</code></td><td>Minor-unit or major-unit input</td></tr>
       <tr><td><code>showSign</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Show +/- sign</td></tr>
       <tr><td><code>highlightNegative</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Red for negative</td></tr>
       <tr><td><code>highlightPositive</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Green for positive</td></tr>

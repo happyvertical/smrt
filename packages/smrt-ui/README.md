@@ -58,7 +58,9 @@ for BHD); `unit="dollars"` means the value is already in major units.
 ISO fund, metal, test, and no-currency codes whose minor unit is `N.A.` require
 `unit="dollars"`; the default minor-unit mode renders an accessible inline
 error for those codes. Major-unit values for these codes use a stable two-digit
-display policy across server and browser runtimes.
+display policy across server and browser runtimes. CAD and USD retain their
+symbol display; all other codes render their ISO code so SSR output does not
+depend on runtime-specific symbol data.
 
 ```svelte
 <script lang="ts">

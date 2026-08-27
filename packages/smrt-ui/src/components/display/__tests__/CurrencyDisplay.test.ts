@@ -9,6 +9,7 @@
  * classes, and axe-cleanliness.
  */
 
+import { createHash } from 'node:crypto';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { render, screen } from '@testing-library/svelte';
 import { hydrate, unmount } from 'svelte';
@@ -19,29 +20,13 @@ import CurrencyDisplay from '../CurrencyDisplay.svelte';
 import { ISO_4217_MINOR_UNITS } from '../currency-metadata.js';
 import CurrencyDisplaySsrHarness from './CurrencyDisplaySsrHarness.svelte';
 
-function metadataEntries(
-  codes: string,
-  minorUnits: number | null,
-): Array<[string, number | null]> {
-  return codes.split(' ').map((code) => [code, minorUnits]);
+function metadataDigest(metadata: ReadonlyMap<string, number | null>): string {
+  const canonical = [...metadata.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([code, minorUnits]) => `${code}:${minorUnits ?? 'N.A.'}`)
+    .join('\n');
+  return createHash('sha256').update(canonical).digest('hex');
 }
-
-const OFFICIAL_LIST_ONE_2026_01_01 = new Map<string, number | null>([
-  ...metadataEntries(
-    'XOF BIF XAF CLP KMF DJF XPF GNF ISK JPY KRW PYG RWF UGX UYI VUV VND',
-    0,
-  ),
-  ...metadataEntries(
-    'AFN EUR ALL DZD USD AOA XCD XAD ARS AMD AWG AUD AZN BSD BDT BBD BYN BZD BMD INR BTN BOB BOV BAM BWP NOK BRL BND CVE KHR CAD KYD CNY COP COU CDF NZD CRC CUP XCG CZK DKK DOP EGP SVC ERN SZL ETB FKP FJD GMD GEL GHS GIP GTQ GBP GYD HTG HNL HKD HUF IDR IRR ILS JMD KZT KES KPW KGS LAK LBP LSL ZAR LRD CHF MOP MKD MGA MWK MYR MVR MRU MUR MXN MXV MDL MNT MAD MZN MMK NAD NPR NIO NGN PKR PAB PGK PEN PHP PLN QAR RON RUB SHP WST STN SAR RSD SCR SLE SGD SBD SOS SSP LKR SDG SRD SEK CHE CHW SYP TWD TJS TZS THB TOP TTD TRY TMT UAH AED USN UYU UZS VES VED YER ZMW ZWG',
-    2,
-  ),
-  ...metadataEntries('BHD IQD JOD KWD LYD OMR TND', 3),
-  ...metadataEntries('CLF UYW', 4),
-  ...metadataEntries(
-    'XDR XUA XSU XBA XBB XBC XBD XTS XXX XAU XPD XPT XAG',
-    null,
-  ),
-]);
 
 /** Mirror the component's absolute-value currency formatting. */
 function money(
@@ -52,14 +37,19 @@ function money(
   return new Intl.NumberFormat('en-CA', {
     style: 'currency',
     currency,
+    currencyDisplay:
+      currency === 'CAD' || currency === 'USD' ? 'symbol' : 'code',
     minimumFractionDigits: minorUnitDigits,
     maximumFractionDigits: minorUnitDigits,
   }).format(absDollars);
 }
 
 describe('CurrencyDisplay', () => {
-  it('matches all 178 codes and exponents in SIX List One 2026-01-01', () => {
-    expect(ISO_4217_MINOR_UNITS).toEqual(OFFICIAL_LIST_ONE_2026_01_01);
+  it('matches the canonical digest of SIX List One 2026-01-01', () => {
+    expect(ISO_4217_MINOR_UNITS.size).toBe(178);
+    expect(metadataDigest(ISO_4217_MINOR_UNITS)).toBe(
+      'e1a3c502511fa784b38dd7ac2b4056d00f3f1a9f5781df93b0f2352f8eedc976',
+    );
   });
 
   it('formats cents into dollars by default', () => {
@@ -91,10 +81,12 @@ describe('CurrencyDisplay', () => {
 
   it('formats an EUR amount through the public string currency prop', () => {
     const commerceCurrency: string = 'EUR';
-    render(CurrencyDisplay, {
+    const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency: commerceCurrency },
     });
-    expect(screen.getByText(money(123.45, 'EUR'))).toBeInTheDocument();
+    expect(container.querySelector('span')?.textContent).toBe(
+      money(123.45, 'EUR'),
+    );
   });
 
   it.each([
@@ -111,6 +103,7 @@ describe('CurrencyDisplay', () => {
   it.each([
     ['IQD', 3, '9,007,199,254,740.991'],
     ['AFN', 2, '90,071,992,547,409.91'],
+    ['CLF', 4, '900,719,925,474.0991'],
   ])('preserves the least-significant minor unit for large safe %s values', (currency, digits, expected) => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: Number.MAX_SAFE_INTEGER, currency },
@@ -286,6 +279,7 @@ describe('CurrencyDisplay', () => {
       const result = renderSsr(SsrHarness);
       expect(result.body).toContain(money(123.45, 'EUR'));
       expect(result.body).toContain('Invalid currency code: ZZZ');
+      expect(result.body).toContain('Currency code has no minor unit: XAU');
 
       const host = document.createElement('div');
       host.innerHTML = result.body;

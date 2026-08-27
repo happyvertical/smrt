@@ -359,7 +359,8 @@ zero or three minor digits are scaled correctly; `unit="dollars"` means major
 units.
 ISO codes whose minor unit is `N.A.` require `unit="dollars"`; minor-unit mode
 renders an accessible inline error for those codes, while major-unit mode uses
-a stable two-digit display policy.
+a stable two-digit display policy. CAD and USD retain their symbol display;
+all other currencies render their ISO code for deterministic SSR hydration.
 
 **Feedback**: `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar`
 

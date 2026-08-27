@@ -1,12 +1,18 @@
 <script module lang="ts">
 import { ISO_4217_MINOR_UNITS } from './currency-metadata.js';
 
-function normalizeCurrencyCode(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toUpperCase();
-  if (!/^[A-Z]{3}$/.test(normalized)) return null;
+interface NormalizedCurrency {
+  code: string;
+  minorUnitDigits: number | null;
+}
 
-  return ISO_4217_MINOR_UNITS.has(normalized) ? normalized : null;
+function normalizeCurrencyCode(value: unknown): NormalizedCurrency | null {
+  if (typeof value !== 'string') return null;
+  const code = value.trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return null;
+
+  const minorUnitDigits = ISO_4217_MINOR_UNITS.get(code);
+  return minorUnitDigits === undefined ? null : { code, minorUnitDigits };
 }
 
 function invalidCurrencyCode(value: unknown): string {
@@ -101,19 +107,18 @@ const formatted = $derived.by((): FormattedCurrency => {
     };
   }
 
-  const minorUnitDigits = ISO_4217_MINOR_UNITS.get(normalizedCurrency);
-  if (minorUnitDigits === undefined) {
-    return {
-      text: `Invalid currency code: ${normalizedCurrency}`,
-      invalidCode: normalizedCurrency,
-    };
-  }
-
   const formatOptions: Intl.NumberFormatOptions = {
     style: 'currency',
-    currency: normalizedCurrency,
+    currency: normalizedCurrency.code,
+    // CAD and USD retain their historical symbol display. Using the ISO code
+    // for every other currency avoids ICU-dependent narrow-symbol differences
+    // between server and browser runtimes.
+    currencyDisplay:
+      normalizedCurrency.code === 'CAD' || normalizedCurrency.code === 'USD'
+        ? 'symbol'
+        : 'code',
   };
-  const displayDigits = minorUnitDigits ?? 2;
+  const displayDigits = normalizedCurrency.minorUnitDigits ?? 2;
   formatOptions.minimumFractionDigits = displayDigits;
   formatOptions.maximumFractionDigits = displayDigits;
 
@@ -122,21 +127,24 @@ const formatted = $derived.by((): FormattedCurrency => {
     formatter = new Intl.NumberFormat('en-CA', formatOptions);
   } catch {
     return {
-      text: `Invalid currency code: ${normalizedCurrency}`,
-      invalidCode: normalizedCurrency,
+      text: `Invalid currency code: ${normalizedCurrency.code}`,
+      invalidCode: normalizedCurrency.code,
     };
   }
 
   let majorAmount: number | bigint | Intl.StringNumericLiteral =
     Math.abs(amount);
   if (unit === 'cents') {
-    if (minorUnitDigits == null) {
+    if (normalizedCurrency.minorUnitDigits == null) {
       return {
-        text: `Currency code has no minor unit: ${normalizedCurrency}`,
-        invalidCode: normalizedCurrency,
+        text: `Currency code has no minor unit: ${normalizedCurrency.code}`,
+        invalidCode: normalizedCurrency.code,
       };
     }
-    majorAmount = exactMajorUnitValue(amount, minorUnitDigits);
+    majorAmount = exactMajorUnitValue(
+      amount,
+      normalizedCurrency.minorUnitDigits,
+    );
   }
   let display = formatter.format(majorAmount);
 
