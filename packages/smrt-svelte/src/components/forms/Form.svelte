@@ -848,7 +848,10 @@ async function submitCurrentForm(): Promise<string> {
     }
     if (field.validate) {
       try {
-        valid = field.validate() && valid;
+        const validation = field.validate();
+        valid =
+          (validation instanceof Promise ? await validation : validation) &&
+          valid;
       } catch {
         valid = false;
       }

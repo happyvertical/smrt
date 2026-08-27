@@ -27,6 +27,7 @@ vi.mock('../../../hooks/useSTT.svelte.js', () => ({
   }),
 }));
 
+import AsyncValidationForm from './async-validation-form.fixture.svelte';
 import FormRegistrationLifecycle from './form-registration-lifecycle.fixture.svelte';
 import FormWithFields from './form-with-fields.fixture.svelte';
 import FormWithPolicyField from './form-with-policy-field.fixture.svelte';
@@ -56,6 +57,36 @@ function dispatchLocalGesture<T>(
 }
 
 describe('Form WebMCP staged-edit intent', () => {
+  it('awaits an async false field validation before the WebMCP form submits', async () => {
+    const registered: Array<{ name: string }> = [];
+    document.modelContext = {
+      async registerTool(tool) {
+        registered.push(tool as { name: string });
+      },
+    };
+    let resolveValidation: (valid: boolean) => void = () => {};
+    const validation = new Promise<boolean>((resolve) => {
+      resolveValidation = resolve;
+    });
+    const validate = vi.fn(() => validation);
+    const onsubmit = vi.fn();
+    render(AsyncValidationForm, {
+      props: { onsubmit, validate, webmcp: true },
+    });
+    await tick();
+    await tick();
+
+    expect(registered).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    await waitFor(() => expect(validate).toHaveBeenCalledTimes(1));
+    expect(onsubmit).not.toHaveBeenCalled();
+
+    resolveValidation(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onsubmit).not.toHaveBeenCalled();
+  });
+
   it('registers a field-derived tool and stages without mutating or submitting', async () => {
     const registered: Array<{
       name: string;
