@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
 import CurrencyDisplay from '../CurrencyDisplay.svelte';
 import { ISO_4217_MINOR_UNITS } from '../currency-metadata.js';
+import CurrencyDisplayI18nHarness from './CurrencyDisplayI18nHarness.svelte';
 import CurrencyDisplaySsrHarness from './CurrencyDisplaySsrHarness.svelte';
 
 function metadataDigest(metadata: ReadonlyMap<string, number | null>): string {
@@ -137,9 +138,6 @@ describe('CurrencyDisplay', () => {
     'SLL',
     'ZWL',
     'ZZZ',
-    'uſd',
-    'ıqd',
-    'ßp',
     '',
   ])('renders invalid code %j without throwing', (currency) => {
     const { container } = render(CurrencyDisplay, {
@@ -155,15 +153,27 @@ describe('CurrencyDisplay', () => {
   });
 
   it.each([
-    ['uſd', 'UſD'],
-    ['ıqd', 'ıQD'],
-    ['ßp', 'ßP'],
-  ])('preserves rejected non-ASCII input %j in its diagnostic as %s', (currency, diagnostic) => {
+    ['uſd', 'U\\u{17F}D'],
+    ['ıqd', '\\u{131}QD'],
+    ['ßp', '\\u{DF}P'],
+    ['U\u200bSD', 'U\\u{200B}SD'],
+    ['USD\u202e', 'USD\\u{202E}'],
+    ['U\u2066SD', 'U\\u{2066}SD'],
+  ])('renders rejected non-ASCII input %j visibly as %s', (currency, diagnostic) => {
     const { container } = render(CurrencyDisplay, {
       props: { amount: 12345, currency },
     });
     expect(container.querySelector('.currency-display')).toHaveTextContent(
       `Invalid currency code: ${diagnostic}`,
+    );
+  });
+
+  it('bounds escaped astral input without splitting a code-point token', () => {
+    const { container } = render(CurrencyDisplay, {
+      props: { amount: 12345, currency: '😀😀' },
+    });
+    expect(container.querySelector('.currency-display')).toHaveTextContent(
+      'Invalid currency code: \\u{1F600}…',
     );
   });
 
@@ -198,6 +208,12 @@ describe('CurrencyDisplay', () => {
     expect(document.querySelector('.currency-display')?.textContent).toBe(
       money(12.5, 'XAU', 2),
     );
+  });
+
+  it('resolves invalid-code prose through the active i18n snapshot', () => {
+    render(CurrencyDisplayI18nHarness);
+    expect(screen.getByText('Code monétaire invalide : ZZZ')).toBeVisible();
+    expect(screen.getByText('Devise sans unité mineure : XAU')).toBeVisible();
   });
 
   it('shows an explicit + sign for positive amounts when showSign is set', () => {

@@ -18,16 +18,23 @@ function normalizeCurrencyCode(value: unknown): NormalizedCurrency | null {
 
 function invalidCurrencyCode(value: unknown): string {
   if (typeof value !== 'string') return '(non-string)';
-  // Keep rejected non-ASCII characters intact so malformed input cannot be
-  // presented as a different, valid-looking ISO code after Unicode folding.
-  const normalized = value
-    .trim()
-    .replace(/[a-z]/g, (character) => character.toUpperCase());
-  if (!normalized) return '(empty)';
-  const characters = Array.from(normalized);
-  return characters.length > 12
-    ? `${characters.slice(0, 12).join('')}…`
-    : normalized;
+  const characters = Array.from(value.trim());
+  if (characters.length === 0) return '(empty)';
+
+  let diagnostic = '';
+  let consumed = 0;
+  for (const character of characters) {
+    const codePoint = character.codePointAt(0)!;
+    const visibleCharacter =
+      codePoint >= 0x20 && codePoint <= 0x7e
+        ? character.replace(/[a-z]/g, (ascii) => ascii.toUpperCase())
+        : `\\u{${codePoint.toString(16).toUpperCase()}}`;
+    if (diagnostic.length + visibleCharacter.length > 12) break;
+    diagnostic += visibleCharacter;
+    consumed += 1;
+  }
+
+  return consumed < characters.length ? `${diagnostic}…` : diagnostic;
 }
 
 function isStringNumericLiteral(
@@ -59,6 +66,9 @@ function exactMajorUnitValue(
 </script>
 
 <script lang="ts">
+import { M } from '../../i18n/strings.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
 /**
  * CurrencyDisplay - Formats and displays monetary values
  *
@@ -101,6 +111,8 @@ const {
   class: className = '',
 }: Props = $props();
 
+const { t } = useI18n();
+
 interface FormattedCurrency {
   text: string;
   invalidCode: string | null;
@@ -112,7 +124,7 @@ const formatted = $derived.by((): FormattedCurrency => {
   if (!normalizedCurrency) {
     const invalidCode = invalidCurrencyCode(currency);
     return {
-      text: `Invalid currency code: ${invalidCode}`,
+      text: t(M['ui.currency_display.invalid_code'], { code: invalidCode }),
       invalidCode,
     };
   }
@@ -137,7 +149,9 @@ const formatted = $derived.by((): FormattedCurrency => {
     formatter = new Intl.NumberFormat('en-CA', formatOptions);
   } catch {
     return {
-      text: `Invalid currency code: ${normalizedCurrency.code}`,
+      text: t(M['ui.currency_display.invalid_code'], {
+        code: normalizedCurrency.code,
+      }),
       invalidCode: normalizedCurrency.code,
     };
   }
@@ -147,7 +161,9 @@ const formatted = $derived.by((): FormattedCurrency => {
   if (unit === 'cents') {
     if (normalizedCurrency.minorUnitDigits == null) {
       return {
-        text: `Currency code has no minor unit: ${normalizedCurrency.code}`,
+        text: t(M['ui.currency_display.no_minor_unit'], {
+          code: normalizedCurrency.code,
+        }),
         invalidCode: normalizedCurrency.code,
       };
     }
