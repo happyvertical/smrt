@@ -10,5 +10,5 @@ const { webmcp }: Props = $props();
 </script>
 
 <Provider {webmcp}>
-  <span>provider ready</span>
+  <span></span>
 </Provider>
