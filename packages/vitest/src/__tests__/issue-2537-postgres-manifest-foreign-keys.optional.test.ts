@@ -425,22 +425,7 @@ postgresDescribe(
              )
            ORDER BY constraint_row.conname`,
         );
-        expect(after.rows).toEqual(
-          before.rows.map(
-            (row: {
-              constraint_oid: string;
-              constraint_name: string;
-              ownership_comment: string | null;
-            }) => ({
-              ...row,
-              ownership_comment:
-                row.constraint_name ===
-                'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey'
-                  ? 'smrt-vitest:manifest-foreign-key:v1'
-                  : null,
-            }),
-          ),
-        );
+        expect(after.rows).toEqual(before.rows);
       } finally {
         await reopened?.cleanup();
         rmSync(manifestPath, { force: true });

@@ -594,15 +594,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         confmatchtype: string;
         ownership_comment: string | null;
       }>) {
-        const catalogForeignKey: ForeignKeyDefinition = {
-          column: row.column_name,
-          referencesTable: row.referenced_table,
-          referencesColumn: row.referenced_column,
-        };
-        const rendererOwned =
-          row.ownership_comment === ownershipComment ||
-          row.constraint_name ===
-            foreignKeyConstraintName(tableName, catalogForeignKey);
+        const rendererOwned = row.ownership_comment === ownershipComment;
         const desired = expected.get(row.constraint_name);
         if (!desired) {
           if (rendererOwned && manifestTable.pruneOwnedForeignKeys) {
@@ -645,17 +637,13 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         }
 
         if (!row.convalidated) {
+          if (!rendererOwned) {
+            throw new Error(
+              `Cannot validate manifest foreign key ${tableName}.${row.constraint_name}: the existing constraint is not owned by the manifest renderer.`,
+            );
+          }
           await schemaDb.query(
             renderForeignKeyConstraintValidate(tableName, row.constraint_name),
-          );
-        }
-        if (row.ownership_comment !== ownershipComment) {
-          await schemaDb.query(
-            renderForeignKeyConstraintComment(
-              tableName,
-              row.constraint_name,
-              ownershipComment,
-            ),
           );
         }
         satisfied.add(row.constraint_name);
