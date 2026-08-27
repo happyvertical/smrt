@@ -2475,6 +2475,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2

@@ -116,5 +116,8 @@ in-memory SQLite database, and generated REST handlers. Only the browser
 `document.modelContext` and external AI boundary are doubled. Keep this fixture
 focused on the WebMCP contract: auth failures, effect/exposure policy,
 tool-only fetches, custom actions, relationship cache invalidation, and
-registration disposal. The integration model is documented in
+registration disposal. Its descriptors come from the OXC manifest adapter so
+the test follows the same generation path as the virtual WebMCP module; the
+Vitest config excludes test files from the package manifest to avoid exposing
+fixture-only classes to package discovery. The integration model is documented in
 `docs/content/webmcp-integration.md`.

@@ -258,15 +258,15 @@ narrower tool set.
 <script lang="ts">
   import { webMcpToolDefinitions } from '@happyvertical/smrt-virt-web';
   import { Provider } from '@happyvertical/smrt-svelte';
+
+  const webmcp = $derived(
+    typeof document !== 'undefined' && 'modelContext' in document
+      ? { definitions: webMcpToolDefinitions, basePath: '/api', effects: ['read'] as const }
+      : false,
+  );
 </script>
 
-<Provider
-  webmcp={{
-    definitions: webMcpToolDefinitions,
-    basePath: '/api',
-    effects: ['read'],
-  }}
->
+<Provider {webmcp}>
   {@render children()}
 </Provider>
 ```
@@ -282,8 +282,9 @@ closed as destructive.
 
 ## 9. Add optional live browser data
 
-Use this only on an interactive page. `@happyvertical/smrt-web` must be a direct
-dependency because the page imports it; the base starter does not need it.
+Use this only on an interactive page. The template already includes
+`@happyvertical/smrt-web` for the root Provider; no separate install is needed
+for WebMCP. Live browser collections remain opt-in per page.
 
 Keep the server load from section 7, then seed the browser collection from its
 hydrated rows so the first render does not issue a duplicate request:

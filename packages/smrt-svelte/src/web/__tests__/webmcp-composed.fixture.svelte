@@ -4,13 +4,19 @@ import {
   type DataSurfaceDescriptor,
   DataTable,
 } from '@happyvertical/smrt-ui/data';
+import type { WebMcpToolDefinition } from '@happyvertical/smrt-web';
 import Form from '../../components/forms/Form.svelte';
 import TextInput from '../../components/forms/TextInput.svelte';
 import Provider from '../../Provider.svelte';
 import { useWebMcpTool } from '../webmcp.svelte.js';
 
-let { dataSurfaceRegistry }: { dataSurfaceRegistry: DataSurfaceRegistry } =
-  $props();
+let {
+  dataSurfaceRegistry,
+  generatedDefinitions = [],
+}: {
+  dataSurfaceRegistry: DataSurfaceRegistry;
+  generatedDefinitions?: readonly WebMcpToolDefinition[];
+} = $props();
 
 useWebMcpTool(() => ({
   name: 'fixture_component_preview',
@@ -51,7 +57,9 @@ const columns = [
 ];
 </script>
 
-<Provider webmcp={{ ui: { dataSurfaceRegistry } }}>
+<Provider
+  webmcp={{ definitions: generatedDefinitions, ui: { dataSurfaceRegistry } }}
+>
   <Form formId="fixture-form">
     <TextInput name="title" label="Title" />
   </Form>

@@ -18,8 +18,15 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { ManifestGenerator } from '@happyvertical/smrt-core/scanner';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  buildWebCollectionDefinition,
+  buildWebMcpToolDefinitions,
+  selectWebCollectionEntries,
+} from '../../../packages/core/src/vite-plugin/web-collections.js';
 import {
   createDefinitionFetchers,
   createSmrtCollection,
@@ -28,7 +35,6 @@ import {
   type SmrtWebCollection,
   type SmrtWebCollectionDefinition,
   type WebMcpToolDefinition,
-  type WebToolDescriptor,
 } from './index.js';
 import { registerWebMcpTools } from './webmcp.js';
 
@@ -144,102 +150,6 @@ type CapturedTool = {
   signal?: AbortSignal;
 };
 
-const itemDefinition: SmrtWebCollectionDefinition = {
-  name: 'webmcpfixtureitems',
-  objectRef: '@fixture/smrt-web:WebMcpFixtureItem',
-  className: 'WebMcpFixtureItem',
-  endpoint: '/webmcpfixtureitems',
-  idField: 'id',
-  actions: ['list', 'get', 'create', 'update', 'delete'],
-  fields: {
-    name: { type: 'text', required: true },
-    labelId: { type: 'foreignKey' },
-    secret: { type: 'text', sensitive: true },
-  },
-  relationships: [
-    {
-      field: 'labelId',
-      kind: 'foreignKey',
-      relatedCollection: 'webmcpfixturelabels',
-    },
-  ],
-  toolDescriptors: [
-    {
-      action: 'list',
-      name: 'webmcpfixtureitem_list',
-      description: 'List fixture items',
-      inputSchema: { type: 'object', properties: {} },
-      readOnly: true,
-    },
-    {
-      action: 'create',
-      name: 'webmcpfixtureitem_create',
-      description: 'Create a fixture item',
-      inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
-      readOnly: false,
-    },
-  ] satisfies WebToolDescriptor[],
-};
-
-const labelDefinition: SmrtWebCollectionDefinition = {
-  name: 'webmcpfixturelabels',
-  objectRef: '@fixture/smrt-web:WebMcpFixtureLabel',
-  className: 'WebMcpFixtureLabel',
-  endpoint: '/webmcpfixturelabels',
-  idField: 'id',
-  actions: ['list', 'get', 'create', 'update', 'delete'],
-  fields: { name: { type: 'text', required: true } },
-  relationships: [],
-};
-
-function canonicalDefinition(
-  overrides: Partial<WebMcpToolDefinition> = {},
-): WebMcpToolDefinition {
-  return {
-    collection: 'webmcpfixturegetonlys',
-    objectRef: '@fixture/smrt-web:WebMcpFixtureGetOnly',
-    className: 'WebMcpFixtureGetOnly',
-    endpoint: '/webmcpfixturegetonlys',
-    idField: 'id',
-    idType: 'uuid',
-    relationships: [],
-    action: 'get',
-    name: 'webmcpfixturegetonly_get',
-    description: 'Get one fixture record',
-    inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
-    readOnly: true,
-    effect: 'read',
-    idempotent: true,
-    openWorld: false,
-    route: { method: 'GET', scope: 'item', path: [] },
-    ...overrides,
-  };
-}
-
-const commandDefinition = canonicalDefinition({
-  collection: 'webmcpfixturecommands',
-  objectRef: '@fixture/smrt-web:WebMcpFixtureCommand',
-  className: 'WebMcpFixtureCommand',
-  endpoint: '/webmcpfixturecommands',
-  action: 'run',
-  name: 'webmcpfixturecommand_run',
-  description: 'Run the fixture command',
-  inputSchema: {
-    type: 'object',
-    properties: { options: { type: 'object' } },
-  },
-  readOnly: false,
-  effect: 'write',
-  idempotent: true,
-  openWorld: false,
-  route: {
-    method: 'POST',
-    scope: 'collection',
-    path: ['run'],
-    optionsBag: true,
-  },
-});
-
 describe('WebMCP application composition (#2523)', () => {
   const originalDocument = (globalThis as { document?: unknown }).document;
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
@@ -247,9 +157,58 @@ describe('WebMCP application composition (#2523)', () => {
   let itemCollection: WebMcpFixtureItemCollection;
   let getOnly: WebMcpFixtureGetOnlyCollection;
   let command: WebMcpFixtureCommandCollection;
+  let itemDefinition: SmrtWebCollectionDefinition;
+  let labelDefinition: SmrtWebCollectionDefinition;
+  let generatedDefinitions: WebMcpToolDefinition[];
+  let getDefinition: WebMcpToolDefinition;
+  let commandDefinition: WebMcpToolDefinition;
   const baseUrl = 'http://fixture.local/api/v1';
 
   beforeAll(async () => {
+    // Use the same AST manifest builder that emits the production virtual web
+    // module. The fixture must exercise generated descriptors, not a copied
+    // hand-authored approximation of their shape.
+    const scanner = new OxcScanner({
+      cwd: process.cwd(),
+      include: ['src/webmcp-e2e.integration.test.ts'],
+      exclude: [],
+      followImports: true,
+      baseClasses: ['SmrtObject', 'SmrtCollection'],
+      includeStaticMethods: true,
+    });
+    const { results, resolved } = await scanner.scanAndResolve();
+    const manifest = new ManifestAdapter().toManifest(resolved, {
+      packageName: '@fixture/smrt-web',
+      typeAliases: results.typeAliases,
+    });
+    new ManifestGenerator().applyGenerationPasses(manifest, {
+      packageName: '@fixture/smrt-web',
+    });
+    const collectionDefinitions = selectWebCollectionEntries(manifest).map(
+      (entry) => buildWebCollectionDefinition(entry, manifest),
+    );
+    itemDefinition = collectionDefinitions.find(
+      (definition) => definition.name === 'webmcpfixtureitems',
+    ) as SmrtWebCollectionDefinition;
+    labelDefinition = collectionDefinitions.find(
+      (definition) => definition.name === 'webmcpfixturelabels',
+    ) as SmrtWebCollectionDefinition;
+    generatedDefinitions = buildWebMcpToolDefinitions(manifest);
+    getDefinition = generatedDefinitions.find(
+      (definition) =>
+        definition.action === 'get' &&
+        definition.collection === 'webmcpfixturegetonlies',
+    ) as WebMcpToolDefinition;
+    commandDefinition = generatedDefinitions.find(
+      (definition) =>
+        definition.action === 'run' &&
+        definition.collection === 'webmcpfixturecommands',
+    ) as WebMcpToolDefinition;
+    expect(itemDefinition).toBeDefined();
+    expect(labelDefinition).toBeDefined();
+    expect(getDefinition).toBeDefined();
+    expect(commandDefinition).toBeDefined();
+
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -286,7 +245,7 @@ describe('WebMCP application composition (#2523)', () => {
     );
     api.registerCollection('webmcpfixtureitems', itemCollection);
     api.registerCollection('webmcpfixturelabels', labels);
-    api.registerCollection('webmcpfixturegetonlys', getOnly);
+    api.registerCollection('webmcpfixturegetonlies', getOnly);
     api.registerCollection('webmcpfixturecommands', command);
     handler = api.generateHandler();
 
@@ -308,10 +267,15 @@ describe('WebMCP application composition (#2523)', () => {
   });
 
   function authenticatedFetch(): typeof fetch {
+    return fetchWithAuthorization('Bearer fixture-user');
+  }
+
+  function fetchWithAuthorization(authorization?: string): typeof fetch {
     return (async (input: RequestInfo | URL, init?: RequestInit) => {
       const requestUrl = new URL(String(input), `${baseUrl}/`);
       const headers = new Headers(init?.headers);
-      headers.set('authorization', 'Bearer fixture-user');
+      if (authorization === undefined) headers.delete('authorization');
+      else headers.set('authorization', authorization);
       return handler(
         new Request(requestUrl, {
           ...init,
@@ -347,9 +311,34 @@ describe('WebMCP application composition (#2523)', () => {
     );
     expect(unauthorized.status).toBe(403);
     // Principal-bound server tools are not part of this browser registrar.
-    expect(
-      itemDefinition.toolDescriptors?.map((tool) => tool.name),
-    ).not.toContain('principal_read');
+    expect(generatedDefinitions.map((tool) => tool.name)).not.toContain(
+      'principal_read',
+    );
+
+    const { tools } = installModelContext();
+    const registration = registerWebMcpTools(
+      [
+        generatedDefinitions.find(
+          (definition) =>
+            definition.collection === 'webmcpfixtureitems' &&
+            definition.action === 'list',
+        ) as WebMcpToolDefinition,
+      ],
+      {
+        client: createSmrtWebClient(),
+        resolveToolFetchers: () =>
+          createDefinitionFetchers(
+            itemDefinition,
+            '/api/v1',
+            fetchWithAuthorization(),
+          ),
+      },
+    );
+    await registration.ready;
+    const list = tools.find((tool) => tool.name.endsWith('_list'));
+    if (!list) throw new Error('fixture list tool was not registered');
+    await expect(list.execute({})).rejects.toThrow(/401/);
+    registration();
   });
 
   it('executes generated list/create, get-only, and custom-action-only tools', async () => {
@@ -361,11 +350,18 @@ describe('WebMCP application composition (#2523)', () => {
       authenticatedFetch(),
     );
     const getOnlyRecord = (await getOnly.list())[0];
-    const getDefinition = canonicalDefinition();
     const registration = registerWebMcpTools(
-      [itemDefinition, getDefinition, commandDefinition],
+      [
+        ...generatedDefinitions.filter(
+          (definition) =>
+            definition.collection === 'webmcpfixtureitems' &&
+            ['list', 'create'].includes(definition.action),
+        ),
+        getDefinition,
+        commandDefinition,
+      ],
       {
-        effects: ['read', 'write'],
+        effects: ['read', 'write', 'destructive'],
         client,
         resolveFetchers: () => itemFetchers,
         resolveToolFetchers: (definition) =>
@@ -375,8 +371,8 @@ describe('WebMCP application composition (#2523)', () => {
     await registration.ready;
 
     expect(tools.map((tool) => tool.name)).toEqual([
-      'webmcpfixtureitem_list',
       'webmcpfixtureitem_create',
+      'webmcpfixtureitem_list',
       'webmcpfixturegetonly_get',
       'webmcpfixturecommand_run',
     ]);
@@ -417,7 +413,12 @@ describe('WebMCP application composition (#2523)', () => {
   it('defaults to read exposure and namespaces the selected browser surface', async () => {
     const { tools } = installModelContext();
     const registration = registerWebMcpTools(
-      [itemDefinition, commandDefinition],
+      [
+        ...generatedDefinitions.filter(
+          (definition) => definition.collection === 'webmcpfixtureitems',
+        ),
+        commandDefinition,
+      ],
       {
         namespace: 'fixture',
         client: createSmrtWebClient(),
@@ -434,6 +435,7 @@ describe('WebMCP application composition (#2523)', () => {
     await registration.ready;
 
     expect(tools.map((tool) => tool.name)).toEqual([
+      'fixture_webmcpfixtureitem_get',
       'fixture_webmcpfixtureitem_list',
     ]);
     registration();
@@ -468,10 +470,15 @@ describe('WebMCP application composition (#2523)', () => {
     await labels.preload();
     expect(labelLists).toBe(1);
 
-    const registration = registerWebMcpTools([itemDefinition], {
+    const itemCreateDefinition = generatedDefinitions.find(
+      (definition) =>
+        definition.collection === 'webmcpfixtureitems' &&
+        definition.action === 'create',
+    ) as WebMcpToolDefinition;
+    const registration = registerWebMcpTools([itemCreateDefinition], {
       effects: ['write'],
       client,
-      resolveFetchers: () =>
+      resolveToolFetchers: () =>
         createDefinitionFetchers(
           itemDefinition,
           '/api/v1',

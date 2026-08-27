@@ -8,10 +8,14 @@
  */
 
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
+import type { WebMcpToolDefinition } from '@happyvertical/smrt-web';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { createServer } from 'vite';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import Fixture from './webmcp-composed.fixture.svelte';
+import SsrFixture from './webmcp-ssr.fixture.svelte';
 
 type CapturedTool = {
   name: string;
@@ -24,6 +28,25 @@ afterEach(() => {
 });
 
 describe('composed Provider WebMCP surface (#2523)', () => {
+  const generatedReadDefinition: WebMcpToolDefinition = {
+    collection: 'fixture-items',
+    objectRef: '@fixture/app:FixtureItem',
+    className: 'FixtureItem',
+    endpoint: '/fixture-items',
+    idField: 'id',
+    idType: 'text',
+    relationships: [],
+    action: 'get',
+    name: 'fixture_generated_read',
+    description: 'Read one fixture item.',
+    inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    readOnly: true,
+    effect: 'read',
+    idempotent: true,
+    openWorld: false,
+    route: { method: 'GET', scope: 'item', path: [] },
+  };
+
   it('keeps the composed UI render safe without browser modelContext support', async () => {
     const dataSurfaceRegistry = createDataSurfaceRegistry();
     const view = render(Fixture, { props: { dataSurfaceRegistry } });
@@ -34,6 +57,26 @@ describe('composed Provider WebMCP surface (#2523)', () => {
     expect(dataSurfaceRegistry.list()).toEqual([]);
   });
 
+  it('renders the Provider composition through the server runtime', async () => {
+    const vite = await createServer({
+      appType: 'custom',
+      configFile: false,
+      plugins: [svelte()],
+      root: process.cwd(),
+      server: { middlewareMode: true },
+    });
+    try {
+      const { default: ssrFixture } = await vite.ssrLoadModule(
+        '/src/web/__tests__/webmcp-ssr.fixture.svelte',
+      );
+      const { render: renderSsr } = await vite.ssrLoadModule('svelte/server');
+      const result = renderSsr(ssrFixture);
+      expect(result.body).toContain('WebMCP SSR-safe fixture');
+    } finally {
+      await vite.close();
+    }
+  });
+
   it('registers the mounted Form and DataTable together and preserves consent', async () => {
     const registered: CapturedTool[] = [];
     document.modelContext = {
@@ -42,9 +85,19 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       },
     };
     const dataSurfaceRegistry = createDataSurfaceRegistry();
-    const view = render(Fixture, { props: { dataSurfaceRegistry } });
+    const view = render(Fixture, {
+      props: {
+        dataSurfaceRegistry,
+        generatedDefinitions: [generatedReadDefinition],
+      },
+    });
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.map((tool) => tool.name)).toContain(
+        'fixture_generated_read',
+      ),
+    );
 
     expect(registered.map((tool) => tool.name)).toEqual([
       'smrt_ui_list_form_controls',
@@ -54,6 +107,7 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       'smrt_ui_inspect_data_surface',
       'smrt_ui_execute_data_surface_control',
       'fixture_component_preview',
+      'fixture_generated_read',
     ]);
     expect(dataSurfaceRegistry.list()).toHaveLength(1);
 

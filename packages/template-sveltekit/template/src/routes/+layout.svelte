@@ -19,6 +19,18 @@
     data.session.activeTenantId ? 'Authorized session tenant' : 'No active tenant',
   );
 
+  // Keep the optional data-plane runtime out of browsers that do not expose
+  // WebMCP. SSR remains safe because the feature check is document-guarded.
+  const webmcp = $derived(
+    typeof document !== 'undefined' && 'modelContext' in document
+      ? {
+          definitions: webMcpToolDefinitions,
+          basePath: '/api',
+          effects: ['read'] as const,
+        }
+      : false,
+  );
+
   // Add application routes here. Generated REST routes live under /api and do
   // not automatically imply a human-facing page.
   const nav: ShellNavItem[] = [
@@ -35,13 +47,7 @@
   ];
 </script>
 
-<Provider
-  webmcp={{
-    definitions: webMcpToolDefinitions,
-    basePath: '/api',
-    effects: ['read'],
-  }}
->
+<Provider {webmcp}>
   <ThemeProvider preset="smrt" colorScheme="system" persist={true}>
     <AdminShell
       title="s-m-r-t app"
