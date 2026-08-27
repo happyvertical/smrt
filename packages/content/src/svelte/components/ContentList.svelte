@@ -345,7 +345,9 @@ let jobSnapshot = $state<ContentListJobSnapshot>({
   pendingRowIds: new Set(),
   pendingQueryKeys: new Set(),
 });
+const MAX_DEFERRED_JOB_COMPLETIONS = 50;
 let completedJobs = $state<ContentListJob[]>([]);
+let completedJobsOverflowed = $state(false);
 let activeQueryKey = $state<string | undefined>(undefined);
 
 // Job state is subscribed once so hosts can use a framework-free controller.
@@ -354,6 +356,7 @@ let activeQueryKey = $state<string | undefined>(undefined);
 $effect(() => {
   const binding = jobs;
   completedJobs = [];
+  completedJobsOverflowed = false;
   if (!binding) {
     jobSnapshot = {
       jobs: [],
@@ -380,8 +383,12 @@ $effect(() => {
     statuses = nextStatuses;
     initialized = true;
     jobSnapshot = next;
-    if (completions.length > 0)
-      completedJobs = [...completedJobs, ...completions];
+    if (completions.length > 0) {
+      const combined = [...completedJobs, ...completions];
+      if (combined.length > MAX_DEFERRED_JOB_COMPLETIONS)
+        completedJobsOverflowed = true;
+      completedJobs = combined.slice(-MAX_DEFERRED_JOB_COMPLETIONS);
+    }
   });
 });
 
@@ -790,11 +797,13 @@ $effect(() => {
 // stay visible and never produce the refresh that a success would.
 $effect(() => {
   const completions = completedJobs;
-  if (completions.length === 0) return;
+  const overflowed = completedJobsOverflowed;
+  if (completions.length === 0 && !overflowed) return;
   if (!queryBinding?.refresh) {
     // Local lists and structurally valid read-only bindings cannot consume a
     // completion. Discard it rather than retaining unbounded job history.
     completedJobs = [];
+    completedJobsOverflowed = false;
     return;
   }
   // A success can arrive while an older query is still in flight. Keep the
@@ -802,7 +811,9 @@ $effect(() => {
   // become the indefinitely visible final state.
   if (refreshing || isLoading) return;
   completedJobs = [];
+  completedJobsOverflowed = false;
   if (
+    overflowed ||
     completions.some((job) =>
       contentListJobAffectsQuery(job, activeQueryKey, visibleRowIds),
     )

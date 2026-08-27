@@ -810,6 +810,38 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
     expect(query.refreshes).toBe(1);
   });
 
+  it('bounds completions during a stuck query without losing refresh intent', async () => {
+    const query = createFakeContentListQuery();
+    const jobs = createContentListJobController({ maxTerminalJobs: 100 });
+    renderList({ jobs, query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    query.setBusy({ refreshing: true });
+    flushSync();
+
+    jobs.update({
+      jobId: 'job-relevant-first',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'succeeded',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    for (let index = 0; index < 51; index += 1) {
+      jobs.update({
+        jobId: `job-unrelated-${index}`,
+        actionId: 'review',
+        submissionKey: `review:other-${index}`,
+        status: 'succeeded',
+        target: { kind: 'rows', rowIds: [`other-${index}`] },
+      });
+    }
+    await settle();
+    expect(query.refreshes).toBe(0);
+
+    query.setBusy({ refreshing: false });
+    await settle();
+    expect(query.refreshes).toBe(1);
+  });
+
   it('discards completions when the query cannot refresh', async () => {
     const jobs = createContentListJobController();
     const onRefresh = vi.fn();
