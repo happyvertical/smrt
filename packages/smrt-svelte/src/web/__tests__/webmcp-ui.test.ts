@@ -578,4 +578,84 @@ describe('registerWebMcpUiTools', () => {
     ).not.toThrow();
     expect(calls).toBe(6);
   });
+
+  it('observes asynchronous host rejection, aborts tools, and releases only its own lock', async () => {
+    let rejectFirstRegistration: ((reason?: unknown) => void) | undefined;
+    const signals: AbortSignal[] = [];
+    let calls = 0;
+    const document = {
+      modelContext: {
+        registerTool(
+          _tool: WebMcpToolSpec,
+          options?: { signal?: AbortSignal },
+        ): void | PromiseLike<void> {
+          calls += 1;
+          if (options?.signal) signals.push(options.signal);
+          if (calls === 1) {
+            return new Promise<void>((_resolve, reject) => {
+              rejectFirstRegistration = reject;
+            });
+          }
+        },
+      },
+    };
+    const registries = {
+      controlRegistry: createControlInteractionRegistry(),
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+    };
+
+    const disposeFirst = registerWebMcpUiTools({ ...registries, document });
+    disposeFirst();
+    const disposeReplacement = registerWebMcpUiTools({
+      ...registries,
+      document,
+    });
+
+    rejectFirstRegistration?.(new Error('late host collision'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(signals.slice(0, 6).every((signal) => signal.aborted)).toBe(true);
+    expect(signals.slice(6).every((signal) => !signal.aborted)).toBe(true);
+    expect(() => registerWebMcpUiTools({ ...registries, document })).toThrow(
+      'already registered',
+    );
+
+    disposeReplacement();
+    expect(() =>
+      registerWebMcpUiTools({ ...registries, document }),
+    ).not.toThrow();
+  });
+
+  it('releases an active prefix when asynchronous host registration fails', async () => {
+    const signals: AbortSignal[] = [];
+    let rejectRegistration: ((reason?: unknown) => void) | undefined;
+    const document = {
+      modelContext: {
+        registerTool(
+          _tool: WebMcpToolSpec,
+          options?: { signal?: AbortSignal },
+        ): void | PromiseLike<void> {
+          if (options?.signal) signals.push(options.signal);
+          if (!rejectRegistration) {
+            return new Promise<void>((_resolve, reject) => {
+              rejectRegistration = reject;
+            });
+          }
+        },
+      },
+    };
+    const registries = {
+      controlRegistry: createControlInteractionRegistry(),
+      dataSurfaceRegistry: createDataSurfaceRegistry(),
+    };
+
+    registerWebMcpUiTools({ ...registries, document });
+    rejectRegistration?.(new Error('host collision'));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect(() =>
+      registerWebMcpUiTools({ ...registries, document }),
+    ).not.toThrow();
+  });
 });

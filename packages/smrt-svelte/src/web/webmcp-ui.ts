@@ -606,24 +606,29 @@ export function registerWebMcpUiTools(
 
   const controller = new AbortController();
   let disposed = false;
+  const dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    controller.abort();
+    locks.delete(prefix);
+  };
   try {
     for (const tool of tools(
       prefix,
       options.controlRegistry,
       options.dataSurfaceRegistry,
     )) {
-      modelContext.registerTool(tool, { signal: controller.signal });
+      const registration = modelContext.registerTool(tool, {
+        signal: controller.signal,
+      });
+      if (registration) {
+        void Promise.resolve(registration).catch(dispose);
+      }
     }
   } catch (error) {
-    controller.abort();
-    locks.delete(prefix);
+    dispose();
     throw error;
   }
 
-  return () => {
-    if (disposed) return;
-    disposed = true;
-    controller.abort();
-    locks.delete(prefix);
-  };
+  return dispose;
 }
