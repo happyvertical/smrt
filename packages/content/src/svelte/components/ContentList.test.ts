@@ -113,6 +113,45 @@ function switchTo(target: HTMLElement, label: string) {
   click(buttonByLabel(target, label));
 }
 
+/**
+ * Presentations whose paging must be identical.
+ *
+ * `defaultViewMode` defaults to `grid`, and `renderList` never overrode it, so
+ * every paging, clamping, and restoration test only ever exercised the arm
+ * where `DataTable` is NOT mounted. `DataTable` clamps the same controller, so
+ * half the component's paging behaviour was untested — twice a clamp fix landed
+ * green while the compact path still carried the bug. Anything about which page
+ * is requested, which pages exist, or which rows are reachable belongs in
+ * `describePaging` so it runs in both.
+ */
+const PAGING_VIEW_MODES = ['grid', 'compact'] as const;
+
+/** Renders in one presentation; the suite body receives the bound renderer. */
+function describePaging(
+  name: string,
+  suite: (render: (props?: RenderOptions) => HTMLElement) => void,
+): void {
+  for (const defaultViewMode of PAGING_VIEW_MODES) {
+    describe(`${name} [${defaultViewMode}]`, () => {
+      suite((props: RenderOptions = {}) =>
+        renderList({ defaultViewMode, ...props }),
+      );
+    });
+  }
+}
+
+/**
+ * The rendered row titles, in whichever presentation is mounted — the card
+ * modes render headings, the compact table renders a title cell.
+ */
+function visibleRowTitles(target: HTMLElement): string[] {
+  const table = target.querySelector('table');
+  if (!table) return rowTitles(target);
+  return Array.from(table.querySelectorAll('tbody tr td:nth-child(3)')).map(
+    (cell) => cell.textContent?.trim() ?? '',
+  );
+}
+
 function rowTitles(target: HTMLElement): string[] {
   return Array.from(target.querySelectorAll('h3')).map(
     (heading) => heading.textContent?.trim() ?? '',
@@ -1234,103 +1273,106 @@ function paginationNav(target: HTMLElement): HTMLElement | null {
   return target.querySelector<HTMLElement>('nav[aria-label="Content pages"]');
 }
 
-describe('ContentList unpaginated state in server mode (#2452)', () => {
-  it('coerces `?size=all` to the page size, pages, and says so', () => {
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
-      urlState: { params: 'size=all' },
+describePaging(
+  'ContentList unpaginated state in server mode (#2452)',
+  (render) => {
+    it('coerces `?size=all` to the page size, pages, and says so', () => {
+      const query = createFakeContentListQuery();
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
+        urlState: { params: 'size=all' },
+      });
+
+      // The request is bounded, not silently defaulted behind the operator's back.
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 0,
+        limit: 2,
+      });
+
+      query.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 5);
+      flushSync();
+
+      // Page controls render, so the other three rows are reachable.
+      expect(paginationNav(target)).toBeTruthy();
+      const notice = target.querySelector('.state-notice');
+      expect(notice?.textContent).toContain(
+        'an unpaginated list is not available from the server',
+      );
+
+      // And paging actually issues the next offset.
+      const nextPage = Array.from(
+        paginationNav(target)?.querySelectorAll('button') ?? [],
+      ).find((button) =>
+        /next|2/i.test(
+          `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`,
+        ),
+      );
+      click(nextPage as HTMLButtonElement);
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 2,
+        limit: 2,
+      });
     });
 
-    // The request is bounded, not silently defaulted behind the operator's back.
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 0,
-      limit: 2,
+    it('keeps the server page-size seed when a link omits `size`', () => {
+      const query = createFakeContentListQuery();
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
+        urlState: { params: 'q=zoning' },
+      });
+
+      expect(searchInput(target).value).toBe('zoning');
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 0,
+        limit: 2,
+      });
+
+      query.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 5);
+      flushSync();
+
+      expect(paginationNav(target)).toBeTruthy();
+      // Nothing was refused, so the operator is not told anything.
+      expect(target.querySelector('.state-notice')).toBeNull();
     });
 
-    query.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 5);
-    flushSync();
+    it('omits `size` from a published link while at the default', () => {
+      const onChange = vi.fn();
+      const query = createFakeContentListQuery();
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
+        urlState: { params: '', onChange },
+      });
 
-    // Page controls render, so the other three rows are reachable.
-    expect(paginationNav(target)).toBeTruthy();
-    const notice = target.querySelector('.state-notice');
-    expect(notice?.textContent).toContain(
-      'an unpaginated list is not available from the server',
-    );
+      typeText(searchInput(target), 'zoning');
 
-    // And paging actually issues the next offset.
-    const nextPage = Array.from(
-      paginationNav(target)?.querySelectorAll('button') ?? [],
-    ).find((button) =>
-      /next|2/i.test(
-        `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`,
-      ),
-    );
-    click(nextPage as HTMLButtonElement);
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 2,
-      limit: 2,
-    });
-  });
-
-  it('keeps the server page-size seed when a link omits `size`', () => {
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
-      urlState: { params: 'q=zoning' },
+      const params = onChange.mock.calls.at(-1)?.[0] as URLSearchParams;
+      expect(params.get('q')).toBe('zoning');
+      expect(params.get('size')).toBeNull();
     });
 
-    expect(searchInput(target).value).toBe('zoning');
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 0,
-      limit: 2,
+    it('restores configured defaults from an empty query string', () => {
+      // A bare path is a valid binding, not an absent one: the configured page
+      // size must apply exactly as it would with parameters present.
+      const target = render({
+        urlState: { params: '', options: { defaultPageSize: 1 } },
+      });
+
+      expect(visibleRowTitles(target)).toHaveLength(1);
+      expect(paginationNav(target)).toBeTruthy();
     });
 
-    query.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 5);
-    flushSync();
+    it('still allows an unpaginated local list', () => {
+      const target = render({ urlState: { params: 'size=all' } });
 
-    expect(paginationNav(target)).toBeTruthy();
-    // Nothing was refused, so the operator is not told anything.
-    expect(target.querySelector('.state-notice')).toBeNull();
-  });
-
-  it('omits `size` from a published link while at the default', () => {
-    const onChange = vi.fn();
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 2 } },
-      urlState: { params: '', onChange },
+      expect(visibleRowTitles(target)).toHaveLength(2);
+      expect(paginationNav(target)).toBeNull();
+      expect(target.querySelector('.state-notice')).toBeNull();
     });
-
-    typeText(searchInput(target), 'zoning');
-
-    const params = onChange.mock.calls.at(-1)?.[0] as URLSearchParams;
-    expect(params.get('q')).toBe('zoning');
-    expect(params.get('size')).toBeNull();
-  });
-
-  it('restores configured defaults from an empty query string', () => {
-    // A bare path is a valid binding, not an absent one: the configured page
-    // size must apply exactly as it would with parameters present.
-    const target = renderList({
-      urlState: { params: '', options: { defaultPageSize: 1 } },
-    });
-
-    expect(rowTitles(target)).toHaveLength(1);
-    expect(paginationNav(target)).toBeTruthy();
-  });
-
-  it('still allows an unpaginated local list', () => {
-    const target = renderList({ urlState: { params: 'size=all' } });
-
-    expect(rowTitles(target)).toHaveLength(2);
-    expect(paginationNav(target)).toBeNull();
-    expect(target.querySelector('.state-notice')).toBeNull();
-  });
-});
+  },
+);
 
 describe('ContentList server completeness reporting (#2452)', () => {
   it('tells the operator when the server truncated the answer', async () => {
@@ -1396,7 +1438,7 @@ describe('ContentList server completeness reporting (#2452)', () => {
   });
 });
 
-describe('ContentList restore limits (#2452)', () => {
+describePaging('ContentList restore limits (#2452)', (render) => {
   it('holds a saved view to the host maxPageSize, like a link', async () => {
     const store = createContentListMemorySavedViewStore({
       storageKey: 'test:content-list:max-page-size',
@@ -1428,7 +1470,7 @@ describe('ContentList restore limits (#2452)', () => {
     });
 
     const query = createFakeContentListQuery();
-    const target = renderList({
+    const target = render({
       savedViews: store,
       query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
       urlState: { options: { maxPageSize: 25 } },
@@ -1752,100 +1794,94 @@ describe('ContentList free-text filter case (#2452 batch 3)', () => {
   });
 });
 
-describe('ContentList capped-offset reporting (#2452 batch 3)', () => {
-  it('tells the operator that the page was redirected', () => {
-    const query = createFakeContentListQuery();
-    // A link is the way an unreachable page arrives now that the pager stops
-    // offering them: it is applied before anything can clamp it.
-    const target = renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
-      urlState: { params: 'page=9000' },
+describePaging(
+  'ContentList capped-offset reporting (#2452 batch 3)',
+  (render) => {
+    it('tells the operator that the page was redirected', () => {
+      const query = createFakeContentListQuery();
+      // A link is the way an unreachable page arrives now that the pager stops
+      // offering them: it is applied before anything can clamp it.
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+        urlState: { params: 'page=9000' },
+      });
+
+      const page = query.requests.at(-1)?.page as { offset: number };
+      expect(page.offset).toBeLessThanOrEqual(1_000_000);
+      // The redirect survives the corrective re-translation that follows it.
+      const notice = target.querySelector('.state-notice');
+      expect(notice?.textContent).toContain('page 9000 cannot be loaded');
+      expect(notice?.textContent).toContain('the list stops at page 5001');
     });
 
-    const page = query.requests.at(-1)?.page as { offset: number };
-    expect(page.offset).toBeLessThanOrEqual(1_000_000);
-    // The redirect survives the corrective re-translation that follows it.
-    const notice = target.querySelector('.state-notice');
-    expect(notice?.textContent).toContain('page 9000 cannot be loaded');
-    expect(notice?.textContent).toContain('the list stops at page 5001');
-  });
+    it('clears the redirect notice once the operator moves elsewhere', () => {
+      const query = createFakeContentListQuery();
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+        urlState: { params: 'page=9000' },
+      });
+      query.resolve([serverRow('a', 'Alpha')], 2_000_000);
+      flushSync();
+      expect(target.querySelector('.state-notice')).not.toBeNull();
 
-  it('clears the redirect notice once the operator moves elsewhere', async () => {
-    const registry = createDataSurfaceRegistry();
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      defaultViewMode: 'compact',
-      dataSurface: { registry },
-      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
-      urlState: { params: 'page=9000' },
+      // Moved through the pager the operator actually sees, which now renders in
+      // every presentation rather than only in the card modes.
+      const first = Array.from(
+        paginationNav(target)?.querySelectorAll('button') ?? [],
+      ).find((button) => button.textContent?.trim() === '1');
+      click(first as HTMLButtonElement);
+
+      expect(target.querySelector('.state-notice')).toBeNull();
     });
-    query.resolve([serverRow('a', 'Alpha')], 2_000_000);
-    flushSync();
-    expect(target.querySelector('.state-notice')).not.toBeNull();
 
-    const identity = { surfaceId: 'content-list', kind: 'table' as const };
-    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
-    await registry.execute({
-      version: 1,
-      commandId: 'elsewhere',
-      identity,
-      expectedRevision: registry.inspect(identity)?.revision ?? 0,
-      controlId: 'set-page',
-      payload: { page: 2 },
+    it('keeps a restored page when the compact table mounts', () => {
+      const query = createFakeContentListQuery();
+      render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+        urlState: { params: 'page=3' },
+      });
+      // DataTable clamps the controller's page against `totalRows`; before the
+      // first response there is no total to clamp against, and handing it a zero
+      // would silently open a `?page=3` link on page 1.
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 20,
+        limit: 10,
+      });
     });
-    flushSync();
 
-    expect(target.querySelector('.state-notice')).toBeNull();
-  });
+    it('never advertises a page the endpoint cannot fetch', () => {
+      const query = createFakeContentListQuery();
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+      });
+      // 2,000,000 rows at 200 a page is 10,000 pages, but offset paging stops at
+      // 1,000,000 — page 5,001 is the last one that can ever be fetched.
+      query.resolve([serverRow('a', 'Alpha')], 2_000_000);
+      flushSync();
 
-  it('keeps a restored page when the compact table mounts', () => {
-    const query = createFakeContentListQuery();
-    renderList({
-      defaultViewMode: 'compact',
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-      urlState: { params: 'page=3' },
+      const labels = Array.from(
+        paginationNav(target)?.querySelectorAll('button') ?? [],
+      ).map((button) => button.textContent?.trim() ?? '');
+      expect(labels).toContain('5001');
+      expect(labels).not.toContain('10000');
     });
-    // DataTable clamps the controller's page against `totalRows`; before the
-    // first response there is no total to clamp against, and handing it a zero
-    // would silently open a `?page=3` link on page 1.
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 20,
-      limit: 10,
+
+    it('advertises every page when they are all reachable', () => {
+      const query = createFakeContentListQuery();
+      const target = render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      });
+      query.resolve([serverRow('a', 'Alpha')], 45);
+      flushSync();
+
+      const labels = Array.from(
+        paginationNav(target)?.querySelectorAll('button') ?? [],
+      ).map((button) => button.textContent?.trim() ?? '');
+      expect(labels).toContain('5');
     });
-  });
-
-  it('never advertises a page the endpoint cannot fetch', () => {
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
-    });
-    // 2,000,000 rows at 200 a page is 10,000 pages, but offset paging stops at
-    // 1,000,000 — page 5,001 is the last one that can ever be fetched.
-    query.resolve([serverRow('a', 'Alpha')], 2_000_000);
-    flushSync();
-
-    const labels = Array.from(
-      paginationNav(target)?.querySelectorAll('button') ?? [],
-    ).map((button) => button.textContent?.trim() ?? '');
-    expect(labels).toContain('5001');
-    expect(labels).not.toContain('10000');
-  });
-
-  it('advertises every page when they are all reachable', () => {
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-    });
-    query.resolve([serverRow('a', 'Alpha')], 45);
-    flushSync();
-
-    const labels = Array.from(
-      paginationNav(target)?.querySelectorAll('button') ?? [],
-    ).map((button) => button.textContent?.trim() ?? '');
-    expect(labels).toContain('5');
-  });
-});
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Review batch 4 (#2452)
@@ -1940,59 +1976,62 @@ describe('ContentList toolbar vocabulary (#2452 batch 4)', () => {
   });
 });
 
-describe('ContentList type lock and a restored page (#2452 batch 4)', () => {
-  it('keeps a restored page on a locked list whose link omits `type`', () => {
-    const query = createFakeContentListQuery();
-    renderList({
-      type: 'article',
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-      urlState: { params: 'page=3' },
+describePaging(
+  'ContentList type lock and a restored page (#2452 batch 4)',
+  (render) => {
+    it('keeps a restored page on a locked list whose link omits `type`', () => {
+      const query = createFakeContentListQuery();
+      render({
+        type: 'article',
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+        urlState: { params: 'page=3' },
+      });
+
+      // The lock's `setFilters` resets paging, so re-applying it after the
+      // restore would silently discard the page the same link just carried.
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 20,
+        limit: 10,
+      });
+      // And the lock still won.
+      expect(JSON.stringify(query.requests.at(-1)?.filter)).toContain(
+        '"article"',
+      );
     });
 
-    // The lock's `setFilters` resets paging, so re-applying it after the
-    // restore would silently discard the page the same link just carried.
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 20,
-      limit: 10,
+    it('keeps a restored page when the link carries the locked type too', () => {
+      const query = createFakeContentListQuery();
+      render({
+        type: 'article',
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+        urlState: { params: 'type=article&page=3' },
+      });
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 20,
+        limit: 10,
+      });
     });
-    // And the lock still won.
-    expect(JSON.stringify(query.requests.at(-1)?.filter)).toContain(
-      '"article"',
-    );
-  });
 
-  it('keeps a restored page when the link carries the locked type too', () => {
-    const query = createFakeContentListQuery();
-    renderList({
-      type: 'article',
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-      urlState: { params: 'type=article&page=3' },
+    it('lets the lock override a conflicting restored type without losing the page', () => {
+      const query = createFakeContentListQuery();
+      render({
+        type: 'article',
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+        urlState: { params: 'type=document&page=3' },
+      });
+      const filter = JSON.stringify(query.requests.at(-1)?.filter);
+      expect(filter).toContain('"article"');
+      expect(filter).not.toContain('"document"');
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 20,
+        limit: 10,
+      });
     });
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 20,
-      limit: 10,
-    });
-  });
-
-  it('lets the lock override a conflicting restored type without losing the page', () => {
-    const query = createFakeContentListQuery();
-    renderList({
-      type: 'article',
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-      urlState: { params: 'type=document&page=3' },
-    });
-    const filter = JSON.stringify(query.requests.at(-1)?.filter);
-    expect(filter).toContain('"article"');
-    expect(filter).not.toContain('"document"');
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 20,
-      limit: 10,
-    });
-  });
-});
+  },
+);
 
 describe('ContentList type lock across a prop change (#2452 batch 4)', () => {
   function mountHarness(type: string | undefined) {
@@ -2286,106 +2325,113 @@ describe('the unrepresentable-option sentinel survives HTML parsing', () => {
   });
 });
 
-describe('a page is only clamped against its own query total', () => {
-  it('keeps a restored page when the previous total was smaller', async () => {
-    const store = createContentListMemorySavedViewStore({
-      storageKey: 'test:content-list:stale-total',
+describePaging(
+  'a page is only clamped against its own query total',
+  (render) => {
+    it('keeps a restored page when the previous total was smaller', async () => {
+      const store = createContentListMemorySavedViewStore({
+        storageKey: 'test:content-list:stale-total',
+      });
+      await store.save({
+        name: 'Deep page',
+        snapshot: {
+          version: 3,
+          modes: {
+            filtering: 'manual',
+            sorting: 'manual',
+            pagination: 'manual',
+          },
+          state: {
+            search: 'zoning',
+            filters: [],
+            sorting: [],
+            page: 5,
+            pageSize: 10,
+            columnOrder: [],
+            columnVisibility: [],
+            columnWidths: [],
+            columnPinning: [],
+            selection: { scope: 'explicit', rowIds: [] },
+            selectedRowIds: [],
+            expandedRowIds: [],
+          },
+        } as never,
+      });
+
+      const query = createFakeContentListQuery();
+      const target = render({
+        savedViews: store,
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+      });
+      await settle();
+
+      // The FIRST query settles with a small total — one page's worth.
+      query.resolve([serverRow('a', 'Alpha')], 3);
+      flushSync();
+
+      // Applying the view changes the query AND restores page 5.
+      const [saved] = await store.list();
+      const select = target.querySelector<HTMLSelectElement>(
+        'select[aria-label="Saved views"]',
+      );
+      if (!select) throw new Error('No saved-view select');
+      selectOption(select, saved.id);
+
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 40,
+        limit: 10,
+      });
+
+      // `remoteQuery` publishes rows and a total while the new request is still
+      // in flight — a cache hit, or the stale-while-revalidate path. That total
+      // belongs to the PREVIOUS query (3 rows, one page at this size), and
+      // clamping against it here resets a page the new query has not counted yet.
+      // No `settle()`: the response for the current query has not arrived.
+      query.resolve([serverRow('a', 'Alpha')], 3);
+      flushSync();
+
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 40,
+        limit: 10,
+      });
+
+      // Once the current query does report its own total, the clamp applies.
+      await settle();
+      expect(query.requests.at(-1)?.page).toEqual({
+        kind: 'offset',
+        offset: 0,
+        limit: 10,
+      });
     });
-    await store.save({
-      name: 'Deep page',
-      snapshot: {
-        version: 3,
-        modes: { filtering: 'manual', sorting: 'manual', pagination: 'manual' },
-        state: {
-          search: 'zoning',
-          filters: [],
-          sorting: [],
-          page: 5,
-          pageSize: 10,
-          columnOrder: [],
-          columnVisibility: [],
-          columnWidths: [],
-          columnPinning: [],
-          selection: { scope: 'explicit', rowIds: [] },
-          selectedRowIds: [],
-          expandedRowIds: [],
-        },
-      } as never,
+
+    it('still clamps once the current query reports its own total', async () => {
+      const query = createFakeContentListQuery();
+      render({
+        query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
+        urlState: { params: 'page=5' },
+      });
+      expect(query.requests.at(-1)?.page).toMatchObject({ offset: 40 });
+
+      // The response for THAT query says there are only 12 rows — two pages — so
+      // page 5 is genuinely out of range and is clamped.
+      query.resolve([serverRow('a', 'Alpha')], 12);
+      await settle();
+
+      expect(query.requests.at(-1)?.page).toMatchObject({ offset: 10 });
     });
+  },
+);
 
-    const query = createFakeContentListQuery();
-    const target = renderList({
-      savedViews: store,
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-    });
-    await settle();
-
-    // The FIRST query settles with a small total — one page's worth.
-    query.resolve([serverRow('a', 'Alpha')], 3);
-    flushSync();
-
-    // Applying the view changes the query AND restores page 5.
-    const [saved] = await store.list();
-    const select = target.querySelector<HTMLSelectElement>(
-      'select[aria-label="Saved views"]',
-    );
-    if (!select) throw new Error('No saved-view select');
-    selectOption(select, saved.id);
-
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 40,
-      limit: 10,
-    });
-
-    // `remoteQuery` publishes rows and a total while the new request is still
-    // in flight — a cache hit, or the stale-while-revalidate path. That total
-    // belongs to the PREVIOUS query (3 rows, one page at this size), and
-    // clamping against it here resets a page the new query has not counted yet.
-    // No `settle()`: the response for the current query has not arrived.
-    query.resolve([serverRow('a', 'Alpha')], 3);
-    flushSync();
-
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 40,
-      limit: 10,
-    });
-
-    // Once the current query does report its own total, the clamp applies.
-    await settle();
-    expect(query.requests.at(-1)?.page).toEqual({
-      kind: 'offset',
-      offset: 0,
-      limit: 10,
-    });
-  });
-
-  it('still clamps once the current query reports its own total', async () => {
-    const query = createFakeContentListQuery();
-    renderList({
-      query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
-      urlState: { params: 'page=5' },
-    });
-    expect(query.requests.at(-1)?.page).toMatchObject({ offset: 40 });
-
-    // The response for THAT query says there are only 12 rows — two pages — so
-    // page 5 is genuinely out of range and is clamped.
-    query.resolve([serverRow('a', 'Alpha')], 12);
-    await settle();
-
-    expect(query.requests.at(-1)?.page).toMatchObject({ offset: 10 });
-  });
-});
-
-describe('only an authoritative count may clamp a page', () => {
+describePaging('only an authoritative count may clamp a page', (render) => {
   /**
    * Mounts on page 3 with a page size of 10, so the first request reads offset
    * 20 and any clamp is immediately visible as a re-query at offset 0.
    */
   function mountOnPageThree() {
     const query = createFakeContentListQuery();
-    renderList({
+    render({
       query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
       urlState: { params: 'page=3' },
     });
@@ -2441,6 +2487,20 @@ describe('only an authoritative count may clamp a page', () => {
       offset: 20,
       limit: 10,
     });
+
+    // CONTROL: the same value as an EXACT total must clamp, so the assertion
+    // above is the authority rule at work rather than a clamp that never ran.
+    query.resolveWithTotal([serverRow('a', 'Alpha')], {
+      kind: 'exact',
+      value: 5,
+    });
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 0,
+      limit: 10,
+    });
   });
 
   it('clamps on an exact total, which is the authoritative case', async () => {
@@ -2471,11 +2531,26 @@ describe('only an authoritative count may clamp a page', () => {
       offset: 20,
       limit: 10,
     });
+
+    // CONTROL: shrink the same authoritative total below page 3 and the clamp
+    // must fire — otherwise "left alone" would just mean "never evaluated".
+    // 15 rows at 10 a page is 2 pages, so page 3 clamps to page 2.
+    query.resolveWithTotal([serverRow('a', 'Alpha')], {
+      kind: 'exact',
+      value: 15,
+    });
+    await settle();
+
+    expect(query.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 10,
+      limit: 10,
+    });
   });
 
   it('still shows a pager for an estimate, which is what estimates are for', async () => {
     const query = createFakeContentListQuery();
-    const target = renderList({
+    const target = render({
       query: { bind: () => query.binding, request: { defaultPageSize: 10 } },
     });
     query.resolveWithTotal([serverRow('a', 'Alpha')], {
@@ -2492,11 +2567,11 @@ describe('only an authoritative count may clamp a page', () => {
   });
 
   it('still clamps in local mode, where the array IS the result set', () => {
-    const target = renderList({
+    const target = render({
       urlState: { params: 'page=3&size=10' },
     });
     // Two rows, one page: local mode has an exact count by construction.
-    expect(rowTitles(target)).toEqual([
+    expect(visibleRowTitles(target)).toEqual([
       'Council budget explained',
       'Zoning appendix',
     ]);

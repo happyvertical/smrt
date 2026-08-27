@@ -174,6 +174,32 @@ total", so the rule is stated as a set rather than patched case by case:
 | a settled response for a DIFFERENT query | **no** — the binding holds the previous total while a new request is in flight |
 | a page-size change | n/a — `setPageSize` resets the page itself |
 
+**ContentList owns paging in EVERY presentation, compact included, and
+deliberately never passes `totalRows` to DataTable.** DataTable runs its own
+`clampPage(totalRows)` effect against the SAME controller, with no authority
+rule and no notion of which query a total belongs to — so for two rounds the
+clamp fixes above were live in the card modes and bypassed in compact, where an
+`estimated` total clamped a real page away and a stale total reset a restored
+one.
+
+One prop cannot serve both jobs: `totalRows` drives that clamp AND DataTable's
+pager, so any total authoritative enough to clamp against is also the only total
+the pager can show. Passing an authoritative-only total silences the clamp but
+leaves compact with no pager on an `estimated` total while the card modes still
+show one, and then the two modes disagree about which pages exist — a worse bug
+than the one being fixed. So ContentList keeps one clamp (its own effect, with
+the authority rule) and one pager (its own `<Pagination>`, driven by
+`pageableRowCount`, which accepts an estimate because SHOWING a page and MOVING
+the operator are different questions). The same reasoning already made the
+selection column content-owned in compact mode.
+
+**Invariant: the presentations must never disagree about which pages exist or
+which rows are reachable.** Anything about which page is requested, which pages
+are offered, or which rows come back belongs in `describePaging` in the test
+suite, which runs the suite in both `grid` and `compact`. `defaultViewMode`
+defaults to `grid`, so a plain `renderList` test proves only the arm where
+DataTable is not mounted.
+
 `estimated` is a deliberate choice, not an oversight. Clamping on an estimate
 strands rows the operator cannot then reach; not clamping can offer a page that
 comes back empty, which is visible and self-correcting. Hiding reachable rows is
@@ -603,6 +629,21 @@ vocabulary and search fields are asserted against the real
   would hide that until the first rows query. A zero or negative budget is
   refused too — it previously meant "use the default" for rows and "zero
   budget" for facets, which is two answers to one question.
+- **A row is never dropped to fit the byte budget — only shortened.** Offset
+  paging advances by the requested LIMIT, not by the number of rows actually
+  returned, so a dropped row is skipped on its own page and on every page after
+  it: silent, permanent data loss. `DataQueryResult`'s offset page is
+  `{ kind, offset, limit, hasMore }` with no next-offset slot, and the
+  normalizer refuses a `nextCursor` on an offset page, so a continuation offset
+  cannot express "resume at 170" either. Instead the page's budget is allocated
+  max-min fair — rows are considered smallest-first and each may take an even
+  share of what is left — and a row over its share gives way on whichever field
+  is contributing the most bytes: a string is halved repeatedly, a `json`
+  document becomes `null`, and the identity field is never touched. Shortening
+  is already a reported state (`truncated` plus its warning) and it leaves
+  offset paging exact. A row whose irreducible part — identity, field names,
+  numbers, booleans — exceeds its share cannot be fitted at all, and that fails
+  the request loudly rather than answering with a page that quietly omits rows.
 - A restored page size is clamped to `maxPageSize` (default
   `CONTENT_LIST_MAX_PAGE_SIZE`, 200, matching the schema's `maxPageLimit`), and
   the clamp is reported. The ceiling is resolved once and applied to **both**

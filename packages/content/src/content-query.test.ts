@@ -534,7 +534,7 @@ describe('executeContentQuery', () => {
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
-  it('truncates a large result to the schema byte budget', async () => {
+  it('shortens a large result to the byte budget WITHOUT dropping a row', async () => {
     const filler = 'x'.repeat(4_000);
     const rowCount = 100;
     await seed(
@@ -550,18 +550,134 @@ describe('executeContentQuery', () => {
     const result = await executeContentQuery(
       collectionOf(contents),
       request({
-        projection: ['title', 'description', 'url'],
+        projection: ['name', 'title', 'description', 'url'],
         sort: [{ field: 'name', direction: 'asc' }],
         page: { kind: 'offset', offset: 0, limit: rowCount },
       }),
     );
 
+    // Every row asked for is returned. Dropping the tail was silent, permanent
+    // data loss: offset paging advances by the requested LIMIT, so the next
+    // page starts past the dropped rows and skips them forever.
+    expect(result.rows).toHaveLength(rowCount);
     expect(result.truncated).toBe(true);
-    expect(result.rows.length).toBeGreaterThan(0);
-    expect(result.rows.length).toBeLessThan(rowCount);
-    expect(result.page).toMatchObject({ hasMore: true });
     expect(result.warnings.join(' ')).toMatch(/maximum result bytes/);
     expect(result.total).toEqual({ kind: 'exact', value: rowCount });
+    // The page is exactly the rows the offset asked for, so `hasMore` is a
+    // plain positional fact again.
+    expect(result.page).toMatchObject({ hasMore: false });
+    // …and it really does fit.
+    expect(
+      new TextEncoder().encode(JSON.stringify(result)).byteLength,
+    ).toBeLessThanOrEqual(CONTENT_QUERY_MAX_RESULT_BYTES);
+  });
+
+  it('returns an oversized row shortened rather than omitting it', async () => {
+    // One row far too large for the budget, among ordinary ones.
+    await seed(contents, [
+      { name: 'small-a', title: 'A' },
+      {
+        name: 'huge',
+        title: 'H',
+        description: 'd'.repeat(200_000),
+        metadata: { blob: 'm'.repeat(200_000) },
+      },
+      { name: 'small-b', title: 'B' },
+    ]);
+
+    const result = await executeContentQuery(
+      collectionOf(contents),
+      request({
+        projection: ['name', 'title', 'description', 'metadata'],
+        sort: [{ field: 'name', direction: 'asc' }],
+        page: { kind: 'offset', offset: 0, limit: 10 },
+      }),
+      {
+        schema: { ...(await buildContentQuerySchema()), maxResultBytes: 8_192 },
+      },
+    );
+
+    expect(result.rows.map((row) => String(row.name))).toEqual([
+      'huge',
+      'small-a',
+      'small-b',
+    ]);
+    expect(result.truncated).toBe(true);
+    expect(result.warnings.join(' ')).toMatch(/shortened/);
+    // Max-min fair: the ordinary rows keep their real titles; only the row that
+    // caused the overflow gives way.
+    const small = result.rows.find((row) => row.name === 'small-a');
+    expect(small?.title).toBe('A');
+  });
+
+  it('PROPERTY: paging across a shortened row reaches every row exactly once', async () => {
+    const filler = 'x'.repeat(6_000);
+    const rowCount = 25;
+    const pageSize = 5;
+    await seed(
+      contents,
+      Array.from({ length: rowCount }, (_, index) => ({
+        name: `page-${String(index).padStart(3, '0')}`,
+        title: filler,
+        description: filler,
+      })),
+    );
+
+    const schema = {
+      ...(await buildContentQuerySchema()),
+      maxResultBytes: 16_384,
+    };
+    const seen: string[] = [];
+    for (let offset = 0; offset < rowCount; offset += pageSize) {
+      const page = await executeContentQuery(
+        collectionOf(contents),
+        request({
+          projection: ['name', 'title', 'description'],
+          sort: [{ field: 'name', direction: 'asc' }],
+          page: { kind: 'offset', offset, limit: pageSize },
+        }),
+        { schema },
+      );
+      // Each page returns exactly what the offset asked for — the invariant
+      // that makes offset paging sound.
+      expect(page.rows, `offset ${offset}`).toHaveLength(pageSize);
+      seen.push(...page.rows.map((row) => String(row.name)));
+    }
+
+    const expected = Array.from(
+      { length: rowCount },
+      (_, index) => `page-${String(index).padStart(3, '0')}`,
+    );
+    // No skips …
+    expect(seen.sort()).toEqual(expected);
+    // … and no repeats.
+    expect(new Set(seen).size).toBe(rowCount);
+  });
+
+  it('fails loudly rather than omitting a row it cannot fit', async () => {
+    // A projection whose field NAMES alone overrun the per-row share: the one
+    // case shortening cannot solve, and the one case where answering with a
+    // short page would hide rows.
+    await seed(
+      contents,
+      Array.from({ length: 40 }, (_, index) => ({
+        name: `dense-${index}`,
+        title: 't',
+      })),
+    );
+    const base = await buildContentQuerySchema();
+    await expect(
+      executeContentQuery(
+        collectionOf(contents),
+        request({
+          projection: base.fields
+            .filter((field) => field.projectable)
+            .map((field) => field.id),
+          page: { kind: 'offset', offset: 0, limit: 40 },
+        }),
+        { schema: { ...base, maxResultBytes: CONTENT_QUERY_MIN_RESULT_BYTES } },
+      ),
+    ).rejects.toMatchObject({ code: 'DATA_QUERY_RESULT_TOO_LARGE' });
   });
 
   it('pages deterministically across a tie-broken sort', async () => {

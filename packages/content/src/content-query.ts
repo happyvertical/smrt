@@ -995,34 +995,164 @@ interface BoundedRows {
   truncated: boolean;
 }
 
+/** Cut a string to a BYTE budget without splitting a code point. */
+function capStringBytes(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) return '';
+  if (jsonByteLength(value) - 2 <= maxBytes) return value;
+  let kept = '';
+  let used = 0;
+  for (const character of value) {
+    const cost = encoder.encode(character).byteLength;
+    if (used + cost > maxBytes) break;
+    kept += character;
+    used += cost;
+  }
+  return kept;
+}
+
 /**
- * Keep the returned rows inside the schema byte budget.
+ * Shrink ONE row until its serialized form fits `allowance` bytes.
  *
- * The normalizer *rejects* an oversized result rather than trimming it, and a
- * single content body can be megabytes, so the adapter must bound the payload
- * itself: trailing rows are dropped and the result is flagged `truncated`.
+ * Each pass gives way on the field currently contributing the MOST bytes, so
+ * the value that made the row large is the one that shrinks: a 200 KB
+ * `metadata` blob goes before a 20-character `title` is touched. A string is
+ * halved (repeatedly, so it converges on the allowance rather than collapsing);
+ * a `json` document becomes `null`, because there is no way to shorten a
+ * document by a few bytes at a time. Numbers and booleans are irreducible, and
+ * the identity field is never touched at all — it is the row's address, and the
+ * result normalizer refuses a row whose identity is empty.
+ *
+ * Returns `undefined` only when the row's irreducible part — its identity, its
+ * field names, and its numeric and boolean values — is itself larger than the
+ * allowance. Every shortened field is recorded, so the caller reports it the
+ * same way it reports any other shortened value.
+ */
+function shrinkRowToBytes(
+  row: DataQueryRow,
+  allowance: number,
+  descriptors: Map<string, DataQueryFieldDescriptor>,
+  identityField: string,
+  truncation: TruncationLog,
+): DataQueryRow | undefined {
+  const shrunk: DataQueryRow = { ...row };
+  const cost = (): number => jsonByteLength(shrunk) + 1;
+  // Bounded by the number of halvings a 64-bit length can survive, times the
+  // number of fields; the loop cannot run away.
+  let guard = 0;
+  while (cost() > allowance && guard < 4_096) {
+    guard += 1;
+    // The largest remaining contributor, whatever kind it is. Exhausting every
+    // string before considering a JSON document would empty a four-character
+    // `name` while a 200 KB `metadata` blob — the actual cause — sat untouched.
+    let target: string | undefined;
+    let targetBytes = 0;
+    for (const [field, value] of Object.entries(shrunk)) {
+      // The identity field is the row's address, and is never reducible.
+      if (field === identityField || value === null) continue;
+      const reducible =
+        (typeof value === 'string' && value.length > 0) ||
+        descriptors.get(field)?.type === 'json';
+      if (!reducible) continue;
+      const bytes = jsonByteLength(value);
+      if (bytes > targetBytes) {
+        target = field;
+        targetBytes = bytes;
+      }
+    }
+    if (target === undefined) return undefined;
+    const current = shrunk[target];
+    if (typeof current === 'string') {
+      const currentBytes = encoder.encode(current).byteLength;
+      // Halve it, and fall to empty when halving cannot make it any smaller —
+      // a one-character value halves to itself, which would spin forever.
+      const halved =
+        currentBytes <= 1 ? '' : capStringBytes(current, currentBytes >> 1);
+      shrunk[target] = halved.length < current.length ? halved : '';
+    } else {
+      shrunk[target] = null;
+    }
+    truncation.fields.add(target);
+  }
+  return cost() <= allowance ? shrunk : undefined;
+}
+
+/**
+ * Keep the returned rows inside the schema byte budget WITHOUT dropping any.
+ *
+ * The normalizer rejects an oversized result rather than trimming it, and one
+ * content row can carry megabytes of `metadata`, so the adapter has to bound
+ * the payload itself. It used to do that by dropping trailing rows — which is
+ * silent, permanent data loss: offset paging advances by the requested LIMIT,
+ * not by the number of rows actually returned, so the next page starts past the
+ * dropped rows and they are skipped on every page, forever. `DataQueryResult`'s
+ * offset page is `{ kind, offset, limit, hasMore }` with no next-offset slot,
+ * and the normalizer refuses a `nextCursor` on an offset page, so a
+ * continuation offset cannot be expressed to say "resume at 170" either.
+ *
+ * So a row is never dropped for size — only shortened, which is a state the
+ * result already reports through `truncated` and its warning, and which leaves
+ * offset paging exact. Budget is allocated max-min fair: rows are considered
+ * smallest-first and each may take up to an even share of what is left, so a
+ * single enormous row is cut back while every other row on the page survives
+ * whole.
+ *
+ * Throws only when a row cannot be made to fit at all — its identity and field
+ * names alone exceed its share. Failing loudly beats answering with a page that
+ * silently omits rows.
  */
 function boundRowBytes(
   rows: DataQueryRow[],
   maxResultBytes: number,
+  descriptors: Map<string, DataQueryFieldDescriptor>,
+  identityField: string,
+  truncation: TruncationLog,
 ): BoundedRows {
   const budget = Math.max(
     0,
     (maxResultBytes || CONTENT_QUERY_MAX_RESULT_BYTES) -
       RESULT_ENVELOPE_RESERVE_BYTES,
   );
-  const kept: DataQueryRow[] = [];
   // Opening and closing brackets of the serialized rows array.
-  let used = 2;
-  for (const row of rows) {
-    const cost = jsonByteLength(row) + 1;
-    if (used + cost > budget) {
-      return { rows: kept, truncated: true };
-    }
-    used += cost;
-    kept.push(row);
+  const framing = 2;
+  const costs = rows.map((row) => jsonByteLength(row) + 1);
+  const total = costs.reduce((sum, cost) => sum + cost, framing);
+  if (total <= budget) return { rows, truncated: false };
+
+  // Max-min fair allocation: walk the rows smallest-first, giving each an even
+  // share of the remaining budget. A row that fits its share keeps its whole
+  // size and returns the difference to the pool for the rows that do not.
+  const order = rows
+    .map((_, index) => index)
+    .sort((left, right) => costs[left] - costs[right]);
+  const allowances = new Array<number>(rows.length);
+  let remaining = budget - framing;
+  let left = rows.length;
+  for (const index of order) {
+    const share = Math.floor(remaining / left);
+    const allowance = Math.min(costs[index], share);
+    allowances[index] = allowance;
+    remaining -= allowance;
+    left -= 1;
   }
-  return { rows: kept, truncated: false };
+
+  const bounded = rows.map((row, index) => {
+    if (costs[index] <= allowances[index]) return row;
+    const shrunk = shrinkRowToBytes(
+      row,
+      allowances[index],
+      descriptors,
+      identityField,
+      truncation,
+    );
+    if (shrunk === undefined) {
+      return queryFail(
+        'Content query cannot fit a row inside its maximum result bytes; request fewer fields or a smaller page.',
+        'DATA_QUERY_RESULT_TOO_LARGE',
+      );
+    }
+    return shrunk;
+  });
+  return { rows: bounded, truncated: true };
 }
 
 function orderByTerms(sort: DataQuerySort[] | undefined): string[] | undefined {
@@ -1121,13 +1251,16 @@ export async function executeContentQuery(
     const bounded = boundRowBytes(
       mapped,
       schema.maxResultBytes ?? CONTENT_QUERY_MAX_RESULT_BYTES,
+      descriptors,
+      schema.identityField,
+      truncation,
     );
     const rows: DataQueryRow[] = bounded.rows;
     truncated = bounded.truncated || truncation.fields.size > 0;
     if (bounded.truncated) {
       pushWarning(
         warnings,
-        'Content query result was truncated to fit its maximum result bytes; request fewer fields or a smaller page.',
+        'Content query shortened values to fit its maximum result bytes; request fewer fields or a smaller page.',
       );
     }
     if (truncation.fields.size > 0) {
@@ -1141,7 +1274,9 @@ export async function executeContentQuery(
       kind: 'offset',
       offset,
       limit,
-      hasMore: bounded.truncated || offset + rows.length < total,
+      // No row is ever dropped for size any more, so the page is exactly the
+      // rows the offset asked for and `hasMore` is a plain positional fact.
+      hasMore: offset + rows.length < total,
     };
     return normalizeDataQueryResult(
       {

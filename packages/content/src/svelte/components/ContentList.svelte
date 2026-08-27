@@ -518,23 +518,24 @@ const pageableRowCount = $derived(
     ? Math.min(totalRowCount, maxReachablePage * tableState.pageSize)
     : totalRowCount,
 );
-/**
- * What DataTable is told, which is `undefined` until the first authoritative
- * total arrives.
- *
- * DataTable clamps the controller's page against `totalRows`, so handing it the
- * pre-response zero resets a page restored from a link the moment the compact
- * table mounts — a `?page=3` link silently opens on page 1. `undefined` is the
- * documented "not known yet" value: DataTable renders no pager and clamps
- * nothing until a real count exists.
- */
-const dataTableTotalRows = $derived(
-  serverBacked && serverTotal === undefined ? undefined : pageableRowCount,
-);
-// The card presentations have to render their own page controls: DataTable —
-// and with it the page navigation — is only mounted in compact mode, so a page
-// size set from a saved view or a surface command would otherwise strand the
-// operator on page one.
+// EVERY presentation renders its own page controls, compact included, and
+// `totalRows` is deliberately never handed to DataTable.
+//
+// DataTable runs its own `clampPage(totalRows)` effect against the SAME
+// controller, with no authority rule and no notion of which query a total
+// belongs to. One prop cannot serve both purposes: it drives that clamp AND
+// DataTable's pager, so any total authoritative enough to clamp against is also
+// the only total the pager can show, and vice versa. Passing an
+// authoritative-only total silences the clamp correctly but leaves compact with
+// no pager on an `estimated` total while the card modes still show one — the
+// two modes would then disagree about which pages exist, which is a worse bug
+// than the one being fixed.
+//
+// So ContentList owns paging outright: one clamp (the effect above, with the
+// authority rule) and one pager (below, driven by `pageableRowCount`, which
+// accepts an estimate because SHOWING a page is a different question from
+// MOVING the operator). The same reasoning already made the selection column
+// content-owned in compact mode.
 const totalPages = $derived(
   tableState.pageSize
     ? Math.max(1, Math.ceil(pageableRowCount / tableState.pageSize))
@@ -1454,7 +1455,6 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       <div class="content-table-wrapper">
         <DataTable
           data={pageRows}
-          totalRows={dataTableTotalRows}
           columns={tableColumns}
           rowKey={CONTENT_LIST_ROW_KEY}
           {controller}
@@ -1625,7 +1625,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       </div>
     {/if}
 
-    {#if showPagination && viewMode !== 'compact'}
+    {#if showPagination}
       <div class="content-pagination">
         <Pagination
           currentPage={tableState.page}
