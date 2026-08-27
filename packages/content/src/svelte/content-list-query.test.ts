@@ -796,19 +796,37 @@ describe('client-side caps mirroring the server limits', () => {
     }
   });
 
-  it('trims an over-long filter value', () => {
+  it('drops an over-long filter value rather than sending a shortened one', () => {
+    // A shortened comparand names a different row: `gt`/`gte` would widen,
+    // `lt`/`lte` would NARROW and hide rows, `eq`/`ne` would name some third
+    // row. There is no honest label for that, so the filter is not applied.
     const { request, dropped } = translate({
       filters: [
         { columnId: 'status', operator: 'equals', value: 'b'.repeat(9_000) },
       ],
     });
-    expect((conditions(request.filter)[0].value as string).length).toBe(4_096);
+    expect(request.filter).toBeUndefined();
     expect(dropped).toContainEqual({
       scope: 'filter',
       reason: 'filter-widened',
       columnId: 'status',
       detail: 'equals',
     });
+  });
+
+  it.each([
+    'equals',
+    'notEquals',
+    'gt',
+    'gte',
+    'lt',
+    'lte',
+  ] as const)('drops an over-long comparand for %s, whichever way it would have moved', (operator) => {
+    const { request, dropped } = translate({
+      filters: [{ columnId: 'status', operator, value: 'b'.repeat(9_000) }],
+    });
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
   });
 });
 
@@ -910,15 +928,28 @@ describe('bounding a value in the unit the server measures (finding 1)', () => {
     ).toBe(4_096);
   });
 
-  it('agrees with the scalar bounder on an astral filter value', () => {
-    const { request } = translate({
+  it('drops an astral filter value rather than sending a shortened one', () => {
+    const { request, dropped } = translate({
       filters: [
         { columnId: 'status', operator: 'equals', value: '😀'.repeat(9_000) },
       ],
     });
-    expect(
-      serverLength(conditions(request.filter)[0].value as string),
-    ).toBeLessThanOrEqual(4_096);
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'filter-widened' });
+  });
+
+  it('still bounds the pattern operators, which stay applied', () => {
+    // A `like` CAN be shortened honestly, because a shorter pattern matches a
+    // superset — so those keep being sent, bounded in the server's unit.
+    for (const operator of ['contains', 'startsWith', 'endsWith'] as const) {
+      const { request } = translate({
+        filters: [{ columnId: 'title', operator, value: '😀'.repeat(9_000) }],
+      });
+      expect(
+        serverLength(conditions(request.filter)[0].value as string),
+        operator,
+      ).toBeLessThanOrEqual(4_096);
+    }
   });
 });
 
@@ -2300,7 +2331,6 @@ describe('a datetime value means one instant for every reader', () => {
     ['no offset and no seconds', '2026-02-01T00:00'],
     ['no offset', '2026-02-01T00:00:00'],
     ['no offset with fractional seconds', '2026-02-01T00:00:00.000'],
-    ['a space separator', '2026-02-01 10:00:00Z'],
   ])('drops a time-bearing value with %s', (_label, value) => {
     const { request, dropped } = dateFilter(value);
     expect(request.filter).toBeUndefined();
@@ -2309,6 +2339,47 @@ describe('a datetime value means one instant for every reader', () => {
       reason: 'unsupported-value',
       columnId: 'updated',
     });
+  });
+
+  it('drops a space-separated value, which leaves the ISO grammar', () => {
+    // RFC 3339 5.6 permits a space by mutual agreement, but `Date` then falls
+    // through to its implementation-defined legacy parser — the same "one text,
+    // two instants" hazard moved from timezone to engine. Refused on purpose,
+    // and NOT for the reason the seconds rule was: this one carries an offset.
+    const { request, dropped } = dateFilter('2026-02-01 10:00:00Z');
+    expect(request.filter).toBeUndefined();
+    expect(dropped[0]).toMatchObject({ reason: 'unsupported-value' });
+  });
+
+  it('validates and parses the SAME string', () => {
+    // Validating `text.trim()` and then parsing `text` let a trailing space
+    // through: V8's ISO parser rejects whitespace and falls back to the legacy
+    // parser, which reads a bare date as LOCAL midnight.
+    expect(
+      withTimezone('Europe/London', () =>
+        new Date('2026-02-01 ').toISOString(),
+      ),
+    ).not.toBe(
+      withTimezone('Asia/Tokyo', () => new Date('2026-02-01 ').toISOString()),
+    );
+
+    for (const value of [
+      '2026-02-01 ',
+      ' 2026-02-01',
+      '  2026-02-01T10:00:00Z  ',
+    ]) {
+      const london = withTimezone('Europe/London', () => dateFilter(value));
+      const tokyo = withTimezone('Asia/Tokyo', () => dateFilter(value));
+      expect(london.dropped, JSON.stringify(value)).toEqual([]);
+      expect(
+        conditions(london.request.filter)[0]?.value,
+        `${JSON.stringify(value)} differs by timezone`,
+      ).toBe(conditions(tokyo.request.filter)[0]?.value);
+    }
+    // And a padded value means exactly what the unpadded one does.
+    expect(conditions(dateFilter('2026-02-01 ').request.filter)[0].value).toBe(
+      conditions(dateFilter('2026-02-01').request.filter)[0].value,
+    );
   });
 
   it.each([
@@ -2338,6 +2409,18 @@ describe('a datetime value means one instant for every reader', () => {
       '2026-02-01T10:00:00-05:00',
       '2026-02-01T15:00:00.000Z',
     ],
+    // Seconds are optional: these carry an offset, so they name one instant.
+    ['Z with no seconds', '2026-02-01T12:30Z', '2026-02-01T12:30:00.000Z'],
+    [
+      'an offset with no seconds',
+      '2026-02-01T12:30+09:00',
+      '2026-02-01T03:30:00.000Z',
+    ],
+    [
+      'a single fractional digit',
+      '2026-02-01T12:30:45.5Z',
+      '2026-02-01T12:30:45.500Z',
+    ],
   ])('accepts %s', (_label, value, expected) => {
     const { request, dropped } = dateFilter(value);
     expect(dropped).toEqual([]);
@@ -2347,9 +2430,12 @@ describe('a datetime value means one instant for every reader', () => {
   it('produces an identical request in two timezones, for every accepted shape', () => {
     for (const value of [
       '2026-02-01',
+      '2026-02-01 ',
       '2026-02-01T10:00:00Z',
       '2026-02-01T10:00:00+05:00',
       '2026-02-01t10:00:00.000z',
+      '2026-02-01T12:30Z',
+      '2026-02-01T12:30+09:00',
     ]) {
       const london = withTimezone('Europe/London', () => dateFilter(value));
       const tokyo = withTimezone('Asia/Tokyo', () => dateFilter(value));
@@ -2373,5 +2459,81 @@ describe('a datetime value means one instant for every reader', () => {
     expect(contentListQueryRequestKey(london.request)).toBe(
       contentListQueryRequestKey(tokyo.request),
     );
+  });
+});
+
+describe('a shortened pattern still matches a superset', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+
+  /** The row the operator names, whose title ends in a distinctive marker. */
+  const longTitle = `${'A'.repeat(4_094)}END`;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    for (const entry of [
+      { name: 'named', title: longTitle },
+      { name: 'other', title: `${'A'.repeat(4_094)}OTHER` },
+    ]) {
+      const item = await contents.create(entry);
+      await item.save();
+    }
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const patternFor = (operator: 'contains' | 'startsWith' | 'endsWith') =>
+    conditions(
+      translate({
+        filters: [{ columnId: 'title', operator, value: longTitle }],
+      }).request.filter,
+    )[0].value as string;
+
+  it('keeps the TRAILING characters for `endsWith`', () => {
+    // Keeping the leading characters turns `%…END` into `%AAAA…`, which names a
+    // different ending: the row the operator asked for stops matching while
+    // unrelated rows start. Neither superset nor subset — so not a widening,
+    // and not something `filter-widened` could honestly describe.
+    const pattern = patternFor('endsWith');
+    expect(pattern.startsWith('%')).toBe(true);
+    expect(pattern.endsWith('END')).toBe(true);
+  });
+
+  it('keeps the LEADING characters for `startsWith` and `contains`', () => {
+    expect(patternFor('startsWith').startsWith('A')).toBe(true);
+    expect(patternFor('contains').startsWith('%A')).toBe(true);
+  });
+
+  it('still matches the named row after truncation, in every direction', async () => {
+    for (const operator of ['contains', 'startsWith', 'endsWith'] as const) {
+      const result = await executeContentQuery(
+        contents as unknown as ContentQueryCollection,
+        contentListViewStateToDataQueryRequest(
+          viewState({
+            filters: [{ columnId: 'title', operator, value: longTitle }],
+          }),
+          { createRequestId: () => 'superset', projection: ['id', 'name'] },
+        ).request,
+      );
+      const names = result.rows.map((row) => String(row.name));
+      // The superset property: whatever else comes back, the row the operator
+      // named must be in it.
+      expect(names, operator).toContain('named');
+    }
+  });
+
+  it('reports the shortened pattern as a widening, which it now truly is', () => {
+    const { dropped } = translate({
+      filters: [{ columnId: 'title', operator: 'endsWith', value: longTitle }],
+    });
+    expect(dropped).toContainEqual({
+      scope: 'filter',
+      reason: 'filter-widened',
+      columnId: 'title',
+      detail: 'endsWith',
+    });
   });
 });

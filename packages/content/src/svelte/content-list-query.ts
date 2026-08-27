@@ -511,19 +511,36 @@ export function escapeContentListQueryLikeValue(value: string): string {
 function boundLikeSource(
   text: string,
   budget: number,
+  keep: 'leading' | 'trailing' = 'leading',
 ): { text: string; truncated: boolean } {
-  let out = '';
+  // A shortened pattern is only acceptable because it matches a SUPERSET of
+  // what was asked for, and which end survives is what decides that. A prefix
+  // pattern (`abc%`) and a contains pattern (`%abc%`) keep their leading
+  // characters: anything starting with (or containing) `abcdef` also starts
+  // with (or contains) `abc`. A SUFFIX pattern (`%abc`) is the mirror image —
+  // keeping the leading characters names a different ending entirely, so the
+  // row the operator asked for stops matching while unrelated rows start.
+  // Keeping the trailing characters restores the superset property.
+  const source = keep === 'trailing' ? [...text].reverse() : [...text];
+  const kept: string[] = [];
   let used = 0;
-  for (const character of text) {
+  let truncated = false;
+  for (const character of source) {
     // `character.length` is 1 for a BMP code point and 2 for a surrogate pair;
     // an escaped metacharacter (always BMP) adds its backslash.
     const cost =
       character.length + (LIKE_METACHARACTER.test(character) ? 1 : 0);
-    if (used + cost > budget) return { text: out, truncated: true };
-    out += character;
+    if (used + cost > budget) {
+      truncated = true;
+      break;
+    }
+    kept.push(character);
     used += cost;
   }
-  return { text: out, truncated: false };
+  return {
+    text: (keep === 'trailing' ? kept.reverse() : kept).join(''),
+    truncated,
+  };
 }
 
 function likeValue(
@@ -534,6 +551,7 @@ function likeValue(
   const bounded = boundLikeSource(
     value,
     CONTENT_LIST_QUERY_MAX_VALUE_LENGTH - 2,
+    pattern === 'suffix' ? 'trailing' : 'leading',
   );
   const escaped = escapeContentListQueryLikeValue(bounded.text);
   const wrapped =
@@ -568,15 +586,26 @@ const CALENDAR_DATE_PREFIX = /^(\d{4})-(\d{2})-(\d{2})(?:[Tt ].*)?$/;
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * The full RFC 3339 instant, accepted case-insensitively.
+ * A time-bearing input that names ONE instant, accepted case-insensitively.
  *
- * Deliberately looser than {@link RFC_3339_INSTANT} in exactly one way: RFC
- * 3339 §5.6 permits a lower-case `t`/`z`, and the value is canonicalized
- * through `toISOString()` before it is sent, so the server only ever sees the
- * upper-case form it insists on.
+ * Deliberately looser than {@link RFC_3339_INSTANT} in two ways, because this
+ * matches the INPUT while that one matches the canonical form sent to the
+ * server (the value goes through `toISOString()` first, so the server only ever
+ * sees the strict form it insists on):
+ *
+ * - RFC 3339 §5.6 permits a lower-case `t`/`z`;
+ * - seconds are optional. `2026-02-01T12:30Z` and `2026-02-01T12:30+09:00`
+ *   carry an offset, so they name one instant for every reader, and `Date`
+ *   parses both through its ISO path. The rule this guards is "a time must
+ *   carry an offset", not "a time must state its seconds".
+ *
+ * The `T` separator is still required. RFC 3339 §5.6 allows a space by mutual
+ * agreement, but a space leaves the ISO grammar, so `Date` falls through to its
+ * implementation-defined legacy parser — which is exactly the "same text, two
+ * different instants across engines" hazard this check exists to prevent.
  */
 const RFC_3339_INSTANT_INPUT =
-  /^(\d{4})-(\d{2})-(\d{2})[Tt]([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,9})?(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+  /^(\d{4})-(\d{2})-(\d{2})[Tt]([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:\.\d{1,9})?)?(?:[Zz]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 /**
  * True when an input names ONE instant, the same one for every reader.
@@ -588,11 +617,17 @@ const RFC_3339_INSTANT_INPUT =
  * offset; a bare calendar day is unambiguous and stays accepted, widened to
  * UTC midnight exactly as `Date` already reads it.
  */
-function isExpressibleInstant(text: string): boolean {
+function expressibleInstantSource(text: string): string | undefined {
+  // Returns the exact string that must be parsed, never merely a verdict about
+  // a different one. Validating `text.trim()` and then parsing `text` let
+  // `"2026-02-01 "` through: V8's ISO parser rejects the trailing space and
+  // falls back to the legacy parser, which reads a bare date as LOCAL midnight
+  // — reintroducing the per-viewer divergence this whole check exists to stop,
+  // and without even a drop to show for it.
   const trimmed = text.trim();
-  if (!isRealCalendarDate(trimmed)) return false;
-  if (DATE_ONLY.test(trimmed)) return true;
-  return RFC_3339_INSTANT_INPUT.test(trimmed);
+  if (!isRealCalendarDate(trimmed)) return undefined;
+  if (DATE_ONLY.test(trimmed)) return trimmed;
+  return RFC_3339_INSTANT_INPUT.test(trimmed) ? trimmed : undefined;
 }
 
 /**
@@ -647,8 +682,9 @@ function coerceValue(
     // would silently target a date the link never asked for. The server rejects
     // it (`normalizedInstant` re-derives the components and compares), so this
     // has to reject it too, and report the drop.
-    if (!isExpressibleInstant(text)) return undefined;
-    const parsed = new Date(text);
+    const source = expressibleInstantSource(text);
+    if (source === undefined) return undefined;
+    const parsed = new Date(source);
     if (Number.isNaN(parsed.getTime())) return undefined;
     const instant = parsed.toISOString();
     // Parsing is not the same as being expressible: a year outside the
@@ -864,14 +900,19 @@ function translateFilter(
     return null;
   }
   if (truncated.value) {
-    // The comparison now names a value the caller did not, so the predicate is
-    // no longer the one requested.
+    // Never emit a value the caller did not name — the same rule the list path
+    // applies to its entries. A shortened comparand does not merely loosen the
+    // predicate: `gt`/`gte` would widen, `lt`/`lte` would NARROW and hide rows,
+    // and `eq`/`ne` would name some third row entirely. There is no honest
+    // single label for that, so the filter is not applied at all, which is
+    // uniformly a widening and is reported as one.
     dropped.push({
       scope: 'filter',
       reason: 'filter-widened',
       columnId,
       detail: filter.operator,
     });
+    return null;
   }
   return {
     kind: 'condition',

@@ -120,6 +120,46 @@ export const DATA_QUERY_FORBIDDEN_JSON_KEYS: ReadonlySet<string> = new Set([
 const RESULT_ENVELOPE_RESERVE_BYTES = 4_096;
 
 /**
+ * Smallest row allowance a page can be given and still answer with anything.
+ * Comfortably holds one identity-only row plus a few projected scalars.
+ */
+const MIN_RESULT_ROW_BYTES = 512;
+
+/**
+ * The smallest `maxResultBytes` a schema may declare.
+ *
+ * The row budget is `maxResultBytes` minus the envelope reserve, so a schema
+ * below the reserve leaves nothing for rows: every query would answer with an
+ * empty page flagged `truncated`, forever, and a page small enough that the
+ * metadata alone overruns the budget would fail `normalizeDataQueryResult`
+ * outright. Both look like "no content matched" from the outside.
+ *
+ * `schema` is trusted adapter configuration, never caller input, so a budget
+ * this small is a deployment mistake rather than a bad request — and it is
+ * refused loudly at the boundary rather than degrading every read.
+ */
+export const CONTENT_QUERY_MIN_RESULT_BYTES =
+  RESULT_ENVELOPE_RESERVE_BYTES + MIN_RESULT_ROW_BYTES;
+
+/**
+ * Refuse a result budget too small to carry an envelope and a row.
+ *
+ * Throws a plain `Error`, not a `DataQueryValidationError`: a validation error
+ * becomes a 400 and tells the caller they asked for something wrong, when the
+ * fault is in the host's own schema. This mirrors how an unusable `scope` is
+ * refused.
+ */
+function assertUsableResultBudget(schema: DataQuerySchema): void {
+  const budget = schema.maxResultBytes ?? CONTENT_QUERY_MAX_RESULT_BYTES;
+  if (budget >= CONTENT_QUERY_MIN_RESULT_BYTES) return;
+  throw new Error(
+    `Content query schema maxResultBytes must be at least ${CONTENT_QUERY_MIN_RESULT_BYTES} ` +
+      `(${RESULT_ENVELOPE_RESERVE_BYTES} reserved for the result envelope, ` +
+      `${MIN_RESULT_ROW_BYTES} for rows); received ${budget}.`,
+  );
+}
+
+/**
  * Upper bound on OR branches handed to the collection query builder.
  *
  * Exported so a client can mirror it: the null-safe `ne`/`notIn` lowering below
@@ -935,6 +975,9 @@ export async function executeContentQuery(
   options: ContentQueryOptions = {},
 ): Promise<DataQueryResult> {
   const schema = options.schema ?? (await buildContentQuerySchema());
+  // Configuration first: a budget too small to hold an envelope plus a row
+  // would otherwise answer every query with an empty page rather than fail.
+  assertUsableResultBudget(schema);
   const request: DataQueryRequest = normalizeDataQueryRequest(
     rawRequest,
     schema,

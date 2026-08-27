@@ -9,6 +9,7 @@
 
 import {
   createDataQueryFingerprint,
+  DataQueryValidationError,
   field,
   getTestDatabase,
   MAX_DATA_QUERY_RESULT_BYTES,
@@ -39,6 +40,7 @@ import {
   CONTENT_QUERY_IDENTITY_FIELD,
   CONTENT_QUERY_MAX_PAGE_LIMIT,
   CONTENT_QUERY_MAX_RESULT_BYTES,
+  CONTENT_QUERY_MIN_RESULT_BYTES,
   type ContentQueryCollection,
   DATA_QUERY_FORBIDDEN_JSON_KEYS,
   DATA_QUERY_MAX_JSON_CONTAINER_ITEMS,
@@ -1447,5 +1449,66 @@ describe('null entries in a ne / notIn value list', () => {
       { scope: { name: 'Grace' } },
     );
     expect(result.rows.map((row) => String(row.name))).toEqual(['Grace']);
+  });
+});
+
+describe('an unusable result byte budget is refused at the boundary', () => {
+  let db: DatabaseInterface;
+  let contents: Contents;
+  let base: DataQuerySchema;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    contents = await Contents.create({ db });
+    const item = await contents.create({ name: 'a', title: 'A' });
+    await item.save();
+    base = await buildContentQuerySchema();
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') await db.close();
+  });
+
+  const runWithBudget = (maxResultBytes: number) =>
+    executeContentQuery(
+      contents as unknown as ContentQueryCollection,
+      request({
+        projection: ['id', 'title'],
+        page: { kind: 'offset', offset: 0, limit: 10 },
+      }),
+      { schema: { ...base, maxResultBytes } },
+    );
+
+  it('refuses a budget below the floor, naming the minimum', async () => {
+    // Below the floor the row allowance is zero or negative, so EVERY query
+    // would answer with an empty page flagged `truncated` — indistinguishable
+    // from "no content matched". `schema` is trusted host configuration, so
+    // this is a deployment mistake and fails loudly rather than per-request.
+    await expect(
+      runWithBudget(CONTENT_QUERY_MIN_RESULT_BYTES - 1),
+    ).rejects.toThrow(new RegExp(`at least ${CONTENT_QUERY_MIN_RESULT_BYTES}`));
+    await expect(runWithBudget(512)).rejects.toThrow(/maxResultBytes/);
+  });
+
+  it('is a configuration error, not a caller error', async () => {
+    // A `DataQueryValidationError` would surface as a 400 and tell the caller
+    // they asked for something wrong, when the fault is in the host's schema.
+    await expect(runWithBudget(512)).rejects.not.toBeInstanceOf(
+      DataQueryValidationError,
+    );
+  });
+
+  it('still answers with a real page just above the floor', async () => {
+    const result = await runWithBudget(CONTENT_QUERY_MIN_RESULT_BYTES);
+    expect(result.rows).toHaveLength(1);
+    expect(result.truncated).toBe(false);
+    expect(result.total).toEqual({ kind: 'exact', value: 1 });
+  });
+
+  it('leaves the default schema, and any generous budget, untouched', async () => {
+    expect(base.maxResultBytes).toBeGreaterThanOrEqual(
+      CONTENT_QUERY_MIN_RESULT_BYTES,
+    );
+    await expect(runWithBudget(1_000_000)).resolves.toBeDefined();
   });
 });

@@ -281,14 +281,36 @@ accepted and widened to midnight UTC; only impossible days are refused.
 request rather than failing it, but degrading is only honest when the answer
 stays a subset of the question:
 
+Direction is a property of the OPERATOR, not of the site — the same cap narrows
+an `in` and widens a `notIn`, and the same truncation widens a `contains` and
+does neither to an `eq`. So the classification is made per operator, and where a
+change is neither narrowing nor widening the filter is not sent at all:
+
 | Bound hit | Effect on the result | What happens |
 |---|---|---|
 | `in` list past 100 values | narrows — a disjunct is removed | capped, reported as `out-of-range` |
 | `notIn` list past 100 values, or carrying an entry that cannot be sent faithfully | **widens** — an exclusion is removed | the whole filter is left out, reported as `filter-widened` |
 | filter-node, OR-branch, or request-byte budget | **widens** — a conjunct is shed | reported as `filter-widened` |
-| a shortened `like` pattern or search term | **widens** — a shorter pattern matches more | reported as `filter-widened` |
-| a shortened scalar comparand | names a value the caller did not | reported as `filter-widened` |
+| a shortened `contains` or `startsWith` pattern, or a shortened search term | **widens** — a shorter pattern matches a superset | sent, reported as `filter-widened` |
+| a shortened `endsWith` pattern | **widens**, but only because the TRAILING characters are the ones kept | sent, reported as `filter-widened` |
+| a shortened scalar comparand (`eq`, `ne`, `gt`, `gte`, `lt`, `lte`) | **neither** — `gt`/`gte` would widen, `lt`/`lte` would NARROW and hide rows, `eq`/`ne` would name a third row entirely | the filter is left out, reported as `filter-widened` |
 | page size, offset, projection count | does not add rows | reported as `out-of-range` |
+
+**Never emit a value the caller did not name.** The list path already refused to
+send a shortened entry; the scalar path used to send one and merely relabel the
+report, which was affirmatively wrong for half the operators — telling an
+operator the list "may include rows it would have excluded" while `lt` was
+quietly hiding rows. A comparand that cannot be sent whole is now not sent at
+all, which is uniformly a widening and is honestly reported as one.
+
+**Which end of a pattern survives decides whether it widens.**
+`boundLikeSource` keeps the LEADING code points for `contains` (`%abc%`) and
+`startsWith` (`abc%`) — anything containing or starting with `abcdef` also
+contains or starts with `abc`. A suffix pattern (`%abc`) is the mirror image, so
+it keeps the TRAILING ones: truncating `%…END` from the front would name a
+different ending, dropping the row the operator asked for while picking up
+unrelated ones. That is neither a superset nor a subset, and no honest label
+exists for it.
 
 A widening `notIn` is never PARTIALLY applied. The cap keeps arrival order, so a
 literal `null` past the hundredth entry is the entry shed — and the executor
@@ -317,14 +339,24 @@ datetime input is held to three separate checks before it is parsed, because
 | Check | Refuses | Why |
 |---|---|---|
 | calendar round-trip | `2026-02-31` | `Date` rolls it to March 3, so the query targets a day the link never named |
-| RFC 3339 shape on a time-bearing value | `2026-02-01T00:00` | no offset means `Date` reads it as LOCAL time, so the identical link submits a different instant per viewer — nine hours apart between London and Tokyo |
+| an offset on a time-bearing value | `2026-02-01T00:00` | no offset means `Date` reads it as LOCAL time, so the identical link submits a different instant per viewer — nine hours apart between London and Tokyo |
+| the `T` separator | `2026-02-01 10:00:00Z` | a space leaves the ISO grammar, so `Date` falls through to its implementation-defined legacy parser: the same hazard moved from timezone to engine |
 | four-digit year | `+275760-09-13` | serializes to an expanded-year form the server refuses outright |
 
-A bare calendar day (`2026-02-01`) stays accepted: `Date` reads it as UTC
-midnight for every reader, so it names one instant. Lower-case `t`/`z` is
-accepted too — RFC 3339 §5.6 permits it, and the value is canonicalized through
-`toISOString()` before it is sent, so the server only ever sees the upper-case
-form it insists on.
+The rule is "a time must carry an offset", not "a time must state its seconds":
+`2026-02-01T12:30Z` and `2026-02-01T12:30+09:00` each name one instant for every
+reader and are accepted. A bare calendar day (`2026-02-01`) is accepted too —
+`Date` reads it as UTC midnight everywhere. Lower-case `t`/`z` is fine: RFC 3339
+§5.6 permits it, and the value is canonicalized through `toISOString()` before
+it is sent, so the server only ever sees the strict upper-case form it insists
+on.
+
+**Validate and parse the SAME string.** Checking `text.trim()` and then parsing
+`text` let `"2026-02-01 "` through, and V8's ISO parser rejects the whitespace
+and falls back to the legacy parser — which reads a bare date as LOCAL midnight,
+reintroducing the per-viewer divergence with no drop reported at all. The
+validator returns the exact string to parse rather than a verdict about a
+different one.
 
 ### Filter case: tokens are folded, free text is not
 
@@ -471,6 +503,14 @@ vocabulary and search fields are asserted against the real
 - `metadata` path filtering is unavailable: JSON columns get no filter operators.
 - There is no ETag or version slot in the canonical envelope; `queryFingerprint`
   and `freshness.asOf` serve that role.
+- `maxResultBytes` on a host-supplied schema must be at least
+  `CONTENT_QUERY_MIN_RESULT_BYTES`. The row budget is that number minus the
+  envelope reserve, so a smaller one leaves nothing for rows and every query
+  answers with an empty page flagged `truncated` — indistinguishable from "no
+  content matched". `schema` is trusted adapter configuration rather than caller
+  input, so this is refused loudly at the boundary with a plain `Error` naming
+  the minimum, not per request with a `DataQueryValidationError` that would
+  surface as a 400 and blame the caller for the host's mistake.
 - A restored page size is clamped to `maxPageSize` (default
   `CONTENT_LIST_MAX_PAGE_SIZE`, 200, matching the schema's `maxPageLimit`), and
   the clamp is reported. The ceiling is resolved once and applied to **both**
