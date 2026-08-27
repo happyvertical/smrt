@@ -512,7 +512,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
           'automated-review',
           { scope: 'explicit-ids', rowIds: ['a'] },
           { expectedCount: 1 },
-          { payload: { kind: 'x'.repeat(65) } },
+          { payload: { kind: 'unsupported' } },
         ),
         setup.context,
       ),

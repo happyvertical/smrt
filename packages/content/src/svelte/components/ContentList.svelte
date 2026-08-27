@@ -2171,13 +2171,17 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <option value="html">HTML</option>
           </Select>
         {:else if selectedWorkflow === 'automated-review'}
-          <Input
+          <Select
             aria-label="Review kind"
-            placeholder="Review kind (optional)"
             value={workflowReviewKind}
             disabled={workflowPending}
-            oninput={(event: Event) => workflowReviewKind = (event.currentTarget as HTMLInputElement).value}
-          />
+            onchange={(event: Event) => workflowReviewKind = (event.currentTarget as HTMLSelectElement).value}
+          >
+            <option value="">Default review kind</option>
+            <option value="facts">Facts</option>
+            <option value="safety">Safety</option>
+            <option value="custom">Custom</option>
+          </Select>
           <Input
             aria-label="Review policy key"
             placeholder="Policy key (optional)"

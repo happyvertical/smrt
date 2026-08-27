@@ -105,7 +105,7 @@ const OPTIONAL_REVIEW_INPUT: DataSurfaceJsonObject = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    kind: { type: 'string', maxLength: 64 },
+    kind: { type: 'string', enum: ['facts', 'safety', 'custom'] },
     policyKey: { type: 'string', maxLength: 128 },
   },
 };

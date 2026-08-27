@@ -282,6 +282,25 @@ describe('ContentList presentations', () => {
 });
 
 describe('ContentList bulk workflows', () => {
+  it('constrains automated review kinds to the server-supported values', async () => {
+    const workflow = workflowBinding();
+    const target = renderList({ workflows: workflow });
+
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    selectOption(selectByLabel(target, 'Bulk workflow'), 'automated-review');
+
+    const reviewKind = selectByLabel(target, 'Review kind');
+    expect(optionValues(reviewKind)).toEqual(['', 'facts', 'safety', 'custom']);
+    selectOption(reviewKind, 'safety');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      actionId: 'automated-review',
+      payload: { kind: 'safety' },
+    });
+  });
+
   it('binds an all-matching selection to the settled canonical query fingerprint', async () => {
     const remote = createFakeContentListQuery();
     remote.setEnvelope({
