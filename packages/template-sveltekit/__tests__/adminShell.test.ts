@@ -22,12 +22,12 @@ describe('application shell', () => {
     expect(layout).toContain("import { Provider } from '@happyvertical/smrt-svelte'");
     expect(layout).toContain("ThemeProvider } from '@happyvertical/smrt-ui/themes'");
     expect(layout).toContain("@happyvertical/smrt-ui/themes/styles/fonts.css");
-    expect(layout.indexOf('<Provider>')).toBeLessThan(
-      layout.indexOf('<ThemeProvider'),
-    );
-    expect(layout.indexOf('<ThemeProvider')).toBeLessThan(
-      layout.indexOf('<AdminShell'),
-    );
+    const providerIndex = layout.indexOf('<Provider {webmcp}>');
+    const themeIndex = layout.indexOf('<ThemeProvider');
+    const shellIndex = layout.indexOf('<AdminShell');
+    expect(providerIndex).toBeGreaterThanOrEqual(0);
+    expect(themeIndex).toBeGreaterThan(providerIndex);
+    expect(shellIndex).toBeGreaterThan(themeIndex);
     expect(layout).toContain('preset="smrt"');
   });
 
