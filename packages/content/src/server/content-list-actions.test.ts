@@ -109,6 +109,11 @@ class MemoryContentCollection implements ContentListActionCollection {
             try {
               return await operation(content.db);
             } catch (error) {
+              for (const key of Object.keys(row)) {
+                if (!(key in snapshot)) {
+                  delete (row as unknown as Record<string, unknown>)[key];
+                }
+              }
               Object.assign(row, snapshot);
               throw error;
             }
@@ -1064,7 +1069,11 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
   it.each([
     { actionId: 'publish' as const, initialStatus: 'draft' as const },
     { actionId: 'restore' as const, initialStatus: 'deleted' as const },
-  ])('rolls back $actionId when publication snapshot persistence fails', async ({
+    { actionId: 'mark-draft' as const, initialStatus: 'archived' as const },
+    { actionId: 'archive' as const, initialStatus: 'draft' as const },
+    { actionId: 'move-to-trash' as const, initialStatus: 'draft' as const },
+    { actionId: 'categorize' as const, initialStatus: 'draft' as const },
+  ])('rolls back $actionId when post-save persistence fails', async ({
     actionId,
     initialStatus,
   }) => {
@@ -1076,7 +1085,11 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
     const target = { expectedCount: 1 };
     const payload =
-      actionId === 'restore' ? { status: 'published' } : undefined;
+      actionId === 'restore'
+        ? { status: 'published' }
+        : actionId === 'categorize'
+          ? { category: 'news' }
+          : undefined;
     const preview = await setup.adapter.preview(
       actionRequest('preview', actionId, selection, target, { payload }),
       setup.context,
@@ -1102,7 +1115,52 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
     });
     expect(collection.rows[0].status).toBe(initialStatus);
+    expect(collection.rows[0].category).toBeUndefined();
     expect(collection.rows[0].updated_at).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('rejects all-matching pagination churn that repeats an id', async () => {
+    const churnRows = Array.from({ length: 201 }, (_, index) => ({
+      id: String(index).padStart(3, '0'),
+      title: `Content ${index}`,
+      status: 'draft' as const,
+      updated_at: `2026-01-01T00:00:00.${String(index).padStart(3, '0')}Z`,
+      tenantId: 'tenant-a',
+    }));
+    const collection = new MemoryContentCollection(churnRows);
+    const list = collection.list.bind(collection);
+    vi.spyOn(collection, 'list').mockImplementation(async (options) => {
+      const page = await list(options);
+      if (options.offset === 200) {
+        return [{ ...page[0], id: '199' }];
+      }
+      return page;
+    });
+    const setup = harness({ collection, maxSelectionSize: 201 });
+    const targetQuery = query({
+      page: { kind: 'offset', offset: 0, limit: 1 },
+    });
+    const canonical = await fingerprint(targetQuery);
+
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'categorize',
+          {
+            scope: 'all-matching',
+            queryFingerprint: canonical,
+            expectedCount: 201,
+          },
+          { query: targetQuery, expectedCount: 201 },
+          { payload: { category: 'news' } },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({
+      ok: false,
+      reason: 'matching_count_drifted',
+    });
   });
 
   it('rejects an automated review when content changes during AI work', async () => {

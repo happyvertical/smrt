@@ -699,14 +699,10 @@ async function applyWorkflow(
 ): Promise<void> {
   const input = payloadRecord(payload);
   const save = async () => {
-    if (content.status !== 'published') {
-      await content.save({ expectedUpdatedAt });
-      return;
-    }
     const db = content.db;
     if (!db.transaction) {
       throw new Error(
-        'Atomic published content persistence requires transaction support',
+        'Atomic content workflow persistence requires transaction support',
       );
     }
     await db.transaction((transaction) =>
@@ -937,6 +933,12 @@ async function resolveQuerySelection(
     ) {
       if (rows.length <= maxSelectionSize)
         throw new ContentListActionError('matching_count_drifted');
+    }
+    if (selection.scope === 'all-matching') {
+      const distinctIds = new Set(rows.map((row) => String(row.id)));
+      if (distinctIds.size !== rows.length) {
+        throw new ContentListActionError('matching_count_drifted');
+      }
     }
     queryFingerprint = `${baseFingerprint}:${revisionFingerprint(rows)}`;
   }
