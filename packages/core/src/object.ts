@@ -1899,8 +1899,23 @@ export class SmrtObject extends SmrtClass {
         this.slug = await this.getSlug();
       }
 
-      // Update the updated_at timestamp
-      this.updated_at = new Date();
+      // A guarded write must advance its revision even when both saves land in
+      // the same clock millisecond. Otherwise a second writer holding the old
+      // revision could still match after this update commits.
+      const updatedAt = new Date();
+      if (expectedUpdatedAt !== undefined) {
+        const expectedTime =
+          expectedUpdatedAt instanceof Date
+            ? expectedUpdatedAt.getTime()
+            : Date.parse(expectedUpdatedAt);
+        if (
+          Number.isFinite(expectedTime) &&
+          updatedAt.getTime() <= expectedTime
+        ) {
+          updatedAt.setTime(expectedTime + 1);
+        }
+      }
+      this.updated_at = updatedAt;
 
       if (!this.created_at) {
         this.created_at = new Date();

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { SmrtObject } from '../object';
@@ -31,6 +31,7 @@ describe('issue #2453 revision-guarded saves', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await db.close?.();
   });
 
@@ -60,5 +61,30 @@ describe('issue #2453 revision-guarded saves', () => {
 
     const stored = await rows.get(String(created.id));
     expect(stored?.title).toBe('concurrent');
+  });
+
+  it('advances the revision when a guarded save occurs in the same millisecond', async () => {
+    const created = await rows.create({ title: 'original' });
+    const first = await rows.get(String(created.id));
+    const stale = await rows.get(String(created.id));
+    if (!first || !stale || !first.updated_at) {
+      throw new Error('expected two persisted snapshots');
+    }
+    const expectedUpdatedAt = first.updated_at;
+    const expectedTime = new Date(expectedUpdatedAt).getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(expectedTime);
+
+    first.title = 'first writer';
+    await first.save({ expectedUpdatedAt });
+
+    const stored = await rows.get(String(created.id));
+    expect(stored?.updated_at?.getTime()).toBe(expectedTime + 1);
+
+    stale.title = 'stale overwrite';
+    await expect(stale.save({ expectedUpdatedAt })).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    expect((await rows.get(String(created.id)))?.title).toBe('first writer');
   });
 });
