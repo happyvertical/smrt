@@ -6,6 +6,7 @@
  */
 
 import { startRestServer } from '@happyvertical/smrt-core';
+import './__smrt-register__.js';
 import { Content } from './content';
 
 async function startServer() {

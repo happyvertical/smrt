@@ -779,8 +779,20 @@ export async function sendContentEditorChatThreadMessage(
       ([key, value]) => sessionContext[key] !== value,
     )
   ) {
+    // sendAgentReply records message activity on the session. Reload that
+    // latest revision before merging model context so the guarded save cannot
+    // overwrite the message counters with this pre-reply snapshot.
+    const refreshedSession = await chatService.getAgentSession({
+      agentSessionId: (session as { id: string }).id,
+      tenantId,
+    });
+    if (!refreshedSession) {
+      throw new Error('Active session not found');
+    }
     await (
-      session as { updateSessionContext: (value: unknown) => Promise<void> }
+      refreshedSession as {
+        updateSessionContext: (value: unknown) => Promise<void>;
+      }
     ).updateSessionContext(updates);
   }
 

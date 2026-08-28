@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
+import { GlobalInterceptors } from '../interceptors';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -78,25 +79,23 @@ describe('issue #2453 revision-guarded saves', () => {
     first.title = 'first writer';
     await first.save();
 
-    const guarded = await rows.get(String(created.id));
-    expect(guarded?.updated_at?.getTime()).toBe(expectedTime + 1);
+    expect((await rows.get(String(created.id)))?.updated_at?.getTime()).toBe(
+      expectedTime + 1,
+    );
 
     stale.title = 'second ordinary writer';
-    await stale.save();
-    expect((await rows.get(String(created.id)))?.updated_at?.getTime()).toBe(
-      expectedTime + 2,
-    );
-
-    if (!guarded?.updated_at) throw new Error('expected guarded snapshot');
-    guarded.title = 'stale overwrite';
-    await expect(
-      guarded.save({ expectedUpdatedAt: guarded.updated_at }),
-    ).rejects.toMatchObject({
+    await expect(stale.save()).rejects.toMatchObject({
       code: 'RUNTIME_REVISION_CONFLICT',
     });
-    expect((await rows.get(String(created.id)))?.title).toBe(
-      'second ordinary writer',
+    expect((await rows.get(String(created.id)))?.updated_at?.getTime()).toBe(
+      expectedTime + 1,
     );
+
+    stale.title = 'stale overwrite';
+    await expect(stale.save({ expectedUpdatedAt })).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    expect((await rows.get(String(created.id)))?.title).toBe('first writer');
   });
 
   it('claims a revision without persisting other in-memory mutations', async () => {
@@ -116,5 +115,33 @@ describe('issue #2453 revision-guarded saves', () => {
     const stored = await rows.get(String(created.id));
     expect(stored?.title).toBe('original');
     expect(stored?.updated_at?.getTime()).toBe(expectedTime + 1);
+  });
+
+  it('runs tenant save interception before claiming a revision', async () => {
+    const created = await rows.create({ title: 'original' });
+    const claimant = await rows.get(String(created.id));
+    if (!claimant?.updated_at) {
+      throw new Error('expected persisted row');
+    }
+    const originalRevision = claimant.updated_at.getTime();
+    GlobalInterceptors.register({
+      name: 'issue-2453-tenant-denial',
+      beforeSave() {
+        throw Object.assign(new Error('tenant denied'), {
+          code: 'TENANT_ISOLATION_VIOLATION',
+        });
+      },
+    });
+
+    try {
+      await expect(
+        claimant.claimRevision(claimant.updated_at),
+      ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+    } finally {
+      GlobalInterceptors.unregister('issue-2453-tenant-denial');
+    }
+
+    const stored = await rows.get(String(created.id));
+    expect(stored?.updated_at?.getTime()).toBe(originalRevision);
   });
 });

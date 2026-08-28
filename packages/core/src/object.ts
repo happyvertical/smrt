@@ -1878,6 +1878,19 @@ export class SmrtObject extends SmrtClass {
   async save(options: SmrtSaveOptions = {}) {
     const className = this.getResolvedClassName();
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    // Persisted objects always write through a compare-and-swap predicate.
+    // This makes revision advancement atomic at the database boundary across
+    // processes: only the writer whose loaded revision is still current can
+    // replace it, even when separate runtimes propose the same next timestamp.
+    const loadedRevision =
+      expectedUpdatedAt ??
+      (this._persisted ? (this.updated_at ?? undefined) : undefined);
+    // Snapshot Date objects as immutable strings before hooks or timestamp
+    // issuance can touch instance state during the save lifecycle.
+    const revisionGuard =
+      loadedRevision instanceof Date
+        ? loadedRevision.toISOString()
+        : loadedRevision;
 
     try {
       if (expectedUpdatedAt !== undefined && (!this._persisted || !this.id)) {
@@ -1907,7 +1920,7 @@ export class SmrtObject extends SmrtClass {
       // Every persisted write must advance beyond the loaded revision. If an
       // ordinary writer saves in the same clock millisecond and keeps the old
       // timestamp, a later guarded writer could still match and overwrite it.
-      this.updated_at = this.nextRevisionTimestamp(expectedUpdatedAt);
+      this.updated_at = this.nextRevisionTimestamp(revisionGuard);
 
       if (!this.created_at) {
         this.created_at = new Date();
@@ -1991,6 +2004,10 @@ export class SmrtObject extends SmrtClass {
           data[toSnakeCase(key)] = value;
         }
       }
+      // `updated_at` is the framework revision token. A legacy model field
+      // named `updatedAt` also snake-cases to this column, so assert the
+      // freshly issued framework value after serializing model fields.
+      data.updated_at = this.updated_at;
 
       // Coerce empty-string values to NULL for native UUID columns (declared
       // FKs / cross-package refs). The TypeScript default for an unset
@@ -2018,6 +2035,8 @@ export class SmrtObject extends SmrtClass {
       // natural-key columns — its legacy-STI probe semantics are unchanged.
       const upsertConflictColumns =
         this._persisted && data.id ? ['id'] : conflictColumns;
+      const usesEmbeddedRevisionFallback =
+        revisionGuard !== undefined && isEmbeddedDatabase(this.db);
 
       // A NULL among the conflict values routes the SDK's upsert through its
       // null-aware path — on file-backed SQLite a write transaction on a
@@ -2027,11 +2046,12 @@ export class SmrtObject extends SmrtClass {
       // concurrent creates livelocked into SQLITE_BUSY against the
       // change-feed append on the root connection.
       const serializeEmbeddedWrite =
-        writePlan.type !== 'updateById' &&
-        expectedUpdatedAt === undefined &&
-        !(this._insertOnly && !this._persisted) &&
-        isEmbeddedDatabase(this.db) &&
-        upsertConflictColumns.some((column) => data[column] == null);
+        usesEmbeddedRevisionFallback ||
+        (writePlan.type !== 'updateById' &&
+          revisionGuard === undefined &&
+          !(this._insertOnly && !this._persisted) &&
+          isEmbeddedDatabase(this.db) &&
+          upsertConflictColumns.some((column) => data[column] == null));
 
       let revisionMatched = true;
       await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
@@ -2040,26 +2060,45 @@ export class SmrtObject extends SmrtClass {
             try {
               if (
                 writePlan.type === 'updateById' ||
-                expectedUpdatedAt !== undefined
+                revisionGuard !== undefined
               ) {
                 const { id: _id, ...updateData } = data;
-                const updateResult = await this.db.update(
-                  this.tableName,
-                  {
+                // Embedded adapters have no cross-process writers in supported
+                // deployments, and DuckDB cannot type a TIMESTAMP predicate in
+                // this generic UPDATE API. Compare then upsert while holding
+                // the shared per-database embedded-write queue instead.
+                if (usesEmbeddedRevisionFallback) {
+                  const current = await this.db.get(this.tableName, {
                     id: data.id,
-                    ...(expectedUpdatedAt !== undefined
-                      ? {
-                          updated_at:
-                            expectedUpdatedAt instanceof Date
-                              ? expectedUpdatedAt.toISOString()
-                              : expectedUpdatedAt,
-                        }
-                      : {}),
-                  },
-                  updateData,
-                );
+                  });
+                  if (
+                    !current ||
+                    !this.revisionsEqual(
+                      (current as Record<string, unknown>).updated_at,
+                      revisionGuard,
+                    )
+                  ) {
+                    revisionMatched = false;
+                    return;
+                  }
+                }
+                const updateResult = usesEmbeddedRevisionFallback
+                  ? await this.db.upsert(this.tableName, ['id'], data)
+                  : await this.db.update(
+                      this.tableName,
+                      {
+                        id: data.id,
+                        ...(revisionGuard !== undefined
+                          ? {
+                              updated_at:
+                                this.revisionPredicateValue(revisionGuard),
+                            }
+                          : {}),
+                      },
+                      updateData,
+                    );
                 if (
-                  expectedUpdatedAt !== undefined &&
+                  revisionGuard !== undefined &&
                   updateResult.affected !== 1
                 ) {
                   revisionMatched = false;
@@ -2109,8 +2148,7 @@ export class SmrtObject extends SmrtClass {
                   throw ValidationError.requiredField(field, className);
                 }
                 const operation =
-                  writePlan.type === 'updateById' ||
-                  expectedUpdatedAt !== undefined
+                  writePlan.type === 'updateById' || revisionGuard !== undefined
                     ? `UPDATE ${this.tableName} (id-targeted)`
                     : this._insertOnly && !this._persisted
                       ? `INSERT INTO ${this.tableName}`
@@ -2220,19 +2258,51 @@ export class SmrtObject extends SmrtClass {
       );
     }
 
-    const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
-    const result = await this.db.update(
-      this.tableName,
-      {
-        id: this.id,
-        updated_at:
-          expectedUpdatedAt instanceof Date
-            ? expectedUpdatedAt.toISOString()
-            : expectedUpdatedAt,
-      },
-      { updated_at: updatedAt.toISOString() },
+    // A revision claim is still a write for tenant isolation purposes. Run the
+    // same pre-save security interceptors as save(), while intentionally
+    // omitting domain mutation and after-save hooks.
+    await GlobalInterceptors.executeBeforeSave(
+      this,
+      createInterceptorContext(className, 'save'),
     );
-    if (result.affected !== 1) {
+
+    const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
+    let result: Awaited<ReturnType<typeof this.db.update>> | undefined;
+    let revisionMatched = true;
+    const usesEmbeddedRevisionFallback = isEmbeddedDatabase(this.db);
+    await withEmbeddedWriteQueue(
+      this.db,
+      usesEmbeddedRevisionFallback,
+      async () => {
+        let current: Record<string, unknown> | null = null;
+        if (usesEmbeddedRevisionFallback) {
+          current = (await this.db.get(this.tableName, {
+            id: this.id,
+          })) as Record<string, unknown> | null;
+          if (
+            !current ||
+            !this.revisionsEqual(current.updated_at, expectedUpdatedAt)
+          ) {
+            revisionMatched = false;
+            return;
+          }
+        }
+        result = usesEmbeddedRevisionFallback
+          ? await this.db.upsert(this.tableName, ['id'], {
+              ...current,
+              updated_at: updatedAt.toISOString(),
+            })
+          : await this.db.update(
+              this.tableName,
+              {
+                id: this.id,
+                updated_at: this.revisionPredicateValue(expectedUpdatedAt),
+              },
+              { updated_at: updatedAt.toISOString() },
+            );
+      },
+    );
+    if (!revisionMatched || result?.affected !== 1) {
       throw new RuntimeError(
         `Revision conflict while claiming ${className}`,
         'RUNTIME_REVISION_CONFLICT',
@@ -2243,6 +2313,22 @@ export class SmrtObject extends SmrtClass {
     this.updated_at = updatedAt;
     this.invalidateCollectionReadCache();
     return this;
+  }
+
+  private revisionPredicateValue(revision: Date | string): Date | string {
+    return revision instanceof Date ? revision.toISOString() : revision;
+  }
+
+  private revisionsEqual(left: unknown, right: Date | string): boolean {
+    const leftTime =
+      left instanceof Date
+        ? left.getTime()
+        : typeof left === 'string'
+          ? Date.parse(left)
+          : Number.NaN;
+    const rightTime =
+      right instanceof Date ? right.getTime() : Date.parse(right);
+    return Number.isFinite(leftTime) && leftTime === rightTime;
   }
 
   private nextRevisionTimestamp(expectedUpdatedAt?: Date | string): Date {
