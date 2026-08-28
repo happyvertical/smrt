@@ -151,6 +151,12 @@ const PUBLICATION_OPERATIONS = [
     collection: 'contentreferences',
     action: 'read',
   },
+  {
+    id: 'content-assets:read',
+    collection: 'contentassets',
+    action: 'read',
+  },
+  { id: 'assets:read', collection: 'assets', action: 'read' },
   { id: 'facts:read', collection: 'facts', action: 'read' },
   { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
   { id: 'fact-sources:read', collection: 'factsources', action: 'read' },

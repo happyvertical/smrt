@@ -716,6 +716,39 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(setup.collection.saveCalls).toEqual([]);
   });
 
+  it.each([
+    'contentassets',
+    'assets',
+  ])('fails closed when a publication snapshot lacks %s read permission', async (deniedCollection) => {
+    const setup = harness({
+      assertOperation: async (collection, action) => {
+        if (collection === deniedCollection && action === 'read') {
+          throw permissionDeniedError();
+        }
+        return { allowed: true } as Awaited<
+          ReturnType<PrincipalRun['assertOperation']>
+        >;
+      },
+    });
+
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          'publish',
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { expectedCount: 1 },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(setup.run.assertOperation).toHaveBeenCalledWith(
+      deniedCollection,
+      'read',
+    );
+    expect(setup.collection.saveCalls).toEqual([]);
+  });
+
   it('rechecks publish readiness and configured automated-review policies', async () => {
     const setup = harness();
     const content = await setup.collection.get('a');
@@ -808,6 +841,8 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       .mocked(setup.run.assertOperation)
       .mock.calls.map(([collection, action]) => `${collection}:${action}`);
     expect(publishedOperations).toContain('contentreferences:read');
+    expect(publishedOperations).toContain('contentassets:read');
+    expect(publishedOperations).toContain('assets:read');
     expect(publishedOperations).toContain('contentversions:create');
   });
 

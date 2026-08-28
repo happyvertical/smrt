@@ -71,6 +71,10 @@ Important invariants:
   handlers mutate the supplied object but must not call `save()`; the adapter
   owns the guarded save. Query, count, membership, or row drift returns a stale
   failure before mutation.
+- Publication-producing workflows require every read used to construct their
+  version snapshot, including `contentassets:read` and `assets:read`. Keep those
+  explicit catalog assertions in sync with `ContentVersion.createSnapshot()`;
+  they are the authorization boundary on adapters without PostgreSQL RLS.
 - Workflow queries must project `id`, `title`, `status`, and `updated_at` so the
   server can bind labels, eligibility, and row revisions. The standard
   ContentList query projection already includes them; a host-supplied projection
