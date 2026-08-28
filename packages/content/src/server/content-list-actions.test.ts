@@ -468,6 +468,12 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(count).not.toHaveBeenCalled();
   });
 
+  it('rejects a configured selection cap above the coherent query bound', () => {
+    expect(() => harness({ maxSelectionSize: 1_001 })).toThrow(
+      'ContentList maxSelectionSize must be an integer between 1 and 1000',
+    );
+  });
+
   it('reports an oversized all-matching selection as limit exceeded', async () => {
     const setup = harness({ maxSelectionSize: 2 });
     const targetQuery = query();

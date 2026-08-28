@@ -1029,6 +1029,15 @@ export function createContentListActionAdapter(
     options.maxSelectionSize ??
     options.descriptor?.limits.maxSelectionSize ??
     DEFAULT_MAX_SELECTION_SIZE;
+  if (
+    !Number.isSafeInteger(maxSelectionSize) ||
+    maxSelectionSize < 1 ||
+    maxSelectionSize > MAX_DATA_QUERY_PAGE_LIMIT
+  ) {
+    throw new Error(
+      `ContentList maxSelectionSize must be an integer between 1 and ${MAX_DATA_QUERY_PAGE_LIMIT} so all-matching membership resolves in one bounded query`,
+    );
+  }
   const representativeLimit =
     options.representativeLimit ?? DEFAULT_REPRESENTATIVE_LIMIT;
   const descriptor = options.descriptor ?? defaultDescriptor(maxSelectionSize);
