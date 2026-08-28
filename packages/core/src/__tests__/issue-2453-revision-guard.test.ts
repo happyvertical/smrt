@@ -78,14 +78,25 @@ describe('issue #2453 revision-guarded saves', () => {
     first.title = 'first writer';
     await first.save();
 
-    const stored = await rows.get(String(created.id));
-    expect(stored?.updated_at?.getTime()).toBe(expectedTime + 1);
+    const guarded = await rows.get(String(created.id));
+    expect(guarded?.updated_at?.getTime()).toBe(expectedTime + 1);
 
-    stale.title = 'stale overwrite';
-    await expect(stale.save({ expectedUpdatedAt })).rejects.toMatchObject({
+    stale.title = 'second ordinary writer';
+    await stale.save();
+    expect((await rows.get(String(created.id)))?.updated_at?.getTime()).toBe(
+      expectedTime + 2,
+    );
+
+    if (!guarded?.updated_at) throw new Error('expected guarded snapshot');
+    guarded.title = 'stale overwrite';
+    await expect(
+      guarded.save({ expectedUpdatedAt: guarded.updated_at }),
+    ).rejects.toMatchObject({
       code: 'RUNTIME_REVISION_CONFLICT',
     });
-    expect((await rows.get(String(created.id)))?.title).toBe('first writer');
+    expect((await rows.get(String(created.id)))?.title).toBe(
+      'second ordinary writer',
+    );
   });
 
   it('claims a revision without persisting other in-memory mutations', async () => {

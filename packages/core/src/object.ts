@@ -57,6 +57,11 @@ const logger = createLogger({
   level: process.env.DEBUG_STI ? 'debug' : 'info',
 });
 
+// Millisecond timestamps are the persisted revision token. Keep issuance
+// monotonic within this runtime so independent instances saved on the same
+// clock tick cannot publish the same revision.
+let lastIssuedRevisionTime = 0;
+
 /**
  * Default maximum number of characters of serialized object data injected into
  * the AI prompts built by `is()`, `do()`, and `describe()`.
@@ -2251,7 +2256,13 @@ export class SmrtObject extends SmrtClass {
       revisionTimes.length > 0
         ? Math.max(...revisionTimes)
         : Number.NEGATIVE_INFINITY;
-    return new Date(Math.max(Date.now(), revisionFloor + 1));
+    const nextRevisionTime = Math.max(
+      Date.now(),
+      revisionFloor + 1,
+      lastIssuedRevisionTime + 1,
+    );
+    lastIssuedRevisionTime = nextRevisionTime;
+    return new Date(nextRevisionTime);
   }
 
   /**

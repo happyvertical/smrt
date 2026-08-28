@@ -29,6 +29,7 @@ import {
 } from '@happyvertical/smrt-agents/server';
 import {
   createDataQueryFingerprint,
+  MAX_DATA_QUERY_PAGE_LIMIT,
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
 import type {
@@ -880,6 +881,21 @@ async function resolveQuerySelection(
     const input = request.target.query;
     if (!input) throw new ContentListActionError('invalid_target');
     const normalized = normalizeDataQueryRequest(input, schema);
+    const allMatchingPageLimit = Math.min(
+      maxSelectionSize,
+      MAX_DATA_QUERY_PAGE_LIMIT,
+    );
+    const querySchema =
+      selection.scope === 'all-matching'
+        ? {
+            ...schema,
+            defaultPageLimit: Math.min(
+              schema.defaultPageLimit ?? CONTENT_QUERY_MAX_PAGE_LIMIT,
+              allMatchingPageLimit,
+            ),
+            maxPageLimit: allMatchingPageLimit,
+          }
+        : schema;
     if (normalized.mode !== 'rows')
       throw new ContentListActionError('invalid_target');
     for (const field of REQUIRED_QUERY_FIELDS) {
@@ -896,7 +912,7 @@ async function resolveQuerySelection(
     const pageLimit =
       selection.scope === 'current-page'
         ? (normalized.page?.limit ?? CONTENT_QUERY_MAX_PAGE_LIMIT)
-        : Math.min(maxSelectionSize, CONTENT_QUERY_MAX_PAGE_LIMIT);
+        : allMatchingPageLimit;
     const offset =
       selection.scope === 'current-page' && normalized.page?.kind === 'offset'
         ? normalized.page.offset
@@ -908,6 +924,7 @@ async function resolveQuerySelection(
     };
     const result = await executeContentQuery(collection, pageRequest, {
       scope,
+      schema: querySchema,
     });
     if (result.total.kind !== 'exact')
       throw new ContentListActionError('count_unavailable');

@@ -1165,6 +1165,41 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('resolves a configured all-matching limit above the default page cap', async () => {
+    const rows = Array.from({ length: 201 }, (_, index) => ({
+      id: String(index).padStart(3, '0'),
+      title: `Content ${index}`,
+      status: 'draft' as const,
+      type: 'document',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    }));
+    const collection = new MemoryContentCollection(rows);
+    const listSpy = vi.spyOn(collection, 'list');
+    const setup = harness({ collection, maxSelectionSize: 201 });
+    const targetQuery = query({
+      page: { kind: 'offset', offset: 0, limit: 1 },
+    });
+    const canonical = await fingerprint(targetQuery);
+
+    const result = await setup.adapter.preview(
+      actionRequest(
+        'preview',
+        'categorize',
+        {
+          scope: 'all-matching',
+          queryFingerprint: canonical,
+          expectedCount: 201,
+        },
+        { query: targetQuery, expectedCount: 201 },
+        { payload: { category: 'news' } },
+      ),
+      setup.context,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(listSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects an automated review when content changes during AI work', async () => {
     let queued: DataSurfaceBackgroundActionJob | undefined;
     let reviewWrites = 0;
