@@ -530,6 +530,7 @@ describe('ContentList bulk workflows', () => {
   });
 
   it.each([
+    'version',
     'requestId',
     'identity',
   ] as const)('rejects a direct preview result for another %s', async (mismatch) => {
@@ -817,14 +818,16 @@ describe('ContentList bulk workflows', () => {
         status: 'succeeded' as const,
         result: {
           ...applyRequest,
-          ...(mismatch === 'requestId'
-            ? { requestId: 'another-request' }
-            : {
-                identity: {
-                  surfaceId: 'another-content-list',
-                  kind: 'table' as const,
-                },
-              }),
+          ...(mismatch === 'version'
+            ? { version: 2 as const }
+            : mismatch === 'requestId'
+              ? { requestId: 'another-request' }
+              : {
+                  identity: {
+                    surfaceId: 'another-content-list',
+                    kind: 'table' as const,
+                  },
+                }),
           ok: true,
           details: {
             accepted: 1,

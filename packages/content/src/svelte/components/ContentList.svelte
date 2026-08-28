@@ -1639,7 +1639,8 @@ async function checkWorkflowJob() {
     }
     if (
       job.result &&
-      (job.result.phase !== 'apply' ||
+      (job.result.version !== 1 ||
+        job.result.phase !== 'apply' ||
         job.result.actionId !== queuedJob.actionId ||
         job.result.requestId !== queuedJob.requestId ||
         !workflowIdentityMatches(job.result.identity, queuedJob.identity))
