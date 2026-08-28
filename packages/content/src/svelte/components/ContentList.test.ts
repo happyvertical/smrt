@@ -537,14 +537,16 @@ describe('ContentList bulk workflows', () => {
     const workflow = workflowBinding({
       preview: async (request) => ({
         ...request,
-        ...(mismatch === 'requestId'
-          ? { requestId: 'another-request' }
-          : {
-              identity: {
-                surfaceId: 'another-content-list',
-                kind: 'table' as const,
-              },
-            }),
+        ...(mismatch === 'version'
+          ? { version: 2 as const }
+          : mismatch === 'requestId'
+            ? { requestId: 'another-request' }
+            : {
+                identity: {
+                  surfaceId: 'another-content-list',
+                  kind: 'table' as const,
+                },
+              }),
         ok: true,
         confirmationToken: 'wrong-preview',
       }),
@@ -799,6 +801,7 @@ describe('ContentList bulk workflows', () => {
   });
 
   it.each([
+    'version',
     'requestId',
     'identity',
   ] as const)('keeps an all-matching job locked when its result mismatches the %s', async (mismatch) => {
