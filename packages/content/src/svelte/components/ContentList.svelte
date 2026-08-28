@@ -1589,12 +1589,38 @@ async function applyWorkflow() {
   if (!request) return;
   request.confirmationToken = workflowPreview.confirmationToken;
   request.idempotencyKey = workflowIdempotencyKey;
+  const appliedIntent = workflowIntentAtPreview;
   workflowPending = true;
   workflowError = null;
   try {
     const result = await workflows.client.apply(request);
     if (!workflowResultMatchesRequest(result, request)) {
       throw new Error('The workflow response did not match the apply request.');
+    }
+    if (appliedIntent !== workflowIntentSignature()) {
+      if (
+        result.ok &&
+        result.details?.background === true &&
+        typeof result.details.jobId === 'string' &&
+        !workflowQueuedJobs.some((job) => job.intent === appliedIntent)
+      ) {
+        workflowQueuedJobs = [
+          ...workflowQueuedJobs,
+          {
+            intent: appliedIntent,
+            jobId: result.details.jobId,
+            actionId: request.actionId,
+            requestId: request.requestId,
+            identity: request.identity,
+          },
+        ];
+      }
+      workflowError =
+        'The selection or workflow changed while applying; its result was not applied.';
+      workflowPreview = null;
+      workflowIdempotencyKey = '';
+      workflowConfirmOpen = false;
+      return;
     }
     workflowResult = result;
     if (!result.ok) {

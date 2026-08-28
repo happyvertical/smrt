@@ -2173,6 +2173,7 @@ export class SmrtObject extends SmrtClass {
         );
       }
       revisionPersisted = true;
+      this.commitRevisionTimestamp(this.updated_at);
 
       // The row now exists, so any further save() must update it by primary
       // key even if natural-key fields change afterwards (issue #1472).
@@ -2322,6 +2323,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     this.updated_at = updatedAt;
+    this.commitRevisionTimestamp(updatedAt);
     this.invalidateCollectionReadCache();
     return this;
   }
@@ -2358,8 +2360,17 @@ export class SmrtObject extends SmrtClass {
       revisionFloor + 1,
       lastIssuedRevisionTime + 1,
     );
-    lastIssuedRevisionTime = nextRevisionTime;
     return new Date(nextRevisionTime);
+  }
+
+  private commitRevisionTimestamp(revision: Date): void {
+    const revisionTime = revision.getTime();
+    if (Number.isFinite(revisionTime)) {
+      // Only successful writes advance the process floor. Reserving a future
+      // candidate before its CAS succeeds lets a stale or malformed request
+      // push unrelated object revisions forward even though nothing persisted.
+      lastIssuedRevisionTime = Math.max(lastIssuedRevisionTime, revisionTime);
+    }
   }
 
   /**

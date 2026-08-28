@@ -119,6 +119,27 @@ describe('issue #2453 revision-guarded saves', () => {
     expect((await rows.get(String(second.id)))?.title).toBe('retried');
   });
 
+  it('does not advance unrelated revisions after a future-dated CAS fails', async () => {
+    const staleTarget = await rows.create({ title: 'stale target' });
+    const unrelated = await rows.create({ title: 'unrelated' });
+    const claimant = await rows.get(String(staleTarget.id));
+    const writer = await rows.get(String(unrelated.id));
+    if (!claimant?.updated_at || !writer?.updated_at) {
+      throw new Error('expected persisted rows');
+    }
+    const writerRevision = writer.updated_at.getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(writerRevision);
+
+    await expect(
+      claimant.claimRevision('2999-01-01T00:00:00.000Z'),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    writer.title = 'unrelated update';
+    await writer.save();
+    expect(writer.updated_at.getTime()).toBe(writerRevision + 1);
+  });
+
   it('claims a revision without persisting other in-memory mutations', async () => {
     const created = await rows.create({ title: 'original' });
     const claimant = await rows.get(String(created.id));

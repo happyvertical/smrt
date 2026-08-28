@@ -800,6 +800,62 @@ describe('ContentList bulk workflows', () => {
     expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
   });
 
+  it('does not reconcile a foreground apply after its live workflow intent changes', async () => {
+    let applyRequest: ContentListWorkflowRequest | undefined;
+    let resolveApply: ((result: DataSurfaceActionResult) => void) | undefined;
+    const workflow = workflowBinding({
+      apply: (request) => {
+        applyRequest = request;
+        return new Promise((resolve) => {
+          resolveApply = resolve;
+        });
+      },
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Apply workflow')[0]);
+    await vi.waitFor(() => expect(applyRequest).toBeDefined());
+
+    expect(workflowSelect.disabled).toBe(true);
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').disabled,
+    ).toBe(true);
+
+    // Simulate a host-driven state replacement while component controls are
+    // disabled. The completed response still belongs to the captured intent.
+    selectOption(workflowSelect, 'mark-draft');
+    if (!applyRequest || !resolveApply)
+      throw new Error('Apply was not started');
+    resolveApply({
+      ...applyRequest,
+      ok: true,
+      details: {
+        accepted: 1,
+        outcomes: [{ rowId: 'content-1', status: 'accepted' }],
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain(
+        'The selection or workflow changed while applying; its result was not applied.',
+      ),
+    );
+    expect(target.textContent).toContain('1 selected');
+    expect(target.textContent).not.toContain('1 accepted');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+  });
+
   it('does not reconcile a queued job after its live workflow intent changes', async () => {
     let applyRequest: ContentListWorkflowRequest | undefined;
     let resolveStatus:

@@ -393,6 +393,13 @@ describe('Content governance', () => {
       expect((storedAfter as Record<string, unknown>).updated_at).toEqual(
         (storedBefore as Record<string, unknown>).updated_at,
       );
+      expect(content.updated_at).toEqual(expectedUpdatedAt);
+
+      content.title = 'Retry after rolled-back review';
+      await expect(content.save()).resolves.toBe(content);
+      expect((await db.get('contents', { id: contentId }))?.title).toBe(
+        'Retry after rolled-back review',
+      );
     } finally {
       if (typeof db.close === 'function') await db.close();
     }
