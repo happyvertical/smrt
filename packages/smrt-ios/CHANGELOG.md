@@ -1,5 +1,7 @@
 # @happyvertical/smrt-ios
 
+## 0.43.6
+
 ## 0.43.5
 
 ## 0.43.4

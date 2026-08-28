@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.43.6
+
+### Patch Changes
+
+- ### Features
+
+  - support ISO currency display (#2538) (smrt-ui)
+
+  ### Bug Fixes
+
+  - provision deferred manifest foreign keys on PostgreSQL (#2540) (smrt-vitest)
+  - @happyvertical/smrt-config@0.43.6
+  - @happyvertical/smrt-types@0.43.6
+  - @happyvertical/smrt-scanner@0.43.6
+
 ## 0.43.5
 
 ### Patch Changes
