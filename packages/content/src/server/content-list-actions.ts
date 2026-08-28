@@ -896,43 +896,30 @@ async function resolveQuerySelection(
     const pageLimit =
       selection.scope === 'current-page'
         ? (normalized.page?.limit ?? CONTENT_QUERY_MAX_PAGE_LIMIT)
-        : CONTENT_QUERY_MAX_PAGE_LIMIT;
-    let offset =
+        : Math.min(maxSelectionSize, CONTENT_QUERY_MAX_PAGE_LIMIT);
+    const offset =
       selection.scope === 'current-page' && normalized.page?.kind === 'offset'
         ? normalized.page.offset
         : 0;
-    let authoritativeTotal: number | undefined;
-    do {
-      const pageRequest: DataQueryRequest = {
-        ...normalized,
-        requestId: `${normalized.requestId}-action-${offset}`.slice(0, 128),
-        page: { kind: 'offset', offset, limit: pageLimit },
-      };
-      const result = await executeContentQuery(collection, pageRequest, {
-        scope,
-      });
-      if (result.total.kind !== 'exact')
-        throw new ContentListActionError('count_unavailable');
-      if (authoritativeTotal === undefined)
-        authoritativeTotal = result.total.value;
-      if (result.total.value !== authoritativeTotal)
-        throw new ContentListActionError('matching_count_drifted');
-      if (
-        selection.scope === 'all-matching' &&
-        authoritativeTotal > maxSelectionSize
-      )
-        throw new ContentListActionError('limit_exceeded');
-      rows.push(...result.rows);
-      if (selection.scope === 'current-page' || !result.page?.hasMore) break;
-      offset += pageLimit;
-      if (rows.length > maxSelectionSize) break;
-    } while (rows.length <= maxSelectionSize);
+    const pageRequest: DataQueryRequest = {
+      ...normalized,
+      requestId: `${normalized.requestId}-action-${offset}`.slice(0, 128),
+      page: { kind: 'offset', offset, limit: Math.max(1, pageLimit) },
+    };
+    const result = await executeContentQuery(collection, pageRequest, {
+      scope,
+    });
+    if (result.total.kind !== 'exact')
+      throw new ContentListActionError('count_unavailable');
+    if (selection.scope === 'all-matching' && result.total.value > pageLimit) {
+      throw new ContentListActionError('limit_exceeded');
+    }
+    rows.push(...result.rows);
     if (
       selection.scope === 'all-matching' &&
-      rows.length !== authoritativeTotal
+      rows.length !== result.total.value
     ) {
-      if (rows.length <= maxSelectionSize)
-        throw new ContentListActionError('matching_count_drifted');
+      throw new ContentListActionError('matching_count_drifted');
     }
     if (selection.scope === 'all-matching') {
       const distinctIds = new Set(rows.map((row) => String(row.id)));

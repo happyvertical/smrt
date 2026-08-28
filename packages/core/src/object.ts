@@ -1899,23 +1899,10 @@ export class SmrtObject extends SmrtClass {
         this.slug = await this.getSlug();
       }
 
-      // A guarded write must advance its revision even when both saves land in
-      // the same clock millisecond. Otherwise a second writer holding the old
-      // revision could still match after this update commits.
-      const updatedAt = new Date();
-      if (expectedUpdatedAt !== undefined) {
-        const expectedTime =
-          expectedUpdatedAt instanceof Date
-            ? expectedUpdatedAt.getTime()
-            : Date.parse(expectedUpdatedAt);
-        if (
-          Number.isFinite(expectedTime) &&
-          updatedAt.getTime() <= expectedTime
-        ) {
-          updatedAt.setTime(expectedTime + 1);
-        }
-      }
-      this.updated_at = updatedAt;
+      // Every persisted write must advance beyond the loaded revision. If an
+      // ordinary writer saves in the same clock millisecond and keeps the old
+      // timestamp, a later guarded writer could still match and overwrite it.
+      this.updated_at = this.nextRevisionTimestamp(expectedUpdatedAt);
 
       if (!this.created_at) {
         this.created_at = new Date();
@@ -2209,6 +2196,62 @@ export class SmrtObject extends SmrtClass {
         error instanceof Error ? error : new Error(String(error)),
       );
     }
+  }
+
+  /**
+   * Atomically claim the current row revision without running model save hooks.
+   *
+   * Artifact-producing workflows use this immediately before persisting their
+   * artifacts in the same transaction. It provides the same compare-and-swap
+   * conflict contract as `save({ expectedUpdatedAt })`, while deliberately not
+   * re-running domain mutation, publication, embedding, or relationship hooks.
+   */
+  async claimRevision(expectedUpdatedAt: Date | string): Promise<this> {
+    const className = this.getResolvedClassName();
+    if (!this._persisted || !this.id) {
+      throw RuntimeError.invalidState(
+        'A revision claim requires a persisted object',
+        { className },
+      );
+    }
+
+    const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
+    const result = await this.db.update(
+      this.tableName,
+      {
+        id: this.id,
+        updated_at:
+          expectedUpdatedAt instanceof Date
+            ? expectedUpdatedAt.toISOString()
+            : expectedUpdatedAt,
+      },
+      { updated_at: updatedAt.toISOString() },
+    );
+    if (result.affected !== 1) {
+      throw new RuntimeError(
+        `Revision conflict while claiming ${className}`,
+        'RUNTIME_REVISION_CONFLICT',
+        { className, id: this.id },
+      );
+    }
+
+    this.updated_at = updatedAt;
+    this.invalidateCollectionReadCache();
+    return this;
+  }
+
+  private nextRevisionTimestamp(expectedUpdatedAt?: Date | string): Date {
+    const revisionTimes = [this.updated_at, expectedUpdatedAt]
+      .filter((revision): revision is Date | string => revision != null)
+      .map((revision) =>
+        revision instanceof Date ? revision.getTime() : Date.parse(revision),
+      )
+      .filter(Number.isFinite);
+    const revisionFloor =
+      revisionTimes.length > 0
+        ? Math.max(...revisionTimes)
+        : Number.NEGATIVE_INFINITY;
+    return new Date(Math.max(Date.now(), revisionFloor + 1));
   }
 
   /**

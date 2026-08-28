@@ -3786,7 +3786,7 @@ export class Content
     const result = parseContentReviewResponse(rawResponse);
     const persistReview = async (content: Content) => {
       if (options.expectedUpdatedAt !== undefined) {
-        await content.save({ expectedUpdatedAt: options.expectedUpdatedAt });
+        await content.claimRevision(options.expectedUpdatedAt);
       }
       const version =
         options.createVersion === false

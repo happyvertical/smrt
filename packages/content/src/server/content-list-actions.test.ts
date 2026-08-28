@@ -1119,8 +1119,8 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(collection.rows[0].updated_at).toBe('2026-01-01T00:00:00.000Z');
   });
 
-  it('rejects all-matching pagination churn that repeats an id', async () => {
-    const churnRows = Array.from({ length: 201 }, (_, index) => ({
+  it('rejects repeated all-matching ids from one bounded snapshot query', async () => {
+    const churnRows = Array.from({ length: 200 }, (_, index) => ({
       id: String(index).padStart(3, '0'),
       title: `Content ${index}`,
       status: 'draft' as const,
@@ -1129,14 +1129,15 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     }));
     const collection = new MemoryContentCollection(churnRows);
     const list = collection.list.bind(collection);
-    vi.spyOn(collection, 'list').mockImplementation(async (options) => {
-      const page = await list(options);
-      if (options.offset === 200) {
-        return [{ ...page[0], id: '199' }];
-      }
-      return page;
-    });
-    const setup = harness({ collection, maxSelectionSize: 201 });
+    const listSpy = vi
+      .spyOn(collection, 'list')
+      .mockImplementation(async (options) => {
+        const page = await list(options);
+        return page.map((row, index) =>
+          index === 199 ? { ...row, id: '198' } : row,
+        );
+      });
+    const setup = harness({ collection, maxSelectionSize: 200 });
     const targetQuery = query({
       page: { kind: 'offset', offset: 0, limit: 1 },
     });
@@ -1150,9 +1151,9 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
           {
             scope: 'all-matching',
             queryFingerprint: canonical,
-            expectedCount: 201,
+            expectedCount: 200,
           },
-          { query: targetQuery, expectedCount: 201 },
+          { query: targetQuery, expectedCount: 200 },
           { payload: { category: 'news' } },
         ),
         setup.context,
@@ -1161,6 +1162,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       ok: false,
       reason: 'matching_count_drifted',
     });
+    expect(listSpy).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an automated review when content changes during AI work', async () => {

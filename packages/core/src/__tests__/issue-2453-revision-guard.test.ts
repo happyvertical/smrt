@@ -63,7 +63,7 @@ describe('issue #2453 revision-guarded saves', () => {
     expect(stored?.title).toBe('concurrent');
   });
 
-  it('advances the revision when a guarded save occurs in the same millisecond', async () => {
+  it('advances an ordinary save so a same-millisecond stale writer is rejected', async () => {
     const created = await rows.create({ title: 'original' });
     const first = await rows.get(String(created.id));
     const stale = await rows.get(String(created.id));
@@ -76,7 +76,7 @@ describe('issue #2453 revision-guarded saves', () => {
     vi.setSystemTime(expectedTime);
 
     first.title = 'first writer';
-    await first.save({ expectedUpdatedAt });
+    await first.save();
 
     const stored = await rows.get(String(created.id));
     expect(stored?.updated_at?.getTime()).toBe(expectedTime + 1);
@@ -86,5 +86,24 @@ describe('issue #2453 revision-guarded saves', () => {
       code: 'RUNTIME_REVISION_CONFLICT',
     });
     expect((await rows.get(String(created.id)))?.title).toBe('first writer');
+  });
+
+  it('claims a revision without persisting other in-memory mutations', async () => {
+    const created = await rows.create({ title: 'original' });
+    const claimant = await rows.get(String(created.id));
+    if (!claimant?.updated_at) {
+      throw new Error('expected persisted row');
+    }
+    const expectedUpdatedAt = claimant.updated_at;
+    const expectedTime = new Date(expectedUpdatedAt).getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(expectedTime);
+    claimant.title = 'must not persist';
+
+    await claimant.claimRevision(expectedUpdatedAt);
+
+    const stored = await rows.get(String(created.id));
+    expect(stored?.title).toBe('original');
+    expect(stored?.updated_at?.getTime()).toBe(expectedTime + 1);
   });
 });

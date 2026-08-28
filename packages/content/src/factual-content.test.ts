@@ -398,6 +398,57 @@ describe('Content governance', () => {
     }
   });
 
+  it('claims a published row revision without re-running publish readiness', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
+      configureContentGovernance({
+        assignments: [{ contentType: 'document', enabled: true }],
+      });
+      const content = new Content({
+        name: 'published-review-replacement',
+        title: 'Published review replacement',
+        body: 'Published body',
+        type: 'document',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              status: 'passed',
+              summary: 'Replacement review',
+              findings: [],
+            }),
+          ),
+        },
+      });
+      await content.initialize();
+      await content.save();
+      const expectedUpdatedAt = content.updated_at;
+      content.status = 'published';
+      const save = vi
+        .spyOn(content, 'save')
+        .mockRejectedValue(new Error('publish readiness is stale'));
+
+      const review = await content.runReview({
+        kind: 'custom',
+        createVersion: false,
+        expectedUpdatedAt: expectedUpdatedAt ?? undefined,
+      });
+
+      expect(review.status).toBe('passed');
+      expect(save).not.toHaveBeenCalled();
+      expect(await db.list('content_reviews', {})).toHaveLength(1);
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('keeps plain Content publish/save compatible without governance tables', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
