@@ -1189,6 +1189,12 @@ describe('content chat prompt integration', () => {
         maxTokens: 123,
       }),
     );
+    expect(response.session).not.toBe(session);
+    expect(response.session.getSessionContext()).toMatchObject({
+      contentId: content.id,
+      model: 'bifrost-editor',
+      provider: 'bifrost',
+    });
 
     const updated = await chatService.getAgentSession({
       agentSessionId: session.id as string,

@@ -800,6 +800,96 @@ describe('ContentList bulk workflows', () => {
     expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
   });
 
+  it('does not reconcile a queued job after its live workflow intent changes', async () => {
+    let applyRequest: ContentListWorkflowRequest | undefined;
+    let resolveStatus:
+      | ((
+          result: Awaited<
+            ReturnType<
+              NonNullable<ContentListWorkflowBinding['client']['status']>
+            >
+          >,
+        ) => void)
+      | undefined;
+    const status = vi.fn(
+      () =>
+        new Promise<
+          Awaited<
+            ReturnType<
+              NonNullable<ContentListWorkflowBinding['client']['status']>
+            >
+          >
+        >((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+    const workflow = workflowBinding({
+      apply: async (request) => {
+        applyRequest = request;
+        return {
+          ...request,
+          ok: true,
+          details: {
+            accepted: 1,
+            background: true,
+            jobId: 'job-intent-race',
+          },
+        };
+      },
+      status,
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Check job')[0]);
+    await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(1));
+
+    expect(workflowSelect.disabled).toBe(true);
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').disabled,
+    ).toBe(true);
+
+    // A host-driven state change can still occur while the request is in
+    // flight, so completion must bind to the captured queued intent as well as
+    // disabling the component's own controls.
+    selectOption(workflowSelect, 'mark-draft');
+    if (!applyRequest || !resolveStatus) throw new Error('Job was not queued');
+    resolveStatus({
+      jobId: 'job-intent-race',
+      status: 'succeeded',
+      result: {
+        ...applyRequest,
+        ok: true,
+        details: {
+          accepted: 1,
+          outcomes: [{ rowId: 'content-1', status: 'accepted' }],
+        },
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain(
+        'The selection or workflow changed while checking the job; its result was not applied.',
+      ),
+    );
+    expect(target.textContent).toContain('1 selected');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+  });
+
   it.each([
     'version',
     'requestId',

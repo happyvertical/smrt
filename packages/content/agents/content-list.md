@@ -86,6 +86,8 @@ Important invariants:
   authenticated `jobStatusPath` transport (or supply `client.status`) so the
   list can keep an identical intent locked while queued/running, reconcile
   terminal row outcomes, and unlock a failed or cancelled intent for retry.
+  Selection controls are disabled while a status request is in flight, and the
+  captured intent is rechecked before any returned outcomes are reconciled.
 - Foreground results report accepted, skipped, and failed rows separately. The
   client clears only accepted IDs; a failed request never reports success or
   clears selection.

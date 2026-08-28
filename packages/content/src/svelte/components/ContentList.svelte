@@ -1283,11 +1283,18 @@ function formattedLastUpdated(value: number): string {
 }
 
 function toggleRow(row: ContentListRow) {
-  if (!row.identified || rowPending(row) || allMatchingSelected) return;
+  if (
+    workflowPending ||
+    !row.identified ||
+    rowPending(row) ||
+    allMatchingSelected
+  )
+    return;
   controller.dispatch({ type: 'toggleRowSelection', rowId: row.id });
 }
 
 function togglePageSelection() {
+  if (workflowPending) return;
   if (allMatchingSelected) {
     clearSelection();
     return;
@@ -1304,6 +1311,7 @@ function togglePageSelection() {
 
 function selectAllMatching() {
   if (
+    workflowPending ||
     !canSelectAllMatching ||
     !settledWorkflowFingerprint ||
     !settledWorkflowRevision ||
@@ -1318,6 +1326,7 @@ function selectAllMatching() {
 }
 
 function clearSelection() {
+  if (workflowPending) return;
   controller.dispatch({ type: 'setSelectedRows', rowIds: [] });
 }
 
@@ -1629,6 +1638,11 @@ async function checkWorkflowJob() {
   workflowError = null;
   try {
     const job = await workflows.client.status(queuedJob.jobId);
+    if (queuedJob.intent !== workflowIntentSignature()) {
+      workflowError =
+        'The selection or workflow changed while checking the job; its result was not applied.';
+      return;
+    }
     if (job.status === 'queued' || job.status === 'running') {
       workflowError = `Job ${job.jobId} is still ${job.status}.`;
       return;
@@ -1769,6 +1783,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   <Checkbox
     checked={allPageSelected}
     indeterminate={somePageSelected}
+    disabled={workflowPending}
     aria-label={t(M['content.content_list.select_all'])}
     onchange={togglePageSelection}
   />
@@ -1777,7 +1792,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 {#snippet selectCell({ row }: { row: ContentListRow })}
   <Checkbox
     checked={isSelected(row)}
-    disabled={!row.identified || rowPending(row) || allMatchingSelected}
+    disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
     aria-label={selectRowLabel(row)}
     title={row.identified
       ? rowPending(row)
@@ -2172,6 +2187,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           <Checkbox
             checked={allPageSelected}
             indeterminate={somePageSelected}
+            disabled={workflowPending}
             aria-label={t(M['content.content_list.select_all'])}
             onchange={togglePageSelection}
           />
@@ -2180,7 +2196,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           {t(M['content.content_list.selection_count'], { count: selectedCount })}
         </span>
         {#if selectedCount > 0}
-          <Button variant="ghost" size="sm" type="button" class="clear-selection" onclick={clearSelection}>
+          <Button variant="ghost" size="sm" type="button" class="clear-selection" disabled={workflowPending} onclick={clearSelection}>
             {t(M['content.content_list.clear_selection'])}
           </Button>
         {/if}
@@ -2190,6 +2206,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             size="sm"
             type="button"
             class="select-all-matching"
+            disabled={workflowPending}
             onclick={selectAllMatching}
           >
             Select all {exactMatchingCount} matching
@@ -2350,7 +2367,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <div class="content-row__select">
               <Checkbox
                 checked={isSelected(row)}
-                disabled={!row.identified || rowPending(row) || allMatchingSelected}
+                disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
                 aria-label={selectRowLabel(row)}
                 title={row.identified
                   ? rowPending(row)
@@ -2444,7 +2461,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               <div class="content-header__eyebrow">
                 <Checkbox
                   checked={isSelected(row)}
-                  disabled={!row.identified || rowPending(row) || allMatchingSelected}
+                  disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
                   aria-label={selectRowLabel(row)}
                   title={row.identified
                     ? rowPending(row)
