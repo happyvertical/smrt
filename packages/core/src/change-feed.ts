@@ -1138,6 +1138,14 @@ async function appendForInstance(
   }
 }
 
+/** Record a framework-owned mutation that intentionally bypasses save hooks. */
+export async function recordInstanceChange(
+  instance: SmrtObject,
+  operation: ChangeOperation = 'update',
+): Promise<void> {
+  await appendForInstance(instance, operation);
+}
+
 function warnAppendFailureOnce(
   db: DatabaseInterface,
   table: string,

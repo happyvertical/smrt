@@ -1071,10 +1071,22 @@ const surfaceOptions = $derived(
         registry: dataSurface.registry,
         descriptor:
           dataSurface.descriptor ??
-          buildContentListSurfaceDescriptor({
-            columnLabels,
-            includeWorkflows: workflows !== undefined,
-          }),
+          (() => {
+            const descriptor = buildContentListSurfaceDescriptor({
+              columnLabels,
+              includeWorkflows: workflows !== undefined,
+            });
+            return {
+              ...descriptor,
+              identity: workflows?.identity ?? descriptor.identity,
+              limits: {
+                ...descriptor.limits,
+                ...(workflows?.maxSelectionSize === undefined
+                  ? {}
+                  : { maxSelectionSize: workflows.maxSelectionSize }),
+              },
+            };
+          })(),
       }
     : undefined,
 );

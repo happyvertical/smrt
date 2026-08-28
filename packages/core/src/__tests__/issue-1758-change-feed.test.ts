@@ -206,6 +206,23 @@ describe('change feed spine (issue #1758)', () => {
       ]);
     });
 
+    it('records a revision-only claim as an observable update', async () => {
+      const widgets = await ChangeFeedWidgetCollection.create({ db });
+      const widget = await widgets.create({ name: 'claimed' });
+      const expectedUpdatedAt = widget.updated_at;
+      if (!expectedUpdatedAt) throw new Error('expected persisted revision');
+
+      await widget.claimRevision(expectedUpdatedAt);
+
+      const changes = await allChanges(db);
+      expect(changes).toHaveLength(2);
+      expect(changes[1]).toMatchObject({
+        table: WIDGETS_TABLE,
+        rowId: widget.id,
+        operation: 'update',
+      });
+    });
+
     it('stamps the tenant id from the instance', async () => {
       const docs = await ChangeFeedTenantDocCollection.create({ db });
       const doc = await docs.create({ title: 'doc', tenantId: 'tenant-a' });

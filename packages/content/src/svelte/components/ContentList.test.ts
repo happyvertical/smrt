@@ -136,6 +136,7 @@ function workflowBinding(
     ) => Promise<DataSurfaceActionResult>;
     status?: ContentListWorkflowBinding['client']['status'];
     maxSelectionSize?: number;
+    identity?: ContentListWorkflowBinding['identity'];
   } = {},
 ): ContentListWorkflowBinding & {
   preview: ReturnType<typeof vi.fn>;
@@ -172,6 +173,7 @@ function workflowBinding(
     ...(options.maxSelectionSize !== undefined
       ? { maxSelectionSize: options.maxSelectionSize }
       : {}),
+    ...(options.identity ? { identity: options.identity } : {}),
     preview,
     apply,
   };
@@ -1958,6 +1960,26 @@ describe('ContentList data surface', () => {
         .inspect(identity)
         ?.descriptor.actions.some((action) => action.id === 'mark-draft'),
     ).toBe(true);
+  });
+
+  it('publishes workflow identity and selection limits on the mounted surface', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = {
+      surfaceId: 'tenant-content-list',
+      kind: 'table' as const,
+      subject: { type: 'tenant', id: 'tenant-a' },
+    };
+    renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      workflows: workflowBinding({ identity, maxSelectionSize: 37 }),
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    expect(registry.inspect(identity)?.descriptor.identity).toEqual(identity);
+    expect(registry.inspect(identity)?.descriptor.limits.maxSelectionSize).toBe(
+      37,
+    );
   });
 });
 

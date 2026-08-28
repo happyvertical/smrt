@@ -392,10 +392,13 @@ describe('data-surface action adapter', () => {
 
     const first = await setup.adapter.apply(applyRequest, setup.context);
     now += 5 * 60 * 1_000;
-    const retry = await setup.adapter.apply(applyRequest, setup.context);
+    const retry = await setup.adapter.apply(
+      { ...applyRequest, requestId: 'apply-retry-2' },
+      setup.context,
+    );
 
     expect(first).toMatchObject({ ok: true, details: { accepted: 2 } });
-    expect(retry).toEqual(first);
+    expect(retry).toEqual({ ...first, requestId: 'apply-retry-2' });
     expect(applyRow).toHaveBeenCalledTimes(2);
   });
 

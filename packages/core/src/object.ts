@@ -1,6 +1,7 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { runCascadeDelete } from './cascade';
+import { recordInstanceChange } from './change-feed';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -2318,6 +2319,10 @@ export class SmrtObject extends SmrtClass {
 
     this.updated_at = updatedAt;
     this.invalidateCollectionReadCache();
+    // claimRevision intentionally skips domain afterSave hooks, but the public
+    // row revision still changed and must remain visible to ETags, delta pull,
+    // and SSE. When transaction-bound this feed row shares the transaction.
+    await recordInstanceChange(this, 'update');
     return this;
   }
 

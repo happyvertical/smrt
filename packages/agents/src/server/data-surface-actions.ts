@@ -491,6 +491,16 @@ function result(
   };
 }
 
+function replayResult(
+  request: DataSurfaceServerActionRequest,
+  stored: DataSurfaceActionResult,
+): DataSurfaceActionResult {
+  // Idempotency keys identify one logical execution, but each transport retry
+  // has its own correlation id. Preserve the stored outcome while binding the
+  // replay envelope to the request that is receiving it.
+  return { ...stored, requestId: request.requestId };
+}
+
 function outcomesDetails(
   outcomes: DataSurfaceActionRowOutcome[],
   extra: DataSurfaceJsonObject = {},
@@ -774,7 +784,8 @@ export function createDataSurfaceActionAdapter(
       });
       if (winner.requestFingerprint !== executionFingerprint)
         return result(request, false, 'idempotency_conflict');
-      if (winner.status === 'completed') return winner.result;
+      if (winner.status === 'completed')
+        return replayResult(request, winner.result);
       if (winner.ownerToken === ownerToken) {
         let executed: DataSurfaceActionResult;
         try {
@@ -803,7 +814,8 @@ export function createDataSurfaceActionAdapter(
           setTimeout(resolve, idempotencyPollIntervalMs),
         );
         const current = await state.getIdempotency(executionScope);
-        if (current?.status === 'completed') return current.result;
+        if (current?.status === 'completed')
+          return replayResult(request, current.result);
       }
     }
     return result(request, false, 'idempotency_in_progress');
@@ -903,7 +915,8 @@ export function createDataSurfaceActionAdapter(
       return result(request, false, 'idempotency_conflict');
     // A completed durable result is safe to replay from its actor/tenant-bound
     // idempotency scope even when the one-time confirmation has expired.
-    if (prior?.status === 'completed') return prior.result;
+    if (prior?.status === 'completed')
+      return replayResult(request, prior.result);
 
     let token: DataSurfacePreviewTokenRecord | undefined;
     if (confirmationToken) {
@@ -942,7 +955,8 @@ export function createDataSurfaceActionAdapter(
       });
       if (winner.requestFingerprint !== requestFingerprintValue)
         return result(request, false, 'idempotency_conflict');
-      if (winner.status === 'completed') return winner.result;
+      if (winner.status === 'completed')
+        return replayResult(request, winner.result);
       if (winner.ownerToken === ownerToken) {
         let applied: DataSurfaceActionResult;
         try {
@@ -976,7 +990,8 @@ export function createDataSurfaceActionAdapter(
           setTimeout(resolve, idempotencyPollIntervalMs),
         );
         const current = await state.getIdempotency(idempotencyScope);
-        if (current?.status === 'completed') return current.result;
+        if (current?.status === 'completed')
+          return replayResult(request, current.result);
       }
     }
     return result(request, false, 'idempotency_in_progress');
