@@ -689,46 +689,52 @@ postgresDescribe(
       }
     });
 
-    it('preserves unowned constraints and leaves unchanged owned constraints in place', async () => {
+    it('adopts legacy canonical constraints and preserves unrelated unowned constraints', async () => {
       await dropIssueTables('i2537_owned_child', 'i2537_owned_parent');
       const manifestPath = join(
         tmpdir(),
         `smrt-vitest-issue-2537-owned-${randomUUID()}.json`,
       );
-      writeFileSync(
-        manifestPath,
-        JSON.stringify({
-          objects: {
-            Parent: {
-              className: 'Parent',
-              schema: {
-                tableName: 'i2537_owned_parent',
-                columns: {
-                  id: { type: 'TEXT', primaryKey: true, notNull: true },
+      const writeManifest = (onDelete?: 'CASCADE' | 'RESTRICT') =>
+        writeFileSync(
+          manifestPath,
+          JSON.stringify({
+            objects: {
+              Parent: {
+                className: 'Parent',
+                schema: {
+                  tableName: 'i2537_owned_parent',
+                  columns: {
+                    id: { type: 'TEXT', primaryKey: true, notNull: true },
+                  },
                 },
               },
-            },
-            Child: {
-              className: 'Child',
-              schema: {
-                tableName: 'i2537_owned_child',
-                columns: {
-                  id: { type: 'TEXT', primaryKey: true, notNull: true },
-                  parent_id: {
-                    type: 'TEXT',
-                    foreignKey: {
-                      table: 'i2537_owned_parent',
-                      column: 'id',
-                      onDelete: 'CASCADE',
-                      onUpdate: 'CASCADE',
+              Child: {
+                className: 'Child',
+                schema: {
+                  tableName: 'i2537_owned_child',
+                  columns: {
+                    id: { type: 'TEXT', primaryKey: true, notNull: true },
+                    parent_id: {
+                      type: 'TEXT',
+                      ...(onDelete
+                        ? {
+                            foreignKey: {
+                              table: 'i2537_owned_parent',
+                              column: 'id',
+                              onDelete,
+                              onUpdate: 'CASCADE',
+                            },
+                          }
+                        : {}),
                     },
                   },
                 },
               },
             },
-          },
-        }),
-      );
+          }),
+        );
+      writeManifest('CASCADE');
 
       const provisioned = await createIsolatedTestDbFromManifest({
         manifestPath,
@@ -783,7 +789,71 @@ postgresDescribe(
              )
            ORDER BY constraint_row.conname`,
         );
-        expect(after.rows).toEqual(before.rows);
+        expect(after.rows).toEqual([
+          {
+            constraint_oid: before.rows[0].constraint_oid,
+            constraint_name: 'external_owned_child_parent_fkey',
+            ownership_comment: null,
+          },
+          {
+            constraint_oid: before.rows[1].constraint_oid,
+            constraint_name:
+              'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey',
+            ownership_comment: 'smrt-vitest:manifest-foreign-key:v1',
+          },
+        ]);
+        await reopened.cleanup();
+        reopened = undefined;
+
+        writeManifest('RESTRICT');
+        reopened = await createIsolatedTestDbFromManifest({ manifestPath });
+        const migrated = await reopened.db.query(
+          `SELECT constraint_row.oid::text AS constraint_oid,
+                  constraint_row.conname AS constraint_name,
+                  constraint_row.confdeltype,
+                  obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           WHERE child.relname = 'i2537_owned_child'
+             AND constraint_row.conname IN (
+               'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey',
+               'external_owned_child_parent_fkey'
+             )
+           ORDER BY constraint_row.conname`,
+        );
+        expect(migrated.rows).toEqual([
+          {
+            constraint_oid: before.rows[0].constraint_oid,
+            constraint_name: 'external_owned_child_parent_fkey',
+            confdeltype: 'a',
+            ownership_comment: null,
+          },
+          expect.objectContaining({
+            constraint_name:
+              'i2537_owned_child_parent_id_i2537_owned_parent_id_fkey',
+            confdeltype: 'r',
+            ownership_comment: 'smrt-vitest:manifest-foreign-key:v1',
+          }),
+        ]);
+        expect(migrated.rows[1].constraint_oid).not.toBe(
+          before.rows[1].constraint_oid,
+        );
+        await reopened.cleanup();
+        reopened = undefined;
+
+        writeManifest();
+        reopened = await createIsolatedTestDbFromManifest({ manifestPath });
+        const pruned = await reopened.db.query(
+          `SELECT constraint_row.conname AS constraint_name
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           WHERE child.relname = 'i2537_owned_child'
+             AND constraint_row.contype = 'f'
+           ORDER BY constraint_row.conname`,
+        );
+        expect(pruned.rows).toEqual([
+          { constraint_name: 'external_owned_child_parent_fkey' },
+        ]);
       } finally {
         await reopened?.cleanup();
         rmSync(manifestPath, { force: true });

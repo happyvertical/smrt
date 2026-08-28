@@ -601,7 +601,17 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         confmatchtype: string;
         ownership_comment: string | null;
       }>) {
-        const rendererOwned = row.ownership_comment === ownershipComment;
+        const legacyCanonicalName = foreignKeyConstraintName(tableName, {
+          column: row.column_name,
+          referencesTable: row.referenced_table,
+          referencesColumn: row.referenced_column,
+        });
+        const legacyRendererOwned =
+          manifestTable.pruneOwnedForeignKeys &&
+          row.ownership_comment === null &&
+          row.constraint_name === legacyCanonicalName;
+        const rendererOwned =
+          row.ownership_comment === ownershipComment || legacyRendererOwned;
         const desired = expected.get(row.constraint_name);
         if (!desired) {
           if (rendererOwned && manifestTable.pruneOwnedForeignKeys) {
@@ -650,6 +660,15 @@ async function createIsolatedTestDbWithPostSchemaStatements(
             );
           }
         } else {
+          if (legacyRendererOwned) {
+            await schemaDb.query(
+              renderForeignKeyConstraintComment(
+                tableName,
+                row.constraint_name,
+                ownershipComment,
+              ),
+            );
+          }
           satisfied.add(row.constraint_name);
         }
       }
