@@ -98,6 +98,27 @@ describe('issue #2453 revision-guarded saves', () => {
     expect((await rows.get(String(created.id)))?.title).toBe('first writer');
   });
 
+  it('restores the loaded revision after a failed write so the same instance can retry', async () => {
+    const first = await rows.create({ title: 'first' });
+    const second = await rows.create({ title: 'second' });
+    const retrying = await rows.get(String(second.id));
+    if (!first.slug || !retrying?.updated_at) {
+      throw new Error('expected persisted rows');
+    }
+    const loadedRevision = retrying.updated_at.getTime();
+
+    retrying.slug = first.slug;
+    await expect(retrying.save()).rejects.toMatchObject({
+      code: 'VALIDATION_UNIQUE_CONSTRAINT',
+    });
+    expect(retrying.updated_at.getTime()).toBe(loadedRevision);
+
+    retrying.slug = 'retry-after-unique-conflict';
+    retrying.title = 'retried';
+    await expect(retrying.save()).resolves.toBe(retrying);
+    expect((await rows.get(String(second.id)))?.title).toBe('retried');
+  });
+
   it('claims a revision without persisting other in-memory mutations', async () => {
     const created = await rows.create({ title: 'original' });
     const claimant = await rows.get(String(created.id));

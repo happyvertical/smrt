@@ -1878,6 +1878,8 @@ export class SmrtObject extends SmrtClass {
   async save(options: SmrtSaveOptions = {}) {
     const className = this.getResolvedClassName();
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    const previousUpdatedAt = this.updated_at;
+    let revisionPersisted = false;
     // Persisted objects always write through a compare-and-swap predicate.
     // This makes revision advancement atomic at the database boundary across
     // processes: only the writer whose loaded revision is still current can
@@ -2170,6 +2172,7 @@ export class SmrtObject extends SmrtClass {
           { className, id: this.id },
         );
       }
+      revisionPersisted = true;
 
       // The row now exists, so any further save() must update it by primary
       // key even if natural-key fields change afterwards (issue #1472).
@@ -2215,6 +2218,14 @@ export class SmrtObject extends SmrtClass {
 
       return this;
     } catch (error) {
+      // A failed database write did not commit the newly issued revision.
+      // Restore the loaded token so correcting the data and retrying this same
+      // instance does not compare against a timestamp that never reached the
+      // row. Failures after persistence (for example an afterSave hook) keep
+      // the committed revision.
+      if (!revisionPersisted) {
+        this.updated_at = previousUpdatedAt;
+      }
       // Re-throw SMRT errors as-is (ValidationError, DatabaseError,
       // TenantIsolationError, etc. all extend SmrtError) so their stable
       // `code`/`instanceof` contract survives the save() boundary.
