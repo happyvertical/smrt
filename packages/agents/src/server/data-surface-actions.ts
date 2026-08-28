@@ -616,7 +616,10 @@ export function createDataSurfaceActionAdapter(
         false,
         payloadValidation.reason ?? 'invalid_payload',
       );
-    if (!action.descriptor.selectionScopes.includes(request.selection.scope)) {
+    if (
+      !declared.selectionScopes.includes(request.selection.scope) ||
+      !action.descriptor.selectionScopes.includes(request.selection.scope)
+    ) {
       return result(request, false, 'selection_not_supported');
     }
     const base = {

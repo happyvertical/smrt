@@ -64,6 +64,50 @@ describe('issue #2453 revision-guarded saves', () => {
     expect(stored?.title).toBe('concurrent');
   });
 
+  it('uses conditional updates for remote LibSQL revision guards', async () => {
+    const created = await rows.create({ title: 'original' });
+    const first = await rows.get(String(created.id));
+    const stale = await rows.get(String(created.id));
+    if (!first?.updated_at || !stale?.updated_at) {
+      throw new Error('expected two persisted snapshots');
+    }
+    const expectedUpdatedAt = first.updated_at;
+    const originalUrl = db.url;
+    db.url = 'libsql://shared.turso.io';
+    const update = vi.spyOn(db, 'update');
+    const upsert = vi.spyOn(db, 'upsert');
+
+    try {
+      first.title = 'winner';
+      await first.save({ expectedUpdatedAt });
+      stale.title = 'stale overwrite';
+      await expect(stale.save({ expectedUpdatedAt })).rejects.toMatchObject({
+        code: 'RUNTIME_REVISION_CONFLICT',
+      });
+      const claimant = await rows.get(String(created.id));
+      if (!claimant?.updated_at) throw new Error('expected winning revision');
+      claimant.title = 'claim must not persist this';
+      await claimant.claimRevision(claimant.updated_at);
+
+      expect(update).toHaveBeenCalledWith(
+        'issue_2453_revision_rows',
+        {
+          id: created.id,
+          updated_at: expectedUpdatedAt.toISOString(),
+        },
+        expect.objectContaining({ title: 'winner' }),
+      );
+      expect(
+        upsert.mock.calls.some(
+          ([table]) => table === 'issue_2453_revision_rows',
+        ),
+      ).toBe(false);
+      expect((await rows.get(String(created.id)))?.title).toBe('winner');
+    } finally {
+      db.url = originalUrl;
+    }
+  });
+
   it('advances an ordinary save so a same-millisecond stale writer is rejected', async () => {
     const created = await rows.create({ title: 'original' });
     const first = await rows.get(String(created.id));

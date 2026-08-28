@@ -17,6 +17,7 @@ import {
 } from './db-errors';
 import {
   isEmbeddedDatabase,
+  usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue';
 import { ContentHasher } from './embeddings/hash';
@@ -2033,8 +2034,8 @@ export class SmrtObject extends SmrtClass {
       // natural-key columns — its legacy-STI probe semantics are unchanged.
       const upsertConflictColumns =
         this._persisted && data.id ? ['id'] : conflictColumns;
-      const usesEmbeddedRevisionFallback =
-        revisionGuard !== undefined && isEmbeddedDatabase(this.db);
+      const useEmbeddedRevisionFallback =
+        revisionGuard !== undefined && usesEmbeddedRevisionFallback(this.db);
 
       // A NULL among the conflict values routes the SDK's upsert through its
       // null-aware path — on file-backed SQLite a write transaction on a
@@ -2044,7 +2045,7 @@ export class SmrtObject extends SmrtClass {
       // concurrent creates livelocked into SQLITE_BUSY against the
       // change-feed append on the root connection.
       const serializeEmbeddedWrite =
-        usesEmbeddedRevisionFallback ||
+        useEmbeddedRevisionFallback ||
         (writePlan.type !== 'updateById' &&
           revisionGuard === undefined &&
           !(this._insertOnly && !this._persisted) &&
@@ -2065,7 +2066,7 @@ export class SmrtObject extends SmrtClass {
                 // deployments, and DuckDB cannot type a TIMESTAMP predicate in
                 // this generic UPDATE API. Compare then upsert while holding
                 // the shared per-database embedded-write queue instead.
-                if (usesEmbeddedRevisionFallback) {
+                if (useEmbeddedRevisionFallback) {
                   const current = await this.db.get(this.tableName, {
                     id: data.id,
                   });
@@ -2080,7 +2081,7 @@ export class SmrtObject extends SmrtClass {
                     return;
                   }
                 }
-                const updateResult = usesEmbeddedRevisionFallback
+                const updateResult = useEmbeddedRevisionFallback
                   ? await this.db.upsert(this.tableName, ['id'], data)
                   : await this.db.update(
                       this.tableName,
@@ -2276,13 +2277,13 @@ export class SmrtObject extends SmrtClass {
     const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
     let result: Awaited<ReturnType<typeof this.db.update>> | undefined;
     let revisionMatched = true;
-    const usesEmbeddedRevisionFallback = isEmbeddedDatabase(this.db);
+    const useEmbeddedRevisionFallback = usesEmbeddedRevisionFallback(this.db);
     await withEmbeddedWriteQueue(
       this.db,
-      usesEmbeddedRevisionFallback,
+      useEmbeddedRevisionFallback,
       async () => {
         let current: Record<string, unknown> | null = null;
-        if (usesEmbeddedRevisionFallback) {
+        if (useEmbeddedRevisionFallback) {
           current = (await this.db.get(this.tableName, {
             id: this.id,
           })) as Record<string, unknown> | null;
@@ -2294,7 +2295,7 @@ export class SmrtObject extends SmrtClass {
             return;
           }
         }
-        result = usesEmbeddedRevisionFallback
+        result = useEmbeddedRevisionFallback
           ? await this.db.upsert(this.tableName, ['id'], {
               ...current,
               updated_at: updatedAt.toISOString(),

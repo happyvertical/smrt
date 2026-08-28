@@ -46,6 +46,19 @@ export function isEmbeddedDatabase(db: QueueableDatabase): boolean {
   return !/^postgres(?:ql)?:/iu.test(db?.url ?? '');
 }
 
+/**
+ * Whether revision compare-and-swap needs the process-local read/upsert path.
+ *
+ * DuckDB/JSON cannot express the timestamp predicate through the generic
+ * update API, and local SQLite has only the process's writers in supported
+ * deployments. Remote LibSQL/Turso is different: other processes may write
+ * the same database, so it must use one conditional UPDATE at the server.
+ */
+export function usesEmbeddedRevisionFallback(db: QueueableDatabase): boolean {
+  const url = db?.url ?? '';
+  return isEmbeddedDatabase(db) && !/^(?:https?|libsql):\/\//iu.test(url);
+}
+
 function queueKey(db: QueueableDatabase): string | object {
   return typeof db?.url === 'string' && db.url.length > 0 ? db.url : db;
 }

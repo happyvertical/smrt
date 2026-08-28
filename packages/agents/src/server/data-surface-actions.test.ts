@@ -79,6 +79,7 @@ function harness(options: {
   surfaceIdentity?: DataSurfaceIdentity;
   requestFingerprintExtension?: () => string;
   mapError?: (error: unknown) => string;
+  declaredSelectionScopes?: DataSurfaceActionDescriptor['selectionScopes'];
 }) {
   const calls: ExecuteAsPrincipalOptions[] = [];
   const resolveSelectionCalls: DataSurfaceSelectionReference[] = [];
@@ -140,7 +141,14 @@ function harness(options: {
       descriptor: {
         ...descriptor,
         identity: options.surfaceIdentity ?? descriptor.identity,
-        actions: [definition.descriptor],
+        actions: [
+          {
+            ...definition.descriptor,
+            selectionScopes:
+              options.declaredSelectionScopes ??
+              definition.descriptor.selectionScopes,
+          },
+        ],
       },
       revision: options.revision?.() ?? 7,
       actions: { archive: definition },
@@ -177,6 +185,22 @@ function harness(options: {
   };
   return { adapter, assertOperation, calls, context, resolveSelectionCalls };
 }
+
+it('rejects a selection scope excluded by the mounted surface descriptor', async () => {
+  const { adapter, context, resolveSelectionCalls } = harness({
+    declaredSelectionScopes: ['explicit-ids'],
+  });
+
+  await expect(
+    adapter.preview(
+      request('preview', {
+        selection: { scope: 'all-matching', queryFingerprint: 'query-v1' },
+      }),
+      context,
+    ),
+  ).resolves.toMatchObject({ ok: false, reason: 'selection_not_supported' });
+  expect(resolveSelectionCalls).toEqual([]);
+});
 
 async function previewToken(
   setup: ReturnType<typeof harness>,
