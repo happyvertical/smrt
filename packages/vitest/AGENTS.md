@@ -97,7 +97,9 @@ constraint-free `CREATE TABLE IF NOT EXISTS` statements exactly, reconciles
 structured missing columns through the core `SchemaManager`, and executes core
 index statements directly. This preserves valid delimited identifiers that the
 generic SQL synchronizer cannot parse. It then applies every physical foreign
-key through the core FK renderer after all tables exist. Renderer-owned named
+key through `SchemaManager.ensurePostgresForeignKey()` after all tables exist,
+so existing rows receive the canonical exact orphan preflight before an absent
+constraint is added `NOT VALID` and explicitly validated. Renderer-owned named
 constraints and structured manifest DDL must never be fed back through the
 generic SQL schema parser.
 SQLite keeps its existing schema-template and synchronizer path.

@@ -21,14 +21,6 @@ export interface ForeignKeyCreationPlan {
   }>;
 }
 
-/** Render a PostgreSQL deferred ADD CONSTRAINT statement. */
-export function renderDeferredForeignKeyAdd(
-  table: string,
-  foreignKey: ForeignKeyDefinition,
-): string {
-  return `ALTER TABLE ${quoteIdentifier(table)} ADD ${renderForeignKeyConstraint(table, foreignKey)};`;
-}
-
 /** Render the inverse of a PostgreSQL deferred ADD CONSTRAINT statement. */
 export function renderDeferredForeignKeyDrop(
   table: string,
@@ -223,8 +215,9 @@ export function planForeignKeyCreation(
       (name) => (componentSizes.get(components.get(name) ?? -1) || 0) > 1,
     ),
     deferredConstraints: deferred,
-    deferredStatements: deferred.map(({ table, foreignKey }) =>
-      renderDeferredForeignKeyAdd(table, foreignKey),
+    deferredStatements: deferred.map(
+      ({ table, foreignKey }) =>
+        `ALTER TABLE ${quoteIdentifier(table)} ADD ${renderForeignKeyConstraint(table, foreignKey)};`,
     ),
   };
 }

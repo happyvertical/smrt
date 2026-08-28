@@ -558,6 +558,16 @@ describe('SchemaManager dependency sorting', () => {
         String(sql).includes(' ADD CONSTRAINT '),
       ),
     ).toHaveLength(2);
+    expect(
+      query.mock.calls
+        .filter(([sql]) => String(sql).includes(' ADD CONSTRAINT '))
+        .every(([sql]) => String(sql).endsWith(' NOT VALID')),
+    ).toBe(true);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(' VALIDATE CONSTRAINT '),
+      ),
+    ).toHaveLength(2);
   });
 
   it('retries validation without re-adding an existing NOT VALID cycle constraint', async () => {

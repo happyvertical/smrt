@@ -53,10 +53,8 @@ import type {
 import {
   foreignKeyConstraintName,
   planForeignKeyCreation,
-  renderDeferredForeignKeyAdd,
   renderForeignKeyConstraintComment,
   renderForeignKeyConstraintDrop,
-  renderForeignKeyConstraintValidate,
   SchemaManager,
   schemaForeignKeysForEngine,
 } from '@happyvertical/smrt-core/schema';
@@ -535,6 +533,10 @@ async function createIsolatedTestDbWithPostSchemaStatements(
     schemaDb: DatabaseInterfaceWithTransaction,
   ): Promise<void> => {
     const ownershipComment = 'smrt-vitest:manifest-foreign-key:v1';
+    const schemaManager = new SchemaManager(schemaDb, {
+      engine: 'postgres',
+      skipTriggers: true,
+    });
     const expectedByTable = new Map<string, Map<string, PostSchemaStatement>>();
     for (const deferred of postSchemaStatements) {
       const tableConstraints =
@@ -647,15 +649,16 @@ async function createIsolatedTestDbWithPostSchemaStatements(
               `Cannot validate manifest foreign key ${tableName}.${row.constraint_name}: the existing constraint is not owned by the manifest renderer.`,
             );
           }
-          await schemaDb.query(
-            renderForeignKeyConstraintValidate(tableName, row.constraint_name),
-          );
+        } else {
+          satisfied.add(row.constraint_name);
         }
-        satisfied.add(row.constraint_name);
       }
       for (const deferred of expected.values()) {
         if (satisfied.has(deferred.constraintName)) continue;
-        await schemaDb.query(deferred.statement);
+        await schemaManager.ensurePostgresForeignKey(
+          deferred.tableName,
+          deferred.foreignKey,
+        );
         await schemaDb.query(
           renderForeignKeyConstraintComment(
             deferred.tableName,
@@ -796,7 +799,6 @@ interface PostSchemaStatement {
   tableName: string;
   constraintName: string;
   foreignKey: ForeignKeyDefinition;
-  statement: string;
 }
 
 interface ManifestTableReconciliation {
@@ -1487,7 +1489,6 @@ export async function createIsolatedTestDbFromManifest(
             tableName,
             constraintName: foreignKeyConstraintName(tableName, foreignKey),
             foreignKey,
-            statement: renderDeferredForeignKeyAdd(tableName, foreignKey),
           }))
       : [],
     adapter === 'postgres'

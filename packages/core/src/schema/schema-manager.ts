@@ -215,7 +215,7 @@ export class SchemaManager {
    * - PostgreSQL: pg_catalog.pg_attribute for the exact search-path relation
    *
    * @param tableName - Name of the table to inspect
-   * @returns Set of existing column names (lowercase)
+   * @returns Set of existing column names with catalog identifier case preserved
    */
   private async getExistingColumns(tableName: string): Promise<Set<string>> {
     const columns = new Set<string>();
@@ -356,11 +356,18 @@ export class SchemaManager {
       await this.ensureTable(schema);
     }
     for (const { table, foreignKey } of plan.deferredConstraints) {
-      await this.ensurePostgresDeferredForeignKey(table, foreignKey);
+      await this.ensurePostgresForeignKey(table, foreignKey);
     }
   }
 
-  private async ensurePostgresDeferredForeignKey(
+  /**
+   * Safely add or validate one PostgreSQL foreign key.
+   *
+   * Existing rows are probed with the canonical exact-column orphan detector
+   * before an absent constraint is added as NOT VALID and then explicitly
+   * validated. Existing NOT VALID constraints follow the same preflight.
+   */
+  async ensurePostgresForeignKey(
     tableName: string,
     foreignKey: ForeignKeyDefinition,
   ): Promise<void> {

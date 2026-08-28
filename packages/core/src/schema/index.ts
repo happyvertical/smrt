@@ -17,7 +17,6 @@ export {
 export {
   type ForeignKeyCreationPlan,
   planForeignKeyCreation,
-  renderDeferredForeignKeyAdd,
 } from './foreign-key-planner.js';
 export {
   normalizeForeignKeyAction,

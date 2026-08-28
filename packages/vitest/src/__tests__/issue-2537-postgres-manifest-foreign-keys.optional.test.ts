@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { foreignKeyConstraintName } from '@happyvertical/smrt-core/schema';
 import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it } from 'vitest';
 import { createIsolatedTestDbFromManifest } from '../test-db.js';
@@ -309,9 +310,56 @@ postgresDescribe(
         await actionChanged.cleanup();
       }
 
+      const persistentParentId = randomUUID();
+      const retargetAdmin = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+      try {
+        await retargetAdmin.insert('i2537_evolve_parent', {
+          id: persistentParentId,
+        });
+        await retargetAdmin.insert('i2537_evolve_child', {
+          id: randomUUID(),
+          parent_id: persistentParentId,
+        });
+        await retargetAdmin.query(
+          'CREATE TABLE IF NOT EXISTS "i2537_evolve_parent_alternate" ("id" TEXT PRIMARY KEY)',
+        );
+      } finally {
+        await retargetAdmin.close();
+      }
+
       writeObjects(
         relationshipObjects('i2537_evolve_parent_alternate', 'CASCADE'),
       );
+      await expect(
+        createIsolatedTestDbFromManifest({ manifestPath }),
+      ).rejects.toThrow(/existing rows do not match.*Repair them/);
+      const failedRetargetAdmin = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+      try {
+        const preserved = await failedRetargetAdmin.query(
+          `SELECT parent.relname AS referenced_table
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           JOIN pg_class AS parent ON parent.oid = constraint_row.confrelid
+           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+           WHERE namespace_row.nspname = current_schema()
+             AND child.relname = 'i2537_evolve_child'
+             AND constraint_row.contype = 'f'`,
+        );
+        expect(preserved.rows).toEqual([
+          { referenced_table: 'i2537_evolve_parent' },
+        ]);
+        await failedRetargetAdmin.insert('i2537_evolve_parent_alternate', {
+          id: persistentParentId,
+        });
+      } finally {
+        await failedRetargetAdmin.close();
+      }
       const targetChanged = await createIsolatedTestDbFromManifest({
         manifestPath,
       });
@@ -427,6 +475,134 @@ postgresDescribe(
         ).rejects.toThrow();
       } finally {
         await evolved.cleanup();
+        rmSync(manifestPath, { force: true });
+      }
+    });
+
+    it('preflights existing quoted-column orphans before NOT VALID installation and explicit validation', async () => {
+      const parentTable = 'i2537_safe_parent_"q"';
+      const childTable = 'i2537_safe_child_"q"';
+      const relationshipColumn = 'parent_"id"';
+      const constraintName = foreignKeyConstraintName(childTable, {
+        column: relationshipColumn,
+        referencesTable: parentTable,
+        referencesColumn: 'id',
+        onDelete: 'CASCADE',
+        onUpdate: 'CASCADE',
+      });
+      await dropIssueTables(childTable, parentTable);
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2537-safe-add-${randomUUID()}.json`,
+      );
+      const objects = (withRelationship: boolean) => ({
+        Parent: {
+          className: 'Parent',
+          schema: {
+            tableName: parentTable,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+            },
+          },
+        },
+        Child: {
+          className: 'Child',
+          schema: {
+            tableName: childTable,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              [relationshipColumn]: withRelationship
+                ? {
+                    type: 'TEXT',
+                    foreignKey: {
+                      table: parentTable,
+                      column: 'id',
+                      onDelete: 'CASCADE',
+                      onUpdate: 'CASCADE',
+                    },
+                  }
+                : { type: 'TEXT' },
+            },
+          },
+        },
+      });
+      writeFileSync(manifestPath, JSON.stringify({ objects: objects(false) }));
+
+      const initial = await createIsolatedTestDbFromManifest({ manifestPath });
+      await initial.cleanup();
+      const orphanId = randomUUID();
+      const admin = await getDatabase({
+        type: 'postgres',
+        url: process.env.DATABASE_URL as string,
+      });
+      try {
+        const insertChild = await admin.query(
+          `SELECT format('INSERT INTO %I (%I, %I) VALUES ($1, $2)', $1::text, $2::text, $3::text) AS statement`,
+          [childTable, 'id', relationshipColumn],
+        );
+        await admin.query(insertChild.rows[0].statement, [
+          randomUUID(),
+          orphanId,
+        ]);
+        writeFileSync(manifestPath, JSON.stringify({ objects: objects(true) }));
+
+        await expect(
+          createIsolatedTestDbFromManifest({ manifestPath }),
+        ).rejects.toThrow(/existing rows do not match.*Repair them/);
+        const absentAfterPreflight = await admin.query(
+          `SELECT constraint_row.conname
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+           WHERE namespace_row.nspname = current_schema()
+             AND child.relname = $1
+             AND constraint_row.conname = $2`,
+          [childTable, constraintName],
+        );
+        expect(absentAfterPreflight.rows).toEqual([]);
+
+        const insertParent = await admin.query(
+          `SELECT format('INSERT INTO %I (%I) VALUES ($1)', $1::text, $2::text) AS statement`,
+          [parentTable, 'id'],
+        );
+        await admin.query(insertParent.rows[0].statement, [orphanId]);
+      } finally {
+        await admin.close();
+      }
+
+      const validated = await createIsolatedTestDbFromManifest({
+        manifestPath,
+      });
+      try {
+        const constraint = await validated.db.query(
+          `SELECT constraint_row.convalidated,
+                  obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
+           FROM pg_constraint AS constraint_row
+           JOIN pg_class AS child ON child.oid = constraint_row.conrelid
+           JOIN pg_namespace AS namespace_row ON namespace_row.oid = child.relnamespace
+           WHERE namespace_row.nspname = current_schema()
+             AND child.relname = $1
+             AND constraint_row.conname = $2`,
+          [childTable, constraintName],
+        );
+        expect(constraint.rows).toEqual([
+          {
+            convalidated: true,
+            ownership_comment: 'smrt-vitest:manifest-foreign-key:v1',
+          },
+        ]);
+        const insertOrphan = await validated.db.query(
+          `SELECT format('INSERT INTO %I (%I, %I) VALUES ($1, $2)', $1::text, $2::text, $3::text) AS statement`,
+          [childTable, 'id', relationshipColumn],
+        );
+        await expect(
+          validated.db.query(insertOrphan.rows[0].statement, [
+            randomUUID(),
+            randomUUID(),
+          ]),
+        ).rejects.toThrow();
+      } finally {
+        await validated.cleanup();
         rmSync(manifestPath, { force: true });
       }
     });
