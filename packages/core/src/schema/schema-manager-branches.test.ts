@@ -418,9 +418,9 @@ describe('SchemaManager addMissingColumns edge cases', () => {
     );
   });
 
-  it('uses information_schema introspection for postgres and logs on failure', async () => {
+  it('uses pg_catalog introspection for postgres and logs on failure', async () => {
     const query = vi.fn(async (sql: string) => {
-      if (sql.includes('information_schema.columns')) {
+      if (sql.includes('pg_attribute')) {
         throw new Error('permission denied');
       }
       return { rows: [] };
@@ -556,6 +556,16 @@ describe('SchemaManager dependency sorting', () => {
     expect(
       query.mock.calls.filter(([sql]) =>
         String(sql).includes(' ADD CONSTRAINT '),
+      ),
+    ).toHaveLength(2);
+    expect(
+      query.mock.calls
+        .filter(([sql]) => String(sql).includes(' ADD CONSTRAINT '))
+        .every(([sql]) => String(sql).endsWith(' NOT VALID')),
+    ).toBe(true);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(' VALIDATE CONSTRAINT '),
       ),
     ).toHaveLength(2);
   });

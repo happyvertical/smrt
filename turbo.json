@@ -160,6 +160,22 @@
       ],
       "cache": false
     },
+    "@happyvertical/smrt-vitest#test:postgres": {
+      "dependsOn": [
+        "build",
+        "generate:test",
+        "@happyvertical/smrt-commerce#build",
+        "@happyvertical/smrt-marketing#build"
+      ],
+      "env": [
+        "CI_POSTGRES_BASE_URL",
+        "DATABASE_URL",
+        "TEST_DB_URL",
+        "TEST_DB_ADAPTER",
+        "SMRT_TEST_POSTGRES_URL"
+      ],
+      "cache": false
+    },
     "format": {
       "inputs": [
         "src/**",

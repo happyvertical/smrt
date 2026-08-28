@@ -212,10 +212,10 @@ export class SchemaManager {
    *
    * Uses engine-appropriate introspection:
    * - SQLite/DuckDB: PRAGMA table_info
-   * - PostgreSQL: information_schema.columns
+   * - PostgreSQL: pg_catalog.pg_attribute for the exact search-path relation
    *
    * @param tableName - Name of the table to inspect
-   * @returns Set of existing column names (lowercase)
+   * @returns Set of existing column names with catalog identifier case preserved
    */
   private async getExistingColumns(tableName: string): Promise<Set<string>> {
     const columns = new Set<string>();
@@ -223,7 +223,11 @@ export class SchemaManager {
     try {
       if (this.engine === 'postgres') {
         const result = await this.db.query(
-          'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+          `SELECT attribute.attname AS column_name
+           FROM pg_attribute AS attribute
+           WHERE attribute.attrelid = to_regclass(format('%I', $1::text))
+             AND attribute.attnum > 0
+             AND NOT attribute.attisdropped`,
           tableName,
         );
         const rows = extractRows<{ column_name: string }>(result);
@@ -352,11 +356,18 @@ export class SchemaManager {
       await this.ensureTable(schema);
     }
     for (const { table, foreignKey } of plan.deferredConstraints) {
-      await this.ensurePostgresDeferredForeignKey(table, foreignKey);
+      await this.ensurePostgresForeignKey(table, foreignKey);
     }
   }
 
-  private async ensurePostgresDeferredForeignKey(
+  /**
+   * Safely add or validate one PostgreSQL foreign key.
+   *
+   * Existing rows are probed with the canonical exact-column orphan detector
+   * before an absent constraint is added as NOT VALID and then explicitly
+   * validated. Existing NOT VALID constraints follow the same preflight.
+   */
+  async ensurePostgresForeignKey(
     tableName: string,
     foreignKey: ForeignKeyDefinition,
   ): Promise<void> {

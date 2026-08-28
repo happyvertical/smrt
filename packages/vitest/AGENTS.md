@@ -88,6 +88,28 @@ string is a CREATE TABLE preview and is merged in only for a table whose
 contributors expose no `columns` (hand-authored manifests). Do not add a
 private DDL/index renderer here; extend the core strategy instead.
 
+When `includeObjects` names an object that is not in the package-local manifest,
+the helper resolves that explicitly requested object from dependency manifests
+already registered by `smrtVitestPlugin()`. It does not materialize every
+registered dependency implicitly. PostgreSQL serializes schema preparation with
+a transaction-scoped advisory lock, executes the core renderer's ordered,
+constraint-free `CREATE TABLE IF NOT EXISTS` statements exactly, reconciles
+structured missing columns through the core `SchemaManager`, and executes core
+index statements directly. This preserves valid delimited identifiers that the
+generic SQL synchronizer cannot parse. It then applies every physical foreign
+key through `SchemaManager.ensurePostgresForeignKey()` after all tables exist,
+so existing rows receive the canonical exact orphan preflight before an absent
+constraint is added `NOT VALID` and explicitly validated. Renderer-owned named
+constraints and structured manifest DDL must never be fed back through the
+generic SQL schema parser.
+SQLite keeps its existing schema-template and synchronizer path.
+
+The package's PostgreSQL integration lane reads the built commerce and
+marketing manifests as multi-package fixtures. Its package-specific Turbo task
+therefore builds both fixture packages explicitly; do not rely on pre-existing
+`dist/manifest.json` files in a developer worktree or add dependency cycles to
+`@happyvertical/smrt-vitest`.
+
 On PostgreSQL, the isolated factories provision the canonical change-feed
 table and `_smrt_append_change` helper on the base connection before opening
 the test transaction. Transaction handles are treated as already initialized

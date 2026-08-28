@@ -44,10 +44,19 @@ import { join } from 'node:path';
 import {
   ensureSystemTables,
   isSmrtCollectionExtendsName,
+  ObjectRegistry,
 } from '@happyvertical/smrt-core';
+import type {
+  ForeignKeyDefinition,
+  SchemaDefinition,
+} from '@happyvertical/smrt-core/schema';
 import {
   foreignKeyConstraintName,
   planForeignKeyCreation,
+  renderForeignKeyConstraintComment,
+  renderForeignKeyConstraintDrop,
+  SchemaManager,
+  schemaForeignKeysForEngine,
 } from '@happyvertical/smrt-core/schema';
 import {
   type CollectedManifestTable,
@@ -129,6 +138,9 @@ export interface ManifestTestDbOptions {
    * Accepts either simple class names (`'Product'`) or fully-qualified
    * manifest keys (`'@my-org/smrt-models:Product'`).  When omitted, every
    * object that has a schema in the manifest is included.
+   *
+   * An explicitly named object absent from the local manifest is resolved from
+   * dependency manifests already registered by `smrtVitestPlugin()`.
    *
    * @example `['Product', 'Order', 'OrderItem']`
    */
@@ -481,6 +493,8 @@ export async function createIsolatedTestDb(
 async function createIsolatedTestDbWithPostSchemaStatements(
   options: IsolatedTestDbOptions,
   postSchemaStatements: readonly PostSchemaStatement[],
+  manifestTables: readonly ManifestTableReconciliation[] = [],
+  postgresManifestPlan?: PostgresManifestSchemaPlan,
 ): Promise<IsolatedTestDbResult> {
   const { schema, prefix = 'smrt-isolated' } = options;
 
@@ -515,43 +529,224 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // bypasses the setup file's pragma application, so it happens here.
   await applySqliteSpeedPragmas(baseDb, config);
 
-  // Sync schema if provided (must be done before transaction for DDL)
-  if (schema && config.type !== 'sqlite') {
-    await syncSchema({ db: baseDb, schema });
-  }
-
-  // PostgreSQL cycle planning removes cyclic constraints from CREATE TABLE
-  // and adds them only after every table exists. syncSchema intentionally
-  // handles schema definitions rather than arbitrary follow-up statements, so
-  // execute the planner's deferred constraints explicitly before opening the
-  // test transaction.
-  for (const deferred of postSchemaStatements) {
-    if (
-      await postgresConstraintExists(
-        baseDb,
-        deferred.tableName,
-        deferred.constraintName,
-      )
-    ) {
-      continue;
+  const applyPostSchemaStatements = async (
+    schemaDb: DatabaseInterfaceWithTransaction,
+  ): Promise<void> => {
+    const ownershipComment = 'smrt-vitest:manifest-foreign-key:v1';
+    const schemaManager = new SchemaManager(schemaDb, {
+      engine: 'postgres',
+      skipTriggers: true,
+    });
+    const expectedByTable = new Map<string, Map<string, PostSchemaStatement>>();
+    for (const deferred of postSchemaStatements) {
+      const tableConstraints =
+        expectedByTable.get(deferred.tableName) ?? new Map();
+      tableConstraints.set(deferred.constraintName, deferred);
+      expectedByTable.set(deferred.tableName, tableConstraints);
     }
-    try {
-      await baseDb.query(deferred.statement);
-    } catch (error) {
-      // Parallel test factories may both observe the constraint as absent.
-      // Treat the losing ADD as successful only when the exact table/name is
-      // now present; otherwise preserve the original database failure.
-      if (
-        await postgresConstraintExists(
-          baseDb,
+    for (const manifestTable of manifestTables) {
+      const { tableName } = manifestTable;
+      const result = await schemaDb.query(
+        `SELECT constraint_row.conname AS constraint_name,
+                constraint_row.convalidated,
+                constraint_row.confdeltype,
+                constraint_row.confupdtype,
+                parent_row.relname AS referenced_table,
+                parent_namespace.nspname AS referenced_schema,
+                current_schema() AS expected_schema,
+                child_column.attname AS column_name,
+                parent_column.attname AS referenced_column,
+                cardinality(constraint_row.conkey) AS column_count,
+                cardinality(constraint_row.confkey) AS referenced_column_count,
+                constraint_row.condeferrable,
+                constraint_row.condeferred,
+                constraint_row.confmatchtype,
+                obj_description(constraint_row.oid, 'pg_constraint') AS ownership_comment
+         FROM pg_constraint AS constraint_row
+         JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
+         JOIN pg_class AS parent_row ON parent_row.oid = constraint_row.confrelid
+         JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
+         JOIN pg_namespace AS parent_namespace ON parent_namespace.oid = parent_row.relnamespace
+         JOIN pg_attribute AS child_column
+           ON child_column.attrelid = constraint_row.conrelid
+          AND child_column.attnum = constraint_row.conkey[1]
+         JOIN pg_attribute AS parent_column
+           ON parent_column.attrelid = constraint_row.confrelid
+          AND parent_column.attnum = constraint_row.confkey[1]
+         WHERE table_row.relname = $1
+           AND namespace_row.nspname = current_schema()
+           AND constraint_row.contype = 'f'
+         ORDER BY constraint_row.conname`,
+        [tableName],
+      );
+      const rows = Array.isArray(result)
+        ? result
+        : ((result as { rows?: unknown[] }).rows ?? []);
+      const expected = expectedByTable.get(tableName) ?? new Map();
+      const satisfied = new Set<string>();
+      for (const row of rows as Array<{
+        constraint_name: string;
+        convalidated: boolean;
+        confdeltype: string;
+        confupdtype: string;
+        referenced_table: string;
+        referenced_schema: string;
+        expected_schema: string;
+        column_name: string;
+        referenced_column: string;
+        column_count: number;
+        referenced_column_count: number;
+        condeferrable: boolean;
+        condeferred: boolean;
+        confmatchtype: string;
+        ownership_comment: string | null;
+      }>) {
+        const legacyCanonicalName = foreignKeyConstraintName(tableName, {
+          column: row.column_name,
+          referencesTable: row.referenced_table,
+          referencesColumn: row.referenced_column,
+        });
+        const legacyRendererOwned =
+          manifestTable.pruneOwnedForeignKeys &&
+          row.ownership_comment === null &&
+          row.constraint_name === legacyCanonicalName;
+        const rendererOwned =
+          row.ownership_comment === ownershipComment || legacyRendererOwned;
+        const desired = expected.get(row.constraint_name);
+        if (!desired) {
+          if (rendererOwned && manifestTable.pruneOwnedForeignKeys) {
+            await schemaDb.query(
+              renderForeignKeyConstraintDrop(tableName, row.constraint_name),
+            );
+          }
+          continue;
+        }
+
+        const actionCode = (action: ForeignKeyDefinition['onDelete']) =>
+          ({
+            CASCADE: 'c',
+            'SET NULL': 'n',
+            RESTRICT: 'r',
+            'NO ACTION': 'a',
+          })[action ?? 'NO ACTION'];
+        const definitionMatches =
+          row.column_name === desired.foreignKey.column &&
+          row.referenced_table === desired.foreignKey.referencesTable &&
+          row.referenced_schema === row.expected_schema &&
+          row.referenced_column === desired.foreignKey.referencesColumn &&
+          row.column_count === 1 &&
+          row.referenced_column_count === 1 &&
+          !row.condeferrable &&
+          !row.condeferred &&
+          row.confmatchtype === 's' &&
+          row.confdeltype === actionCode(desired.foreignKey.onDelete) &&
+          row.confupdtype === actionCode(desired.foreignKey.onUpdate);
+        if (!definitionMatches) {
+          if (!rendererOwned) {
+            throw new Error(
+              `Cannot reconcile manifest foreign key ${tableName}.${row.constraint_name}: an unowned constraint with that name has a different definition.`,
+            );
+          }
+          await schemaDb.query(
+            renderForeignKeyConstraintDrop(tableName, row.constraint_name),
+          );
+          continue;
+        }
+
+        if (!row.convalidated) {
+          if (!rendererOwned) {
+            throw new Error(
+              `Cannot validate manifest foreign key ${tableName}.${row.constraint_name}: the existing constraint is not owned by the manifest renderer.`,
+            );
+          }
+        } else {
+          if (legacyRendererOwned) {
+            await schemaDb.query(
+              renderForeignKeyConstraintComment(
+                tableName,
+                row.constraint_name,
+                ownershipComment,
+              ),
+            );
+          }
+          satisfied.add(row.constraint_name);
+        }
+      }
+      for (const deferred of expected.values()) {
+        if (satisfied.has(deferred.constraintName)) continue;
+        await schemaManager.ensurePostgresForeignKey(
           deferred.tableName,
-          deferred.constraintName,
-        )
-      ) {
-        continue;
+          deferred.foreignKey,
+        );
+        await schemaDb.query(
+          renderForeignKeyConstraintComment(
+            deferred.tableName,
+            deferred.constraintName,
+            ownershipComment,
+          ),
+        );
+      }
+    }
+  };
+
+  let systemTablesPrepared = false;
+
+  // Sync schema if provided (must be done before the isolated test
+  // transaction). PostgreSQL schema preparation is serialized across workers
+  // in a transaction-scoped advisory lock. The lock covers reconciliation,
+  // FK installation, and framework system tables without leaking a session
+  // lock through a pooled connection.
+  if (schema && config.type === 'postgres' && postgresManifestPlan) {
+    if (!baseDb.beginTransaction) {
+      throw new Error(
+        `Database adapter '${config.type}' does not support beginTransaction(). ` +
+          'This requires @happyvertical/sql with SDK PR #722 merged.',
+      );
+    }
+    const schemaTransaction = await baseDb.beginTransaction();
+    try {
+      await schemaTransaction.query(
+        'SELECT pg_advisory_xact_lock(hashtext($1))',
+        ['smrt-vitest-manifest-schema'],
+      );
+      // SDK syncSchema's PostgreSQL parser accepts only `\w+` identifiers.
+      // Execute canonical structured renderer output directly so valid
+      // delimited identifiers (including embedded quotes) are materialized
+      // exactly, then reconcile structured missing columns. Legacy cached DDL
+      // keeps the synchronizer's established table-existence guard.
+      for (const statement of postgresManifestPlan.createTableStatements) {
+        await schemaTransaction.query(statement);
+      }
+      if (postgresManifestPlan.structuredDefinitions.length > 0) {
+        const schemaManager = new SchemaManager(schemaTransaction, {
+          engine: 'postgres',
+          skipTriggers: true,
+        });
+        await schemaManager.ensureTables([
+          ...postgresManifestPlan.structuredDefinitions,
+        ]);
+      }
+      if (postgresManifestPlan.legacySchema) {
+        await syncSchema({
+          db: schemaTransaction,
+          schema: postgresManifestPlan.legacySchema,
+        });
+      }
+      for (const statement of postgresManifestPlan.indexStatements) {
+        await schemaTransaction.query(statement);
+      }
+      await applyPostSchemaStatements(schemaTransaction);
+      await ensureSystemTables(schemaTransaction, config.type);
+      await schemaTransaction.commit();
+      systemTablesPrepared = true;
+    } catch (error) {
+      if (schemaTransaction.isActive()) {
+        await schemaTransaction.rollback();
       }
       throw error;
     }
+  } else if (schema && config.type !== 'sqlite') {
+    await syncSchema({ db: baseDb, schema });
   }
 
   // Transaction handles are passed to SMRT objects as already-initialized
@@ -559,7 +754,7 @@ async function createIsolatedTestDbWithPostSchemaStatements(
   // A missing-table probe aborts a PostgreSQL transaction even when the caller
   // catches the error. Provision every framework-owned system table on the base
   // connection before opening the isolated transaction.
-  if (config.type === 'postgres') {
+  if (config.type === 'postgres' && !systemTablesPrepared) {
     await ensureSystemTables(baseDb, config.type);
   }
 
@@ -620,32 +815,22 @@ async function createIsolatedTestDbWithPostSchemaStatements(
 }
 
 interface PostSchemaStatement {
-  statement: string;
   tableName: string;
   constraintName: string;
+  foreignKey: ForeignKeyDefinition;
 }
 
-async function postgresConstraintExists(
-  db: DatabaseInterfaceWithTransaction,
-  tableName: string,
-  constraintName: string,
-): Promise<boolean> {
-  const result = await db.query(
-    `SELECT 1
-     FROM pg_constraint AS constraint_row
-     JOIN pg_class AS table_row ON table_row.oid = constraint_row.conrelid
-     JOIN pg_namespace AS namespace_row ON namespace_row.oid = table_row.relnamespace
-     WHERE table_row.relname = $1
-       AND namespace_row.nspname = current_schema()
-       AND constraint_row.conname = $2
-       AND constraint_row.contype = 'f'
-     LIMIT 1`,
-    [tableName, constraintName],
-  );
-  const rows = Array.isArray(result)
-    ? result
-    : ((result as { rows?: unknown[] }).rows ?? []);
-  return rows.length > 0;
+interface ManifestTableReconciliation {
+  tableName: string;
+  /** Full structured manifests are authoritative; partial/legacy inputs are additive. */
+  pruneOwnedForeignKeys: boolean;
+}
+
+interface PostgresManifestSchemaPlan {
+  createTableStatements: readonly string[];
+  structuredDefinitions: readonly SchemaDefinition[];
+  legacySchema?: string;
+  indexStatements: readonly string[];
 }
 
 // ============================================================================
@@ -1047,6 +1232,38 @@ function extractTablesFromManifest(
     entries.push({ schema: objectDef.schema, source: key });
   }
 
+  // The Vitest plugin registers dependency manifests in ObjectRegistry but
+  // deliberately leaves the generated local manifest package-local. Resolve
+  // only explicitly requested objects that are absent from that local file;
+  // pulling every registered dependency table would unexpectedly expand
+  // otherwise focused test schemas.
+  if (includeObjects) {
+    const missingIncludes = includeObjects.filter(
+      (includeObject) => !findManifestObject(manifest, includeObject),
+    );
+    const registeredSchemas =
+      missingIncludes.length > 0
+        ? ObjectRegistry.getAllSchemasAsDefinitions()
+        : undefined;
+    const addedRegisteredTables = new Set<string>();
+    for (const includeObject of missingIncludes) {
+      const tableName = ObjectRegistry.getTableName(includeObject);
+      const schema =
+        tableName && registeredSchemas
+          ? registeredSchemas[tableName]
+          : undefined;
+      if (!schema || addedRegisteredTables.has(schema.tableName)) {
+        continue;
+      }
+
+      addedRegisteredTables.add(schema.tableName);
+      entries.push({
+        schema,
+        source: `registered manifest object ${includeObject}`,
+      });
+    }
+  }
+
   const collected = Array.from(collectManifestTables(entries).values());
   const includedTables = new Set(collected.map((table) => table.tableName));
 
@@ -1216,16 +1433,43 @@ export async function createIsolatedTestDbFromManifest(
       );
     }
   }
-  const rendered = plan.schemas.flatMap((definition) => {
+  // PostgreSQL's generic synchronizer remains responsible for reconciling
+  // existing test tables, indexes, defaults, and newly added columns. Keep
+  // named constraints out of that parser and apply every physical FK through
+  // the core renderer only after all tables exist. SQLite retains its existing
+  // inline-constraint rendering path.
+  const renderedDefinitions =
+    adapter === 'postgres'
+      ? plan.schemas.map((definition) => ({
+          ...definition,
+          columns: Object.fromEntries(
+            Object.entries(definition.columns).map(([name, column]) => [
+              name,
+              { ...column, foreignKey: undefined },
+            ]),
+          ),
+          foreignKeys: [],
+        }))
+      : plan.schemas;
+  const rendered = renderedDefinitions.flatMap((definition) => {
     const table = tableMap.get(definition.tableName);
     return table
-      ? [renderCollectedManifestTable({ ...table.table, definition }, adapter)]
+      ? [
+          {
+            definition,
+            structured: table.table.structured,
+            ddl: renderCollectedManifestTable(
+              { ...table.table, definition },
+              adapter,
+            ),
+          },
+        ]
       : [];
   });
 
   // CREATE TABLE statements first
   const createTableDDL = rendered
-    .map((ddl) => ddl.createTable)
+    .map(({ ddl }) => ddl.createTable)
     .filter(Boolean)
     .join('\n\n');
 
@@ -1236,7 +1480,7 @@ export async function createIsolatedTestDbFromManifest(
   // (`ManifestSchema` has no `triggers`), and multi-statement trigger bodies
   // would not survive the schema splitter below.
   const createIndexDDL = rendered
-    .flatMap((ddl) => ddl.indexes)
+    .flatMap(({ ddl }) => ddl.indexes)
     .filter(Boolean)
     .join('\n');
 
@@ -1248,10 +1492,51 @@ export async function createIsolatedTestDbFromManifest(
   // 4. Delegate to existing function
   return createIsolatedTestDbWithPostSchemaStatements(
     { schema: sortedDDL, prefix },
-    plan.deferredConstraints.map(({ table, foreignKey }, index) => ({
-      statement: plan.deferredStatements[index] as string,
-      tableName: table,
-      constraintName: foreignKeyConstraintName(table, foreignKey),
-    })),
+    adapter === 'postgres'
+      ? tables
+          .flatMap(({ tableName, table }) =>
+            schemaForeignKeysForEngine(table.definition, 'postgres').map(
+              (foreignKey) => ({ tableName, foreignKey }),
+            ),
+          )
+          .sort((a, b) =>
+            `${a.tableName}.${a.foreignKey.column}`.localeCompare(
+              `${b.tableName}.${b.foreignKey.column}`,
+            ),
+          )
+          .map(({ tableName, foreignKey }) => ({
+            tableName,
+            constraintName: foreignKeyConstraintName(tableName, foreignKey),
+            foreignKey,
+          }))
+      : [],
+    adapter === 'postgres'
+      ? tables
+          .map(({ tableName, table }) => ({
+            tableName,
+            pruneOwnedForeignKeys:
+              includeObjects === undefined && table.structured,
+          }))
+          .sort((a, b) => a.tableName.localeCompare(b.tableName))
+      : [],
+    adapter === 'postgres'
+      ? {
+          createTableStatements: rendered
+            .filter(({ structured }) => structured)
+            .map(({ ddl }) => ddl.createTable)
+            .filter(Boolean),
+          structuredDefinitions: rendered
+            .filter(({ structured }) => structured)
+            .map(({ definition }) => definition),
+          legacySchema: rendered
+            .filter(({ structured }) => !structured)
+            .map(({ ddl }) => ddl.createTable)
+            .filter(Boolean)
+            .join('\n\n'),
+          indexStatements: rendered
+            .flatMap(({ ddl }) => ddl.indexes)
+            .filter(Boolean),
+        }
+      : undefined,
   );
 }

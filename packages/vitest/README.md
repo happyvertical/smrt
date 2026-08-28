@@ -96,7 +96,7 @@ The manifest is generated once at vitest startup. Restart vitest after adding ne
 
 | Export | Description |
 |--------|-------------|
-| `createIsolatedTestDbFromManifest(options?)` | Create DB from manifest with FK ordering and STI dedup (recommended) |
+| `createIsolatedTestDbFromManifest(options?)` | Create DB from local + explicitly requested registered dependency manifest objects, with FK ordering and STI dedup (recommended) |
 | `createIsolatedTestDb(options?)` | Create DB with raw DDL schema and transaction isolation |
 | `createTestDb(prefix?)` | Create DB with cleanup function (no transaction isolation) |
 | `getTestDbConfig(prefix?)` | Get DB config for current environment |
