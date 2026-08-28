@@ -172,30 +172,11 @@ const PUBLICATION_OPERATIONS = [
 ] as const;
 
 const AUTOMATED_REVIEW_OPERATIONS = [
-  CONTENT_READ_OPERATION,
-  CONTENT_UPDATE_OPERATION,
-  ...GOVERNANCE_READ_OPERATIONS,
-  {
-    id: 'content-references:read',
-    collection: 'contentreferences',
-    action: 'read',
-  },
-  { id: 'facts:read', collection: 'facts', action: 'read' },
-  { id: 'fact-contents:read', collection: 'factcontents', action: 'read' },
+  ...PUBLICATION_OPERATIONS,
   {
     id: 'prompt-overrides:read',
     collection: 'promptoverrides',
     action: 'read',
-  },
-  {
-    id: 'content-versions:read',
-    collection: 'contentversions',
-    action: 'read',
-  },
-  {
-    id: 'content-versions:create',
-    collection: 'contentversions',
-    action: 'create',
   },
   {
     id: 'content-reviews:create',
@@ -300,6 +281,10 @@ export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
         'a formatting handler is configured',
       ],
       consequences: ['The persisted content body may change.'],
+      permissionRequirements: {
+        tool: 'content.workflow.format-body',
+        operations: [...PUBLICATION_OPERATIONS],
+      },
     }),
     workflow('categorize', 'Categorize', {
       description: 'Assign one required hierarchical category path.',
@@ -313,6 +298,10 @@ export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
       },
       eligibility: ['content is not deleted', 'category is non-empty'],
       consequences: ['The content category changes.'],
+      permissionRequirements: {
+        tool: 'content.workflow.categorize',
+        operations: [...PUBLICATION_OPERATIONS],
+      },
     }),
     workflow('optimize', 'Optimize / complete', {
       description: 'Run the application-owned content optimization workflow.',
@@ -709,7 +698,23 @@ async function applyWorkflow(
   handlers: ContentListWorkflowHandlers,
 ): Promise<void> {
   const input = payloadRecord(payload);
-  const save = () => content.save({ expectedUpdatedAt });
+  const save = async () => {
+    if (content.status !== 'published') {
+      await content.save({ expectedUpdatedAt });
+      return;
+    }
+    const db = content.db;
+    if (!db.transaction) {
+      throw new Error(
+        'Atomic published content persistence requires transaction support',
+      );
+    }
+    await db.transaction((transaction) =>
+      content.withDatabase(transaction, (bound) =>
+        bound.save({ expectedUpdatedAt }),
+      ),
+    );
+  };
   const mutationDraft = (): ContentListWorkflowDraft => ({
     contentId: String(content.id),
     tenantId: content.tenantId,

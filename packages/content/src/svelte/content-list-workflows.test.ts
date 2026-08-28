@@ -61,6 +61,32 @@ describe('ContentList workflow transport', () => {
     );
   });
 
+  it.each([
+    {
+      label: 'request',
+      response: { requestId: 'another-request' },
+    },
+    {
+      label: 'identity',
+      response: {
+        identity: { surfaceId: 'another-list', kind: 'table' },
+      },
+    },
+  ])('rejects a direct result for another $label', async ({ response }) => {
+    const client = createContentListWorkflowTransport({
+      fetch: vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ ...request(), ok: true, ...response }),
+            { status: 200 },
+          ),
+        ),
+    });
+
+    await expect(client.preview(request())).rejects.toThrow('invalid result');
+  });
+
   it('resolves authenticated background job status when the host configures it', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
       new Response(

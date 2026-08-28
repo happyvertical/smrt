@@ -131,6 +131,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function matchesIdentity(
+  value: unknown,
+  expected: DataSurfaceIdentity,
+): boolean {
+  if (!isRecord(value)) return false;
+  const subject = isRecord(value.subject) ? value.subject : undefined;
+  return (
+    value.surfaceId === expected.surfaceId &&
+    value.kind === expected.kind &&
+    (expected.subject
+      ? subject?.type === expected.subject.type &&
+        subject.id === expected.subject.id
+      : value.subject === undefined)
+  );
+}
+
 function joinUrl(base: string, path: string): string {
   return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
 }
@@ -197,7 +213,15 @@ export function createContentListWorkflowTransport(
       isRecord(payload) && Object.hasOwn(payload, 'result')
         ? payload.result
         : payload;
-    if (!isRecord(result) || typeof result.ok !== 'boolean') {
+    if (
+      !isRecord(result) ||
+      result.version !== 1 ||
+      typeof result.ok !== 'boolean' ||
+      result.requestId !== request.requestId ||
+      result.phase !== request.phase ||
+      result.actionId !== request.actionId ||
+      !matchesIdentity(result.identity, request.identity)
+    ) {
       throw new ContentListWorkflowError(
         'The content workflow returned an invalid result.',
       );
@@ -246,8 +270,12 @@ export function createContentListWorkflowTransport(
       if (
         status.result !== undefined &&
         (!isRecord(status.result) ||
+          status.result.version !== 1 ||
           typeof status.result.ok !== 'boolean' ||
-          status.result.phase !== 'apply')
+          status.result.phase !== 'apply' ||
+          typeof status.result.requestId !== 'string' ||
+          typeof status.result.actionId !== 'string' ||
+          !isRecord(status.result.identity))
       ) {
         throw new ContentListWorkflowError(
           'The content workflow returned an invalid job result.',

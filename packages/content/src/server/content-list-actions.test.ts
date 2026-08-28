@@ -77,6 +77,7 @@ class MemoryContentCollection implements ContentListActionCollection {
   readonly contents = new Map<string, Content>();
   readonly saveCalls: string[] = [];
   failOnSave = new Set<string>();
+  failAfterSave = new Set<string>();
 
   constructor(readonly rows: Row[]) {
     for (const row of rows) {
@@ -100,6 +101,23 @@ class MemoryContentCollection implements ContentListActionCollection {
           });
           return {};
         },
+        db: {
+          transaction: async <T>(
+            operation: (transaction: unknown) => Promise<T>,
+          ) => {
+            const snapshot = { ...row };
+            try {
+              return await operation(content.db);
+            } catch (error) {
+              Object.assign(row, snapshot);
+              throw error;
+            }
+          },
+        },
+        withDatabase: async <T>(
+          _db: unknown,
+          operation: (bound: typeof content) => Promise<T>,
+        ) => operation(content),
         save: async (options?: { expectedUpdatedAt?: Date | string }) => {
           this.saveCalls.push(row.id);
           if (this.failOnSave.has(row.id))
@@ -115,6 +133,9 @@ class MemoryContentCollection implements ContentListActionCollection {
           row.status = content.status;
           row.category = content.category;
           row.updated_at = `${row.updated_at}-saved`;
+          if (this.failAfterSave.has(row.id)) {
+            throw new Error('forced publication snapshot failure');
+          }
         },
       } as unknown as Content;
       this.contents.set(row.id, content);
@@ -809,6 +830,54 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     ).resolves.toMatchObject({ ok: false, reason: 'denied' });
   });
 
+  it.each([
+    {
+      actionId: 'format-body' as const,
+      payload: { format: 'markdown' },
+    },
+    {
+      actionId: 'categorize' as const,
+      payload: { category: 'news' },
+    },
+    {
+      actionId: 'automated-review' as const,
+      payload: {},
+    },
+  ])('requires publication operations before $actionId can touch published content', async ({
+    actionId,
+    payload,
+  }) => {
+    const collection = new MemoryContentCollection([
+      { ...rows()[0], status: 'published' },
+    ]);
+    const setup = harness({
+      collection,
+      handlers: { formatBody: vi.fn() },
+      assertOperation: async (target, action) => {
+        if (target === 'contentversions' && action === 'create') {
+          throw permissionDeniedError();
+        }
+        return { allowed: true } as Awaited<
+          ReturnType<PrincipalRun['assertOperation']>
+        >;
+      },
+    });
+
+    await expect(
+      setup.adapter.preview(
+        actionRequest(
+          'preview',
+          actionId,
+          { scope: 'explicit-ids', rowIds: ['a'] },
+          { expectedCount: 1 },
+          { payload },
+        ),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(setup.collection.saveCalls).toEqual([]);
+  });
+
   it('surfaces permission catalog failures instead of misreporting them as denial', async () => {
     const setup = harness({
       assertOperation: async (collection) => {
@@ -990,6 +1059,50 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
     });
     expect(setup.collection.rows[0].title).toBe('Alpha');
+  });
+
+  it.each([
+    { actionId: 'publish' as const, initialStatus: 'draft' as const },
+    { actionId: 'restore' as const, initialStatus: 'deleted' as const },
+  ])('rolls back $actionId when publication snapshot persistence fails', async ({
+    actionId,
+    initialStatus,
+  }) => {
+    const collection = new MemoryContentCollection([
+      { ...rows()[0], status: initialStatus },
+    ]);
+    collection.failAfterSave.add('a');
+    const setup = harness({ collection });
+    const selection = { scope: 'explicit-ids' as const, rowIds: ['a'] };
+    const target = { expectedCount: 1 };
+    const payload =
+      actionId === 'restore' ? { status: 'published' } : undefined;
+    const preview = await setup.adapter.preview(
+      actionRequest('preview', actionId, selection, target, { payload }),
+      setup.context,
+    );
+    expect(preview).toMatchObject({ ok: true });
+
+    const result = await setup.adapter.apply(
+      actionRequest('apply', actionId, selection, target, {
+        payload,
+        confirmationToken: preview.confirmationToken,
+      }),
+      setup.context,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        failed: 1,
+        outcomes: [
+          { rowId: 'a', status: 'failed', reason: 'execution_failed' },
+        ],
+      },
+    });
+    expect(collection.rows[0].status).toBe(initialStatus);
+    expect(collection.rows[0].updated_at).toBe('2026-01-01T00:00:00.000Z');
   });
 
   it('rejects an automated review when content changes during AI work', async () => {

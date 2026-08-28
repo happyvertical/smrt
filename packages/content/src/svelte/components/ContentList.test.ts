@@ -529,6 +529,36 @@ describe('ContentList bulk workflows', () => {
     expect(workflow.preview).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    'requestId',
+    'identity',
+  ] as const)('rejects a direct preview result for another %s', async (mismatch) => {
+    const workflow = workflowBinding({
+      preview: async (request) => ({
+        ...request,
+        ...(mismatch === 'requestId'
+          ? { requestId: 'another-request' }
+          : {
+              identity: {
+                surfaceId: 'another-content-list',
+                kind: 'table' as const,
+              },
+            }),
+        ok: true,
+        confirmationToken: 'wrong-preview',
+      }),
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('did not match the preview request'),
+    );
+    expect(target.textContent).toContain('1 selected');
+    expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(0);
+  });
+
   it('fails closed when an all-matching query changes after preview', async () => {
     const remote = createFakeContentListQuery();
     remote.setEnvelope({
@@ -712,26 +742,32 @@ describe('ContentList bulk workflows', () => {
   });
 
   it('preserves selection when a succeeded queue job carries a failed action result', async () => {
-    const status = vi.fn().mockResolvedValue({
-      jobId: 'job-failed-action',
-      status: 'succeeded',
-      result: {
-        ok: false,
-        phase: 'apply',
-        actionId: 'optimize',
-        reason: 'stale_preview',
-      },
+    let applyRequest: ContentListWorkflowRequest | undefined;
+    const status = vi.fn(async () => {
+      if (!applyRequest) throw new Error('apply request not captured');
+      return {
+        jobId: 'job-failed-action',
+        status: 'succeeded' as const,
+        result: {
+          ...applyRequest,
+          ok: false,
+          reason: 'stale_preview',
+        },
+      };
     });
     const workflow = workflowBinding({
-      apply: async (request) => ({
-        ...request,
-        ok: true,
-        details: {
-          accepted: 1,
-          background: true,
-          jobId: 'job-failed-action',
-        },
-      }),
+      apply: async (request) => {
+        applyRequest = request;
+        return {
+          ...request,
+          ok: true,
+          details: {
+            accepted: 1,
+            background: true,
+            jobId: 'job-failed-action',
+          },
+        };
+      },
       status,
     });
     const target = renderList({ workflows: workflow });
@@ -759,6 +795,85 @@ describe('ContentList bulk workflows', () => {
       checkboxByLabel(target, 'Deselect Council budget explained').checked,
     ).toBe(true);
     expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
+  });
+
+  it.each([
+    'requestId',
+    'identity',
+  ] as const)('keeps an all-matching job locked when its result mismatches the %s', async (mismatch) => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-job-correlation',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 5);
+    let applyRequest: ContentListWorkflowRequest | undefined;
+    const status = vi.fn(async () => {
+      if (!applyRequest) throw new Error('apply request not captured');
+      return {
+        jobId: 'job-correlation',
+        status: 'succeeded' as const,
+        result: {
+          ...applyRequest,
+          ...(mismatch === 'requestId'
+            ? { requestId: 'another-request' }
+            : {
+                identity: {
+                  surfaceId: 'another-content-list',
+                  kind: 'table' as const,
+                },
+              }),
+          ok: true,
+          details: {
+            accepted: 1,
+            outcomes: [{ rowId: 'content-1', status: 'accepted' }],
+          },
+        },
+      };
+    });
+    const workflow = workflowBinding({
+      apply: async (request) => {
+        applyRequest = request;
+        return {
+          ...request,
+          ok: true,
+          details: {
+            accepted: 5,
+            background: true,
+            jobId: 'job-correlation',
+          },
+        };
+      },
+      status,
+    });
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 5 matching')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Select all 5 matching')[0]);
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Check job')[0]);
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain(
+        'returned a result for another workflow',
+      ),
+    );
+    expect(target.textContent).toContain('5 selected');
+    expect(buttonsByText(target, 'Check job')).toHaveLength(1);
   });
 
   it('keeps an identical intent locked when a succeeded job omits its action result', async () => {

@@ -33,6 +33,8 @@ export interface ContentListUrlStateBinding {
 <script lang="ts">
 import {
   DataTable,
+  type DataSurfaceActionResult,
+  type DataSurfaceIdentity,
   type DataTableColumn,
   type DataTableViewState,
 } from '@happyvertical/smrt-ui/data';
@@ -420,7 +422,13 @@ let workflowConfirmOpen = $state(false);
 let workflowIntentAtPreview = '';
 let workflowIdempotencyKey = '';
 let workflowQueuedJobs = $state<
-  Array<{ intent: string; jobId: string; actionId: ContentListWorkflowId }>
+  Array<{
+    intent: string;
+    jobId: string;
+    actionId: ContentListWorkflowId;
+    requestId: string;
+    identity: DataSurfaceIdentity;
+  }>
 >([]);
 
 $effect(() =>
@@ -1413,6 +1421,35 @@ function createWorkflowRequest(
   };
 }
 
+function workflowIdentityMatches(
+  actual: DataSurfaceIdentity | null | undefined,
+  expected: DataSurfaceIdentity,
+): boolean {
+  return (
+    actual !== null &&
+    actual !== undefined &&
+    actual.surfaceId === expected.surfaceId &&
+    actual.kind === expected.kind &&
+    (expected.subject
+      ? actual.subject?.type === expected.subject.type &&
+        actual.subject.id === expected.subject.id
+      : actual.subject === undefined)
+  );
+}
+
+function workflowResultMatchesRequest(
+  result: DataSurfaceActionResult,
+  request: ContentListWorkflowRequest,
+): boolean {
+  return (
+    result.version === 1 &&
+    result.requestId === request.requestId &&
+    result.phase === request.phase &&
+    result.actionId === request.actionId &&
+    workflowIdentityMatches(result.identity, request.identity)
+  );
+}
+
 function workflowResultMessage(result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult): string {
   const details = result.details ?? {};
   const accepted = typeof details.accepted === 'number' ? details.accepted : 0;
@@ -1511,6 +1548,9 @@ async function previewWorkflow() {
   workflowIdempotencyKey = '';
   try {
     const result = await workflows.client.preview(request);
+    if (!workflowResultMatchesRequest(result, request)) {
+      throw new Error('The workflow response did not match the preview request.');
+    }
     if (!result.ok) {
       workflowError = result.reason ?? 'Preview failed.';
       return;
@@ -1544,6 +1584,9 @@ async function applyWorkflow() {
   workflowError = null;
   try {
     const result = await workflows.client.apply(request);
+    if (!workflowResultMatchesRequest(result, request)) {
+      throw new Error('The workflow response did not match the apply request.');
+    }
     workflowResult = result;
     if (!result.ok) {
       workflowError = result.reason ?? 'Workflow failed.';
@@ -1564,6 +1607,8 @@ async function applyWorkflow() {
           intent: workflowIntentAtPreview,
           jobId: result.details.jobId,
           actionId: request.actionId,
+          requestId: request.requestId,
+          identity: request.identity,
         },
       ];
     }
@@ -1595,7 +1640,9 @@ async function checkWorkflowJob() {
     if (
       job.result &&
       (job.result.phase !== 'apply' ||
-        job.result.actionId !== queuedJob.actionId)
+        job.result.actionId !== queuedJob.actionId ||
+        job.result.requestId !== queuedJob.requestId ||
+        !workflowIdentityMatches(job.result.identity, queuedJob.identity))
     ) {
       workflowError = `Job ${job.jobId} returned a result for another workflow.`;
       return;
