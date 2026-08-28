@@ -877,9 +877,13 @@ export function createDataSurfaceActionAdapter(
             accepted: invocation.selection.rowIds.length,
             skipped: 0,
             failed: 0,
+            ...(queued.details ?? {}),
             background: true,
             jobId: queued.jobId,
-            ...(queued.details ?? {}),
+            // A replayed apply has a new transport request id, while the
+            // already-queued job still returns the original execution result.
+            // Preserve that correlation id across the replay envelope.
+            jobRequestId: request.requestId,
           });
         }
         return executeForeground(request, invocation);

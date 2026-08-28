@@ -775,14 +775,28 @@ describe('data-surface action adapter', () => {
       },
     });
     const token = await previewToken(setup);
-    const accepted = await setup.adapter.apply(
-      request('apply', { confirmationToken: token }),
+    const applyRequest = request('apply', { confirmationToken: token });
+    const accepted = await setup.adapter.apply(applyRequest, setup.context);
+    const replayed = await setup.adapter.apply(
+      { ...applyRequest, requestId: 'background-apply-retry' },
       setup.context,
     );
 
     expect(accepted).toMatchObject({
       ok: true,
-      details: { background: true, jobId: 'job-1', accepted: 2 },
+      details: {
+        background: true,
+        jobId: 'job-1',
+        jobRequestId: accepted.requestId,
+        accepted: 2,
+      },
+    });
+    expect(replayed).toMatchObject({
+      requestId: 'background-apply-retry',
+      details: {
+        jobId: 'job-1',
+        jobRequestId: applyRequest.requestId,
+      },
     });
     expect(applyRow).not.toHaveBeenCalled();
     expect(setup.calls).toHaveLength(2);

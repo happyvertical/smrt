@@ -1108,6 +1108,76 @@ describe('ContentList bulk workflows', () => {
       apply.mock.calls[0]?.[0].idempotencyKey,
     );
   });
+
+  it('reconciles a retried background apply against the original job request', async () => {
+    let originalRequest: ContentListWorkflowRequest | undefined;
+    const apply = vi
+      .fn()
+      .mockImplementationOnce(async (request: ContentListWorkflowRequest) => {
+        originalRequest = request;
+        throw new Error('response lost');
+      })
+      .mockImplementationOnce(async (request: ContentListWorkflowRequest) => {
+        if (!originalRequest) throw new Error('original request not captured');
+        return {
+          ...request,
+          ok: true,
+          details: {
+            accepted: 1,
+            background: true,
+            jobId: 'job-lost-response',
+            jobRequestId: originalRequest.requestId,
+          },
+        };
+      });
+    const status = vi.fn(async () => {
+      if (!originalRequest) throw new Error('original request not captured');
+      return {
+        jobId: 'job-lost-response',
+        status: 'succeeded' as const,
+        result: {
+          ...originalRequest,
+          ok: true,
+          details: {
+            accepted: 1,
+            outcomes: [{ rowId: 'content-1', status: 'accepted' as const }],
+          },
+        },
+      };
+    });
+    const workflow = workflowBinding({ apply, status });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('response lost'),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    expect(apply.mock.calls[1]?.[0].requestId).not.toBe(
+      apply.mock.calls[0]?.[0].requestId,
+    );
+    click(buttonsByText(target, 'Check job')[0]);
+
+    await vi.waitFor(() => expect(target.textContent).toContain('1 accepted'));
+    expect(target.textContent).toContain('0 selected');
+    expect(target.textContent).not.toContain(
+      'returned a result for another workflow',
+    );
+    expect(buttonsByText(target, 'Check job')).toHaveLength(0);
+  });
 });
 
 describe('ContentList shared query state', () => {

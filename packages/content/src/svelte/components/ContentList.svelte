@@ -1622,7 +1622,10 @@ async function applyWorkflow() {
             intent: appliedIntent,
             jobId: result.details.jobId,
             actionId: request.actionId,
-            requestId: request.requestId,
+            requestId:
+              typeof result.details.jobRequestId === 'string'
+                ? result.details.jobRequestId
+                : request.requestId,
             identity: request.identity,
           },
         ];
@@ -1654,7 +1657,10 @@ async function applyWorkflow() {
           intent: workflowIntentAtPreview,
           jobId: result.details.jobId,
           actionId: request.actionId,
-          requestId: request.requestId,
+          requestId:
+            typeof result.details.jobRequestId === 'string'
+              ? result.details.jobRequestId
+              : request.requestId,
           identity: request.identity,
         },
       ];
