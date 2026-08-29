@@ -363,6 +363,30 @@ function rejectUnknownFields(
   return issues;
 }
 
+/**
+ * Validate only the runtime contract's object and field shape.
+ *
+ * @internal Used while composing configuration layers before a profile is
+ * necessarily available. Full profile/provider compatibility validation stays
+ * in {@link resolveApplicationRuntime}.
+ */
+export function validateApplicationRuntimeConfigShape(
+  config: unknown,
+): readonly RuntimeProfileValidationIssue[] {
+  if (!isRecord(config)) {
+    return [
+      {
+        code: 'invalid_config',
+        path: 'runtime',
+        message: 'must be an object.',
+        recovery:
+          'Provide runtime: { profile: "local" | "self-hosted" | "cloud" }.',
+      },
+    ];
+  }
+  return rejectUnknownFields(config);
+}
+
 function applyOverrides(
   providers: RuntimeProviders,
   input: Record<string, unknown>,
@@ -611,17 +635,11 @@ export function resolveApplicationRuntime(
 ): Readonly<ResolvedApplicationRuntime> {
   if (!isRecord(config)) {
     throw new RuntimeProfileValidationError([
-      {
-        code: 'invalid_config',
-        path: 'runtime',
-        message: 'must be an object.',
-        recovery:
-          'Provide runtime: { profile: "local" | "self-hosted" | "cloud" }.',
-      },
+      ...validateApplicationRuntimeConfigShape(config),
     ]);
   }
 
-  const unknownIssues = rejectUnknownFields(config);
+  const unknownIssues = validateApplicationRuntimeConfigShape(config);
   const profile = config.profile;
   if (profile !== 'local' && profile !== 'self-hosted' && profile !== 'cloud') {
     throw new RuntimeProfileValidationError([

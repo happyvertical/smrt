@@ -6,7 +6,9 @@ import {
   mergeConfigs,
 } from './merge.js';
 import {
+  RuntimeProfileValidationError as _RuntimeProfileValidationError,
   resolveApplicationRuntime as _resolveApplicationRuntime,
+  validateApplicationRuntimeConfigShape as _validateApplicationRuntimeConfigShape,
   type ApplicationRuntimeConfig,
   type ResolvedApplicationRuntime,
 } from './runtime-profile.js';
@@ -220,8 +222,14 @@ export function resolveConfiguredApplicationRuntime(): Readonly<ResolvedApplicat
   // priority profile, but it must not make invalid file configuration vanish.
   // Validate that layer before removing its profile-specific providers, then
   // preserve every root field so the effective resolver remains fail-closed.
-  if (profileChanged && fileRuntime?.profile !== undefined) {
-    _resolveApplicationRuntime(fileRuntime as ApplicationRuntimeConfig);
+  if (profileChanged && fileRuntime !== undefined) {
+    const shapeIssues = _validateApplicationRuntimeConfigShape(fileRuntime);
+    if (shapeIssues.length > 0) {
+      throw new _RuntimeProfileValidationError([...shapeIssues]);
+    }
+    if (fileRuntime.profile !== undefined) {
+      _resolveApplicationRuntime(fileRuntime as ApplicationRuntimeConfig);
+    }
   }
   const { providers: _staleProviders, ...fileRuntimeWithoutProviders } =
     fileRuntime ?? {};

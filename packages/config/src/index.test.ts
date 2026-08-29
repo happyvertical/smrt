@@ -373,6 +373,48 @@ describe('@smrt/config', () => {
         /providers\.jobs\.unexpectedCredential: is not a supported provider override/,
       );
     });
+
+    it('rejects unsupported profile-less file provider fields during a profile switch', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-unknown-provider-field.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            providers: {
+              jobs: { unexpectedCredential: 'secret' }
+            }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers\.jobs\.unexpectedCredential: is not a supported provider override/,
+      );
+    });
+
+    it('rejects non-object providers in a profile-less file runtime', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-malformed-providers.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default { runtime: { providers: 'not-an-object' } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers: must be an object/,
+      );
+    });
   });
 
   describe('getModuleConfig', () => {
