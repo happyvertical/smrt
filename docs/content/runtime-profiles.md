@@ -83,3 +83,40 @@ Provider selection cannot change these application behaviors:
 The resolved snapshot includes these invariants so integration tests can compare
 profiles directly. Implementing packages consume the contract; templates should
 never copy profile conditionals into application code.
+
+## Running the local profile
+
+`@happyvertical/smrt-app-runtime` implements the private local composition. The
+application supplies its normal idempotent migration hook; the runtime prepares
+the user-owned filesystem, opens and tunes file-backed SQLite, creates local
+application-secret material, and issues the first short-lived onboarding token.
+
+```ts
+import { initializeLocalApplicationRuntime } from '@happyvertical/smrt-app-runtime';
+
+const { runtime, bootstrap, diagnostics } =
+  await initializeLocalApplicationRuntime({
+    appId: 'my-app',
+    sourceRoot: process.cwd(),
+    prepareDatabase: runApplicationMigrations,
+  });
+```
+
+The default root is the operating system's per-user application-data directory,
+never the source checkout. Directories are mode `0700`; the database and
+generated application-secret file are mode `0600`. SQLite enables foreign keys,
+WAL, full synchronous durability, and a busy timeout. The local server binds to
+`127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
+
+Only an HMAC of the onboarding token is stored. The plaintext is returned once,
+expires within fifteen minutes, and is consumed in the same serialized database
+transaction that creates the real global `Person`, `User`, default `Tenant`,
+owner `Role` / `Membership`, and server-side `Session`. Repeated setup or startup
+does not duplicate those records. Tenancy can remain hidden in the local UI, but
+the durable default tenant is preserved for later logical migration.
+
+Background work and application-defined paid capabilities are disabled by
+default. An explicit background opt-in exposes the regular embedded
+`TaskRunner`, preserving the same persisted enqueue and execution contract used
+by deployed workers. Diagnostics report these choices and bootstrap state but
+never read or emit application secrets, token plaintext, or token hashes.

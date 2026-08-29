@@ -1,0 +1,65 @@
+{
+  "name": "@happyvertical/smrt-app-runtime",
+  "version": "0.43.6",
+  "description": "Safe private local runtime composition for s-m-r-t applications",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "build:watch": "vite build --watch",
+    "clean": "rm -rf dist",
+    "dev": "npm run build:watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/sql": "catalog:"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "24.13.2",
+    "typescript": "5.9.3",
+    "vite": "8.1.4",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/app-runtime"
+  },
+  "keywords": [
+    "smrt",
+    "runtime",
+    "sqlite",
+    "sveltekit"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT"
+}
