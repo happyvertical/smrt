@@ -21,6 +21,10 @@ export interface FakeContentListQuery {
   readonly requests: ContentListDataQueryRequest[];
   /** How many times the list asked the binding to retry. */
   readonly retries: number;
+  readonly refreshes: number;
+  readonly liveSubscriptions: number;
+  readonly reconnects: number;
+  readonly liveUnsubscribes: number;
   /** Publish a result page. `total` defaults to the page length. */
   resolve(rows: Array<Record<string, unknown>>, total?: number): void;
   /**
@@ -36,6 +40,13 @@ export interface FakeContentListQuery {
   fail(error: unknown): void;
   /** Toggle the busy flags independently of a request. */
   setBusy(options: { loading?: boolean; refreshing?: boolean }): void;
+  setFreshness(options: { stale?: boolean; lastUpdated?: number }): void;
+  /** Publish a query-scoped live replacement and its completeness envelope. */
+  publishLive(
+    rows: Array<Record<string, unknown>>,
+    envelope: unknown,
+    total?: number,
+  ): void;
   /**
    * The envelope subsequent `execute` calls resolve with. `RemoteQueryBinding`
    * does not expose `truncated`/`warnings`, so this is the path the component
@@ -44,14 +55,23 @@ export interface FakeContentListQuery {
   setEnvelope(envelope: unknown): void;
 }
 
-export function createFakeContentListQuery(): FakeContentListQuery {
+export function createFakeContentListQuery(
+  options: { requireRequestForLive?: boolean } = {},
+): FakeContentListQuery {
   let rows = $state<Array<Record<string, unknown>>>([]);
   let total = $state<ContentListQueryTotal | undefined>(undefined);
   let loading = $state(false);
   let refreshing = $state(false);
   let error = $state<unknown>(null);
+  let stale = $state(false);
+  let lastUpdated = $state<number | undefined>(undefined);
+  let result = $state<unknown>(undefined);
   const requests: ContentListDataQueryRequest[] = [];
   let retries = 0;
+  let refreshes = 0;
+  let liveSubscriptions = 0;
+  let reconnects = 0;
+  let liveUnsubscribes = 0;
   let envelope: unknown;
 
   const binding: ContentListQueryBinding = {
@@ -68,20 +88,46 @@ export function createFakeContentListQuery(): FakeContentListQuery {
       return refreshing;
     },
     get stale() {
-      return false;
+      return stale;
     },
     get error() {
       return error;
     },
+    get lastUpdated() {
+      return lastUpdated;
+    },
+    get result() {
+      return result;
+    },
     async execute(request) {
       requests.push(request);
+      result = envelope;
       return envelope;
     },
     async retry() {
       retries += 1;
       // `remoteQuery.retry()` resolves the refreshed envelope, and the
       // component reads the completeness flags off it.
+      result = envelope;
       return envelope;
+    },
+    async refresh() {
+      refreshes += 1;
+      result = envelope;
+      return envelope;
+    },
+    subscribeLive() {
+      if (options.requireRequestForLive && requests.length === 0)
+        return undefined;
+      liveSubscriptions += 1;
+      return {
+        reconnect() {
+          reconnects += 1;
+        },
+        unsubscribe() {
+          liveUnsubscribes += 1;
+        },
+      };
     },
   };
 
@@ -91,12 +137,27 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     get retries() {
       return retries;
     },
+    get refreshes() {
+      return refreshes;
+    },
+    get liveSubscriptions() {
+      return liveSubscriptions;
+    },
+    get reconnects() {
+      return reconnects;
+    },
+    get liveUnsubscribes() {
+      return liveUnsubscribes;
+    },
     resolve(nextRows, nextTotal) {
       rows = nextRows;
       total = { kind: 'exact', value: nextTotal ?? nextRows.length };
       loading = false;
       refreshing = false;
       error = null;
+      stale = false;
+      lastUpdated = Date.now();
+      result = envelope;
     },
     resolveWithTotal(nextRows, nextTotal) {
       rows = nextRows;
@@ -104,6 +165,8 @@ export function createFakeContentListQuery(): FakeContentListQuery {
       loading = false;
       refreshing = false;
       error = null;
+      stale = false;
+      lastUpdated = Date.now();
     },
     fail(nextError) {
       error = nextError;
@@ -113,6 +176,20 @@ export function createFakeContentListQuery(): FakeContentListQuery {
     setBusy(options) {
       if (options.loading !== undefined) loading = options.loading;
       if (options.refreshing !== undefined) refreshing = options.refreshing;
+    },
+    setFreshness(options) {
+      if (options.stale !== undefined) stale = options.stale;
+      if (options.lastUpdated !== undefined) lastUpdated = options.lastUpdated;
+    },
+    publishLive(nextRows, nextEnvelope, nextTotal) {
+      rows = nextRows;
+      total = { kind: 'exact', value: nextTotal ?? nextRows.length };
+      loading = false;
+      refreshing = false;
+      error = null;
+      stale = false;
+      lastUpdated = Date.now();
+      result = nextEnvelope;
     },
     setEnvelope(next) {
       envelope = next;

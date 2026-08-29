@@ -256,6 +256,18 @@ export {
   readContentListQueryNotices,
   resolveContentListMaxPageSize,
 } from './content-list-query.js';
+export {
+  type ContentListJob,
+  type ContentListJobBinding,
+  type ContentListJobController,
+  type ContentListJobControllerOptions,
+  type ContentListJobSnapshot,
+  type ContentListJobStatus,
+  type ContentListJobSubmission,
+  type ContentListJobTarget,
+  contentListJobAffectsQuery,
+  createContentListJobController,
+} from './content-list-runtime.js';
 // Saved views (#2452): a named, restorable view backed by a narrow store seam.
 export {
   CONTENT_LIST_SAVED_VIEW_SCHEMA_VERSION,

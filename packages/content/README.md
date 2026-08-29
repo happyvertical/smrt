@@ -465,7 +465,7 @@ startup and seeds sample content (3 items) for immediate testing.
 
 | Component | Props | Description |
 |-----------|-------|-------------|
-| `ContentList` | `contents`, `onEdit`, `onDelete`, `onAdd`, `getViewHref` | Card/list catalog with search, filters, and view toggles |
+| `ContentList` | `contents` or `query`, `jobs`, `onEdit`, `onDelete`, `onAdd`, `getViewHref` | Query-backed catalog with realtime freshness, background-job progress, retry, search, filters, and view toggles |
 | `ContentEditor` | `content`, `contentId`, `onSave`, `onCancel` | Full content editor with metadata, assets, references |
 | `GovernedContentEditor` | `content`, `contentId`, `onSave`, `onCancel` | Editor with integrated governance panel and review controls |
 | `ContentAgentChat` | `contentId`, `apiBasePath` | AI chat sidebar for content with thread management |
@@ -475,6 +475,10 @@ startup and seeds sample content (3 items) for immediate testing.
 | `ArticleList` | `articles` | List of article cards |
 | `ImageThumbnail` | `src`, `alt` | Thumbnail image display |
 | `Markdown` | `source` | Markdown renderer |
+
+`ContentList` retry handlers must return a new job attempt with a distinct
+`jobId`. The controller retains the failed attempt as immutable history so a
+late event from it cannot overwrite the retry result.
 
 Applications that compose their own article editor can use
 `createContentEditorState`, `getContentEditorAssetImageSource`, and

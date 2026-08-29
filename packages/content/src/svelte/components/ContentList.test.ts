@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,10 +10,16 @@ import {
   CONTENT_LIST_UNREPRESENTABLE_OPTION,
   normalizeContentToken,
 } from '../content-list-controller.js';
-import { ContentListQueryError } from '../content-list-query.js';
+import {
+  ContentListQueryError,
+  contentListQueryRequestKey,
+} from '../content-list-query.js';
+import { createContentListJobController } from '../content-list-runtime.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
+import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
+import RefreshCapabilityHarness from './__tests__/content-list-refresh-capability-harness.svelte';
 import ContentList from './ContentList.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
@@ -647,6 +655,376 @@ describe('ContentList async states', () => {
     expect(emptyTarget.textContent).toContain(
       'No contents match your filters.',
     );
+  });
+});
+
+describe('ContentList trustworthy async runtime (#2455)', () => {
+  it('keeps stale rows usable and reports a failed refresh without success', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    query.setFreshness({ stale: true, lastUpdated: 1_787_765_400_000 });
+    query.fail(new Error('reconnect failed'));
+    flushSync();
+
+    expect(rowTitles(target)).toEqual(['Council budget explained']);
+    const alert = target.querySelector('[role="alert"]');
+    expect(alert?.textContent).toContain('latest refresh failed');
+    expect(alert?.textContent).toContain('reconnect failed');
+    expect(alert?.textContent).not.toContain('Completed');
+    expect(target.textContent).toContain('Showing saved content');
+  });
+
+  it('subscribes to the exact live query and reconnects after offline state', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+    Object.defineProperty(navigator, 'onLine', {
+      configurable: true,
+      value: true,
+    });
+    try {
+      const query = createFakeContentListQuery();
+      const target = renderList({ query: { bind: () => query.binding } });
+      query.resolve([serverRow('content-1', 'Council budget explained')]);
+      flushSync();
+
+      expect(query.liveSubscriptions).toBe(1);
+      window.dispatchEvent(new Event('offline'));
+      flushSync();
+      expect(target.textContent).toContain('Offline — showing saved content');
+      expect(rowTitles(target)).toEqual(['Council budget explained']);
+
+      window.dispatchEvent(new Event('online'));
+      flushSync();
+      expect(query.reconnects).toBe(1);
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, 'onLine', descriptor);
+      else Reflect.deleteProperty(navigator, 'onLine');
+    }
+  });
+
+  it('subscribes live after an initially capped query starts', () => {
+    const query = createFakeContentListQuery({ requireRequestForLive: true });
+    renderList({
+      query: { bind: () => query.binding, request: { defaultPageSize: 200 } },
+      urlState: { params: 'page=9000' },
+    });
+    flushSync();
+
+    expect(query.requests).toHaveLength(1);
+    expect(query.liveSubscriptions).toBe(1);
+  });
+
+  it('reconciles an external row change without losing query or selection', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    flushSync();
+
+    typeText(searchInput(target), 'budget');
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    query.resolve([serverRow('content-1', 'Council budget updated')]);
+    flushSync();
+
+    expect(searchInput(target).value).toBe('budget');
+    expect(rowTitles(target)).toEqual(['Council budget updated']);
+    expect(target.textContent).toContain('1 selected');
+  });
+
+  it('shows job id and progress, disables its row, and refreshes only on success', async () => {
+    const query = createFakeContentListQuery();
+    const jobs = createContentListJobController();
+    jobs.update({
+      jobId: 'job-review-1',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+      completed: 1,
+      total: 3,
+    });
+    const target = renderList({
+      jobs,
+      query: { bind: () => query.binding },
+    });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    flushSync();
+
+    expect(target.textContent).toContain('Job job-review-1');
+    expect(target.querySelector('progress')?.getAttribute('value')).toBe('1');
+    expect(buttonsByText(target, 'Edit')[0].disabled).toBe(true);
+
+    jobs.update({
+      ...jobs.snapshot().jobs[0],
+      status: 'succeeded',
+      completed: 3,
+    });
+    await settle();
+    expect(query.refreshes).toBe(1);
+
+    jobs.update({
+      jobId: 'job-unrelated',
+      actionId: 'review',
+      submissionKey: 'review:content-2',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-2'] },
+    });
+    const unrelated = jobs
+      .snapshot()
+      .jobs.find((job) => job.jobId === 'job-unrelated');
+    expect(unrelated).toBeDefined();
+    if (!unrelated) throw new Error('Expected the unrelated job snapshot.');
+    jobs.update({ ...unrelated, status: 'succeeded' });
+    await settle();
+    expect(query.refreshes).toBe(1);
+
+    const activeRequest = query.requests.at(-1);
+    expect(activeRequest).toBeDefined();
+    if (!activeRequest) throw new Error('Expected the active query request.');
+    jobs.update({
+      jobId: 'job-query',
+      actionId: 'bulk-review',
+      submissionKey: 'bulk-review:active-query',
+      status: 'running',
+      target: {
+        kind: 'query',
+        queryKey: contentListQueryRequestKey(activeRequest),
+      },
+    });
+    flushSync();
+    expect(buttonsByText(target, 'Edit')[0].disabled).toBe(true);
+    expect(
+      checkboxByLabel(target, 'Select Council budget explained').disabled,
+    ).toBe(true);
+  });
+
+  it('retains a successful job refresh until an in-flight query settles', async () => {
+    const query = createFakeContentListQuery();
+    const jobs = createContentListJobController();
+    jobs.update({
+      jobId: 'job-during-refresh',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    renderList({ jobs, query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    query.setBusy({ refreshing: true });
+    flushSync();
+
+    const running = jobs.snapshot().jobs[0];
+    jobs.update({ ...running, status: 'succeeded' });
+    await settle();
+    expect(query.refreshes).toBe(0);
+
+    query.setBusy({ refreshing: false });
+    await settle();
+    expect(query.refreshes).toBe(1);
+  });
+
+  it('bounds completions during a stuck query without losing refresh intent', async () => {
+    const query = createFakeContentListQuery();
+    const jobs = createContentListJobController({ maxTerminalJobs: 100 });
+    renderList({ jobs, query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    query.setBusy({ refreshing: true });
+    flushSync();
+
+    jobs.update({
+      jobId: 'job-relevant-first',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'succeeded',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    for (let index = 0; index < 51; index += 1) {
+      jobs.update({
+        jobId: `job-unrelated-${index}`,
+        actionId: 'review',
+        submissionKey: `review:other-${index}`,
+        status: 'succeeded',
+        target: { kind: 'rows', rowIds: [`other-${index}`] },
+      });
+    }
+    await settle();
+    expect(query.refreshes).toBe(0);
+
+    query.setBusy({ refreshing: false });
+    await settle();
+    expect(query.refreshes).toBe(1);
+  });
+
+  it('discards completions when the query cannot refresh', async () => {
+    const jobs = createContentListJobController();
+    const onRefresh = vi.fn();
+    let enableRefresh!: () => void;
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(RefreshCapabilityHarness, {
+      target,
+      props: {
+        contents,
+        jobs,
+        onRefresh,
+        onReady: (enable) => {
+          enableRefresh = enable;
+        },
+      },
+    });
+    mountedComponents.push(component);
+    await settle();
+
+    jobs.update({
+      jobId: 'job-no-refresh',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    jobs.update({ ...jobs.snapshot().jobs[0], status: 'succeeded' });
+    await settle();
+    expect(onRefresh).not.toHaveBeenCalled();
+
+    enableRefresh();
+    await settle();
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
+
+  it('keeps a failed job failed and exposes its explicit retry', async () => {
+    const retry = vi.fn(async () => ({
+      jobId: 'job-retry-2',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running' as const,
+      target: { kind: 'rows' as const, rowIds: ['content-1'] },
+    }));
+    const jobs = createContentListJobController({ retry });
+    jobs.update({
+      jobId: 'job-failed-1',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    const target = renderList({ jobs });
+    jobs.update({
+      ...jobs.snapshot().jobs[0],
+      status: 'failed',
+      error: 'model unavailable',
+    });
+    flushSync();
+
+    expect(
+      target.querySelector('[data-job-id="job-failed-1"] [role="alert"]')
+        ?.textContent,
+    ).toBe('model unavailable');
+    click(buttonsByText(target, 'Retry job')[0]);
+    await settle();
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(buttonsByText(target, 'Retry job')).toHaveLength(0);
+  });
+
+  it('does not advertise retry when the job binding cannot retry', () => {
+    const jobs = createContentListJobController();
+    const target = renderList({ jobs });
+    jobs.update({
+      jobId: 'job-no-retry',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'failed',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+      error: 'model unavailable',
+    });
+    flushSync();
+
+    expect(target.textContent).toContain('model unavailable');
+    expect(buttonsByText(target, 'Retry job')).toHaveLength(0);
+  });
+
+  it('subscribes to a late job binding and replaces it reactively', () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    let setJobs!: (
+      next: ReturnType<typeof createContentListJobController> | undefined,
+    ) => void;
+    const component = mount(JobsHarness, {
+      target,
+      props: {
+        contents,
+        onReady: (setter) => {
+          setJobs = setter;
+        },
+      },
+    });
+    mountedComponents.push(component);
+    const first = createContentListJobController();
+    const replacement = createContentListJobController();
+
+    setJobs(first);
+    flushSync();
+    first.update({
+      jobId: 'job-first',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    flushSync();
+    expect(target.textContent).toContain('Job job-first');
+
+    setJobs(replacement);
+    flushSync();
+    expect(target.textContent).not.toContain('Job job-first');
+    replacement.update({
+      jobId: 'job-replacement',
+      actionId: 'review',
+      submissionKey: 'review:content-2',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-2'] },
+    });
+    flushSync();
+    expect(target.textContent).toContain('Job job-replacement');
+
+    first.update({
+      ...first.snapshot().jobs[0],
+      status: 'succeeded',
+    });
+    flushSync();
+    expect(target.textContent).not.toContain('Job job-first');
+  });
+
+  it('refuses a delete confirmed after its row becomes pending', () => {
+    const onDelete = vi.fn();
+    const jobs = createContentListJobController();
+    const target = renderList({ jobs, onDelete });
+    click(buttonsByText(target, 'Delete')[0]);
+
+    jobs.update({
+      jobId: 'job-after-dialog',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    flushSync();
+
+    const dialog = document.querySelector('[role="dialog"]');
+    const confirm = Array.from(dialog?.querySelectorAll('button') ?? []).find(
+      (button) => button.textContent?.trim() === 'Delete',
+    );
+    click(confirm as HTMLButtonElement);
+
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('ships a reduced-motion override for refresh affordances', () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, 'ContentList.svelte'),
+      'utf8',
+    );
+    expect(source).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(source).toMatch(/refresh-button[\s\S]*transition: none/);
   });
 });
 
@@ -1427,6 +1805,24 @@ describe('ContentList server completeness reporting (#2452)', () => {
 
     const notice = target.querySelector('.state-notice');
     expect(notice?.textContent).toContain('shortened over-long values');
+  });
+
+  it('updates completeness notices when a live result replaces the query', () => {
+    const query = createFakeContentListQuery();
+    const target = renderList({ query: { bind: () => query.binding } });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    flushSync();
+    expect(target.querySelector('.state-notice')).toBeNull();
+
+    query.publishLive([serverRow('content-1', 'Council budget updated')], {
+      truncated: true,
+      warnings: ['live result was shortened'],
+    });
+    flushSync();
+
+    expect(target.querySelector('.state-notice')?.textContent).toContain(
+      'live result was shortened',
+    );
   });
 
   it('says nothing when the answer was complete', async () => {

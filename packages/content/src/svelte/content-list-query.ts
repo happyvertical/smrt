@@ -1666,6 +1666,10 @@ export interface ContentListQueryBinding {
   readonly stale: boolean;
   /** The last failure, or a falsy value when the query is healthy. */
   readonly error: unknown;
+  /** Epoch milliseconds of the last successful answer. */
+  readonly lastUpdated?: number;
+  /** Latest applied envelope, including query-scoped live replacements. */
+  readonly result?: unknown;
   /**
    * True when the server had to shorten the answer to fit its byte budget.
    * Optional because `RemoteQueryBinding` does not surface it; when a binding
@@ -1678,7 +1682,14 @@ export interface ContentListQueryBinding {
     request: ContentListDataQueryRequest,
     options?: { signal?: AbortSignal },
   ): Promise<unknown>;
+  /** Revalidate the active query while retaining its usable rows. */
+  refresh?(options?: { signal?: AbortSignal }): Promise<unknown>;
   retry(): Promise<unknown>;
+  /** Subscribe to changes for the active query rather than the whole table. */
+  subscribeLive?():
+    | { unsubscribe(): void; reconnect(): void }
+    | { unsubscribe(): void }
+    | undefined;
 }
 
 /**

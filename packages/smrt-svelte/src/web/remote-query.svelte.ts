@@ -19,6 +19,8 @@ export interface RemoteQueryBinding<TData extends object = object> {
   readonly stale: boolean;
   readonly error: unknown;
   readonly lastUpdated: number | undefined;
+  /** Latest applied result, including query-scoped live replacements. */
+  readonly result?: SmrtWebDataQueryResult | undefined;
   readonly request: SmrtWebDataQueryRequest | undefined;
   execute(
     request: SmrtWebDataQueryRequest,
@@ -83,6 +85,9 @@ export function remoteQuery<TData extends object>(
     },
     get lastUpdated() {
       return snapshot.lastUpdated;
+    },
+    get result() {
+      return snapshot.result;
     },
     get request() {
       return activeRequest;

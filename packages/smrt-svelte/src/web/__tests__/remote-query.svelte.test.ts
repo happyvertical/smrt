@@ -91,6 +91,7 @@ describe('remoteQuery', () => {
     flushSync();
 
     expect(mounted.target.textContent).toContain('svelte-request:Ada');
+    expect(mounted.view.result?.rows).toEqual([{ id: 'Ada', name: 'Ada' }]);
     mounted.teardown();
     await collection.cleanup();
   });
