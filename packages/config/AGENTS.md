@@ -21,6 +21,7 @@ Configuration management with cosmiconfig, secret sanitization, and SSG export.
 | `exportConfig({ includeSecrets })` | SSG-safe export (defaults to no secrets) |
 | `sanitizeConfig(config)` | Strips keys matching: apiKey, password, secret, token, credential, private, auth, key |
 | `resolveApplicationRuntime(config)` | Resolve and validate a local, self-hosted, or cloud infrastructure profile |
+| `resolveConfiguredApplicationRuntime()` | Resolve loaded file config plus highest-priority `setConfig()` runtime overrides |
 | `getApplicationRuntimePreset(profile)` | Inspect a profile's safe provider defaults |
 
 ## Key Files

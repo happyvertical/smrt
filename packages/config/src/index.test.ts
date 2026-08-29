@@ -7,6 +7,7 @@ import {
   getModuleConfig,
   getPackageConfig,
   loadConfig,
+  resolveConfiguredApplicationRuntime,
   setConfig,
 } from './index.js';
 import { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
@@ -244,6 +245,88 @@ describe('@smrt/config', () => {
 
       // Parent's config must NOT leak in — no config found from childDir.
       expect(config).toEqual({});
+    });
+  });
+
+  describe('resolveConfiguredApplicationRuntime', () => {
+    it('lets a runtime profile replace a loaded file profile safely', async () => {
+      const runtimeConfigPath = join(testDir, 'runtime-profile.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            providers: { jobs: { topology: 'inline' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      setConfig({
+        runtime: {
+          profile: 'cloud',
+          providers: {
+            assets: { provider: 's3-compatible' },
+            tenancy: { isolation: 'application' },
+          },
+        },
+      });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.profile).toBe('cloud');
+      expect(resolved.providers.database.engine).toBe('postgres');
+      expect(resolved.providers.jobs.topology).toBe('scalable');
+      expect(resolved.providers.assets.provider).toBe('s3-compatible');
+      expect(resolved.providers.tenancy.isolation).toBe('application');
+      expect(resolved.diagnostics.overrides).toEqual([
+        {
+          path: 'providers.tenancy.isolation',
+          from: 'database-rls',
+          to: 'application',
+        },
+        {
+          path: 'providers.assets.provider',
+          from: 'managed-object-storage',
+          to: 's3-compatible',
+        },
+      ]);
+    });
+
+    it('deep-merges nested runtime provider overrides over the same file profile', async () => {
+      const runtimeConfigPath = join(testDir, 'runtime-providers.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'self-hosted',
+            providers: {
+              assets: { provider: 'local-files' },
+              authentication: { provider: 'oidc' },
+              tenancy: { mode: 'single-tenant', context: 'defaulted' }
+            }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: {
+            authentication: { provider: 'magic-link' },
+            tenancy: { mode: 'multi-tenant', context: 'required' },
+          },
+        },
+      });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.providers.authentication.provider).toBe('magic-link');
+      expect(resolved.providers.tenancy.mode).toBe('multi-tenant');
+      expect(resolved.providers.tenancy.context).toBe('required');
+      expect(resolved.providers.assets.provider).toBe('local-files');
+      expect(resolved.diagnostics.secretValuesIncluded).toBe(false);
     });
   });
 

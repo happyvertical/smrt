@@ -16,10 +16,13 @@ export default defineConfig({
 });
 ```
 
-At startup, pass `config.runtime` to `resolveApplicationRuntime()`. The resolver
-returns a deterministic, immutable, machine-readable snapshot for startup,
-`doctor`, tests, and agent inspection. It reads no environment variables and
-contains no connection strings, paths, credentials, or secret values.
+At startup, call `resolveConfiguredApplicationRuntime()`. It composes the loaded
+file with highest-priority `setConfig()` overrides, then returns a deterministic,
+immutable, machine-readable snapshot for startup, `doctor`, tests, and agent
+inspection. It reads no environment variables and contains no connection
+strings, paths, credentials, or secret values. Use
+`resolveApplicationRuntime(config)` only when resolving an explicit value, such
+as a test fixture; `getConfig()` retains its legacy loaded-file-only semantics.
 
 ## Safe presets
 
@@ -57,6 +60,11 @@ fields and incompatible combinations fail before application startup with a
 path, reason, and recovery action. For example, local owner bootstrap cannot be
 combined with a public bind, and cloud mode cannot disable required tenant
 context or TLS.
+
+When a runtime override selects a different profile, file-level provider
+overrides are discarded before the new preset resolves. This prevents a local
+choice such as inline jobs or local files from leaking into a cloud composition.
+When the profile stays the same, nested provider overrides deep-merge normally.
 
 ## Cross-profile invariants
 

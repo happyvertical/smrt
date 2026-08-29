@@ -46,17 +46,15 @@ export default {
 ### Application runtime profiles
 
 `runtime.profile` selects a validated infrastructure composition without
-forking application objects or workflows. Resolution is pure and happens before
-startup; unsupported combinations throw `RuntimeProfileValidationError` with a
-recovery action.
+forking application objects or workflows. Validation happens before startup;
+unsupported combinations throw `RuntimeProfileValidationError` with a recovery
+action.
 
 ```typescript
-import {
-  defineConfig,
-  resolveApplicationRuntime,
-} from '@happyvertical/smrt-config';
+// smrt.config.ts
+import { defineConfig } from '@happyvertical/smrt-config';
 
-const config = defineConfig({
+export default defineConfig({
   runtime: {
     profile: 'self-hosted',
     providers: {
@@ -66,8 +64,17 @@ const config = defineConfig({
     },
   },
 });
+```
 
-const runtime = resolveApplicationRuntime(config.runtime!);
+```typescript
+// application startup
+import {
+  loadConfig,
+  resolveConfiguredApplicationRuntime,
+} from '@happyvertical/smrt-config';
+
+await loadConfig();
+const runtime = resolveConfiguredApplicationRuntime();
 // Safe for doctor output and agent inspection: provider selectors and derived
 // capabilities are present; URLs, paths, credentials, and secret values are not.
 console.log(JSON.stringify(runtime));
@@ -89,6 +96,12 @@ metadata, approval policy, authorization records, or the job invocation API.
 Those are cross-profile invariants and are emitted in every resolved snapshot.
 Provider implementations keep their credentials and connection values in their
 own configuration; do not add those values to `runtime.providers`.
+
+Use `resolveApplicationRuntime(config.runtime)` for a pure, explicit value such
+as a test fixture. Application startup should use
+`resolveConfiguredApplicationRuntime()`: it composes the loaded file with
+highest-priority `setConfig()` overrides before validation. `getConfig()` keeps
+its legacy meaning and returns only loaded file state.
 
 ### Use config in code
 
@@ -170,6 +183,7 @@ const sanitized = sanitizeConfig(config);
 | `exportConfig(config, options?)` | SSG-safe export (defaults to no secrets) |
 | `sanitizeConfig(config)` | Strip secret-matching keys |
 | `resolveApplicationRuntime(config)` | Resolve and fail-closed validate a runtime profile |
+| `resolveConfiguredApplicationRuntime()` | Resolve effective file plus runtime-overridden profile config |
 | `getApplicationRuntimePreset(profile)` | Inspect an immutable copy of a profile preset |
 | `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |

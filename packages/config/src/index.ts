@@ -5,6 +5,11 @@ import {
   getRuntimeConfig,
   mergeConfigs,
 } from './merge.js';
+import {
+  resolveApplicationRuntime as _resolveApplicationRuntime,
+  type ApplicationRuntimeConfig,
+  type ResolvedApplicationRuntime,
+} from './runtime-profile.js';
 import type { LoadConfigOptions, SmrtConfig } from './types.js';
 
 // Re-export config export utilities
@@ -158,7 +163,7 @@ export async function loadConfig(
 }
 
 /**
- * Return the full merged configuration synchronously.
+ * Return the loaded file configuration synchronously.
  *
  * Reads from `globalThis.__smrtConfigCache` without triggering a file search.
  * Returns `null` when {@link loadConfig} has not been called yet (or after
@@ -175,11 +180,51 @@ export async function loadConfig(
  * ```
  *
  * @see {@link loadConfig}
+ * @see {@link resolveConfiguredApplicationRuntime}
  * @see {@link getSiteConfig}
  * @see {@link getModuleConfig}
  */
 export function getConfig(): SmrtConfig | null {
   return getLoadedConfig();
+}
+
+/**
+ * Resolve the effective application runtime using the documented config
+ * priority: runtime overrides set by {@link setConfig} > loaded file config >
+ * profile defaults.
+ *
+ * This accessor is intentionally separate from {@link getConfig}, whose legacy
+ * contract returns the loaded file object only. When a runtime override selects
+ * a different profile, lower-priority provider overrides are discarded so they
+ * cannot leak profile-specific choices (for example local files or inline jobs)
+ * into the new profile. Provider overrides still deep-merge when the profile is
+ * unchanged.
+ *
+ * @returns A validated, deterministic, secret-free runtime snapshot.
+ * @throws {RuntimeProfileValidationError} When no profile is configured or the
+ * effective provider composition violates a profile invariant.
+ */
+export function resolveConfiguredApplicationRuntime(): Readonly<ResolvedApplicationRuntime> {
+  const fileRuntime = getLoadedConfig()?.runtime as
+    | (ApplicationRuntimeConfig & Record<string, unknown>)
+    | undefined;
+  const runtimeOverride = getRuntimeConfig().runtime as
+    | (Partial<ApplicationRuntimeConfig> & Record<string, unknown>)
+    | undefined;
+  const runtimeSelectsProfile =
+    runtimeOverride !== undefined && Object.hasOwn(runtimeOverride, 'profile');
+  const profileChanged =
+    runtimeSelectsProfile && runtimeOverride.profile !== fileRuntime?.profile;
+
+  const effective = mergeConfigs<Record<string, unknown>>(
+    {},
+    profileChanged ? {} : (fileRuntime ?? {}),
+    runtimeOverride ?? {},
+  );
+
+  return _resolveApplicationRuntime(
+    effective as unknown as ApplicationRuntimeConfig,
+  );
 }
 
 /**
