@@ -16,6 +16,44 @@ export {
   sanitizeConfig,
 } from './export.js';
 export { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
+export type {
+  ApplicationRuntimeConfig,
+  ApplicationRuntimeProfile,
+  AssetOwnership,
+  AssetStorageProvider,
+  AuthenticationProvider,
+  BackupProvider,
+  ConnectionOwnership,
+  DatabaseEngine,
+  JobTopology,
+  NetworkExposure,
+  OwnerBootstrapMode,
+  ResolvedApplicationRuntime,
+  RuntimeAssetProvider,
+  RuntimeAuthenticationProvider,
+  RuntimeCapabilities,
+  RuntimeDatabaseProvider,
+  RuntimeInvariants,
+  RuntimeJobProvider,
+  RuntimeNetworkProvider,
+  RuntimeOverrideReport,
+  RuntimePortabilityProvider,
+  RuntimeProfileValidationIssue,
+  RuntimeProviderOverrides,
+  RuntimeProviders,
+  RuntimeSecretProvider,
+  RuntimeTenancyProvider,
+  SecretOwnership,
+  SecretProvider,
+  TenancyMode,
+  TenantContextMode,
+  TenantIsolation,
+} from './runtime-profile.js';
+export {
+  getApplicationRuntimePreset,
+  RuntimeProfileValidationError,
+  resolveApplicationRuntime,
+} from './runtime-profile.js';
 
 // Re-export types
 export type {
