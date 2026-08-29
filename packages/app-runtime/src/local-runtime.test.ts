@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   rm,
   stat,
   symlink,
@@ -29,10 +30,12 @@ afterEach(async () => {
 });
 
 async function localDirectories(label: string) {
-  const root = await mkdtemp(join(tmpdir(), `smrt-local-${label}-`));
+  const temporaryRoot = await mkdtemp(join(tmpdir(), `smrt-local-${label}-`));
+  const root = await realpath(temporaryRoot);
   temporaryRoots.push(root);
   const sourceRoot = join(root, 'source');
   const dataDirectory = join(root, 'data');
+  await mkdir(sourceRoot);
   return { root, sourceRoot, dataDirectory };
 }
 
@@ -329,6 +332,85 @@ describe('local application runtime', () => {
       }),
     ).rejects.toMatchObject({ code: 'invalid_configuration' });
     expect(await readFile(target, 'utf8')).toBe('must-not-be-used\n');
+  });
+
+  it('refuses a symlinked ancestor that redirects storage into the source tree', async () => {
+    const directories = await localDirectories('ancestor-source');
+    const redirect = join(directories.root, 'source-link');
+    const redirectedData = join(redirect, 'local-data');
+    await symlink(directories.sourceRoot, redirect);
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        sourceRoot: directories.sourceRoot,
+        dataDirectory: redirectedData,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    await expect(
+      stat(join(directories.sourceRoot, 'local-data')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a symlinked data root that redirects storage elsewhere', async () => {
+    const directories = await localDirectories('root-redirect');
+    const external = join(directories.root, 'external');
+    const redirectedData = join(directories.root, 'data-link');
+    await mkdir(external);
+    const externalMode = (await stat(external)).mode & 0o777;
+    await symlink(external, redirectedData);
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        sourceRoot: directories.sourceRoot,
+        dataDirectory: redirectedData,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect((await stat(external)).mode & 0o777).toBe(externalMode);
+    await expect(
+      stat(join(external, 'application.sqlite')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses nested symlink ancestors before creating redirected descendants', async () => {
+    const directories = await localDirectories('nested-redirect');
+    const nested = join(directories.root, 'nested');
+    const external = join(directories.root, 'external');
+    const redirect = join(nested, 'redirect');
+    await mkdir(nested);
+    await mkdir(external);
+    await symlink(external, redirect);
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        sourceRoot: directories.sourceRoot,
+        dataDirectory: join(redirect, 'deep', 'local-data'),
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    await expect(stat(join(external, 'deep'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('opens an existing database with no-follow semantics', async () => {
+    const directories = await localDirectories('database-symlink');
+    const target = join(directories.root, 'outside-database');
+    await mkdir(directories.dataDirectory);
+    await writeFile(target, 'must-not-be-opened\n');
+    await symlink(
+      target,
+      join(directories.dataDirectory, 'application.sqlite'),
+    );
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(await readFile(target, 'utf8')).toBe('must-not-be-opened\n');
   });
 
   it('keeps diagnostics deterministic and free of secret values and token hashes', async () => {

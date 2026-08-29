@@ -10,16 +10,15 @@
 
 import { createHmac, randomBytes } from 'node:crypto';
 import {
-  chmod,
+  constants,
+  type FileHandle,
   lstat,
   mkdir,
   open,
-  readFile,
-  stat,
-  writeFile,
+  realpath,
 } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import {
   type ResolvedApplicationRuntime,
   type RuntimeProviderOverrides,
@@ -249,7 +248,8 @@ export async function initializeLocalApplicationRuntime(
     providers: options.providers,
   });
   const paths = resolveLocalRuntimePaths(options);
-  await prepareLocalFilesystem(paths);
+  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const canonicalSourceRoot = await prepareLocalFilesystem(paths, sourceRoot);
 
   const db =
     options.db ?? (await getDatabase({ type: 'sqlite', url: paths.database }));
@@ -259,6 +259,7 @@ export async function initializeLocalApplicationRuntime(
       'The local application runtime requires a SQLite database.',
     );
   }
+  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
   await tuneLocalSqlite(db);
   await options.prepareDatabase?.(db);
   await ensureBootstrapTable(db);
@@ -273,6 +274,7 @@ export async function initializeLocalApplicationRuntime(
     backgroundJobs: options.backgroundJobs === true,
     paidCapabilities: options.paidCapabilities === true,
     now: options.now ?? (() => new Date()),
+    canonicalSourceRoot,
   });
   const bootstrap = await runtime.ensureBootstrapInvitation();
   return {
@@ -292,6 +294,7 @@ interface LocalApplicationRuntimeState {
   backgroundJobs: boolean;
   paidCapabilities: boolean;
   now: () => Date;
+  canonicalSourceRoot: string;
 }
 
 /** Initialized local runtime used by server startup and onboarding handlers. */
@@ -305,6 +308,7 @@ export class LocalApplicationRuntime {
   private readonly bootstrapTtlSeconds: number;
   private readonly sessionTtlSeconds: number;
   private readonly now: () => Date;
+  private readonly canonicalSourceRoot: string;
 
   constructor(state: LocalApplicationRuntimeState) {
     this.db = state.db;
@@ -316,6 +320,7 @@ export class LocalApplicationRuntime {
     this.backgroundJobsEnabled = state.backgroundJobs;
     this.paidCapabilitiesEnabled = state.paidCapabilities;
     this.now = state.now;
+    this.canonicalSourceRoot = state.canonicalSourceRoot;
   }
 
   /**
@@ -521,7 +526,11 @@ export class LocalApplicationRuntime {
   }
 
   private async hashBootstrapToken(token: string): Promise<string> {
-    const secret = await readFile(this.paths.applicationSecret, 'utf8');
+    const secret = await readSafeFile(
+      this.paths.applicationSecret,
+      this.canonicalSourceRoot,
+      'Application secret',
+    );
     return createHmac('sha256', secret.trim()).update(token).digest('hex');
   }
 }
@@ -671,71 +680,282 @@ async function tuneLocalSqlite(db: DatabaseInterface): Promise<void> {
   await db.query('PRAGMA busy_timeout = 5000');
 }
 
-async function prepareLocalFilesystem(paths: LocalRuntimePaths): Promise<void> {
-  await mkdir(paths.root, { recursive: true, mode: 0o700 });
-  await mkdir(paths.assets, { recursive: true, mode: 0o700 });
-  await mkdir(paths.secrets, { recursive: true, mode: 0o700 });
-  await assertPlainDirectory(paths.root);
-  await assertPlainDirectory(paths.assets);
-  await assertPlainDirectory(paths.secrets);
-  await chmod(paths.root, 0o700);
-  await chmod(paths.assets, 0o700);
-  await chmod(paths.secrets, 0o700);
+async function prepareLocalFilesystem(
+  paths: LocalRuntimePaths,
+  sourceRoot: string,
+): Promise<string> {
+  requireNoFollowSupport();
+  const canonicalSourceRoot = await realpath(sourceRoot);
+  await ensureSafeDirectoryTree(paths.root, canonicalSourceRoot);
+  await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
+  await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
 
-  await assertPlainFileOrMissing(paths.database, 'SQLite database');
-  const database = await open(paths.database, 'a', 0o600);
+  const database = await openSafeFile(
+    paths.database,
+    constants.O_RDWR | constants.O_CREAT,
+    0o600,
+    'SQLite database',
+    canonicalSourceRoot,
+  );
+  await database.chmod(0o600);
   await database.close();
-  await chmod(paths.database, 0o600);
+  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
 
-  try {
-    await assertPlainFileOrMissing(
-      paths.applicationSecret,
-      'Application secret',
-    );
-    await stat(paths.applicationSecret);
-    await chmod(paths.applicationSecret, 0o600);
-  } catch (error) {
-    if (!isMissingFile(error)) throw error;
-    const secret = randomBytes(32).toString('base64url');
-    try {
-      await writeFile(paths.applicationSecret, `${secret}\n`, {
-        encoding: 'utf8',
-        mode: 0o600,
-        flag: 'wx',
-      });
-    } catch (writeError) {
-      // A concurrent idempotent startup may have won the exclusive create.
-      if (!isFileAlreadyExists(writeError)) throw writeError;
-    }
-    await chmod(paths.applicationSecret, 0o600);
-  }
+  await ensureApplicationSecret(paths.applicationSecret, canonicalSourceRoot);
+  return canonicalSourceRoot;
 }
 
-async function assertPlainDirectory(path: string): Promise<void> {
-  const details = await lstat(path);
-  if (details.isSymbolicLink() || !details.isDirectory()) {
-    throw new LocalRuntimeError(
-      'invalid_configuration',
-      `Local runtime directory must be a real directory: ${path}`,
-    );
-  }
-}
-
-async function assertPlainFileOrMissing(
+async function ensureSafeDirectoryTree(
   path: string,
-  label: string,
+  canonicalSourceRoot: string,
 ): Promise<void> {
+  const components = absolutePathComponents(path);
+  for (const component of components) {
+    let created = false;
+    try {
+      const details = await lstat(component);
+      if (details.isSymbolicLink() || !details.isDirectory()) {
+        throw unsafeFilesystemEntry(
+          `Local runtime path component must be a real directory: ${component}`,
+        );
+      }
+    } catch (error) {
+      if (!isMissingFile(error)) throw error;
+      try {
+        await mkdir(component, { mode: 0o700 });
+        created = true;
+      } catch (mkdirError) {
+        // A concurrent initializer may have created the component. It is still
+        // opened and validated without following links below.
+        if (!isFileAlreadyExists(mkdirError)) throw mkdirError;
+      }
+    }
+
+    const directory = await openSafeDirectory(component, canonicalSourceRoot);
+    try {
+      if (created || component === path) await directory.chmod(0o700);
+      await assertCanonicalEntry(component, canonicalSourceRoot);
+    } finally {
+      await directory.close();
+    }
+  }
+  await validateExistingPathChain(path, canonicalSourceRoot, 'directory');
+}
+
+async function ensureApplicationSecret(
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  let secret: FileHandle;
   try {
-    const details = await lstat(path);
-    if (details.isSymbolicLink() || !details.isFile()) {
-      throw new LocalRuntimeError(
-        'invalid_configuration',
-        `${label} must be a regular file and cannot be a symbolic link.`,
+    secret = await openSafeFile(
+      path,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      0o600,
+      'Application secret',
+      canonicalSourceRoot,
+    );
+    await secret.writeFile(
+      `${randomBytes(32).toString('base64url')}\n`,
+      'utf8',
+    );
+    await secret.sync();
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+    secret = await openSafeFile(
+      path,
+      constants.O_RDONLY,
+      0o600,
+      'Application secret',
+      canonicalSourceRoot,
+    );
+  }
+  try {
+    await secret.chmod(0o600);
+  } finally {
+    await secret.close();
+  }
+  await validateExistingPathChain(path, canonicalSourceRoot, 'file');
+}
+
+async function readSafeFile(
+  path: string,
+  canonicalSourceRoot: string,
+  label: string,
+): Promise<string> {
+  await validateExistingPathChain(path, canonicalSourceRoot, 'file');
+  const file = await openSafeFile(
+    path,
+    constants.O_RDONLY,
+    0o600,
+    label,
+    canonicalSourceRoot,
+  );
+  try {
+    const contents = await file.readFile('utf8');
+    await validateExistingPathChain(path, canonicalSourceRoot, 'file');
+    return contents;
+  } finally {
+    await file.close();
+  }
+}
+
+async function openSafeDirectory(path: string, canonicalSourceRoot: string) {
+  let directory: FileHandle | undefined;
+  try {
+    directory = await open(
+      path,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    await validateOpenHandlePath(
+      directory,
+      path,
+      'directory',
+      canonicalSourceRoot,
+    );
+    return directory;
+  } catch (error) {
+    await directory?.close();
+    if (error instanceof LocalRuntimeError) throw error;
+    throw unsafeFilesystemEntry(
+      `Could not safely open local runtime directory: ${path}`,
+      error,
+    );
+  }
+}
+
+async function openSafeFile(
+  path: string,
+  flags: number,
+  mode: number,
+  label: string,
+  canonicalSourceRoot: string,
+) {
+  let file: FileHandle | undefined;
+  try {
+    file = await open(path, flags | constants.O_NOFOLLOW, mode);
+    await validateOpenHandlePath(file, path, 'file', canonicalSourceRoot);
+    return file;
+  } catch (error) {
+    await file?.close();
+    if (error instanceof LocalRuntimeError || isFileAlreadyExists(error)) {
+      throw error;
+    }
+    throw unsafeFilesystemEntry(
+      `${label} could not be opened without following symbolic links.`,
+      error,
+    );
+  }
+}
+
+async function validateOpenHandlePath(
+  handle: FileHandle,
+  path: string,
+  expectedType: 'directory' | 'file',
+  canonicalSourceRoot: string,
+): Promise<void> {
+  const opened = await handle.stat();
+  const current = await lstat(path);
+  const expectedDirectory = expectedType === 'directory';
+  if (
+    current.isSymbolicLink() ||
+    (expectedDirectory ? !opened.isDirectory() : !opened.isFile()) ||
+    (expectedDirectory ? !current.isDirectory() : !current.isFile()) ||
+    opened.dev !== current.dev ||
+    opened.ino !== current.ino
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local runtime ${expectedType} changed while it was being opened: ${path}`,
+    );
+  }
+  await validateExistingPathChain(path, canonicalSourceRoot, expectedType);
+  const afterValidation = await lstat(path);
+  if (
+    afterValidation.isSymbolicLink() ||
+    opened.dev !== afterValidation.dev ||
+    opened.ino !== afterValidation.ino
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local runtime ${expectedType} changed during validation: ${path}`,
+    );
+  }
+}
+
+async function validateExistingPathChain(
+  path: string,
+  canonicalSourceRoot: string,
+  leafType: 'directory' | 'file',
+): Promise<void> {
+  const components = absolutePathComponents(path);
+  for (const [index, component] of components.entries()) {
+    const details = await lstat(component);
+    const expectedFile = index === components.length - 1 && leafType === 'file';
+    if (
+      details.isSymbolicLink() ||
+      (expectedFile ? !details.isFile() : !details.isDirectory())
+    ) {
+      throw unsafeFilesystemEntry(
+        `Local runtime path contains an unsafe component: ${component}`,
       );
     }
-  } catch (error) {
-    if (!isMissingFile(error)) throw error;
+    await assertCanonicalEntry(component, canonicalSourceRoot);
   }
+}
+
+async function assertCanonicalEntry(
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  const canonical = await realpath(path);
+  if (!sameFilesystemPath(canonical, path)) {
+    throw unsafeFilesystemEntry(
+      `Local runtime path must not be redirected: ${path}`,
+    );
+  }
+  if (isInside(canonicalSourceRoot, canonical)) {
+    throw unsafeFilesystemEntry(
+      'Local application data must remain outside the canonical source tree.',
+    );
+  }
+}
+
+function absolutePathComponents(path: string): string[] {
+  const absolute = resolve(path);
+  const root = parse(absolute).root;
+  const parts = absolute.slice(root.length).split(sep).filter(Boolean);
+  const components = [root];
+  for (const part of parts) {
+    components.push(resolve(components.at(-1) as string, part));
+  }
+  return components;
+}
+
+function requireNoFollowSupport(): void {
+  if (
+    typeof constants.O_NOFOLLOW !== 'number' ||
+    constants.O_NOFOLLOW === 0 ||
+    typeof constants.O_DIRECTORY !== 'number' ||
+    constants.O_DIRECTORY === 0
+  ) {
+    throw unsafeFilesystemEntry(
+      'This platform cannot safely initialize local storage without no-follow filesystem support.',
+    );
+  }
+}
+
+function sameFilesystemPath(left: string, right: string): boolean {
+  const normalizedLeft = resolve(left);
+  const normalizedRight = resolve(right);
+  return platform() === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+function unsafeFilesystemEntry(message: string, cause?: unknown) {
+  const error = new LocalRuntimeError('invalid_configuration', message);
+  if (cause !== undefined)
+    Object.defineProperty(error, 'cause', { value: cause });
+  return error;
 }
 
 function validateBootstrapTtl(value: number): number {

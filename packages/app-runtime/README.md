@@ -25,6 +25,10 @@ The default data directory is the current user's OS application-data directory
 `$XDG_DATA_HOME` / `~/.local/share` on Linux). It contains a mode-0600 SQLite
 database, a user-owned asset directory, and generated mode-0600 application
 secret material. Placing this directory inside the source checkout is refused.
+Every existing path component is opened without following symbolic links and
+checked against its canonical path before descendants or secret bytes are
+written. Platforms that do not expose the required no-follow directory/file
+semantics fail closed during initialization.
 
 Owner onboarding binds to `127.0.0.1` by default and rejects non-loopback hosts.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,

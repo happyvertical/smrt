@@ -107,6 +107,10 @@ never the source checkout. Directories are mode `0700`; the database and
 generated application-secret file are mode `0600`. SQLite enables foreign keys,
 WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
+Initialization walks every existing storage-path component without following
+symbolic links, verifies canonical source-tree separation, and performs chmod
+through validated file descriptors. A platform without the required no-follow
+file and directory semantics is refused rather than initialized unsafely.
 
 Only an HMAC of the onboarding token is stored. The plaintext is returned once,
 expires within fifteen minutes, and is consumed in the same serialized database
