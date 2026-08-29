@@ -15,6 +15,10 @@ pnpm add @happyvertical/smrt-config
 ```javascript
 // smrt.config.js
 export default {
+  runtime: {
+    profile: 'local',
+  },
+
   smrt: {
     cacheDir: '.cache',
     logLevel: 'info',
@@ -38,6 +42,69 @@ export default {
   },
 };
 ```
+
+### Application runtime profiles
+
+`runtime.profile` selects a validated infrastructure composition without
+forking application objects or workflows. Validation happens before startup;
+unsupported combinations throw `RuntimeProfileValidationError` with a recovery
+action.
+
+```typescript
+// smrt.config.ts
+import { defineConfig } from '@happyvertical/smrt-config';
+
+export default defineConfig({
+  runtime: {
+    profile: 'self-hosted',
+    providers: {
+      authentication: { provider: 'magic-link' },
+      tenancy: { mode: 'multi-tenant', context: 'required' },
+      assets: { provider: 'local-files' },
+    },
+  },
+});
+```
+
+```typescript
+// application startup
+import {
+  loadConfig,
+  resolveConfiguredApplicationRuntime,
+} from '@happyvertical/smrt-config';
+
+await loadConfig();
+const runtime = resolveConfiguredApplicationRuntime();
+// Safe for doctor output and agent inspection: provider selectors and derived
+// capabilities are present; URLs, paths, credentials, and secret values are not.
+console.log(JSON.stringify(runtime));
+```
+
+| Profile | Database | Authentication | Tenancy | Assets / secrets | Jobs | Network |
+| --- | --- | --- | --- | --- | --- | --- |
+| `local` | user-owned SQLite | single-use owner bootstrap | real default tenant | user-owned local files | embedded (`inline` override allowed) | loopback |
+| `self-hosted` | operator PostgreSQL | OIDC (`magic-link` allowed) | single tenant (`multi-tenant` allowed) | S3-compatible + environment secrets (documented local/external overrides allowed) | external worker | public TLS |
+| `cloud` | managed PostgreSQL | hosted identity | required multi-tenant context, application isolation or RLS | managed object storage/secrets | scalable workers | public TLS |
+
+Every profile supports logical export/import. The local profile additionally
+advertises file-snapshot backup; deployment profiles assign physical backup to
+the operator or managed provider.
+
+The override seam selects only infrastructure providers. It cannot modify
+domain models, generated REST/CLI/MCP/WebMCP definitions, action-effect
+metadata, approval policy, authorization records, or the job invocation API.
+Those are cross-profile invariants and are emitted in every resolved snapshot.
+Provider implementations keep their credentials and connection values in their
+own configuration; do not add those values to `runtime.providers`.
+
+Use `resolveApplicationRuntime(config.runtime)` for a pure, explicit value such
+as a test fixture. Application startup should use
+`resolveConfiguredApplicationRuntime()`: it composes the loaded file with
+highest-priority `setConfig()` overrides before validation. `getConfig()` keeps
+its legacy meaning and returns only loaded file state. Successive `setConfig()`
+calls deep-merge providers while the profile is unchanged; an explicit profile
+switch resets earlier runtime provider selections before applying the new
+profile.
 
 ### Use config in code
 
@@ -118,6 +185,9 @@ const sanitized = sanitizeConfig(config);
 | `defineConfig(config)` | Type-safe config file helper |
 | `exportConfig(config, options?)` | SSG-safe export (defaults to no secrets) |
 | `sanitizeConfig(config)` | Strip secret-matching keys |
+| `resolveApplicationRuntime(config)` | Resolve and fail-closed validate a runtime profile |
+| `resolveConfiguredApplicationRuntime()` | Resolve effective file plus runtime-overridden profile config |
+| `getApplicationRuntimePreset(profile)` | Inspect an immutable copy of a profile preset |
 | `mergeExportedConfig(baseConfig, exportedConfig)` | Merge an exported config over a base |
 | `parseExportedConfig(raw)` | Parse an exported config string |
 
@@ -131,7 +201,7 @@ Configuration merging (highest to lowest):
 
 ### Key Types
 
-`SmrtConfig`, `SmrtGlobalConfig`, `DatabaseConfig`, `SiteConfig`, `MigrationsConfig`, `LoadConfigOptions`, `ExportConfig`, `ExportConfigOptions`
+`SmrtConfig`, `SmrtGlobalConfig`, `ApplicationRuntimeConfig`, `ResolvedApplicationRuntime`, `RuntimeProviders`, `RuntimeCapabilities`, `RuntimeInvariants`, `RuntimeProfileValidationError`, `DatabaseConfig`, `SiteConfig`, `MigrationsConfig`, `LoadConfigOptions`, `ExportConfig`, `ExportConfigOptions`
 
 ## Dependencies
 

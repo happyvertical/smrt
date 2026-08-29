@@ -5,6 +5,13 @@ import {
   getRuntimeConfig,
   mergeConfigs,
 } from './merge.js';
+import {
+  RuntimeProfileValidationError as _RuntimeProfileValidationError,
+  resolveApplicationRuntime as _resolveApplicationRuntime,
+  validateApplicationRuntimeConfigShape as _validateApplicationRuntimeConfigShape,
+  type ApplicationRuntimeConfig,
+  type ResolvedApplicationRuntime,
+} from './runtime-profile.js';
 import type { LoadConfigOptions, SmrtConfig } from './types.js';
 
 // Re-export config export utilities
@@ -16,6 +23,44 @@ export {
   sanitizeConfig,
 } from './export.js';
 export { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
+export type {
+  ApplicationRuntimeConfig,
+  ApplicationRuntimeProfile,
+  AssetOwnership,
+  AssetStorageProvider,
+  AuthenticationProvider,
+  BackupProvider,
+  ConnectionOwnership,
+  DatabaseEngine,
+  JobTopology,
+  NetworkExposure,
+  OwnerBootstrapMode,
+  ResolvedApplicationRuntime,
+  RuntimeAssetProvider,
+  RuntimeAuthenticationProvider,
+  RuntimeCapabilities,
+  RuntimeDatabaseProvider,
+  RuntimeInvariants,
+  RuntimeJobProvider,
+  RuntimeNetworkProvider,
+  RuntimeOverrideReport,
+  RuntimePortabilityProvider,
+  RuntimeProfileValidationIssue,
+  RuntimeProviderOverrides,
+  RuntimeProviders,
+  RuntimeSecretProvider,
+  RuntimeTenancyProvider,
+  SecretOwnership,
+  SecretProvider,
+  TenancyMode,
+  TenantContextMode,
+  TenantIsolation,
+} from './runtime-profile.js';
+export {
+  getApplicationRuntimePreset,
+  RuntimeProfileValidationError,
+  resolveApplicationRuntime,
+} from './runtime-profile.js';
 
 // Re-export types
 export type {
@@ -120,7 +165,7 @@ export async function loadConfig(
 }
 
 /**
- * Return the full merged configuration synchronously.
+ * Return the loaded file configuration synchronously.
  *
  * Reads from `globalThis.__smrtConfigCache` without triggering a file search.
  * Returns `null` when {@link loadConfig} has not been called yet (or after
@@ -137,11 +182,80 @@ export async function loadConfig(
  * ```
  *
  * @see {@link loadConfig}
+ * @see {@link resolveConfiguredApplicationRuntime}
  * @see {@link getSiteConfig}
  * @see {@link getModuleConfig}
  */
 export function getConfig(): SmrtConfig | null {
   return getLoadedConfig();
+}
+
+/**
+ * Resolve the effective application runtime using the documented config
+ * priority: runtime overrides set by {@link setConfig} > loaded file config >
+ * profile defaults.
+ *
+ * This accessor is intentionally separate from {@link getConfig}, whose legacy
+ * contract returns the loaded file object only. When a runtime override selects
+ * a different profile, lower-priority provider overrides are discarded so they
+ * cannot leak profile-specific choices (for example local files or inline jobs)
+ * into the new profile. Provider overrides still deep-merge when the profile is
+ * unchanged.
+ *
+ * @returns A validated, deterministic, secret-free runtime snapshot.
+ * @throws {RuntimeProfileValidationError} When no profile is configured or the
+ * effective provider composition violates a profile invariant.
+ */
+export function resolveConfiguredApplicationRuntime(): Readonly<ResolvedApplicationRuntime> {
+  const loadedConfig = getLoadedConfig();
+  const runtimeConfig = getRuntimeConfig();
+  const fileRuntime = (
+    loadedConfig && Object.hasOwn(loadedConfig, 'runtime')
+      ? loadedConfig.runtime
+      : undefined
+  ) as (ApplicationRuntimeConfig & Record<string, unknown>) | undefined;
+  const runtimeOverride = (
+    Object.hasOwn(runtimeConfig, 'runtime') ? runtimeConfig.runtime : undefined
+  ) as
+    | (Partial<ApplicationRuntimeConfig> & Record<string, unknown>)
+    | undefined;
+
+  for (const layer of [fileRuntime, runtimeOverride]) {
+    if (layer === undefined) continue;
+    const shapeIssues = _validateApplicationRuntimeConfigShape(layer);
+    if (shapeIssues.length > 0) {
+      throw new _RuntimeProfileValidationError([...shapeIssues]);
+    }
+  }
+
+  const fileHasProfile =
+    fileRuntime !== undefined && Object.hasOwn(fileRuntime, 'profile');
+  const runtimeSelectsProfile =
+    runtimeOverride !== undefined && Object.hasOwn(runtimeOverride, 'profile');
+  const profileChanged =
+    runtimeSelectsProfile &&
+    runtimeOverride.profile !==
+      (fileHasProfile ? fileRuntime.profile : undefined);
+
+  // A profile switch intentionally resets provider selectors from the lower
+  // priority profile, but it must not make invalid file configuration vanish.
+  // Validate that layer before removing its profile-specific providers, then
+  // preserve every root field so the effective resolver remains fail-closed.
+  if (profileChanged && fileHasProfile) {
+    _resolveApplicationRuntime(fileRuntime as ApplicationRuntimeConfig);
+  }
+  const fileRuntimeWithoutProviders = { ...(fileRuntime ?? {}) };
+  delete fileRuntimeWithoutProviders.providers;
+
+  const effective = mergeConfigs<Record<string, unknown>>(
+    {},
+    profileChanged ? fileRuntimeWithoutProviders : (fileRuntime ?? {}),
+    runtimeOverride ?? {},
+  );
+
+  return _resolveApplicationRuntime(
+    effective as unknown as ApplicationRuntimeConfig,
+  );
 }
 
 /**
@@ -293,7 +407,9 @@ export function getPackageConfig<T extends Record<string, unknown>>(
  *
  * Deep-merges `config` into an in-memory store that takes the highest priority
  * in every subsequent {@link getModuleConfig} / {@link getPackageConfig} call.
- * Successive calls accumulate — they do not replace earlier overrides.
+ * Successive calls accumulate. When a call explicitly changes the runtime
+ * profile, the stored runtime provider subtree is reset before merging so
+ * profile-specific selectors cannot leak into the new profile.
  *
  * Common uses:
  * - Inject test doubles or environment-specific values without a config file.

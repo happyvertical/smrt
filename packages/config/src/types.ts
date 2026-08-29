@@ -1,4 +1,5 @@
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+import type { ApplicationRuntimeConfig } from './runtime-profile.js';
 
 /**
  * Global SMRT framework options that apply to all modules unless overridden.
@@ -680,6 +681,9 @@ export interface SmrtConfig {
 
   /** Domain-scoped agent/developer knowledge generation and exposure. */
   knowledge?: DomainKnowledgeConfig;
+
+  /** Validated application infrastructure composition. */
+  runtime?: ApplicationRuntimeConfig;
 
   /**
    * Module-scoped configurations keyed by module name.

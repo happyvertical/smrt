@@ -1,3 +1,7 @@
+import {
+  RuntimeProfileValidationError,
+  validateApplicationRuntimeConfigShape,
+} from './runtime-profile.js';
 import type { SmrtConfig } from './types.js';
 
 declare global {
@@ -11,6 +15,19 @@ globalThis.__smrtRuntimeConfig ??= {};
 // Keys that must never be written when merging untrusted / DB-exported config,
 // to avoid prototype pollution.
 const UNSAFE_KEYS = new Set<string>(['__proto__', 'constructor', 'prototype']);
+
+function defineOwn(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
 
 /**
  * True only for plain config maps (prototype is `Object.prototype` or `null`),
@@ -42,7 +59,7 @@ function deepClone<V>(value: V): V {
       if (UNSAFE_KEYS.has(key)) {
         continue;
       }
-      out[key] = deepClone(value[key]);
+      defineOwn(out, key, deepClone(value[key]));
     }
     return out as V;
   }
@@ -81,10 +98,10 @@ function deepMerge<T extends Record<string, unknown>>(
 
   // Carry over target-only keys, cloned so the result never aliases `target`.
   for (const key of Object.keys(tgt)) {
-    if (UNSAFE_KEYS.has(key) || key in src) {
+    if (UNSAFE_KEYS.has(key) || Object.hasOwn(src, key)) {
       continue;
     }
-    result[key] = deepClone(tgt[key]);
+    defineOwn(result, key, deepClone(tgt[key]));
   }
 
   for (const key of Object.keys(src)) {
@@ -92,17 +109,17 @@ function deepMerge<T extends Record<string, unknown>>(
       continue;
     }
     const sourceValue = src[key];
-    const targetValue = tgt[key];
+    const targetValue = Object.hasOwn(tgt, key) ? tgt[key] : undefined;
 
     if (isPlainObject(sourceValue) && isPlainObject(targetValue)) {
       // Recurse — the child call returns a fully-owned object (no re-clone).
-      result[key] = deepMerge(targetValue, sourceValue);
+      defineOwn(result, key, deepMerge(targetValue, sourceValue));
     } else if (sourceValue !== undefined && sourceValue !== null) {
       // `source` wins — clone its (possibly nested) value so we don't alias it.
-      result[key] = deepClone(sourceValue);
+      defineOwn(result, key, deepClone(sourceValue));
     } else if (targetValue !== undefined) {
       // `source` is null/undefined — keep the (cloned) target value.
-      result[key] = deepClone(targetValue);
+      defineOwn(result, key, deepClone(targetValue));
     }
   }
 
@@ -114,7 +131,9 @@ function deepMerge<T extends Record<string, unknown>>(
  *
  * Runtime overrides take the highest priority in the merge order:
  * runtime > file config > defaults. Subsequent calls accumulate — they do not
- * replace previous overrides. Call {@link clearRuntimeConfig} to reset.
+ * replace previous overrides, except that explicitly switching runtime profile
+ * resets the stored runtime provider subtree. Call {@link clearRuntimeConfig}
+ * to reset all overrides.
  *
  * This is the low-level setter; consumer code should call {@link setConfig}
  * from `index.ts` which delegates here.
@@ -125,10 +144,46 @@ function deepMerge<T extends Record<string, unknown>>(
  * @see {@link getRuntimeConfig}
  */
 export function setConfig(config: Partial<SmrtConfig>): void {
-  globalThis.__smrtRuntimeConfig = deepMerge(
-    globalThis.__smrtRuntimeConfig || {},
-    config,
-  );
+  const incomingRuntime = Object.hasOwn(config, 'runtime')
+    ? (config.runtime as unknown)
+    : undefined;
+  if (
+    incomingRuntime !== null &&
+    (typeof incomingRuntime === 'object' ||
+      typeof incomingRuntime === 'function') &&
+    Object.hasOwn(incomingRuntime, 'profile')
+  ) {
+    const profileIssues = validateApplicationRuntimeConfigShape(
+      incomingRuntime,
+    ).filter((issue) => issue.path === 'runtime' || issue.path === 'profile');
+    if (profileIssues.length > 0) {
+      throw new RuntimeProfileValidationError([...profileIssues]);
+    }
+  }
+
+  let current = globalThis.__smrtRuntimeConfig || {};
+  const currentRuntime =
+    Object.hasOwn(current, 'runtime') && isPlainObject(current.runtime)
+      ? current.runtime
+      : undefined;
+  const incomingRuntimeMap =
+    Object.hasOwn(config, 'runtime') && isPlainObject(config.runtime)
+      ? config.runtime
+      : undefined;
+  const switchesProfile =
+    currentRuntime !== undefined &&
+    incomingRuntimeMap !== undefined &&
+    Object.hasOwn(currentRuntime, 'profile') &&
+    Object.hasOwn(incomingRuntimeMap, 'profile') &&
+    currentRuntime.profile !== incomingRuntimeMap.profile;
+
+  if (switchesProfile) {
+    current = deepClone(current);
+    const resetRuntime = current.runtime as unknown as Record<string, unknown>;
+    delete resetRuntime.providers;
+  }
+
+  globalThis.__smrtRuntimeConfig = deepMerge(current, config);
 }
 
 /**

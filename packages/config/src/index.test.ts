@@ -7,6 +7,7 @@ import {
   getModuleConfig,
   getPackageConfig,
   loadConfig,
+  resolveConfiguredApplicationRuntime,
   setConfig,
 } from './index.js';
 import { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
@@ -86,6 +87,19 @@ describe('mergeConfigs', () => {
       .demo;
     expect(demo.factory).toBe(factory);
     expect(demo.factory()).toBe('built');
+  });
+
+  it('does not let polluted prototypes suppress own merge defaults', () => {
+    Object.defineProperty(Object.prototype, 'safeOwnDefault', {
+      configurable: true,
+      value: 'polluted',
+    });
+    try {
+      const merged = mergeConfigs({ safeOwnDefault: 'expected' }, {}, {});
+      expect(merged.safeOwnDefault).toBe('expected');
+    } finally {
+      delete (Object.prototype as Record<string, unknown>).safeOwnDefault;
+    }
   });
 });
 
@@ -244,6 +258,495 @@ describe('@smrt/config', () => {
 
       // Parent's config must NOT leak in — no config found from childDir.
       expect(config).toEqual({});
+    });
+  });
+
+  describe('resolveConfiguredApplicationRuntime', () => {
+    it('lets a runtime profile replace a loaded file profile safely', async () => {
+      const runtimeConfigPath = join(testDir, 'runtime-profile.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            providers: { jobs: { topology: 'inline' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      setConfig({
+        runtime: {
+          profile: 'cloud',
+          providers: {
+            assets: { provider: 's3-compatible' },
+            tenancy: { isolation: 'application' },
+          },
+        },
+      });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.profile).toBe('cloud');
+      expect(resolved.providers.database.engine).toBe('postgres');
+      expect(resolved.providers.jobs.topology).toBe('scalable');
+      expect(resolved.providers.assets.provider).toBe('s3-compatible');
+      expect(resolved.providers.tenancy.isolation).toBe('application');
+      expect(resolved.diagnostics.overrides).toEqual([
+        {
+          path: 'providers.tenancy.isolation',
+          from: 'database-rls',
+          to: 'application',
+        },
+        {
+          path: 'providers.assets.provider',
+          from: 'managed-object-storage',
+          to: 's3-compatible',
+        },
+      ]);
+    });
+
+    it('deep-merges nested runtime provider overrides over the same file profile', async () => {
+      const runtimeConfigPath = join(testDir, 'runtime-providers.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'self-hosted',
+            providers: {
+              assets: { provider: 'local-files' },
+              authentication: { provider: 'oidc' },
+              tenancy: { mode: 'single-tenant', context: 'defaulted' }
+            }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: {
+            authentication: { provider: 'magic-link' },
+            tenancy: { mode: 'multi-tenant', context: 'required' },
+          },
+        },
+      });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.providers.authentication.provider).toBe('magic-link');
+      expect(resolved.providers.tenancy.mode).toBe('multi-tenant');
+      expect(resolved.providers.tenancy.context).toBe('required');
+      expect(resolved.providers.assets.provider).toBe('local-files');
+      expect(resolved.diagnostics.secretValuesIncluded).toBe(false);
+    });
+
+    it('rejects unsupported file root fields during a profile switch', async () => {
+      const runtimeConfigPath = join(testDir, 'runtime-unknown-root.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            unexpectedPolicy: 'allow-all'
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /unexpectedPolicy: is not part of the runtime-profile contract/,
+      );
+    });
+
+    it('rejects unsupported file provider fields during a profile switch', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-unknown-provider-field.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            providers: {
+              jobs: { topology: 'inline', unexpectedCredential: 'secret' }
+            }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers\.jobs\.unexpectedCredential: is not a supported provider override/,
+      );
+    });
+
+    it('rejects unsupported profile-less file provider fields during a profile switch', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-unknown-provider-field.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            providers: {
+              jobs: { unexpectedCredential: 'secret' }
+            }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers\.jobs\.unexpectedCredential: is not a supported provider override/,
+      );
+    });
+
+    it('rejects non-object providers in a profile-less file runtime', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-malformed-providers.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default { runtime: { providers: 'not-an-object' } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers: must be an object/,
+      );
+    });
+
+    it('rejects invalid profile-less provider values without echoing them', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-invalid-topology.config.js',
+      );
+      const secretLikeValue = 'token-do-not-echo';
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            providers: { jobs: { topology: '${secretLikeValue}' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      }
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /providers\.jobs\.topology: must be one of inline, embedded, external, scalable/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
+
+    it('rejects a non-boolean network tls selector without echoing it', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-invalid-tls.config.js',
+      );
+      const secretLikeValue = 'secret-tls-value';
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            providers: { network: { tls: '${secretLikeValue}' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      }
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /providers\.network\.tls: must be one of false, true/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
+
+    it('rejects inherited provider selectors without echoing them', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-inherited-selector.config.js',
+      );
+      const secretLikeValue = 'inherited-token-do-not-echo';
+      writeFileSync(
+        runtimeConfigPath,
+        `const jobs = Object.create({ topology: '${secretLikeValue}' });
+        export default { runtime: { providers: { jobs } } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      }
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /providers\.jobs: must be an object with Object\.prototype or null/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
+
+    it('rejects inherited allowed selectors instead of applying them', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-inherited-allowed-selector.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `const jobs = Object.create({ topology: 'inline' });
+        export default { runtime: { providers: { jobs } } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers\.jobs: must be an object with Object\.prototype or null/,
+      );
+    });
+
+    it('ignores polluted Object.prototype profile and providers selectors', () => {
+      const secretLikeValue = 'polluted-secret-do-not-echo';
+      Object.defineProperties(Object.prototype, {
+        profile: { configurable: true, value: 'cloud' },
+        providers: {
+          configurable: true,
+          value: { jobs: { topology: secretLikeValue } },
+        },
+      });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      } finally {
+        delete (Object.prototype as Record<string, unknown>).profile;
+        delete (Object.prototype as Record<string, unknown>).providers;
+      }
+
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /profile: must be local, self-hosted, or cloud/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
+
+    it('rejects custom-prototype file and runtime roots without echoing them', async () => {
+      const fileSecret = 'file-root-secret-do-not-echo';
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-custom-prototype-root.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `const runtime = Object.create({ profile: '${fileSecret}' });
+        export default { runtime };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let fileError: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        fileError = error;
+      }
+      expect(fileError).toBeInstanceOf(Error);
+      expect((fileError as Error).message).toMatch(
+        /runtime: must be an object with Object\.prototype or null/,
+      );
+      expect((fileError as Error).message).not.toContain(fileSecret);
+
+      clearCache();
+      const runtimeSecret = 'runtime-root-secret-do-not-echo';
+      const runtime = Object.create({ profile: runtimeSecret });
+      setConfig({ runtime } as Parameters<typeof setConfig>[0]);
+
+      let runtimeError: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        runtimeError = error;
+      }
+      expect(runtimeError).toBeInstanceOf(Error);
+      expect((runtimeError as Error).message).toMatch(
+        /runtime: must be an object with Object\.prototype or null/,
+      );
+      expect((runtimeError as Error).message).not.toContain(runtimeSecret);
+    });
+
+    it('accepts null-prototype runtime provider maps', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-null-prototype-provider.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `const jobs = Object.create(null);
+        jobs.topology = 'inline';
+        const providers = Object.create(null);
+        providers.jobs = jobs;
+        export default { runtime: { profile: 'local', providers } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.profile).toBe('local');
+      expect(resolved.providers.jobs.topology).toBe('inline');
+      expect(resolved.diagnostics.secretValuesIncluded).toBe(false);
+    });
+
+    it('resets prior runtime providers when setConfig switches profile', () => {
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: { tenancy: { isolation: 'application' } },
+        },
+      });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      const cloud = resolveConfiguredApplicationRuntime();
+      expect(cloud.profile).toBe('cloud');
+      expect(cloud.providers.tenancy.isolation).toBe('database-rls');
+
+      setConfig({
+        runtime: {
+          profile: 'cloud',
+          providers: {
+            assets: { provider: 'managed-object-storage' },
+            secrets: { provider: 'managed' },
+          },
+        },
+      });
+      setConfig({ runtime: { profile: 'self-hosted' } });
+
+      const selfHosted = resolveConfiguredApplicationRuntime();
+      expect(selfHosted.profile).toBe('self-hosted');
+      expect(selfHosted.providers.assets.provider).toBe('s3-compatible');
+      expect(selfHosted.providers.secrets.provider).toBe('environment');
+    });
+
+    it('keeps nested runtime providers across same-profile setConfig calls', () => {
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: { assets: { provider: 'local-files' } },
+        },
+      });
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: { authentication: { provider: 'magic-link' } },
+        },
+      });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.providers.assets.provider).toBe('local-files');
+      expect(resolved.providers.authentication.provider).toBe('magic-link');
+    });
+
+    it('rejects owned invalid runtime profiles before merging with a loaded file', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-invalid-runtime-profile.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            providers: { jobs: { topology: 'inline' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      const secretLikeProfile = 'secret-profile-do-not-echo';
+      for (const profile of [null, undefined, secretLikeProfile]) {
+        let captured: unknown;
+        try {
+          setConfig({
+            runtime: {
+              profile,
+              providers: { jobs: { topology: 'scalable' } },
+            },
+          } as Parameters<typeof setConfig>[0]);
+        } catch (error) {
+          captured = error;
+        }
+        expect(captured).toBeInstanceOf(Error);
+        expect((captured as Error).message).toMatch(
+          /profile: must be local, self-hosted, or cloud/,
+        );
+        expect((captured as Error).message).not.toContain(secretLikeProfile);
+
+        const resolved = resolveConfiguredApplicationRuntime();
+        expect(resolved.profile).toBe('local');
+        expect(resolved.providers.jobs.topology).toBe('inline');
+      }
+    });
+
+    it('does not mutate accumulated runtime state for invalid profile switches', () => {
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: { assets: { provider: 'local-files' } },
+        },
+      });
+      const before = JSON.stringify(getRuntimeConfig());
+
+      for (const profile of [undefined, null, 'invalid-secret-profile']) {
+        expect(() =>
+          setConfig({
+            runtime: {
+              profile,
+              providers: { assets: { provider: 'managed-object-storage' } },
+            },
+          } as Parameters<typeof setConfig>[0]),
+        ).toThrowError(/profile: must be local, self-hosted, or cloud/);
+        expect(JSON.stringify(getRuntimeConfig())).toBe(before);
+      }
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.profile).toBe('self-hosted');
+      expect(resolved.providers.assets.provider).toBe('local-files');
     });
   });
 
