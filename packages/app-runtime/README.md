@@ -7,12 +7,19 @@ forking domain objects, generated surfaces, effects, approvals, or job calls.
 ## Private local applications
 
 ```ts
-import { initializeLocalApplicationRuntime } from '@happyvertical/smrt-app-runtime';
+import {
+  initializeLocalApplicationRuntime,
+  resolveLocalRuntimePaths,
+} from '@happyvertical/smrt-app-runtime';
+
+const paths = resolveLocalRuntimePaths({ appId: 'my-app' });
+const db = await openSqliteWithoutFollowingLinks(paths.database);
 
 const { runtime, bootstrap, diagnostics } =
   await initializeLocalApplicationRuntime({
     appId: 'my-app',
     sourceRoot: process.cwd(),
+    db,
     prepareDatabase: runApplicationMigrations,
   });
 
@@ -29,6 +36,13 @@ Every existing path component is opened without following symbolic links and
 checked against its canonical path before descendants or secret bytes are
 written. Platforms that do not expose the required no-follow directory/file
 semantics fail closed during initialization.
+
+The runtime currently requires an already-open `DatabaseInterface` bound to
+the resolved database path. It deliberately does not call the general SQL
+adapter with a pathname after validation, because that would reintroduce a
+symlink-replacement window. Automatic safe acquisition is tracked upstream in
+`happyvertical/sdk#1208`; callers must use an adapter that binds the verified
+inode without following links until that API is available.
 
 Owner onboarding binds to `127.0.0.1` by default and rejects non-loopback hosts.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,

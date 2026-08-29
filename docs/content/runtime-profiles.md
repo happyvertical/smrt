@@ -88,16 +88,23 @@ never copy profile conditionals into application code.
 
 `@happyvertical/smrt-app-runtime` implements the private local composition. The
 application supplies its normal idempotent migration hook; the runtime prepares
-the user-owned filesystem, opens and tunes file-backed SQLite, creates local
+the user-owned filesystem, validates and tunes injected file-backed SQLite, creates local
 application-secret material, and issues the first short-lived onboarding token.
 
 ```ts
-import { initializeLocalApplicationRuntime } from '@happyvertical/smrt-app-runtime';
+import {
+  initializeLocalApplicationRuntime,
+  resolveLocalRuntimePaths,
+} from '@happyvertical/smrt-app-runtime';
+
+const paths = resolveLocalRuntimePaths({ appId: 'my-app' });
+const db = await openSqliteWithoutFollowingLinks(paths.database);
 
 const { runtime, bootstrap, diagnostics } =
   await initializeLocalApplicationRuntime({
     appId: 'my-app',
     sourceRoot: process.cwd(),
+    db,
     prepareDatabase: runApplicationMigrations,
   });
 ```
@@ -111,6 +118,9 @@ Initialization walks every existing storage-path component without following
 symbolic links, verifies canonical source-tree separation, and performs chmod
 through validated file descriptors. A platform without the required no-follow
 file and directory semantics is refused rather than initialized unsafely.
+Until `happyvertical/sdk#1208` exposes atomic no-follow SQLite acquisition, the
+runtime requires a pre-opened `DatabaseInterface` bound to the resolved file.
+It never reopens that verified file by pathname.
 
 Only an HMAC of the onboarding token is stored. The plaintext is returned once,
 expires within fifteen minutes, and is consumed in the same serialized database

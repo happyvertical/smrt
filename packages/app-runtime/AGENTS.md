@@ -7,6 +7,8 @@ Application infrastructure composition for the validated runtime profiles in
 
 - `initializeLocalApplicationRuntime()` owns user data paths, SQLite tuning,
   local application-secret creation, and the single-use owner bootstrap flow.
+- A pre-opened SQLite `DatabaseInterface` bound to the resolved file is
+  required until `happyvertical/sdk#1208` provides atomic no-follow acquisition.
 - Application migrations are explicit through `prepareDatabase`; runtime never
   creates application model tables implicitly.
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /

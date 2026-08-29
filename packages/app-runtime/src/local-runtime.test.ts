@@ -1,3 +1,4 @@
+import { rmSync, symlinkSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -11,10 +12,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
-import { getDatabase } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  initializeLocalApplicationRuntime,
+  initializeLocalApplicationRuntime as initializeLocalApplicationRuntimeUnsafe,
+  type LocalApplicationRuntimeOptions,
   LocalRuntimeError,
   resolveLocalRuntimePaths,
 } from './index.js';
@@ -37,6 +39,28 @@ async function localDirectories(label: string) {
   const dataDirectory = join(root, 'data');
   await mkdir(sourceRoot);
   return { root, sourceRoot, dataDirectory };
+}
+
+async function initializeLocalApplicationRuntime(
+  options: Omit<LocalApplicationRuntimeOptions, 'db'> & {
+    db?: DatabaseInterface;
+  },
+) {
+  if (options.db) return initializeLocalApplicationRuntimeUnsafe(options);
+  const paths = resolveLocalRuntimePaths(options);
+  await mkdir(paths.root, { recursive: true });
+  const db = await getDatabase({ type: 'sqlite', url: paths.database });
+  return initializeLocalApplicationRuntimeUnsafe({ ...options, db });
+}
+
+function initializeWithUnopenedDatabase(
+  options: Omit<LocalApplicationRuntimeOptions, 'db'>,
+) {
+  const paths = resolveLocalRuntimePaths(options);
+  return initializeLocalApplicationRuntimeUnsafe({
+    ...options,
+    db: { url: paths.database } as DatabaseInterface,
+  });
 }
 
 async function countRows(
@@ -306,12 +330,25 @@ describe('local application runtime', () => {
   it('refuses public exposure before touching the filesystem', async () => {
     const directories = await localDirectories('public');
     await expect(
-      initializeLocalApplicationRuntime({
+      initializeWithUnopenedDatabase({
         appId: 'lolaus',
         ...directories,
         bindHost: '0.0.0.0',
       }),
     ).rejects.toMatchObject({ code: 'unsafe_public_exposure' });
+    await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('refuses automatic pathname opening before touching the filesystem', async () => {
+    const directories = await localDirectories('database-required');
+    await expect(
+      initializeLocalApplicationRuntimeUnsafe({
+        appId: 'lolaus',
+        ...directories,
+      } as LocalApplicationRuntimeOptions),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
     await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
       code: 'ENOENT',
     });
@@ -326,7 +363,7 @@ describe('local application runtime', () => {
     await symlink(target, join(secrets, 'application.secret'));
 
     await expect(
-      initializeLocalApplicationRuntime({
+      initializeWithUnopenedDatabase({
         appId: 'lolaus',
         ...directories,
       }),
@@ -341,7 +378,7 @@ describe('local application runtime', () => {
     await symlink(directories.sourceRoot, redirect);
 
     await expect(
-      initializeLocalApplicationRuntime({
+      initializeWithUnopenedDatabase({
         appId: 'lolaus',
         sourceRoot: directories.sourceRoot,
         dataDirectory: redirectedData,
@@ -361,7 +398,7 @@ describe('local application runtime', () => {
     await symlink(external, redirectedData);
 
     await expect(
-      initializeLocalApplicationRuntime({
+      initializeWithUnopenedDatabase({
         appId: 'lolaus',
         sourceRoot: directories.sourceRoot,
         dataDirectory: redirectedData,
@@ -383,7 +420,7 @@ describe('local application runtime', () => {
     await symlink(external, redirect);
 
     await expect(
-      initializeLocalApplicationRuntime({
+      initializeWithUnopenedDatabase({
         appId: 'lolaus',
         sourceRoot: directories.sourceRoot,
         dataDirectory: join(redirect, 'deep', 'local-data'),
@@ -405,12 +442,38 @@ describe('local application runtime', () => {
     );
 
     await expect(
-      initializeLocalApplicationRuntime({
+      initializeWithUnopenedDatabase({
         appId: 'lolaus',
         ...directories,
       }),
     ).rejects.toMatchObject({ code: 'invalid_configuration' });
     expect(await readFile(target, 'utf8')).toBe('must-not-be-opened\n');
+  });
+
+  it('never reopens a replaced database leaf at the adapter boundary', async () => {
+    const directories = await localDirectories('database-boundary-race');
+    const paths = resolveLocalRuntimePaths({ appId: 'lolaus', ...directories });
+    await mkdir(paths.root);
+    const db = await getDatabase({ type: 'sqlite', url: paths.database });
+    const target = join(directories.root, 'race-target');
+    await writeFile(target, 'must-remain-untouched\n');
+    let boundaryReached = false;
+    const options: LocalApplicationRuntimeOptions = {
+      appId: 'lolaus',
+      ...directories,
+      get db() {
+        boundaryReached = true;
+        rmSync(paths.database);
+        symlinkSync(target, paths.database);
+        return db;
+      },
+    };
+
+    await expect(
+      initializeLocalApplicationRuntimeUnsafe(options),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(boundaryReached).toBe(true);
+    expect(await readFile(target, 'utf8')).toBe('must-remain-untouched\n');
   });
 
   it('keeps diagnostics deterministic and free of secret values and token hashes', async () => {
