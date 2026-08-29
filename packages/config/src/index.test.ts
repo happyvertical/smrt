@@ -415,6 +415,68 @@ describe('@smrt/config', () => {
         /providers: must be an object/,
       );
     });
+
+    it('rejects invalid profile-less provider values without echoing them', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-invalid-topology.config.js',
+      );
+      const secretLikeValue = 'token-do-not-echo';
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            providers: { jobs: { topology: '${secretLikeValue}' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      }
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /providers\.jobs\.topology: must be one of inline, embedded, external, scalable/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
+
+    it('rejects a non-boolean network tls selector without echoing it', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-invalid-tls.config.js',
+      );
+      const secretLikeValue = 'secret-tls-value';
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            providers: { network: { tls: '${secretLikeValue}' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      }
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /providers\.network\.tls: must be one of false, true/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
   });
 
   describe('getModuleConfig', () => {

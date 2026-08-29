@@ -278,6 +278,37 @@ const PROVIDER_FIELDS = {
 
 type OverridableProvider = keyof typeof PROVIDER_FIELDS;
 
+const PROVIDER_VALUE_DOMAINS = {
+  database: {
+    engine: ['sqlite', 'postgres'],
+    connectionOwnership: ['user', 'operator', 'managed'],
+  },
+  authentication: {
+    provider: ['owner-bootstrap', 'oidc', 'magic-link', 'hosted-identity'],
+    ownerBootstrap: ['single-use', 'disabled'],
+  },
+  tenancy: {
+    mode: ['default-tenant', 'single-tenant', 'multi-tenant'],
+    context: ['defaulted', 'required'],
+    isolation: ['application', 'database-rls'],
+  },
+  assets: {
+    provider: ['local-files', 's3-compatible', 'managed-object-storage'],
+    ownership: ['user', 'operator', 'managed'],
+  },
+  secrets: {
+    provider: ['local-file', 'environment', 'external', 'managed'],
+    ownership: ['user', 'operator', 'managed'],
+  },
+  jobs: { topology: ['inline', 'embedded', 'external', 'scalable'] },
+  network: { exposure: ['loopback', 'public'], tls: [false, true] },
+} as const satisfies {
+  [Provider in OverridableProvider]: Record<
+    (typeof PROVIDER_FIELDS)[Provider][number],
+    readonly unknown[]
+  >;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -348,6 +379,9 @@ function rejectUnknownFields(
     const allowed = PROVIDER_FIELDS[
       providerName as OverridableProvider
     ] as readonly string[];
+    const valueDomains = PROVIDER_VALUE_DOMAINS[
+      providerName as OverridableProvider
+    ] as Record<string, readonly unknown[]>;
     for (const field of Object.keys(value).sort()) {
       if (!allowed.includes(field)) {
         issues.push({
@@ -356,6 +390,21 @@ function rejectUnknownFields(
           message: 'is not a supported provider override.',
           recovery:
             'Remove secret values and application-policy fields; configure only documented provider selectors.',
+        });
+        continue;
+      }
+      const suppliedValue = value[field];
+      const allowedValues = valueDomains[field];
+      if (
+        suppliedValue !== undefined &&
+        !allowedValues.includes(suppliedValue)
+      ) {
+        issues.push({
+          code: 'invalid_config',
+          path: `providers.${providerName}.${field}`,
+          message: `must be one of ${allowedValues.map(String).join(', ')}.`,
+          recovery:
+            'Choose a documented provider selector value; supplied values are omitted from diagnostics.',
         });
       }
     }
