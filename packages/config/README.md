@@ -101,7 +101,10 @@ Use `resolveApplicationRuntime(config.runtime)` for a pure, explicit value such
 as a test fixture. Application startup should use
 `resolveConfiguredApplicationRuntime()`: it composes the loaded file with
 highest-priority `setConfig()` overrides before validation. `getConfig()` keeps
-its legacy meaning and returns only loaded file state.
+its legacy meaning and returns only loaded file state. Successive `setConfig()`
+calls deep-merge providers while the profile is unchanged; an explicit profile
+switch resets earlier runtime provider selections before applying the new
+profile.
 
 ### Use config in code
 

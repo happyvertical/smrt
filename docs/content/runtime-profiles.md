@@ -64,7 +64,9 @@ context or TLS.
 When a runtime override selects a different profile, file-level provider
 overrides are discarded before the new preset resolves. This prevents a local
 choice such as inline jobs or local files from leaking into a cloud composition.
-When the profile stays the same, nested provider overrides deep-merge normally.
+The same reset applies when successive `setConfig()` calls explicitly change
+profile. When the profile stays the same, nested provider overrides deep-merge
+normally.
 
 ## Cross-profile invariants
 

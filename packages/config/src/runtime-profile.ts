@@ -347,7 +347,9 @@ function rejectUnknownFields(
     }
   }
 
-  const providers = input.providers;
+  const providers = Object.hasOwn(input, 'providers')
+    ? input.providers
+    : undefined;
   if (providers === undefined) return issues;
   if (!isPlainRecord(providers)) {
     issues.push({
@@ -397,7 +399,9 @@ function rejectUnknownFields(
         });
         continue;
       }
-      const suppliedValue = value[field];
+      const suppliedValue = Object.hasOwn(value, field)
+        ? value[field]
+        : undefined;
       const allowedValues = valueDomains[field];
       if (
         suppliedValue !== undefined &&
@@ -444,12 +448,16 @@ function applyOverrides(
   providers: RuntimeProviders,
   input: Record<string, unknown>,
 ): RuntimeOverrideReport[] {
-  const overrideRoot = isPlainRecord(input.providers) ? input.providers : {};
+  const overrideRoot =
+    Object.hasOwn(input, 'providers') && isPlainRecord(input.providers)
+      ? input.providers
+      : {};
   const report: RuntimeOverrideReport[] = [];
 
   for (const providerName of Object.keys(
     PROVIDER_FIELDS,
   ) as OverridableProvider[]) {
+    if (!Object.hasOwn(overrideRoot, providerName)) continue;
     const supplied = overrideRoot[providerName];
     if (!isPlainRecord(supplied)) continue;
     const target = providers[providerName] as unknown as Record<
@@ -457,6 +465,7 @@ function applyOverrides(
       unknown
     >;
     for (const field of PROVIDER_FIELDS[providerName]) {
+      if (!Object.hasOwn(supplied, field)) continue;
       const value = supplied[field];
       if (value === undefined) continue;
       const previous = target[field];
@@ -693,7 +702,7 @@ export function resolveApplicationRuntime(
   }
 
   const unknownIssues = validateApplicationRuntimeConfigShape(config);
-  const profile = config.profile;
+  const profile = Object.hasOwn(config, 'profile') ? config.profile : undefined;
   if (profile !== 'local' && profile !== 'self-hosted' && profile !== 'cloud') {
     throw new RuntimeProfileValidationError([
       ...unknownIssues,
