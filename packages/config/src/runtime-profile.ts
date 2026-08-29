@@ -168,6 +168,21 @@ export interface RuntimeProfileValidationIssue {
   recovery: string;
 }
 
+function isApplicationRuntimeProfile(
+  value: unknown,
+): value is ApplicationRuntimeProfile {
+  return value === 'local' || value === 'self-hosted' || value === 'cloud';
+}
+
+function invalidProfileIssue(): RuntimeProfileValidationIssue {
+  return {
+    code: 'invalid_config',
+    path: 'profile',
+    message: 'must be local, self-hosted, or cloud.',
+    recovery: 'Select one documented runtime profile.',
+  };
+}
+
 /** Aggregates deterministic, actionable failures before application startup. */
 export class RuntimeProfileValidationError extends Error {
   readonly issues: readonly RuntimeProfileValidationIssue[];
@@ -345,6 +360,13 @@ function rejectUnknownFields(
           'Move provider selection under providers or remove this field.',
       });
     }
+  }
+
+  if (
+    Object.hasOwn(input, 'profile') &&
+    !isApplicationRuntimeProfile(input.profile)
+  ) {
+    issues.push(invalidProfileIssue());
   }
 
   const providers = Object.hasOwn(input, 'providers')
@@ -703,15 +725,10 @@ export function resolveApplicationRuntime(
 
   const unknownIssues = validateApplicationRuntimeConfigShape(config);
   const profile = Object.hasOwn(config, 'profile') ? config.profile : undefined;
-  if (profile !== 'local' && profile !== 'self-hosted' && profile !== 'cloud') {
+  if (!isApplicationRuntimeProfile(profile)) {
     throw new RuntimeProfileValidationError([
       ...unknownIssues,
-      {
-        code: 'invalid_config',
-        path: 'profile',
-        message: 'must be local, self-hosted, or cloud.',
-        recovery: 'Select one documented runtime profile.',
-      },
+      ...(Object.hasOwn(config, 'profile') ? [] : [invalidProfileIssue()]),
     ]);
   }
 
@@ -738,15 +755,8 @@ export function resolveApplicationRuntime(
 export function getApplicationRuntimePreset(
   profile: ApplicationRuntimeProfile,
 ): Readonly<RuntimeProviders> {
-  if (profile !== 'local' && profile !== 'self-hosted' && profile !== 'cloud') {
-    throw new RuntimeProfileValidationError([
-      {
-        code: 'invalid_config',
-        path: 'profile',
-        message: 'must be local, self-hosted, or cloud.',
-        recovery: 'Select one documented runtime profile.',
-      },
-    ]);
+  if (!isApplicationRuntimeProfile(profile)) {
+    throw new RuntimeProfileValidationError([invalidProfileIssue()]);
   }
   return deepFreeze(cloneDefaults(profile));
 }

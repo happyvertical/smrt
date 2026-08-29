@@ -1,3 +1,7 @@
+import {
+  RuntimeProfileValidationError,
+  validateApplicationRuntimeConfigShape,
+} from './runtime-profile.js';
 import type { SmrtConfig } from './types.js';
 
 declare global {
@@ -140,21 +144,38 @@ function deepMerge<T extends Record<string, unknown>>(
  * @see {@link getRuntimeConfig}
  */
 export function setConfig(config: Partial<SmrtConfig>): void {
+  const incomingRuntime = Object.hasOwn(config, 'runtime')
+    ? (config.runtime as unknown)
+    : undefined;
+  if (
+    incomingRuntime !== null &&
+    (typeof incomingRuntime === 'object' ||
+      typeof incomingRuntime === 'function') &&
+    Object.hasOwn(incomingRuntime, 'profile')
+  ) {
+    const profileIssues = validateApplicationRuntimeConfigShape(
+      incomingRuntime,
+    ).filter((issue) => issue.path === 'runtime' || issue.path === 'profile');
+    if (profileIssues.length > 0) {
+      throw new RuntimeProfileValidationError([...profileIssues]);
+    }
+  }
+
   let current = globalThis.__smrtRuntimeConfig || {};
   const currentRuntime =
     Object.hasOwn(current, 'runtime') && isPlainObject(current.runtime)
       ? current.runtime
       : undefined;
-  const incomingRuntime =
+  const incomingRuntimeMap =
     Object.hasOwn(config, 'runtime') && isPlainObject(config.runtime)
       ? config.runtime
       : undefined;
   const switchesProfile =
     currentRuntime !== undefined &&
-    incomingRuntime !== undefined &&
+    incomingRuntimeMap !== undefined &&
     Object.hasOwn(currentRuntime, 'profile') &&
-    Object.hasOwn(incomingRuntime, 'profile') &&
-    currentRuntime.profile !== incomingRuntime.profile;
+    Object.hasOwn(incomingRuntimeMap, 'profile') &&
+    currentRuntime.profile !== incomingRuntimeMap.profile;
 
   if (switchesProfile) {
     current = deepClone(current);

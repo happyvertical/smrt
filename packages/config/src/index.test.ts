@@ -680,6 +680,74 @@ describe('@smrt/config', () => {
       expect(resolved.providers.assets.provider).toBe('local-files');
       expect(resolved.providers.authentication.provider).toBe('magic-link');
     });
+
+    it('rejects owned invalid runtime profiles before merging with a loaded file', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-invalid-runtime-profile.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            providers: { jobs: { topology: 'inline' } }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      const secretLikeProfile = 'secret-profile-do-not-echo';
+      for (const profile of [null, undefined, secretLikeProfile]) {
+        let captured: unknown;
+        try {
+          setConfig({
+            runtime: {
+              profile,
+              providers: { jobs: { topology: 'scalable' } },
+            },
+          } as Parameters<typeof setConfig>[0]);
+        } catch (error) {
+          captured = error;
+        }
+        expect(captured).toBeInstanceOf(Error);
+        expect((captured as Error).message).toMatch(
+          /profile: must be local, self-hosted, or cloud/,
+        );
+        expect((captured as Error).message).not.toContain(secretLikeProfile);
+
+        const resolved = resolveConfiguredApplicationRuntime();
+        expect(resolved.profile).toBe('local');
+        expect(resolved.providers.jobs.topology).toBe('inline');
+      }
+    });
+
+    it('does not mutate accumulated runtime state for invalid profile switches', () => {
+      setConfig({
+        runtime: {
+          profile: 'self-hosted',
+          providers: { assets: { provider: 'local-files' } },
+        },
+      });
+      const before = JSON.stringify(getRuntimeConfig());
+
+      for (const profile of [undefined, null, 'invalid-secret-profile']) {
+        expect(() =>
+          setConfig({
+            runtime: {
+              profile,
+              providers: { assets: { provider: 'managed-object-storage' } },
+            },
+          } as Parameters<typeof setConfig>[0]),
+        ).toThrowError(/profile: must be local, self-hosted, or cloud/);
+        expect(JSON.stringify(getRuntimeConfig())).toBe(before);
+      }
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.profile).toBe('self-hosted');
+      expect(resolved.providers.assets.provider).toBe('local-files');
+    });
   });
 
   describe('getModuleConfig', () => {
