@@ -309,8 +309,12 @@ const PROVIDER_VALUE_DOMAINS = {
   >;
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function cloneDefaults(profile: ApplicationRuntimeProfile): RuntimeProviders {
@@ -345,11 +349,11 @@ function rejectUnknownFields(
 
   const providers = input.providers;
   if (providers === undefined) return issues;
-  if (!isRecord(providers)) {
+  if (!isPlainRecord(providers)) {
     issues.push({
       code: 'invalid_config',
       path: 'providers',
-      message: 'must be an object.',
+      message: 'must be an object with Object.prototype or null.',
       recovery: 'Use providers: { database: { ... } } or omit providers.',
     });
     return issues;
@@ -367,11 +371,11 @@ function rejectUnknownFields(
       continue;
     }
     const value = providers[providerName];
-    if (!isRecord(value)) {
+    if (!isPlainRecord(value)) {
       issues.push({
         code: 'invalid_config',
         path: `providers.${providerName}`,
-        message: 'must be an object.',
+        message: 'must be an object with Object.prototype or null.',
         recovery: `Provide a partial ${providerName} provider object or omit it.`,
       });
       continue;
@@ -422,12 +426,12 @@ function rejectUnknownFields(
 export function validateApplicationRuntimeConfigShape(
   config: unknown,
 ): readonly RuntimeProfileValidationIssue[] {
-  if (!isRecord(config)) {
+  if (!isPlainRecord(config)) {
     return [
       {
         code: 'invalid_config',
         path: 'runtime',
-        message: 'must be an object.',
+        message: 'must be an object with Object.prototype or null.',
         recovery:
           'Provide runtime: { profile: "local" | "self-hosted" | "cloud" }.',
       },
@@ -440,14 +444,14 @@ function applyOverrides(
   providers: RuntimeProviders,
   input: Record<string, unknown>,
 ): RuntimeOverrideReport[] {
-  const overrideRoot = isRecord(input.providers) ? input.providers : {};
+  const overrideRoot = isPlainRecord(input.providers) ? input.providers : {};
   const report: RuntimeOverrideReport[] = [];
 
   for (const providerName of Object.keys(
     PROVIDER_FIELDS,
   ) as OverridableProvider[]) {
     const supplied = overrideRoot[providerName];
-    if (!isRecord(supplied)) continue;
+    if (!isPlainRecord(supplied)) continue;
     const target = providers[providerName] as unknown as Record<
       string,
       unknown
@@ -682,7 +686,7 @@ function deepFreeze<T>(value: T): Readonly<T> {
 export function resolveApplicationRuntime(
   config: ApplicationRuntimeConfig,
 ): Readonly<ResolvedApplicationRuntime> {
-  if (!isRecord(config)) {
+  if (!isPlainRecord(config)) {
     throw new RuntimeProfileValidationError([
       ...validateApplicationRuntimeConfigShape(config),
     ]);

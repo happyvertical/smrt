@@ -477,6 +477,56 @@ describe('@smrt/config', () => {
       );
       expect((captured as Error).message).not.toContain(secretLikeValue);
     });
+
+    it('rejects inherited provider selectors without echoing them', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-profileless-inherited-selector.config.js',
+      );
+      const secretLikeValue = 'inherited-token-do-not-echo';
+      writeFileSync(
+        runtimeConfigPath,
+        `const jobs = Object.create({ topology: '${secretLikeValue}' });
+        export default { runtime: { providers: { jobs } } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      let captured: unknown;
+      try {
+        resolveConfiguredApplicationRuntime();
+      } catch (error) {
+        captured = error;
+      }
+      expect(captured).toBeInstanceOf(Error);
+      expect((captured as Error).message).toMatch(
+        /providers\.jobs: must be an object with Object\.prototype or null/,
+      );
+      expect((captured as Error).message).not.toContain(secretLikeValue);
+    });
+
+    it('accepts null-prototype runtime provider maps', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-null-prototype-provider.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `const jobs = Object.create(null);
+        jobs.topology = 'inline';
+        const providers = Object.create(null);
+        providers.jobs = jobs;
+        export default { runtime: { profile: 'local', providers } };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+
+      const resolved = resolveConfiguredApplicationRuntime();
+      expect(resolved.profile).toBe('local');
+      expect(resolved.providers.jobs.topology).toBe('inline');
+      expect(resolved.diagnostics.secretValuesIncluded).toBe(false);
+    });
   });
 
   describe('getModuleConfig', () => {
