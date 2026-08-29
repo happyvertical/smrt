@@ -328,6 +328,51 @@ describe('@smrt/config', () => {
       expect(resolved.providers.assets.provider).toBe('local-files');
       expect(resolved.diagnostics.secretValuesIncluded).toBe(false);
     });
+
+    it('rejects unsupported file root fields during a profile switch', async () => {
+      const runtimeConfigPath = join(testDir, 'runtime-unknown-root.config.js');
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            unexpectedPolicy: 'allow-all'
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /unexpectedPolicy: is not part of the runtime-profile contract/,
+      );
+    });
+
+    it('rejects unsupported file provider fields during a profile switch', async () => {
+      const runtimeConfigPath = join(
+        testDir,
+        'runtime-unknown-provider-field.config.js',
+      );
+      writeFileSync(
+        runtimeConfigPath,
+        `export default {
+          runtime: {
+            profile: 'local',
+            providers: {
+              jobs: { topology: 'inline', unexpectedCredential: 'secret' }
+            }
+          }
+        };`,
+        'utf-8',
+      );
+      await loadConfig({ configPath: runtimeConfigPath, cache: false });
+      setConfig({ runtime: { profile: 'cloud' } });
+
+      expect(() => resolveConfiguredApplicationRuntime()).toThrowError(
+        /providers\.jobs\.unexpectedCredential: is not a supported provider override/,
+      );
+    });
   });
 
   describe('getModuleConfig', () => {

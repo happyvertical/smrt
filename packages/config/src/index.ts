@@ -216,9 +216,19 @@ export function resolveConfiguredApplicationRuntime(): Readonly<ResolvedApplicat
   const profileChanged =
     runtimeSelectsProfile && runtimeOverride.profile !== fileRuntime?.profile;
 
+  // A profile switch intentionally resets provider selectors from the lower
+  // priority profile, but it must not make invalid file configuration vanish.
+  // Validate that layer before removing its profile-specific providers, then
+  // preserve every root field so the effective resolver remains fail-closed.
+  if (profileChanged && fileRuntime?.profile !== undefined) {
+    _resolveApplicationRuntime(fileRuntime as ApplicationRuntimeConfig);
+  }
+  const { providers: _staleProviders, ...fileRuntimeWithoutProviders } =
+    fileRuntime ?? {};
+
   const effective = mergeConfigs<Record<string, unknown>>(
     {},
-    profileChanged ? {} : (fileRuntime ?? {}),
+    profileChanged ? fileRuntimeWithoutProviders : (fileRuntime ?? {}),
     runtimeOverride ?? {},
   );
 
