@@ -625,6 +625,44 @@ describe('ContentList bulk workflows', () => {
     });
   });
 
+  it('uses explicit IDs when a pending job makes page selection partial', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-pending-page',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 2);
+    const jobs = createContentListJobController();
+    const workflow = workflowBinding();
+    const target = renderList({
+      jobs,
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 2 matching')).toHaveLength(1),
+    );
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    jobs.update({
+      jobId: 'job-content-1',
+      actionId: 'review',
+      submissionKey: 'review:content-1',
+      status: 'running',
+      target: { kind: 'rows', rowIds: ['content-1'] },
+    });
+    flushSync();
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      selection: { scope: 'explicit-ids', rowIds: ['content-2'] },
+      target: { expectedCount: 1 },
+    });
+  });
+
   it('prevents duplicate preview calls and shows the resolved preview consequences', async () => {
     let resolvePreview: ((value: unknown) => void) | undefined;
     const workflow = workflowBinding({

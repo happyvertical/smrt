@@ -1545,19 +1545,28 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
   if (selection.scope === 'allMatching') {
     return { scope: 'all-matching', queryFingerprint: selection.queryFingerprint };
   }
+  const effectiveRowIds =
+    selection.scope === 'page'
+      ? selection.rowIds.filter((rowId) =>
+          selectablePageRowIds.some(
+            (selectableId) => String(selectableId) === String(rowId),
+          ),
+        )
+      : selection.rowIds;
   if (
     selection.scope === 'page' &&
-    selection.rowIds.length === selectablePageRowIds.length &&
+    selectablePageRowIds.length === pageRows.length &&
+    effectiveRowIds.length === selectablePageRowIds.length &&
     selectablePageRowIds.every((rowId) =>
-      selection.rowIds.some(
+      effectiveRowIds.some(
         (selectedId) => String(selectedId) === String(rowId),
       ),
     )
   ) {
     return { scope: 'current-page' };
   }
-  if (selection.rowIds.length === 0) return null;
-  return { scope: 'explicit-ids', rowIds: selection.rowIds };
+  if (effectiveRowIds.length === 0) return null;
+  return { scope: 'explicit-ids', rowIds: effectiveRowIds };
 }
 
 function workflowIntentSignature(): string {
@@ -1612,7 +1621,10 @@ function createWorkflowRequest(
       ...(queryRequired && settledWorkflowQuery
         ? { query: settledWorkflowQuery }
         : {}),
-      expectedCount: selectedCount,
+      expectedCount:
+        selection.scope === 'explicit-ids'
+          ? selection.rowIds.length
+          : selectedCount,
     },
   };
 }

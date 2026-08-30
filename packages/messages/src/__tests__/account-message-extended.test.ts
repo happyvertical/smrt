@@ -450,4 +450,58 @@ describe('Message.send orchestration', () => {
       'authoritative edit',
     );
   });
+
+  it('preserves a concurrent read update while finalizing a successful send', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+
+    let providerStarted!: () => void;
+    let releaseProvider!: () => void;
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    sendMock.mockImplementationOnce(async () => {
+      providerStarted();
+      await release;
+      return {
+        success: true,
+        messageId: 'slack-concurrent-read',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      };
+    });
+
+    const seed = new SlackMessage({
+      body: 'hi',
+      channelId: 'C1',
+      accountId: account.id!,
+      db,
+    });
+    await seed.initialize();
+    await seed.save();
+    const messages = await (MessageCollection as any).create({ db });
+    const sender = await messages.get({ id: seed.id });
+
+    const sending = sender.send();
+    await started;
+    const reader = await messages.get({ id: seed.id });
+    await reader.markRead();
+    releaseProvider();
+
+    await expect(sending).resolves.toMatchObject({ success: true });
+    const stored = await messages.get({ id: seed.id });
+    expect(stored?.sendStatus).toBe('sent');
+    expect(stored?.sentAt).toBeInstanceOf(Date);
+    expect(stored?.isRead).toBe(true);
+  });
 });

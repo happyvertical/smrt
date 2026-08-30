@@ -9,6 +9,8 @@ import {
   foreignKey,
   SmrtObject,
   smrt,
+  usesEmbeddedRevisionFallback,
+  withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
@@ -100,6 +102,68 @@ export class Message extends SmrtObject {
       this.inReplyToMessageId = options.inReplyToMessageId;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+
+  private async finalizeSendLifecycle(
+    result: MessageSendResult,
+  ): Promise<void> {
+    if (!this.id) throw new Error('Cannot finalize an unsaved message send');
+
+    const sendStatus: SendStatus = result.success ? 'sent' : 'failed';
+    const sendError = result.success ? '' : (result.error ?? 'Send failed');
+    const useEmbeddedFallback = usesEmbeddedRevisionFallback(this.db);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      let nextRevision: Date | undefined;
+      await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
+        const current = await this.db.get(this.tableName, { id: this.id });
+        if (current?.send_status !== 'sending') return;
+        const currentRevision = current.updated_at;
+        const currentRevisionMs = new Date(String(currentRevision)).getTime();
+        if (!Number.isFinite(currentRevisionMs)) return;
+        nextRevision = new Date(Math.max(Date.now(), currentRevisionMs + 1));
+        const values = {
+          send_status: sendStatus,
+          sent_at: result.success ? result.sentAt : null,
+          send_error: sendError,
+          updated_at: nextRevision,
+        };
+        if (useEmbeddedFallback) {
+          await this.db.upsert(this.tableName, ['id'], {
+            ...current,
+            ...values,
+          });
+          return;
+        }
+        await this.db.update(
+          this.tableName,
+          {
+            id: this.id,
+            send_status: 'sending',
+            updated_at:
+              currentRevision instanceof Date
+                ? currentRevision.toISOString()
+                : currentRevision,
+          },
+          values,
+        );
+      });
+      // DuckDB's generic update result reports one affected row even when the
+      // predicate matched none. Verify the durable lifecycle value instead of
+      // trusting adapter row-count metadata before declaring finalization.
+      const verified = await this.db.get(this.tableName, { id: this.id });
+      if (verified?.send_status === sendStatus) {
+        const verifiedRevision = new Date(String(verified.updated_at));
+        this.sendStatus = sendStatus;
+        this.sentAt = result.success ? result.sentAt : null;
+        this.sendError = sendError;
+        this.updated_at = Number.isFinite(verifiedRevision.getTime())
+          ? verifiedRevision
+          : nextRevision;
+        this.updatedAt = new Date();
+        return;
+      }
+    }
+    throw new Error('Cannot finalize: message revision kept changing');
   }
 
   /**
@@ -315,16 +379,41 @@ export class Message extends SmrtObject {
       const claimedRevision = new Date(
         Math.max(Date.now(), loadedRevision.getTime() + 1),
       );
-      const claim = await this.db.update(
-        this.tableName,
-        {
-          id: this.id,
-          send_status: claimFromStatus,
-          updated_at: loadedRevision.toISOString(),
-        },
-        { send_status: 'sending', updated_at: claimedRevision },
-      );
-      if (!claim || claim.affected < 1) {
+      const useEmbeddedFallback = usesEmbeddedRevisionFallback(this.db);
+      let claimed = false;
+      await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
+        if (useEmbeddedFallback) {
+          const current = await this.db.get(this.tableName, { id: this.id });
+          const currentRevision = new Date(
+            String(current?.updated_at),
+          ).getTime();
+          if (
+            !current ||
+            current.send_status !== claimFromStatus ||
+            !Number.isFinite(currentRevision) ||
+            currentRevision !== loadedRevision.getTime()
+          )
+            return;
+          await this.db.upsert(this.tableName, ['id'], {
+            ...current,
+            send_status: 'sending',
+            updated_at: claimedRevision,
+          });
+          claimed = true;
+          return;
+        }
+        const claim = await this.db.update(
+          this.tableName,
+          {
+            id: this.id,
+            send_status: claimFromStatus,
+            updated_at: loadedRevision.toISOString(),
+          },
+          { send_status: 'sending', updated_at: claimedRevision },
+        );
+        claimed = claim?.affected === 1;
+      });
+      if (!claimed) {
         return {
           success: false,
           error: 'Cannot send: message is already being sent',
@@ -340,35 +429,20 @@ export class Message extends SmrtObject {
       await this.save();
     }
 
+    let result: MessageSendResult;
     try {
-      const result = await sender.send(this, options);
-
-      if (result.success) {
-        this.sendStatus = 'sent';
-        this.sentAt = result.sentAt;
-        this.sendError = '';
-      } else {
-        this.sendStatus = 'failed';
-        this.sendError = result.error ?? 'Send failed';
-      }
-
-      this.updatedAt = new Date();
-      await this.save();
-      return result;
+      result = await sender.send(this, options);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      this.sendStatus = 'failed';
-      this.sendError = errorMessage;
-      this.updatedAt = new Date();
-      await this.save();
-
-      return {
+      result = {
         success: false,
         error: errorMessage,
         sentAt: new Date(),
       };
     }
+    await this.finalizeSendLifecycle(result);
+    return result;
   }
 
   /**
