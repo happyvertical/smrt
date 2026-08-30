@@ -1059,6 +1059,43 @@ describe('data-surface action adapter', () => {
     );
   });
 
+  it('binds confirmation tokens to the previewing agent class', async () => {
+    const setup = harness({});
+    setup.context.principal.agentClass = 'orders-agent-a';
+    const token = await previewToken(setup);
+
+    setup.context.principal.agentClass = 'orders-agent-b';
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: token }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'confirmation_mismatch' });
+  });
+
+  it('isolates idempotency across agent-class authority bindings', async () => {
+    const applyRow = vi.fn();
+    const setup = harness({ apply: applyRow });
+    setup.context.principal.agentClass = 'orders-agent-a';
+    const firstToken = await previewToken(setup);
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: firstToken }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+
+    setup.context.principal.agentClass = 'orders-agent-b';
+    const secondToken = await previewToken(setup);
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: secondToken }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(applyRow).toHaveBeenCalledTimes(4);
+  });
+
   it('maps deferred failures into a structured background result', async () => {
     let queued: DataSurfaceBackgroundActionJob | undefined;
     let authorizationChecks = 0;

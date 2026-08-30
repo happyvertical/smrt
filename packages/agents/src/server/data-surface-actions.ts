@@ -143,6 +143,7 @@ export interface DataSurfacePreviewTokenRecord {
   tenantId: string | null;
   onBehalfOfUserId: string | null;
   actsAsProfileId: string | null;
+  agentClass: string | null;
   identityKey: string;
   actionId: string;
   actionFingerprint: string;
@@ -707,6 +708,7 @@ export function createDataSurfaceActionAdapter(
           tenantId: context.principal.principal.tenantId,
           onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
           actsAsProfileId: context.principal.principal.actsAsProfileId ?? null,
+          agentClass: context.principal.agentClass ?? null,
           identityKey: identityKey(request.identity),
           actionId: request.actionId,
           actionFingerprint: actionFingerprint(invocation.action),
@@ -787,6 +789,7 @@ export function createDataSurfaceActionAdapter(
       tenantId: reference.tenantId,
       onBehalfOfUserId: reference.onBehalfOfUserId,
       actsAsProfileId: reference.actsAsProfileId,
+      agentClass: reference.agentClass ?? null,
       identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
       idempotencyKey: request.idempotencyKey,
@@ -967,12 +970,14 @@ export function createDataSurfaceActionAdapter(
     const tenantId = context.principal.principal.tenantId;
     const onBehalfOfUserId = context.principal.onBehalfOfUserId ?? null;
     const actsAsProfileId = context.principal.principal.actsAsProfileId ?? null;
+    const agentClass = context.principal.agentClass ?? null;
     const requestFingerprintValue = fingerprintRequest(request);
     const idempotencyScope = fingerprint({
       actorUserId,
       tenantId,
       onBehalfOfUserId,
       actsAsProfileId,
+      agentClass,
       identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
       idempotencyKey,
@@ -996,6 +1001,7 @@ export function createDataSurfaceActionAdapter(
         token.tenantId !== tenantId ||
         token.onBehalfOfUserId !== onBehalfOfUserId ||
         token.actsAsProfileId !== actsAsProfileId ||
+        token.agentClass !== agentClass ||
         token.identityKey !== identityKey(request.identity) ||
         token.actionId !== request.actionId ||
         token.requestFingerprint !== requestFingerprintValue
