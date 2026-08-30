@@ -160,12 +160,18 @@ function inferAdapterType(url: string): SqlAdapterType | undefined {
 
 function environmentAdapterType(): SqlAdapterType | undefined {
   const type = process.env.HAVE_SQL_TYPE;
-  return type === 'sqlite' ||
+  if (type === undefined || type === '') return undefined;
+  if (
+    type === 'sqlite' ||
     type === 'postgres' ||
     type === 'duckdb' ||
     type === 'json'
-    ? type
-    : undefined;
+  ) {
+    return type;
+  }
+  throw new CommercialBillingStorageConfigurationError(
+    'Commercial billing HAVE_SQL_TYPE must be sqlite, postgres, duckdb, or json.',
+  );
 }
 
 function environmentWriteStrategy(): CommercialBillingStorage['writeStrategy'] {

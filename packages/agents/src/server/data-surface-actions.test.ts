@@ -842,6 +842,53 @@ describe('data-surface action adapter', () => {
     expect(setup.calls).toHaveLength(3);
   });
 
+  it('resolves permissions live when deferred work starts', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let permissionsRevoked = false;
+    const applyRow = vi.fn();
+    const runAsPrincipal = (async <T>(
+      principalOptions: ExecuteAsPrincipalOptions,
+      fn: (principalRun: PrincipalRun) => Promise<T>,
+    ): Promise<T> => {
+      const allowedTools = ['orders.archive'];
+      return fn({
+        context: {} as PrincipalRun['context'],
+        permissions: principalOptions.permissions ?? [],
+        allowedTools,
+        isToolAllowed: (tool) => allowedTools.includes(tool),
+        assertToolAllowed(tool) {
+          if (!allowedTools.includes(tool)) throw new Error('tool denied');
+        },
+        async assertOperation() {
+          if (principalOptions.permissions === undefined && permissionsRevoked)
+            throw new Error('permission revoked');
+          return {} as Awaited<ReturnType<PrincipalRun['assertOperation']>>;
+        },
+      });
+    }) as typeof executeAsPrincipal;
+    const setup = harness({
+      execution: 'background',
+      apply: applyRow,
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-live-permissions' };
+      },
+      runAsPrincipal,
+    });
+    Object.assign(setup.context.principal, {
+      permissions: ['orders:update'],
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    permissionsRevoked = true;
+    await expect(queued?.run()).rejects.toThrow('permission revoked');
+    expect(applyRow).not.toHaveBeenCalled();
+  });
+
   it('maps deferred failures into a structured background result', async () => {
     let queued: DataSurfaceBackgroundActionJob | undefined;
     let authorizationChecks = 0;

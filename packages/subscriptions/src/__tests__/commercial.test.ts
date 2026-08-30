@@ -115,6 +115,20 @@ describe('commercial usage tracer', () => {
     }
   });
 
+  it.each([
+    'jsno',
+    'SQLite',
+    ' ',
+  ])('rejects invalid nonempty HAVE_SQL_TYPE %j before adapter inference', async (type) => {
+    vi.stubEnv('HAVE_SQL_TYPE', type);
+    await expect(
+      CommercialUsageService.create({
+        db: 'file:billing.db',
+        billingStorage: { adapterType: 'sqlite' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
   it('normalizes environment values over explicitly undefined options', async () => {
     vi.stubEnv('HAVE_SQL_TYPE', 'json');
     vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'immediate');

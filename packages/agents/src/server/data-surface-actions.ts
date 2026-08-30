@@ -792,7 +792,18 @@ export function createDataSurfaceActionAdapter(
       if (winner.ownerToken === ownerToken) {
         let executed: DataSurfaceActionResult;
         try {
-          executed = await authorizedApply(request, context, token, false);
+          // A queued job may run long after the request that created it. Never
+          // carry a caller-supplied permission snapshot across that boundary:
+          // executeAsPrincipal must resolve the actor's current RBAC/membership
+          // state again immediately before deferred mutations.
+          const { permissions: _permissions, ...livePrincipal } =
+            context.principal;
+          executed = await authorizedApply(
+            request,
+            { ...context, principal: livePrincipal },
+            token,
+            false,
+          );
         } catch (error) {
           const reason = options.mapError?.(error, request);
           if (!reason) {
