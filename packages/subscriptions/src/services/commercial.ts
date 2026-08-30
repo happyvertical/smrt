@@ -111,13 +111,26 @@ function environmentAdapterType(): SqlAdapterType | undefined {
     : undefined;
 }
 
+function environmentWriteStrategy(): CommercialBillingStorage['writeStrategy'] {
+  const strategy = process.env.HAVE_SQL_WRITE_STRATEGY;
+  return strategy === 'immediate' ||
+    strategy === 'manual' ||
+    strategy === 'none'
+    ? strategy
+    : undefined;
+}
+
 function billingStorageFromConfig(
   config: DatabaseConfig | undefined,
   declared?: CommercialBillingStorage,
 ): CommercialBillingStorage {
   if (config === undefined) {
     const environmentType = environmentAdapterType();
-    if (environmentType) return { adapterType: environmentType };
+    if (environmentType)
+      return {
+        adapterType: environmentType,
+        writeStrategy: environmentWriteStrategy(),
+      };
     return { adapterType: 'sqlite' };
   }
   if (isDatabaseInterface(config)) {
@@ -128,7 +141,11 @@ function billingStorageFromConfig(
       environmentAdapterType() ??
       inferAdapterType(config) ??
       declared?.adapterType;
-    if (adapterType) return { adapterType };
+    if (adapterType)
+      return {
+        adapterType,
+        writeStrategy: environmentWriteStrategy(),
+      };
     throw new Error(
       'Commercial billing requires an explicit billingStorage adapter contract for ambiguous database URLs.',
     );
@@ -143,12 +160,13 @@ function billingStorageFromConfig(
       'Commercial billing requires an explicit database type or billingStorage adapter contract.',
     );
   }
+  const configuredWriteStrategy = config.writeStrategy;
   const writeStrategy =
-    config.writeStrategy === 'immediate' ||
-    config.writeStrategy === 'manual' ||
-    config.writeStrategy === 'none'
-      ? config.writeStrategy
-      : undefined;
+    configuredWriteStrategy === 'immediate' ||
+    configuredWriteStrategy === 'manual' ||
+    configuredWriteStrategy === 'none'
+      ? configuredWriteStrategy
+      : environmentWriteStrategy();
   return { adapterType, writeStrategy };
 }
 
@@ -188,6 +206,43 @@ function resolveCommercialBillingStorage(
   return configured;
 }
 
+function normalizedCommercialClassOptions(
+  options: CommercialUsageServiceOptions,
+  billingStorage: CommercialBillingStorage,
+): SmrtClassOptions {
+  const { billingStorage: _billingStorage, ...classOptions } = options;
+  const configuredDatabase = options.db ?? options.persistence;
+  if (
+    (typeof configuredDatabase === 'string' ||
+      (configuredDatabase &&
+        !isDatabaseInterface(configuredDatabase) &&
+        !configuredDatabase.type)) &&
+    !environmentAdapterType() &&
+    !inferAdapterType(
+      typeof configuredDatabase === 'string'
+        ? configuredDatabase
+        : String(configuredDatabase?.url ?? ''),
+    )
+  ) {
+    const normalizedDatabase =
+      typeof configuredDatabase === 'string'
+        ? {
+            type: billingStorage.adapterType,
+            url: configuredDatabase,
+            writeStrategy: billingStorage.writeStrategy,
+          }
+        : {
+            ...configuredDatabase,
+            type: billingStorage.adapterType,
+            writeStrategy:
+              configuredDatabase?.writeStrategy ?? billingStorage.writeStrategy,
+          };
+    if (options.db !== undefined) classOptions.db = normalizedDatabase;
+    else classOptions.persistence = normalizedDatabase;
+  }
+  return classOptions;
+}
+
 export class CommercialUsageService {
   private readonly customStrategies = new Map<string, CustomPricingStrategy>();
   constructor(
@@ -208,7 +263,10 @@ export class CommercialUsageService {
   ): Promise<CommercialUsageService> {
     const billingStorage = resolveCommercialBillingStorage(options);
     assertCommercialBillingStorageSupported(billingStorage);
-    const { billingStorage: _billingStorage, ...classOptions } = options;
+    const classOptions = normalizedCommercialClassOptions(
+      options,
+      billingStorage,
+    );
     const usage = await TenantUsageMetricCollection.create(classOptions);
     const sharedOptions = { ...classOptions, db: usage.db };
     return new CommercialUsageService(

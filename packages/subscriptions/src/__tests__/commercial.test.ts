@@ -91,12 +91,39 @@ describe('commercial usage tracer', () => {
         db: { url: 'file:billing-json' },
       }),
     ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    vi.stubEnv('HAVE_SQL_TYPE', 'duckdb');
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'immediate');
+    await expect(CommercialUsageService.create()).rejects.toBeInstanceOf(
+      UnsupportedCommercialBillingStorageError,
+    );
     vi.stubEnv('HAVE_SQL_TYPE', 'sqlite');
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', '');
     const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
     try {
       await expect(
         CommercialUsageService.create({
           db: join(directory, 'billing.db'),
+          billingStorage: { adapterType: 'sqlite' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it('normalizes explicit contracts for ambiguous database strings', async () => {
+    vi.stubEnv('HAVE_SQL_TYPE', '');
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
+    try {
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing-db-option.db'),
+          billingStorage: { adapterType: 'sqlite' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+      await expect(
+        CommercialUsageService.create({
+          persistence: join(directory, 'billing-persistence-option.db'),
           billingStorage: { adapterType: 'sqlite' },
         }),
       ).resolves.toBeInstanceOf(CommercialUsageService);
