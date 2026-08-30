@@ -187,8 +187,11 @@ function billingStorageFromConfig(
   config: DatabaseConfig | undefined,
   declared?: CommercialBillingStorage,
 ): CommercialBillingStorage {
+  // Validate a configured environment value even when an explicit config type
+  // wins adapter precedence. Otherwise normalization below could hide an SDK
+  // configuration error by replacing the invalid environment value.
+  const environmentType = environmentAdapterType();
   if (config === undefined) {
-    const environmentType = environmentAdapterType();
     if (environmentType)
       return {
         adapterType: environmentType,
@@ -201,9 +204,7 @@ function billingStorageFromConfig(
   }
   if (typeof config === 'string') {
     const adapterType =
-      environmentAdapterType() ??
-      inferAdapterType(config) ??
-      declared?.adapterType;
+      environmentType ?? inferAdapterType(config) ?? declared?.adapterType;
     if (adapterType)
       return {
         adapterType,
@@ -215,7 +216,7 @@ function billingStorageFromConfig(
   }
   const adapterType =
     config.type ??
-    environmentAdapterType() ??
+    environmentType ??
     inferAdapterType(String(config.url ?? '')) ??
     declared?.adapterType;
   if (!adapterType) {
