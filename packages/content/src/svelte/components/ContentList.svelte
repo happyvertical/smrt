@@ -124,6 +124,56 @@ import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
 
+const WORKFLOW_LABEL_MESSAGES: Record<
+  ContentListWorkflowId,
+  keyof typeof M
+> = {
+  'move-to-trash': M['content.content_list.workflow_move_to_trash'],
+  'mark-draft': M['content.content_list.workflow_mark_draft'],
+  'submit-review': M['content.content_list.workflow_submit_review'],
+  publish: M['content.content_list.workflow_publish'],
+  archive: M['content.content_list.workflow_archive'],
+  restore: M['content.content_list.workflow_restore'],
+  'automated-review': M['content.content_list.workflow_automated_review'],
+  'format-body': M['content.content_list.workflow_format_body'],
+  categorize: M['content.content_list.workflow_categorize'],
+  optimize: M['content.content_list.workflow_optimize'],
+};
+
+function workflowLabel(id: ContentListWorkflowId): string {
+  return t(WORKFLOW_LABEL_MESSAGES[id]);
+}
+
+function workflowScopeLabel(scope: string): string {
+  switch (scope) {
+    case 'explicit-ids':
+      return t(M['content.content_list.workflow_scope_explicit_ids']);
+    case 'current-page':
+      return t(M['content.content_list.workflow_scope_current_page']);
+    case 'all-matching':
+      return t(M['content.content_list.workflow_scope_all_matching']);
+    default:
+      return scope;
+  }
+}
+
+function workflowJobStatusLabel(status: string): string {
+  switch (status) {
+    case 'queued':
+      return t(M['content.content_list.job_queued']);
+    case 'running':
+      return t(M['content.content_list.job_running']);
+    case 'succeeded':
+      return t(M['content.content_list.job_succeeded']);
+    case 'failed':
+      return t(M['content.content_list.job_failed']);
+    case 'cancelled':
+      return t(M['content.content_list.workflow_status_cancelled']);
+    default:
+      return status;
+  }
+}
+
 /** One reported refusal, from a restore or from the query translation. */
 type ContentListDropNotice = ContentListStateDrop | ContentListQueryDrop;
 
@@ -1489,11 +1539,17 @@ function workflowResultMessage(result: import('@happyvertical/smrt-ui/data').Dat
   const details = result.details ?? {};
   const accepted = typeof details.accepted === 'number' ? details.accepted : 0;
   if (details.background === true) {
-    return `${accepted} queued for background processing; results pending`;
+    return t(M['content.content_list.workflow_result_background'], {
+      accepted,
+    });
   }
   const skipped = typeof details.skipped === 'number' ? details.skipped : 0;
   const failed = typeof details.failed === 'number' ? details.failed : 0;
-  return `${accepted} accepted, ${skipped} skipped, ${failed} failed`;
+  return t(M['content.content_list.workflow_result_summary'], {
+    accepted,
+    skipped,
+    failed,
+  });
 }
 
 function applyWorkflowSelectionOutcomes(
@@ -1508,8 +1564,9 @@ function applyWorkflowSelectionOutcomes(
       outcomes.length !== tableState.selection.expectedCount ||
       uniqueOutcomes.size !== outcomes.length
     ) {
-      workflowError =
-        'The workflow returned incomplete row outcomes; the selection was preserved.';
+      workflowError = t(
+        M['content.content_list.workflow_incomplete_outcomes'],
+      );
       return false;
     }
     controller.dispatch({
@@ -1564,11 +1621,32 @@ function workflowPreviewMessage(): string {
       })
     : [];
   return [
-    resolvedScope ? `Resolved scope: ${resolvedScope}.` : '',
-    `${count} matching content item${count === 1 ? '' : 's'}.`,
-    labels.length ? `Examples: ${labels.join(', ')}.` : '',
-    skipped ? `${skipped} currently ineligible.` : '',
-    ineligible.length ? `Ineligible: ${ineligible.join(', ')}.` : '',
+    resolvedScope
+      ? t(M['content.content_list.workflow_preview_scope'], {
+          scope: workflowScopeLabel(resolvedScope),
+        })
+      : '',
+    t(
+      count === 1
+        ? M['content.content_list.workflow_preview_count_one']
+        : M['content.content_list.workflow_preview_count_many'],
+      { count },
+    ),
+    labels.length
+      ? t(M['content.content_list.workflow_preview_examples'], {
+          labels: labels.join(', '),
+        })
+      : '',
+    skipped
+      ? t(M['content.content_list.workflow_preview_ineligible_count'], {
+          count: skipped,
+        })
+      : '',
+    ineligible.length
+      ? t(M['content.content_list.workflow_preview_ineligible'], {
+          items: ineligible.join(', '),
+        })
+      : '',
     ...consequences,
   ].filter(Boolean).join(' ');
 }
@@ -1584,10 +1662,11 @@ async function previewWorkflow() {
   try {
     const result = await workflows.client.preview(request);
     if (!workflowResultMatchesRequest(result, request)) {
-      throw new Error('The workflow response did not match the preview request.');
+      throw new Error(t(M['content.content_list.workflow_preview_mismatch']));
     }
     if (!result.ok) {
-      workflowError = result.reason ?? 'Preview failed.';
+      workflowError =
+        result.reason ?? t(M['content.content_list.workflow_preview_failed']);
       return;
     }
     workflowPreview = result;
@@ -1608,7 +1687,7 @@ async function applyWorkflow() {
     workflowConfirmOpen = false;
     workflowPreview = null;
     workflowIdempotencyKey = '';
-    workflowError = 'The selection or query changed. Preview the workflow again.';
+    workflowError = t(M['content.content_list.workflow_selection_changed']);
     return;
   }
   const request = createWorkflowRequest('apply');
@@ -1621,7 +1700,7 @@ async function applyWorkflow() {
   try {
     const result = await workflows.client.apply(request);
     if (!workflowResultMatchesRequest(result, request)) {
-      throw new Error('The workflow response did not match the apply request.');
+      throw new Error(t(M['content.content_list.workflow_apply_mismatch']));
     }
     if (appliedIntent !== workflowIntentSignature()) {
       if (
@@ -1644,8 +1723,7 @@ async function applyWorkflow() {
           },
         ];
       }
-      workflowError =
-        'The selection or workflow changed while applying; its result was not applied.';
+      workflowError = t(M['content.content_list.workflow_changed_applying']);
       workflowPreview = null;
       workflowIdempotencyKey = '';
       workflowConfirmOpen = false;
@@ -1653,7 +1731,8 @@ async function applyWorkflow() {
     }
     workflowResult = result;
     if (!result.ok) {
-      workflowError = result.reason ?? 'Workflow failed.';
+      workflowError =
+        result.reason ?? t(M['content.content_list.workflow_failed']);
       workflowPreview = null;
       workflowIdempotencyKey = '';
       workflowConfirmOpen = false;
@@ -1697,16 +1776,22 @@ async function checkWorkflowJob() {
   try {
     const job = await workflows.client.status(queuedJob.jobId);
     if (queuedJob.intent !== workflowIntentSignature()) {
-      workflowError =
-        'The selection or workflow changed while checking the job; its result was not applied.';
+      workflowError = t(
+        M['content.content_list.workflow_changed_checking_job'],
+      );
       return;
     }
     if (job.status === 'queued' || job.status === 'running') {
-      workflowError = `Job ${job.jobId} is still ${job.status}.`;
+      workflowError = t(M['content.content_list.workflow_job_still'], {
+        id: job.jobId,
+        status: workflowJobStatusLabel(job.status),
+      });
       return;
     }
     if (job.status === 'succeeded' && !job.result) {
-      workflowError = `Job ${job.jobId} completed without an action result; check the job runner before retrying.`;
+      workflowError = t(M['content.content_list.workflow_job_missing_result'], {
+        id: job.jobId,
+      });
       return;
     }
     if (
@@ -1717,7 +1802,9 @@ async function checkWorkflowJob() {
         job.result.requestId !== queuedJob.requestId ||
         !workflowIdentityMatches(job.result.identity, queuedJob.identity))
     ) {
-      workflowError = `Job ${job.jobId} returned a result for another workflow.`;
+      workflowError = t(M['content.content_list.workflow_job_wrong_workflow'], {
+        id: job.jobId,
+      });
       return;
     }
     workflowQueuedJobs = workflowQueuedJobs.filter(
@@ -1726,13 +1813,20 @@ async function checkWorkflowJob() {
     if (job.result) {
       workflowResult = job.result;
       if (!job.result.ok) {
-        workflowError = job.result.reason ?? `Job ${job.jobId} failed.`;
+        workflowError =
+          job.result.reason ??
+          t(M['content.content_list.workflow_job_failed'], { id: job.jobId });
       } else {
         applyWorkflowSelectionOutcomes(job.result);
       }
     }
     if (job.status !== 'succeeded' && !workflowError) {
-      workflowError = job.reason ?? `Job ${job.jobId} ${job.status}.`;
+      workflowError =
+        job.reason ??
+        t(M['content.content_list.workflow_job_status'], {
+          id: job.jobId,
+          status: workflowJobStatusLabel(job.status),
+        });
     }
   } catch (error) {
     workflowError = error instanceof Error ? error.message : String(error);
@@ -2290,7 +2384,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           }}
         >
           {#each CONTENT_LIST_WORKFLOW_OPTIONS as option (option.id)}
-            <option value={option.id}>{option.label}</option>
+            <option value={option.id}>{workflowLabel(option.id)}</option>
           {/each}
         </Select>
 
@@ -2309,9 +2403,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             disabled={workflowPending}
             onchange={(event: Event) => workflowRestoreStatus = (event.currentTarget as HTMLSelectElement).value as typeof workflowRestoreStatus}
           >
-            <option value="draft">Draft</option>
-            <option value="review">Review</option>
-            <option value="published">Published</option>
+            <option value="draft">{t(M['content.content_list.workflow_draft'])}</option>
+            <option value="review">{t(M['content.content_list.workflow_review'])}</option>
+            <option value="published">{t(M['content.content_list.workflow_published'])}</option>
           </Select>
         {:else if selectedWorkflow === 'format-body'}
           <Select
@@ -2320,8 +2414,8 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             disabled={workflowPending}
             onchange={(event: Event) => workflowFormat = (event.currentTarget as HTMLSelectElement).value as typeof workflowFormat}
           >
-            <option value="markdown">Markdown</option>
-            <option value="html">HTML</option>
+            <option value="markdown">{t(M['content.content_list.workflow_markdown'])}</option>
+            <option value="html">{t(M['content.content_list.workflow_html'])}</option>
           </Select>
         {:else if selectedWorkflow === 'automated-review'}
           <Select
@@ -2331,9 +2425,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             onchange={(event: Event) => workflowReviewKind = (event.currentTarget as HTMLSelectElement).value}
           >
             <option value="">{t(M['content.content_list.default_review_kind'])}</option>
-            <option value="facts">Facts</option>
-            <option value="safety">Safety</option>
-            <option value="custom">Custom</option>
+            <option value="facts">{t(M['content.content_list.workflow_facts'])}</option>
+            <option value="safety">{t(M['content.content_list.workflow_safety'])}</option>
+            <option value="custom">{t(M['content.content_list.workflow_custom'])}</option>
           </Select>
           <Input
             aria-label={t(M['content.content_list.review_policy_key'])}
@@ -2362,10 +2456,10 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           onclick={() => void previewWorkflow()}
         >
           {workflowPending
-            ? 'Working…'
+            ? t(M['content.content_list.workflow_working'])
             : workflowDuplicateQueued
-              ? 'Job queued'
-              : 'Preview workflow'}
+              ? t(M['content.content_list.workflow_job_queued'])
+              : t(M['content.content_list.workflow_preview'])}
         </Button>
 
         {#if workflowError}
@@ -2622,10 +2716,16 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
 <ConfirmDialog
   open={workflowConfirmOpen}
-  title={`Confirm ${CONTENT_LIST_WORKFLOW_OPTIONS.find((option) => option.id === selectedWorkflow)?.label ?? 'workflow'}`}
+  title={t(M['content.content_list.workflow_confirm'], {
+    workflow: selectedWorkflow
+      ? workflowLabel(selectedWorkflow)
+      : t(M['content.content_list.workflow_noun']),
+  })}
   message={workflowPreviewMessage()}
-  confirmLabel={workflowPending ? 'Applying…' : 'Apply workflow'}
-  cancelLabel="Cancel"
+  confirmLabel={workflowPending
+    ? t(M['content.content_list.workflow_applying'])
+    : t(M['content.content_list.workflow_apply'])}
+  cancelLabel={t(M['content.content_list.cancel'])}
   destructive={CONTENT_LIST_WORKFLOW_OPTIONS.find((option) => option.id === selectedWorkflow)?.sensitivity === 'sensitive'}
   onconfirm={() => void applyWorkflow()}
   oncancel={cancelWorkflowConfirmation}

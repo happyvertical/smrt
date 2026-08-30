@@ -21,6 +21,7 @@ import type {
   ContentListWorkflowBinding,
   ContentListWorkflowRequest,
 } from '../content-list-workflows.js';
+import I18nHarness from './__tests__/content-list-i18n-harness.svelte';
 import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
@@ -284,6 +285,32 @@ describe('ContentList presentations', () => {
 });
 
 describe('ContentList bulk workflows', () => {
+  it('renders workflow controls through the active locale catalog', () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    const component = mount(I18nHarness, {
+      target,
+      props: {
+        contents,
+        workflows: workflowBinding(),
+        messages: {
+          'content.content_list.workflow_mark_draft': 'Mettre en brouillon',
+          'content.content_list.workflow_preview': 'Prévisualiser le flux',
+        },
+      },
+    });
+    mountedComponents.push(component);
+    flushSync();
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+
+    expect(
+      Array.from(target.querySelectorAll('option')).some(
+        (option) => option.textContent === 'Mettre en brouillon',
+      ),
+    ).toBe(true);
+    expect(buttonsByText(target, 'Prévisualiser le flux')).toHaveLength(1);
+  });
+
   it('constrains automated review kinds to the server-supported values', async () => {
     const workflow = workflowBinding();
     const target = renderList({ workflows: workflow });

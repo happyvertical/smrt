@@ -413,4 +413,41 @@ describe('Message.send orchestration', () => {
     const loser = ra.success ? rb : ra;
     expect(loser.error).toContain('already');
   });
+
+  it('rejects a stale send claim after another writer edits the message', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+    if (!account.id) throw new Error('Test setup failed');
+
+    const seed = new SlackMessage({
+      body: 'original body',
+      channelId: 'C1',
+      accountId: account.id,
+      db,
+    });
+    await seed.initialize();
+    await seed.save();
+
+    const messages = await (MessageCollection as any).create({ db });
+    const staleSender = await messages.get({ id: seed.id });
+    const editor = await messages.get({ id: seed.id });
+    editor.body = 'authoritative edit';
+    await editor.save();
+
+    const result = await staleSender.send();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already');
+    expect(sendMock).not.toHaveBeenCalled();
+    expect((await messages.get({ id: seed.id }))?.body).toBe(
+      'authoritative edit',
+    );
+  });
 });

@@ -304,10 +304,24 @@ export class Message extends SmrtObject {
     // serves as the claim.
     const claimFromStatus = this.sendStatus;
     if (this.isPersisted && this.id) {
-      const claimedRevision = new Date();
+      const loadedRevision = this.updated_at;
+      if (!loadedRevision) {
+        return {
+          success: false,
+          error: 'Cannot send: persisted message has no loaded revision',
+          sentAt: new Date(),
+        };
+      }
+      const claimedRevision = new Date(
+        Math.max(Date.now(), loadedRevision.getTime() + 1),
+      );
       const claim = await this.db.update(
         this.tableName,
-        { id: this.id, send_status: claimFromStatus },
+        {
+          id: this.id,
+          send_status: claimFromStatus,
+          updated_at: loadedRevision.toISOString(),
+        },
         { send_status: 'sending', updated_at: claimedRevision },
       );
       if (!claim || claim.affected < 1) {

@@ -37,7 +37,10 @@ export interface ContentListWorkflowOption {
   sensitivity: 'public' | 'sensitive';
 }
 
-/** Browser-visible workflow choices. Server descriptors remain authoritative. */
+/**
+ * Workflow choices with default English descriptor labels. ContentList maps
+ * their stable ids through its i18n catalog before rendering them.
+ */
 export const CONTENT_LIST_WORKFLOW_OPTIONS: readonly ContentListWorkflowOption[] =
   Object.freeze([
     option('move-to-trash', 'Move to trash', 'foreground', 'sensitive'),

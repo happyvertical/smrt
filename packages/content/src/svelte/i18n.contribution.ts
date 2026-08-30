@@ -133,6 +133,69 @@ export const M = defineMessages({
     'Optimization instructions (optional)',
   'content.content_list.job_queued_progress':
     'Job {id} queued. Progress is available from the job runner.',
+  'content.content_list.workflow_move_to_trash': 'Move to trash',
+  'content.content_list.workflow_mark_draft': 'Mark draft',
+  'content.content_list.workflow_submit_review': 'Submit for review',
+  'content.content_list.workflow_publish': 'Publish',
+  'content.content_list.workflow_archive': 'Archive',
+  'content.content_list.workflow_restore': 'Restore',
+  'content.content_list.workflow_automated_review': 'Automated review',
+  'content.content_list.workflow_format_body': 'Format body',
+  'content.content_list.workflow_categorize': 'Categorize',
+  'content.content_list.workflow_optimize': 'Optimize / complete',
+  'content.content_list.workflow_result_background':
+    '{accepted} queued for background processing; results pending',
+  'content.content_list.workflow_result_summary':
+    '{accepted} accepted, {skipped} skipped, {failed} failed',
+  'content.content_list.workflow_incomplete_outcomes':
+    'The workflow returned incomplete row outcomes; the selection was preserved.',
+  'content.content_list.workflow_preview_scope': 'Resolved scope: {scope}.',
+  'content.content_list.workflow_preview_count_one':
+    '{count} matching content item.',
+  'content.content_list.workflow_preview_count_many':
+    '{count} matching content items.',
+  'content.content_list.workflow_preview_examples': 'Examples: {labels}.',
+  'content.content_list.workflow_preview_ineligible_count':
+    '{count} currently ineligible.',
+  'content.content_list.workflow_preview_ineligible': 'Ineligible: {items}.',
+  'content.content_list.workflow_preview_mismatch':
+    'The workflow response did not match the preview request.',
+  'content.content_list.workflow_preview_failed': 'Preview failed.',
+  'content.content_list.workflow_selection_changed':
+    'The selection or query changed. Preview the workflow again.',
+  'content.content_list.workflow_apply_mismatch':
+    'The workflow response did not match the apply request.',
+  'content.content_list.workflow_changed_applying':
+    'The selection or workflow changed while applying; its result was not applied.',
+  'content.content_list.workflow_failed': 'Workflow failed.',
+  'content.content_list.workflow_changed_checking_job':
+    'The selection or workflow changed while checking the job; its result was not applied.',
+  'content.content_list.workflow_job_still': 'Job {id} is still {status}.',
+  'content.content_list.workflow_job_missing_result':
+    'Job {id} completed without an action result; check the job runner before retrying.',
+  'content.content_list.workflow_job_wrong_workflow':
+    'Job {id} returned a result for another workflow.',
+  'content.content_list.workflow_job_failed': 'Job {id} failed.',
+  'content.content_list.workflow_job_status': 'Job {id} {status}.',
+  'content.content_list.workflow_scope_explicit_ids': 'explicit-ids',
+  'content.content_list.workflow_scope_current_page': 'current-page',
+  'content.content_list.workflow_scope_all_matching': 'all-matching',
+  'content.content_list.workflow_status_cancelled': 'Cancelled',
+  'content.content_list.workflow_draft': 'Draft',
+  'content.content_list.workflow_review': 'Review',
+  'content.content_list.workflow_published': 'Published',
+  'content.content_list.workflow_markdown': 'Markdown',
+  'content.content_list.workflow_html': 'HTML',
+  'content.content_list.workflow_facts': 'Facts',
+  'content.content_list.workflow_safety': 'Safety',
+  'content.content_list.workflow_custom': 'Custom',
+  'content.content_list.workflow_working': 'Working…',
+  'content.content_list.workflow_job_queued': 'Job queued',
+  'content.content_list.workflow_preview': 'Preview workflow',
+  'content.content_list.workflow_confirm': 'Confirm {workflow}',
+  'content.content_list.workflow_applying': 'Applying…',
+  'content.content_list.workflow_apply': 'Apply workflow',
+  'content.content_list.workflow_noun': 'workflow',
   'content.content_list.pagination': 'Content pages',
   'content.content_list.error_title': 'Contents could not be loaded',
   'content.content_list.retry': 'Retry',
