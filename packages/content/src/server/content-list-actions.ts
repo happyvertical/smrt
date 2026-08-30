@@ -32,10 +32,7 @@ import {
   MAX_DATA_QUERY_PAGE_LIMIT,
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
-import type {
-  DataQueryFilter,
-  DataQueryRequest,
-} from '@happyvertical/smrt-types';
+import type { DataQueryRequest } from '@happyvertical/smrt-types';
 import type {
   DataSurfaceActionResult,
   DataSurfaceDescriptor,
@@ -817,13 +814,6 @@ async function applyWorkflow(
       await runHandler(handlers.optimize);
       return;
   }
-}
-
-function mergeFilter(
-  left: DataQueryFilter | undefined,
-  right: DataQueryFilter,
-): DataQueryFilter {
-  return left ? { kind: 'all', filters: [left, right] } : right;
 }
 
 function revisionFingerprint(rows: readonly Record<string, unknown>[]): string {

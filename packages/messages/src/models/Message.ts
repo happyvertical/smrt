@@ -304,10 +304,11 @@ export class Message extends SmrtObject {
     // serves as the claim.
     const claimFromStatus = this.sendStatus;
     if (this.isPersisted && this.id) {
+      const claimedRevision = new Date();
       const claim = await this.db.update(
         this.tableName,
         { id: this.id, send_status: claimFromStatus },
-        { send_status: 'sending', updated_at: new Date() },
+        { send_status: 'sending', updated_at: claimedRevision },
       );
       if (!claim || claim.affected < 1) {
         return {
@@ -317,6 +318,7 @@ export class Message extends SmrtObject {
         };
       }
       this.sendStatus = 'sending';
+      this.updated_at = claimedRevision;
       this.updatedAt = new Date();
     } else {
       this.sendStatus = 'sending';

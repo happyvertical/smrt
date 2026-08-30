@@ -205,7 +205,18 @@ export class CommercialUsageService {
     }
     if (charge.status === 'approved') {
       charge.status = 'adjusted';
-      await charge.save();
+      try {
+        await charge.save();
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          !('code' in error) ||
+          error.code !== 'RUNTIME_REVISION_CONFLICT'
+        )
+          throw error;
+        const current = await this.charges.get(chargeId);
+        if (current?.status !== 'adjusted') throw error;
+      }
     }
     return adjustment;
   }

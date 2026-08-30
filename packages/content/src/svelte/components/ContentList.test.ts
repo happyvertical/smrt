@@ -17,11 +17,11 @@ import {
 } from '../content-list-query.js';
 import { createContentListJobController } from '../content-list-runtime.js';
 import { createContentListMemorySavedViewStore } from '../content-list-saved-views.js';
-import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import type {
   ContentListWorkflowBinding,
   ContentListWorkflowRequest,
 } from '../content-list-workflows.js';
+import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import Harness from './__tests__/content-list-props-harness.svelte';
 import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
 import RefreshCapabilityHarness from './__tests__/content-list-refresh-capability-harness.svelte';
@@ -351,6 +351,53 @@ describe('ContentList bulk workflows', () => {
       },
       target: {
         expectedCount: 5,
+        query: { version: 1, mode: 'rows' },
+      },
+    });
+  });
+
+  it('binds workflows to a query recovered through retry', async () => {
+    const remote = createFakeContentListQuery();
+    remote.resolve(
+      [
+        {
+          id: 'content-1',
+          title: 'Recovered',
+          status: 'draft',
+          updated_at: '2026-08-30T12:00:00.000Z',
+        },
+      ],
+      1,
+    );
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    await settle();
+
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-recovered-query',
+      freshness: { state: 'fresh', asOf: '2026-08-30T12:01:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.fail(new Error('transient'));
+    flushSync();
+    click(buttonsByText(target, 'Retry')[0]);
+
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 1 matching')).toHaveLength(1),
+    );
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      selection: {
+        scope: 'current-page',
+      },
+      target: {
         query: { version: 1, mode: 'rows' },
       },
     });

@@ -676,6 +676,36 @@ function refreshQuery(): void {
     })
     .catch(() => undefined);
 }
+
+function settleWorkflowQueryResult(
+  result: unknown,
+  request: ContentListDataQueryRequest,
+  signature: string,
+): void {
+  settledSignature = signature;
+  resultNotices = readContentListQueryNotices(result);
+  if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+    const envelope = result as Record<string, unknown>;
+    settledWorkflowQuery = request;
+    settledWorkflowFingerprint =
+      typeof envelope.queryFingerprint === 'string'
+        ? envelope.queryFingerprint
+        : null;
+    const freshness = envelope.freshness;
+    settledWorkflowRevision =
+      freshness !== null &&
+      typeof freshness === 'object' &&
+      !Array.isArray(freshness) &&
+      typeof (freshness as Record<string, unknown>).asOf === 'string'
+        ? String((freshness as Record<string, unknown>).asOf)
+        : null;
+    return;
+  }
+  settledWorkflowQuery = null;
+  settledWorkflowFingerprint = null;
+  settledWorkflowRevision = null;
+}
+
 /**
  * A retry re-reads the same query, so its answer replaces the rendered rows —
  * and therefore has to replace the completeness flags that describe them too.
@@ -687,13 +717,20 @@ function refreshQuery(): void {
 function retryQuery(): void {
   if (!queryBinding) return;
   const signature = executedSignature;
+  const request = executedWorkflowQuery;
   void queryBinding
     .retry()
     .then((result) => {
       // `retry()` resolves undefined when there is no request to repeat, and a
       // newer query may have superseded this one while it was in flight.
-      if (result === undefined || executedSignature !== signature) return;
-      resultNotices = readContentListQueryNotices(result);
+      if (
+        result === undefined ||
+        request === null ||
+        executedSignature !== signature ||
+        signature === undefined
+      )
+        return;
+      settleWorkflowQueryResult(result, request, signature);
     })
     .catch(() => undefined);
 }
@@ -719,8 +756,8 @@ const querySignature = $derived(
 );
 
 let executedSignature: string | undefined;
+let executedWorkflowQuery: ContentListDataQueryRequest | null = null;
 let publishedUrlSignature: string | undefined;
-
 
 $effect(() => {
   const signature = querySignature;
@@ -766,39 +803,16 @@ $effect(() => {
       // unhandled one. The resolved envelope carries the server's completeness
       // flags, which the binding itself does not expose.
       activeQueryKey = contentListQueryRequestKey(translated.request);
+      executedWorkflowQuery = translated.request;
       void queryBinding
         .execute(translated.request)
         .then((result) => {
           // A newer query may have superseded this one while it was in flight.
           if (executedSignature !== signature) return;
           // The binding's rows and total now describe THIS query, so the page
-          // may be clamped against them.
-          settledSignature = signature;
-          resultNotices = readContentListQueryNotices(result);
-          if (
-            result !== null &&
-            typeof result === 'object' &&
-            !Array.isArray(result)
-          ) {
-            const envelope = result as Record<string, unknown>;
-            settledWorkflowQuery = translated.request;
-            settledWorkflowFingerprint =
-              typeof envelope.queryFingerprint === 'string'
-                ? envelope.queryFingerprint
-                : null;
-            const freshness = envelope.freshness;
-            settledWorkflowRevision =
-              freshness !== null &&
-              typeof freshness === 'object' &&
-              !Array.isArray(freshness) &&
-              typeof (freshness as Record<string, unknown>).asOf === 'string'
-                ? String((freshness as Record<string, unknown>).asOf)
-                : null;
-          } else {
-            settledWorkflowQuery = null;
-            settledWorkflowFingerprint = null;
-            settledWorkflowRevision = null;
-          }
+          // may be clamped against them and workflows may bind to the exact
+          // settled request.
+          settleWorkflowQueryResult(result, translated.request, signature);
         })
         .catch(() => undefined);
     }
@@ -2060,7 +2074,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             disabled={workflowPending}
             onclick={() => void checkWorkflowJob()}
           >
-            Check job
+            {t(M['content.content_list.check_job'])}
           </Button>
         {/if}
         <Button
@@ -2253,16 +2267,18 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             disabled={workflowPending}
             onclick={selectAllMatching}
           >
-            Select all {exactMatchingCount} matching
+            {t(M['content.content_list.select_all_matching'], {
+              count: exactMatchingCount,
+            })}
           </Button>
         {/if}
       </div>
     {/if}
 
     {#if workflows && (selectedCount > 0 || workflowError || workflowResult)}
-      <section class="content-workflows" aria-label="Bulk content workflows">
+      <section class="content-workflows" aria-label={t(M['content.content_list.bulk_workflows'])}>
         <Select
-          aria-label="Bulk workflow"
+          aria-label={t(M['content.content_list.bulk_workflow'])}
           value={selectedWorkflow}
           disabled={workflowPending}
           onchange={(event: Event) => {
@@ -2280,15 +2296,15 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
         {#if selectedWorkflow === 'categorize'}
           <Input
-            aria-label="Category path"
-            placeholder="Category path"
+            aria-label={t(M['content.content_list.category_path'])}
+            placeholder={t(M['content.content_list.category_path'])}
             value={workflowCategory}
             disabled={workflowPending}
             oninput={(event: Event) => workflowCategory = (event.currentTarget as HTMLInputElement).value}
           />
         {:else if selectedWorkflow === 'restore'}
           <Select
-            aria-label="Restore status"
+            aria-label={t(M['content.content_list.restore_status'])}
             value={workflowRestoreStatus}
             disabled={workflowPending}
             onchange={(event: Event) => workflowRestoreStatus = (event.currentTarget as HTMLSelectElement).value as typeof workflowRestoreStatus}
@@ -2299,7 +2315,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           </Select>
         {:else if selectedWorkflow === 'format-body'}
           <Select
-            aria-label="Body format"
+            aria-label={t(M['content.content_list.body_format'])}
             value={workflowFormat}
             disabled={workflowPending}
             onchange={(event: Event) => workflowFormat = (event.currentTarget as HTMLSelectElement).value as typeof workflowFormat}
@@ -2309,27 +2325,27 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           </Select>
         {:else if selectedWorkflow === 'automated-review'}
           <Select
-            aria-label="Review kind"
+            aria-label={t(M['content.content_list.review_kind'])}
             value={workflowReviewKind}
             disabled={workflowPending}
             onchange={(event: Event) => workflowReviewKind = (event.currentTarget as HTMLSelectElement).value}
           >
-            <option value="">Default review kind</option>
+            <option value="">{t(M['content.content_list.default_review_kind'])}</option>
             <option value="facts">Facts</option>
             <option value="safety">Safety</option>
             <option value="custom">Custom</option>
           </Select>
           <Input
-            aria-label="Review policy key"
-            placeholder="Policy key (optional)"
+            aria-label={t(M['content.content_list.review_policy_key'])}
+            placeholder={t(M['content.content_list.policy_key_optional'])}
             value={workflowPolicyKey}
             disabled={workflowPending}
             oninput={(event: Event) => workflowPolicyKey = (event.currentTarget as HTMLInputElement).value}
           />
         {:else if selectedWorkflow === 'optimize'}
           <Input
-            aria-label="Optimization instructions"
-            placeholder="Optimization instructions (optional)"
+            aria-label={t(M['content.content_list.optimization_instructions'])}
+            placeholder={t(M['content.content_list.optimization_instructions_optional'])}
             value={workflowInstructions}
             disabled={workflowPending}
             oninput={(event: Event) => workflowInstructions = (event.currentTarget as HTMLInputElement).value}
@@ -2359,7 +2375,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           <p class="content-workflows__result" role="status">
             {workflowResultMessage(workflowResult)}
             {#if typeof workflowResult.details?.jobId === 'string'}
-              Job {workflowResult.details.jobId} queued. Progress is available from the job runner.
+              {t(M['content.content_list.job_queued_progress'], {
+                id: workflowResult.details.jobId,
+              })}
             {/if}
           </p>
         {/if}
