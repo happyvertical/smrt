@@ -677,6 +677,10 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         await schemaManager.ensurePostgresForeignKey(
           deferred.tableName,
           deferred.foreignKey,
+          {
+            nullable: deferred.nullable,
+            uuidComparison: deferred.uuidComparison,
+          },
         );
         await schemaDb.query(
           renderForeignKeyConstraintComment(
@@ -818,6 +822,8 @@ interface PostSchemaStatement {
   tableName: string;
   constraintName: string;
   foreignKey: ForeignKeyDefinition;
+  nullable: boolean;
+  uuidComparison: boolean;
 }
 
 interface ManifestTableReconciliation {
@@ -1423,6 +1429,9 @@ export async function createIsolatedTestDbFromManifest(
     })),
     adapter,
   );
+  const definitionsByTable = new Map(
+    plan.schemas.map((definition) => [definition.tableName, definition]),
+  );
   if (adapter === 'postgres') {
     const unstructuredCyclicTables = plan.cyclicTables.filter(
       (tableName) => !tableMap.get(tableName)?.table.structured,
@@ -1508,6 +1517,15 @@ export async function createIsolatedTestDbFromManifest(
             tableName,
             constraintName: foreignKeyConstraintName(tableName, foreignKey),
             foreignKey,
+            nullable:
+              definitionsByTable.get(tableName)?.columns[foreignKey.column]
+                ?.notNull !== true,
+            uuidComparison:
+              definitionsByTable.get(tableName)?.columns[foreignKey.column]
+                ?.type === 'UUID' &&
+              definitionsByTable.get(foreignKey.referencesTable)?.columns[
+                foreignKey.referencesColumn
+              ]?.type === 'UUID',
           }))
       : [],
     adapter === 'postgres'

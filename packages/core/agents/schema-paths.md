@@ -702,10 +702,18 @@ current ALTER/constraint support cannot enforce those shapes safely.
 
 For existing tables, PostgreSQL checks the exact child table/column against the
 exact referenced table/column before adding a constraint as `NOT VALID` and
-then validating it. If orphans exist (or the probe cannot run), migration stops
-with detector and repair SQL. SQLite requires a deliberate table rebuild;
-DuckDB reports the unsupported ALTER path. Neither engine treats an unsupported
-constraint addition as a successful no-op.
+then validating it. The probe uses distinct child/parent aliases and, when both
+manifest columns are UUIDs, bases its guarded casts on both live column types:
+matching live types compare directly, while a legacy text side is shape-checked
+before casting. This keeps a self-reference or malformed legacy value from
+invalidating the query. An orphan stops migration with detector SQL and an
+executable repair suggestion: nullable FKs are cleared, while required FKs
+require an explicit operator decision to reassign the reference or deliberately
+remove a child row after preserving its required data. A probe failure is
+surfaced as a database/framework error, never misreported as orphan data.
+SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
+path. Neither engine treats an unsupported constraint addition as a successful
+no-op.
 
 Properties to keep if you touch that module:
 

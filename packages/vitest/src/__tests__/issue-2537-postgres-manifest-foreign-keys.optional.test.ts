@@ -607,6 +607,80 @@ postgresDescribe(
       }
     });
 
+    it('preflights malformed legacy text with UUID manifest foreign keys', async () => {
+      const parentTable = 'i2537_legacy_uuid_parent';
+      const childTable = 'i2537_legacy_uuid_child';
+      await dropIssueTables(childTable, parentTable);
+      const manifestPath = join(
+        tmpdir(),
+        `smrt-vitest-issue-2551-${randomUUID()}.json`,
+      );
+      const objects = (withRelationship: boolean) => ({
+        Parent: {
+          className: 'Parent',
+          schema: {
+            tableName: parentTable,
+            columns: {
+              id: { type: 'UUID', primaryKey: true, notNull: true },
+            },
+          },
+        },
+        Child: {
+          className: 'Child',
+          schema: {
+            tableName: childTable,
+            columns: {
+              id: { type: 'UUID', primaryKey: true, notNull: true },
+              parent_id: withRelationship
+                ? {
+                    type: 'UUID',
+                    referenceKind: 'foreignKey',
+                    foreignKey: {
+                      table: parentTable,
+                      column: 'id',
+                    },
+                  }
+                : { type: 'UUID' },
+            },
+          },
+        },
+      });
+      try {
+        writeFileSync(
+          manifestPath,
+          JSON.stringify({ objects: objects(false) }),
+        );
+        const initial = await createIsolatedTestDbFromManifest({
+          manifestPath,
+        });
+        await initial.cleanup();
+
+        const admin = await getDatabase({
+          type: 'postgres',
+          url: process.env.DATABASE_URL as string,
+        });
+        try {
+          await admin.query(
+            `ALTER TABLE "${childTable}" ALTER COLUMN "parent_id" TYPE TEXT USING "parent_id"::text`,
+          );
+          await admin.query(
+            `INSERT INTO "${childTable}" (id, parent_id) VALUES ($1, $2)`,
+            [randomUUID(), 'not-a-uuid'],
+          );
+        } finally {
+          await admin.close();
+        }
+
+        writeFileSync(manifestPath, JSON.stringify({ objects: objects(true) }));
+        await expect(
+          createIsolatedTestDbFromManifest({ manifestPath }),
+        ).rejects.toThrow(/existing rows do not match.*Repair them/);
+      } finally {
+        rmSync(manifestPath, { force: true });
+        await dropIssueTables(childTable, parentTable);
+      }
+    });
+
     it('reconciles columns only from the active PostgreSQL schema', async () => {
       const tableName = 'i2537_schema_scoped_columns';
       const addedColumn = 'added_later';

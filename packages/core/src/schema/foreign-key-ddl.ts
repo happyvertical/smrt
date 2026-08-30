@@ -4,6 +4,8 @@ import { shortenIdentifier } from './index-utils.js';
 import { quoteIdentifier, quoteStringLiteral } from './sql-identifiers.js';
 import type { ForeignKeyDefinition, SchemaDefinition } from './types.js';
 
+export type ForeignKeyUuidCastSide = 'child' | 'parent' | 'both' | 'none';
+
 export function foreignKeyConstraintName(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
@@ -65,16 +67,24 @@ export function renderForeignKeyConstraintComment(
 export function renderForeignKeyOrphanDetector(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
-  options: { limitOne?: boolean } = {},
+  options: {
+    engine?: DatabaseEngine;
+    limitOne?: boolean;
+    uuidComparison?: boolean;
+    uuidCastSide?: ForeignKeyUuidCastSide;
+  } = {},
 ): string {
-  const childTable = quoteIdentifier(tableName);
-  const childColumn = quoteIdentifier(foreignKey.column);
-  const parentTable = quoteIdentifier(foreignKey.referencesTable);
-  const parentColumn = quoteIdentifier(foreignKey.referencesColumn);
+  const parts = foreignKeyOrphanParts(
+    tableName,
+    foreignKey,
+    options.engine,
+    options.uuidComparison,
+    options.uuidCastSide,
+  );
   return (
-    `SELECT ${childTable}.${childColumn} AS orphan_key FROM ${childTable} ` +
-    `LEFT JOIN ${parentTable} ON ${parentTable}.${parentColumn} = ${childTable}.${childColumn} ` +
-    `WHERE ${childTable}.${childColumn} IS NOT NULL AND ${parentTable}.${parentColumn} IS NULL` +
+    `SELECT ${parts.childColumn} AS orphan_key FROM ${parts.childTable} ` +
+    `LEFT JOIN ${parts.parentTable} ON ${parts.joinPredicate} ` +
+    `WHERE ${parts.childColumn} IS NOT NULL AND ${parts.parentColumn} IS NULL` +
     (options.limitOne ? ' LIMIT 1' : '')
   );
 }
@@ -82,15 +92,76 @@ export function renderForeignKeyOrphanDetector(
 export function renderForeignKeyOrphanRepair(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
+  options: {
+    engine?: DatabaseEngine;
+    uuidComparison?: boolean;
+    uuidCastSide?: ForeignKeyUuidCastSide;
+    nullable?: boolean;
+  } = {},
 ): string {
-  const childTable = quoteIdentifier(tableName);
-  const childColumn = quoteIdentifier(foreignKey.column);
-  const parentTable = quoteIdentifier(foreignKey.referencesTable);
-  const parentColumn = quoteIdentifier(foreignKey.referencesColumn);
-  return (
-    `DELETE FROM ${childTable} WHERE ${childColumn} IS NOT NULL AND NOT EXISTS (` +
-    `SELECT 1 FROM ${parentTable} WHERE ${parentTable}.${parentColumn} = ${childTable}.${childColumn})`
+  const parts = foreignKeyOrphanParts(
+    tableName,
+    foreignKey,
+    options.engine,
+    options.uuidComparison,
+    options.uuidCastSide,
   );
+  const orphanPredicate =
+    `${parts.childColumn} IS NOT NULL AND NOT EXISTS (` +
+    `SELECT 1 FROM ${parts.parentTable} WHERE ${parts.joinPredicate})`;
+  if (options.nullable === false) {
+    return (
+      `-- Manual repair required: ${quoteIdentifier(tableName)}.${quoteIdentifier(foreignKey.column)} is NOT NULL. ` +
+      `Reassign each orphaned reference to a valid ${quoteIdentifier(foreignKey.referencesTable)}.${quoteIdentifier(foreignKey.referencesColumn)} value, ` +
+      'or deliberately delete rows only after preserving any required child data.'
+    );
+  }
+  return (
+    `UPDATE ${quoteIdentifier(tableName)} AS ${parts.childAlias} ` +
+    `SET ${quoteIdentifier(foreignKey.column)} = NULL ` +
+    `WHERE ${orphanPredicate}`
+  );
+}
+
+const FOREIGN_KEY_CHILD_ALIAS = 'smrt_fk_child';
+const FOREIGN_KEY_PARENT_ALIAS = 'smrt_fk_parent';
+const CANONICAL_UUID_PATTERN =
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+function foreignKeyOrphanParts(
+  tableName: string,
+  foreignKey: ForeignKeyDefinition,
+  engine: DatabaseEngine = 'postgres',
+  uuidComparison = false,
+  uuidCastSide?: ForeignKeyUuidCastSide,
+) {
+  const childAlias = quoteIdentifier(FOREIGN_KEY_CHILD_ALIAS);
+  const parentAlias = quoteIdentifier(FOREIGN_KEY_PARENT_ALIAS);
+  const childColumn = `${childAlias}.${quoteIdentifier(foreignKey.column)}`;
+  const parentColumn = `${parentAlias}.${quoteIdentifier(foreignKey.referencesColumn)}`;
+  const guardedUuidValue = (column: string) =>
+    `CASE WHEN ${column}::text ~* '${CANONICAL_UUID_PATTERN}' THEN ${column}::uuid ELSE NULL END`;
+  const effectiveUuidCastSide =
+    engine === 'postgres' && uuidComparison
+      ? (uuidCastSide ?? 'child')
+      : undefined;
+  const childValue =
+    effectiveUuidCastSide === 'child' || effectiveUuidCastSide === 'both'
+      ? guardedUuidValue(childColumn)
+      : childColumn;
+  const parentValue =
+    effectiveUuidCastSide === 'parent' || effectiveUuidCastSide === 'both'
+      ? guardedUuidValue(parentColumn)
+      : parentColumn;
+
+  return {
+    childAlias,
+    childColumn,
+    childTable: `${quoteIdentifier(tableName)} AS ${childAlias}`,
+    joinPredicate: `${parentValue} = ${childValue}`,
+    parentColumn,
+    parentTable: `${quoteIdentifier(foreignKey.referencesTable)} AS ${parentAlias}`,
+  };
 }
 
 export function schemaForeignKeys(
