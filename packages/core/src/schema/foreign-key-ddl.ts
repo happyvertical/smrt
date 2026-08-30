@@ -65,9 +65,18 @@ export function renderForeignKeyConstraintComment(
 export function renderForeignKeyOrphanDetector(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
-  options: { engine?: DatabaseEngine; limitOne?: boolean } = {},
+  options: {
+    engine?: DatabaseEngine;
+    limitOne?: boolean;
+    uuidComparison?: boolean;
+  } = {},
 ): string {
-  const parts = foreignKeyOrphanParts(tableName, foreignKey, options.engine);
+  const parts = foreignKeyOrphanParts(
+    tableName,
+    foreignKey,
+    options.engine,
+    options.uuidComparison,
+  );
   return (
     `SELECT ${parts.childColumn} AS orphan_key FROM ${parts.childTable} ` +
     `LEFT JOIN ${parts.parentTable} ON ${parts.joinPredicate} ` +
@@ -79,9 +88,14 @@ export function renderForeignKeyOrphanDetector(
 export function renderForeignKeyOrphanRepair(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
-  options: { engine?: DatabaseEngine } = {},
+  options: { engine?: DatabaseEngine; uuidComparison?: boolean } = {},
 ): string {
-  const parts = foreignKeyOrphanParts(tableName, foreignKey, options.engine);
+  const parts = foreignKeyOrphanParts(
+    tableName,
+    foreignKey,
+    options.engine,
+    options.uuidComparison,
+  );
   return (
     `UPDATE ${quoteIdentifier(tableName)} AS ${parts.childAlias} ` +
     `SET ${quoteIdentifier(foreignKey.column)} = NULL ` +
@@ -99,13 +113,14 @@ function foreignKeyOrphanParts(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
   engine: DatabaseEngine = 'postgres',
+  uuidComparison = false,
 ) {
   const childAlias = quoteIdentifier(FOREIGN_KEY_CHILD_ALIAS);
   const parentAlias = quoteIdentifier(FOREIGN_KEY_PARENT_ALIAS);
   const childColumn = `${childAlias}.${quoteIdentifier(foreignKey.column)}`;
   const parentColumn = `${parentAlias}.${quoteIdentifier(foreignKey.referencesColumn)}`;
   const childValue =
-    engine === 'postgres'
+    engine === 'postgres' && uuidComparison
       ? `CASE WHEN ${childColumn}::text ~* '${CANONICAL_UUID_PATTERN}' THEN ${childColumn}::uuid ELSE NULL END`
       : childColumn;
 

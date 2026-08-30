@@ -11,6 +11,8 @@ const suffix = `${process.pid}_${Math.random().toString(36).slice(2, 7)}`;
 const contents = `i2551_contents_${suffix}`;
 const parents = `i2551_parents_${suffix}`;
 const children = `i2551_children_${suffix}`;
+const textParents = `i2551_text_parents_${suffix}`;
+const textChildren = `i2551_text_children_${suffix}`;
 
 describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
   let db: Awaited<ReturnType<typeof getDatabase>>;
@@ -29,10 +31,16 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
     await db.query(
       `CREATE TABLE "${children}" (id UUID PRIMARY KEY, parent_id TEXT)`,
     );
+    await db.query(`CREATE TABLE "${textParents}" (id TEXT PRIMARY KEY)`);
+    await db.query(
+      `CREATE TABLE "${textChildren}" (id TEXT PRIMARY KEY, parent_id TEXT)`,
+    );
   });
 
   afterAll(async () => {
     if (!db) return;
+    await db.query(`DROP TABLE IF EXISTS "${textChildren}"`);
+    await db.query(`DROP TABLE IF EXISTS "${textParents}"`);
     await db.query(`DROP TABLE IF EXISTS "${children}"`);
     await db.query(`DROP TABLE IF EXISTS "${parents}"`);
     await db.query(`DROP TABLE IF EXISTS "${contents}"`);
@@ -56,7 +64,9 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
       [randomUUID(), missingId],
     );
 
-    const detector = renderForeignKeyOrphanDetector(contents, foreignKey);
+    const detector = renderForeignKeyOrphanDetector(contents, foreignKey, {
+      uuidComparison: true,
+    });
     expect(detector).toContain('AS "smrt_fk_child"');
     expect(detector).toContain('AS "smrt_fk_parent"');
 
@@ -77,9 +87,30 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
       [randomUUID(), parentId],
     );
 
-    const detector = renderForeignKeyOrphanDetector(children, foreignKey);
+    const detector = renderForeignKeyOrphanDetector(children, foreignKey, {
+      uuidComparison: true,
+    });
     expect(detector).toContain('::text ~*');
     expect(detector).toContain('::uuid');
+    expect((await db.query(detector)).rows).toEqual([]);
+  });
+
+  it('keeps non-UUID text foreign keys as a direct comparison', async () => {
+    const foreignKey = {
+      column: 'parent_id',
+      referencesTable: textParents,
+      referencesColumn: 'id',
+    };
+    await db.query(`INSERT INTO "${textParents}" (id) VALUES ($1)`, [
+      'parent-text-key',
+    ]);
+    await db.query(
+      `INSERT INTO "${textChildren}" (id, parent_id) VALUES ($1, $2)`,
+      ['child-text-key', 'parent-text-key'],
+    );
+
+    const detector = renderForeignKeyOrphanDetector(textChildren, foreignKey);
+    expect(detector).not.toContain('::uuid');
     expect((await db.query(detector)).rows).toEqual([]);
   });
 
@@ -95,12 +126,16 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
       [childId, 'not-a-uuid'],
     );
 
-    const detector = renderForeignKeyOrphanDetector(children, foreignKey);
+    const detector = renderForeignKeyOrphanDetector(children, foreignKey, {
+      uuidComparison: true,
+    });
     expect((await db.query(detector)).rows).toEqual([
       { orphan_key: 'not-a-uuid' },
     ]);
 
-    const repair = renderForeignKeyOrphanRepair(children, foreignKey);
+    const repair = renderForeignKeyOrphanRepair(children, foreignKey, {
+      uuidComparison: true,
+    });
     expect(repair).toContain(`UPDATE "${children}" AS "smrt_fk_child"`);
     expect(repair).not.toContain('DELETE');
     await db.query(repair);

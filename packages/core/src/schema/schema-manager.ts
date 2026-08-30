@@ -351,12 +351,21 @@ export class SchemaManager {
    */
   async ensureTables(schemas: SchemaDefinition[]): Promise<void> {
     const plan = planForeignKeyCreation(schemas, this.engine);
+    const schemasByTable = new Map(
+      schemas.map((schema) => [schema.tableName, schema]),
+    );
 
     for (const schema of plan.schemas) {
       await this.ensureTable(schema);
     }
     for (const { table, foreignKey } of plan.deferredConstraints) {
-      await this.ensurePostgresForeignKey(table, foreignKey);
+      const source = schemasByTable.get(table);
+      const target = schemasByTable.get(foreignKey.referencesTable);
+      await this.ensurePostgresForeignKey(table, foreignKey, {
+        uuidComparison:
+          source?.columns[foreignKey.column]?.type === 'UUID' &&
+          target?.columns[foreignKey.referencesColumn]?.type === 'UUID',
+      });
     }
   }
 
@@ -370,6 +379,7 @@ export class SchemaManager {
   async ensurePostgresForeignKey(
     tableName: string,
     foreignKey: ForeignKeyDefinition,
+    options: { uuidComparison?: boolean } = {},
   ): Promise<void> {
     const constraintName = foreignKeyConstraintName(tableName, foreignKey);
     let existing: unknown;
@@ -390,6 +400,7 @@ export class SchemaManager {
     const detector = renderForeignKeyOrphanDetector(tableName, foreignKey, {
       engine: 'postgres',
       limitOne: true,
+      uuidComparison: options.uuidComparison,
     });
     let orphanResult: unknown;
     try {
@@ -402,7 +413,7 @@ export class SchemaManager {
     }
     if (extractRows(orphanResult).length > 0) {
       throw new Error(
-        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres' })}`,
+        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres', uuidComparison: options.uuidComparison })}`,
       );
     }
 

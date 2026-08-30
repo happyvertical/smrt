@@ -627,6 +627,8 @@ export class SchemaComparer {
     }
 
     for (const foreignKey of enabledForeignKeys) {
+      const uuidComparison =
+        manifest.columns[foreignKey.column]?.type === 'UUID';
       const expectedDelete =
         foreignKey.onDelete === undefined
           ? 'NO ACTION'
@@ -658,10 +660,12 @@ export class SchemaComparer {
         foreignKey,
         {
           engine: this.engine,
+          uuidComparison,
         },
       );
       const repairSql = renderForeignKeyOrphanRepair(tableName, foreignKey, {
         engine: this.engine,
+        uuidComparison,
       });
       const sameColumn = liveForeignKeys.some(
         (live) => live.column === foreignKey.column,
@@ -709,7 +713,7 @@ export class SchemaComparer {
       const childColumnExists = Boolean(dbSchema.columns[foreignKey.column]);
       if (
         childColumnExists &&
-        (await this.foreignKeyHasOrphans(tableName, foreignKey))
+        (await this.foreignKeyHasOrphans(tableName, foreignKey, uuidComparison))
       ) {
         changes.push({
           type: 'add_foreign_key',
@@ -745,12 +749,14 @@ export class SchemaComparer {
   private async foreignKeyHasOrphans(
     tableName: string,
     foreignKey: import('../schema/types.js').ForeignKeyDefinition,
+    uuidComparison: boolean,
   ): Promise<boolean> {
     try {
       const result = await this.db.query(
         renderForeignKeyOrphanDetector(tableName, foreignKey, {
           engine: this.engine,
           limitOne: true,
+          uuidComparison,
         }),
       );
       const rows = Array.isArray(result) ? result : result.rows || [];

@@ -782,12 +782,27 @@ describe('existing-table orphan safety (#2413)', () => {
       'FROM "children" AS "smrt_fk_child" LEFT JOIN "parents" AS "smrt_fk_parent"',
     );
     expect(detector).toContain(
-      '"smrt_fk_parent"."id" = CASE WHEN "smrt_fk_child"."parent_id"::text ~*',
+      '"smrt_fk_parent"."id" = "smrt_fk_child"."parent_id"',
     );
     expect(change?.sqlStatements).toEqual([
       'ALTER TABLE "children" ADD CONSTRAINT "children_parent_id_parents_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") ON DELETE NO ACTION ON UPDATE CASCADE NOT VALID',
       'ALTER TABLE "children" VALIDATE CONSTRAINT "children_parent_id_parents_id_fkey"',
     ]);
+  });
+
+  it('uses the guarded UUID comparison only when the manifest FK column is UUID', async () => {
+    const uuidChild = structuredClone(child);
+    uuidChild.columns.id.type = 'UUID';
+    uuidChild.columns.parent_id.type = 'UUID';
+    const mock = postgresMock(false);
+
+    await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: uuidChild });
+
+    expect(mock.queries.find((sql) => sql.includes('orphan_key'))).toContain(
+      '"smrt_fk_child"."parent_id"::text ~*',
+    );
   });
 
   it('refuses automatic add when an orphan exists and returns detector/repair guidance', async () => {
