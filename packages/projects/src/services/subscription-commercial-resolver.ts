@@ -1,5 +1,7 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
-import { CommercialUsageService } from '@happyvertical/smrt-subscriptions';
+import {
+  CommercialUsageService,
+  type CommercialUsageServiceOptions,
+} from '@happyvertical/smrt-subscriptions';
 import type { ServiceTimeEntry } from '../models/service-evidence.js';
 import type {
   CommercialSnapshot,
@@ -20,7 +22,7 @@ export class SubscriptionServiceCommercialResolver
   ) {}
 
   static async create(
-    options: SmrtClassOptions,
+    options: CommercialUsageServiceOptions,
     provider: ProviderCompensationResolver,
   ): Promise<SubscriptionServiceCommercialResolver> {
     return new SubscriptionServiceCommercialResolver(

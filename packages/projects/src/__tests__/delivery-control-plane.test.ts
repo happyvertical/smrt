@@ -749,7 +749,7 @@ describe('managed application delivery control plane (#1949)', () => {
     rule.setTerms({ unitPrice: 2 });
     await withTenant({ tenantId: 'tenant-1' }, () => rule.save());
     const commercial = await SubscriptionServiceCommercialResolver.create(
-      { db },
+      { db, billingStorage: { adapterType: 'sqlite' } },
       {
         compensate: async () => ({
           amount: 2500, // $25.00 in cents

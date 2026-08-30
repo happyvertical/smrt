@@ -1,4 +1,9 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type DatabaseConfig,
+  isDatabaseInterface,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import type { SqlAdapterType } from '@happyvertical/sql';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
   BillingAdjustmentCollection,
@@ -31,6 +36,143 @@ export type CustomPricingStrategy = (
   context: CustomPricingContext,
 ) => number | Promise<number>;
 
+export interface CommercialBillingStorage {
+  adapterType: SqlAdapterType;
+  writeStrategy?: 'immediate' | 'manual' | 'none';
+}
+
+export interface CommercialUsageServiceOptions extends SmrtClassOptions {
+  /**
+   * Required when `db` is an already-resolved database handle, whose public
+   * interface does not expose its adapter/write-back configuration.
+   */
+  billingStorage?: CommercialBillingStorage;
+}
+
+export class UnsupportedCommercialBillingStorageError extends Error {
+  readonly code = 'UNSUPPORTED_COMMERCIAL_BILLING_STORAGE';
+
+  constructor(storage: CommercialBillingStorage) {
+    super(
+      `Commercial billing does not support ${storage.adapterType} ` +
+        `with immediate JSON write-back because exported files are not ` +
+        `transactionally rolled back. Use PostgreSQL, SQLite, ordinary ` +
+        `DuckDB, or a non-immediate write strategy.`,
+    );
+    this.name = 'UnsupportedCommercialBillingStorageError';
+  }
+}
+
+export class CommercialBillingStorageConfigurationError extends Error {
+  readonly code = 'COMMERCIAL_BILLING_STORAGE_CONFIGURATION_REQUIRED';
+
+  constructor(message?: string) {
+    super(
+      message ??
+        'Commercial billing requires billingStorage when db is an already-resolved handle because adapter write-back capabilities are not public on that interface.',
+    );
+    this.name = 'CommercialBillingStorageConfigurationError';
+  }
+}
+
+export function assertCommercialBillingStorageSupported(
+  storage: CommercialBillingStorage,
+): void {
+  const writeStrategy =
+    storage.adapterType === 'json'
+      ? (storage.writeStrategy ?? 'immediate')
+      : storage.writeStrategy;
+  if (
+    (storage.adapterType === 'json' || storage.adapterType === 'duckdb') &&
+    writeStrategy === 'immediate'
+  ) {
+    throw new UnsupportedCommercialBillingStorageError({
+      ...storage,
+      writeStrategy,
+    });
+  }
+}
+
+function inferAdapterType(url: string): SqlAdapterType | undefined {
+  if (/^postgres(?:ql)?:/iu.test(url)) return 'postgres';
+  if (/^(?:https?|libsql):\/\//iu.test(url)) return 'sqlite';
+  if (/\.duckdb(?:$|\?)/iu.test(url)) return 'duckdb';
+  if (url === ':memory:' || url.startsWith('file:')) return 'sqlite';
+  return undefined;
+}
+
+function billingStorageFromConfig(
+  config: DatabaseConfig | undefined,
+): CommercialBillingStorage {
+  if (config === undefined) {
+    const environmentType = process.env.HAVE_SQL_TYPE;
+    if (
+      environmentType === 'sqlite' ||
+      environmentType === 'postgres' ||
+      environmentType === 'duckdb' ||
+      environmentType === 'json'
+    ) {
+      return { adapterType: environmentType };
+    }
+    return { adapterType: 'sqlite' };
+  }
+  if (isDatabaseInterface(config)) {
+    throw new CommercialBillingStorageConfigurationError();
+  }
+  if (typeof config === 'string') {
+    const adapterType = inferAdapterType(config);
+    if (adapterType) return { adapterType };
+    throw new Error(
+      'Commercial billing requires an explicit billingStorage adapter contract for ambiguous database URLs.',
+    );
+  }
+  const adapterType = config.type ?? inferAdapterType(String(config.url ?? ''));
+  if (!adapterType) {
+    throw new Error(
+      'Commercial billing requires an explicit database type or billingStorage adapter contract.',
+    );
+  }
+  const writeStrategy =
+    config.writeStrategy === 'immediate' ||
+    config.writeStrategy === 'manual' ||
+    config.writeStrategy === 'none'
+      ? config.writeStrategy
+      : undefined;
+  return { adapterType, writeStrategy };
+}
+
+function effectiveWriteStrategy(
+  storage: CommercialBillingStorage,
+): CommercialBillingStorage['writeStrategy'] {
+  if (storage.writeStrategy) return storage.writeStrategy;
+  if (storage.adapterType === 'json') return 'immediate';
+  if (storage.adapterType === 'duckdb') return 'none';
+  return undefined;
+}
+
+function resolveCommercialBillingStorage(
+  options: CommercialUsageServiceOptions,
+): CommercialBillingStorage {
+  if (isDatabaseInterface(options.db)) {
+    if (!options.billingStorage) {
+      throw new CommercialBillingStorageConfigurationError();
+    }
+    return options.billingStorage;
+  }
+  const configured = billingStorageFromConfig(options.db);
+  if (
+    options.billingStorage &&
+    (options.billingStorage.adapterType !== configured.adapterType ||
+      effectiveWriteStrategy(options.billingStorage) !==
+        effectiveWriteStrategy(configured))
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billingStorage must match the configured database adapter and write strategy.',
+    );
+  }
+  return configured;
+}
+
 export class CommercialUsageService {
   private readonly customStrategies = new Map<string, CustomPricingStrategy>();
   constructor(
@@ -38,18 +180,28 @@ export class CommercialUsageService {
     private readonly rules: PricingRuleCollection,
     private readonly charges: ClientChargeCollection,
     private readonly adjustments: BillingAdjustmentCollection,
-  ) {}
+    billingStorage: CommercialBillingStorage,
+  ) {
+    if (!billingStorage) {
+      throw new CommercialBillingStorageConfigurationError();
+    }
+    assertCommercialBillingStorageSupported(billingStorage);
+  }
 
   static async create(
-    options: SmrtClassOptions = {},
+    options: CommercialUsageServiceOptions = {},
   ): Promise<CommercialUsageService> {
-    const usage = await TenantUsageMetricCollection.create(options);
-    const sharedOptions = { ...options, db: usage.db };
+    const billingStorage = resolveCommercialBillingStorage(options);
+    assertCommercialBillingStorageSupported(billingStorage);
+    const { billingStorage: _billingStorage, ...classOptions } = options;
+    const usage = await TenantUsageMetricCollection.create(classOptions);
+    const sharedOptions = { ...classOptions, db: usage.db };
     return new CommercialUsageService(
       usage,
       await PricingRuleCollection.create(sharedOptions),
       await ClientChargeCollection.create(sharedOptions),
       await BillingAdjustmentCollection.create(sharedOptions),
+      billingStorage,
     );
   }
 

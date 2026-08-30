@@ -34,6 +34,14 @@ that reverted to DECIMAL passes every SQLite suite.
   compare charge sums against `limitAmount` exactly.
 - **`adjust()` rejects a fractional amount.** Negative amounts are legitimate
   (a credit); fractional ones almost always mean the caller passed major units.
+- **Billing rejects immediate JSON write-back.** The JSON adapter's default
+  `writeStrategy: 'immediate'` and DuckDB with that write-back strategy export
+  files before transaction commit, while adapter rollback restores only the
+  database transaction. `CommercialUsageService` therefore fails before setup
+  on those configurations. PostgreSQL, SQLite, ordinary DuckDB, and explicit
+  non-immediate write strategies remain supported. When supplying an already
+  resolved database handle, also pass `billingStorage` so this capability
+  decision is explicit rather than inferred from private adapter state.
 - **UI formats by dividing, never by `toFixed`.** `PlanPicker` and
   `CommercialOverview` scale back to major units using the currency's own
   minor-unit exponent, so zero-decimal currencies (JPY, KRW) are not divided.

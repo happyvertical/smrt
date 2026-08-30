@@ -9,8 +9,11 @@ import {
   SpendingPolicyCollection,
 } from '../models/commercial.js';
 import {
+  assertCommercialBillingStorageSupported,
+  CommercialBillingStorageConfigurationError,
   CommercialUsageService,
   SpendingPolicyEvaluator,
+  UnsupportedCommercialBillingStorageError,
 } from '../services/commercial.js';
 
 describe('commercial usage tracer', () => {
@@ -30,7 +33,64 @@ describe('commercial usage tracer', () => {
     charges = await ClientChargeCollection.create(options);
     adjustments = await BillingAdjustmentCollection.create(options);
     policies = await SpendingPolicyCollection.create(options);
-    service = new CommercialUsageService(usage, rules, charges, adjustments);
+    service = new CommercialUsageService(usage, rules, charges, adjustments, {
+      adapterType: 'sqlite',
+    });
+  });
+
+  it('rejects non-transactional billing write-back adapters before setup', async () => {
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'json',
+          url: './unused-commercial-json',
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'duckdb',
+          url: ':memory:',
+          writeStrategy: 'immediate',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'UNSUPPORTED_COMMERCIAL_BILLING_STORAGE',
+    });
+    await expect(
+      CommercialUsageService.create({ db: usage.db }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+    await expect(
+      CommercialUsageService.create({
+        db: { type: 'json', url: './unused-commercial-json' },
+        billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it('preserves relational and ordinary DuckDB billing storage', () => {
+    expect(() =>
+      assertCommercialBillingStorageSupported({ adapterType: 'sqlite' }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({ adapterType: 'postgres' }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({ adapterType: 'duckdb' }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'duckdb',
+        writeStrategy: 'none',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'duckdb',
+        writeStrategy: 'manual',
+      }),
+    ).not.toThrow();
   });
   afterEach(async () => {
     await usage.db.close?.();
