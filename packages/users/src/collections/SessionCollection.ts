@@ -103,11 +103,7 @@ export class SessionCollection extends SmrtCollection<Session> {
     const session = await this.findValidSession(sessionId);
     if (!session) return false;
 
-    session.touch();
-    if (extendTtl) {
-      session.extend(ttl);
-    }
-    await session.save();
+    await session.recordActivity(extendTtl, ttl);
     return true;
   }
 

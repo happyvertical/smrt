@@ -7,6 +7,7 @@
 import {
   crossPackageRef,
   foreignKey,
+  recordInstanceChange,
   SmrtObject,
   smrt,
   usesEmbeddedRevisionFallback,
@@ -160,6 +161,7 @@ export class Message extends SmrtObject {
           ? verifiedRevision
           : nextRevision;
         this.updatedAt = new Date();
+        await recordInstanceChange(this);
         return;
       }
     }

@@ -12,7 +12,11 @@
  * models/collections/DB are real.
  */
 
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  ensureChangeFeedTable,
+  getChangesSince,
+  getTestDatabase,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -345,10 +349,26 @@ describe('Message.send orchestration', () => {
     });
     await msg.initialize();
     await msg.save();
+    await ensureChangeFeedTable(db);
+    const beforeSendCursor = (await getChangesSince(db, { since: 0 })).cursor;
 
     const first = await msg.send();
     expect(first.success).toBe(true);
     expect(sendMock).toHaveBeenCalledTimes(1);
+    await expect(
+      getChangesSince(db, {
+        since: beforeSendCursor,
+        table: 'messages',
+      }),
+    ).resolves.toMatchObject({
+      changes: [
+        expect.objectContaining({
+          operation: 'update',
+          rowId: msg.id,
+          table: 'messages',
+        }),
+      ],
+    });
 
     // A second send on the already-'sent' instance must be rejected without
     // touching the provider.

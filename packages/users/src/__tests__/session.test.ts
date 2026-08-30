@@ -186,6 +186,22 @@ describe('SessionCollection', () => {
     expect(found?.id).toBe(session.id);
   });
 
+  it('persists concurrent activity for the same valid session', async () => {
+    const user = await users.create({ email: 'parallel@example.com' });
+    await user.save();
+    const created = await sessions.createSession({ userId: String(user.id) });
+    const first = await sessions.get(String(created.id));
+    const second = await sessions.get(String(created.id));
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    if (!first || !second)
+      throw new Error('Expected persisted session instances');
+
+    await Promise.all([first.recordActivity(), second.recordActivity()]);
+
+    expect(await sessions.findValidSession(String(created.id))).not.toBeNull();
+  });
+
   it('should return null for invalid session', async () => {
     const notFound = await sessions.findValidSession('non-existent-id');
     expect(notFound).toBeNull();

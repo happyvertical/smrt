@@ -51,6 +51,7 @@ export {
   getTenantScopedChangesSince,
   MAX_CHANGES_LIMIT,
   pruneChangeFeed,
+  recordInstanceChange,
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
   unregisterChangeFeedWriter,

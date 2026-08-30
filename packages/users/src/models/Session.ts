@@ -172,6 +172,33 @@ export class Session extends SmrtObject {
     this.touch();
   }
 
+  /** Persist routine session activity without failing concurrent requests. */
+  async recordActivity(
+    extendTtl = false,
+    ttlSeconds: number = DEFAULT_SESSION_TTL,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (attempt > 0) await this.loadFromId();
+      if (extendTtl) this.extend(ttlSeconds);
+      else this.touch();
+      try {
+        await this.save();
+        return;
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'RUNTIME_REVISION_CONFLICT'
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+  }
+
   /**
    * Revoke the session
    */

@@ -180,12 +180,7 @@ export class SessionService {
     }
 
     // Touch session (and optionally extend)
-    if (this.autoExtend) {
-      session.extend(this.defaultTTL);
-    } else {
-      session.touch();
-    }
-    await session.save();
+    await session.recordActivity(this.autoExtend, this.defaultTTL);
 
     return {
       user,
