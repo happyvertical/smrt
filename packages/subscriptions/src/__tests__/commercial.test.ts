@@ -115,6 +115,37 @@ describe('commercial usage tracer', () => {
     }
   });
 
+  it('normalizes environment values over explicitly undefined options', async () => {
+    vi.stubEnv('HAVE_SQL_TYPE', 'json');
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'immediate');
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: undefined,
+          url: './unused-commercial-json',
+          writeStrategy: undefined,
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'manual');
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
+    try {
+      await expect(
+        CommercialUsageService.create({
+          db: {
+            type: 'json',
+            url: join(directory, 'billing.json'),
+            writeStrategy: undefined,
+          },
+          billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it('normalizes explicit contracts for ambiguous database strings', async () => {
     vi.stubEnv('HAVE_SQL_TYPE', '');
     const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));

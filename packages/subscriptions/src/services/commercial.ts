@@ -212,15 +212,7 @@ function normalizedCommercialClassOptions(
 ): SmrtClassOptions {
   const { billingStorage: _billingStorage, ...classOptions } = options;
   const configuredDatabase = options.db ?? options.persistence;
-  if (
-    configuredDatabase &&
-    !isDatabaseInterface(configuredDatabase) &&
-    (typeof configuredDatabase === 'string' ||
-      (!configuredDatabase.type && !environmentAdapterType()) ||
-      (!configuredDatabase.writeStrategy &&
-        !environmentWriteStrategy() &&
-        billingStorage.writeStrategy !== undefined))
-  ) {
+  if (configuredDatabase && !isDatabaseInterface(configuredDatabase)) {
     const normalizedDatabase =
       typeof configuredDatabase === 'string'
         ? {
@@ -230,12 +222,14 @@ function normalizedCommercialClassOptions(
           }
         : {
             ...configuredDatabase,
-            type:
-              configuredDatabase.type ??
-              environmentAdapterType() ??
-              billingStorage.adapterType,
-            writeStrategy:
-              configuredDatabase.writeStrategy ?? billingStorage.writeStrategy,
+            type: configuredDatabase.type ?? billingStorage.adapterType,
+            ...(billingStorage.writeStrategy === undefined
+              ? {}
+              : {
+                  writeStrategy:
+                    configuredDatabase.writeStrategy ??
+                    billingStorage.writeStrategy,
+                }),
           };
     if (options.db !== undefined) classOptions.db = normalizedDatabase;
     else classOptions.persistence = normalizedDatabase;
