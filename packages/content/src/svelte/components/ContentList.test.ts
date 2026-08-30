@@ -285,17 +285,43 @@ describe('ContentList presentations', () => {
 });
 
 describe('ContentList bulk workflows', () => {
-  it('renders workflow controls through the active locale catalog', () => {
+  it('localizes workflow controls, confirmation details, and failures', async () => {
+    const workflows = workflowBinding({
+      preview: async (request) => ({
+        ...request,
+        ok: true,
+        confirmationToken: 'localized-preview',
+        details: {
+          count: 1,
+          skipped: 1,
+          ineligible: [
+            { rowId: 'content-2', status: 'skipped', reason: 'requires_draft' },
+          ],
+          consequences: ['Published content is no longer public.'],
+        },
+      }),
+      apply: async (request) => ({
+        ...request,
+        ok: false,
+        reason: 'stale_preview',
+      }),
+    });
     const target = document.createElement('div');
     document.body.appendChild(target);
     const component = mount(I18nHarness, {
       target,
       props: {
         contents,
-        workflows: workflowBinding(),
+        workflows,
         messages: {
           'content.content_list.workflow_mark_draft': 'Mettre en brouillon',
           'content.content_list.workflow_preview': 'Prévisualiser le flux',
+          'content.content_list.workflow_consequence_unpublished':
+            'Le contenu publié n’est plus public.',
+          'content.content_list.workflow_reason_requires_draft':
+            'nécessite un brouillon',
+          'content.content_list.workflow_reason_stale_preview':
+            'l’aperçu n’est plus à jour',
         },
       },
     });
@@ -309,6 +335,69 @@ describe('ContentList bulk workflows', () => {
       ),
     ).toBe(true);
     expect(buttonsByText(target, 'Prévisualiser le flux')).toHaveLength(1);
+
+    click(buttonsByText(target, 'Prévisualiser le flux')[0]);
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        'content-2 (nécessite un brouillon)',
+      ),
+    );
+    expect(document.body.textContent).toContain(
+      'Le contenu publié n’est plus public.',
+    );
+    expect(document.body.textContent).not.toContain('requires_draft');
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('l’aperçu n’est plus à jour'),
+    );
+    expect(target.textContent).not.toContain('stale_preview');
+
+    const background = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          background: true,
+          jobId: 'job-localized-failure',
+        },
+      }),
+      status: async () => ({
+        jobId: 'job-localized-failure',
+        status: 'failed',
+        reason: 'execution_failed',
+      }),
+    });
+    const second = document.createElement('div');
+    document.body.appendChild(second);
+    const secondComponent = mount(I18nHarness, {
+      target: second,
+      props: {
+        contents,
+        workflows: background,
+        messages: {
+          'content.content_list.workflow_reason_execution_failed':
+            'l’exécution du flux a échoué',
+        },
+      },
+    });
+    mountedComponents.push(secondComponent);
+    flushSync();
+    click(checkboxByLabel(second, 'Select Council budget explained'));
+    selectOption(selectByLabel(second, 'Bulk workflow'), 'optimize');
+    click(buttonsByText(second, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(second, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(second, 'Check job')[0]);
+    await vi.waitFor(() =>
+      expect(second.textContent).toContain('l’exécution du flux a échoué'),
+    );
+    expect(second.textContent).not.toContain('execution_failed');
   });
 
   it('constrains automated review kinds to the server-supported values', async () => {
@@ -540,7 +629,7 @@ describe('ContentList bulk workflows', () => {
     });
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain(
-        'Resolved scope: explicit-ids. 1 matching content item. Examples: Council budget explained. 1 currently ineligible. Ineligible: content-2 (requires_draft). Published content is no longer public.',
+        'Resolved scope: explicit-ids. 1 matching content item. Examples: Council budget explained. 1 currently ineligible. Ineligible: content-2 (requires a draft). Published content is no longer public.',
       ),
     );
   });
@@ -758,7 +847,7 @@ describe('ContentList bulk workflows', () => {
     );
     click(buttonsByText(document.body, 'Apply workflow')[0]);
     await vi.waitFor(() =>
-      expect(target.textContent).toContain('stale_preview'),
+      expect(target.textContent).toContain('preview is no longer current'),
     );
     expect(target.textContent).toContain('1 selected');
     expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(0);
@@ -814,7 +903,7 @@ describe('ContentList bulk workflows', () => {
       expect(status).toHaveBeenCalledWith('job-content-42'),
     );
     await vi.waitFor(() =>
-      expect(second.textContent).toContain('provider unavailable'),
+      expect(second.textContent).toContain('Job job-content-42 Failed.'),
     );
     expect(second.textContent).toContain('1 selected');
     expect(buttonsByText(second, 'Preview workflow')[0]?.disabled).toBe(false);
@@ -867,7 +956,7 @@ describe('ContentList bulk workflows', () => {
     click(buttonsByText(target, 'Check job')[0]);
 
     await vi.waitFor(() =>
-      expect(target.textContent).toContain('stale_preview'),
+      expect(target.textContent).toContain('preview is no longer current'),
     );
     expect(target.textContent).toContain('1 selected');
     expect(

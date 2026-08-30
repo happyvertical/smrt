@@ -158,6 +158,72 @@ export const M = defineMessages({
   'content.content_list.workflow_preview_ineligible_count':
     '{count} currently ineligible.',
   'content.content_list.workflow_preview_ineligible': 'Ineligible: {items}.',
+  'content.content_list.workflow_consequence_trash':
+    'Content leaves active views and becomes restorable from trash.',
+  'content.content_list.workflow_consequence_unpublished':
+    'Published content is no longer public.',
+  'content.content_list.workflow_consequence_review_queue':
+    'Content enters the review queue.',
+  'content.content_list.workflow_consequence_published':
+    'Content becomes public and may create a publication snapshot.',
+  'content.content_list.workflow_consequence_leave_trash':
+    'Content leaves trash.',
+  'content.content_list.workflow_consequence_restore_published':
+    'Publishing makes content public.',
+  'content.content_list.workflow_consequence_review_result':
+    'Creates a review result and may create a review version.',
+  'content.content_list.workflow_consequence_body_change':
+    'The persisted content body may change.',
+  'content.content_list.workflow_consequence_category_change':
+    'The content category changes.',
+  'content.content_list.workflow_consequence_fields_change':
+    'Content fields may be revised or completed.',
+  'content.content_list.workflow_consequence_unknown':
+    'Review the workflow details before continuing.',
+  'content.content_list.workflow_reason_not_deleted': 'not deleted',
+  'content.content_list.workflow_reason_publish_readiness_failed':
+    'publication requirements were not met',
+  'content.content_list.workflow_reason_deleted': 'deleted',
+  'content.content_list.workflow_reason_already_draft': 'already a draft',
+  'content.content_list.workflow_reason_requires_draft': 'requires a draft',
+  'content.content_list.workflow_reason_invalid_status': 'invalid status',
+  'content.content_list.workflow_reason_already_archived': 'already archived',
+  'content.content_list.workflow_reason_governance_unavailable':
+    'content governance is unavailable',
+  'content.content_list.workflow_reason_review_policy_unavailable':
+    'review policy is unavailable',
+  'content.content_list.workflow_reason_review_kind_mismatch':
+    'review kind does not match the policy',
+  'content.content_list.workflow_reason_handler_unavailable':
+    'the workflow handler is unavailable',
+  'content.content_list.workflow_reason_requires_draft_or_review':
+    'requires draft or review status',
+  'content.content_list.workflow_reason_not_found_or_denied':
+    'not found or access denied',
+  'content.content_list.workflow_reason_row_revision_drifted':
+    'content changed after selection',
+  'content.content_list.workflow_reason_permission_denied': 'access denied',
+  'content.content_list.workflow_reason_not_found': 'not found',
+  'content.content_list.workflow_reason_stale_query_fingerprint':
+    'the selected query is no longer current',
+  'content.content_list.workflow_reason_matching_count_drifted':
+    'the number of matching items changed',
+  'content.content_list.workflow_reason_limit_exceeded':
+    'the selection exceeds the workflow limit',
+  'content.content_list.workflow_reason_invalid_request': 'invalid request',
+  'content.content_list.workflow_reason_invalid_payload': 'invalid input',
+  'content.content_list.workflow_reason_confirmation_required':
+    'confirmation is required',
+  'content.content_list.workflow_reason_stale_preview':
+    'the preview is no longer current',
+  'content.content_list.workflow_reason_denied': 'access denied',
+  'content.content_list.workflow_reason_unknown_permission':
+    'the required permission is unavailable',
+  'content.content_list.workflow_reason_execution_failed':
+    'workflow execution failed',
+  'content.content_list.workflow_reason_idempotency_conflict':
+    'this request conflicts with an earlier attempt',
+  'content.content_list.workflow_reason_unknown': 'not eligible',
   'content.content_list.workflow_preview_mismatch':
     'The workflow response did not match the preview request.',
   'content.content_list.workflow_preview_failed': 'Preview failed.',

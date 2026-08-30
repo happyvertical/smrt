@@ -140,8 +140,91 @@ const WORKFLOW_LABEL_MESSAGES: Record<
   optimize: M['content.content_list.workflow_optimize'],
 };
 
+const WORKFLOW_CONSEQUENCE_MESSAGES: Record<string, keyof typeof M> = {
+  'Content leaves active views and becomes restorable from trash.':
+    M['content.content_list.workflow_consequence_trash'],
+  'Published content is no longer public.':
+    M['content.content_list.workflow_consequence_unpublished'],
+  'Content enters the review queue.':
+    M['content.content_list.workflow_consequence_review_queue'],
+  'Content becomes public and may create a publication snapshot.':
+    M['content.content_list.workflow_consequence_published'],
+  'Content leaves trash.':
+    M['content.content_list.workflow_consequence_leave_trash'],
+  'Publishing makes content public.':
+    M['content.content_list.workflow_consequence_restore_published'],
+  'Creates a review result and may create a review version.':
+    M['content.content_list.workflow_consequence_review_result'],
+  'The persisted content body may change.':
+    M['content.content_list.workflow_consequence_body_change'],
+  'The content category changes.':
+    M['content.content_list.workflow_consequence_category_change'],
+  'Content fields may be revised or completed.':
+    M['content.content_list.workflow_consequence_fields_change'],
+};
+
+const WORKFLOW_REASON_MESSAGES: Record<string, keyof typeof M> = {
+  not_deleted: M['content.content_list.workflow_reason_not_deleted'],
+  publish_readiness_failed:
+    M['content.content_list.workflow_reason_publish_readiness_failed'],
+  deleted: M['content.content_list.workflow_reason_deleted'],
+  already_draft: M['content.content_list.workflow_reason_already_draft'],
+  requires_draft: M['content.content_list.workflow_reason_requires_draft'],
+  invalid_status: M['content.content_list.workflow_reason_invalid_status'],
+  already_archived: M['content.content_list.workflow_reason_already_archived'],
+  governance_unavailable:
+    M['content.content_list.workflow_reason_governance_unavailable'],
+  review_policy_unavailable:
+    M['content.content_list.workflow_reason_review_policy_unavailable'],
+  review_kind_mismatch:
+    M['content.content_list.workflow_reason_review_kind_mismatch'],
+  handler_unavailable:
+    M['content.content_list.workflow_reason_handler_unavailable'],
+  requires_draft_or_review:
+    M['content.content_list.workflow_reason_requires_draft_or_review'],
+  not_found_or_denied:
+    M['content.content_list.workflow_reason_not_found_or_denied'],
+  row_revision_drifted:
+    M['content.content_list.workflow_reason_row_revision_drifted'],
+  permission_denied:
+    M['content.content_list.workflow_reason_permission_denied'],
+  not_found: M['content.content_list.workflow_reason_not_found'],
+  stale_query_fingerprint:
+    M['content.content_list.workflow_reason_stale_query_fingerprint'],
+  matching_count_drifted:
+    M['content.content_list.workflow_reason_matching_count_drifted'],
+  limit_exceeded: M['content.content_list.workflow_reason_limit_exceeded'],
+  invalid_request: M['content.content_list.workflow_reason_invalid_request'],
+  invalid_payload: M['content.content_list.workflow_reason_invalid_payload'],
+  confirmation_required:
+    M['content.content_list.workflow_reason_confirmation_required'],
+  stale_preview: M['content.content_list.workflow_reason_stale_preview'],
+  denied: M['content.content_list.workflow_reason_denied'],
+  unknown_permission:
+    M['content.content_list.workflow_reason_unknown_permission'],
+  execution_failed:
+    M['content.content_list.workflow_reason_execution_failed'],
+  idempotency_conflict:
+    M['content.content_list.workflow_reason_idempotency_conflict'],
+};
+
 function workflowLabel(id: ContentListWorkflowId): string {
   return t(WORKFLOW_LABEL_MESSAGES[id]);
+}
+
+function workflowConsequenceLabel(consequence: string): string {
+  return t(
+    WORKFLOW_CONSEQUENCE_MESSAGES[consequence] ??
+      M['content.content_list.workflow_consequence_unknown'],
+  );
+}
+
+function workflowReasonLabel(
+  reason: string | undefined,
+  fallback: keyof typeof M,
+  params?: Record<string, string | number>,
+): string {
+  return t((reason && WORKFLOW_REASON_MESSAGES[reason]) ?? fallback, params);
 }
 
 function workflowScopeLabel(scope: string): string {
@@ -1616,7 +1699,12 @@ function workflowPreviewMessage(): string {
         )
           return [];
         const reason =
-          typeof outcome.reason === 'string' ? ` (${outcome.reason})` : '';
+          typeof outcome.reason === 'string'
+            ? ` (${workflowReasonLabel(
+                outcome.reason,
+                M['content.content_list.workflow_reason_unknown'],
+              )})`
+            : '';
         return [`${String(outcome.rowId)}${reason}`];
       })
     : [];
@@ -1647,7 +1735,7 @@ function workflowPreviewMessage(): string {
           items: ineligible.join(', '),
         })
       : '',
-    ...consequences,
+    ...consequences.map(workflowConsequenceLabel),
   ].filter(Boolean).join(' ');
 }
 
@@ -1665,8 +1753,10 @@ async function previewWorkflow() {
       throw new Error(t(M['content.content_list.workflow_preview_mismatch']));
     }
     if (!result.ok) {
-      workflowError =
-        result.reason ?? t(M['content.content_list.workflow_preview_failed']);
+      workflowError = workflowReasonLabel(
+        result.reason,
+        M['content.content_list.workflow_preview_failed'],
+      );
       return;
     }
     workflowPreview = result;
@@ -1731,8 +1821,10 @@ async function applyWorkflow() {
     }
     workflowResult = result;
     if (!result.ok) {
-      workflowError =
-        result.reason ?? t(M['content.content_list.workflow_failed']);
+      workflowError = workflowReasonLabel(
+        result.reason,
+        M['content.content_list.workflow_failed'],
+      );
       workflowPreview = null;
       workflowIdempotencyKey = '';
       workflowConfirmOpen = false;
@@ -1813,20 +1905,21 @@ async function checkWorkflowJob() {
     if (job.result) {
       workflowResult = job.result;
       if (!job.result.ok) {
-        workflowError =
-          job.result.reason ??
-          t(M['content.content_list.workflow_job_failed'], { id: job.jobId });
+        workflowError = workflowReasonLabel(
+          job.result.reason,
+          M['content.content_list.workflow_job_failed'],
+          { id: job.jobId },
+        );
       } else {
         applyWorkflowSelectionOutcomes(job.result);
       }
     }
     if (job.status !== 'succeeded' && !workflowError) {
-      workflowError =
-        job.reason ??
-        t(M['content.content_list.workflow_job_status'], {
-          id: job.jobId,
-          status: workflowJobStatusLabel(job.status),
-        });
+      workflowError = workflowReasonLabel(
+        job.reason,
+        M['content.content_list.workflow_job_status'],
+        { id: job.jobId, status: workflowJobStatusLabel(job.status) },
+      );
     }
   } catch (error) {
     workflowError = error instanceof Error ? error.message : String(error);
