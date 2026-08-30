@@ -974,6 +974,91 @@ describe('data-surface action adapter', () => {
     );
   });
 
+  it('binds deferred execution to the immutable enqueue principal', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const references: Array<{
+      runAsUserId: string;
+      tenantId: string | null;
+      agentClass?: string;
+    }> = [];
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-bound-principal' };
+      },
+      resolveDeferredPrincipal: async (reference) => {
+        references.push({
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          agentClass: reference.agentClass,
+        });
+        return {
+          db: 'test.db',
+          principal: {
+            runAsUserId: reference.runAsUserId,
+            tenantId: reference.tenantId,
+            actsAsProfileId: reference.actsAsProfileId,
+            allowedTools: ['orders.archive'],
+          },
+          onBehalfOfUserId: reference.onBehalfOfUserId,
+          agentClass: reference.agentClass,
+        };
+      },
+    });
+    setup.context.principal.agentClass = 'orders-agent';
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    setup.context.principal.principal.runAsUserId = 'replacement-user';
+    setup.context.principal.principal.tenantId = 'replacement-tenant';
+    setup.context.principal.agentClass = 'replacement-agent';
+
+    await expect(queued?.run()).resolves.toMatchObject({ ok: true });
+    expect(references).toEqual([
+      {
+        runAsUserId: 'principal-a',
+        tenantId: 'tenant-a',
+        agentClass: 'orders-agent',
+      },
+    ]);
+  });
+
+  it('fails deferred execution closed when the live agent class changes', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-agent-class-mismatch' };
+      },
+      resolveDeferredPrincipal: async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          actsAsProfileId: reference.actsAsProfileId,
+          allowedTools: ['orders.archive'],
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+        agentClass: 'replacement-agent',
+      }),
+    });
+    setup.context.principal.agentClass = 'orders-agent';
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).rejects.toThrow(
+      'principal binding could not be resolved safely',
+    );
+  });
+
   it('maps deferred failures into a structured background result', async () => {
     let queued: DataSurfaceBackgroundActionJob | undefined;
     let authorizationChecks = 0;

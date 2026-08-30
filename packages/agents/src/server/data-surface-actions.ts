@@ -767,6 +767,13 @@ export function createDataSurfaceActionAdapter(
     request: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
     token: DataSurfacePreviewTokenRecord | undefined,
+    reference: Readonly<{
+      runAsUserId: string;
+      tenantId: string | null;
+      actsAsProfileId: string | null;
+      onBehalfOfUserId: string | null;
+      agentClass?: string;
+    }>,
   ): Promise<DataSurfaceActionResult> {
     const ownerToken = randomBytes(16).toString('base64url');
     const executionFingerprint = fingerprint({
@@ -776,15 +783,10 @@ export function createDataSurfaceActionAdapter(
     });
     const executionScope = fingerprint({
       kind: 'background-execution',
-      actorUserId:
-        token?.actorUserId ?? context.principal.principal.runAsUserId,
-      tenantId: token?.tenantId ?? context.principal.principal.tenantId,
-      onBehalfOfUserId:
-        token?.onBehalfOfUserId ?? context.principal.onBehalfOfUserId ?? null,
-      actsAsProfileId:
-        token?.actsAsProfileId ??
-        context.principal.principal.actsAsProfileId ??
-        null,
+      actorUserId: reference.runAsUserId,
+      tenantId: reference.tenantId,
+      onBehalfOfUserId: reference.onBehalfOfUserId,
+      actsAsProfileId: reference.actsAsProfileId,
       identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
       idempotencyKey: request.idempotencyKey,
@@ -809,16 +811,6 @@ export function createDataSurfaceActionAdapter(
           // A queued job may run long after the request that created it. The
           // complete persona binding (including the TenantAgent-capped tool
           // allow-list) must therefore be resolved again at execution time.
-          const reference = {
-            runAsUserId: context.principal.principal.runAsUserId,
-            tenantId: context.principal.principal.tenantId,
-            actsAsProfileId:
-              context.principal.principal.actsAsProfileId ?? null,
-            onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
-            ...(context.principal.agentClass
-              ? { agentClass: context.principal.agentClass }
-              : {}),
-          };
           const refreshed = await options.resolveDeferredPrincipal?.(reference);
           if (
             !refreshed ||
@@ -828,6 +820,7 @@ export function createDataSurfaceActionAdapter(
               reference.actsAsProfileId ||
             (refreshed.onBehalfOfUserId ?? null) !==
               reference.onBehalfOfUserId ||
+            (refreshed.agentClass ?? null) !== (reference.agentClass ?? null) ||
             !Array.isArray(refreshed.principal.allowedTools)
           ) {
             throw new Error(
@@ -882,6 +875,17 @@ export function createDataSurfaceActionAdapter(
   ): Promise<DataSurfaceActionResult> {
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
+    // Capture the immutable binding before any asynchronous authorization.
+    // The host may reuse or mutate its request context after enqueue returns.
+    const deferredPrincipalReference = Object.freeze({
+      runAsUserId: context.principal.principal.runAsUserId,
+      tenantId: context.principal.principal.tenantId,
+      actsAsProfileId: context.principal.principal.actsAsProfileId ?? null,
+      onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
+      ...(context.principal.agentClass
+        ? { agentClass: context.principal.agentClass }
+        : {}),
+    });
     return runAsPrincipal(
       {
         ...context.principal,
@@ -924,7 +928,13 @@ export function createDataSurfaceActionAdapter(
             identity: request.identity,
             actionId: request.actionId,
             rowIds: invocation.selection.rowIds,
-            run: () => executeBackgroundOnce(request, context, token),
+            run: () =>
+              executeBackgroundOnce(
+                request,
+                context,
+                token,
+                deferredPrincipalReference,
+              ),
           });
           return result(request, true, undefined, {
             accepted: invocation.selection.rowIds.length,
