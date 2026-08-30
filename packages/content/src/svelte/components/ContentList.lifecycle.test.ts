@@ -4,6 +4,7 @@ import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentData } from '../../mock-smrt-client.js';
+import { createFakeContentListQuery } from './__tests__/content-list-query-fixture.svelte.js';
 import ContentList from './ContentList.svelte';
 
 const mounted: Array<ReturnType<typeof mount>> = [];
@@ -109,6 +110,52 @@ describe('ContentList trash lifecycle integration', () => {
     ).toBeNull();
     expect(target.querySelector('button[aria-label="Delete"]')).toBeNull();
     expect(target.querySelector('button[aria-label="Edit"]')).toBeNull();
+  });
+
+  it('locks a restored URL to deleted before the first server query', () => {
+    const query = createFakeContentListQuery();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mounted.push(
+      mount(ContentList, {
+        target,
+        props: {
+          lifecycleMode: 'trash',
+          lifecycle: {
+            client: {
+              preview: vi.fn(async () => result('preview')),
+              apply: vi.fn(async () => result('apply')),
+            },
+            identity,
+          },
+          query: { bind: () => query.binding },
+          urlState: { params: 'status=draft' },
+        },
+      }),
+    );
+    flushSync();
+
+    expect(query.requests).toHaveLength(1);
+    const firstFilter = JSON.stringify(query.requests[0]?.filter);
+    expect(firstFilter).toContain('"status"');
+    expect(firstFilter).toContain('"deleted"');
+    expect(firstFilter).not.toContain('"draft"');
+  });
+
+  it('fails closed when trash mode is mounted without a lifecycle binding', () => {
+    const onDelete = vi.fn();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mounted.push(
+      mount(ContentList, {
+        target,
+        props: { contents, lifecycleMode: 'trash', onDelete },
+      }),
+    );
+    flushSync();
+
+    expect(target.querySelector('button[aria-label="Delete"]')).toBeNull();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 
   it('keeps server-skipped rows selected after restore and shows the audit', async () => {

@@ -494,22 +494,34 @@ if (initialUrlState?.params !== undefined && initialUrlState?.params !== null) {
   // the same link just restored. Folding the lock into the restored patch keeps
   // it to one `replaceState`, and leaves the effect's first run a no-op.
   const initialLockedType = normalizeContentListTypeLock(untrack(() => type));
-  const patch =
-    initialLockedType === null
-      ? reading.state
-      : {
-          ...reading.state,
-          filters: [
-            ...(reading.state.filters ?? []).filter(
-              (filter) => filter.columnId !== CONTENT_LIST_TYPE_FILTER_ID,
-            ),
-            {
-              columnId: CONTENT_LIST_TYPE_FILTER_ID,
-              operator: 'equals' as const,
-              value: initialLockedType,
-            },
-          ],
-        };
+  const initialTrashMode = untrack(() => lifecycleMode) === 'trash';
+  const lockedFilters = [...(reading.state.filters ?? [])].filter(
+    (filter) =>
+      (initialLockedType === null ||
+        filter.columnId !== CONTENT_LIST_TYPE_FILTER_ID) &&
+      (!initialTrashMode ||
+        filter.columnId !== CONTENT_LIST_STATUS_FILTER_ID),
+  );
+  if (initialLockedType !== null) {
+    lockedFilters.push({
+      columnId: CONTENT_LIST_TYPE_FILTER_ID,
+      operator: 'equals',
+      value: initialLockedType,
+    });
+  }
+  if (initialTrashMode) {
+    lockedFilters.push({
+      columnId: CONTENT_LIST_STATUS_FILTER_ID,
+      operator: 'equals',
+      value: 'deleted',
+    });
+  }
+  const patch = {
+    ...reading.state,
+    ...(initialLockedType !== null || initialTrashMode
+      ? { filters: lockedFilters }
+      : {}),
+  };
   applyContentListViewState(controller, patch, restoreOptions);
   restoreDrops = reading.dropped;
 }
@@ -2138,7 +2150,7 @@ function rowActions(row: ContentListRow) {
   return contentListRowActions(row, {
     getViewHref,
     canEdit: lifecycleMode !== 'trash',
-    canDelete: lifecycle === undefined,
+    canDelete: lifecycleMode !== 'trash' && lifecycle === undefined,
   });
 }
 
