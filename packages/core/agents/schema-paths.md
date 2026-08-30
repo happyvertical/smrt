@@ -708,10 +708,12 @@ matching live types compare directly, while a legacy text side is shape-checked
 before casting. This keeps a self-reference or malformed legacy value from
 invalidating the query. An orphan stops migration with detector SQL and an
 executable repair suggestion: nullable FKs are cleared, while required FKs
-delete only the orphaned child rows. A probe failure is surfaced as a
-database/framework error, never misreported as orphan data. SQLite requires a
-deliberate table rebuild; DuckDB reports the unsupported ALTER path. Neither
-engine treats an unsupported constraint addition as a successful no-op.
+require an explicit operator decision to reassign the reference or deliberately
+remove a child row after preserving its required data. A probe failure is
+surfaced as a database/framework error, never misreported as orphan data.
+SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
+path. Neither engine treats an unsupported constraint addition as a successful
+no-op.
 
 Properties to keep if you touch that module:
 

@@ -874,7 +874,7 @@ describe('existing-table orphan safety (#2413)', () => {
     );
   });
 
-  it('suggests deleting only an orphaned row when its FK column is required', async () => {
+  it('requires an explicit repair decision when its FK column is required', async () => {
     const requiredChild = structuredClone(child);
     requiredChild.columns.parent_id.notNull = true;
     const mock = postgresMock(true);
@@ -886,8 +886,9 @@ describe('existing-table orphan safety (#2413)', () => {
     );
 
     expect(change?.advisory?.suggestedSql?.[1]).toContain(
-      'DELETE FROM "children" AS "smrt_fk_child"',
+      '-- Manual repair required:',
     );
+    expect(change?.advisory?.suggestedSql?.[1]).not.toContain('DELETE FROM');
   });
 
   it('refuses automatic add when a bare-array adapter result contains an orphan', async () => {

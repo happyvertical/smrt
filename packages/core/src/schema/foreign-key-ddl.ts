@@ -110,7 +110,11 @@ export function renderForeignKeyOrphanRepair(
     `${parts.childColumn} IS NOT NULL AND NOT EXISTS (` +
     `SELECT 1 FROM ${parts.parentTable} WHERE ${parts.joinPredicate})`;
   if (options.nullable === false) {
-    return `DELETE FROM ${parts.childTable} WHERE ${orphanPredicate}`;
+    return (
+      `-- Manual repair required: ${quoteIdentifier(tableName)}.${quoteIdentifier(foreignKey.column)} is NOT NULL. ` +
+      `Reassign each orphaned reference to a valid ${quoteIdentifier(foreignKey.referencesTable)}.${quoteIdentifier(foreignKey.referencesColumn)} value, ` +
+      'or deliberately delete rows only after preserving any required child data.'
+    );
   }
   return (
     `UPDATE ${quoteIdentifier(tableName)} AS ${parts.childAlias} ` +

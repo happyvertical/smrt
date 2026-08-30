@@ -230,7 +230,7 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
     expect(repaired.rows).toEqual([{ id: childId, parent_id: null }]);
   });
 
-  it('deletes an orphaned row when the foreign-key column is required', async () => {
+  it('requires an explicit repair decision when the foreign-key column is required', async () => {
     const foreignKey = {
       column: 'parent_id',
       referencesTable: parents,
@@ -246,15 +246,15 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
       nullable: false,
       uuidComparison: true,
     });
-    expect(repair).toContain(
-      `DELETE FROM "${requiredChildren}" AS "smrt_fk_child"`,
-    );
+    expect(repair).toContain('-- Manual repair required:');
+    expect(repair).toContain(`"${requiredChildren}"."parent_id" is NOT NULL`);
+    expect(repair).not.toContain('DELETE FROM');
     await db.query(repair);
 
     const repaired = await db.query(
       `SELECT id FROM "${requiredChildren}" WHERE id = $1`,
       [childId],
     );
-    expect(repaired.rows).toEqual([]);
+    expect(repaired.rows).toEqual([{ id: childId }]);
   });
 });
