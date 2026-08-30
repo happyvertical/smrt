@@ -230,16 +230,29 @@ export function createContentListWorkflowTransport(
     return payload;
   }
 
+  async function buildHeaders(includeContentType: boolean): Promise<Headers> {
+    try {
+      const extraHeaders =
+        typeof options.headers === 'function'
+          ? await options.headers()
+          : options.headers;
+      const headers = new Headers(extraHeaders);
+      if (includeContentType) headers.set('content-type', 'application/json');
+      if (!headers.has('accept')) headers.set('accept', 'application/json');
+      return headers;
+    } catch {
+      throw new ContentListWorkflowError(
+        'The content workflow request could not be prepared.',
+        undefined,
+        'network_failure',
+      );
+    }
+  }
+
   async function invoke(
     request: ContentListWorkflowRequest,
   ): Promise<DataSurfaceActionResult> {
-    const extraHeaders =
-      typeof options.headers === 'function'
-        ? await options.headers()
-        : options.headers;
-    const headers = new Headers(extraHeaders);
-    headers.set('content-type', 'application/json');
-    if (!headers.has('accept')) headers.set('accept', 'application/json');
+    const headers = await buildHeaders(true);
     const payload = await fetchJson(url, {
       method: 'POST',
       headers,
@@ -274,12 +287,7 @@ export function createContentListWorkflowTransport(
   };
   if (options.jobStatusPath) {
     client.status = async (jobId) => {
-      const extraHeaders =
-        typeof options.headers === 'function'
-          ? await options.headers()
-          : options.headers;
-      const headers = new Headers(extraHeaders);
-      if (!headers.has('accept')) headers.set('accept', 'application/json');
+      const headers = await buildHeaders(false);
       const path = options.jobStatusPath?.replace(
         '{jobId}',
         encodeURIComponent(jobId),

@@ -190,6 +190,47 @@ describe('ContentList workflow transport', () => {
     });
   });
 
+  it.each([
+    {
+      label: 'preview',
+      invoke: (client: ReturnType<typeof createContentListWorkflowTransport>) =>
+        client.preview(request()),
+    },
+    {
+      label: 'apply',
+      invoke: (client: ReturnType<typeof createContentListWorkflowTransport>) =>
+        client.apply({ ...request(), phase: 'apply' }),
+    },
+    {
+      label: 'job status',
+      invoke: (client: ReturnType<typeof createContentListWorkflowTransport>) =>
+        client.status?.('job-a'),
+    },
+  ])('classifies a rejected header provider for $label', async ({ invoke }) => {
+    const client = createContentListWorkflowTransport({
+      jobStatusPath: 'jobs/{jobId}',
+      headers: vi.fn().mockRejectedValue(new Error('private auth detail')),
+      fetch: vi.fn<typeof globalThis.fetch>(),
+    });
+
+    await expect(invoke(client)).rejects.toMatchObject({
+      name: 'ContentListWorkflowError',
+      reason: 'network_failure',
+    });
+  });
+
+  it('classifies invalid configured headers without exposing constructor detail', async () => {
+    const client = createContentListWorkflowTransport({
+      headers: () => ({ 'bad header\n': 'value' }) as HeadersInit,
+      fetch: vi.fn<typeof globalThis.fetch>(),
+    });
+
+    await expect(client.preview(request())).rejects.toMatchObject({
+      name: 'ContentListWorkflowError',
+      reason: 'network_failure',
+    });
+  });
+
   it('retains only valid accepted, skipped, and failed row outcomes', () => {
     expect(
       contentListWorkflowOutcomes({
