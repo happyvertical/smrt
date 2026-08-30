@@ -170,6 +170,8 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@testing-library/jest-dom": "^6.9.1",
