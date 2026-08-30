@@ -78,7 +78,11 @@ describe('commercial usage tracer', () => {
     ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
     await expect(
       CommercialUsageService.create({
-        db: { type: 'json', url: './unused-commercial-json' },
+        db: {
+          type: 'json',
+          url: './unused-commercial-json',
+          writeStrategy: 'immediate',
+        },
         billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
       }),
     ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
@@ -121,6 +125,24 @@ describe('commercial usage tracer', () => {
           billingStorage: { adapterType: 'sqlite' },
         }),
       ).resolves.toBeInstanceOf(CommercialUsageService);
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing.duckdb'),
+          billingStorage: {
+            adapterType: 'duckdb',
+            writeStrategy: 'manual',
+          },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing.json'),
+          billingStorage: {
+            adapterType: 'json',
+            writeStrategy: 'immediate',
+          },
+        }),
+      ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
       await expect(
         CommercialUsageService.create({
           persistence: join(directory, 'billing-persistence-option.db'),

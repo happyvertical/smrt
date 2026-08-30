@@ -144,7 +144,7 @@ function billingStorageFromConfig(
     if (adapterType)
       return {
         adapterType,
-        writeStrategy: environmentWriteStrategy(),
+        writeStrategy: environmentWriteStrategy() ?? declared?.writeStrategy,
       };
     throw new Error(
       'Commercial billing requires an explicit billingStorage adapter contract for ambiguous database URLs.',
@@ -166,7 +166,7 @@ function billingStorageFromConfig(
     configuredWriteStrategy === 'manual' ||
     configuredWriteStrategy === 'none'
       ? configuredWriteStrategy
-      : environmentWriteStrategy();
+      : (environmentWriteStrategy() ?? declared?.writeStrategy);
   return { adapterType, writeStrategy };
 }
 
@@ -213,16 +213,13 @@ function normalizedCommercialClassOptions(
   const { billingStorage: _billingStorage, ...classOptions } = options;
   const configuredDatabase = options.db ?? options.persistence;
   if (
+    configuredDatabase &&
+    !isDatabaseInterface(configuredDatabase) &&
     (typeof configuredDatabase === 'string' ||
-      (configuredDatabase &&
-        !isDatabaseInterface(configuredDatabase) &&
-        !configuredDatabase.type)) &&
-    !environmentAdapterType() &&
-    !inferAdapterType(
-      typeof configuredDatabase === 'string'
-        ? configuredDatabase
-        : String(configuredDatabase?.url ?? ''),
-    )
+      (!configuredDatabase.type && !environmentAdapterType()) ||
+      (!configuredDatabase.writeStrategy &&
+        !environmentWriteStrategy() &&
+        billingStorage.writeStrategy !== undefined))
   ) {
     const normalizedDatabase =
       typeof configuredDatabase === 'string'
@@ -233,9 +230,12 @@ function normalizedCommercialClassOptions(
           }
         : {
             ...configuredDatabase,
-            type: billingStorage.adapterType,
+            type:
+              configuredDatabase.type ??
+              environmentAdapterType() ??
+              billingStorage.adapterType,
             writeStrategy:
-              configuredDatabase?.writeStrategy ?? billingStorage.writeStrategy,
+              configuredDatabase.writeStrategy ?? billingStorage.writeStrategy,
           };
     if (options.db !== undefined) classOptions.db = normalizedDatabase;
     else classOptions.persistence = normalizedDatabase;
