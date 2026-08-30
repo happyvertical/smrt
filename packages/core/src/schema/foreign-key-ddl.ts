@@ -4,6 +4,8 @@ import { shortenIdentifier } from './index-utils.js';
 import { quoteIdentifier, quoteStringLiteral } from './sql-identifiers.js';
 import type { ForeignKeyDefinition, SchemaDefinition } from './types.js';
 
+export type ForeignKeyUuidCastSide = 'child' | 'parent' | 'both' | 'none';
+
 export function foreignKeyConstraintName(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
@@ -69,7 +71,7 @@ export function renderForeignKeyOrphanDetector(
     engine?: DatabaseEngine;
     limitOne?: boolean;
     uuidComparison?: boolean;
-    uuidCastSide?: 'child' | 'parent' | 'both';
+    uuidCastSide?: ForeignKeyUuidCastSide;
   } = {},
 ): string {
   const parts = foreignKeyOrphanParts(
@@ -93,7 +95,7 @@ export function renderForeignKeyOrphanRepair(
   options: {
     engine?: DatabaseEngine;
     uuidComparison?: boolean;
-    uuidCastSide?: 'child' | 'parent' | 'both';
+    uuidCastSide?: ForeignKeyUuidCastSide;
     nullable?: boolean;
   } = {},
 ): string {
@@ -127,7 +129,7 @@ function foreignKeyOrphanParts(
   foreignKey: ForeignKeyDefinition,
   engine: DatabaseEngine = 'postgres',
   uuidComparison = false,
-  uuidCastSide?: 'child' | 'parent' | 'both',
+  uuidCastSide?: ForeignKeyUuidCastSide,
 ) {
   const childAlias = quoteIdentifier(FOREIGN_KEY_CHILD_ALIAS);
   const parentAlias = quoteIdentifier(FOREIGN_KEY_PARENT_ALIAS);

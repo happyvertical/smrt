@@ -6,6 +6,7 @@ import {
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
 } from './foreign-key-ddl.js';
+import { SchemaManager } from './schema-manager.js';
 import type { SchemaDefinition } from './types.js';
 
 const pgUrl = process.env.DATABASE_URL ?? process.env.SMRT_TEST_POSTGRES_URL;
@@ -182,6 +183,18 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
 
     expect(change?.advisory).toBeUndefined();
     expect(change?.sqlStatements).toHaveLength(2);
+
+    await new SchemaManager(db, {
+      engine: 'postgres',
+    }).ensurePostgresForeignKey(legacyUuidChildren, foreignKey, {
+      uuidComparison: true,
+    });
+    await expect(
+      db.query(
+        `INSERT INTO "${legacyUuidChildren}" (id, parent_id) VALUES ($1, $2)`,
+        [randomUUID(), randomUUID()],
+      ),
+    ).rejects.toThrow();
   });
 
   it('reports malformed legacy text without crashing and clears only its FK in the suggested repair', async () => {

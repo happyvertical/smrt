@@ -17,6 +17,7 @@ import {
   getDDLStrategy,
 } from './ddl/index.js';
 import {
+  type ForeignKeyUuidCastSide,
   foreignKeyConstraintName,
   renderForeignKeyConstraint,
   renderForeignKeyOrphanDetector,
@@ -380,7 +381,11 @@ export class SchemaManager {
   async ensurePostgresForeignKey(
     tableName: string,
     foreignKey: ForeignKeyDefinition,
-    options: { nullable?: boolean; uuidComparison?: boolean } = {},
+    options: {
+      nullable?: boolean;
+      uuidComparison?: boolean;
+      uuidCastSide?: ForeignKeyUuidCastSide;
+    } = {},
   ): Promise<void> {
     const constraintName = foreignKeyConstraintName(tableName, foreignKey);
     let existing: unknown;
@@ -398,10 +403,17 @@ export class SchemaManager {
     const existingRows = extractRows<{ convalidated?: boolean }>(existing);
     if (existingRows[0]?.convalidated === true) return;
 
+    const probeOptions = await this.resolvePostgresForeignKeyProbeOptions(
+      tableName,
+      foreignKey,
+      options,
+    );
+
     const detector = renderForeignKeyOrphanDetector(tableName, foreignKey, {
       engine: 'postgres',
       limitOne: true,
-      uuidComparison: options.uuidComparison,
+      uuidComparison: probeOptions.uuidComparison,
+      uuidCastSide: probeOptions.uuidCastSide,
     });
     let orphanResult: unknown;
     try {
@@ -414,7 +426,7 @@ export class SchemaManager {
     }
     if (extractRows(orphanResult).length > 0) {
       throw new Error(
-        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres', nullable: options.nullable, uuidComparison: options.uuidComparison })}`,
+        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres', nullable: probeOptions.nullable, uuidComparison: probeOptions.uuidComparison, uuidCastSide: probeOptions.uuidCastSide })}`,
       );
     }
 
@@ -426,6 +438,47 @@ export class SchemaManager {
     await this.db.query(
       `ALTER TABLE ${this.quoteIdentifier(tableName)} VALIDATE CONSTRAINT ${this.quoteIdentifier(constraintName)}`,
     );
+  }
+
+  private async resolvePostgresForeignKeyProbeOptions(
+    tableName: string,
+    foreignKey: ForeignKeyDefinition,
+    options: {
+      nullable?: boolean;
+      uuidComparison?: boolean;
+      uuidCastSide?: ForeignKeyUuidCastSide;
+    },
+  ): Promise<typeof options> {
+    if (!options.uuidComparison || options.uuidCastSide) return options;
+
+    const childSchema = await this.db.getTableSchema?.(tableName);
+    const parentSchema =
+      foreignKey.referencesTable === tableName
+        ? childSchema
+        : await this.db.getTableSchema?.(foreignKey.referencesTable);
+    const childType = childSchema?.columns[foreignKey.column]?.type;
+    const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
+    if (!childType || !parentType) return options;
+
+    const childTypeNormalized = this.normalizeForeignKeyProbeType(childType);
+    const parentTypeNormalized = this.normalizeForeignKeyProbeType(parentType);
+    if (childTypeNormalized === parentTypeNormalized) {
+      return { ...options, uuidCastSide: 'none' };
+    }
+    if (childTypeNormalized === 'UUID') {
+      return { ...options, uuidCastSide: 'parent' };
+    }
+    if (parentTypeNormalized === 'UUID') {
+      return { ...options, uuidCastSide: 'child' };
+    }
+    return { ...options, uuidCastSide: 'both' };
+  }
+
+  private normalizeForeignKeyProbeType(type: string): string {
+    const upper = type.toUpperCase().trim();
+    if (/^UUID$/i.test(upper)) return 'UUID';
+    if (/^(TEXT|CLOB|STRING|VARCHAR|CHAR)/i.test(upper)) return 'TEXT';
+    return upper;
   }
 
   /**
