@@ -470,7 +470,11 @@ export class SchemaComparer {
         diff.has_changes = true;
       } else {
         // Table exists - compare columns and indexes
-        const tableChanges = await this.compareTable(tableName, schema);
+        const tableChanges = await this.compareTable(
+          tableName,
+          schema,
+          manifestSchemas,
+        );
         if (tableChanges.length > 0) {
           diff.changes.push(...tableChanges);
           // Info-level report-only notes (a harmless orphan column, a stale
@@ -512,6 +516,7 @@ export class SchemaComparer {
   async compareTable(
     tableName: string,
     manifest: SchemaDefinition,
+    manifestSchemas: Record<string, SchemaDefinition> = {},
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
 
@@ -563,7 +568,12 @@ export class SchemaComparer {
     );
     changes.push(...indexChanges);
     changes.push(
-      ...(await this.compareForeignKeys(tableName, manifest, dbSchema)),
+      ...(await this.compareForeignKeys(
+        tableName,
+        manifest,
+        dbSchema,
+        manifestSchemas,
+      )),
     );
 
     return changes;
@@ -573,6 +583,7 @@ export class SchemaComparer {
     tableName: string,
     manifest: SchemaDefinition,
     dbSchema: SqlTableSchemaInfo,
+    manifestSchemas: Record<string, SchemaDefinition>,
   ): Promise<SchemaChange[]> {
     const changes: SchemaChange[] = [];
     const liveForeignKeys = dbSchema.foreignKeys || [];
@@ -627,8 +638,6 @@ export class SchemaComparer {
     }
 
     for (const foreignKey of enabledForeignKeys) {
-      const uuidComparison =
-        manifest.columns[foreignKey.column]?.type === 'UUID';
       const expectedDelete =
         foreignKey.onDelete === undefined
           ? 'NO ACTION'
@@ -655,17 +664,28 @@ export class SchemaComparer {
       );
       if (exact) continue;
 
+      const orphanOptions = await this.getForeignKeyOrphanOptions(
+        tableName,
+        manifest,
+        dbSchema,
+        foreignKey,
+        manifestSchemas,
+      );
+
       const detectorSql = renderForeignKeyOrphanDetector(
         tableName,
         foreignKey,
         {
           engine: this.engine,
-          uuidComparison,
+          uuidComparison: orphanOptions.uuidComparison,
+          uuidCastSide: orphanOptions.uuidCastSide,
         },
       );
       const repairSql = renderForeignKeyOrphanRepair(tableName, foreignKey, {
         engine: this.engine,
-        uuidComparison,
+        uuidComparison: orphanOptions.uuidComparison,
+        uuidCastSide: orphanOptions.uuidCastSide,
+        nullable: orphanOptions.nullable,
       });
       const sameColumn = liveForeignKeys.some(
         (live) => live.column === foreignKey.column,
@@ -713,7 +733,7 @@ export class SchemaComparer {
       const childColumnExists = Boolean(dbSchema.columns[foreignKey.column]);
       if (
         childColumnExists &&
-        (await this.foreignKeyHasOrphans(tableName, foreignKey, uuidComparison))
+        (await this.foreignKeyHasOrphans(tableName, foreignKey, orphanOptions))
       ) {
         changes.push({
           type: 'add_foreign_key',
@@ -749,14 +769,18 @@ export class SchemaComparer {
   private async foreignKeyHasOrphans(
     tableName: string,
     foreignKey: import('../schema/types.js').ForeignKeyDefinition,
-    uuidComparison: boolean,
+    options: {
+      uuidComparison: boolean;
+      uuidCastSide?: 'child' | 'parent' | 'both';
+    },
   ): Promise<boolean> {
     try {
       const result = await this.db.query(
         renderForeignKeyOrphanDetector(tableName, foreignKey, {
           engine: this.engine,
           limitOne: true,
-          uuidComparison,
+          uuidComparison: options.uuidComparison,
+          uuidCastSide: options.uuidCastSide,
         }),
       );
       const rows = Array.isArray(result) ? result : result.rows || [];
@@ -767,6 +791,51 @@ export class SchemaComparer {
         { cause: error },
       );
     }
+  }
+
+  private async getForeignKeyOrphanOptions(
+    tableName: string,
+    manifest: SchemaDefinition,
+    dbSchema: SqlTableSchemaInfo,
+    foreignKey: import('../schema/types.js').ForeignKeyDefinition,
+    manifestSchemas: Record<string, SchemaDefinition>,
+  ): Promise<{
+    nullable: boolean;
+    uuidComparison: boolean;
+    uuidCastSide?: 'child' | 'parent' | 'both';
+  }> {
+    const sourceColumn = manifest.columns[foreignKey.column];
+    const targetColumn =
+      manifestSchemas[foreignKey.referencesTable]?.columns[
+        foreignKey.referencesColumn
+      ];
+    const nullable = sourceColumn?.notNull !== true;
+    const uuidComparison =
+      sourceColumn?.type === 'UUID' &&
+      (targetColumn === undefined || targetColumn.type === 'UUID');
+    if (!uuidComparison) return { nullable, uuidComparison };
+
+    const parentSchema =
+      foreignKey.referencesTable === tableName
+        ? dbSchema
+        : await this.db.getTableSchema?.(foreignKey.referencesTable);
+    const childType = dbSchema.columns[foreignKey.column]?.type;
+    const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
+    if (!childType || !parentType) return { nullable, uuidComparison };
+
+    const childTypeNormalized = this.normalizeType(childType);
+    const parentTypeNormalized = this.normalizeType(parentType);
+    if (childTypeNormalized === parentTypeNormalized) {
+      return { nullable, uuidComparison: false };
+    }
+
+    if (childTypeNormalized === 'UUID') {
+      return { nullable, uuidComparison, uuidCastSide: 'parent' };
+    }
+    if (parentTypeNormalized === 'UUID') {
+      return { nullable, uuidComparison, uuidCastSide: 'child' };
+    }
+    return { nullable, uuidComparison, uuidCastSide: 'both' };
   }
 
   /**

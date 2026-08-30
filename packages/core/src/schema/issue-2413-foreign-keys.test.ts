@@ -790,19 +790,71 @@ describe('existing-table orphan safety (#2413)', () => {
     ]);
   });
 
-  it('uses the guarded UUID comparison only when the manifest FK column is UUID', async () => {
+  it('casts a legacy text child only when both manifest FK columns are UUID', async () => {
     const uuidChild = structuredClone(child);
     uuidChild.columns.id.type = 'UUID';
+    uuidChild.columns.parent_id.type = 'UUID';
+    const uuidParent = schema('parents');
+    uuidParent.columns.id.type = 'UUID';
+    const mock = postgresMock(false);
+    mock.db.getTableSchema = async (tableName: string) =>
+      tableName === 'parents'
+        ? {
+            columns: {
+              id: { name: 'id', type: 'uuid', primaryKey: true },
+            },
+            indexes: [],
+            foreignKeys: [],
+          }
+        : {
+            columns: {
+              id: { name: 'id', type: 'text', primaryKey: true },
+              parent_id: { name: 'parent_id', type: 'text' },
+            },
+            indexes: [],
+            foreignKeys: [],
+          };
+
+    await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: uuidChild, parents: uuidParent });
+
+    expect(mock.queries.find((sql) => sql.includes('orphan_key'))).toContain(
+      '"smrt_fk_child"."parent_id"::text ~*',
+    );
+  });
+
+  it('keeps a UUID-compatible text/text probe as a direct comparison', async () => {
+    const uuidChild = structuredClone(child);
+    uuidChild.columns.id.type = 'UUID';
+    uuidChild.columns.parent_id.type = 'UUID';
+    const uuidParent = schema('parents');
+    uuidParent.columns.id.type = 'UUID';
+    const mock = postgresMock(false);
+
+    await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: uuidChild, parents: uuidParent });
+
+    const detector = mock.queries.find((sql) => sql.includes('orphan_key'));
+    expect(detector).toContain(
+      '"smrt_fk_parent"."id" = "smrt_fk_child"."parent_id"',
+    );
+    expect(detector).not.toContain('::uuid');
+  });
+
+  it('keeps a direct comparison when the manifest target is non-UUID', async () => {
+    const uuidChild = structuredClone(child);
     uuidChild.columns.parent_id.type = 'UUID';
     const mock = postgresMock(false);
 
     await new SchemaComparer(mock.db as never, {
       engineHint: 'postgres',
-    }).compare({ children: uuidChild });
+    }).compare({ children: uuidChild, parents: schema('parents') });
 
-    expect(mock.queries.find((sql) => sql.includes('orphan_key'))).toContain(
-      '"smrt_fk_child"."parent_id"::text ~*',
-    );
+    expect(
+      mock.queries.find((sql) => sql.includes('orphan_key')),
+    ).not.toContain('::uuid');
   });
 
   it('refuses automatic add when an orphan exists and returns detector/repair guidance', async () => {
@@ -819,6 +871,22 @@ describe('existing-table orphan safety (#2413)', () => {
     expect(change?.advisory?.suggestedSql).toHaveLength(2);
     expect(change?.advisory?.suggestedSql?.[0]).toContain(
       'FROM "children" AS "smrt_fk_child" LEFT JOIN "parents" AS "smrt_fk_parent"',
+    );
+  });
+
+  it('suggests deleting only an orphaned row when its FK column is required', async () => {
+    const requiredChild = structuredClone(child);
+    requiredChild.columns.parent_id.notNull = true;
+    const mock = postgresMock(true);
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare({ children: requiredChild });
+    const change = diff.changes.find(
+      (candidate) => candidate.type === 'add_foreign_key',
+    );
+
+    expect(change?.advisory?.suggestedSql?.[1]).toContain(
+      'DELETE FROM "children" AS "smrt_fk_child"',
     );
   });
 

@@ -362,6 +362,7 @@ export class SchemaManager {
       const source = schemasByTable.get(table);
       const target = schemasByTable.get(foreignKey.referencesTable);
       await this.ensurePostgresForeignKey(table, foreignKey, {
+        nullable: source?.columns[foreignKey.column]?.notNull !== true,
         uuidComparison:
           source?.columns[foreignKey.column]?.type === 'UUID' &&
           target?.columns[foreignKey.referencesColumn]?.type === 'UUID',
@@ -379,7 +380,7 @@ export class SchemaManager {
   async ensurePostgresForeignKey(
     tableName: string,
     foreignKey: ForeignKeyDefinition,
-    options: { uuidComparison?: boolean } = {},
+    options: { nullable?: boolean; uuidComparison?: boolean } = {},
   ): Promise<void> {
     const constraintName = foreignKeyConstraintName(tableName, foreignKey);
     let existing: unknown;
@@ -413,7 +414,7 @@ export class SchemaManager {
     }
     if (extractRows(orphanResult).length > 0) {
       throw new Error(
-        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres', uuidComparison: options.uuidComparison })}`,
+        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres', nullable: options.nullable, uuidComparison: options.uuidComparison })}`,
       );
     }
 

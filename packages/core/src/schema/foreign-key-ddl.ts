@@ -69,6 +69,7 @@ export function renderForeignKeyOrphanDetector(
     engine?: DatabaseEngine;
     limitOne?: boolean;
     uuidComparison?: boolean;
+    uuidCastSide?: 'child' | 'parent' | 'both';
   } = {},
 ): string {
   const parts = foreignKeyOrphanParts(
@@ -76,6 +77,7 @@ export function renderForeignKeyOrphanDetector(
     foreignKey,
     options.engine,
     options.uuidComparison,
+    options.uuidCastSide,
   );
   return (
     `SELECT ${parts.childColumn} AS orphan_key FROM ${parts.childTable} ` +
@@ -88,19 +90,30 @@ export function renderForeignKeyOrphanDetector(
 export function renderForeignKeyOrphanRepair(
   tableName: string,
   foreignKey: ForeignKeyDefinition,
-  options: { engine?: DatabaseEngine; uuidComparison?: boolean } = {},
+  options: {
+    engine?: DatabaseEngine;
+    uuidComparison?: boolean;
+    uuidCastSide?: 'child' | 'parent' | 'both';
+    nullable?: boolean;
+  } = {},
 ): string {
   const parts = foreignKeyOrphanParts(
     tableName,
     foreignKey,
     options.engine,
     options.uuidComparison,
+    options.uuidCastSide,
   );
+  const orphanPredicate =
+    `${parts.childColumn} IS NOT NULL AND NOT EXISTS (` +
+    `SELECT 1 FROM ${parts.parentTable} WHERE ${parts.joinPredicate})`;
+  if (options.nullable === false) {
+    return `DELETE FROM ${parts.childTable} WHERE ${orphanPredicate}`;
+  }
   return (
     `UPDATE ${quoteIdentifier(tableName)} AS ${parts.childAlias} ` +
     `SET ${quoteIdentifier(foreignKey.column)} = NULL ` +
-    `WHERE ${parts.childColumn} IS NOT NULL AND NOT EXISTS (` +
-    `SELECT 1 FROM ${parts.parentTable} WHERE ${parts.joinPredicate})`
+    `WHERE ${orphanPredicate}`
   );
 }
 
@@ -114,21 +127,32 @@ function foreignKeyOrphanParts(
   foreignKey: ForeignKeyDefinition,
   engine: DatabaseEngine = 'postgres',
   uuidComparison = false,
+  uuidCastSide?: 'child' | 'parent' | 'both',
 ) {
   const childAlias = quoteIdentifier(FOREIGN_KEY_CHILD_ALIAS);
   const parentAlias = quoteIdentifier(FOREIGN_KEY_PARENT_ALIAS);
   const childColumn = `${childAlias}.${quoteIdentifier(foreignKey.column)}`;
   const parentColumn = `${parentAlias}.${quoteIdentifier(foreignKey.referencesColumn)}`;
-  const childValue =
+  const guardedUuidValue = (column: string) =>
+    `CASE WHEN ${column}::text ~* '${CANONICAL_UUID_PATTERN}' THEN ${column}::uuid ELSE NULL END`;
+  const effectiveUuidCastSide =
     engine === 'postgres' && uuidComparison
-      ? `CASE WHEN ${childColumn}::text ~* '${CANONICAL_UUID_PATTERN}' THEN ${childColumn}::uuid ELSE NULL END`
+      ? (uuidCastSide ?? 'child')
+      : undefined;
+  const childValue =
+    effectiveUuidCastSide === 'child' || effectiveUuidCastSide === 'both'
+      ? guardedUuidValue(childColumn)
       : childColumn;
+  const parentValue =
+    effectiveUuidCastSide === 'parent' || effectiveUuidCastSide === 'both'
+      ? guardedUuidValue(parentColumn)
+      : parentColumn;
 
   return {
     childAlias,
     childColumn,
     childTable: `${quoteIdentifier(tableName)} AS ${childAlias}`,
-    joinPredicate: `${parentColumn} = ${childValue}`,
+    joinPredicate: `${parentValue} = ${childValue}`,
     parentColumn,
     parentTable: `${quoteIdentifier(foreignKey.referencesTable)} AS ${parentAlias}`,
   };

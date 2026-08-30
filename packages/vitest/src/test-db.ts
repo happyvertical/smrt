@@ -677,7 +677,10 @@ async function createIsolatedTestDbWithPostSchemaStatements(
         await schemaManager.ensurePostgresForeignKey(
           deferred.tableName,
           deferred.foreignKey,
-          { uuidComparison: deferred.uuidComparison },
+          {
+            nullable: deferred.nullable,
+            uuidComparison: deferred.uuidComparison,
+          },
         );
         await schemaDb.query(
           renderForeignKeyConstraintComment(
@@ -819,6 +822,7 @@ interface PostSchemaStatement {
   tableName: string;
   constraintName: string;
   foreignKey: ForeignKeyDefinition;
+  nullable: boolean;
   uuidComparison: boolean;
 }
 
@@ -1513,6 +1517,9 @@ export async function createIsolatedTestDbFromManifest(
             tableName,
             constraintName: foreignKeyConstraintName(tableName, foreignKey),
             foreignKey,
+            nullable:
+              definitionsByTable.get(tableName)?.columns[foreignKey.column]
+                ?.notNull !== true,
             uuidComparison:
               definitionsByTable.get(tableName)?.columns[foreignKey.column]
                 ?.type === 'UUID' &&

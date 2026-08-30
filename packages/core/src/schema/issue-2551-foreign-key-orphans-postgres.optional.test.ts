@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SchemaComparer } from '../migrations/differ.js';
 import {
   renderForeignKeyOrphanDetector,
   renderForeignKeyOrphanRepair,
 } from './foreign-key-ddl.js';
+import type { SchemaDefinition } from './types.js';
 
 const pgUrl = process.env.DATABASE_URL ?? process.env.SMRT_TEST_POSTGRES_URL;
 const suffix = `${process.pid}_${Math.random().toString(36).slice(2, 7)}`;
@@ -13,6 +15,9 @@ const parents = `i2551_parents_${suffix}`;
 const children = `i2551_children_${suffix}`;
 const textParents = `i2551_text_parents_${suffix}`;
 const textChildren = `i2551_text_children_${suffix}`;
+const requiredChildren = `i2551_required_children_${suffix}`;
+const legacyUuidParents = `i2551_legacy_uuid_parents_${suffix}`;
+const legacyUuidChildren = `i2551_legacy_uuid_children_${suffix}`;
 
 describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
   let db: Awaited<ReturnType<typeof getDatabase>>;
@@ -35,10 +40,20 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
     await db.query(
       `CREATE TABLE "${textChildren}" (id TEXT PRIMARY KEY, parent_id TEXT)`,
     );
+    await db.query(
+      `CREATE TABLE "${requiredChildren}" (id UUID PRIMARY KEY, parent_id TEXT NOT NULL)`,
+    );
+    await db.query(`CREATE TABLE "${legacyUuidParents}" (id TEXT PRIMARY KEY)`);
+    await db.query(
+      `CREATE TABLE "${legacyUuidChildren}" (id TEXT PRIMARY KEY, parent_id TEXT)`,
+    );
   });
 
   afterAll(async () => {
     if (!db) return;
+    await db.query(`DROP TABLE IF EXISTS "${legacyUuidChildren}"`);
+    await db.query(`DROP TABLE IF EXISTS "${legacyUuidParents}"`);
+    await db.query(`DROP TABLE IF EXISTS "${requiredChildren}"`);
     await db.query(`DROP TABLE IF EXISTS "${textChildren}"`);
     await db.query(`DROP TABLE IF EXISTS "${textParents}"`);
     await db.query(`DROP TABLE IF EXISTS "${children}"`);
@@ -114,6 +129,61 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
     expect((await db.query(detector)).rows).toEqual([]);
   });
 
+  it('diffs legacy text UUID references without comparing text to uuid', async () => {
+    const parentSchema: SchemaDefinition = {
+      tableName: legacyUuidParents,
+      columns: {
+        id: { type: 'UUID', primaryKey: true },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '2551',
+    };
+    const foreignKey = {
+      column: 'parent_id',
+      referencesTable: legacyUuidParents,
+      referencesColumn: 'id',
+    };
+    const childSchema: SchemaDefinition = {
+      tableName: legacyUuidChildren,
+      columns: {
+        id: { type: 'UUID', primaryKey: true },
+        parent_id: {
+          type: 'UUID',
+          foreignKey: { table: legacyUuidParents, column: 'id' },
+        },
+      },
+      indexes: [],
+      triggers: [],
+      foreignKeys: [foreignKey],
+      dependencies: [legacyUuidParents],
+      version: '2551',
+    };
+    const parentId = randomUUID();
+    await db.query(`INSERT INTO "${legacyUuidParents}" (id) VALUES ($1)`, [
+      parentId,
+    ]);
+    await db.query(
+      `INSERT INTO "${legacyUuidChildren}" (id, parent_id) VALUES ($1, $2)`,
+      [randomUUID(), parentId],
+    );
+
+    const diff = await new SchemaComparer(db, {
+      engineHint: 'postgres',
+    }).compare({
+      [legacyUuidParents]: parentSchema,
+      [legacyUuidChildren]: childSchema,
+    });
+    const change = diff.changes.find(
+      (candidate) => candidate.type === 'add_foreign_key',
+    );
+
+    expect(change?.advisory).toBeUndefined();
+    expect(change?.sqlStatements).toHaveLength(2);
+  });
+
   it('reports malformed legacy text without crashing and clears only its FK in the suggested repair', async () => {
     const foreignKey = {
       column: 'parent_id',
@@ -145,5 +215,33 @@ describe.skipIf(!pgUrl)('PostgreSQL foreign-key orphan probes (#2551)', () => {
       [childId],
     );
     expect(repaired.rows).toEqual([{ id: childId, parent_id: null }]);
+  });
+
+  it('deletes an orphaned row when the foreign-key column is required', async () => {
+    const foreignKey = {
+      column: 'parent_id',
+      referencesTable: parents,
+      referencesColumn: 'id',
+    };
+    const childId = randomUUID();
+    await db.query(
+      `INSERT INTO "${requiredChildren}" (id, parent_id) VALUES ($1, $2)`,
+      [childId, randomUUID()],
+    );
+
+    const repair = renderForeignKeyOrphanRepair(requiredChildren, foreignKey, {
+      nullable: false,
+      uuidComparison: true,
+    });
+    expect(repair).toContain(
+      `DELETE FROM "${requiredChildren}" AS "smrt_fk_child"`,
+    );
+    await db.query(repair);
+
+    const repaired = await db.query(
+      `SELECT id FROM "${requiredChildren}" WHERE id = $1`,
+      [childId],
+    );
+    expect(repaired.rows).toEqual([]);
   });
 });
