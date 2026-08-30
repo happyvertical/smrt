@@ -106,6 +106,8 @@ import {
 } from '../content-list-saved-views.js';
 import {
   type ContentListWorkflowBinding,
+  ContentListWorkflowError,
+  type ContentListWorkflowErrorReason,
   type ContentListWorkflowId,
   type ContentListWorkflowRequest,
   CONTENT_LIST_WORKFLOW_OPTIONS,
@@ -208,6 +210,20 @@ const WORKFLOW_REASON_MESSAGES: Record<string, keyof typeof M> = {
     M['content.content_list.workflow_reason_idempotency_conflict'],
 };
 
+const WORKFLOW_TRANSPORT_MESSAGES: Record<
+  ContentListWorkflowErrorReason,
+  keyof typeof M
+> = {
+  network_failure: M['content.content_list.workflow_transport_network_failure'],
+  invalid_json: M['content.content_list.workflow_transport_invalid_json'],
+  http_error: M['content.content_list.workflow_transport_http_error'],
+  invalid_result: M['content.content_list.workflow_transport_invalid_result'],
+  invalid_job_status:
+    M['content.content_list.workflow_transport_invalid_job_status'],
+  invalid_job_result:
+    M['content.content_list.workflow_transport_invalid_job_result'],
+};
+
 function workflowLabel(id: ContentListWorkflowId): string {
   return t(WORKFLOW_LABEL_MESSAGES[id]);
 }
@@ -225,6 +241,18 @@ function workflowReasonLabel(
   params?: Record<string, string | number>,
 ): string {
   return t((reason && WORKFLOW_REASON_MESSAGES[reason]) ?? fallback, params);
+}
+
+function workflowExceptionMessage(
+  error: unknown,
+  fallback: keyof typeof M,
+): string {
+  if (error instanceof ContentListWorkflowError) {
+    return t(WORKFLOW_TRANSPORT_MESSAGES[error.reason], {
+      status: error.status ?? '',
+    });
+  }
+  return error instanceof Error ? error.message : t(fallback);
 }
 
 function workflowScopeLabel(scope: string): string {
@@ -1765,7 +1793,10 @@ async function previewWorkflow() {
       globalThis.crypto?.randomUUID?.() ?? `content-workflow-apply-${Date.now()}`;
     workflowConfirmOpen = true;
   } catch (error) {
-    workflowError = error instanceof Error ? error.message : String(error);
+    workflowError = workflowExceptionMessage(
+      error,
+      M['content.content_list.workflow_preview_failed'],
+    );
   } finally {
     workflowPending = false;
   }
@@ -1854,7 +1885,10 @@ async function applyWorkflow() {
     workflowIdempotencyKey = '';
     workflowConfirmOpen = false;
   } catch (error) {
-    workflowError = error instanceof Error ? error.message : String(error);
+    workflowError = workflowExceptionMessage(
+      error,
+      M['content.content_list.workflow_failed'],
+    );
   } finally {
     workflowPending = false;
   }
@@ -1922,7 +1956,10 @@ async function checkWorkflowJob() {
       );
     }
   } catch (error) {
-    workflowError = error instanceof Error ? error.message : String(error);
+    workflowError = workflowExceptionMessage(
+      error,
+      M['content.content_list.workflow_job_failed'],
+    );
   } finally {
     workflowPending = false;
   }

@@ -21,6 +21,7 @@ import type {
   ContentListWorkflowBinding,
   ContentListWorkflowRequest,
 } from '../content-list-workflows.js';
+import { ContentListWorkflowError } from '../content-list-workflows.js';
 import I18nHarness from './__tests__/content-list-i18n-harness.svelte';
 import JobsHarness from './__tests__/content-list-jobs-harness.svelte';
 import Harness from './__tests__/content-list-props-harness.svelte';
@@ -398,6 +399,37 @@ describe('ContentList bulk workflows', () => {
       expect(second.textContent).toContain('l’exécution du flux a échoué'),
     );
     expect(second.textContent).not.toContain('execution_failed');
+
+    const transportFailure = workflowBinding({
+      preview: async () => {
+        throw new ContentListWorkflowError(
+          'internal server detail must not render',
+          503,
+          'http_error',
+        );
+      },
+    });
+    const third = document.createElement('div');
+    document.body.appendChild(third);
+    const thirdComponent = mount(I18nHarness, {
+      target: third,
+      props: {
+        contents,
+        workflows: transportFailure,
+        messages: {
+          'content.content_list.workflow_transport_http_error':
+            'Échec du transport HTTP {status}.',
+        },
+      },
+    });
+    mountedComponents.push(thirdComponent);
+    flushSync();
+    click(checkboxByLabel(third, 'Select Council budget explained'));
+    click(buttonsByText(third, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(third.textContent).toContain('Échec du transport HTTP 503.'),
+    );
+    expect(third.textContent).not.toContain('internal server detail');
   });
 
   it('constrains automated review kinds to the server-supported values', async () => {

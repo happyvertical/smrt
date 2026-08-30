@@ -224,6 +224,18 @@ export const M = defineMessages({
   'content.content_list.workflow_reason_idempotency_conflict':
     'this request conflicts with an earlier attempt',
   'content.content_list.workflow_reason_unknown': 'not eligible',
+  'content.content_list.workflow_transport_network_failure':
+    'The content workflow request could not be completed.',
+  'content.content_list.workflow_transport_invalid_json':
+    'The content workflow returned an unreadable response.',
+  'content.content_list.workflow_transport_http_error':
+    'The content workflow request failed (HTTP {status}).',
+  'content.content_list.workflow_transport_invalid_result':
+    'The content workflow returned an invalid result.',
+  'content.content_list.workflow_transport_invalid_job_status':
+    'The content workflow returned an invalid job status.',
+  'content.content_list.workflow_transport_invalid_job_result':
+    'The content workflow returned an invalid job result.',
   'content.content_list.workflow_preview_mismatch':
     'The workflow response did not match the preview request.',
   'content.content_list.workflow_preview_failed': 'Preview failed.',

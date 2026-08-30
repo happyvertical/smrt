@@ -120,13 +120,27 @@ export interface ContentListWorkflowTransportOptions {
   credentials?: RequestCredentials;
 }
 
+export type ContentListWorkflowErrorReason =
+  | 'network_failure'
+  | 'invalid_json'
+  | 'http_error'
+  | 'invalid_result'
+  | 'invalid_job_status'
+  | 'invalid_job_result';
+
 export class ContentListWorkflowError extends Error {
   readonly status?: number;
+  readonly reason: ContentListWorkflowErrorReason;
 
-  constructor(message: string, status?: number) {
+  constructor(
+    message: string,
+    status?: number,
+    reason: ContentListWorkflowErrorReason = 'http_error',
+  ) {
     super(message);
     this.name = 'ContentListWorkflowError';
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -170,7 +184,16 @@ export function createContentListWorkflowTransport(
   );
 
   async function fetchJson(url: string, init: RequestInit): Promise<unknown> {
-    const response = await fetchImpl(url, init);
+    let response: Response;
+    try {
+      response = await fetchImpl(url, init);
+    } catch (error) {
+      throw new ContentListWorkflowError(
+        'The content workflow request failed.',
+        undefined,
+        'network_failure',
+      );
+    }
     const text = await response.text();
     let payload: unknown;
     try {
@@ -179,6 +202,7 @@ export function createContentListWorkflowTransport(
       throw new ContentListWorkflowError(
         'The content workflow returned invalid JSON.',
         response.status,
+        'invalid_json',
       );
     }
     if (!response.ok) {
@@ -191,6 +215,7 @@ export function createContentListWorkflowTransport(
           ? error.message
           : `The content workflow failed with HTTP ${response.status}.`,
         response.status,
+        'http_error',
       );
     }
     return payload;
@@ -227,6 +252,8 @@ export function createContentListWorkflowTransport(
     ) {
       throw new ContentListWorkflowError(
         'The content workflow returned an invalid result.',
+        undefined,
+        'invalid_result',
       );
     }
     return result as unknown as DataSurfaceActionResult;
@@ -268,6 +295,8 @@ export function createContentListWorkflowTransport(
       ) {
         throw new ContentListWorkflowError(
           'The content workflow returned an invalid job status.',
+          undefined,
+          'invalid_job_status',
         );
       }
       if (
@@ -282,6 +311,8 @@ export function createContentListWorkflowTransport(
       ) {
         throw new ContentListWorkflowError(
           'The content workflow returned an invalid job result.',
+          undefined,
+          'invalid_job_result',
         );
       }
       return status as unknown as ContentListWorkflowJobStatus;

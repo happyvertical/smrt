@@ -989,6 +989,24 @@ export class SmrtObject extends SmrtClass {
       }
     }
 
+    // Framework timestamps keep their snake_case property names even when a
+    // legacy model also declares `createdAt` / `updatedAt`. formatDataJs()
+    // correctly hydrates that model alias, but one database column cannot emit
+    // both keys; restore the framework slots from the same converted value so
+    // persisted saves always retain their revision guard.
+    if (Object.hasOwn(data, 'created_at')) {
+      this.created_at = (formattedData.created_at ?? formattedData.createdAt) as
+        | Date
+        | null
+        | undefined;
+    }
+    if (Object.hasOwn(data, 'updated_at')) {
+      this.updated_at = (formattedData.updated_at ?? formattedData.updatedAt) as
+        | Date
+        | null
+        | undefined;
+    }
+
     if (process.env.DEBUG_STI) {
       logger.debug('[loadDataFromDb] Hydration complete', {
         class: className,

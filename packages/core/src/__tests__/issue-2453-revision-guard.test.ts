@@ -10,6 +10,15 @@ import { getTestDatabase } from '../testing/database';
 class Issue2453RevisionRow extends SmrtObject {
   @field()
   title: string = '';
+
+  // Existing domain models may still expose these legacy camelCase aliases.
+  // They share database columns with the framework timestamps and must not
+  // prevent the framework revision token from hydrating.
+  @field({ type: 'datetime' })
+  createdAt = new Date();
+
+  @field({ type: 'datetime' })
+  updatedAt = new Date();
 }
 
 class Issue2453RevisionRows extends SmrtCollection<Issue2453RevisionRow> {
@@ -62,6 +71,15 @@ describe('issue #2453 revision-guarded saves', () => {
 
     const stored = await rows.get(String(created.id));
     expect(stored?.title).toBe('concurrent');
+  });
+
+  it('hydrates the framework revision alongside legacy timestamp aliases', async () => {
+    const created = await rows.create({ title: 'legacy timestamp model' });
+    const hydrated = await rows.get(String(created.id));
+
+    expect(hydrated?.updatedAt).toBeInstanceOf(Date);
+    expect(hydrated?.updated_at).toBeInstanceOf(Date);
+    expect(hydrated?.updated_at?.getTime()).toBe(hydrated?.updatedAt.getTime());
   });
 
   it('uses conditional updates for remote LibSQL revision guards', async () => {

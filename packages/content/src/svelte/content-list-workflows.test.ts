@@ -56,9 +56,11 @@ describe('ContentList workflow transport', () => {
         .mockResolvedValue(new Response('not json', { status: 200 })),
     });
 
-    await expect(client.preview(request())).rejects.toBeInstanceOf(
-      ContentListWorkflowError,
-    );
+    await expect(client.preview(request())).rejects.toMatchObject({
+      name: 'ContentListWorkflowError',
+      reason: 'invalid_json',
+      status: 200,
+    });
   });
 
   it.each([
@@ -84,7 +86,9 @@ describe('ContentList workflow transport', () => {
         ),
     });
 
-    await expect(client.preview(request())).rejects.toThrow('invalid result');
+    await expect(client.preview(request())).rejects.toMatchObject({
+      reason: 'invalid_result',
+    });
   });
 
   it('resolves authenticated background job status when the host configures it', async () => {
@@ -123,9 +127,9 @@ describe('ContentList workflow transport', () => {
         ),
     });
 
-    await expect(client.status?.('job-a')).rejects.toThrow(
-      'invalid job status',
-    );
+    await expect(client.status?.('job-a')).rejects.toMatchObject({
+      reason: 'invalid_job_status',
+    });
   });
 
   it('rejects a terminal job result that is not an apply result', async () => {
@@ -143,9 +147,35 @@ describe('ContentList workflow transport', () => {
       ),
     });
 
-    await expect(client.status?.('job-a')).rejects.toThrow(
-      'invalid job result',
-    );
+    await expect(client.status?.('job-a')).rejects.toMatchObject({
+      reason: 'invalid_job_result',
+    });
+  });
+
+  it('classifies network and HTTP failures without trusting server messages', async () => {
+    const network = createContentListWorkflowTransport({
+      fetch: vi
+        .fn<typeof globalThis.fetch>()
+        .mockRejectedValue(new Error('offline')),
+    });
+    await expect(network.preview(request())).rejects.toMatchObject({
+      reason: 'network_failure',
+    });
+
+    const http = createContentListWorkflowTransport({
+      fetch: vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ error: { message: 'private server detail' } }),
+            { status: 503 },
+          ),
+        ),
+    });
+    await expect(http.preview(request())).rejects.toMatchObject({
+      reason: 'http_error',
+      status: 503,
+    });
   });
 
   it('retains only valid accepted, skipped, and failed row outcomes', () => {
