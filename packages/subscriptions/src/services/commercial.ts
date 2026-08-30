@@ -75,9 +75,25 @@ export class CommercialBillingStorageConfigurationError extends Error {
   }
 }
 
+function assertValidCommercialBillingWriteStrategy(
+  writeStrategy: unknown,
+): asserts writeStrategy is CommercialBillingStorage['writeStrategy'] {
+  if (
+    writeStrategy !== undefined &&
+    writeStrategy !== 'immediate' &&
+    writeStrategy !== 'manual' &&
+    writeStrategy !== 'none'
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billing database writeStrategy must be immediate, manual, or none.',
+    );
+  }
+}
+
 export function assertCommercialBillingStorageSupported(
   storage: CommercialBillingStorage,
 ): void {
+  assertValidCommercialBillingWriteStrategy(storage.writeStrategy);
   const writeStrategy =
     storage.adapterType === 'json'
       ? (storage.writeStrategy ?? 'immediate')
@@ -161,16 +177,7 @@ function billingStorageFromConfig(
     );
   }
   const configuredWriteStrategy = config.writeStrategy;
-  if (
-    configuredWriteStrategy !== undefined &&
-    configuredWriteStrategy !== 'immediate' &&
-    configuredWriteStrategy !== 'manual' &&
-    configuredWriteStrategy !== 'none'
-  ) {
-    throw new CommercialBillingStorageConfigurationError(
-      'Commercial billing database writeStrategy must be immediate, manual, or none.',
-    );
-  }
+  assertValidCommercialBillingWriteStrategy(configuredWriteStrategy);
   const writeStrategy =
     configuredWriteStrategy === 'immediate' ||
     configuredWriteStrategy === 'manual' ||

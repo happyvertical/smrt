@@ -163,6 +163,26 @@ describe('commercial usage tracer', () => {
     ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
   });
 
+  it.each([
+    '',
+    false,
+    'later',
+  ])('rejects invalid declared write strategy %j before use', (writeStrategy) => {
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'json',
+        writeStrategy: writeStrategy as never,
+      }),
+    ).toThrow(CommercialBillingStorageConfigurationError);
+    expect(
+      () =>
+        new CommercialUsageService(usage, rules, charges, adjustments, {
+          adapterType: 'json',
+          writeStrategy: writeStrategy as never,
+        }),
+    ).toThrow(CommercialBillingStorageConfigurationError);
+  });
+
   it('normalizes explicit contracts for ambiguous database strings', async () => {
     vi.stubEnv('HAVE_SQL_TYPE', '');
     const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
