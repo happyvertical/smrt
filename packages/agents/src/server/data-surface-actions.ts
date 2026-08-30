@@ -294,6 +294,20 @@ export interface DataSurfaceActionAdapterOptions {
   now?: () => number;
   createToken?: () => string;
   runAsPrincipal?: typeof executeAsPrincipal;
+  /**
+   * Re-resolve the complete current binding immediately before deferred work.
+   * Background execution fails closed when this seam is absent or returns a
+   * binding for a different principal.
+   */
+  resolveDeferredPrincipal?(
+    reference: Readonly<{
+      runAsUserId: string;
+      tenantId: string | null;
+      actsAsProfileId: string | null;
+      onBehalfOfUserId: string | null;
+      agentClass?: string;
+    }>,
+  ): ExecuteAsPrincipalOptions | Promise<ExecuteAsPrincipalOptions>;
   idempotencyPollIntervalMs?: number;
   idempotencyWaitTimeoutMs?: number;
   /** Domain-specific request input that must participate in confirmation/idempotency. */
@@ -792,12 +806,37 @@ export function createDataSurfaceActionAdapter(
       if (winner.ownerToken === ownerToken) {
         let executed: DataSurfaceActionResult;
         try {
-          // A queued job may run long after the request that created it. Never
-          // carry a caller-supplied permission snapshot across that boundary:
-          // executeAsPrincipal must resolve the actor's current RBAC/membership
-          // state again immediately before deferred mutations.
-          const { permissions: _permissions, ...livePrincipal } =
-            context.principal;
+          // A queued job may run long after the request that created it. The
+          // complete persona binding (including the TenantAgent-capped tool
+          // allow-list) must therefore be resolved again at execution time.
+          const reference = {
+            runAsUserId: context.principal.principal.runAsUserId,
+            tenantId: context.principal.principal.tenantId,
+            actsAsProfileId:
+              context.principal.principal.actsAsProfileId ?? null,
+            onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
+            ...(context.principal.agentClass
+              ? { agentClass: context.principal.agentClass }
+              : {}),
+          };
+          const refreshed = await options.resolveDeferredPrincipal?.(reference);
+          if (
+            !refreshed ||
+            refreshed.principal.runAsUserId !== reference.runAsUserId ||
+            refreshed.principal.tenantId !== reference.tenantId ||
+            (refreshed.principal.actsAsProfileId ?? null) !==
+              reference.actsAsProfileId ||
+            (refreshed.onBehalfOfUserId ?? null) !==
+              reference.onBehalfOfUserId ||
+            !Array.isArray(refreshed.principal.allowedTools)
+          ) {
+            throw new Error(
+              'Deferred data-surface action principal binding could not be resolved safely',
+            );
+          }
+          // Permission snapshots are never carried across the queue boundary;
+          // executeAsPrincipal resolves current RBAC/membership immediately.
+          const { permissions: _permissions, ...livePrincipal } = refreshed;
           executed = await authorizedApply(
             request,
             { ...context, principal: livePrincipal },

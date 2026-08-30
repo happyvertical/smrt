@@ -1948,7 +1948,7 @@ async function checkWorkflowJob() {
     workflowQueuedJobs = workflowQueuedJobs.filter(
       (queued) => queued.jobId !== job.jobId,
     );
-    if (job.result) {
+    if (job.status === 'succeeded' && job.result) {
       workflowResult = job.result;
       if (!job.result.ok) {
         workflowError = workflowReasonLabel(
@@ -1960,7 +1960,7 @@ async function checkWorkflowJob() {
         applyWorkflowSelectionOutcomes(job.result);
       }
     }
-    if (job.status !== 'succeeded' && !workflowError) {
+    if (job.status !== 'succeeded') {
       workflowError = workflowReasonLabel(
         job.reason,
         M['content.content_list.workflow_job_status'],

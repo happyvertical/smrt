@@ -1035,6 +1035,75 @@ describe('ContentList bulk workflows', () => {
     expect(buttonsByText(target, 'Preview workflow')[0]?.disabled).toBe(false);
   });
 
+  it.each([
+    'failed',
+    'cancelled',
+  ] as const)('preserves selection when a %s queue job carries a contradictory successful result', async (jobStatus) => {
+    let applyRequest: ContentListWorkflowRequest | undefined;
+    const status = vi.fn(async () => {
+      if (!applyRequest) throw new Error('apply request not captured');
+      return {
+        jobId: `job-${jobStatus}-with-success`,
+        status: jobStatus,
+        reason: 'provider unavailable',
+        result: {
+          ...applyRequest,
+          ok: true,
+          details: {
+            accepted: 1,
+            skipped: 0,
+            failed: 0,
+            outcomes: [{ rowId: 'content-1', status: 'accepted' as const }],
+          },
+        },
+      };
+    });
+    const workflow = workflowBinding({
+      apply: async (request) => {
+        applyRequest = request;
+        return {
+          ...request,
+          ok: true,
+          details: {
+            accepted: 1,
+            background: true,
+            jobId: `job-${jobStatus}-with-success`,
+          },
+        };
+      },
+      status,
+    });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Check job')[0]);
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain(
+        `Job job-${jobStatus}-with-success ${
+          jobStatus === 'failed' ? 'Failed' : 'Cancelled'
+        }.`,
+      ),
+    );
+    expect(target.textContent).toContain('1 selected');
+    expect(target.textContent).not.toContain('1 accepted');
+    expect(
+      checkboxByLabel(target, 'Deselect Council budget explained').checked,
+    ).toBe(true);
+  });
+
   it('does not reconcile a foreground apply after its live workflow intent changes', async () => {
     let applyRequest: ContentListWorkflowRequest | undefined;
     let resolveApply: ((result: DataSurfaceActionResult) => void) | undefined;

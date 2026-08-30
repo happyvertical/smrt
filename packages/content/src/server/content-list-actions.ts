@@ -445,6 +445,10 @@ export interface ContentListActionAdapterOptions {
   tokenTtlMs?: number;
   /** Test/host seam for principal execution; production defaults to executeAsPrincipal. */
   runAsPrincipal?: typeof import('@happyvertical/smrt-agents').executeAsPrincipal;
+  /** Resolve the live persona/TenantAgent binding before a queued mutation. */
+  resolveDeferredPrincipal?: Parameters<
+    typeof createDataSurfaceActionAdapter
+  >[0]['resolveDeferredPrincipal'];
 }
 
 interface ResolvedContentSelection {
@@ -1175,6 +1179,7 @@ export function createContentListActionAdapter(
     backgroundQueue: options.backgroundQueue,
     tokenTtlMs: options.tokenTtlMs,
     runAsPrincipal: options.runAsPrincipal,
+    resolveDeferredPrincipal: options.resolveDeferredPrincipal,
     requestFingerprintExtension: (request) =>
       (request as ContentListActionRequest)
         .target as unknown as DataSurfaceJsonValue,

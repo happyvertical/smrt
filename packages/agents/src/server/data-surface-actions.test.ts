@@ -80,6 +80,9 @@ function harness(options: {
   requestFingerprintExtension?: () => string;
   mapError?: (error: unknown) => string;
   declaredSelectionScopes?: DataSurfaceActionDescriptor['selectionScopes'];
+  resolveDeferredPrincipal?: Parameters<
+    typeof createDataSurfaceActionAdapter
+  >[0]['resolveDeferredPrincipal'];
 }) {
   const calls: ExecuteAsPrincipalOptions[] = [];
   const resolveSelectionCalls: DataSurfaceSelectionReference[] = [];
@@ -132,6 +135,18 @@ function harness(options: {
       return undefined;
     },
   };
+  const context = {
+    principal: {
+      db: 'test.db',
+      principal: {
+        runAsUserId: 'principal-a',
+        tenantId: 'tenant-a',
+        allowedTools,
+      },
+      onBehalfOfUserId: 'originator-a',
+      audit: vi.fn(),
+    },
+  };
   const adapter = createDataSurfaceActionAdapter({
     state: options.state ?? new InMemoryDataSurfaceActionStateStore(),
     now: options.now,
@@ -170,19 +185,9 @@ function harness(options: {
       : {}),
     requestFingerprintExtension: options.requestFingerprintExtension,
     mapError: options.mapError,
+    resolveDeferredPrincipal:
+      options.resolveDeferredPrincipal ?? (async () => context.principal),
   });
-  const context = {
-    principal: {
-      db: 'test.db',
-      principal: {
-        runAsUserId: 'principal-a',
-        tenantId: 'tenant-a',
-        allowedTools,
-      },
-      onBehalfOfUserId: 'originator-a',
-      audit: vi.fn(),
-    },
-  };
   return { adapter, assertOperation, calls, context, resolveSelectionCalls };
 }
 
@@ -887,6 +892,86 @@ describe('data-surface action adapter', () => {
     permissionsRevoked = true;
     await expect(queued?.run()).rejects.toThrow('permission revoked');
     expect(applyRow).not.toHaveBeenCalled();
+  });
+
+  it('resolves the persona tool ceiling live when deferred work starts', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let allowedTools = ['orders.archive'];
+    const applyRow = vi.fn();
+    const runAsPrincipal = (async <T>(
+      principalOptions: ExecuteAsPrincipalOptions,
+      fn: (principalRun: PrincipalRun) => Promise<T>,
+    ): Promise<T> => {
+      const currentTools = principalOptions.principal.allowedTools ?? [];
+      return fn({
+        context: {} as PrincipalRun['context'],
+        permissions: ['orders:update'],
+        allowedTools: currentTools,
+        isToolAllowed: (tool) => currentTools.includes(tool),
+        assertToolAllowed(tool) {
+          if (!currentTools.includes(tool)) throw new Error('tool revoked');
+        },
+        async assertOperation() {
+          return {} as Awaited<ReturnType<PrincipalRun['assertOperation']>>;
+        },
+      });
+    }) as typeof executeAsPrincipal;
+    const setup = harness({
+      execution: 'background',
+      apply: applyRow,
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-live-tools' };
+      },
+      runAsPrincipal,
+      resolveDeferredPrincipal: async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          actsAsProfileId: reference.actsAsProfileId,
+          allowedTools,
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+      }),
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    allowedTools = [];
+    await expect(queued?.run()).rejects.toThrow('tool revoked');
+    expect(applyRow).not.toHaveBeenCalled();
+  });
+
+  it('fails deferred execution closed for an incomplete live principal binding', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-missing-binding' };
+      },
+      resolveDeferredPrincipal: async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+      }),
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).rejects.toThrow(
+      'principal binding could not be resolved safely',
+    );
   });
 
   it('maps deferred failures into a structured background result', async () => {

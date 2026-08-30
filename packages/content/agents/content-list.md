@@ -86,7 +86,10 @@ Important invariants:
   `limit_exceeded` for forged or agent requests above it.
 - Automated review, formatting, and optimization are background actions. A
   successful apply returns a job ID; the queue callback repeats the guarded
-  apply, and idempotency prevents duplicate execution. Hosts can configure the
+  apply, and idempotency prevents duplicate execution. Hosts must supply
+  `resolveDeferredPrincipal` to re-resolve the complete live persona/TenantAgent
+  binding before queued mutations; missing, mismatched, or incomplete bindings
+  fail closed. Hosts can configure the
   authenticated `jobStatusPath` transport (or supply `client.status`) so the
   list can keep an identical intent locked while queued/running, reconcile
   terminal row outcomes, and unlock a failed or cancelled intent for retry.

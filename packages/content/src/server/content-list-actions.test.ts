@@ -282,6 +282,9 @@ function harness(
     revision?: Parameters<typeof createContentListActionAdapter>[0]['revision'];
     allowedTools?: string[];
     maxSelectionSize?: number;
+    resolveDeferredPrincipal?: Parameters<
+      typeof createContentListActionAdapter
+    >[0]['resolveDeferredPrincipal'];
   } = {},
 ) {
   const collection = options.collection ?? new MemoryContentCollection(rows());
@@ -324,6 +327,18 @@ function harness(
     handlers: options.handlers,
     maxSelectionSize: options.maxSelectionSize,
     runAsPrincipal,
+    resolveDeferredPrincipal:
+      options.resolveDeferredPrincipal ??
+      (async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          actsAsProfileId: reference.actsAsProfileId,
+          allowedTools,
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+      })),
   });
   const context = {
     principal: {
