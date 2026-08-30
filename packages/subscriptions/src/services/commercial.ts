@@ -161,6 +161,16 @@ function billingStorageFromConfig(
     );
   }
   const configuredWriteStrategy = config.writeStrategy;
+  if (
+    configuredWriteStrategy !== undefined &&
+    configuredWriteStrategy !== 'immediate' &&
+    configuredWriteStrategy !== 'manual' &&
+    configuredWriteStrategy !== 'none'
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billing database writeStrategy must be immediate, manual, or none.',
+    );
+  }
   const writeStrategy =
     configuredWriteStrategy === 'immediate' ||
     configuredWriteStrategy === 'manual' ||
@@ -226,9 +236,7 @@ function normalizedCommercialClassOptions(
             ...(billingStorage.writeStrategy === undefined
               ? {}
               : {
-                  writeStrategy:
-                    configuredDatabase.writeStrategy ??
-                    billingStorage.writeStrategy,
+                  writeStrategy: billingStorage.writeStrategy,
                 }),
           };
     if (options.db !== undefined) classOptions.db = normalizedDatabase;
