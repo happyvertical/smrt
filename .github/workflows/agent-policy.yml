@@ -219,6 +219,7 @@ jobs:
               "policy_revision": manifest.get("policy_revision"),
               "source_commit": manifest.get("source_commit"),
               "source_tree_sha256": manifest.get("source_tree_sha256"),
+              "rollout": manifest.get("rollout"),
           }
           for field, value in expected.items():
               if lock.get(field) != value:
