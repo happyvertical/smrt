@@ -183,6 +183,44 @@ describe('commercial usage tracer', () => {
     ).toThrow(CommercialBillingStorageConfigurationError);
   });
 
+  it('validates declarations before default resolution and snapshots accessors', async () => {
+    await expect(
+      CommercialUsageService.create({
+        billingStorage: {
+          adapterType: 'sqlite',
+          writeStrategy: '' as never,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+
+    let storageReads = 0;
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'json',
+        get writeStrategy() {
+          storageReads += 1;
+          return storageReads === 1 ? 'manual' : (false as never);
+        },
+      }),
+    ).not.toThrow();
+    expect(storageReads).toBe(1);
+
+    let configReads = 0;
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'duckdb',
+          url: ':memory:',
+          get writeStrategy() {
+            configReads += 1;
+            return configReads === 1 ? undefined : 'immediate';
+          },
+        },
+      }),
+    ).resolves.toBeInstanceOf(CommercialUsageService);
+    expect(configReads).toBe(1);
+  });
+
   it('normalizes explicit contracts for ambiguous database strings', async () => {
     vi.stubEnv('HAVE_SQL_TYPE', '');
     const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));

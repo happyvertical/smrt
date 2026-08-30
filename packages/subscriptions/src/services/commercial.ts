@@ -90,20 +90,51 @@ function assertValidCommercialBillingWriteStrategy(
   }
 }
 
+function snapshotCommercialBillingStorage(
+  storage: CommercialBillingStorage,
+): CommercialBillingStorage {
+  const adapterType = storage.adapterType;
+  const writeStrategy: unknown = storage.writeStrategy;
+  assertValidCommercialBillingWriteStrategy(writeStrategy);
+  return { adapterType, writeStrategy };
+}
+
+function snapshotCommercialUsageServiceOptions(
+  options: CommercialUsageServiceOptions,
+): CommercialUsageServiceOptions {
+  const snapshot = { ...options };
+  if (snapshot.billingStorage) {
+    snapshot.billingStorage = snapshotCommercialBillingStorage(
+      snapshot.billingStorage,
+    );
+  }
+  for (const key of ['db', 'persistence'] as const) {
+    const database = snapshot[key];
+    if (
+      database &&
+      typeof database !== 'string' &&
+      !isDatabaseInterface(database)
+    ) {
+      snapshot[key] = { ...database };
+    }
+  }
+  return snapshot;
+}
+
 export function assertCommercialBillingStorageSupported(
   storage: CommercialBillingStorage,
 ): void {
-  assertValidCommercialBillingWriteStrategy(storage.writeStrategy);
+  const snapshot = snapshotCommercialBillingStorage(storage);
   const writeStrategy =
-    storage.adapterType === 'json'
-      ? (storage.writeStrategy ?? 'immediate')
-      : storage.writeStrategy;
+    snapshot.adapterType === 'json'
+      ? (snapshot.writeStrategy ?? 'immediate')
+      : snapshot.writeStrategy;
   if (
-    (storage.adapterType === 'json' || storage.adapterType === 'duckdb') &&
+    (snapshot.adapterType === 'json' || snapshot.adapterType === 'duckdb') &&
     writeStrategy === 'immediate'
   ) {
     throw new UnsupportedCommercialBillingStorageError({
-      ...storage,
+      ...snapshot,
       writeStrategy,
     });
   }
@@ -239,12 +270,8 @@ function normalizedCommercialClassOptions(
           }
         : {
             ...configuredDatabase,
-            type: configuredDatabase.type ?? billingStorage.adapterType,
-            ...(billingStorage.writeStrategy === undefined
-              ? {}
-              : {
-                  writeStrategy: billingStorage.writeStrategy,
-                }),
+            type: billingStorage.adapterType,
+            writeStrategy: billingStorage.writeStrategy,
           };
     if (options.db !== undefined) classOptions.db = normalizedDatabase;
     else classOptions.persistence = normalizedDatabase;
@@ -270,10 +297,11 @@ export class CommercialUsageService {
   static async create(
     options: CommercialUsageServiceOptions = {},
   ): Promise<CommercialUsageService> {
-    const billingStorage = resolveCommercialBillingStorage(options);
+    const optionSnapshot = snapshotCommercialUsageServiceOptions(options);
+    const billingStorage = resolveCommercialBillingStorage(optionSnapshot);
     assertCommercialBillingStorageSupported(billingStorage);
     const classOptions = normalizedCommercialClassOptions(
-      options,
+      optionSnapshot,
       billingStorage,
     );
     const usage = await TenantUsageMetricCollection.create(classOptions);
