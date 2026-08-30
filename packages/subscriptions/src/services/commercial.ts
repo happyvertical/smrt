@@ -93,7 +93,17 @@ function assertValidCommercialBillingWriteStrategy(
 function snapshotCommercialBillingStorage(
   storage: CommercialBillingStorage,
 ): CommercialBillingStorage {
-  const adapterType = storage.adapterType;
+  const adapterType: unknown = storage.adapterType;
+  if (
+    adapterType !== 'sqlite' &&
+    adapterType !== 'postgres' &&
+    adapterType !== 'duckdb' &&
+    adapterType !== 'json'
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billing storage adapterType must be sqlite, postgres, duckdb, or json.',
+    );
+  }
   const writeStrategy: unknown = storage.writeStrategy;
   assertValidCommercialBillingWriteStrategy(writeStrategy);
   return { adapterType, writeStrategy };

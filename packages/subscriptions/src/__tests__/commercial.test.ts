@@ -221,6 +221,23 @@ describe('commercial usage tracer', () => {
     expect(configReads).toBe(1);
   });
 
+  it.each([
+    undefined,
+    false,
+    'bogus',
+  ])('rejects invalid declared adapter type %j before resolved-handle use', async (adapterType) => {
+    const billingStorage = {
+      adapterType: adapterType as never,
+      writeStrategy: 'manual' as const,
+    };
+    expect(() =>
+      assertCommercialBillingStorageSupported(billingStorage),
+    ).toThrow(CommercialBillingStorageConfigurationError);
+    await expect(
+      CommercialUsageService.create({ db: usage.db, billingStorage }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
   it('normalizes explicit contracts for ambiguous database strings', async () => {
     vi.stubEnv('HAVE_SQL_TYPE', '');
     const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
