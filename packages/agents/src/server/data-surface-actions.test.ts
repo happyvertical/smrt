@@ -1131,6 +1131,76 @@ describe('data-surface action adapter', () => {
     ).resolves.toMatchObject({ ok: false, reason: 'confirmation_mismatch' });
   });
 
+  it('binds pending apply authorization to the entry principal snapshot', async () => {
+    let releaseLookup: (() => void) | undefined;
+    let lookupStarted = false;
+    class DelayedState extends InMemoryDataSurfaceActionStateStore {
+      override async getIdempotency(key: string) {
+        lookupStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseLookup = resolve;
+        });
+        return super.getIdempotency(key);
+      }
+    }
+    const setup = harness({ state: new DelayedState() });
+    const auditMetadata = {
+      binding: { actor: 'a' },
+      tags: ['confirmed'],
+    };
+    const permissions = ['orders:update'];
+    const allowedTools = ['orders.archive'];
+    Object.assign(setup.context.principal, {
+      agentClass: 'orders-agent-a',
+      onBehalfOfUserId: 'originator-a',
+      permissions,
+      auditMetadata,
+    });
+    Object.assign(setup.context.principal.principal, {
+      actsAsProfileId: 'profile-a',
+      allowedTools,
+    });
+    const token = await previewToken(setup);
+    const applying = setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+    await vi.waitFor(() => expect(lookupStarted).toBe(true));
+
+    Object.assign(setup.context.principal, {
+      agentClass: 'orders-agent-b',
+      onBehalfOfUserId: 'originator-b',
+      auditMetadata: { binding: 'b' },
+    });
+    Object.assign(setup.context.principal.principal, {
+      runAsUserId: 'principal-b',
+      tenantId: 'tenant-b',
+      actsAsProfileId: 'profile-b',
+    });
+    permissions[0] = 'orders:admin';
+    allowedTools[0] = 'orders.delete';
+    auditMetadata.binding.actor = 'b';
+    auditMetadata.tags[0] = 'mutated';
+    releaseLookup?.();
+
+    await expect(applying).resolves.toMatchObject({ ok: true });
+    expect(setup.calls.at(-1)).toMatchObject({
+      agentClass: 'orders-agent-a',
+      onBehalfOfUserId: 'originator-a',
+      permissions: ['orders:update'],
+      auditMetadata: expect.objectContaining({
+        binding: { actor: 'a' },
+        tags: ['confirmed'],
+      }),
+      principal: {
+        runAsUserId: 'principal-a',
+        tenantId: 'tenant-a',
+        actsAsProfileId: 'profile-a',
+        allowedTools: ['orders.archive'],
+      },
+    });
+  });
+
   it('isolates idempotency across agent-class authority bindings', async () => {
     const applyRow = vi.fn();
     const setup = harness({ apply: applyRow });

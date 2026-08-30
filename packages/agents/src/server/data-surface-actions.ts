@@ -487,6 +487,34 @@ function snapshotRequest(
   return deepFreeze(structuredClone(request));
 }
 
+function snapshotActionContext(
+  context: DataSurfaceActionContext,
+): DataSurfaceActionContext {
+  const principal = {
+    ...context.principal.principal,
+    ...(context.principal.principal.allowedTools
+      ? { allowedTools: [...context.principal.principal.allowedTools] }
+      : {}),
+  };
+  if (principal.allowedTools) Object.freeze(principal.allowedTools);
+  Object.freeze(principal);
+  const permissions = context.principal.permissions
+    ? [...context.principal.permissions]
+    : undefined;
+  if (permissions) Object.freeze(permissions);
+  const auditMetadata = context.principal.auditMetadata
+    ? deepFreeze(structuredClone(context.principal.auditMetadata))
+    : undefined;
+  const principalOptions: ExecuteAsPrincipalOptions = {
+    ...context.principal,
+    principal,
+    ...(permissions ? { permissions } : {}),
+    ...(auditMetadata ? { auditMetadata } : {}),
+  };
+  Object.freeze(principalOptions);
+  return Object.freeze({ principal: principalOptions });
+}
+
 function actionFingerprint(action: DataSurfaceServerActionDefinition): string {
   return fingerprint({
     descriptor: action.descriptor,
@@ -681,12 +709,13 @@ export function createDataSurfaceActionAdapter(
   ): Promise<DataSurfaceActionResult> {
     const invalid = validateRequest(request, 'preview');
     if (invalid) return result(request, false, invalid);
+    const boundContext = snapshotActionContext(context);
     return runAsPrincipal(
       {
-        ...context.principal,
+        ...boundContext.principal,
         action: 'data_surface.action.preview',
         auditMetadata: {
-          ...context.principal.auditMetadata,
+          ...boundContext.principal.auditMetadata,
           surfaceId: request.identity.surfaceId,
           actionId: request.actionId,
           requestId: request.requestId,
@@ -718,11 +747,12 @@ export function createDataSurfaceActionAdapter(
         const expiresAt = now() + tokenTtlMs;
         await state.putToken(confirmationToken, {
           expiresAt,
-          actorUserId: context.principal.principal.runAsUserId,
-          tenantId: context.principal.principal.tenantId,
-          onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
-          actsAsProfileId: context.principal.principal.actsAsProfileId ?? null,
-          agentClass: context.principal.agentClass ?? null,
+          actorUserId: boundContext.principal.principal.runAsUserId,
+          tenantId: boundContext.principal.principal.tenantId,
+          onBehalfOfUserId: boundContext.principal.onBehalfOfUserId ?? null,
+          actsAsProfileId:
+            boundContext.principal.principal.actsAsProfileId ?? null,
+          agentClass: boundContext.principal.agentClass ?? null,
           identityKey: identityKey(request.identity),
           actionId: request.actionId,
           actionFingerprint: actionFingerprint(invocation.action),
@@ -979,14 +1009,16 @@ export function createDataSurfaceActionAdapter(
     const invalid = validateRequest(input, 'apply');
     if (invalid) return result(input, false, invalid);
     const request = snapshotRequest(input);
+    const boundContext = snapshotActionContext(context);
     const confirmationToken = request.confirmationToken;
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
-    const actorUserId = context.principal.principal.runAsUserId;
-    const tenantId = context.principal.principal.tenantId;
-    const onBehalfOfUserId = context.principal.onBehalfOfUserId ?? null;
-    const actsAsProfileId = context.principal.principal.actsAsProfileId ?? null;
-    const agentClass = context.principal.agentClass ?? null;
+    const actorUserId = boundContext.principal.principal.runAsUserId;
+    const tenantId = boundContext.principal.principal.tenantId;
+    const onBehalfOfUserId = boundContext.principal.onBehalfOfUserId ?? null;
+    const actsAsProfileId =
+      boundContext.principal.principal.actsAsProfileId ?? null;
+    const agentClass = boundContext.principal.agentClass ?? null;
     const requestFingerprintValue = fingerprintRequest(request);
     const idempotencyScope = fingerprint({
       actorUserId,
@@ -1049,7 +1081,7 @@ export function createDataSurfaceActionAdapter(
       if (winner.ownerToken === ownerToken) {
         let applied: DataSurfaceActionResult;
         try {
-          applied = await authorizedApply(request, context, token, true);
+          applied = await authorizedApply(request, boundContext, token, true);
         } catch (error) {
           await state.releaseIdempotency(idempotencyScope, ownerToken);
           throw error;
