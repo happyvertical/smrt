@@ -28,6 +28,7 @@ import {
   generateSessionId,
   Session,
 } from '../models/Session.js';
+import { PermissionResolver } from '../services/PermissionResolver.js';
 import { SessionService } from '../services/SessionService.js';
 import { SessionStatus } from '../types/index.js';
 
@@ -516,6 +517,61 @@ describe('SessionService', () => {
     expect(context).toBeDefined();
     expect(context?.tenantId).toBe(tenant.id);
     expect(context?.permissions).toContain('articles.create');
+  });
+
+  it('rebuilds authorization context after concurrent tenant reassignment', async () => {
+    const user = await users.create({ email: 'tenant-race@example.com' });
+    await user.save();
+    const tenantA = await tenants.create({ name: 'Tenant A' });
+    await tenantA.save();
+    const tenantB = await tenants.create({ name: 'Tenant B' });
+    await tenantB.save();
+    const role = await roles.create({ name: 'Tenant A editor' });
+    await role.save();
+    const permission = await permissions.create({
+      slug: 'articles.create',
+      name: 'Create Articles',
+    });
+    await permission.save();
+    await rolePermissions.addPermission(String(role.id), String(permission.id));
+    const membership = await memberships.create({
+      userId: String(user.id),
+      tenantId: String(tenantA.id),
+      roleId: String(role.id),
+    });
+    await membership.save();
+
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+    const sessionService = await SessionService.create(options);
+    const sessionStore = await SessionCollection.create(options);
+    const sessionId = await sessionService.createSession(
+      String(user.id),
+      String(tenantA.id),
+    );
+    const originalResolve = PermissionResolver.prototype.resolvePermissions;
+    const resolve = vi
+      .spyOn(PermissionResolver.prototype, 'resolvePermissions')
+      .mockImplementationOnce(async function (
+        this: PermissionResolver,
+        resolvedUserId,
+        resolvedTenantId,
+        resolveOptions,
+      ) {
+        await sessionStore.setSessionTenant(sessionId, String(tenantB.id));
+        return originalResolve.call(
+          this,
+          resolvedUserId,
+          resolvedTenantId,
+          resolveOptions,
+        );
+      });
+
+    const context = await sessionService.loadSessionContext(sessionId);
+
+    expect(resolve).toHaveBeenCalledTimes(2);
+    expect(context?.tenantId).toBe(tenantB.id);
+    expect(context?.permissions).not.toContain('articles.create');
+    expect(context?.membership).toBeNull();
   });
 
   it('should include inherited tenant permissions in session context', async () => {

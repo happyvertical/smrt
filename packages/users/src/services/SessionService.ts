@@ -149,48 +149,55 @@ export class SessionService {
    * Returns null if session is invalid or user doesn't exist
    */
   async loadSessionContext(sessionId: string): Promise<SessionContext | null> {
-    // Find valid session
-    const session = await this.sessionCollection.findValidSession(sessionId);
-    if (!session) return null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const session = await this.sessionCollection.findValidSession(sessionId);
+      if (!session) return null;
 
-    // Load user
-    const user = await this.userCollection.get(session.userId);
-    if (!user?.isActive()) return null;
+      // Activity persistence can conflict-reload the instance. Establish the
+      // authorization snapshot only after that reload has converged.
+      if (!(await session.recordActivity(this.autoExtend, this.defaultTTL))) {
+        return null;
+      }
+      const userId = session.userId;
+      const tenantId = session.tenantId;
 
-    // Resolve permissions (only if tenant context exists)
-    let permissions: string[] = [];
-    let membership: Membership | null = null;
-    if (session.tenantId) {
-      const resolvedMembership =
-        await this.membershipCollection.findByUserAndTenant(
-          session.userId,
-          session.tenantId,
+      const user = await this.userCollection.get(userId);
+      if (!user?.isActive()) return null;
+
+      let permissions: string[] = [];
+      let membership: Membership | null = null;
+      if (tenantId) {
+        const resolvedMembership =
+          await this.membershipCollection.findByUserAndTenant(userId, tenantId);
+        membership = resolvedMembership?.isActive() ? resolvedMembership : null;
+
+        // Pass the RAW row: an inactive direct membership pins resolution to
+        // the empty set, while a missing row (null) lets the resolver apply
+        // opt-in ancestor-membership inheritance (`Role.inheritsToDescendants`).
+        const result = await this.permissionResolver.resolvePermissions(
+          userId,
+          tenantId,
+          { membership: resolvedMembership },
         );
-      membership = resolvedMembership?.isActive() ? resolvedMembership : null;
+        permissions = Array.from(result.permissions);
+      }
 
-      // Pass the RAW row: an inactive direct membership pins resolution to
-      // the empty set, while a missing row (null) lets the resolver apply
-      // opt-in ancestor-membership inheritance (`Role.inheritsToDescendants`).
-      const result = await this.permissionResolver.resolvePermissions(
-        session.userId,
-        session.tenantId,
-        { membership: resolvedMembership },
-      );
-      permissions = Array.from(result.permissions);
+      // Bind identity, tenant and permissions to one authoritative session
+      // state. Routine activity may advance the revision without invalidating
+      // this snapshot; security-bearing field changes require reconstruction.
+      const current = await this.sessionCollection.findValidSession(sessionId);
+      if (!current) return null;
+      if (current.userId !== userId || current.tenantId !== tenantId) continue;
+
+      return {
+        user,
+        membership,
+        permissions,
+        tenantId,
+        sessionId: session.id as string,
+      };
     }
-
-    // Touch session (and optionally extend)
-    if (!(await session.recordActivity(this.autoExtend, this.defaultTTL))) {
-      return null;
-    }
-
-    return {
-      user,
-      membership,
-      permissions,
-      tenantId: session.tenantId,
-      sessionId: session.id as string,
-    };
+    return null;
   }
 
   /**
