@@ -164,7 +164,18 @@ export class ServiceEvidenceService {
       entry.approvedAt = new Date();
       entry.approvedByProfileId = options.actorProfileId ?? null;
       entry.approvalPath = options.approvalPath;
-      await entry.save();
+      try {
+        await entry.save();
+      } catch (error) {
+        const revisionConflict =
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'RUNTIME_REVISION_CONFLICT';
+        if (!revisionConflict) throw error;
+        const concurrent = await this.entries.get(timeEntryId);
+        if (concurrent?.status !== 'approved') throw error;
+        entry = concurrent;
+      }
     }
     const provider = existingCompensation
       ? null
