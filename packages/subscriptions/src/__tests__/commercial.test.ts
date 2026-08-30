@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
   BillingAdjustmentCollection,
+  ClientCharge,
   ClientChargeCollection,
   PricingRule,
   PricingRuleCollection,
@@ -291,6 +292,40 @@ describe('commercial usage tracer', () => {
       await adjustments.list({ where: { clientChargeId: charge.id } }),
     ).toHaveLength(1);
     expect((await charges.get(String(charge.id)))?.status).toBe('adjusted');
+  });
+
+  it('rolls back an unsourced adjustment when the charge revision drifts', async () => {
+    await seedUsageEvent(
+      'usage-adjustment-race',
+      '11111111-1111-4111-8111-111111111111',
+    );
+    const charge = await charges.create({
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      usageEventId: 'usage-adjustment-race',
+      amount: 10,
+      status: 'approved',
+      approvedAt: new Date('2026-07-01T00:00:00Z'),
+    });
+    const originalSave = ClientCharge.prototype.save;
+    vi.spyOn(ClientCharge.prototype, 'save').mockImplementationOnce(
+      async function (this: ClientCharge, ...args) {
+        await this.db.update(
+          this.tableName,
+          { id: this.id },
+          { updated_at: new Date(Date.now() + 1_000) },
+        );
+        return originalSave.apply(this, args);
+      },
+    );
+
+    await expect(
+      service.adjust(String(charge.id), -1, 'provider credit'),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    expect(
+      await adjustments.list({ where: { clientChargeId: charge.id } }),
+    ).toHaveLength(0);
+    expect((await charges.get(String(charge.id)))?.status).toBe('approved');
   });
 
   // Terms are minor units per unit of usage and may be fractional (a per-token

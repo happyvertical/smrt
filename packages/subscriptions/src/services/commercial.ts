@@ -165,9 +165,13 @@ export class CommercialUsageService {
           `(cents) — got ${amount}. Money is exact: -$0.25 is -25, not -0.25.`,
       );
     }
-    const charge = await this.charges.get(chargeId);
-    if (!charge) throw new Error(`Client charge ${chargeId} was not found.`);
-    if (charge.status !== 'approved' && charge.status !== 'adjusted') {
+    const initialCharge = await this.charges.get(chargeId);
+    if (!initialCharge)
+      throw new Error(`Client charge ${chargeId} was not found.`);
+    if (
+      initialCharge.status !== 'approved' &&
+      initialCharge.status !== 'adjusted'
+    ) {
       throw new Error(
         `Client charge ${chargeId} must be approved before it can be adjusted.`,
       );
@@ -176,49 +180,64 @@ export class CommercialUsageService {
       source && sourceId
         ? await deterministicUuid([
             'billing-adjustment',
-            String(charge.tenantId),
+            String(initialCharge.tenantId),
             chargeId,
             source,
             sourceId,
           ])
         : null;
-    let adjustment = sourcedId
-      ? await this.adjustments.get(sourcedId)
-      : undefined;
-    if (!adjustment) {
-      try {
-        adjustment = await this.adjustments.create({
-          ...(sourcedId ? { id: sourcedId } : {}),
-          tenantId: charge.tenantId,
-          clientChargeId: chargeId,
-          amount,
-          currency: charge.currency,
-          reason,
-          source,
-          sourceId,
-          _insertOnly: Boolean(sourcedId),
-        });
-      } catch (error) {
-        if (sourcedId) adjustment = await this.adjustments.get(sourcedId);
-        if (!adjustment) throw error;
-      }
+    const db = this.charges.db;
+    if (!db.transaction) {
+      throw new Error('Atomic billing adjustment requires transaction support');
     }
-    if (charge.status === 'approved') {
-      charge.status = 'adjusted';
-      try {
-        await charge.save();
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          !('code' in error) ||
-          error.code !== 'RUNTIME_REVISION_CONFLICT'
-        )
-          throw error;
-        const current = await this.charges.get(chargeId);
-        if (current?.status !== 'adjusted') throw error;
+    try {
+      return await db.transaction(async (transaction) => {
+        const options = { db: transaction };
+        const charges = await ClientChargeCollection.create(options);
+        const adjustments = await BillingAdjustmentCollection.create(options);
+        const charge = await charges.get(chargeId);
+        if (!charge)
+          throw new Error(`Client charge ${chargeId} was not found.`);
+        if (charge.status !== 'approved' && charge.status !== 'adjusted') {
+          throw new Error(
+            `Client charge ${chargeId} must be approved before it can be adjusted.`,
+          );
+        }
+        let adjustment = sourcedId
+          ? await adjustments.get(sourcedId)
+          : undefined;
+        if (!adjustment) {
+          adjustment = await adjustments.create({
+            ...(sourcedId ? { id: sourcedId } : {}),
+            tenantId: charge.tenantId,
+            clientChargeId: chargeId,
+            amount,
+            currency: charge.currency,
+            reason,
+            source,
+            sourceId,
+            _insertOnly: Boolean(sourcedId),
+          });
+        }
+        if (charge.status === 'approved') {
+          charge.status = 'adjusted';
+          await charge.save();
+        }
+        return adjustment;
+      });
+    } catch (error) {
+      // A concurrent sourced adjustment may win the deterministic insert. Its
+      // transaction also owns the charge-state transition, so it is safe to
+      // return only after both durable records are visible.
+      if (sourcedId) {
+        const [adjustment, charge] = await Promise.all([
+          this.adjustments.get(sourcedId),
+          this.charges.get(chargeId),
+        ]);
+        if (adjustment && charge?.status === 'adjusted') return adjustment;
       }
+      throw error;
     }
-    return adjustment;
   }
 
   /**
