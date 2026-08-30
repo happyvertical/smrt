@@ -1,11 +1,48 @@
 <!-- Module doc for packages/content/AGENTS.md. Linked from the Modules table there. -->
 
-# ContentList: shared adapter, server query, URL state, saved views
+# ContentList: shared adapter, query state, saved views, and lifecycle
 
 `ContentList` reads every row, column, filter, and action through one shared
 adapter (`src/svelte/content-list-controller.ts`) over a `DataTableController`,
 and can source those rows either from a client array or from the bounded
 content query endpoint. This doc covers both modes end to end.
+
+## Trash, restore, and permanent deletion (#2454)
+
+Lifecycle controls are an opt-in server-authoritative seam. Pass a
+`ContentListLifecycleBinding` as `lifecycle`; set `lifecycleMode="trash"` for a
+trash view. Trash mode locks the live status predicate to `deleted`, hides the
+ordinary status control, removes legacy edit/delete buttons, and exposes
+restore, permanent-delete, and empty-trash actions. Omit the binding and
+ContentList keeps its existing `onDelete` behavior.
+
+The browser never treats rendered rows as mutation authority. It sends a
+selection reference, canonical query for `all-matching`, expected count, and
+server revision through `createContentListLifecycleTransport()`. Preview and
+apply use the same request id and opaque confirmation token. Changing the
+query or selection invalidates the preview; expired, stale-revision,
+row-revision, query-fingerprint, token, or matching-count failures require a
+new preview.
+
+Lifecycle action ids and restore input are stable:
+
+| action | eligible server state | input / consequence |
+|---|---|---|
+| `move-to-trash` | not already `deleted` | soft-deletes content into trash |
+| `restore` | `deleted` | `{ status: 'draft' \| 'review' \| 'published' }`; the server re-runs permission and publish-readiness checks |
+| `permanent-delete` | `deleted` | irreversible deletion; the operator must type the exact server-resolved count |
+
+The result details expose `count`, accepted/skipped/failed counts,
+representative labels, canonical subtype-aware outcomes
+(`resourceType`/`resourceId`), and `auditReference`. Applying a partial result
+removes only accepted ids from selection, keeping skipped and failed rows
+selected for inspection or retry. The exact query refreshes after success;
+progress, partial exceptions, and the audit reference remain visible in a
+polite live region. Empty trash is available only when an exact server count
+and canonical query are present, so a page-sized guess cannot stand in for its
+scope. `maxSelectionSize` defaults to 200; larger matching sets are announced
+and fail closed until the operator narrows the query, matching the server's
+bounded one-preview selection contract.
 
 ## Realtime, freshness, and background workflows (#2455)
 
@@ -965,10 +1002,11 @@ keeps the control from misstating the query; `readContentListFilter` stays
 value-only and must not drive a control. Choosing any real option replaces every
 filter on that column, so the operator is never stuck.
 
-`review` is now offered outright. `deleted` is deliberately not: that is the
-trash lifecycle (#2454), and offering it here would imply a restore/purge
-affordance this list does not have. `Content.type` is freeform, so its option
-list is a display vocabulary rather than the model's domain.
+`review` is now offered outright. `deleted` is deliberately not part of the
+ordinary status vocabulary: the opt-in trash lifecycle locks that predicate
+and supplies the restore/purge affordances as one inseparable mode.
+`Content.type` is freeform, so its option list is a display vocabulary rather
+than the model's domain.
 
 Everything a restore or a translation refused is reported in one dismissible
 notice rather than thrown — a stale link or an out-of-date saved view must still

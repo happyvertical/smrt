@@ -45,6 +45,8 @@ import { Button, Pagination } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
+import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
+import { reconcileContentListLifecycleSelection } from '../content-list-lifecycle.js';
 import {
   applyContentListFilter,
   buildContentListColumns,
@@ -123,6 +125,7 @@ import {
   readContentListViewStateFromSearchParams,
 } from '../content-list-url-state.js';
 import { M } from '../i18n.contribution.js';
+import ContentListLifecyclePanel from './ContentListLifecyclePanel.svelte';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
@@ -335,6 +338,10 @@ interface Props {
   jobs?: ContentListJobBinding;
   /** Opt-in, authenticated preview/apply client for bulk workflows (#2453). */
   workflows?: ContentListWorkflowBinding;
+  /** Opt-in, server-authoritative trash/restore/permanent-delete lifecycle. */
+  lifecycle?: ContentListLifecycleBinding;
+  /** Locks the status query to deleted content and exposes trash actions. */
+  lifecycleMode?: 'active' | 'trash';
 }
 
 let {
@@ -356,6 +363,8 @@ let {
   savedViews = undefined,
   jobs = undefined,
   workflows = undefined,
+  lifecycle = undefined,
+  lifecycleMode = 'active',
 }: Props = $props();
 
 const initialQuery = untrack(() => query);
@@ -425,6 +434,7 @@ const urlStateOptions: ContentListUrlStateOptions = {
 
 const controller = createContentListController({
   type: untrack(() => type),
+  ...(untrack(() => lifecycleMode) === 'trash' ? { status: 'deleted' } : {}),
   // Local mode keeps the historical unpaginated list.
   ...(serverPageSize === null ? {} : { pageSize: serverPageSize }),
 });
@@ -454,6 +464,10 @@ let resultNotices = $state<ContentListQueryNotices>({
  * its own total ever arrived.
  */
 let settledSignature = $state<string | undefined>(undefined);
+let settledLifecycleQuery = $state<ContentListDataQueryRequest | undefined>(
+  undefined,
+);
+let settledLifecycleFingerprint = $state<string | undefined>(undefined);
 
 function toSearchParams(
   input: URLSearchParams | string | null | undefined,
@@ -843,8 +857,18 @@ function refreshQuery(): void {
   void queryBinding
     .refresh()
     .then((result) => {
-      if (result !== undefined && activeQueryKey === key)
-        resultNotices = readContentListQueryNotices(result);
+      if (result !== undefined && activeQueryKey === key) {
+        if (executedWorkflowQuery) {
+          settleWorkflowQueryResult(
+            result,
+            executedWorkflowQuery,
+            querySignature,
+          );
+        } else {
+          resultNotices = readContentListQueryNotices(result);
+        }
+        settleLifecycleResult(result, lifecycleQueryRequest, querySignature);
+      }
     })
     .catch(() => undefined);
 }
@@ -878,6 +902,27 @@ function settleWorkflowQueryResult(
   settledWorkflowRevision = null;
 }
 
+function settleLifecycleResult(
+  result: unknown,
+  request: ContentListDataQueryRequest | undefined,
+  signature: string,
+): void {
+  if (
+    !request ||
+    result === null ||
+    typeof result !== 'object' ||
+    Array.isArray(result)
+  ) {
+    settledLifecycleQuery = undefined;
+    settledLifecycleFingerprint = undefined;
+    return;
+  }
+  const fingerprint = (result as Record<string, unknown>).queryFingerprint;
+  settledLifecycleQuery = request;
+  settledLifecycleFingerprint =
+    typeof fingerprint === 'string' ? fingerprint : undefined;
+  settledSignature = signature;
+}
 /**
  * A retry re-reads the same query, so its answer replaces the rendered rows —
  * and therefore has to replace the completeness flags that describe them too.
@@ -903,6 +948,7 @@ function retryQuery(): void {
       )
         return;
       settleWorkflowQueryResult(result, request, signature);
+      settleLifecycleResult(result, lifecycleQueryRequest, signature);
     })
     .catch(() => undefined);
 }
@@ -930,6 +976,7 @@ const querySignature = $derived(
 let executedSignature: string | undefined;
 let executedWorkflowQuery: ContentListDataQueryRequest | null = null;
 let publishedUrlSignature: string | undefined;
+let lifecycleQueryRequest: ContentListDataQueryRequest | undefined;
 
 $effect(() => {
   const signature = querySignature;
@@ -976,6 +1023,7 @@ $effect(() => {
       // flags, which the binding itself does not expose.
       activeQueryKey = contentListQueryRequestKey(translated.request);
       executedWorkflowQuery = translated.request;
+      lifecycleQueryRequest = translated.request;
       void queryBinding
         .execute(translated.request)
         .then((result) => {
@@ -985,6 +1033,7 @@ $effect(() => {
           // may be clamped against them and workflows may bind to the exact
           // settled request.
           settleWorkflowQueryResult(result, translated.request, signature);
+          settleLifecycleResult(result, translated.request, signature);
         })
         .catch(() => undefined);
     }
@@ -1124,6 +1173,23 @@ const workflowQueuedJob = $derived(
   workflowQueuedJobs.find((job) => job.intent === workflowIntentSignature()) ??
     workflowQueuedJobs[0],
 );
+const lifecycleViewKey = $derived(
+  JSON.stringify([
+    lifecycleMode,
+    querySignature,
+    [...tableState.selectedRowIds].map(String).sort(),
+  ]),
+);
+const lifecycleQuery = $derived(
+  serverBacked && settledSignature === querySignature
+    ? settledLifecycleQuery
+    : undefined,
+);
+const lifecycleExactMatchingCount = $derived(
+  serverBacked && settledSignature === querySignature
+    ? contentListQueryExactTotal(queryBinding?.total)
+    : queryRows.length,
+);
 
 /** Synthetic ids the adapter minted for rows that carry no durable identity. */
 const unidentifiedRowKeys = $derived(
@@ -1150,6 +1216,23 @@ $effect(() => {
   if (durable.length === selected.length) return;
   untrack(() =>
     controller.dispatch({ type: 'setSelectedRows', rowIds: durable }),
+  );
+});
+
+// Trash is a view, not an editable select value. Keep its status predicate
+// locked against URL restores and agent-driven filter commands.
+$effect(() => {
+  if (lifecycleMode !== 'trash') return;
+  if (
+    isContentListFilterExactly(
+      tableState,
+      CONTENT_LIST_STATUS_FILTER_ID,
+      'deleted',
+    )
+  )
+    return;
+  untrack(() =>
+    applyContentListFilter(controller, CONTENT_LIST_STATUS_FILTER_ID, 'deleted'),
   );
 });
 
@@ -2052,7 +2135,24 @@ function handleFilter(columnId: string, value: string) {
 }
 
 function rowActions(row: ContentListRow) {
-  return contentListRowActions(row, { getViewHref });
+  return contentListRowActions(row, {
+    getViewHref,
+    canEdit: lifecycleMode !== 'trash',
+    canDelete: lifecycle === undefined,
+  });
+}
+
+function handleLifecycleComplete(
+  result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult,
+) {
+  controller.dispatch({
+    type: 'setSelectedRows',
+    rowIds: reconcileContentListLifecycleSelection(
+      tableState.selectedRowIds,
+      result,
+    ),
+  });
+  refreshQuery();
 }
 
 function viewHref(row: ContentListRow): string | null {
@@ -2127,7 +2227,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 </script>
 
 {#snippet tableEmptyState()}
-  <p class="table-empty-state">{t(M['content.content_list.empty'])}</p>
+  <p class="table-empty-state">
+    {lifecycleMode === 'trash'
+      ? t(M['content.content_list.trash_empty'])
+      : t(M['content.content_list.empty'])}
+  </p>
 {/snippet}
 
 {#snippet selectHeader()}
@@ -2267,6 +2371,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
         </Select>
       {/if}
 
+      {#if lifecycleMode !== 'trash'}
       <Select
         aria-label={t(M['content.content_list.filter_status'])}
         value={selectedStatus}
@@ -2289,6 +2394,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           </option>
         {/if}
       </Select>
+      {/if}
 
       {#if savedViews}
         <div class="saved-views" role="group" aria-label={t(M['content.content_list.saved_views'])}>
@@ -2565,6 +2671,18 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             })}
           </Button>
         {/if}
+        {#if lifecycle}
+          <ContentListLifecyclePanel
+            binding={lifecycle}
+            mode={lifecycleMode}
+            selectedRowIds={tableState.selectedRowIds}
+            query={lifecycleQuery}
+            queryFingerprint={settledLifecycleFingerprint}
+            exactMatchingCount={lifecycleExactMatchingCount}
+            viewKey={lifecycleViewKey}
+            oncomplete={handleLifecycleComplete}
+          />
+        {/if}
       </div>
     {/if}
 
@@ -2711,7 +2829,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
       </div>
     {:else if pageRows.length === 0}
       <div class="state-panel empty-state">
-        {t(M['content.content_list.empty'])}
+        {lifecycleMode === 'trash'
+          ? t(M['content.content_list.trash_empty'])
+          : t(M['content.content_list.empty'])}
       </div>
     {:else if viewMode === 'detailed'}
       <div class="content-detailed">

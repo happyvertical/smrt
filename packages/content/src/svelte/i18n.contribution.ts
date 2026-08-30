@@ -282,6 +282,42 @@ export const M = defineMessages({
   'content.content_list.compact_list': 'Compact List',
   'content.content_list.add_content': 'Add Content',
   'content.content_list.empty': 'No contents match your filters.',
+  'content.content_list.trash_empty': 'Trash is empty.',
+  'content.content_list.lifecycle_actions': 'Content lifecycle actions',
+  'content.content_list.trash_actions': 'Trash actions',
+  'content.content_list.move_selected_to_trash': 'Move selected to trash',
+  'content.content_list.restore_destination': 'Restore destination',
+  'content.content_list.restore_as_draft': 'Restore as draft',
+  'content.content_list.restore_for_review': 'Restore for review',
+  'content.content_list.restore_and_publish': 'Restore and publish',
+  'content.content_list.restore_selected': 'Restore selected',
+  'content.content_list.delete_selected_permanently':
+    'Delete selected permanently',
+  'content.content_list.empty_trash': 'Empty trash',
+  'content.content_list.empty_trash_limit':
+    'Empty trash is limited to {count} items. Narrow the current trash query before previewing permanent deletion.',
+  'content.content_list.permanent_delete_title': 'Permanently delete content?',
+  'content.content_list.restore_title': 'Restore content?',
+  'content.content_list.move_to_trash_title': 'Move content to trash?',
+  'content.content_list.lifecycle_resolving':
+    'Resolving the current selection on the server…',
+  'content.content_list.lifecycle_resolved':
+    'The server resolved {count} content items.',
+  'content.content_list.lifecycle_examples': 'Examples: {examples}',
+  'content.content_list.lifecycle_eligibility':
+    'Eligible: {accepted}; skipped: {skipped}; failed: {failed}.',
+  'content.content_list.permanent_delete_warning':
+    'This cannot be undone. Type {count} to confirm the exact scope.',
+  'content.content_list.permanent_delete_count_label':
+    'Type the resolved item count to confirm permanent deletion',
+  'content.content_list.lifecycle_completed_audit':
+    'Completed. Audit reference: {reference}',
+  'content.content_list.lifecycle_completed_summary':
+    'Completed: {accepted} accepted, {skipped} skipped, {failed} failed. Audit reference: {reference}',
+  'content.content_list.lifecycle_exceptions': 'Lifecycle exceptions',
+  'content.content_list.lifecycle_close': 'Close',
+  'content.content_list.lifecycle_renew_preview': 'Renew preview',
+  'content.content_list.lifecycle_confirm_count': 'Confirm {count}',
   'content.content_list.view_published_article': 'View published article',
   'content.content_list.edit': 'Edit',
   'content.content_list.delete': 'Delete',
