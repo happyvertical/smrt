@@ -777,8 +777,12 @@ describe('existing-table orphan safety (#2413)', () => {
       (candidate) => candidate.type === 'add_foreign_key',
     );
 
-    expect(mock.queries.find((sql) => sql.includes('orphan_key'))).toContain(
-      'FROM "children" LEFT JOIN "parents" ON "parents"."id" = "children"."parent_id"',
+    const detector = mock.queries.find((sql) => sql.includes('orphan_key'));
+    expect(detector).toContain(
+      'FROM "children" AS "smrt_fk_child" LEFT JOIN "parents" AS "smrt_fk_parent"',
+    );
+    expect(detector).toContain(
+      '"smrt_fk_parent"."id" = CASE WHEN "smrt_fk_child"."parent_id"::text ~*',
     );
     expect(change?.sqlStatements).toEqual([
       'ALTER TABLE "children" ADD CONSTRAINT "children_parent_id_parents_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id") ON DELETE NO ACTION ON UPDATE CASCADE NOT VALID',
@@ -799,7 +803,7 @@ describe('existing-table orphan safety (#2413)', () => {
     expect(change?.advisory?.message).toMatch(/Repair them, then rerun/);
     expect(change?.advisory?.suggestedSql).toHaveLength(2);
     expect(change?.advisory?.suggestedSql?.[0]).toContain(
-      'FROM "children" LEFT JOIN "parents"',
+      'FROM "children" AS "smrt_fk_child" LEFT JOIN "parents" AS "smrt_fk_parent"',
     );
   });
 
@@ -893,5 +897,24 @@ describe('existing-table orphan safety (#2413)', () => {
         engineHint: 'postgres',
       }).compare({ children: invalid }),
     ).rejects.toThrow(/Invalid foreign-key action/);
+  });
+
+  it('surfaces a failed PostgreSQL orphan probe instead of reporting orphan data', async () => {
+    const mock = postgresMock(false);
+    const query = mock.db.query;
+    mock.db.query = async (sql: string) => {
+      if (sql.includes('orphan_key')) {
+        throw new Error('operator does not exist');
+      }
+      return query(sql);
+    };
+
+    await expect(
+      new SchemaComparer(mock.db as never, {
+        engineHint: 'postgres',
+      }).compare({ children: child }),
+    ).rejects.toThrow(
+      /Cannot probe children\.parent_id for orphan rows.*operator does not exist/,
+    );
   });
 });

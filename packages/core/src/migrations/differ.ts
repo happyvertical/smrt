@@ -653,8 +653,16 @@ export class SchemaComparer {
       );
       if (exact) continue;
 
-      const detectorSql = renderForeignKeyOrphanDetector(tableName, foreignKey);
-      const repairSql = renderForeignKeyOrphanRepair(tableName, foreignKey);
+      const detectorSql = renderForeignKeyOrphanDetector(
+        tableName,
+        foreignKey,
+        {
+          engine: this.engine,
+        },
+      );
+      const repairSql = renderForeignKeyOrphanRepair(tableName, foreignKey, {
+        engine: this.engine,
+      });
       const sameColumn = liveForeignKeys.some(
         (live) => live.column === foreignKey.column,
       );
@@ -741,17 +749,17 @@ export class SchemaComparer {
     try {
       const result = await this.db.query(
         renderForeignKeyOrphanDetector(tableName, foreignKey, {
+          engine: this.engine,
           limitOne: true,
         }),
       );
       const rows = Array.isArray(result) ? result : result.rows || [];
       return rows.length > 0;
     } catch (error) {
-      logger.debug(
-        `[SchemaComparer] Foreign-key orphan probe unavailable for ${tableName}.${foreignKey.column}; refusing automatic constraint addition`,
-        { error: error instanceof Error ? error.message : String(error) },
+      throw new Error(
+        `[SchemaComparer] Cannot probe ${tableName}.${foreignKey.column} for orphan rows; refusing automatic constraint addition: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
       );
-      return true;
     }
   }
 

@@ -388,6 +388,7 @@ export class SchemaManager {
     if (existingRows[0]?.convalidated === true) return;
 
     const detector = renderForeignKeyOrphanDetector(tableName, foreignKey, {
+      engine: 'postgres',
       limitOne: true,
     });
     let orphanResult: unknown;
@@ -401,7 +402,7 @@ export class SchemaManager {
     }
     if (extractRows(orphanResult).length > 0) {
       throw new Error(
-        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey)}`,
+        `[SchemaManager] Cannot add ${constraintName}: existing rows do not match ${foreignKey.referencesTable}.${foreignKey.referencesColumn}. Repair them, then retry. Suggested repair: ${renderForeignKeyOrphanRepair(tableName, foreignKey, { engine: 'postgres' })}`,
       );
     }
 
