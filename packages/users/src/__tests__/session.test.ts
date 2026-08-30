@@ -10,7 +10,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroupCollection } from '../collections/GroupCollection.js';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
 import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
@@ -197,9 +197,48 @@ describe('SessionCollection', () => {
     if (!first || !second)
       throw new Error('Expected persisted session instances');
 
-    await Promise.all([first.recordActivity(), second.recordActivity()]);
+    await expect(
+      Promise.all([first.recordActivity(), second.recordActivity()]),
+    ).resolves.toEqual([true, true]);
 
     expect(await sessions.findValidSession(String(created.id))).not.toBeNull();
+  });
+
+  it('keeps valid authentication available after activity conflicts exhaust', async () => {
+    const user = await users.create({ email: 'busy-session@example.com' });
+    await user.save();
+    const created = await sessions.createSession({ userId: String(user.id) });
+    const contended = await sessions.get(String(created.id));
+    expect(contended).not.toBeNull();
+    if (!contended) throw new Error('Expected persisted session');
+    const conflict = Object.assign(new Error('busy'), {
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    const save = vi.spyOn(contended, 'save').mockRejectedValue(conflict);
+
+    await expect(contended.recordActivity()).resolves.toBe(true);
+    expect(save).toHaveBeenCalledTimes(4);
+  });
+
+  it('fails closed when a conflicting activity reload finds revocation', async () => {
+    const user = await users.create({ email: 'revoked-race@example.com' });
+    await user.save();
+    const created = await sessions.createSession({ userId: String(user.id) });
+    const stale = await sessions.get(String(created.id));
+    expect(stale).not.toBeNull();
+    if (!stale) throw new Error('Expected persisted session');
+    await sessions.db.update(
+      'sessions',
+      { id: created.id },
+      { status: SessionStatus.REVOKED },
+    );
+    const conflict = Object.assign(new Error('revoked concurrently'), {
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    const save = vi.spyOn(stale, 'save').mockRejectedValue(conflict);
+
+    await expect(stale.recordActivity()).resolves.toBe(false);
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it('should return null for invalid session', async () => {

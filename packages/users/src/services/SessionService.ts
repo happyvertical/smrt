@@ -180,7 +180,9 @@ export class SessionService {
     }
 
     // Touch session (and optionally extend)
-    await session.recordActivity(this.autoExtend, this.defaultTTL);
+    if (!(await session.recordActivity(this.autoExtend, this.defaultTTL))) {
+      return null;
+    }
 
     return {
       user,

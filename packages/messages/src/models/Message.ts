@@ -7,7 +7,6 @@
 import {
   crossPackageRef,
   foreignKey,
-  recordInstanceChange,
   SmrtObject,
   smrt,
   usesEmbeddedRevisionFallback,
@@ -153,15 +152,7 @@ export class Message extends SmrtObject {
       // trusting adapter row-count metadata before declaring finalization.
       const verified = await this.db.get(this.tableName, { id: this.id });
       if (verified?.send_status === sendStatus) {
-        const verifiedRevision = new Date(String(verified.updated_at));
-        this.sendStatus = sendStatus;
-        this.sentAt = result.success ? result.sentAt : null;
-        this.sendError = sendError;
-        this.updated_at = Number.isFinite(verifiedRevision.getTime())
-          ? verifiedRevision
-          : nextRevision;
-        this.updatedAt = new Date();
-        await recordInstanceChange(this);
+        await this.completePersistedUpdate(verified);
         return;
       }
     }

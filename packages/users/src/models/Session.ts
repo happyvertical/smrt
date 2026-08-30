@@ -176,27 +176,32 @@ export class Session extends SmrtObject {
   async recordActivity(
     extendTtl = false,
     ttlSeconds: number = DEFAULT_SESSION_TTL,
-  ): Promise<void> {
+  ): Promise<boolean> {
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      if (attempt > 0) await this.loadFromId();
+      if (attempt > 0 && !(await this.reloadValidActivityState())) return false;
       if (extendTtl) this.extend(ttlSeconds);
       else this.touch();
       try {
         await this.save();
-        return;
+        return true;
       } catch (error) {
-        if (
-          attempt === 3 ||
-          !(
-            error instanceof Error &&
-            'code' in error &&
-            error.code === 'RUNTIME_REVISION_CONFLICT'
-          )
-        ) {
-          throw error;
-        }
+        const isRevisionConflict =
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'RUNTIME_REVISION_CONFLICT';
+        if (!isRevisionConflict) throw error;
+        if (attempt === 3) return this.reloadValidActivityState();
       }
     }
+    return false;
+  }
+
+  private async reloadValidActivityState(): Promise<boolean> {
+    if (!this.id) return false;
+    const current = await this.db.get(this.tableName, { id: this.id });
+    if (!current) return false;
+    await this.loadDataFromDb(current);
+    return this.isValid();
   }
 
   /**

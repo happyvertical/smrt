@@ -1008,7 +1008,7 @@ async function deleteCounted(
 // Framework writer (GlobalInterceptors registration)
 // ============================================================================
 
-const WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
+export const CHANGE_FEED_WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 
 /** Databases we already warned about after a failed feed append. */
 const warnedAppendFailures = new Set<string>();
@@ -1057,7 +1057,7 @@ export function registerChangeFeedWriter(): void {
       try {
         context.metadata = {
           ...context.metadata,
-          [WAS_PERSISTED_KEY]: instance.isPersisted === true,
+          [CHANGE_FEED_WAS_PERSISTED_KEY]: instance.isPersisted === true,
         };
       } catch {
         // Never let feed bookkeeping block a save.
@@ -1068,7 +1068,8 @@ export function registerChangeFeedWriter(): void {
       instance: SmrtObject,
       context: InterceptorContext,
     ): Promise<void> {
-      const wasPersisted = context.metadata?.[WAS_PERSISTED_KEY] === true;
+      const wasPersisted =
+        context.metadata?.[CHANGE_FEED_WAS_PERSISTED_KEY] === true;
       await appendForInstance(instance, wasPersisted ? 'update' : 'create');
     },
 

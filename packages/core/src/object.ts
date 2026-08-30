@@ -1,7 +1,10 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import { runCascadeDelete } from './cascade';
-import { recordInstanceChange } from './change-feed';
+import {
+  CHANGE_FEED_WAS_PERSISTED_KEY,
+  recordInstanceChange,
+} from './change-feed';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -2343,6 +2346,28 @@ export class SmrtObject extends SmrtClass {
     // and SSE. When transaction-bound this feed row shares the transaction.
     await recordInstanceChange(this, 'update');
     return this;
+  }
+
+  /**
+   * Complete the observation lifecycle for a guarded update implemented by an
+   * owning subclass outside save(). The confirmed durable row is hydrated
+   * before observers run so cache invalidation, tenant-scoped change feeds,
+   * and other after-save consumers all see authoritative state.
+   */
+  protected async completePersistedUpdate(
+    durableRow: Record<string, unknown>,
+  ): Promise<void> {
+    await this.loadDataFromDb(durableRow);
+    this.invalidateCollectionReadCache();
+    const context = createInterceptorContext(
+      this.getResolvedClassName(),
+      'save',
+    );
+    context.metadata = {
+      ...context.metadata,
+      [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
+    };
+    await GlobalInterceptors.executeAfterSave(this, context);
   }
 
   private revisionPredicateValue(revision: Date | string): Date | string {

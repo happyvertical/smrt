@@ -14,6 +14,7 @@
 
 import {
   ensureChangeFeedTable,
+  GlobalInterceptors,
   getChangesSince,
   getTestDatabase,
 } from '@happyvertical/smrt-core';
@@ -21,6 +22,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendMock = vi.fn();
+const terminalObserverName = 'messages-terminal-observer-test';
 vi.mock('@happyvertical/messages', () => ({
   getMessageClient: async () => ({
     connect: async () => undefined,
@@ -50,6 +52,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  GlobalInterceptors.unregister(terminalObserverName);
   vi.clearAllMocks();
   if (db && typeof db.close === 'function') {
     await db.close();
@@ -334,23 +337,48 @@ describe('Message.send orchestration', () => {
     account.setSettings({ botToken: 'xoxb-token' });
     await account.save();
 
-    sendMock.mockResolvedValueOnce({
-      success: true,
-      messageId: 'slack-1',
-      providerResponse: { ok: true },
-      timestamp: new Date(),
-    });
-
     const msg = new SlackMessage({
       body: 'hi',
       channelId: 'C1',
       accountId: account.id!,
+      tenantId: 'tenant-before-send',
       db,
     });
     await msg.initialize();
     await msg.save();
     await ensureChangeFeedTable(db);
     const beforeSendCursor = (await getChangesSince(db, { since: 0 })).cursor;
+
+    const observedTerminalStates: Array<{
+      operation: string;
+      sendStatus: string;
+      tenantId: string | null;
+    }> = [];
+    GlobalInterceptors.register({
+      name: terminalObserverName,
+      priority: -20,
+      afterSave(instance, context) {
+        if (instance !== msg) return;
+        observedTerminalStates.push({
+          operation: context.operation,
+          sendStatus: msg.sendStatus,
+          tenantId: msg.tenantId,
+        });
+      },
+    });
+    sendMock.mockImplementationOnce(async () => {
+      await db.update(
+        'messages',
+        { id: msg.id },
+        { tenant_id: 'tenant-after-send' },
+      );
+      return {
+        success: true,
+        messageId: 'slack-1',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      };
+    });
 
     const first = await msg.send();
     expect(first.success).toBe(true);
@@ -366,9 +394,17 @@ describe('Message.send orchestration', () => {
           operation: 'update',
           rowId: msg.id,
           table: 'messages',
+          tenantId: 'tenant-after-send',
         }),
       ],
     });
+    expect(observedTerminalStates).toEqual([
+      {
+        operation: 'save',
+        sendStatus: 'sent',
+        tenantId: 'tenant-after-send',
+      },
+    ]);
 
     // A second send on the already-'sent' instance must be rejected without
     // touching the provider.
