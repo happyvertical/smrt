@@ -2461,9 +2461,21 @@ importers:
         specifier: ^1.2.2
         version: 1.2.2
     devDependencies:
+      '@happyvertical/smrt-agents':
+        specifier: workspace:*
+        version: link:../agents
+      '@happyvertical/smrt-chat':
+        specifier: workspace:*
+        version: link:../chat
+      '@happyvertical/smrt-content':
+        specifier: workspace:*
+        version: link:../content
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-reports':
+        specifier: workspace:*
+        version: link:../reports
       '@happyvertical/smrt-scanner':
         specifier: workspace:*
         version: link:../scanner

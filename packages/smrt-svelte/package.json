@@ -164,7 +164,11 @@
     }
   },
   "devDependencies": {
+    "@happyvertical/smrt-agents": "workspace:*",
+    "@happyvertical/smrt-chat": "workspace:*",
+    "@happyvertical/smrt-content": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
     "@sveltejs/package": "^2.5.8",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
