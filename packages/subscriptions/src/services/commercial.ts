@@ -101,32 +101,43 @@ function inferAdapterType(url: string): SqlAdapterType | undefined {
   return undefined;
 }
 
+function environmentAdapterType(): SqlAdapterType | undefined {
+  const type = process.env.HAVE_SQL_TYPE;
+  return type === 'sqlite' ||
+    type === 'postgres' ||
+    type === 'duckdb' ||
+    type === 'json'
+    ? type
+    : undefined;
+}
+
 function billingStorageFromConfig(
   config: DatabaseConfig | undefined,
+  declared?: CommercialBillingStorage,
 ): CommercialBillingStorage {
   if (config === undefined) {
-    const environmentType = process.env.HAVE_SQL_TYPE;
-    if (
-      environmentType === 'sqlite' ||
-      environmentType === 'postgres' ||
-      environmentType === 'duckdb' ||
-      environmentType === 'json'
-    ) {
-      return { adapterType: environmentType };
-    }
+    const environmentType = environmentAdapterType();
+    if (environmentType) return { adapterType: environmentType };
     return { adapterType: 'sqlite' };
   }
   if (isDatabaseInterface(config)) {
     throw new CommercialBillingStorageConfigurationError();
   }
   if (typeof config === 'string') {
-    const adapterType = inferAdapterType(config);
+    const adapterType =
+      environmentAdapterType() ??
+      inferAdapterType(config) ??
+      declared?.adapterType;
     if (adapterType) return { adapterType };
     throw new Error(
       'Commercial billing requires an explicit billingStorage adapter contract for ambiguous database URLs.',
     );
   }
-  const adapterType = config.type ?? inferAdapterType(String(config.url ?? ''));
+  const adapterType =
+    config.type ??
+    environmentAdapterType() ??
+    inferAdapterType(String(config.url ?? '')) ??
+    declared?.adapterType;
   if (!adapterType) {
     throw new Error(
       'Commercial billing requires an explicit database type or billingStorage adapter contract.',
@@ -153,13 +164,17 @@ function effectiveWriteStrategy(
 function resolveCommercialBillingStorage(
   options: CommercialUsageServiceOptions,
 ): CommercialBillingStorage {
-  if (isDatabaseInterface(options.db)) {
+  const configuredDatabase = options.db ?? options.persistence;
+  if (isDatabaseInterface(configuredDatabase)) {
     if (!options.billingStorage) {
       throw new CommercialBillingStorageConfigurationError();
     }
     return options.billingStorage;
   }
-  const configured = billingStorageFromConfig(options.db);
+  const configured = billingStorageFromConfig(
+    configuredDatabase,
+    options.billingStorage,
+  );
   if (
     options.billingStorage &&
     (options.billingStorage.adapterType !== configured.adapterType ||

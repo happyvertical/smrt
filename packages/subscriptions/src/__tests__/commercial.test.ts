@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
@@ -62,11 +65,44 @@ describe('commercial usage tracer', () => {
       CommercialUsageService.create({ db: usage.db }),
     ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
     await expect(
+      CommercialUsageService.create({ persistence: usage.db }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+    await expect(
+      CommercialUsageService.create({
+        persistence: {
+          type: 'duckdb',
+          url: ':memory:',
+          writeStrategy: 'immediate',
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    await expect(
       CommercialUsageService.create({
         db: { type: 'json', url: './unused-commercial-json' },
         billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
       }),
     ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it('uses SQL environment precedence when the adapter type is omitted', async () => {
+    vi.stubEnv('HAVE_SQL_TYPE', 'json');
+    await expect(
+      CommercialUsageService.create({
+        db: { url: 'file:billing-json' },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    vi.stubEnv('HAVE_SQL_TYPE', 'sqlite');
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
+    try {
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing.db'),
+          billingStorage: { adapterType: 'sqlite' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it('preserves relational and ordinary DuckDB billing storage', () => {
@@ -93,6 +129,7 @@ describe('commercial usage tracer', () => {
     ).not.toThrow();
   });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await usage.db.close?.();
   });
 
