@@ -162,6 +162,18 @@ describe('ContentList workflow transport', () => {
       reason: 'network_failure',
     });
 
+    const unreadableBody = createContentListWorkflowTransport({
+      fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: vi.fn().mockRejectedValue(new Error('private stream detail')),
+      } as unknown as Response),
+    });
+    await expect(unreadableBody.preview(request())).rejects.toMatchObject({
+      reason: 'network_failure',
+      status: 200,
+    });
+
     const http = createContentListWorkflowTransport({
       fetch: vi
         .fn<typeof globalThis.fetch>()

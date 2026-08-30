@@ -194,7 +194,16 @@ export function createContentListWorkflowTransport(
         'network_failure',
       );
     }
-    const text = await response.text();
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      throw new ContentListWorkflowError(
+        'The content workflow response could not be read.',
+        response.status,
+        'network_failure',
+      );
+    }
     let payload: unknown;
     try {
       payload = text ? JSON.parse(text) : undefined;
