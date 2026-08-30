@@ -470,6 +470,43 @@ describe('Message.send orchestration', () => {
     expect(loser.error).toContain('already');
   });
 
+  it('accepts a DuckDB-shaped Date revision when claiming a persisted send', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+    sendMock.mockResolvedValueOnce({
+      success: true,
+      messageId: 'slack-date-revision',
+      providerResponse: { ok: true },
+      timestamp: new Date(),
+    });
+    const message = new SlackMessage({
+      body: 'date-shaped revision',
+      channelId: 'C1',
+      accountId: account.id!,
+      db,
+    });
+    await message.initialize();
+    await message.save();
+
+    const originalGet = db.get.bind(db);
+    vi.spyOn(db, 'get').mockImplementation(async (...args) => {
+      const row = await originalGet(...args);
+      return row?.updated_at
+        ? { ...row, updated_at: new Date(row.updated_at as string) }
+        : row;
+    });
+
+    await expect(message.send()).resolves.toMatchObject({ success: true });
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a stale send claim after another writer edits the message', async () => {
     const account = new SlackAccount({
       name: 'WS',

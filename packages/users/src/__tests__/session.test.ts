@@ -295,6 +295,35 @@ describe('SessionCollection', () => {
     expect(found).toBeNull();
   });
 
+  it('retries revocation when activity wins the first revision race', async () => {
+    const user = await users.create({ email: 'revoke-race@example.com' });
+    await user.save();
+    const session = await sessions.createSession({ userId: user.id! });
+    const originalSave = Session.prototype.save;
+    let raced = false;
+    const saveSpy = vi
+      .spyOn(Session.prototype, 'save')
+      .mockImplementation(async function (...args) {
+        if (
+          !raced &&
+          this.id === session.id &&
+          this.status === SessionStatus.REVOKED
+        ) {
+          raced = true;
+          const concurrent = await sessions.get(session.id!);
+          if (!concurrent) throw new Error('Missing concurrent session');
+          concurrent.touch();
+          await originalSave.apply(concurrent, args);
+        }
+        return originalSave.apply(this, args);
+      });
+
+    await expect(sessions.revokeSession(session.id!)).resolves.toBe(true);
+    saveSpy.mockRestore();
+    expect(raced).toBe(true);
+    expect(await sessions.findValidSession(session.id!)).toBeNull();
+  });
+
   it('should revoke all user sessions', async () => {
     const user = await users.create({ email: 'revokeall@example.com' });
     await user.save();

@@ -174,6 +174,12 @@ describe('resolveIdentity', () => {
     expect(result.source).toBe('nostr');
     expect(result.profile?.id).toBe(profile.id);
     expect(result.nostrIdentity?.pubkey).toBe(keypair.pubkey);
+
+    const firstUsage = await identities.findByPubkey(keypair.pubkey);
+    const secondUsage = await identities.findByPubkey(keypair.pubkey);
+    await expect(
+      Promise.all([firstUsage?.recordUsage(), secondUsage?.recordUsage()]),
+    ).resolves.toEqual([undefined, undefined]);
   });
 
   it('does not resolve a Nostr event with the wrong challenge', async () => {

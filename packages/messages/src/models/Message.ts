@@ -377,9 +377,13 @@ export class Message extends SmrtObject {
       await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
         if (useEmbeddedFallback) {
           const current = await this.db.get(this.tableName, { id: this.id });
-          const currentRevision = new Date(
-            String(current?.updated_at),
-          ).getTime();
+          const storedRevision = current?.updated_at;
+          const currentRevision =
+            storedRevision instanceof Date
+              ? storedRevision.getTime()
+              : typeof storedRevision === 'string'
+                ? Date.parse(storedRevision)
+                : Number.NaN;
           if (
             !current ||
             current.send_status !== claimFromStatus ||

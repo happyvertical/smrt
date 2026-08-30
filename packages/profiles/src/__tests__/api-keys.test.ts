@@ -148,6 +148,21 @@ describe('ApiKey model', () => {
     });
     expect(await ApiKey.verify(expired.key, { db })).toBeNull();
   });
+
+  it('allows parallel verification usage stamps to converge', async () => {
+    const { db, profile } = await createProfileFixture(dbUrl);
+    const { key } = await ApiKey.generate(profile, { name: 'parallel', db });
+
+    const results = await Promise.all([
+      ApiKey.verify(key, { db }),
+      ApiKey.verify(key, { db }),
+    ]);
+
+    expect(results.every((result) => result?.isValid())).toBe(true);
+    expect(results.every((result) => result?.lastUsedAt instanceof Date)).toBe(
+      true,
+    );
+  });
 });
 
 describe('ApiKeyCollection', () => {
