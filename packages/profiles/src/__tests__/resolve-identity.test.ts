@@ -327,6 +327,7 @@ describe('OidcIdentity model and collection', () => {
     // recordUsage bumps lastUsedAt.
     await identity.recordUsage();
     expect(identity.lastUsedAt).toBeInstanceOf(Date);
+    expect(identity.email).toBe('updated@example.com');
     expect((await identity.getProfile())?.id).toBe(created.profile.id);
 
     expect(

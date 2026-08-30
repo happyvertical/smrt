@@ -172,6 +172,11 @@ export class OidcIdentity extends SmrtObject {
    * Record usage of this identity
    */
   async recordUsage(): Promise<void> {
+    // Trusted provisioning may have refreshed this exact identity through a
+    // second instance before authentication records usage. Rehydrate first so
+    // the framework revision guard preserves those changes instead of treating
+    // this usage-only write as an overwrite attempt.
+    await this.loadFromId();
     this.lastUsedAt = new Date();
     await this.save();
   }
