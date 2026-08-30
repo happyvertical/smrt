@@ -330,6 +330,20 @@ describe('OidcIdentity model and collection', () => {
     expect(identity.email).toBe('updated@example.com');
     expect((await identity.getProfile())?.id).toBe(created.profile.id);
 
+    const firstUsage = await identities.findBySubject(
+      'https://accounts.google.com',
+      'google-1',
+    );
+    const secondUsage = await identities.findBySubject(
+      'https://accounts.google.com',
+      'google-1',
+    );
+    expect(firstUsage).not.toBeNull();
+    expect(secondUsage).not.toBeNull();
+    await Promise.all([firstUsage?.recordUsage(), secondUsage?.recordUsage()]);
+    expect(firstUsage?.email).toBe('updated@example.com');
+    expect(secondUsage?.email).toBe('updated@example.com');
+
     expect(
       await identities.unlinkFromProfile(
         created.profile.id as string,
