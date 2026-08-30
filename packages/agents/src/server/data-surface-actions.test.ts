@@ -13,6 +13,7 @@ import type {
 import { executeAsPrincipal } from '../execute-as-principal.js';
 import {
   createDataSurfaceActionAdapter,
+  type DataSurfaceActionInvocation,
   type DataSurfaceActionStateStore,
   type DataSurfaceBackgroundActionJob,
   type DataSurfaceServerActionDefinition,
@@ -67,7 +68,10 @@ function harness(options: {
   now?: () => number;
   authorize?: () => boolean;
   eligible?: (rowId: string | number) => { eligible: boolean; reason?: string };
-  apply?: (rowId: string | number) => Promise<void> | void;
+  apply?: (
+    rowId: string | number,
+    invocation: DataSurfaceActionInvocation,
+  ) => Promise<void> | void;
   revision?: () => number;
   queryFingerprint?: () => string;
   rowIds?: () => Array<string | number>;
@@ -131,7 +135,7 @@ function harness(options: {
     eligible: (_invocation, rowId) =>
       options.eligible?.(rowId) ?? { eligible: true },
     apply: async (_invocation, rowId) => {
-      await options.apply?.(rowId);
+      await options.apply?.(rowId, _invocation);
       return undefined;
     },
   };
@@ -529,6 +533,19 @@ describe('data-surface action adapter', () => {
 
     expect(preview).toMatchObject({ ok: false, reason: 'invalid_request' });
     expect(setup.resolveSelectionCalls).toHaveLength(0);
+  });
+
+  it('rejects circular payloads before request snapshotting', async () => {
+    const setup = harness({});
+    const payload: Record<string, unknown> = { reason: 'circular' };
+    payload.self = payload;
+
+    await expect(
+      setup.adapter.preview(
+        request('preview', { payload: payload as never }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
   });
 
   it('rechecks authorization, revision, query fingerprint, and resolved rows at apply', async () => {
@@ -1024,6 +1041,47 @@ describe('data-surface action adapter', () => {
         tenantId: 'tenant-a',
         agentClass: 'orders-agent',
       },
+    ]);
+  });
+
+  it('executes deferred work from an immutable confirmed request snapshot', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const executions: Array<{
+      payload: DataSurfaceActionInvocation['request']['payload'];
+      idempotencyKey: string | undefined;
+    }> = [];
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-request-snapshot' };
+      },
+      apply: (_rowId, invocation) => {
+        executions.push({
+          payload: structuredClone(invocation.request.payload),
+          idempotencyKey: invocation.request.idempotencyKey,
+        });
+      },
+    });
+    const payload = { reason: 'confirmed' };
+    const preview = await setup.adapter.preview(
+      request('preview', { payload }),
+      setup.context,
+    );
+    if (!preview.confirmationToken) throw new Error('Missing preview token');
+    const applyRequest = request('apply', {
+      payload,
+      confirmationToken: preview.confirmationToken,
+      idempotencyKey: 'snapshot-key',
+    });
+    await setup.adapter.apply(applyRequest, setup.context);
+
+    payload.reason = 'mutated-after-enqueue';
+    applyRequest.idempotencyKey = 'mutated-key';
+    await expect(queued?.run()).resolves.toMatchObject({ ok: true });
+    expect(executions).toEqual([
+      { payload: { reason: 'confirmed' }, idempotencyKey: 'snapshot-key' },
+      { payload: { reason: 'confirmed' }, idempotencyKey: 'snapshot-key' },
     ]);
   });
 

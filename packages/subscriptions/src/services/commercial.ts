@@ -176,11 +176,17 @@ function environmentAdapterType(): SqlAdapterType | undefined {
 
 function environmentWriteStrategy(): CommercialBillingStorage['writeStrategy'] {
   const strategy = process.env.HAVE_SQL_WRITE_STRATEGY;
-  return strategy === 'immediate' ||
+  if (strategy === undefined || strategy === '') return undefined;
+  if (
+    strategy === 'immediate' ||
     strategy === 'manual' ||
     strategy === 'none'
-    ? strategy
-    : undefined;
+  ) {
+    return strategy;
+  }
+  throw new CommercialBillingStorageConfigurationError(
+    'Commercial billing HAVE_SQL_WRITE_STRATEGY must be immediate, manual, or none.',
+  );
 }
 
 function billingStorageFromConfig(
@@ -247,6 +253,10 @@ function effectiveWriteStrategy(
 function resolveCommercialBillingStorage(
   options: CommercialUsageServiceOptions,
 ): CommercialBillingStorage {
+  // Environment declarations are configuration contracts, even when explicit
+  // options win precedence. Reject invalid nonempty values before setup.
+  environmentAdapterType();
+  environmentWriteStrategy();
   const configuredDatabase = options.db ?? options.persistence;
   if (isDatabaseInterface(configuredDatabase)) {
     if (!options.billingStorage) {

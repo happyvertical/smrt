@@ -130,6 +130,20 @@ describe('commercial usage tracer', () => {
   });
 
   it.each([
+    'manul',
+    'Immediate',
+    ' ',
+  ])('rejects invalid nonempty HAVE_SQL_WRITE_STRATEGY %j before setup', async (strategy) => {
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', strategy);
+    await expect(
+      CommercialUsageService.create({
+        db: { type: 'sqlite', url: ':memory:' },
+        billingStorage: { adapterType: 'sqlite' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it.each([
     'db',
     'persistence',
   ] as const)('rejects invalid nonempty HAVE_SQL_TYPE before explicit typed %s setup', async (option) => {

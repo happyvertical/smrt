@@ -473,6 +473,20 @@ function requestFingerprint(
   });
 }
 
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreeze(nested, seen);
+  Object.freeze(value);
+  return value;
+}
+
+function snapshotRequest(
+  request: DataSurfaceServerActionRequest,
+): DataSurfaceServerActionRequest {
+  return deepFreeze(structuredClone(request));
+}
+
 function actionFingerprint(action: DataSurfaceServerActionDefinition): string {
   return fingerprint({
     descriptor: action.descriptor,
@@ -906,6 +920,7 @@ export function createDataSurfaceActionAdapter(
         if ('ok' in invocation) return invocation;
         if (token) {
           if (
+            fingerprintRequest(request) !== token.requestFingerprint ||
             invocation.selection.revision !== token.revision ||
             invocation.selection.revision !== request.expectedRevision ||
             invocation.selection.queryFingerprint !== token.queryFingerprint ||
@@ -958,11 +973,12 @@ export function createDataSurfaceActionAdapter(
   }
 
   async function apply(
-    request: DataSurfaceServerActionRequest,
+    input: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
   ): Promise<DataSurfaceActionResult> {
-    const invalid = validateRequest(request, 'apply');
-    if (invalid) return result(request, false, invalid);
+    const invalid = validateRequest(input, 'apply');
+    if (invalid) return result(input, false, invalid);
+    const request = snapshotRequest(input);
     const confirmationToken = request.confirmationToken;
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
