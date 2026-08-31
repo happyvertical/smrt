@@ -210,10 +210,15 @@ export function resolveLocalRuntimePaths(
   const root = resolve(options.dataDirectory ?? resolve(defaultRoot, appId));
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
 
-  if (isInside(sourceRoot, root)) {
+  if (
+    sameFilesystemPath(root, runtimeHome) ||
+    sameFilesystemPath(root, parse(root).root) ||
+    isInside(sourceRoot, root) ||
+    isInside(root, sourceRoot)
+  ) {
     throw new LocalRuntimeError(
       'invalid_configuration',
-      'Local application data must be stored outside the source tree.',
+      'Local application data must be a dedicated directory that does not overlap the source tree.',
     );
   }
 
@@ -260,7 +265,7 @@ export async function initializeLocalApplicationRuntime(
   await options.prepareDatabase?.(db);
   await ensureBootstrapTable(db);
 
-  const runtime = new LocalApplicationRuntime({
+  const runtime = new InitializedLocalApplicationRuntime({
     db,
     paths,
     bindHost,
@@ -294,7 +299,24 @@ interface LocalApplicationRuntimeState {
 }
 
 /** Initialized local runtime used by server startup and onboarding handlers. */
-export class LocalApplicationRuntime {
+export interface LocalApplicationRuntime {
+  readonly db: DatabaseInterface;
+  readonly paths: LocalRuntimePaths;
+  readonly bindHost: string;
+  readonly resolvedRuntime: ResolvedApplicationRuntime;
+  readonly backgroundJobsEnabled: boolean;
+  readonly paidCapabilitiesEnabled: boolean;
+  ensureBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation | null>;
+  rotateBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation>;
+  claimOwner(input: ClaimLocalOwnerInput): Promise<LocalOwnerClaimResult>;
+  restoreSession(
+    sessionId: string,
+  ): ReturnType<SessionService['loadSessionContext']>;
+  createEmbeddedJobRunner(config?: TaskRunnerConfig): Promise<TaskRunner>;
+  diagnostics(): Promise<LocalRuntimeDiagnostics>;
+}
+
+class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   readonly db: DatabaseInterface;
   readonly paths: LocalRuntimePaths;
   readonly bindHost: string;
@@ -682,7 +704,7 @@ async function prepareLocalFilesystem(
 ): Promise<string> {
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
-  await ensureSafeDirectoryTree(paths.root, canonicalSourceRoot);
+  await ensureSafeDirectoryTree(paths.root, canonicalSourceRoot, true);
   await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
   await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
 
@@ -704,6 +726,7 @@ async function prepareLocalFilesystem(
 async function ensureSafeDirectoryTree(
   path: string,
   canonicalSourceRoot: string,
+  dedicatedRoot = false,
 ): Promise<void> {
   const components = absolutePathComponents(path);
   for (const component of components) {
@@ -729,13 +752,50 @@ async function ensureSafeDirectoryTree(
 
     const directory = await openSafeDirectory(component, canonicalSourceRoot);
     try {
-      if (created || component === path) await directory.chmod(0o700);
       await assertCanonicalEntry(component, canonicalSourceRoot);
+      if (component === path && dedicatedRoot && !created) {
+        await assertExistingDedicatedRoot(
+          directory,
+          component,
+          canonicalSourceRoot,
+        );
+      }
+      if (created || (component === path && !dedicatedRoot)) {
+        await directory.chmod(0o700);
+      }
     } finally {
       await directory.close();
     }
   }
   await validateExistingPathChain(path, canonicalSourceRoot, 'directory');
+}
+
+async function assertExistingDedicatedRoot(
+  directory: FileHandle,
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  const canonical = await realpath(path);
+  if (
+    isInside(canonicalSourceRoot, canonical) ||
+    isInside(canonical, canonicalSourceRoot)
+  ) {
+    throw unsafeFilesystemEntry(
+      'Local application data must be a dedicated directory that does not overlap the canonical source tree.',
+    );
+  }
+
+  const details = await directory.stat();
+  const currentUid = process.getuid?.();
+  if (
+    currentUid === undefined ||
+    details.uid !== currentUid ||
+    (details.mode & 0o777) !== 0o700
+  ) {
+    throw unsafeFilesystemEntry(
+      `Existing local application data root must already be owned by the current user with mode 0700: ${path}`,
+    );
+  }
 }
 
 async function ensureApplicationSecret(

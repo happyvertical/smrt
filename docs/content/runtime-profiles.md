@@ -106,7 +106,11 @@ const { runtime, bootstrap, diagnostics } =
 ```
 
 The default root is the operating system's per-user application-data directory,
-never the source checkout. Directories are mode `0700`; the database and
+never the source checkout, one of its ancestors, the user home itself, or the
+filesystem root. The application root is a dedicated directory; when an
+explicit root already exists, it must already be
+owned by the current user with mode `0700`, and a failed proof leaves its mode
+and contents untouched. Directories are mode `0700`; the database and
 generated application-secret file are mode `0600`. SQLite enables foreign keys,
 WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.

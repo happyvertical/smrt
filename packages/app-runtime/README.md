@@ -26,7 +26,12 @@ The default data directory is the current user's OS application-data directory
 (`~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows, or
 `$XDG_DATA_HOME` / `~/.local/share` on Linux). It contains a mode-0600 SQLite
 database, a user-owned asset directory, and generated mode-0600 application
-secret material. Placing this directory inside the source checkout is refused.
+secret material. The root must be a dedicated application directory: placing
+it inside the source checkout or choosing an ancestor of the checkout is
+refused, as is choosing the user home itself or the filesystem root. An
+explicitly configured root that already exists must already be
+owned by the current user with mode `0700`; initialization rejects it without
+changing permissions or creating artifacts when that custody proof fails.
 Every existing path component is opened without following symbolic links and
 checked against its canonical path before descendants or secret bytes are
 written. The runtime then acquires SQLite through `@happyvertical/sql`'s

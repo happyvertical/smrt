@@ -1,4 +1,5 @@
 import {
+  chmod,
   mkdir,
   mkdtemp,
   readFile,
@@ -13,6 +14,7 @@ import { join } from 'node:path';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
+import * as localRuntimeApi from './index.js';
 import {
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
@@ -383,6 +385,82 @@ describe('local application runtime', () => {
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('refuses an existing broad data root without changing its mode or creating artifacts', async () => {
+    const directories = await localDirectories('broad-root');
+    const broadRoot = join(directories.root, 'shared');
+    await mkdir(broadRoot, { mode: 0o755 });
+    await chmod(broadRoot, 0o755);
+    const originalMode = (await stat(broadRoot)).mode & 0o777;
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        sourceRoot: directories.sourceRoot,
+        dataDirectory: broadRoot,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+
+    expect((await stat(broadRoot)).mode & 0o777).toBe(originalMode);
+    await expect(
+      stat(join(broadRoot, 'application.sqlite')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(broadRoot, 'assets'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(stat(join(broadRoot, 'secrets'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('refuses a data root containing the source tree before changing its mode or contents', async () => {
+    const directories = await localDirectories('source-ancestor');
+    await chmod(directories.root, 0o711);
+    const originalMode = (await stat(directories.root)).mode & 0o777;
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        sourceRoot: directories.sourceRoot,
+        dataDirectory: directories.root,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+
+    expect((await stat(directories.root)).mode & 0o777).toBe(originalMode);
+    await expect(
+      stat(join(directories.root, 'application.sqlite')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(join(directories.root, 'assets'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(stat(join(directories.root, 'secrets'))).rejects.toMatchObject(
+      {
+        code: 'ENOENT',
+      },
+    );
+  });
+
+  it('refuses the user home itself as a data root even when it is private', async () => {
+    const directories = await localDirectories('home-root');
+    const homeDirectory = join(directories.root, 'home');
+    await mkdir(homeDirectory, { mode: 0o700 });
+    await chmod(homeDirectory, 0o700);
+    const originalMode = (await stat(homeDirectory)).mode & 0o777;
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        homeDirectory,
+        sourceRoot: directories.sourceRoot,
+        dataDirectory: homeDirectory,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+
+    expect((await stat(homeDirectory)).mode & 0o777).toBe(originalMode);
+    await expect(
+      stat(join(homeDirectory, 'application.sqlite')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('refuses nested symlink ancestors before creating redirected descendants', async () => {
     const directories = await localDirectories('nested-redirect');
     const nested = join(directories.root, 'nested');
@@ -509,6 +587,10 @@ describe('local application runtime', () => {
 });
 
 describe('local runtime paths', () => {
+  it('does not export a concrete runtime constructor or database injection path', () => {
+    expect(localRuntimeApi).not.toHaveProperty('LocalApplicationRuntime');
+  });
+
   it('uses native user application-data roots', () => {
     expect(
       resolveLocalRuntimePaths({
@@ -536,6 +618,26 @@ describe('local runtime paths', () => {
         sourceRoot: '/workspace/lolaus',
         dataDirectory: '/workspace/lolaus/.local-data',
       }),
-    ).toThrow('outside the source tree');
+    ).toThrow('does not overlap the source tree');
+  });
+
+  it('rejects a data root that contains the source tree', () => {
+    expect(() =>
+      resolveLocalRuntimePaths({
+        appId: 'lolaus',
+        sourceRoot: '/workspace/lolaus',
+        dataDirectory: '/workspace',
+      }),
+    ).toThrow('does not overlap the source tree');
+  });
+
+  it('rejects the filesystem root as an application data directory', () => {
+    expect(() =>
+      resolveLocalRuntimePaths({
+        appId: 'lolaus',
+        sourceRoot: '/workspace/lolaus',
+        dataDirectory: '/',
+      }),
+    ).toThrow('dedicated directory');
   });
 });
