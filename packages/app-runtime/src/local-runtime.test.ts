@@ -44,6 +44,10 @@ const filesystemInterleave = vi.hoisted(() => ({
       ) => Promise<void>),
 }));
 
+const initializationLockWorkerInterleave = vi.hoisted(() => ({
+  releaseFailure: undefined as Error | undefined,
+}));
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
   return {
@@ -68,10 +72,39 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   };
 });
 
+vi.mock('node:worker_threads', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:worker_threads')>();
+  return {
+    ...actual,
+    Worker: class extends actual.Worker {
+      override postMessage(value: unknown): void {
+        const releaseFailure =
+          initializationLockWorkerInterleave.releaseFailure;
+        if (
+          releaseFailure &&
+          typeof value === 'object' &&
+          value !== null &&
+          'type' in value &&
+          value.type === 'release'
+        ) {
+          initializationLockWorkerInterleave.releaseFailure = undefined;
+          queueMicrotask(() => {
+            this.emit('error', releaseFailure);
+            this.emit('exit', 1);
+          });
+          return;
+        }
+        super.postMessage(value);
+      }
+    },
+  };
+});
+
 afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
   filesystemInterleave.afterReaddir = undefined;
   filesystemInterleave.beforeUnlink = undefined;
+  initializationLockWorkerInterleave.releaseFailure = undefined;
   vi.restoreAllMocks();
   await Promise.all(
     temporaryRoots
@@ -1137,6 +1170,74 @@ describe('local application runtime', () => {
     });
     expect(calls).toBe(2);
     expect(maximumActive).toBe(1);
+  });
+
+  it('closes a completed runtime database when initialization-lock release fails', async () => {
+    const directories = await localDirectories('release-failure-success');
+    const originalGetDatabase = sql.getDatabase;
+    let databaseCloseCalls = 0;
+    vi.spyOn(sql, 'getDatabase').mockImplementation(async (...args) => {
+      const db = await originalGetDatabase(...args);
+      const originalClose = db.close?.bind(db);
+      db.close = async () => {
+        databaseCloseCalls += 1;
+        await originalClose?.();
+      };
+      return db;
+    });
+    const releaseFailure = new Error('injected lock release failure');
+    initializationLockWorkerInterleave.releaseFailure = releaseFailure;
+
+    let failure: unknown;
+    try {
+      await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ cause: releaseFailure });
+    expect(databaseCloseCalls).toBe(1);
+  });
+
+  it('preserves an initialization failure when lock release also fails', async () => {
+    const directories = await localDirectories('release-failure-primary');
+    const originalGetDatabase = sql.getDatabase;
+    let databaseCloseCalls = 0;
+    vi.spyOn(sql, 'getDatabase').mockImplementation(async (...args) => {
+      const db = await originalGetDatabase(...args);
+      const originalClose = db.close?.bind(db);
+      db.close = async () => {
+        databaseCloseCalls += 1;
+        await originalClose?.();
+      };
+      return db;
+    });
+    const primaryFailure = new Error('injected migration failure');
+    const releaseFailure = new Error('injected lock release failure');
+    initializationLockWorkerInterleave.releaseFailure = releaseFailure;
+
+    let failure: unknown;
+    try {
+      await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          throw primaryFailure;
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBe(primaryFailure);
+    expect(
+      (failure as Error & { initializationLockReleaseError?: unknown })
+        .initializationLockReleaseError,
+    ).toMatchObject({ cause: releaseFailure });
+    expect(databaseCloseCalls).toBe(1);
   });
 
   it.runIf(platform() === 'darwin')(

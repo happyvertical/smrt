@@ -311,6 +311,9 @@ export async function initializeLocalApplicationRuntime(
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
+  let initialization: LocalRuntimeInitialization | undefined;
+  let initializationFailure: unknown;
+  let initializationFailed = false;
   try {
     await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
     const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
@@ -334,17 +337,44 @@ export async function initializeLocalApplicationRuntime(
       canonicalSourceRoot,
     });
     const bootstrap = await runtime.ensureBootstrapInvitation();
-    return {
+    initialization = {
       runtime,
       bootstrap,
       diagnostics: await runtime.diagnostics(),
     };
   } catch (error) {
-    if (db) throw await closeDatabaseAfterFailure(db, error);
-    throw error;
-  } finally {
-    await initializationLock.release();
+    initializationFailed = true;
+    initializationFailure = db
+      ? await closeDatabaseAfterFailure(db, error)
+      : error;
+    db = undefined;
   }
+
+  try {
+    await initializationLock.release();
+  } catch (releaseError) {
+    if (initializationFailed) {
+      initializationFailure = preservePrimaryFailure(
+        initializationFailure,
+        releaseError,
+        'initializationLockReleaseError',
+        'Local runtime initialization and initialization-lock release both failed.',
+      );
+    } else if (db) {
+      initializationFailed = true;
+      initializationFailure = await closeDatabaseAfterFailure(db, releaseError);
+      db = undefined;
+    } else {
+      initializationFailed = true;
+      initializationFailure = releaseError;
+    }
+  }
+
+  if (initializationFailed) throw initializationFailure;
+  if (!initialization) {
+    throw new Error('Local runtime initialization completed without a result.');
+  }
+  return initialization;
 }
 
 interface LocalApplicationRuntimeState {
@@ -991,18 +1021,33 @@ async function closeDatabaseAfterFailure(
   try {
     await db.close?.();
   } catch (cleanupFailure) {
-    if (primaryFailure instanceof Error) {
-      Object.defineProperty(primaryFailure, 'databaseCleanupError', {
-        value: cleanupFailure,
-      });
-      return primaryFailure;
-    }
-    return new AggregateError(
-      [primaryFailure, cleanupFailure],
+    return preservePrimaryFailure(
+      primaryFailure,
+      cleanupFailure,
+      'databaseCleanupError',
       'Local runtime initialization and database cleanup both failed.',
     );
   }
   return primaryFailure;
+}
+
+function preservePrimaryFailure(
+  primaryFailure: unknown,
+  secondaryFailure: unknown,
+  secondaryProperty: string,
+  aggregateMessage: string,
+): unknown {
+  if (primaryFailure instanceof Error) {
+    Object.defineProperty(primaryFailure, secondaryProperty, {
+      value: secondaryFailure,
+      configurable: true,
+    });
+    return primaryFailure;
+  }
+  return new AggregateError(
+    [primaryFailure, secondaryFailure],
+    aggregateMessage,
+  );
 }
 
 async function prepareLocalFilesystem(
