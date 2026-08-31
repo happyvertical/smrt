@@ -40,6 +40,11 @@ it is promoted atomically after the released SQL custody boundary verifies the
 complete ancestor/root chain, including macOS ACLs. Failed custody removes the
 pending claim and every directory only when they were created by that attempt;
 an inherited pending claim and its database remain authoritative for retry.
+Initializers for the same data root are serialized across processes by a
+kernel-owned Unix socket in a private per-user lock directory. Live ownership
+does not depend on PIDs, so PID reuse is irrelevant; after a process crash, a
+failed connection proves the remaining socket pathname stale before it is
+reclaimed. Marker cleanup therefore cannot race another active initializer.
 Every existing path component is opened without following symbolic links and
 checked against its canonical path before descendants or secret bytes are
 written. The runtime then acquires SQLite through `@happyvertical/sql`'s

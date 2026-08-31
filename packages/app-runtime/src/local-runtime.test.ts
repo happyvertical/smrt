@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process';
-import { createHmac } from 'node:crypto';
+import { execFile, spawn } from 'node:child_process';
+import { createHash, createHmac } from 'node:crypto';
+import { once } from 'node:events';
 import {
   chmod,
   mkdir,
@@ -72,6 +73,17 @@ async function localDirectories(label: string) {
   const dataDirectory = join(root, 'data');
   await mkdir(sourceRoot);
   return { root, sourceRoot, dataDirectory };
+}
+
+async function initializationLockPath(dataDirectory: string): Promise<string> {
+  const currentUid = process.getuid?.();
+  if (currentUid === undefined) throw new Error('Tests require a numeric uid.');
+  const lockRoot = join(await realpath('/tmp'), `.smrt-${currentUid}`);
+  const lockKey = createHash('sha256')
+    .update(dataDirectory)
+    .digest('hex')
+    .slice(0, 32);
+  return join(lockRoot, `${lockKey}.sock`);
 }
 
 async function countRows(
@@ -717,6 +729,113 @@ describe('local application runtime', () => {
     });
     await expect(stat(pendingMarker)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await stat(database)).isFile()).toBe(true);
+  });
+
+  it('serializes failed and crashing initializers without losing recovery authority', async () => {
+    const directories = await localDirectories('initializer-race');
+    const pendingMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus.pending',
+    );
+    const database = join(directories.dataDirectory, 'application.sqlite');
+    const originalGetDatabase = sql.getDatabase;
+    let calls = 0;
+    let enterFirst: (() => void) | undefined;
+    let releaseFirst: (() => void) | undefined;
+    let enterSecond: (() => void) | undefined;
+    let releaseSecond: (() => void) | undefined;
+    const firstEntered = new Promise<void>((resolve) => {
+      enterFirst = resolve;
+    });
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const secondEntered = new Promise<void>((resolve) => {
+      enterSecond = resolve;
+    });
+    const secondReleased = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const databaseSpy = vi
+      .spyOn(sql, 'getDatabase')
+      .mockImplementation(async (...args) => {
+        calls += 1;
+        if (calls === 1) {
+          enterFirst?.();
+          await firstReleased;
+          throw new Error('injected first acquisition failure');
+        }
+        if (calls === 2) {
+          enterSecond?.();
+          await secondReleased;
+        }
+        return originalGetDatabase(...args);
+      });
+
+    const first = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await firstEntered;
+    const second = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(calls).toBe(1);
+
+    releaseFirst?.();
+    await expect(first).rejects.toThrow('injected first acquisition failure');
+    await secondEntered;
+    let promotionFailureInjected = false;
+    filesystemInterleave.beforeUnlink = async (path) => {
+      if (!promotionFailureInjected && String(path) === pendingMarker) {
+        promotionFailureInjected = true;
+        throw new Error('injected second promotion crash');
+      }
+    };
+    releaseSecond?.();
+    await expect(second).rejects.toThrow('injected second promotion crash');
+    expect(promotionFailureInjected).toBe(true);
+    expect((await stat(pendingMarker)).isFile()).toBe(true);
+    expect((await stat(database)).isFile()).toBe(true);
+
+    filesystemInterleave.beforeUnlink = undefined;
+    databaseSpy.mockRestore();
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    await expect(stat(pendingMarker)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(database)).isFile()).toBe(true);
+  });
+
+  it('reclaims a kernel-stale initialization socket after its owner crashes', async () => {
+    const directories = await localDirectories('stale-initializer');
+    const lockPath = await initializationLockPath(directories.dataDirectory);
+    await mkdir(join(lockPath, '..'), { recursive: true, mode: 0o700 });
+    await rm(lockPath, { force: true });
+    const child = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const net=require('node:net');const server=net.createServer();server.listen(process.argv[1],()=>process.stdout.write('ready\\n'));",
+        lockPath,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] },
+    );
+    await once(child.stdout as NodeJS.ReadableStream, 'data');
+    child.kill('SIGKILL');
+    await once(child, 'exit');
+    expect((await stat(lockPath)).isSocket()).toBe(true);
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects an inherited pending claim with unrelated contents', async () => {

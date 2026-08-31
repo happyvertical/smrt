@@ -8,7 +8,7 @@
  * step supplied by the application migration layer.
  */
 
-import { createHmac, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import {
   constants,
   type FileHandle,
@@ -21,6 +21,7 @@ import {
   rmdir,
   unlink,
 } from 'node:fs/promises';
+import { createConnection, createServer, type Server } from 'node:net';
 import { homedir, platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
 import {
@@ -52,6 +53,8 @@ const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
 const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
+const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
+const INITIALIZATION_LOCK_RETRY_MS = 20;
 
 /** Paths owned by the local user, outside the source tree by default. */
 export interface LocalRuntimePaths {
@@ -708,6 +711,10 @@ interface PreparedLocalRoot {
   finalMarker: string;
 }
 
+interface LocalInitializationLock {
+  release(): Promise<void>;
+}
+
 async function acquireLocalDatabase(
   paths: LocalRuntimePaths,
   sourceRoot: string,
@@ -718,36 +725,55 @@ async function acquireLocalDatabase(
 }> {
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
-  const prepared = await prepareDedicatedRoot(
-    paths.root,
-    canonicalSourceRoot,
-    appId,
-  );
-  let db: DatabaseInterface;
+  const initializationLock = await acquireInitializationLock(paths.root);
+  let createdDirectories: string[] = [];
+  let removeAttemptDirectories = false;
   try {
-    db = await getDatabase({
-      type: 'sqlite',
-      url: paths.database,
-      secureFile: {
-        driver: 'node:sqlite',
-        custody: 'trusted-parent',
-        root: paths.root,
-      },
-    });
-  } catch (error) {
-    if (prepared.pendingMarkerCreatedByAttempt) {
-      await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-      await removeCreatedDirectories(prepared.createdDirectories);
+    createdDirectories = await ensureSafeDirectoryTree(
+      paths.root,
+      canonicalSourceRoot,
+      true,
+    );
+    const prepared = await prepareDedicatedRoot(
+      paths.root,
+      canonicalSourceRoot,
+      appId,
+      createdDirectories,
+    );
+    let db: DatabaseInterface;
+    try {
+      db = await getDatabase({
+        type: 'sqlite',
+        url: paths.database,
+        secureFile: {
+          driver: 'node:sqlite',
+          custody: 'trusted-parent',
+          root: paths.root,
+        },
+      });
+    } catch (error) {
+      if (prepared.pendingMarkerCreatedByAttempt) {
+        await removeMarkerIfPresent(
+          prepared.pendingMarker,
+          canonicalSourceRoot,
+        );
+        removeAttemptDirectories = true;
+      }
+      throw error;
     }
-    throw error;
-  }
 
-  // Once SQLite acquisition succeeds, the database is an authoritative
-  // artifact. Keep the pending marker through every promotion failure so a
-  // later startup can resume rather than seeing an unmarked populated root.
-  await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
-  await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-  return { canonicalSourceRoot, db };
+    // Once SQLite acquisition succeeds, the database is an authoritative
+    // artifact. Keep the pending marker through every promotion failure so a
+    // later startup can resume rather than seeing an unmarked populated root.
+    await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
+    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+    return { canonicalSourceRoot, db };
+  } finally {
+    await initializationLock.release();
+    if (removeAttemptDirectories) {
+      await removeCreatedDirectories(createdDirectories);
+    }
+  }
 }
 
 async function prepareLocalFilesystem(
@@ -763,12 +789,8 @@ async function prepareDedicatedRoot(
   path: string,
   canonicalSourceRoot: string,
   appId: string,
+  createdDirectories: string[],
 ): Promise<PreparedLocalRoot> {
-  const createdDirectories = await ensureSafeDirectoryTree(
-    path,
-    canonicalSourceRoot,
-    true,
-  );
   const finalMarker = resolve(path, `${ROOT_MARKER_PREFIX}${appId}`);
   const pendingMarker = resolve(path, `${ROOT_MARKER_PREFIX}${appId}.pending`);
   const entries = await readdir(path);
@@ -826,6 +848,166 @@ async function prepareDedicatedRoot(
     pendingMarkerCreatedByAttempt,
     finalMarker,
   };
+}
+
+async function acquireInitializationLock(
+  root: string,
+): Promise<LocalInitializationLock> {
+  const currentUid = process.getuid?.();
+  if (currentUid === undefined) {
+    throw unsafeFilesystemEntry(
+      'Local runtime initialization locks require a numeric current-user identity.',
+    );
+  }
+  const canonicalTemporaryRoot = await realpath('/tmp');
+  const lockRoot = resolve(canonicalTemporaryRoot, `.smrt-${currentUid}`);
+  try {
+    await mkdir(lockRoot, { mode: 0o700 });
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+  }
+  const lockRootDetails = await lstat(lockRoot);
+  if (
+    !lockRootDetails.isDirectory() ||
+    lockRootDetails.isSymbolicLink() ||
+    lockRootDetails.uid !== currentUid ||
+    (lockRootDetails.mode & 0o777) !== 0o700
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local runtime lock directory must be current-user-owned with mode 0700: ${lockRoot}`,
+    );
+  }
+  const lockKey = createHash('sha256')
+    .update(resolve(root))
+    .digest('hex')
+    .slice(0, 32);
+  const path = resolve(lockRoot, `${lockKey}.sock`);
+  // A listening Unix socket is a kernel-backed lease: a live owner can be
+  // probed without trusting a PID, while a crash leaves a pathname that
+  // refuses connections and is therefore safe to reclaim under this
+  // current-user-only directory.
+  const deadline = Date.now() + INITIALIZATION_LOCK_TIMEOUT_MS;
+  while (true) {
+    const server = createServer((socket) => socket.end());
+    try {
+      await listenOnUnixSocket(server, path);
+      const details = await lstat(path);
+      if (!details.isSocket() || details.uid !== currentUid) {
+        throw unsafeFilesystemEntry(
+          `Local runtime initialization lock is not a current-user-owned socket: ${path}`,
+        );
+      }
+      return {
+        release: async () => {
+          await closeServer(server);
+          await removeOwnedSocketIfPresent(path, details.dev, details.ino);
+        },
+      };
+    } catch (error) {
+      await closeServer(server);
+      if (!isAddressInUse(error)) throw error;
+    }
+
+    const state = await probeInitializationSocket(path);
+    if (state === 'stale') {
+      await removeStaleInitializationSocket(path);
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      throw new LocalRuntimeError(
+        'invalid_configuration',
+        'Timed out waiting for another local runtime initializer to finish.',
+      );
+    }
+    await delay(INITIALIZATION_LOCK_RETRY_MS);
+  }
+}
+
+async function listenOnUnixSocket(server: Server, path: string): Promise<void> {
+  await new Promise<void>((resolvePromise, reject) => {
+    const onError = (error: Error) => reject(error);
+    server.once('error', onError);
+    server.listen(path, () => {
+      server.off('error', onError);
+      resolvePromise();
+    });
+  });
+}
+
+async function closeServer(server: Server): Promise<void> {
+  if (!server.listening) return;
+  await new Promise<void>((resolvePromise, reject) => {
+    server.close((error) => {
+      if (error) reject(error);
+      else resolvePromise();
+    });
+  });
+}
+
+async function probeInitializationSocket(
+  path: string,
+): Promise<'live' | 'stale'> {
+  return new Promise((resolvePromise, reject) => {
+    const socket = createConnection(path);
+    const finish = (result: 'live' | 'stale') => {
+      socket.destroy();
+      resolvePromise(result);
+    };
+    socket.once('connect', () => finish('live'));
+    socket.once('error', (error) => {
+      if (isConnectionRefused(error) || isMissingFile(error)) finish('stale');
+      else reject(error);
+    });
+  });
+}
+
+async function removeStaleInitializationSocket(path: string): Promise<void> {
+  let details: Awaited<ReturnType<typeof lstat>>;
+  try {
+    details = await lstat(path);
+  } catch (error) {
+    if (isMissingFile(error)) return;
+    throw error;
+  }
+  const currentUid = process.getuid?.();
+  if (
+    !details.isSocket() ||
+    currentUid === undefined ||
+    details.uid !== currentUid
+  ) {
+    throw unsafeFilesystemEntry(
+      `Refusing to replace an invalid local runtime initialization lock: ${path}`,
+    );
+  }
+  await unlink(path);
+}
+
+async function removeOwnedSocketIfPresent(
+  path: string,
+  expectedDevice: number,
+  expectedInode: number,
+): Promise<void> {
+  try {
+    const details = await lstat(path);
+    if (
+      !details.isSocket() ||
+      details.dev !== expectedDevice ||
+      details.ino !== expectedInode
+    ) {
+      throw unsafeFilesystemEntry(
+        `Local runtime initialization lock changed before release: ${path}`,
+      );
+    }
+    await unlink(path);
+  } catch (error) {
+    if (!isMissingFile(error)) throw error;
+  }
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolvePromise) =>
+    setTimeout(resolvePromise, milliseconds),
+  );
 }
 
 async function ensureSafeDirectoryTree(
@@ -1383,5 +1565,22 @@ function isDirectoryNotEmpty(error: unknown): boolean {
     error !== null &&
     'code' in error &&
     (error as { code?: unknown }).code === 'ENOTEMPTY'
+  );
+}
+
+function isAddressInUse(error: unknown): boolean {
+  return hasErrorCode(error, 'EADDRINUSE');
+}
+
+function isConnectionRefused(error: unknown): boolean {
+  return hasErrorCode(error, 'ECONNREFUSED');
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === code
   );
 }
