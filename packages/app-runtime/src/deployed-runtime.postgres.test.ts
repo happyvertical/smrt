@@ -5,7 +5,6 @@ import {
   type IsolatedTestDbResult,
   isPostgresAvailable,
 } from '@happyvertical/smrt-vitest';
-import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type DeployedApplicationRuntime,
@@ -39,20 +38,19 @@ describePostgres('deployed runtime on PostgreSQL', () => {
     if (isolated.config.type !== 'postgres') {
       throw new Error('Expected a PostgreSQL test database.');
     }
-    const postgresConfig = isolated.config;
+    const connected = isolated;
 
     const checks: string[] = [];
     runtime = await initializeDeployedApplicationRuntime({
       profile: 'cloud',
       database: {
         engine: 'postgres',
-        connect: () =>
-          getDatabase({
-            ...postgresConfig,
-            dbid: 'app-runtime-deployed-integration',
-          }),
-        close: async (db) => {
-          await db.close?.();
+        connect: async () => connected.db,
+        close: async () => {
+          if (isolated === connected) {
+            await connected.cleanup();
+            isolated = undefined;
+          }
         },
       },
       authentication: {
