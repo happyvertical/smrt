@@ -8,12 +8,13 @@ import {
   readFile,
   realpath,
   rm,
+  rmdir,
   stat,
   symlink,
   writeFile,
 } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import * as sql from '@happyvertical/sql';
@@ -26,6 +27,7 @@ import {
 } from './index.js';
 
 const temporaryRoots: string[] = [];
+const initializationLockPaths = new Set<string>();
 const execFileAsync = promisify(execFile);
 
 const filesystemInterleave = vi.hoisted(() => ({
@@ -63,6 +65,18 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => rm(directory, { recursive: true, force: true })),
   );
+  for (const lockPath of initializationLockPaths) {
+    await rm(lockPath, { force: true });
+    await rm(`${lockPath}-journal`, { force: true });
+    await rm(`${lockPath}-shm`, { force: true });
+    await rm(`${lockPath}-wal`, { force: true });
+    try {
+      await rmdir(dirname(lockPath));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  initializationLockPaths.clear();
 });
 
 async function localDirectories(label: string) {
@@ -72,6 +86,7 @@ async function localDirectories(label: string) {
   const sourceRoot = join(root, 'source');
   const dataDirectory = join(root, 'data');
   await mkdir(sourceRoot);
+  await initializationLockPath(dataDirectory);
   return { root, sourceRoot, dataDirectory };
 }
 
@@ -83,7 +98,9 @@ async function initializationLockPath(dataDirectory: string): Promise<string> {
     .update(dataDirectory)
     .digest('hex')
     .slice(0, 32);
-  return join(lockRoot, `${lockKey}.sqlite`);
+  const lockPath = join(lockRoot, lockKey, 'initialization.sqlite');
+  initializationLockPaths.add(lockPath);
+  return lockPath;
 }
 
 async function holdInitializationDatabaseUntilKilled(
@@ -610,6 +627,7 @@ describe('local application runtime', () => {
     await mkdir(external);
     const externalMode = (await stat(external)).mode & 0o777;
     await symlink(external, redirectedData);
+    const lockPath = await initializationLockPath(redirectedData);
 
     await expect(
       initializeLocalApplicationRuntime({
@@ -622,6 +640,7 @@ describe('local application runtime', () => {
     await expect(
       stat(join(external, 'application.sqlite')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('refuses an existing broad data root without changing its mode or creating artifacts', async () => {
@@ -630,6 +649,7 @@ describe('local application runtime', () => {
     await mkdir(broadRoot, { mode: 0o755 });
     await chmod(broadRoot, 0o755);
     const originalMode = (await stat(broadRoot)).mode & 0o777;
+    const lockPath = await initializationLockPath(broadRoot);
 
     await expect(
       initializeLocalApplicationRuntime({
@@ -649,6 +669,7 @@ describe('local application runtime', () => {
     await expect(stat(join(broadRoot, 'secrets'))).rejects.toMatchObject({
       code: 'ENOENT',
     });
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects an unrelated populated private root without changing its contents', async () => {
@@ -657,6 +678,7 @@ describe('local application runtime', () => {
     await chmod(directories.dataDirectory, 0o700);
     const unrelated = join(directories.dataDirectory, 'personal.txt');
     await writeFile(unrelated, 'keep me\n');
+    const lockPath = await initializationLockPath(directories.dataDirectory);
 
     await expect(
       initializeLocalApplicationRuntime({
@@ -672,6 +694,7 @@ describe('local application runtime', () => {
     await expect(
       stat(join(directories.dataDirectory, '.smrt-local-runtime-lolaus')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('marks an empty private root and reopens it idempotently', async () => {
@@ -854,6 +877,46 @@ describe('local application runtime', () => {
     expect((await stat(lockPath)).ino).toBe(lockInode);
   });
 
+  it.runIf(platform() === 'darwin')(
+    'rejects a permissive ACL on the private lock custody root without acquiring a lease',
+    async () => {
+      const directories = await localDirectories('lock-root-acl');
+      const lockPath = await initializationLockPath(directories.dataDirectory);
+      const lockCustodyRoot = dirname(lockPath);
+      await mkdir(lockCustodyRoot, { recursive: true, mode: 0o700 });
+      await chmod(lockCustodyRoot, 0o700);
+      await execFileAsync('/bin/chmod', [
+        '+a',
+        'everyone allow add_file,add_subdirectory,delete_child',
+        lockCustodyRoot,
+      ]);
+      let prepareDatabaseCalled = false;
+
+      let failure: unknown;
+      try {
+        await initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          ...directories,
+          prepareDatabase: async () => {
+            prepareDatabaseCalled = true;
+          },
+        });
+      } catch (error) {
+        failure = error;
+      }
+
+      expectRuntimeError(failure, 'invalid_configuration');
+      expect(String((failure as { cause?: unknown }).cause)).toMatch(
+        /access control list|custody/i,
+      );
+      expect(prepareDatabaseCalled).toBe(false);
+      await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    },
+  );
+
   it('elects one successor without deleting or replacing the lock database', async () => {
     const directories = await localDirectories('stale-successors');
     const lockPath = await initializationLockPath(directories.dataDirectory);
@@ -965,6 +1028,7 @@ describe('local application runtime', () => {
     );
     const database = join(directories.dataDirectory, 'application.sqlite');
     const unrelated = join(directories.dataDirectory, 'unrelated.txt');
+    const lockPath = await initializationLockPath(directories.dataDirectory);
     await writeFile(pendingMarker, '', { mode: 0o600 });
     await writeFile(database, '', { mode: 0o600 });
     await writeFile(unrelated, 'keep me\n', { mode: 0o600 });
@@ -975,6 +1039,7 @@ describe('local application runtime', () => {
     expect(await readFile(unrelated, 'utf8')).toBe('keep me\n');
     expect((await stat(pendingMarker)).isFile()).toBe(true);
     expect((await stat(database)).isFile()).toBe(true);
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('rejects a malformed inherited pending marker', async () => {
@@ -986,6 +1051,7 @@ describe('local application runtime', () => {
       '.smrt-local-runtime-lolaus.pending',
     );
     const database = join(directories.dataDirectory, 'application.sqlite');
+    const lockPath = await initializationLockPath(directories.dataDirectory);
     await writeFile(pendingMarker, 'not-empty\n', { mode: 0o600 });
     await writeFile(database, '', { mode: 0o600 });
 
@@ -994,6 +1060,7 @@ describe('local application runtime', () => {
     ).rejects.toMatchObject({ code: 'invalid_configuration' });
     expect(await readFile(pendingMarker, 'utf8')).toBe('not-empty\n');
     expect((await stat(database)).isFile()).toBe(true);
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('retains a recoverable pending claim when promotion fails after database acquisition', async () => {
@@ -1044,6 +1111,7 @@ describe('local application runtime', () => {
     const dataDirectory = join(unsafeAncestor, 'lolaus');
     await mkdir(unsafeAncestor, { mode: 0o777 });
     await chmod(unsafeAncestor, 0o777);
+    const lockPath = await initializationLockPath(dataDirectory);
 
     await expect(
       initializeLocalApplicationRuntime({
@@ -1055,6 +1123,7 @@ describe('local application runtime', () => {
 
     expect((await stat(unsafeAncestor)).mode & 0o777).toBe(0o777);
     await expect(stat(dataDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it.runIf(platform() === 'darwin')(
@@ -1064,6 +1133,7 @@ describe('local application runtime', () => {
       const aclAncestor = join(directories.root, 'acl-parent');
       const dataDirectory = join(aclAncestor, 'lolaus');
       await mkdir(aclAncestor, { mode: 0o700 });
+      const lockPath = await initializationLockPath(dataDirectory);
       await execFileAsync('/bin/chmod', [
         '+a',
         'everyone allow add_file,add_subdirectory,delete_child',
@@ -1080,6 +1150,7 @@ describe('local application runtime', () => {
       await expect(stat(dataDirectory)).rejects.toMatchObject({
         code: 'ENOENT',
       });
+      await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
     },
   );
 

@@ -8,6 +8,7 @@
  * step supplied by the application migration layer.
  */
 
+import { execFile } from 'node:child_process';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import {
   constants,
@@ -23,6 +24,7 @@ import {
 } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
+import { promisify } from 'node:util';
 import { Worker } from 'node:worker_threads';
 import {
   type ResolvedApplicationRuntime,
@@ -56,26 +58,47 @@ const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
 const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
 const INITIALIZATION_LOCK_WORKER = `
   const { parentPort, workerData } = require('node:worker_threads');
-  const { DatabaseSync } = require('node:sqlite');
   let database;
-  try {
-    database = new DatabaseSync(workerData.path, { timeout: workerData.timeout });
-    database.exec('BEGIN EXCLUSIVE');
-    parentPort.postMessage({ type: 'acquired' });
-  } catch (error) {
-    try { database?.close(); } catch {}
+  let transaction;
+  (async () => {
+    try {
+      const { getDatabase } = await import(workerData.sqlModuleUrl);
+      database = await getDatabase({
+        type: 'sqlite',
+        url: workerData.path,
+        secureFile: {
+          driver: 'node:sqlite',
+          custody: 'trusted-parent',
+          root: workerData.custodyRoot,
+        },
+        transactionQueueTimeout: workerData.timeout,
+      });
+      if (!database.beginTransaction) {
+        throw new Error('Secure SQLite does not expose beginTransaction().');
+      }
+      await database.query('PRAGMA busy_timeout = ' + workerData.timeout);
+      transaction = await database.beginTransaction();
+      parentPort.postMessage({ type: 'acquired' });
+    } catch (error) {
+      try { await database?.close?.(); } catch {}
+      parentPort.postMessage({ type: 'error', message: String(error) });
+      parentPort.close();
+      return;
+    }
+    parentPort.once('message', async (message) => {
+      if (message?.type !== 'release') return;
+      let releaseError;
+      try { await transaction.rollback(); } catch (error) { releaseError = String(error); }
+      try { await database.close?.(); } catch (error) { releaseError ??= String(error); }
+      parentPort.postMessage({ type: 'released', error: releaseError });
+      parentPort.close();
+    });
+  })().catch((error) => {
     parentPort.postMessage({ type: 'error', message: String(error) });
-    parentPort.close();
-  }
-  parentPort.once('message', (message) => {
-    if (message?.type !== 'release' || !database) return;
-    let releaseError;
-    try { database.exec('ROLLBACK'); } catch (error) { releaseError = String(error); }
-    try { database.close(); } catch (error) { releaseError ??= String(error); }
-    parentPort.postMessage({ type: 'released', error: releaseError });
     parentPort.close();
   });
 `;
+const execFileAsync = promisify(execFile);
 
 /** Paths owned by the local user, outside the source tree by default. */
 export interface LocalRuntimePaths {
@@ -284,8 +307,10 @@ export async function initializeLocalApplicationRuntime(
   const paths = resolveLocalRuntimePaths(options);
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
   const appId = normalizeAppId(options.appId);
+  await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
   try {
+    await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
     const { canonicalSourceRoot, db } = await acquireLocalDatabase(
       paths,
       sourceRoot,
@@ -742,6 +767,134 @@ interface LocalInitializationLock {
   release(): Promise<void>;
 }
 
+async function preflightLocalApplicationRoot(
+  root: string,
+  sourceRoot: string,
+  appId: string,
+): Promise<void> {
+  requireNoFollowSupport();
+  const canonicalSourceRoot = await realpath(sourceRoot);
+  const currentUid = process.getuid?.();
+  if (currentUid === undefined) {
+    throw unsafeFilesystemEntry(
+      'Local runtime storage requires a numeric current-user identity.',
+    );
+  }
+  if (
+    isInside(canonicalSourceRoot, root) ||
+    isInside(root, canonicalSourceRoot)
+  ) {
+    throw unsafeFilesystemEntry(
+      'Local application data must remain outside the canonical source tree.',
+    );
+  }
+
+  let rootExists = true;
+  for (const component of absolutePathComponents(root)) {
+    let details: Awaited<ReturnType<typeof lstat>>;
+    try {
+      details = await lstat(component);
+    } catch (error) {
+      if (!isMissingFile(error)) throw error;
+      rootExists = false;
+      break;
+    }
+    if (details.isSymbolicLink() || !details.isDirectory()) {
+      throw unsafeFilesystemEntry(
+        `Local runtime path component must be a real directory: ${component}`,
+      );
+    }
+    await assertCanonicalEntry(component, canonicalSourceRoot);
+    const sharedStickyRoot = details.uid === 0 && (details.mode & 0o1000) !== 0;
+    if (
+      (details.uid !== currentUid && details.uid !== 0) ||
+      ((details.mode & 0o022) !== 0 && !sharedStickyRoot)
+    ) {
+      throw unsafeFilesystemEntry(
+        `Local runtime path ancestry does not have trusted-parent custody: ${component}`,
+      );
+    }
+    await assertNoPermissiveDarwinAcl(component);
+  }
+
+  if (!rootExists) return;
+  const rootDetails = await lstat(root);
+  if (rootDetails.uid !== currentUid || (rootDetails.mode & 0o777) !== 0o700) {
+    throw unsafeFilesystemEntry(
+      `Existing local application data root must already be owned by the current user with mode 0700: ${root}`,
+    );
+  }
+  await preflightDedicatedRoot(root, canonicalSourceRoot, appId);
+}
+
+async function preflightDedicatedRoot(
+  root: string,
+  canonicalSourceRoot: string,
+  appId: string,
+): Promise<void> {
+  const finalMarker = resolve(root, `${ROOT_MARKER_PREFIX}${appId}`);
+  const pendingMarker = resolve(root, `${ROOT_MARKER_PREFIX}${appId}.pending`);
+  const entries = await readdir(root);
+  const finalMarkerName = finalMarker.slice(root.length + 1);
+  const pendingMarkerName = pendingMarker.slice(root.length + 1);
+  const hasFinalMarker = entries.includes(finalMarkerName);
+  const hasPendingMarker = entries.includes(pendingMarkerName);
+
+  if (hasFinalMarker) {
+    await validateRootMarker(finalMarker, canonicalSourceRoot);
+    if (hasPendingMarker) {
+      await validateRootMarker(pendingMarker, canonicalSourceRoot);
+    }
+    return;
+  }
+  if (hasPendingMarker) {
+    await validateRootMarker(pendingMarker, canonicalSourceRoot);
+    const permittedInterruptedEntries = new Set([
+      pendingMarkerName,
+      DATABASE_FILE_NAME,
+      `${DATABASE_FILE_NAME}-shm`,
+      `${DATABASE_FILE_NAME}-wal`,
+    ]);
+    if (entries.some((entry) => !permittedInterruptedEntries.has(entry))) {
+      throw unsafeFilesystemEntry(
+        'Interrupted local application root contains unexpected artifacts.',
+      );
+    }
+    return;
+  }
+  if (entries.length > 0) {
+    throw unsafeFilesystemEntry(
+      'Existing local application data root is populated but has no valid ownership marker.',
+    );
+  }
+}
+
+async function assertNoPermissiveDarwinAcl(path: string): Promise<void> {
+  if (platform() !== 'darwin') return;
+  let listing: string;
+  try {
+    const result = await execFileAsync('/bin/ls', ['-lde', '--', path], {
+      encoding: 'utf8',
+      env: { ...process.env, LC_ALL: 'C' },
+    });
+    listing = result.stdout;
+  } catch (error) {
+    throw unsafeFilesystemEntry(
+      `Local runtime could not inspect macOS access controls: ${path}`,
+      error,
+    );
+  }
+  for (const line of listing.split('\n')) {
+    if (!/^\s*\d+:/.test(line)) continue;
+    const entry = line.match(/^\s*\d+:\s+.+\s+(allow|deny)\s+\S.*$/);
+    if (entry?.[1] !== 'deny') {
+      throw unsafeFilesystemEntry(
+        `Local runtime path contains a permissive macOS access control list: ${path}`,
+      );
+    }
+  }
+}
+
 async function acquireLocalDatabase(
   paths: LocalRuntimePaths,
   sourceRoot: string,
@@ -895,56 +1048,28 @@ async function acquireInitializationLock(
     .update(resolve(root))
     .digest('hex')
     .slice(0, 32);
-  const path = resolve(lockRoot, `${lockKey}.sqlite`);
-  let lockFile: FileHandle;
-  let created = false;
+  const custodyRoot = resolve(lockRoot, lockKey);
   try {
-    lockFile = await open(
-      path,
-      constants.O_RDWR |
-        constants.O_CREAT |
-        constants.O_EXCL |
-        constants.O_NOFOLLOW,
-      0o600,
-    );
-    created = true;
+    await mkdir(custodyRoot, { mode: 0o700 });
   } catch (error) {
     if (!isFileAlreadyExists(error)) throw error;
-    lockFile = await open(path, constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
   }
-  try {
-    const opened = await lockFile.stat();
-    const current = await lstat(path);
-    if (
-      current.isSymbolicLink() ||
-      !opened.isFile() ||
-      !current.isFile() ||
-      opened.dev !== current.dev ||
-      opened.ino !== current.ino ||
-      opened.uid !== currentUid
-    ) {
-      throw unsafeFilesystemEntry(
-        `Local runtime initialization lock must be a current-user-owned regular file: ${path}`,
-      );
-    }
-    if (created) await lockFile.chmod(0o600);
-    else if ((opened.mode & 0o777) !== 0o600) {
-      throw unsafeFilesystemEntry(
-        `Existing local runtime initialization lock must have mode 0600: ${path}`,
-      );
-    }
-  } finally {
-    await lockFile.close();
-  }
-  return acquireInitializationDatabaseLease(path);
+  const path = resolve(custodyRoot, 'initialization.sqlite');
+  return acquireInitializationDatabaseLease(path, custodyRoot);
 }
 
 async function acquireInitializationDatabaseLease(
   path: string,
+  custodyRoot: string,
 ): Promise<LocalInitializationLock> {
   const worker = new Worker(INITIALIZATION_LOCK_WORKER, {
     eval: true,
-    workerData: { path, timeout: INITIALIZATION_LOCK_TIMEOUT_MS },
+    workerData: {
+      path,
+      custodyRoot,
+      timeout: INITIALIZATION_LOCK_TIMEOUT_MS,
+      sqlModuleUrl: import.meta.resolve('@happyvertical/sql'),
+    },
   });
   const acquisitionFailure = (cause: unknown) => {
     const failure = new LocalRuntimeError(
