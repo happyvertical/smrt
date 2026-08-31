@@ -399,6 +399,7 @@ class InitializedDeployedApplicationRuntime
     } catch {
       throw unavailable('authentication');
     }
+    this.assertRunning();
     if (
       context &&
       this.resolvedRuntime.providers.tenancy.context === 'required'
@@ -429,6 +430,7 @@ class InitializedDeployedApplicationRuntime
     } catch {
       throw unavailable('database');
     }
+    this.assertRunning();
     return runner;
   }
 
@@ -442,6 +444,7 @@ class InitializedDeployedApplicationRuntime
     } catch {
       throw unavailable('database');
     }
+    this.assertRunning();
     return runner;
   }
 

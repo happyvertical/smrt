@@ -604,6 +604,37 @@ describe('deployed application runtime', () => {
     expect(scheduleInitialize).toHaveBeenCalledWith(db);
   });
 
+  it('does not return workers whose initialization finishes after shutdown', async () => {
+    const { db } = databaseFixture();
+    let releaseTask!: () => void;
+    let releaseSchedule!: () => void;
+    const taskBlocked = new Promise<void>((resolve) => {
+      releaseTask = resolve;
+    });
+    const scheduleBlocked = new Promise<void>((resolve) => {
+      releaseSchedule = resolve;
+    });
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockReturnValue(taskBlocked);
+    vi.spyOn(ScheduleRunner.prototype, 'initialize').mockReturnValue(
+      scheduleBlocked,
+    );
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const taskWorker = initialized.createTaskWorker();
+    const scheduleWorker = initialized.createScheduleWorker();
+    await Promise.resolve();
+    await initialized.close();
+    releaseTask();
+    releaseSchedule();
+
+    await expect(taskWorker).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await expect(scheduleWorker).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+  });
+
   it('redacts database errors from worker initialization', async () => {
     const { db } = databaseFixture();
     const credential = 'postgresql://operator:secret@example.com/app';
@@ -665,6 +696,36 @@ describe('deployed application runtime', () => {
       });
       expect((failure as Error).message).not.toContain(credential);
     }
+  });
+
+  it('does not return a session whose load finishes after shutdown', async () => {
+    const { db } = databaseFixture();
+    let releaseSession!: () => void;
+    const sessionBlocked = new Promise<void>((resolve) => {
+      releaseSession = resolve;
+    });
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    const loadSession = vi
+      .spyOn(SessionService.prototype, 'loadSessionContext')
+      .mockImplementation(async () => {
+        await sessionBlocked;
+        return {
+          user: {} as never,
+          permissions: [],
+          tenantId: null,
+          sessionId: 'closing-session',
+        };
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const restored = initialized.restoreSession('closing-session');
+    await vi.waitFor(() => expect(loadSession).toHaveBeenCalledOnce());
+    await initialized.close();
+    releaseSession();
+
+    await expect(restored).rejects.toMatchObject({ code: 'runtime_stopped' });
   });
 
   it('owns an idempotent connection lifecycle and becomes not-ready after close', async () => {
