@@ -251,8 +251,15 @@ describe('deployed application runtime', () => {
       .mockResolvedValue();
     vi.spyOn(SessionService.prototype, 'loadSessionContext').mockResolvedValue({
       user: {} as never,
-      membership: { isActive: () => true } as never,
+      membership: {
+        id: 'authorized-membership',
+        isActive: () => true,
+      } as never,
       permissions: [],
+      tenantAuthorization: {
+        membershipId: 'authorized-membership',
+        inheritedFromTenantId: null,
+      },
       tenantId: 'authorized-tenant',
       sessionId: 'authorized-session',
     });
@@ -459,6 +466,38 @@ describe('deployed application runtime', () => {
         code: 'tenant_context_unauthorized',
         component: 'authentication',
       });
+    }
+
+    for (const [sessionId, membershipId, authorization] of [
+      ['missing-direct-provenance', 'membership', undefined],
+      [
+        'mismatched-direct-provenance',
+        'membership',
+        { membershipId: 'other-membership', inheritedFromTenantId: null },
+      ],
+      [
+        'inherited-direct-provenance',
+        'membership',
+        {
+          membershipId: 'membership',
+          inheritedFromTenantId: 'ancestor-tenant',
+        },
+      ],
+    ] as const) {
+      loadSession.mockResolvedValueOnce({
+        user: {} as never,
+        permissions: [],
+        sessionId,
+        tenantId: 'tenant',
+        membership: { id: membershipId, isActive: () => true } as never,
+        tenantAuthorization: authorization,
+      });
+      await expect(initialized.restoreSession(sessionId)).rejects.toMatchObject(
+        {
+          code: 'tenant_context_unauthorized',
+          component: 'authentication',
+        },
+      );
     }
 
     loadSession.mockResolvedValueOnce({
@@ -1104,6 +1143,38 @@ describe('deployed application runtime', () => {
     );
   });
 
+  it('reserves readiness before a provider callback can close the runtime', async () => {
+    const { db, query, close: closeDatabase } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringReadiness: Promise<void> | undefined;
+    let triggerClose = false;
+    const databaseReadiness = vi.fn(async () => {
+      if (triggerClose) closeDuringReadiness = initialized.close();
+    });
+    initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        readiness: databaseReadiness,
+        close: closeDatabase,
+      },
+    });
+
+    triggerClose = true;
+    const readiness = initialized.readiness();
+    await vi.waitFor(() => expect(closeDuringReadiness).toBeDefined());
+    await closeDuringReadiness;
+
+    await expect(readiness).resolves.toMatchObject({ status: 'not-ready' });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.invocationCallOrder[1]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
   it('creates separate job and schedule workers against the shared database', async () => {
     const { db } = databaseFixture();
     const taskInitialize = vi
@@ -1251,6 +1322,40 @@ describe('deployed application runtime', () => {
     });
     expect(taskStop).toHaveBeenCalledOnce();
     expect(scheduleStop).toHaveBeenCalledOnce();
+  });
+
+  it('reserves worker initialization before config access can close the runtime', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    const taskInitialize = vi
+      .spyOn(TaskRunner.prototype, 'initialize')
+      .mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    let closeDuringConfig: Promise<void> | undefined;
+    const config = {
+      get concurrency(): number {
+        closeDuringConfig = initialized.close();
+        return 1;
+      },
+    };
+
+    const worker = initialized.createTaskWorker(config);
+    const workerRejected = expect(worker).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    await vi.waitFor(() => expect(closeDuringConfig).toBeDefined());
+    await closeDuringConfig;
+
+    await workerRejected;
+    expect(taskInitialize).toHaveBeenCalledOnce();
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('retains failed unreturned-worker cleanup before closing the database', async () => {
@@ -1446,6 +1551,38 @@ describe('deployed application runtime', () => {
     await close;
     await expect(restored).rejects.toMatchObject({ code: 'runtime_stopped' });
     expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('reserves session restoration before service initialization can close the runtime', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringInitialization: Promise<void> | undefined;
+    vi.spyOn(SessionService.prototype, 'initialize').mockImplementation(
+      async () => {
+        closeDuringInitialization = initialized.close();
+      },
+    );
+    const loadSession = vi
+      .spyOn(SessionService.prototype, 'loadSessionContext')
+      .mockResolvedValue(null);
+    initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const restored = initialized.restoreSession('reentrant-session');
+    const restoreRejected = expect(restored).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    await vi.waitFor(() => expect(closeDuringInitialization).toBeDefined());
+    await closeDuringInitialization;
+
+    await restoreRejected;
+    expect(loadSession).toHaveBeenCalledOnce();
+    expect(loadSession.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('owns an idempotent connection lifecycle and becomes not-ready after close', async () => {

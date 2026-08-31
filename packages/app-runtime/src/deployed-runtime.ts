@@ -586,7 +586,9 @@ class InitializedDeployedApplicationRuntime
 
   async restoreSession(sessionId: string) {
     this.assertRunning();
-    const operation = this.restoreSessionWhileRunning(sessionId);
+    const operation = Promise.resolve().then(() =>
+      this.restoreSessionWhileRunning(sessionId),
+    );
     this.pendingSessionRestorations.add(operation);
     try {
       return await operation;
@@ -621,26 +623,26 @@ class InitializedDeployedApplicationRuntime
           'authentication',
         );
       }
-      let membership: unknown;
-      let membershipActive: unknown;
+      let tenantAuthorized = false;
       try {
-        membership = context.membership;
-        membershipActive = context.membership?.isActive();
+        const membership = context.membership;
+        const authorization = context.tenantAuthorization;
+        const membershipId = authorization?.membershipId;
+        const validMembershipId =
+          typeof membershipId === 'string' && membershipId.trim().length > 0;
+        if (membership?.isActive() === true) {
+          tenantAuthorized =
+            validMembershipId &&
+            membership.id === membershipId &&
+            authorization?.inheritedFromTenantId === null;
+        } else if (membership === null) {
+          tenantAuthorized =
+            validMembershipId &&
+            typeof authorization?.inheritedFromTenantId === 'string' &&
+            authorization.inheritedFromTenantId.trim().length > 0;
+        }
       } catch {
         throw unavailable('authentication');
-      }
-      let tenantAuthorized = membershipActive === true;
-      if (!tenantAuthorized && membership === null) {
-        try {
-          const authorization = context.tenantAuthorization;
-          tenantAuthorized =
-            typeof authorization?.membershipId === 'string' &&
-            authorization.membershipId.trim().length > 0 &&
-            typeof authorization.inheritedFromTenantId === 'string' &&
-            authorization.inheritedFromTenantId.trim().length > 0;
-        } catch {
-          throw unavailable('authentication');
-        }
       }
       if (!tenantAuthorized) {
         throw new DeployedRuntimeError(
@@ -655,7 +657,9 @@ class InitializedDeployedApplicationRuntime
 
   async createTaskWorker(config: TaskRunnerConfig = {}): Promise<TaskRunner> {
     this.assertRunning();
-    const operation = this.initializeTaskWorker(config);
+    const operation = Promise.resolve().then(() =>
+      this.initializeTaskWorker(config),
+    );
     this.pendingWorkerInitializations.add(operation);
     try {
       const runner = await operation;
@@ -669,7 +673,9 @@ class InitializedDeployedApplicationRuntime
     config: ScheduleRunnerConfig = {},
   ): Promise<ScheduleRunner> {
     this.assertRunning();
-    const operation = this.initializeScheduleWorker(config);
+    const operation = Promise.resolve().then(() =>
+      this.initializeScheduleWorker(config),
+    );
     this.pendingWorkerInitializations.add(operation);
     try {
       const runner = await operation;
@@ -697,7 +703,9 @@ class InitializedDeployedApplicationRuntime
     if (this.state !== 'running')
       return createStoppedReadiness(this.resolvedRuntime.profile);
 
-    const operation = this.checkReadinessWhileRunning();
+    const operation = Promise.resolve().then(() =>
+      this.checkReadinessWhileRunning(),
+    );
     this.pendingReadinessChecks.add(operation);
     try {
       return await operation;
