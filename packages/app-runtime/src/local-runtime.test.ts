@@ -107,8 +107,12 @@ async function initializationLockPath(dataDirectory: string): Promise<string> {
   const currentUid = process.getuid?.();
   if (currentUid === undefined) throw new Error('Tests require a numeric uid.');
   const lockRoot = join(await realpath('/tmp'), `.smrt-${currentUid}`);
+  const lockIdentity =
+    platform() === 'darwin' || platform() === 'win32'
+      ? dataDirectory.toLowerCase()
+      : dataDirectory;
   const lockKey = createHash('sha256')
-    .update(dataDirectory)
+    .update(lockIdentity)
     .digest('hex')
     .slice(0, 32);
   const lockPath = join(lockRoot, lockKey, 'initialization.sqlite');
@@ -1122,6 +1126,69 @@ describe('local application runtime', () => {
     expect(calls).toBe(2);
     expect(maximumActive).toBe(1);
   });
+
+  it.runIf(platform() === 'darwin')(
+    'serializes differently cased aliases of one macOS application root',
+    async () => {
+      const directories = await localDirectories('case-alias-lease');
+      await mkdir(directories.dataDirectory, { mode: 0o700 });
+      const aliasDataDirectory = join(
+        dirname(directories.dataDirectory),
+        'DATA',
+      );
+      let aliasesShareInode = false;
+      try {
+        aliasesShareInode =
+          (await stat(directories.dataDirectory)).ino ===
+          (await stat(aliasDataDirectory)).ino;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      if (!aliasesShareInode) return;
+
+      let active = 0;
+      let maximumActive = 0;
+      let calls = 0;
+      let enterFirst: (() => void) | undefined;
+      let releaseFirst: (() => void) | undefined;
+      const firstEntered = new Promise<void>((resolve) => {
+        enterFirst = resolve;
+      });
+      const firstReleased = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const prepareDatabase = async () => {
+        calls += 1;
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        if (calls === 1) {
+          enterFirst?.();
+          await firstReleased;
+        }
+        active -= 1;
+      };
+
+      const first = initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase,
+      });
+      await firstEntered;
+      const second = initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        dataDirectory: aliasDataDirectory,
+        prepareDatabase,
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(calls).toBe(1);
+      expect(maximumActive).toBe(1);
+      releaseFirst?.();
+      await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+      expect(calls).toBe(2);
+      expect(maximumActive).toBe(1);
+    },
+  );
 
   it('rejects an inherited pending claim with unrelated contents', async () => {
     const directories = await localDirectories('pending-unrelated');

@@ -1080,7 +1080,7 @@ async function acquireInitializationLock(
     );
   }
   const lockKey = createHash('sha256')
-    .update(resolve(root))
+    .update(normalizeFilesystemIdentity(root))
     .digest('hex')
     .slice(0, 32);
   const custodyRoot = resolve(lockRoot, lockKey);
@@ -1582,17 +1582,26 @@ function sameFilesystemPath(
   right: string,
   runtimePlatform: NodeJS.Platform = platform(),
 ): boolean {
-  const normalizedLeft = resolve(left);
-  const normalizedRight = resolve(right);
-  return usesCaseInsensitivePathGuards(runtimePlatform)
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
+  return (
+    normalizeFilesystemIdentity(left, runtimePlatform) ===
+    normalizeFilesystemIdentity(right, runtimePlatform)
+  );
 }
 
 function usesCaseInsensitivePathGuards(
   runtimePlatform: NodeJS.Platform,
 ): boolean {
   return runtimePlatform === 'win32' || runtimePlatform === 'darwin';
+}
+
+function normalizeFilesystemIdentity(
+  value: string,
+  runtimePlatform: NodeJS.Platform = platform(),
+): string {
+  const normalized = resolve(value);
+  return usesCaseInsensitivePathGuards(runtimePlatform)
+    ? normalized.toLowerCase()
+    : normalized;
 }
 
 function unsafeFilesystemEntry(message: string, cause?: unknown) {
@@ -1685,9 +1694,8 @@ function isInside(
   child: string,
   runtimePlatform: NodeJS.Platform = platform(),
 ): boolean {
-  const caseInsensitive = usesCaseInsensitivePathGuards(runtimePlatform);
-  const normalizedParent = caseInsensitive ? parent.toLowerCase() : parent;
-  const normalizedChild = caseInsensitive ? child.toLowerCase() : child;
+  const normalizedParent = normalizeFilesystemIdentity(parent, runtimePlatform);
+  const normalizedChild = normalizeFilesystemIdentity(child, runtimePlatform);
   const path = relative(normalizedParent, normalizedChild);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
