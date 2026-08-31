@@ -8,28 +8,28 @@ overrides:
   '@happyvertical/smrt-types': 'workspace:*'
   '@happyvertical/smrt-config': 'workspace:*'
   '@happyvertical/smrt-core': 'workspace:*'
-  '@happyvertical/ai': ^0.88.1
-  '@happyvertical/cache': ^0.88.1
-  '@happyvertical/documents': ^0.88.1
-  '@happyvertical/email': ^0.88.1
-  '@happyvertical/encryption': ^0.88.1
-  '@happyvertical/files': ^0.88.1
-  '@happyvertical/geo': ^0.88.1
-  '@happyvertical/images': ^0.88.1
-  '@happyvertical/jobs': ^0.88.1
-  '@happyvertical/json': ^0.88.1
-  '@happyvertical/logger': ^0.88.1
-  '@happyvertical/messages': ^0.88.1
+  '@happyvertical/ai': ^0.89.4
+  '@happyvertical/cache': ^0.89.4
+  '@happyvertical/documents': ^0.89.4
+  '@happyvertical/email': ^0.89.4
+  '@happyvertical/encryption': ^0.89.4
+  '@happyvertical/files': ^0.89.4
+  '@happyvertical/geo': ^0.89.4
+  '@happyvertical/images': ^0.89.4
+  '@happyvertical/jobs': ^0.89.4
+  '@happyvertical/json': ^0.89.4
+  '@happyvertical/logger': ^0.89.4
+  '@happyvertical/messages': ^0.89.4
   '@happyvertical/ocr': ^0.61.4
   '@happyvertical/pdf': ^0.65.9
-  '@happyvertical/projects': ^0.88.1
-  '@happyvertical/repos': ^0.88.1
-  '@happyvertical/secrets': ^0.88.1
-  '@happyvertical/signatures': ^0.88.1
-  '@happyvertical/speech': ^0.88.1
+  '@happyvertical/projects': ^0.89.4
+  '@happyvertical/repos': ^0.89.4
+  '@happyvertical/secrets': ^0.89.4
+  '@happyvertical/signatures': ^0.89.4
+  '@happyvertical/speech': ^0.89.4
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.88.1
-  '@happyvertical/utils': ^0.88.1
+  '@happyvertical/sql': ^0.89.4
+  '@happyvertical/utils': ^0.89.4
   '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
   # minimatch 9 is the last consumer of brace-expansion 2.x, which has no
   # patched 2.x line for GHSA-mh99-v99m-4gvg (first patch is 5.0.8). Its
@@ -113,52 +113,52 @@ auditConfig:
   ignoreGhsas: []
 
 minimumReleaseAgeExclude:
-  - '@happyvertical/ai@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/cache@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/documents@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/email@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/encryption@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/files@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/geo@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/graphql@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/images@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/jobs@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/json@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/logger@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/messages@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/projects@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/repos@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/secrets@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/signatures@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/speech@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/sql@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
-  - '@happyvertical/utils@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1'
+  - '@happyvertical/ai@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/cache@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/documents@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/email@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/encryption@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/files@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/geo@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/graphql@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/images@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/jobs@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/json@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/logger@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/messages@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/projects@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/repos@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/secrets@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/signatures@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/speech@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/sql@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
+  - '@happyvertical/utils@0.80.0 || 0.80.2 || 0.84.0 || 0.85.5 || 0.86.1 || 0.86.3 || 0.87.0 || 0.88.0 || 0.88.1 || 0.89.4'
 
 catalog:
   '@aws-sdk/client-sqs': ^3.1079.0
   '@google-cloud/tasks': ^6.2.3
-  '@happyvertical/ai': ^0.88.1
-  '@happyvertical/cache': ^0.88.1
-  '@happyvertical/documents': ^0.88.1
-  '@happyvertical/email': ^0.88.1
-  '@happyvertical/encryption': ^0.88.1
-  '@happyvertical/files': ^0.88.1
-  '@happyvertical/geo': ^0.88.1
-  '@happyvertical/images': ^0.88.1
-  '@happyvertical/jobs': ^0.88.1
-  '@happyvertical/json': ^0.88.1
-  '@happyvertical/logger': ^0.88.1
-  '@happyvertical/messages': ^0.88.1
+  '@happyvertical/ai': ^0.89.4
+  '@happyvertical/cache': ^0.89.4
+  '@happyvertical/documents': ^0.89.4
+  '@happyvertical/email': ^0.89.4
+  '@happyvertical/encryption': ^0.89.4
+  '@happyvertical/files': ^0.89.4
+  '@happyvertical/geo': ^0.89.4
+  '@happyvertical/images': ^0.89.4
+  '@happyvertical/jobs': ^0.89.4
+  '@happyvertical/json': ^0.89.4
+  '@happyvertical/logger': ^0.89.4
+  '@happyvertical/messages': ^0.89.4
   '@happyvertical/ocr': ^0.61.4
   '@happyvertical/pdf': ^0.65.9
-  '@happyvertical/projects': ^0.88.1
-  '@happyvertical/repos': ^0.88.1
-  '@happyvertical/secrets': ^0.88.1
-  '@happyvertical/signatures': ^0.88.1
-  '@happyvertical/speech': ^0.88.1
+  '@happyvertical/projects': ^0.89.4
+  '@happyvertical/repos': ^0.89.4
+  '@happyvertical/secrets': ^0.89.4
+  '@happyvertical/signatures': ^0.89.4
+  '@happyvertical/speech': ^0.89.4
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.88.1
-  '@happyvertical/utils': ^0.88.1
+  '@happyvertical/sql': ^0.89.4
+  '@happyvertical/utils': ^0.89.4
   '@sentry/node': ^10.63.0
   bull: ^4.16.5
   bullmq: ^5.79.2
