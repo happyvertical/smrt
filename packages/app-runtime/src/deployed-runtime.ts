@@ -568,6 +568,7 @@ class InitializedDeployedApplicationRuntime
 {
   private state: 'running' | 'closing' | 'close-failed' | 'stopped' = 'running';
   private closeAttempt?: Promise<void>;
+  private readonly pendingSessionRestorations = new Set<Promise<unknown>>();
   private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
   private readonly pendingWorkerCleanups = new Set<() => Promise<void>>();
   private readonly sessionService: SessionService;
@@ -585,6 +586,16 @@ class InitializedDeployedApplicationRuntime
 
   async restoreSession(sessionId: string) {
     this.assertRunning();
+    const operation = this.restoreSessionWhileRunning(sessionId);
+    this.pendingSessionRestorations.add(operation);
+    try {
+      return await operation;
+    } finally {
+      this.pendingSessionRestorations.delete(operation);
+    }
+  }
+
+  private async restoreSessionWhileRunning(sessionId: string) {
     let context: Awaited<ReturnType<SessionService['loadSessionContext']>>;
     try {
       await this.initializeSessionService();
@@ -597,14 +608,22 @@ class InitializedDeployedApplicationRuntime
       context &&
       this.resolvedRuntime.providers.tenancy.context === 'required'
     ) {
-      if (!context.tenantId) {
+      let tenantId: unknown;
+      let membershipActive: unknown;
+      try {
+        tenantId = context.tenantId;
+        membershipActive = context.membership?.isActive();
+      } catch {
+        throw unavailable('authentication');
+      }
+      if (!tenantId) {
         throw new DeployedRuntimeError(
           'tenant_context_required',
           'The authenticated session does not include the required tenant context.',
           'authentication',
         );
       }
-      if (!context.membership?.isActive()) {
+      if (!membershipActive) {
         throw new DeployedRuntimeError(
           'tenant_context_unauthorized',
           'The authenticated session is not authorized for its tenant context.',
@@ -679,9 +698,12 @@ class InitializedDeployedApplicationRuntime
     if (this.closeAttempt) return this.closeAttempt;
 
     this.state = 'closing';
-    const pendingWorkers = [...this.pendingWorkerInitializations];
+    const pendingOperations = [
+      ...this.pendingSessionRestorations,
+      ...this.pendingWorkerInitializations,
+    ];
     const attempt = Promise.resolve().then(async () => {
-      await Promise.allSettled(pendingWorkers);
+      await Promise.allSettled(pendingOperations);
       await this.cleanupUnreturnedWorkers();
       await this.closeConnection();
     });

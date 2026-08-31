@@ -283,6 +283,71 @@ describe('deployed application runtime', () => {
     expect(initialize).toHaveBeenCalledOnce();
   });
 
+  it('redacts errors from required tenant context accessors', async () => {
+    const { db } = databaseFixture();
+    const credential = 'hosted-identity://operator:secret@example.com/session';
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    const loadSession = vi.spyOn(
+      SessionService.prototype,
+      'loadSessionContext',
+    );
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    const throwingTenant = {
+      user: {} as never,
+      permissions: [],
+      sessionId: 'throwing-tenant',
+      get tenantId(): string {
+        throw new Error(credential);
+      },
+    };
+    const throwingMembership = {
+      user: {} as never,
+      permissions: [],
+      sessionId: 'throwing-membership',
+      tenantId: 'tenant',
+      membership: {
+        isActive(): boolean {
+          throw new Error(credential);
+        },
+      } as never,
+    };
+
+    for (const context of [throwingTenant, throwingMembership]) {
+      loadSession.mockResolvedValueOnce(context as never);
+      let failure: unknown;
+      try {
+        await initialized.restoreSession(context.sessionId);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: 'provider_unavailable',
+        component: 'authentication',
+      });
+      expect((failure as Error).message).not.toContain(credential);
+    }
+  });
+
   it.each([
     {
       name: 'root/default tenant fallback',
@@ -1070,7 +1135,7 @@ describe('deployed application runtime', () => {
   });
 
   it('does not return a session whose load finishes after shutdown', async () => {
-    const { db } = databaseFixture();
+    const { db, close: closeDatabase } = databaseFixture();
     let releaseSession!: () => void;
     const sessionBlocked = new Promise<void>((resolve) => {
       releaseSession = resolve;
@@ -1093,10 +1158,13 @@ describe('deployed application runtime', () => {
 
     const restored = initialized.restoreSession('closing-session');
     await vi.waitFor(() => expect(loadSession).toHaveBeenCalledOnce());
-    await initialized.close();
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
     releaseSession();
 
+    await close;
     await expect(restored).rejects.toMatchObject({ code: 'runtime_stopped' });
+    expect(closeDatabase).toHaveBeenCalledOnce();
   });
 
   it('owns an idempotent connection lifecycle and becomes not-ready after close', async () => {
