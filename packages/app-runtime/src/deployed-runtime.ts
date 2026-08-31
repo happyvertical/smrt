@@ -569,6 +569,7 @@ class InitializedDeployedApplicationRuntime
   private state: 'running' | 'closing' | 'close-failed' | 'stopped' = 'running';
   private closeAttempt?: Promise<void>;
   private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
+  private readonly pendingWorkerCleanups = new Set<() => Promise<void>>();
   private readonly sessionService: SessionService;
   private sessionServiceReady?: Promise<void>;
   private readonly snapshot: DeployedRuntimeDiagnostics;
@@ -681,10 +682,13 @@ class InitializedDeployedApplicationRuntime
     const pendingWorkers = [...this.pendingWorkerInitializations];
     const attempt = Promise.resolve().then(async () => {
       await Promise.allSettled(pendingWorkers);
+      await this.cleanupUnreturnedWorkers();
       await this.closeConnection();
     });
-    this.closeAttempt = attempt;
-    return attempt;
+    this.closeAttempt = attempt.finally(() => {
+      this.closeAttempt = undefined;
+    });
+    return this.closeAttempt;
   }
 
   private async initializeTaskWorker(
@@ -698,10 +702,11 @@ class InitializedDeployedApplicationRuntime
       throw unavailable('database');
     }
     if (this.state !== 'running') {
+      const cleanup = () => runner.stop();
       try {
-        await runner.stop();
+        await cleanup();
       } catch {
-        throw unavailable('database');
+        this.pendingWorkerCleanups.add(cleanup);
       }
       this.assertRunning();
     }
@@ -719,14 +724,27 @@ class InitializedDeployedApplicationRuntime
       throw unavailable('database');
     }
     if (this.state !== 'running') {
+      const cleanup = () => runner.stop();
       try {
-        await runner.stop();
+        await cleanup();
       } catch {
-        throw unavailable('database');
+        this.pendingWorkerCleanups.add(cleanup);
       }
       this.assertRunning();
     }
     return runner;
+  }
+
+  private async cleanupUnreturnedWorkers(): Promise<void> {
+    for (const cleanup of [...this.pendingWorkerCleanups]) {
+      try {
+        await cleanup();
+        this.pendingWorkerCleanups.delete(cleanup);
+      } catch {
+        this.state = 'close-failed';
+        throw unavailable('database');
+      }
+    }
   }
 
   private initializeSessionService(): Promise<void> {
@@ -752,8 +770,6 @@ class InitializedDeployedApplicationRuntime
         "The database connection could not be closed; inspect the provider's private logs.",
         'database',
       );
-    } finally {
-      this.closeAttempt = undefined;
     }
   }
 

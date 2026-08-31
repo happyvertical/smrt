@@ -907,6 +907,40 @@ describe('deployed application runtime', () => {
     expect(scheduleStop).toHaveBeenCalledOnce();
   });
 
+  it('retains failed unreturned-worker cleanup before closing the database', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseTask!: () => void;
+    const taskBlocked = new Promise<void>((resolve) => {
+      releaseTask = resolve;
+    });
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockReturnValue(taskBlocked);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error('first cleanup failure'))
+      .mockRejectedValueOnce(new Error('second cleanup failure'))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const taskWorker = initialized.createTaskWorker();
+    await Promise.resolve();
+    const firstClose = initialized.close();
+    releaseTask();
+
+    await expect(taskWorker).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await expect(firstClose).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).not.toHaveBeenCalled();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(3);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
   it('redacts synchronous failures from hostile worker configuration', async () => {
     const { db } = databaseFixture();
     const credential = 'postgresql://operator:secret@example.com/app';
