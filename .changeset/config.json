@@ -11,6 +11,7 @@
       "@happyvertical/smrt-android",
       "@happyvertical/smrt-app-cli",
       "@happyvertical/smrt-app-mcp",
+      "@happyvertical/smrt-app-runtime",
       "@happyvertical/smrt-assets",
       "@happyvertical/smrt-assets-ergot",
       "@happyvertical/smrt-assets-local",
