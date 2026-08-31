@@ -311,6 +311,34 @@ describe('local application runtime', () => {
     ).toBe(claim.userId);
   });
 
+  it('never reissues a consumed bootstrap slot when the owner membership becomes inactive', async () => {
+    const directories = await localDirectories('consumed-bootstrap');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    const claim = await initialized.runtime.claimOwner({
+      token: initialized.bootstrap?.token as string,
+      name: 'Owner',
+      email: 'owner@example.com',
+    });
+    await initialized.runtime.db.query(
+      'UPDATE memberships SET status = ? WHERE id = ?',
+      'inactive',
+      claim.membershipId,
+    );
+
+    const restarted = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    expect(restarted.bootstrap).toBeNull();
+    await expect(
+      restarted.runtime.rotateBootstrapInvitation(),
+    ).rejects.toMatchObject({ code: 'bootstrap_claimed' });
+    expect(await countRows(restarted.runtime.db, 'users')).toBe(1);
+  });
+
   it('serializes concurrent startup so at most one returned invitation is usable', async () => {
     const directories = await localDirectories('startup-race');
     const startups = await Promise.all([
@@ -463,13 +491,16 @@ describe('local application runtime', () => {
     expect(await countRows(expired.runtime.db, 'users')).toBe(0);
   });
 
-  it('refuses public exposure before touching the filesystem', async () => {
+  it.each([
+    '0.0.0.0',
+    'localhost',
+  ])('refuses ambiguous or public bind host %s before touching the filesystem', async (bindHost) => {
     const directories = await localDirectories('public');
     await expect(
       initializeLocalApplicationRuntime({
         appId: 'lolaus',
         ...directories,
-        bindHost: '0.0.0.0',
+        bindHost,
       }),
     ).rejects.toMatchObject({ code: 'unsafe_public_exposure' });
     await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
@@ -1461,5 +1492,26 @@ describe('local runtime paths', () => {
         dataDirectory: '/',
       }),
     ).toThrow('dedicated directory');
+  });
+
+  it('applies the platform override to case-insensitive custody guards', () => {
+    expect(() =>
+      resolveLocalRuntimePaths({
+        appId: 'lolaus',
+        sourceRoot: '/workspace/lolaus',
+        dataDirectory: '/users/test',
+        homeDirectory: '/Users/Test',
+        platform: 'win32',
+      }),
+    ).toThrow('dedicated directory');
+    expect(() =>
+      resolveLocalRuntimePaths({
+        appId: 'lolaus',
+        sourceRoot: '/Workspace/Lolaus',
+        dataDirectory: '/workspace/lolaus/data',
+        homeDirectory: '/Users/Test',
+        platform: 'win32',
+      }),
+    ).toThrow('does not overlap the source tree');
   });
 });

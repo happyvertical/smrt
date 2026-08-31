@@ -22,12 +22,15 @@ const { runtime, bootstrap, diagnostics } =
 // returned once and only its HMAC is persisted.
 ```
 
-The default data directory is the current user's OS application-data directory
+The path resolver selects the current user's OS application-data directory
 (`~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows, or
-`$XDG_DATA_HOME` / `~/.local/share` on Linux). It contains a mode-0600 SQLite
-database, a user-owned asset directory, and generated mode-0600 application
-secret material. The root must be a dedicated application directory: placing
-it inside the source checkout or choosing an ancestor of the checkout is
+`$XDG_DATA_HOME` / `~/.local/share` on Linux). Secure initialization currently
+requires Node to expose nonzero `O_NOFOLLOW` and `O_DIRECTORY` filesystem
+flags; it fails closed on platforms without that custody support and therefore
+does not yet claim Windows runtime support. The data root contains a mode-0600
+SQLite database, a user-owned asset directory, and generated mode-0600
+application secret material. The root must be a dedicated application
+directory: placing it inside the source checkout or choosing an ancestor is
 refused, as is choosing the user home itself or the filesystem root. An
 explicitly configured root that already exists must already be
 owned by the current user with mode `0700`; initialization rejects it without
@@ -75,7 +78,8 @@ code already running as the same user is outside this boundary; isolating
 same-account processes requires an OS sandbox and a descriptor-relative SQLite
 VFS.
 
-Owner onboarding binds to `127.0.0.1` by default and rejects non-loopback hosts.
+Owner onboarding binds to `127.0.0.1` by default and accepts only loopback IP
+literals (`127.0.0.0/8` or `::1`), avoiding hostname-resolution ambiguity.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session` atomically. Startup and
 setup are idempotent; replayed, expired, or concurrent claims fail closed.

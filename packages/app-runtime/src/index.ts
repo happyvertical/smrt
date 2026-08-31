@@ -117,7 +117,7 @@ export interface ResolveLocalRuntimePathsOptions {
   dataDirectory?: string;
   /** Source checkout to protect from accidental data placement. Defaults to cwd. */
   sourceRoot?: string;
-  /** Testable platform override. */
+  /** Testable default-root and filesystem case-sensitivity override. */
   platform?: NodeJS.Platform;
   /** Testable home-directory override. */
   homeDirectory?: string;
@@ -264,10 +264,10 @@ export function resolveLocalRuntimePaths(
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
 
   if (
-    sameFilesystemPath(root, runtimeHome) ||
-    sameFilesystemPath(root, parse(root).root) ||
-    isInside(sourceRoot, root) ||
-    isInside(root, sourceRoot)
+    sameFilesystemPath(root, runtimeHome, runtimePlatform) ||
+    sameFilesystemPath(root, parse(root).root, runtimePlatform) ||
+    isInside(sourceRoot, root, runtimePlatform) ||
+    isInside(root, sourceRoot, runtimePlatform)
   ) {
     throw new LocalRuntimeError(
       'invalid_configuration',
@@ -408,6 +408,7 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   async ensureBootstrapInvitation(): Promise<LocalOwnerBootstrapInvitation | null> {
     if (await findExistingOwner(this.db)) return null;
     const current = await readBootstrapRow(this.db);
+    if (current?.consumed_at != null) return null;
     const now = this.now();
     const currentExpiry = parseStoredDate(current?.expires_at);
     if (
@@ -429,8 +430,20 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
         'The local owner has already been claimed.',
       );
     }
+    if ((await readBootstrapRow(this.db))?.consumed_at != null) {
+      throw new LocalRuntimeError(
+        'bootstrap_claimed',
+        'The local owner bootstrap invitation has already been consumed.',
+      );
+    }
     const invitation = await this.issueBootstrapInvitation(true);
     if (!invitation) {
+      if ((await readBootstrapRow(this.db))?.consumed_at != null) {
+        throw new LocalRuntimeError(
+          'bootstrap_claimed',
+          'The local owner bootstrap invitation has already been consumed.',
+        );
+      }
       throw new LocalRuntimeError(
         'bootstrap_unavailable',
         'A local owner bootstrap invitation could not be issued.',
@@ -586,9 +599,8 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
          expires_at = excluded.expires_at,
          consumed_at = NULL,
          created_at = excluded.created_at
-       WHERE ? = 1
-          OR ${BOOTSTRAP_TABLE}.consumed_at IS NOT NULL
-          OR ${BOOTSTRAP_TABLE}.expires_at <= ?
+       WHERE ${BOOTSTRAP_TABLE}.consumed_at IS NULL
+         AND (? = 1 OR ${BOOTSTRAP_TABLE}.expires_at <= ?)
        RETURNING token_hash`,
       tokenHash,
       expiresAt.toISOString(),
@@ -1565,10 +1577,14 @@ function requireNoFollowSupport(): void {
   }
 }
 
-function sameFilesystemPath(left: string, right: string): boolean {
+function sameFilesystemPath(
+  left: string,
+  right: string,
+  runtimePlatform: NodeJS.Platform = platform(),
+): boolean {
   const normalizedLeft = resolve(left);
   const normalizedRight = resolve(right);
-  return platform() === 'win32'
+  return runtimePlatform === 'win32'
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
 }
@@ -1618,7 +1634,7 @@ function normalizeLoopbackHost(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host === '::1') return host;
+  if (host === '::1') return host;
   const octets = host.split('.');
   if (
     octets.length === 4 &&
@@ -1629,7 +1645,7 @@ function normalizeLoopbackHost(value: string): string {
   }
   throw new LocalRuntimeError(
     'unsafe_public_exposure',
-    'Owner bootstrap is restricted to a loopback bind. Use localhost, ::1, or 127.0.0.0/8.',
+    'Owner bootstrap is restricted to a loopback IP literal. Use ::1 or 127.0.0.0/8.',
   );
 }
 
@@ -1658,8 +1674,16 @@ function defaultApplicationDataRoot(
   return resolve(env.XDG_DATA_HOME ?? resolve(runtimeHome, '.local', 'share'));
 }
 
-function isInside(parent: string, child: string): boolean {
-  const path = relative(parent, child);
+function isInside(
+  parent: string,
+  child: string,
+  runtimePlatform: NodeJS.Platform = platform(),
+): boolean {
+  const normalizedParent =
+    runtimePlatform === 'win32' ? parent.toLowerCase() : parent;
+  const normalizedChild =
+    runtimePlatform === 'win32' ? child.toLowerCase() : child;
+  const path = relative(normalizedParent, normalizedChild);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
