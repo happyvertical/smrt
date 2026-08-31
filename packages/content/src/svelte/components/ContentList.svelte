@@ -253,7 +253,7 @@ function workflowExceptionMessage(
       status: error.status ?? '',
     });
   }
-  return error instanceof Error ? error.message : t(fallback);
+  return t(fallback);
 }
 
 function workflowScopeLabel(scope: string): string {
@@ -577,6 +577,7 @@ let workflowReviewKind = $state('');
 let workflowPolicyKey = $state('');
 let workflowInstructions = $state('');
 let workflowPending = $state(false);
+let pageHeaderSelectionOnly = $state(false);
 let workflowPreview = $state<import('@happyvertical/smrt-ui/data').DataSurfaceActionResult | null>(null);
 let workflowResult = $state<import('@happyvertical/smrt-ui/data').DataSurfaceActionResult | null>(null);
 let workflowError = $state<string | null>(null);
@@ -1485,6 +1486,7 @@ function toggleRow(row: ContentListRow) {
     allMatchingSelected
   )
     return;
+  pageHeaderSelectionOnly = false;
   controller.dispatch({ type: 'toggleRowSelection', rowId: row.id });
 }
 
@@ -1494,13 +1496,28 @@ function togglePageSelection() {
     clearSelection();
     return;
   }
+  const rowKey = (rowId: string | number) =>
+    `${typeof rowId}:${String(rowId)}`;
+  const pageKeys = new Set(selectablePageRowIds.map(rowKey));
   if (allPageSelected) {
-    clearSelection();
+    pageHeaderSelectionOnly = false;
+    controller.dispatch({
+      type: 'setSelectedRows',
+      rowIds: tableState.selectedRowIds.filter(
+        (rowId) => !pageKeys.has(rowKey(rowId)),
+      ),
+    });
     return;
   }
+  const selected = new Map(
+    tableState.selectedRowIds.map((rowId) => [rowKey(rowId), rowId]),
+  );
+  pageHeaderSelectionOnly =
+    serverBacked && tableState.selectedRowIds.length === 0;
+  for (const rowId of selectablePageRowIds) selected.set(rowKey(rowId), rowId);
   controller.dispatch({
-    type: serverBacked ? 'setPageSelection' : 'setSelectedRows',
-    rowIds: selectablePageRowIds,
+    type: 'setSelectedRows',
+    rowIds: [...selected.values()],
   });
 }
 
@@ -1512,6 +1529,7 @@ function selectAllMatching() {
     !settledWorkflowRevision ||
     exactMatchingCount === undefined
   ) return;
+  pageHeaderSelectionOnly = false;
   controller.dispatch({
     type: 'selectAllMatching',
     queryFingerprint: settledWorkflowFingerprint,
@@ -1522,6 +1540,7 @@ function selectAllMatching() {
 
 function clearSelection() {
   if (workflowPending) return;
+  pageHeaderSelectionOnly = false;
   controller.dispatch({ type: 'setSelectedRows', rowIds: [] });
 }
 
@@ -1553,16 +1572,18 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
   if (selection.scope === 'allMatching') {
     return { scope: 'all-matching', queryFingerprint: selection.queryFingerprint };
   }
+  const currentPageKeys = new Set(pageRows.map((row) => String(row.id)));
+  const selectablePageKeys = new Set(selectablePageRowIds.map(String));
   const effectiveRowIds =
-    selection.scope === 'page'
-      ? selection.rowIds.filter((rowId) =>
-          selectablePageRowIds.some(
-            (selectableId) => String(selectableId) === String(rowId),
-          ),
-        )
+    selection.scope === 'page' || pageHeaderSelectionOnly
+      ? selection.rowIds.filter((rowId) => {
+          const key = String(rowId);
+          return !currentPageKeys.has(key) || selectablePageKeys.has(key);
+        })
       : selection.rowIds;
   if (
-    selection.scope === 'page' &&
+    serverBacked &&
+    pageHeaderSelectionOnly &&
     selectablePageRowIds.length === pageRows.length &&
     effectiveRowIds.length === selectablePageRowIds.length &&
     selectablePageRowIds.every((rowId) =>
@@ -1808,7 +1829,8 @@ async function previewWorkflow() {
   try {
     const result = await workflows.client.preview(request);
     if (!workflowResultMatchesRequest(result, request)) {
-      throw new Error(t(M['content.content_list.workflow_preview_mismatch']));
+      workflowError = t(M['content.content_list.workflow_preview_mismatch']);
+      return;
     }
     if (!result.ok) {
       workflowError = workflowReasonLabel(
@@ -1852,7 +1874,8 @@ async function applyWorkflow() {
   try {
     const result = await workflows.client.apply(request);
     if (!workflowResultMatchesRequest(result, request)) {
-      throw new Error(t(M['content.content_list.workflow_apply_mismatch']));
+      workflowError = t(M['content.content_list.workflow_apply_mismatch']);
+      return;
     }
     if (appliedIntent !== workflowIntentSignature()) {
       if (

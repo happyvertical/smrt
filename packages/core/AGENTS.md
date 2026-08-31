@@ -27,10 +27,11 @@ subsystem you are editing. This file keeps what holds across all of them.
 
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
-- `save({ expectedUpdatedAt })`: optimistic-concurrency variant for persisted
-  objects. The expected revision is included in the database `UPDATE`; zero
-  affected rows throws `RUNTIME_REVISION_CONFLICT` without overwriting the
-  newer row.
+- Persisted `save()` calls use the object's loaded `updated_at` revision in the
+  database `UPDATE`; zero affected rows throws `RUNTIME_REVISION_CONFLICT`
+  without overwriting the newer row. `save({ expectedUpdatedAt })` supplies an
+  explicit revision when a caller binds the mutation to an earlier preview or
+  selection snapshot.
 - Native DuckDB UUID columns are hydrated as canonical strings before model
   initialization, natural-key lookup, and embedded revision claims. Exact
   natural-key probes retain the interceptor-authorized filter when

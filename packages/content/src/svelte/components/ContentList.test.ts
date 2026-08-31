@@ -728,6 +728,59 @@ describe('ContentList bulk workflows', () => {
     });
   });
 
+  it('unions page-header selections across server pages and only removes the current page', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-cross-page-selection',
+      freshness: { state: 'fresh', asOf: '2026-08-31T14:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve([serverRow('a', 'Alpha'), serverRow('b', 'Beta')], 4);
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => remote.binding, request: { defaultPageSize: 2 } },
+      workflows: workflow,
+    });
+    await vi.waitFor(() =>
+      expect(visibleRowTitles(target)).toEqual(['Alpha', 'Beta']),
+    );
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    expect(target.textContent).toContain('2 selected');
+
+    const nextPage = Array.from(
+      paginationNav(target)?.querySelectorAll('button') ?? [],
+    ).find((button) =>
+      /next|2/i.test(
+        `${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`,
+      ),
+    );
+    click(nextPage as HTMLButtonElement);
+    expect(remote.requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 2,
+      limit: 2,
+    });
+    remote.resolve([serverRow('c', 'Gamma'), serverRow('d', 'Delta')], 4);
+    await vi.waitFor(() =>
+      expect(visibleRowTitles(target)).toEqual(['Gamma', 'Delta']),
+    );
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    await vi.waitFor(() => expect(target.textContent).toContain('4 selected'));
+
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+    await vi.waitFor(() => expect(target.textContent).toContain('2 selected'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledTimes(1));
+    expect(workflow.preview.mock.calls[0]?.[0]).toMatchObject({
+      selection: { scope: 'explicit-ids', rowIds: ['a', 'b'] },
+      target: { expectedCount: 2 },
+    });
+  });
+
   it('uses explicit IDs after partially deselecting a server page', async () => {
     const remote = createFakeContentListQuery();
     remote.setEnvelope({
@@ -1532,8 +1585,9 @@ describe('ContentList bulk workflows', () => {
 
     click(buttonsByText(document.body, 'Apply workflow')[0]);
     await vi.waitFor(() =>
-      expect(target.textContent).toContain('response lost'),
+      expect(target.textContent).toContain('Workflow failed.'),
     );
+    expect(target.textContent).not.toContain('response lost');
     click(buttonsByText(document.body, 'Apply workflow')[0]);
     await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));
 
@@ -1594,8 +1648,9 @@ describe('ContentList bulk workflows', () => {
 
     click(buttonsByText(document.body, 'Apply workflow')[0]);
     await vi.waitFor(() =>
-      expect(target.textContent).toContain('response lost'),
+      expect(target.textContent).toContain('Workflow failed.'),
     );
+    expect(target.textContent).not.toContain('response lost');
     click(buttonsByText(document.body, 'Apply workflow')[0]);
     await vi.waitFor(() =>
       expect(buttonsByText(target, 'Check job')).toHaveLength(1),
@@ -1611,6 +1666,55 @@ describe('ContentList bulk workflows', () => {
       'returned a result for another workflow',
     );
     expect(buttonsByText(target, 'Check job')).toHaveLength(0);
+  });
+
+  it('localizes unexpected preview and job-status failures without exposing details', async () => {
+    const preview = vi
+      .fn()
+      .mockRejectedValue(new Error('preview database DSN'));
+    const workflow = workflowBinding({ preview });
+    const target = renderList({ workflows: workflow });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('Preview failed.'),
+    );
+    expect(target.textContent).not.toContain('preview database DSN');
+
+    const background = workflowBinding({
+      apply: async (request) => ({
+        ...request,
+        ok: true,
+        details: {
+          accepted: 1,
+          background: true,
+          jobId: 'job-private-error',
+        },
+      }),
+      status: vi.fn().mockRejectedValue(new Error('worker secret detail')),
+    });
+    const backgroundTarget = renderList({ workflows: background });
+    click(checkboxByLabel(backgroundTarget, 'Select Council budget explained'));
+    const workflowSelect = backgroundTarget.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(backgroundTarget, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(backgroundTarget, 'Check job')).toHaveLength(1),
+    );
+    click(buttonsByText(backgroundTarget, 'Check job')[0]);
+
+    await vi.waitFor(() =>
+      expect(backgroundTarget.textContent?.toLowerCase()).toContain('failed'),
+    );
+    expect(backgroundTarget.textContent).not.toContain('worker secret detail');
   });
 });
 
