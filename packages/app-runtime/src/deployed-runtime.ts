@@ -189,7 +189,13 @@ export async function initializeDeployedApplicationRuntime(
   } catch {
     throw unavailable('database');
   }
-  if (!isDatabaseInterface(db)) {
+  let validDatabase = false;
+  try {
+    validDatabase = isDatabaseInterface(db);
+  } catch {
+    // Treat throwing accessors on an untrusted handle as malformed.
+  }
+  if (!validDatabase) {
     await closeDatabaseQuietly(bindings.database, db);
     throw new DeployedRuntimeError(
       'invalid_configuration',
@@ -366,7 +372,10 @@ async function checkDatabase(
 ): Promise<void> {
   try {
     if (binding.readiness) await binding.readiness(db);
-    else await db.query('SELECT 1');
+    else {
+      const result = await db.query('SELECT 1 AS smrt_runtime_probe');
+      if (!isValidDatabaseProbe(result)) throw new Error('invalid probe');
+    }
   } catch {
     throw unavailable('database');
   }
@@ -618,6 +627,20 @@ function isDatabaseInterface(value: unknown): value is DatabaseInterface {
     typeof value === 'object' &&
     value !== null &&
     typeof (value as { query?: unknown }).query === 'function'
+  );
+}
+
+function isValidDatabaseProbe(
+  value: unknown,
+): value is { rows: Array<{ smrt_runtime_probe: 1 }> } {
+  if (typeof value !== 'object' || value === null) return false;
+  const rows = (value as { rows?: unknown }).rows;
+  if (!Array.isArray(rows) || rows.length !== 1) return false;
+  const row = rows[0];
+  return (
+    typeof row === 'object' &&
+    row !== null &&
+    (row as { smrt_runtime_probe?: unknown }).smrt_runtime_probe === 1
   );
 }
 

@@ -13,7 +13,7 @@ import {
 } from './deployed-runtime.js';
 
 function databaseFixture() {
-  const query = vi.fn(async () => ({ rows: [{ '?column?': 1 }] }));
+  const query = vi.fn(async () => ({ rows: [{ smrt_runtime_probe: 1 }] }));
   const close = vi.fn(async () => undefined);
   const db = { query, close } as unknown as DatabaseInterface;
   return { db, query, close };
@@ -61,7 +61,7 @@ describe('deployed application runtime', () => {
       prepareDatabase,
     });
 
-    expect(query).toHaveBeenCalledWith('SELECT 1');
+    expect(query).toHaveBeenCalledWith('SELECT 1 AS smrt_runtime_probe');
     expect(prepareDatabase).toHaveBeenCalledWith(db);
     expect(initialized.db).toBe(db);
     expect(initialized.resolvedRuntime.profile).toBe('self-hosted');
@@ -495,7 +495,61 @@ describe('deployed application runtime', () => {
       code: 'invalid_configuration',
       component: 'database',
     });
-    expect(close).toHaveBeenCalledWith(malformed);
+    expect(close).toHaveBeenCalledOnce();
+    expect(close.mock.calls[0]?.[0]).toBe(malformed);
+  });
+
+  it('redacts and cleans a connection handle with a throwing query accessor', async () => {
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const malformed = Object.defineProperty({}, 'query', {
+      get: () => {
+        throw new Error(credential);
+      },
+    });
+    const close = vi.fn(async () => undefined);
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(malformed as DatabaseInterface),
+        database: {
+          engine: 'postgres',
+          connect: async () => malformed as DatabaseInterface,
+          close,
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      code: 'invalid_configuration',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+    expect(close).toHaveBeenCalledOnce();
+    expect(close.mock.calls[0]?.[0]).toBe(malformed);
+  });
+
+  it('rejects and cleans a malformed resolved database probe', async () => {
+    const query = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    const db = { query } as unknown as DatabaseInterface;
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres',
+          connect: async () => db,
+          close,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(close).toHaveBeenCalledWith(db);
   });
 
   it('requires a usable database close boundary', async () => {
@@ -548,6 +602,19 @@ describe('deployed application runtime', () => {
       components: { assets: { status: 'not-ready' } },
     });
     expect(JSON.stringify(notReady)).not.toContain(credential);
+  });
+
+  it('reports not-ready when a live database probe resolves malformed data', async () => {
+    const { db, query } = databaseFixture();
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    query.mockResolvedValueOnce(undefined as never);
+
+    await expect(initialized.readiness()).resolves.toMatchObject({
+      status: 'not-ready',
+      components: { database: { status: 'not-ready' } },
+    });
   });
 
   it('does not report ready after shutdown begins during a probe', async () => {
