@@ -15,18 +15,23 @@ import { chmodSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const distRoot = new URL('./dist/', import.meta.url);
-const binPath = join(distRoot.pathname, 'bin/smrt-mcp-bridge.js');
+const binPaths = [
+  join(distRoot.pathname, 'bin/smrt-app.js'),
+  join(distRoot.pathname, 'bin/smrt-mcp-bridge.js'),
+];
 
-const binSource = readFileSync(binPath, 'utf8');
-if (!binSource.startsWith('#!/usr/bin/env node')) {
-  console.error(
-    `[postbuild] ${binPath} missing shebang after build (got: ${JSON.stringify(
-      binSource.slice(0, 32),
-    )}).`,
-  );
-  process.exit(1);
+for (const binPath of binPaths) {
+  const binSource = readFileSync(binPath, 'utf8');
+  if (!binSource.startsWith('#!/usr/bin/env node')) {
+    console.error(
+      `[postbuild] ${binPath} missing shebang after build (got: ${JSON.stringify(
+        binSource.slice(0, 32),
+      )}).`,
+    );
+    process.exit(1);
+  }
+  chmodSync(binPath, 0o755);
 }
-chmodSync(binPath, 0o755);
 
 /**
  * Catch anything that looks like a test artifact slipping into `dist/`.
@@ -52,12 +57,14 @@ function walk(dir) {
 walk(distRoot.pathname);
 
 // Sanity-check that the bin is executable, not zero-byte.
-const stats = statSync(binPath);
-if (stats.size < 64) {
-  console.error(
-    `[postbuild] ${binPath} suspiciously small (${stats.size} bytes).`,
-  );
-  process.exit(1);
+for (const binPath of binPaths) {
+  const stats = statSync(binPath);
+  if (stats.size < 64) {
+    console.error(
+      `[postbuild] ${binPath} suspiciously small (${stats.size} bytes).`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log('[postbuild] ok');

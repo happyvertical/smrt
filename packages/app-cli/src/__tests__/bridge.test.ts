@@ -1,4 +1,6 @@
 import { existsSync } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SMRT_MCP_RESULT_METADATA_KEY as CONTRACT_METADATA_KEY } from '@happyvertical/smrt-users/app-contract';
@@ -18,6 +20,15 @@ const packageRoot = resolve(
 );
 const repoRoot = resolve(packageRoot, '..', '..');
 const tsxBin = join(repoRoot, 'node_modules', '.bin', 'tsx');
+const genericBridgeBin = 'src/bin/smrt-mcp-bridge.ts';
+
+function childEnv(overrides: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries({ ...process.env, ...overrides }).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+}
 
 function resultMetadata(result: object): unknown {
   return (result as { _meta?: Record<string, unknown> })._meta?.[
@@ -98,6 +109,70 @@ describe('formatMcpCallResult', () => {
 });
 
 describe('runMcpStdioBridge', () => {
+  it.each([
+    {
+      label: 'environment override',
+      prepare: async () => ({
+        env: {
+          BRIDGESEC_SERVER_URL: 'http://environment.example',
+          BRIDGESEC_TOKEN: 'environment-secret-value',
+        },
+        cleanup: async () => undefined,
+      }),
+    },
+    {
+      label: 'persisted configuration',
+      prepare: async () => {
+        const directory = await mkdtemp(join(tmpdir(), 'smrt-app-cli-bridge-'));
+        const configPath = join(directory, 'config.json');
+        await writeFile(
+          configPath,
+          JSON.stringify({
+            serverUrl: 'http://persisted.example',
+            token: 'persisted-secret-value',
+          }),
+          'utf8',
+        );
+        return {
+          env: { BRIDGESEC_CLI_CONFIG: configPath },
+          cleanup: () => rm(directory, { force: true, recursive: true }),
+        };
+      },
+    },
+  ])('rejects an insecure $label before the generic bridge sends a request', async ({
+    prepare,
+  }) => {
+    const { env, cleanup } = await prepare();
+    const transport = new StdioClientTransport({
+      command: tsxBin,
+      args: [genericBridgeBin, '--env-prefix=BRIDGESEC'],
+      cwd: packageRoot,
+      env: childEnv(env),
+      stderr: 'pipe',
+    });
+    const client = new Client(
+      { name: 'smrt-app-cli-security-test', version: '1.0.0' },
+      { capabilities: {} },
+    );
+
+    try {
+      await client.connect(transport);
+      let message = '';
+      try {
+        await client.listTools();
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toContain('Invalid server URL configuration.');
+      expect(message).not.toContain('secret-value');
+      expect(message).not.toContain('.example');
+    } finally {
+      await client.close();
+      await transport.close();
+      await cleanup();
+    }
+  });
+
   it('negotiates MCP 2026-07-28 and preserves bridged error redaction', async () => {
     expect(existsSync(tsxBin)).toBe(true);
     const transport = new StdioClientTransport({

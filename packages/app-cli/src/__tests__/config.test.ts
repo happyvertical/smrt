@@ -127,6 +127,20 @@ describe('env var precedence', () => {
     expect(await getServerUrl(context)).toBe('https://default.example');
   });
 
+  it('rejects insecure environment and persisted overrides under secure policy', async () => {
+    const secureContext = { ...context, requireSecureServerUrl: true };
+    process.env.TESTCFG_SERVER_URL = 'http://environment.example';
+    await expect(getServerUrl(secureContext)).rejects.toThrow(
+      'Invalid server URL configuration',
+    );
+
+    delete process.env.TESTCFG_SERVER_URL;
+    await saveAuth(context, 'http://persisted.example', 'stored-secret');
+    await expect(getServerUrl(secureContext)).rejects.toThrow(
+      'Invalid server URL configuration',
+    );
+  });
+
   it('env token wins over config token', async () => {
     await saveAuth(context, 'https://x', 'tok_cfg');
     process.env.TESTCFG_TOKEN = 'tok_env';
@@ -228,6 +242,49 @@ describe('requestJson', () => {
         serverUrl: 'https://issuer-b.example',
       },
     );
+  });
+
+  it('rejects an insecure effective URL before token lookup or fetch', async () => {
+    const secret = 'environment-secret-value';
+    const secureContext = { ...context, requireSecureServerUrl: true };
+    process.env.TESTCFG_SERVER_URL = 'http://insecure.example';
+    process.env.TESTCFG_TOKEN = secret;
+    const fetchMock = vi.fn();
+
+    let message = '';
+    try {
+      await requestJsonResult(
+        secureContext,
+        '/test',
+        { method: 'GET' },
+        { fetch: fetchMock as any },
+      );
+    } catch (error) {
+      message = (error as Error).message;
+    }
+
+    expect(message).toBe('Invalid server URL configuration.');
+    expect(message).not.toContain(secret);
+    expect(message).not.toContain('insecure.example');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('applies secure policy to request-level server overrides', async () => {
+    const secureContext = { ...context, requireSecureServerUrl: true };
+    const fetchMock = vi.fn();
+
+    await expect(
+      requestJsonResult(
+        secureContext,
+        '/test',
+        { method: 'GET' },
+        {
+          fetch: fetchMock as any,
+          serverUrl: 'http://override.example',
+        },
+      ),
+    ).rejects.toThrow('Invalid server URL configuration');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('throws on 401 with server error message', async () => {
