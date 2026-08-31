@@ -83,3 +83,81 @@ Provider selection cannot change these application behaviors:
 The resolved snapshot includes these invariants so integration tests can compare
 profiles directly. Implementing packages consume the contract; templates should
 never copy profile conditionals into application code.
+
+## Running the local profile
+
+`@happyvertical/smrt-app-runtime` implements the private local composition. The
+application supplies its normal idempotent migration hook; the runtime prepares
+the user-owned filesystem, securely acquires and tunes file-backed SQLite,
+creates local application-secret material, and issues the first short-lived
+onboarding token.
+
+```ts
+import {
+  initializeLocalApplicationRuntime,
+} from '@happyvertical/smrt-app-runtime';
+
+const { runtime, bootstrap, diagnostics } =
+  await initializeLocalApplicationRuntime({
+    appId: 'my-app',
+    sourceRoot: process.cwd(),
+    prepareDatabase: runApplicationMigrations,
+  });
+```
+
+The default root is the operating system's per-user application-data directory,
+never the source checkout, one of its ancestors, the user home itself, or the
+filesystem root. The application root is a dedicated directory; when an
+explicit root already exists, it must already be
+owned by the current user with mode `0700`, and a failed proof leaves its mode
+and contents untouched. Empty roots receive an app-specific atomic ownership
+marker; populated roots require that marker. A pending marker safely resumes a
+crash between root claim and database acquisition, while failed SQL custody
+validation removes only a claim and directories created by the failing attempt;
+an inherited pending claim and database remain available for retry. The SQL
+boundary proves ancestor ownership/modes and macOS ACL safety before database,
+asset, or secret artifacts are created. Directories are mode `0700`; the database and
+generated application-secret file are mode `0600`. SQLite enables foreign keys,
+WAL, full synchronous durability, and a busy timeout. The local server binds to
+`127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
+Concurrent initializers are serialized across processes by an exclusive
+transaction in a dedicated SQLite lock database under a private per-user,
+root-keyed custody directory. The released SQL trusted-parent boundary validates
+the lock directory, ancestor chain, leaf, and macOS ACLs before opening it.
+SQLite elects one owner atomically without deleting a lock pathname; process or
+worker death releases the kernel lock without PID/time leases. A read-only
+storage-path and marker preflight rejects obvious invalid configurations before
+creating a registry entry, and the complete validation runs again under the
+lease before application-root mutation. The lease is held through secret
+publication, SQLite tuning, application migrations, and bootstrap construction;
+contenders wait up to two minutes for completion.
+Initialization walks every existing storage-path component without following
+symbolic links, verifies canonical source-tree separation, and performs chmod
+through validated file descriptors. A platform without the required no-follow
+file and directory semantics is refused rather than initialized unsafely. After
+establishing its mode-0700 data root, the runtime acquires SQLite through the
+`@happyvertical/sql` `node:sqlite` trusted-parent custody boundary. That boundary
+rejects unsafe ownership, write permissions, static links, macOS ACLs, and
+unsupported platforms or Node runtimes before opening the database.
+The application secret is written and synced to a private temporary file, then
+published with a no-overwrite atomic hard link. Concurrent startup reuses the
+single complete winner; malformed existing values fail closed and interrupted
+temporary files are cleaned only after a valid final secret exists.
+It protects the custodied directory from other OS principals, not hostile code
+already running as the same user; that stronger boundary requires OS sandboxing
+and a descriptor-relative SQLite VFS.
+
+Only an HMAC of the onboarding token is stored. The plaintext is returned once,
+expires within fifteen minutes, and is consumed in the same serialized database
+transaction that creates the real global `Person`, `User`, default `Tenant`,
+owner `Role` / `Membership`, and server-side `Session`. Repeated setup or startup
+does not duplicate those records. Tenancy can remain hidden in the local UI, but
+the durable default tenant is preserved for later logical migration.
+Authenticated session TTLs are whole seconds with a minimum of one second;
+invalid TTL configuration is rejected before any filesystem mutation.
+
+Background work and application-defined paid capabilities are disabled by
+default. An explicit background opt-in exposes the regular embedded
+`TaskRunner`, preserving the same persisted enqueue and execution contract used
+by deployed workers. Diagnostics report these choices and bootstrap state but
+never read or emit application secrets, token plaintext, or token hashes.

@@ -148,6 +148,7 @@ For framework invariants and production setup, read [the repository guide](./AGE
 | --- | --- |
 | Learn the object and collection model | [`smrt-core`](./packages/core/README.md) |
 | Start a SvelteKit application | [`smrt-template-sveltekit`](./packages/template-sveltekit/README.md) |
+| Run a private local application | [`smrt-app-runtime`](./packages/app-runtime/README.md) |
 | Build agents and personas | [`smrt-agents`](./packages/agents/README.md), [`smrt-personas`](./packages/personas/README.md) |
 | Add tenant-aware identity and authorization | [`smrt-tenancy`](./packages/tenancy/README.md), [`smrt-users`](./packages/users/README.md) |
 | Build live or offline browser data | [`smrt-web`](./packages/smrt-web/README.md), [`smrt-svelte`](./packages/smrt-svelte/README.md) |
@@ -177,6 +178,7 @@ Status legend:
 | [`smrt-vitest`](./packages/vitest/README.md) | Stable | Manifest-aware Vitest integration and database isolation. |
 | [`smrt-cli`](./packages/cli/README.md) | Stable | Developer CLI, schema commands, generation, and knowledge tooling. |
 | [`smrt-app-cli`](./packages/app-cli/README.md) | Preview | Reusable branded application CLI and stdio MCP bridge. |
+| [`smrt-app-runtime`](./packages/app-runtime/README.md) | Preview | Validated local application composition, safe owner bootstrap, and embedded jobs. |
 | [`smrt-workbench`](./packages/smrt-workbench/README.md) | Preview | CWD-scoped package and project workbench for docs, APIs, routes, previews, and knowledge. |
 | [`smrt-workbench-host`](./packages/smrt-workbench/host/README.md) | Internal | Private SvelteKit browser host bundled with the workbench package. |
 | [`smrt-dev-mcp`](./packages/smrt-dev-mcp/README.md) | Stable | Development MCP server and repository knowledge tools. |
