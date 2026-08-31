@@ -27,8 +27,13 @@ import {
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
 
-const secretPublishInterleave = vi.hoisted(() => ({
+const filesystemInterleave = vi.hoisted(() => ({
   beforeLink: undefined as undefined | (() => Promise<void>),
+  beforeUnlink: undefined as
+    | undefined
+    | ((
+        path: Parameters<typeof import('node:fs/promises').unlink>[0],
+      ) => Promise<void>),
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -37,15 +42,20 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...actual,
     link: async (existingPath: string, newPath: string) => {
       if (newPath.endsWith('/application.secret')) {
-        await secretPublishInterleave.beforeLink?.();
+        await filesystemInterleave.beforeLink?.();
       }
       return actual.link(existingPath, newPath);
+    },
+    unlink: async (path: Parameters<typeof actual.unlink>[0]) => {
+      await filesystemInterleave.beforeUnlink?.(path);
+      return actual.unlink(path);
     },
   };
 });
 
 afterEach(async () => {
-  secretPublishInterleave.beforeLink = undefined;
+  filesystemInterleave.beforeLink = undefined;
+  filesystemInterleave.beforeUnlink = undefined;
   await Promise.all(
     temporaryRoots
       .splice(0)
@@ -269,7 +279,7 @@ describe('local application runtime', () => {
     const firstPaused = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-    secretPublishInterleave.beforeLink = async () => {
+    filesystemInterleave.beforeLink = async () => {
       arrivals += 1;
       if (arrivals === 1) await firstPaused;
       else releaseFirst?.();
@@ -642,6 +652,48 @@ describe('local application runtime', () => {
         )
       ).size,
     ).toBe(0);
+  });
+
+  it('retains a recoverable pending claim when promotion fails after database acquisition', async () => {
+    const directories = await localDirectories('pending-promotion');
+    const pendingMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus.pending',
+    );
+    const finalMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus',
+    );
+    let injected = false;
+    filesystemInterleave.beforeUnlink = async (path) => {
+      if (!injected && String(path) === pendingMarker) {
+        injected = true;
+        const error = new Error('injected pending-marker deletion failure');
+        Object.assign(error, { code: 'EIO' });
+        throw error;
+      }
+    };
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).rejects.toThrow('injected pending-marker deletion failure');
+    expect(injected).toBe(true);
+    expect(
+      (
+        await stat(join(directories.dataDirectory, 'application.sqlite'))
+      ).isFile(),
+    ).toBe(true);
+    expect((await stat(pendingMarker)).isFile()).toBe(true);
+    expect((await stat(finalMarker)).isFile()).toBe(true);
+
+    filesystemInterleave.beforeUnlink = undefined;
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    await expect(stat(pendingMarker)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(finalMarker)).size).toBe(0);
   });
 
   it('delegates unsafe ancestor custody to secure SQLite and leaves zero artifacts', async () => {

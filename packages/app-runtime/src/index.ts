@@ -722,8 +722,9 @@ async function acquireLocalDatabase(
     canonicalSourceRoot,
     appId,
   );
+  let db: DatabaseInterface;
   try {
-    const db = await getDatabase({
+    db = await getDatabase({
       type: 'sqlite',
       url: paths.database,
       secureFile: {
@@ -732,14 +733,18 @@ async function acquireLocalDatabase(
         root: paths.root,
       },
     });
-    await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
-    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-    return { canonicalSourceRoot, db };
   } catch (error) {
     await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
     await removeCreatedDirectories(prepared.createdDirectories);
     throw error;
   }
+
+  // Once SQLite acquisition succeeds, the database is an authoritative
+  // artifact. Keep the pending marker through every promotion failure so a
+  // later startup can resume rather than seeing an unmarked populated root.
+  await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
+  await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+  return { canonicalSourceRoot, db };
 }
 
 async function prepareLocalFilesystem(
