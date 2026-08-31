@@ -9,17 +9,12 @@ forking domain objects, generated surfaces, effects, approvals, or job calls.
 ```ts
 import {
   initializeLocalApplicationRuntime,
-  resolveLocalRuntimePaths,
 } from '@happyvertical/smrt-app-runtime';
-
-const paths = resolveLocalRuntimePaths({ appId: 'my-app' });
-const db = await openSqliteWithoutFollowingLinks(paths.database);
 
 const { runtime, bootstrap, diagnostics } =
   await initializeLocalApplicationRuntime({
     appId: 'my-app',
     sourceRoot: process.cwd(),
-    db,
     prepareDatabase: runApplicationMigrations,
   });
 
@@ -34,15 +29,16 @@ database, a user-owned asset directory, and generated mode-0600 application
 secret material. Placing this directory inside the source checkout is refused.
 Every existing path component is opened without following symbolic links and
 checked against its canonical path before descendants or secret bytes are
-written. Platforms that do not expose the required no-follow directory/file
-semantics fail closed during initialization.
+written. The runtime then acquires SQLite through `@happyvertical/sql`'s
+explicit `node:sqlite` trusted-parent custody boundary, rooted at the mode-0700
+application data directory. Unsupported runtimes or platforms and unsafe
+ownership, permissions, ACLs, or path components fail closed.
 
-The runtime currently requires an already-open `DatabaseInterface` bound to
-the resolved database path. It deliberately does not call the general SQL
-adapter with a pathname after validation, because that would reintroduce a
-symlink-replacement window. Automatic safe acquisition is tracked upstream in
-`happyvertical/sdk#1208`; callers must use an adapter that binds the verified
-inode without following links until that API is available.
+The custody boundary prevents static link traversal and mutation by other OS
+principals while the application retains control of that directory. Hostile
+code already running as the same user is outside this boundary; isolating
+same-account processes requires an OS sandbox and a descriptor-relative SQLite
+VFS.
 
 Owner onboarding binds to `127.0.0.1` by default and rejects non-loopback hosts.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,

@@ -19,13 +19,11 @@ import {
 } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   type ResolvedApplicationRuntime,
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import { detectEngine } from '@happyvertical/smrt-core';
 import { TaskRunner, type TaskRunnerConfig } from '@happyvertical/smrt-jobs';
 import { Person, ProfileTypeCollection } from '@happyvertical/smrt-profiles';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
@@ -40,7 +38,7 @@ import {
   UserCollection,
   UserStatus,
 } from '@happyvertical/smrt-users';
-import type { DatabaseInterface } from '@happyvertical/sql';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 
 const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
@@ -78,13 +76,6 @@ export interface LocalApplicationRuntimeOptions
   extends ResolveLocalRuntimePathsOptions {
   /** Actual HTTP bind host. Owner bootstrap refuses non-loopback values. */
   bindHost?: string;
-  /**
-   * Existing SQLite handle already bound to `paths.database`.
-   *
-   * This is required until the SQL adapter exposes an atomic no-follow local
-   * open. The runtime never reopens the verified file by pathname.
-   */
-  db: DatabaseInterface;
   /**
    * Explicit application migration/schema hook, invoked before identity access.
    * It must be idempotent; runtime code never synthesizes application tables.
@@ -254,14 +245,17 @@ export async function initializeLocalApplicationRuntime(
     providers: options.providers,
   });
   const paths = resolveLocalRuntimePaths(options);
-  const db = options.db;
-  validateInjectedDatabase(db, paths.database);
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
   const canonicalSourceRoot = await prepareLocalFilesystem(paths, sourceRoot);
-
-  // The adapter is already bound to the inode by its caller. Revalidate the
-  // pathname before the first query, but never ask an adapter to reopen it.
-  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
+  const db = await getDatabase({
+    type: 'sqlite',
+    url: paths.database,
+    secureFile: {
+      driver: 'node:sqlite',
+      custody: 'trusted-parent',
+      root: paths.root,
+    },
+  });
   await tuneLocalSqlite(db);
   await options.prepareDatabase?.(db);
   await ensureBootstrapTable(db);
@@ -972,43 +966,6 @@ function validateBootstrapTtl(value: number): number {
     );
   }
   return value;
-}
-
-function validateInjectedDatabase(
-  db: DatabaseInterface | undefined,
-  expectedPath: string,
-): asserts db is DatabaseInterface {
-  if (!db) {
-    throw new LocalRuntimeError(
-      'invalid_configuration',
-      'A pre-opened SQLite database handle is required; automatic pathname opening is disabled for local runtime safety.',
-    );
-  }
-  if (detectEngine(db.url) !== 'sqlite') {
-    throw new LocalRuntimeError(
-      'invalid_configuration',
-      'The local application runtime requires a SQLite database.',
-    );
-  }
-  const boundPath = localDatabasePath(db.url);
-  if (!boundPath || !sameFilesystemPath(boundPath, expectedPath)) {
-    throw new LocalRuntimeError(
-      'invalid_configuration',
-      'The injected SQLite handle must be bound to the resolved local database path.',
-    );
-  }
-}
-
-function localDatabasePath(url: string): string | null {
-  if (url === ':memory:' || /^(?:https?|libsql):/i.test(url)) return null;
-  if (url.startsWith('file:')) {
-    try {
-      return resolve(fileURLToPath(url));
-    } catch {
-      return null;
-    }
-  }
-  return resolve(url);
 }
 
 function validateOwnerInput(input: ClaimLocalOwnerInput): void {

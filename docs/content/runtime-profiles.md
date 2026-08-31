@@ -88,23 +88,19 @@ never copy profile conditionals into application code.
 
 `@happyvertical/smrt-app-runtime` implements the private local composition. The
 application supplies its normal idempotent migration hook; the runtime prepares
-the user-owned filesystem, validates and tunes injected file-backed SQLite, creates local
-application-secret material, and issues the first short-lived onboarding token.
+the user-owned filesystem, securely acquires and tunes file-backed SQLite,
+creates local application-secret material, and issues the first short-lived
+onboarding token.
 
 ```ts
 import {
   initializeLocalApplicationRuntime,
-  resolveLocalRuntimePaths,
 } from '@happyvertical/smrt-app-runtime';
-
-const paths = resolveLocalRuntimePaths({ appId: 'my-app' });
-const db = await openSqliteWithoutFollowingLinks(paths.database);
 
 const { runtime, bootstrap, diagnostics } =
   await initializeLocalApplicationRuntime({
     appId: 'my-app',
     sourceRoot: process.cwd(),
-    db,
     prepareDatabase: runApplicationMigrations,
   });
 ```
@@ -117,10 +113,14 @@ WAL, full synchronous durability, and a busy timeout. The local server binds to
 Initialization walks every existing storage-path component without following
 symbolic links, verifies canonical source-tree separation, and performs chmod
 through validated file descriptors. A platform without the required no-follow
-file and directory semantics is refused rather than initialized unsafely.
-Until `happyvertical/sdk#1208` exposes atomic no-follow SQLite acquisition, the
-runtime requires a pre-opened `DatabaseInterface` bound to the resolved file.
-It never reopens that verified file by pathname.
+file and directory semantics is refused rather than initialized unsafely. After
+establishing its mode-0700 data root, the runtime acquires SQLite through the
+`@happyvertical/sql` `node:sqlite` trusted-parent custody boundary. That boundary
+rejects unsafe ownership, write permissions, static links, macOS ACLs, and
+unsupported platforms or Node runtimes before opening the database.
+It protects the custodied directory from other OS principals, not hostile code
+already running as the same user; that stronger boundary requires OS sandboxing
+and a descriptor-relative SQLite VFS.
 
 Only an HMAC of the onboarding token is stored. The plaintext is returned once,
 expires within fifteen minutes, and is consumed in the same serialized database
