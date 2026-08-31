@@ -21,9 +21,9 @@ import {
   rmdir,
   unlink,
 } from 'node:fs/promises';
-import { createConnection, createServer, type Server } from 'node:net';
 import { homedir, platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import {
   type ResolvedApplicationRuntime,
   type RuntimeProviderOverrides,
@@ -54,7 +54,28 @@ const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
 const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
 const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
-const INITIALIZATION_LOCK_RETRY_MS = 20;
+const INITIALIZATION_LOCK_WORKER = `
+  const { parentPort, workerData } = require('node:worker_threads');
+  const { DatabaseSync } = require('node:sqlite');
+  let database;
+  try {
+    database = new DatabaseSync(workerData.path, { timeout: workerData.timeout });
+    database.exec('BEGIN EXCLUSIVE');
+    parentPort.postMessage({ type: 'acquired' });
+  } catch (error) {
+    try { database?.close(); } catch {}
+    parentPort.postMessage({ type: 'error', message: String(error) });
+    parentPort.close();
+  }
+  parentPort.once('message', (message) => {
+    if (message?.type !== 'release' || !database) return;
+    let releaseError;
+    try { database.exec('ROLLBACK'); } catch (error) { releaseError = String(error); }
+    try { database.close(); } catch (error) { releaseError ??= String(error); }
+    parentPort.postMessage({ type: 'released', error: releaseError });
+    parentPort.close();
+  });
+`;
 
 /** Paths owned by the local user, outside the source tree by default. */
 export interface LocalRuntimePaths {
@@ -721,12 +742,6 @@ interface LocalInitializationLock {
   release(): Promise<void>;
 }
 
-interface InitializationSocketIdentity {
-  device: number;
-  inode: number;
-  uid: number;
-}
-
 async function acquireLocalDatabase(
   paths: LocalRuntimePaths,
   sourceRoot: string,
@@ -880,156 +895,115 @@ async function acquireInitializationLock(
     .update(resolve(root))
     .digest('hex')
     .slice(0, 32);
-  const path = resolve(lockRoot, `${lockKey}.sock`);
-  // A listening Unix socket is a kernel-backed lease: a live owner can be
-  // probed without trusting a PID, while a crash leaves a pathname that
-  // refuses connections and is therefore safe to reclaim under this
-  // current-user-only directory.
-  const deadline = Date.now() + INITIALIZATION_LOCK_TIMEOUT_MS;
-  while (true) {
-    const server = createServer((socket) => socket.end());
-    try {
-      await listenOnUnixSocket(server, path);
-      const details = await lstat(path);
-      if (!details.isSocket() || details.uid !== currentUid) {
-        throw unsafeFilesystemEntry(
-          `Local runtime initialization lock is not a current-user-owned socket: ${path}`,
-        );
-      }
-      return {
-        release: async () => {
-          await closeServer(server);
-          await removeOwnedSocketIfPresent(path, details.dev, details.ino);
-        },
-      };
-    } catch (error) {
-      await closeServer(server);
-      if (!isAddressInUse(error)) throw error;
-    }
-
-    const observed = await readInitializationSocketIdentity(path, currentUid);
-    if (observed === null) continue;
-    const state = await probeInitializationSocket(path);
-    if (state === 'stale') {
-      await removeStaleInitializationSocket(path, observed);
-      continue;
-    }
-    if (Date.now() >= deadline) {
-      throw new LocalRuntimeError(
-        'invalid_configuration',
-        'Timed out waiting for another local runtime initializer to finish.',
-      );
-    }
-    await delay(INITIALIZATION_LOCK_RETRY_MS);
-  }
-}
-
-async function listenOnUnixSocket(server: Server, path: string): Promise<void> {
-  await new Promise<void>((resolvePromise, reject) => {
-    const onError = (error: Error) => reject(error);
-    server.once('error', onError);
-    server.listen(path, () => {
-      server.off('error', onError);
-      resolvePromise();
-    });
-  });
-}
-
-async function closeServer(server: Server): Promise<void> {
-  if (!server.listening) return;
-  await new Promise<void>((resolvePromise, reject) => {
-    server.close((error) => {
-      if (error) reject(error);
-      else resolvePromise();
-    });
-  });
-}
-
-async function probeInitializationSocket(
-  path: string,
-): Promise<'live' | 'stale'> {
-  return new Promise((resolvePromise, reject) => {
-    const socket = createConnection(path);
-    const finish = (result: 'live' | 'stale') => {
-      socket.destroy();
-      resolvePromise(result);
-    };
-    socket.once('connect', () => finish('live'));
-    socket.once('error', (error) => {
-      if (isConnectionRefused(error) || isMissingFile(error)) finish('stale');
-      else reject(error);
-    });
-  });
-}
-
-async function readInitializationSocketIdentity(
-  path: string,
-  currentUid: number,
-): Promise<InitializationSocketIdentity | null> {
-  let details: Awaited<ReturnType<typeof lstat>>;
+  const path = resolve(lockRoot, `${lockKey}.sqlite`);
+  let lockFile: FileHandle;
+  let created = false;
   try {
-    details = await lstat(path);
-  } catch (error) {
-    if (isMissingFile(error)) return null;
-    throw error;
-  }
-  if (!details.isSocket() || details.uid !== currentUid) {
-    throw unsafeFilesystemEntry(
-      `Local runtime initialization lock must be a current-user-owned socket: ${path}`,
+    lockFile = await open(
+      path,
+      constants.O_RDWR |
+        constants.O_CREAT |
+        constants.O_EXCL |
+        constants.O_NOFOLLOW,
+      0o600,
     );
-  }
-  return { device: details.dev, inode: details.ino, uid: details.uid };
-}
-
-async function removeStaleInitializationSocket(
-  path: string,
-  expected: InitializationSocketIdentity,
-): Promise<boolean> {
-  const currentUid = process.getuid?.();
-  if (currentUid === undefined || expected.uid !== currentUid) return false;
-  const current = await readInitializationSocketIdentity(path, currentUid);
-  if (
-    current === null ||
-    current.device !== expected.device ||
-    current.inode !== expected.inode
-  ) {
-    return false;
-  }
-  try {
-    await unlink(path);
-    return true;
+    created = true;
   } catch (error) {
-    if (isMissingFile(error)) return false;
-    throw error;
+    if (!isFileAlreadyExists(error)) throw error;
+    lockFile = await open(path, constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
   }
-}
-
-async function removeOwnedSocketIfPresent(
-  path: string,
-  expectedDevice: number,
-  expectedInode: number,
-): Promise<void> {
   try {
-    const details = await lstat(path);
+    const opened = await lockFile.stat();
+    const current = await lstat(path);
     if (
-      !details.isSocket() ||
-      details.dev !== expectedDevice ||
-      details.ino !== expectedInode
+      current.isSymbolicLink() ||
+      !opened.isFile() ||
+      !current.isFile() ||
+      opened.dev !== current.dev ||
+      opened.ino !== current.ino ||
+      opened.uid !== currentUid
     ) {
       throw unsafeFilesystemEntry(
-        `Local runtime initialization lock changed before release: ${path}`,
+        `Local runtime initialization lock must be a current-user-owned regular file: ${path}`,
       );
     }
-    await unlink(path);
-  } catch (error) {
-    if (!isMissingFile(error)) throw error;
+    if (created) await lockFile.chmod(0o600);
+    else if ((opened.mode & 0o777) !== 0o600) {
+      throw unsafeFilesystemEntry(
+        `Existing local runtime initialization lock must have mode 0600: ${path}`,
+      );
+    }
+  } finally {
+    await lockFile.close();
   }
+  return acquireInitializationDatabaseLease(path);
 }
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolvePromise) =>
-    setTimeout(resolvePromise, milliseconds),
-  );
+async function acquireInitializationDatabaseLease(
+  path: string,
+): Promise<LocalInitializationLock> {
+  const worker = new Worker(INITIALIZATION_LOCK_WORKER, {
+    eval: true,
+    workerData: { path, timeout: INITIALIZATION_LOCK_TIMEOUT_MS },
+  });
+  const acquisitionFailure = (cause: unknown) => {
+    const failure = new LocalRuntimeError(
+      'invalid_configuration',
+      'Could not acquire the local runtime initialization lease within two minutes.',
+    );
+    Object.defineProperty(failure, 'cause', { value: cause });
+    return failure;
+  };
+  let workerError: unknown;
+  const exited = new Promise<never>((_resolve, reject) => {
+    worker.once('error', (error) => {
+      workerError = error;
+    });
+    worker.once('exit', (code) => {
+      reject(
+        acquisitionFailure(
+          workerError ??
+            new Error(`Initialization lock worker exited ${code}.`),
+        ),
+      );
+    });
+  });
+  const acquired = new Promise<void>((resolvePromise, reject) => {
+    const onMessage = (message: { type?: string; message?: string }) => {
+      if (message.type === 'acquired') {
+        worker.off('message', onMessage);
+        resolvePromise();
+      } else if (message.type === 'error') {
+        worker.off('message', onMessage);
+        reject(acquisitionFailure(new Error(message.message)));
+      }
+    };
+    worker.on('message', onMessage);
+  });
+  await Promise.race([acquired, exited]);
+
+  let released = false;
+  return {
+    release: async () => {
+      if (released) return;
+      released = true;
+      const releaseCompleted = new Promise<void>((resolvePromise, reject) => {
+        const onMessage = (message: { type?: string; error?: string }) => {
+          if (message.type !== 'released') return;
+          worker.off('message', onMessage);
+          if (message.error) reject(new Error(message.error));
+          else resolvePromise();
+        };
+        worker.on('message', onMessage);
+        worker.postMessage({ type: 'release' });
+      });
+      try {
+        await Promise.race([releaseCompleted, exited]);
+      } finally {
+        await worker.terminate();
+      }
+    },
+  };
 }
 
 async function ensureSafeDirectoryTree(
@@ -1587,22 +1561,5 @@ function isDirectoryNotEmpty(error: unknown): boolean {
     error !== null &&
     'code' in error &&
     (error as { code?: unknown }).code === 'ENOTEMPTY'
-  );
-}
-
-function isAddressInUse(error: unknown): boolean {
-  return hasErrorCode(error, 'EADDRINUSE');
-}
-
-function isConnectionRefused(error: unknown): boolean {
-  return hasErrorCode(error, 'ECONNREFUSED');
-}
-
-function hasErrorCode(error: unknown, code: string): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    (error as { code?: unknown }).code === code
   );
 }

@@ -40,12 +40,12 @@ it is promoted atomically after the released SQL custody boundary verifies the
 complete ancestor/root chain, including macOS ACLs. Failed custody removes the
 pending claim and every directory only when they were created by that attempt;
 an inherited pending claim and its database remain authoritative for retry.
-Initializers for the same data root are serialized across processes by a
-kernel-owned Unix socket in a private per-user lock directory. Live ownership
-does not depend on PIDs, so PID reuse is irrelevant; after a process crash, a
-failed connection proves the remaining socket pathname stale before it is
-reclaimed, and reclamation is bound to the socket inode observed before the
-probe. The lease covers storage acquisition, secret publication, SQLite tuning,
+Initializers for the same data root are serialized across processes by an
+exclusive transaction in a dedicated SQLite lock database under a private
+per-user directory. Atomic SQLite locking elects one owner without deleting or
+replacing a pathname, so there is no stale-file ABA window and no PID or clock
+lease. Process or worker death releases the kernel lock automatically. The
+lease covers storage acquisition, secret publication, SQLite tuning,
 application migrations, and bootstrap construction. Contenders wait up to two
 minutes for that complete sequence, so normal migrations can finish without
 overlap. Marker or temporary-secret cleanup therefore cannot race another

@@ -30,11 +30,6 @@ const execFileAsync = promisify(execFile);
 
 const filesystemInterleave = vi.hoisted(() => ({
   beforeLink: undefined as undefined | (() => Promise<void>),
-  beforeLstat: undefined as
-    | undefined
-    | ((
-        path: Parameters<typeof import('node:fs/promises').lstat>[0],
-      ) => Promise<void>),
   beforeUnlink: undefined as
     | undefined
     | ((
@@ -52,10 +47,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return actual.link(existingPath, newPath);
     },
-    lstat: async (path: Parameters<typeof actual.lstat>[0]) => {
-      await filesystemInterleave.beforeLstat?.(path);
-      return actual.lstat(path);
-    },
     unlink: async (path: Parameters<typeof actual.unlink>[0]) => {
       await filesystemInterleave.beforeUnlink?.(path);
       return actual.unlink(path);
@@ -65,7 +56,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
-  filesystemInterleave.beforeLstat = undefined;
   filesystemInterleave.beforeUnlink = undefined;
   vi.restoreAllMocks();
   await Promise.all(
@@ -93,17 +83,20 @@ async function initializationLockPath(dataDirectory: string): Promise<string> {
     .update(dataDirectory)
     .digest('hex')
     .slice(0, 32);
-  return join(lockRoot, `${lockKey}.sock`);
+  return join(lockRoot, `${lockKey}.sqlite`);
 }
 
-async function leaveCrashStaleSocket(lockPath: string): Promise<void> {
+async function holdInitializationDatabaseUntilKilled(
+  lockPath: string,
+): Promise<void> {
   await mkdir(join(lockPath, '..'), { recursive: true, mode: 0o700 });
   await rm(lockPath, { force: true });
+  await writeFile(lockPath, '', { mode: 0o600 });
   const child = spawn(
     process.execPath,
     [
       '-e',
-      "const net=require('node:net');const server=net.createServer();server.listen(process.argv[1],()=>process.stdout.write('ready\\n'));",
+      "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.argv[1]);db.exec('BEGIN EXCLUSIVE');process.stdout.write('ready\\n');setInterval(()=>{},1000);",
       lockPath,
     ],
     { stdio: ['ignore', 'pipe', 'inherit'] },
@@ -847,44 +840,28 @@ describe('local application runtime', () => {
     expect((await stat(database)).isFile()).toBe(true);
   });
 
-  it('reclaims a kernel-stale initialization socket after its owner crashes', async () => {
+  it('releases the initialization database lease when its owner crashes', async () => {
     const directories = await localDirectories('stale-initializer');
     const lockPath = await initializationLockPath(directories.dataDirectory);
-    await leaveCrashStaleSocket(lockPath);
-    expect((await stat(lockPath)).isSocket()).toBe(true);
+    await holdInitializationDatabaseUntilKilled(lockPath);
+    const lockInode = (await stat(lockPath)).ino;
 
     await expect(
       initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
     ).resolves.toMatchObject({
       diagnostics: { runtime: { profile: 'local' } },
     });
-    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(lockPath)).ino).toBe(lockInode);
   });
 
-  it('binds stale reclaim to the observed inode with two simultaneous successors', async () => {
+  it('elects one successor without deleting or replacing the lock database', async () => {
     const directories = await localDirectories('stale-successors');
     const lockPath = await initializationLockPath(directories.dataDirectory);
-    await leaveCrashStaleSocket(lockPath);
-    const staleInode = (await stat(lockPath)).ino;
-    let lockLstats = 0;
-    let releaseInitialObservers: (() => void) | undefined;
-    const initialObserversReady = new Promise<void>((resolve) => {
-      releaseInitialObservers = resolve;
-    });
-    filesystemInterleave.beforeLstat = async (path) => {
-      if (String(path) !== lockPath) return;
-      lockLstats += 1;
-      if (lockLstats === 1) await initialObserversReady;
-      else if (lockLstats === 2) releaseInitialObservers?.();
-      else if (lockLstats === 4) {
-        for (;;) {
-          try {
-            if ((await stat(lockPath)).ino !== staleInode) break;
-          } catch (error) {
-            if (!String(error).includes('ENOENT')) throw error;
-          }
-          await new Promise((resolve) => setImmediate(resolve));
-        }
+    await holdInitializationDatabaseUntilKilled(lockPath);
+    const lockInode = (await stat(lockPath)).ino;
+    filesystemInterleave.beforeUnlink = async (path) => {
+      if (String(path) === lockPath) {
+        throw new Error('lock database pathname must never be unlinked');
       }
     };
 
@@ -926,8 +903,7 @@ describe('local application runtime', () => {
     releaseFirstMigration?.();
     await expect(Promise.all([first, second])).resolves.toHaveLength(2);
     expect(maximumActiveMigrations).toBe(1);
-    expect(lockLstats).toBeGreaterThanOrEqual(5);
-    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(lockPath)).ino).toBe(lockInode);
   });
 
   it('holds the root lease through migrations and releases it after failure', async () => {
