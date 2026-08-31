@@ -1,7 +1,9 @@
 import {
   type DatabaseConfig,
   isDatabaseInterface,
+  isEmbeddedDatabase,
   type SmrtClassOptions,
+  withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import type { SqlAdapterType } from '@happyvertical/sql';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
@@ -525,40 +527,44 @@ export class CommercialUsageService {
       throw new Error('Atomic billing adjustment requires transaction support');
     }
     try {
-      return await db.transaction(async (transaction) => {
-        const options = { db: transaction };
-        const charges = await ClientChargeCollection.create(options);
-        const adjustments = await BillingAdjustmentCollection.create(options);
-        const charge = await charges.get(chargeId);
-        if (!charge)
-          throw new Error(`Client charge ${chargeId} was not found.`);
-        if (charge.status !== 'approved' && charge.status !== 'adjusted') {
-          throw new Error(
-            `Client charge ${chargeId} must be approved before it can be adjusted.`,
-          );
-        }
-        let adjustment = sourcedId
-          ? await adjustments.get(sourcedId)
-          : undefined;
-        if (!adjustment) {
-          adjustment = await adjustments.create({
-            ...(sourcedId ? { id: sourcedId } : {}),
-            tenantId: charge.tenantId,
-            clientChargeId: chargeId,
-            amount,
-            currency: charge.currency,
-            reason,
-            source,
-            sourceId,
-            _insertOnly: Boolean(sourcedId),
-          });
-        }
-        if (charge.status === 'approved') {
-          charge.status = 'adjusted';
-          await charge.save();
-        }
-        return adjustment;
-      });
+      return await withEmbeddedWriteTransaction(
+        db,
+        isEmbeddedDatabase(db),
+        async (transaction) => {
+          const options = { db: transaction };
+          const charges = await ClientChargeCollection.create(options);
+          const adjustments = await BillingAdjustmentCollection.create(options);
+          const charge = await charges.get(chargeId);
+          if (!charge)
+            throw new Error(`Client charge ${chargeId} was not found.`);
+          if (charge.status !== 'approved' && charge.status !== 'adjusted') {
+            throw new Error(
+              `Client charge ${chargeId} must be approved before it can be adjusted.`,
+            );
+          }
+          let adjustment = sourcedId
+            ? await adjustments.get(sourcedId)
+            : undefined;
+          if (!adjustment) {
+            adjustment = await adjustments.create({
+              ...(sourcedId ? { id: sourcedId } : {}),
+              tenantId: charge.tenantId,
+              clientChargeId: chargeId,
+              amount,
+              currency: charge.currency,
+              reason,
+              source,
+              sourceId,
+              _insertOnly: Boolean(sourcedId),
+            });
+          }
+          if (charge.status === 'approved') {
+            charge.status = 'adjusted';
+            await charge.save();
+          }
+          return adjustment;
+        },
+      );
     } catch (error) {
       // A concurrent sourced adjustment may win the deterministic insert. Its
       // transaction also owns the charge-state transition, so it is safe to

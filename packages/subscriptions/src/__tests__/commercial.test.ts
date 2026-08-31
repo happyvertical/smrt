@@ -691,6 +691,104 @@ describe('commercial usage tracer', () => {
     }
   });
 
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('keeps an ordinary %s charge write outside a rolled-back adjustment transaction', async (type) => {
+    const db = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: [
+        'TenantUsageMetric',
+        'PricingRule',
+        'ClientCharge',
+        'BillingAdjustment',
+      ],
+      omitForeignKeyConstraints: true,
+    });
+    const options = { db };
+    const localUsage = await TenantUsageMetricCollection.create(options);
+    const localRules = await PricingRuleCollection.create(options);
+    const localCharges = await ClientChargeCollection.create(options);
+    const localAdjustments = await BillingAdjustmentCollection.create(options);
+    const localService = new CommercialUsageService(
+      localUsage,
+      localRules,
+      localCharges,
+      localAdjustments,
+      { adapterType: type },
+    );
+    const originalTransaction = db.transaction;
+    if (!originalTransaction) throw new Error('expected transaction support');
+    let transactionEntered!: () => void;
+    const transactionReady = new Promise<void>((resolve) => {
+      transactionEntered = resolve;
+    });
+    let releaseTransaction!: () => void;
+    const transactionReleased = new Promise<void>((resolve) => {
+      releaseTransaction = resolve;
+    });
+    const transactionSpy = vi
+      .spyOn(db, 'transaction')
+      .mockImplementation((operation) =>
+        originalTransaction.call(db, async (transaction) => {
+          transactionEntered();
+          await transactionReleased;
+          await operation(transaction);
+          throw new Error('forced adjustment rollback');
+        }),
+      );
+
+    try {
+      const adjustedCharge = await localCharges.create({
+        id: '33333333-3333-4333-8333-333333333331',
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        usageEventId: '44444444-4444-4444-8444-444444444441',
+        amount: 10,
+        status: 'approved',
+        approvedAt: new Date('2026-07-01T00:00:00Z'),
+      });
+      const ordinaryCharge = await localCharges.create({
+        id: '33333333-3333-4333-8333-333333333332',
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        usageEventId: '44444444-4444-4444-8444-444444444442',
+        amount: 10,
+        status: 'draft',
+      });
+
+      const rolledBack = localService.adjust(
+        String(adjustedCharge.id),
+        -1,
+        'forced rollback',
+      );
+      await transactionReady;
+      ordinaryCharge.amount = 20;
+      const ordinarySave = ordinaryCharge.save();
+      // Let the ordinary save reach the embedded writer boundary. Before the
+      // root transaction joined that queue it could enter the same native
+      // transaction and be rolled back with the adjustment.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      releaseTransaction();
+
+      await expect(rolledBack).rejects.toThrow('forced adjustment rollback');
+      await ordinarySave;
+      expect(
+        await localAdjustments.list({
+          where: { clientChargeId: String(adjustedCharge.id) },
+        }),
+      ).toHaveLength(0);
+      expect((await localCharges.get(String(adjustedCharge.id)))?.status).toBe(
+        'approved',
+      );
+      expect((await localCharges.get(String(ordinaryCharge.id)))?.amount).toBe(
+        20,
+      );
+    } finally {
+      transactionSpy.mockRestore();
+      await db.close?.();
+    }
+  });
+
   it('rolls back an unsourced adjustment when the charge revision drifts', async () => {
     await seedUsageEvent(
       'usage-adjustment-race',

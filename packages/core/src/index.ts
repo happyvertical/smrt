@@ -164,6 +164,7 @@ export {
 // Dispatch system (inter-agent communication)
 export * from './dispatch/index';
 export {
+  isEmbeddedDatabase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
