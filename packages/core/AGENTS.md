@@ -31,7 +31,10 @@ subsystem you are editing. This file keeps what holds across all of them.
   database `UPDATE`; zero affected rows throws `RUNTIME_REVISION_CONFLICT`
   without overwriting the newer row. `save({ expectedUpdatedAt })` supplies an
   explicit revision when a caller binds the mutation to an earlier preview or
-  selection snapshot.
+  selection snapshot. Embedded adapters implement that comparison as a
+  process-local compare/upsert, so every same-process model save and delete is
+  serialized with it; custom write paths must use the same public queue rather
+  than bypassing the CAS ordering contract.
 - Native DuckDB UUID columns are hydrated as canonical strings before model
   initialization, natural-key lookup, and embedded revision claims. Exact
   natural-key probes retain the interceptor-authorized filter when

@@ -2233,13 +2233,10 @@ export class SmrtObject extends SmrtClass {
       // target (#2360) every NULL-tenant create takes that path, and
       // concurrent creates livelocked into SQLITE_BUSY against the
       // change-feed append on the root connection.
-      const serializeEmbeddedWrite =
-        useEmbeddedRevisionFallback ||
-        (writePlan.type !== 'updateById' &&
-          revisionGuard === undefined &&
-          !(this._insertOnly && !this._persisted) &&
-          isEmbeddedDatabase(this.db) &&
-          upsertConflictColumns.some((column) => data[column] == null));
+      // Embedded revision CAS is a process-local compare/upsert sequence. All
+      // same-process writes must join the same queue or an ordinary save can
+      // slip between the compare and upsert and be silently overwritten.
+      const serializeEmbeddedWrite = isEmbeddedDatabase(this.db);
 
       let revisionMatched = true;
       await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
@@ -3308,23 +3305,27 @@ export class SmrtObject extends SmrtClass {
 
     await this.verifyStorageReady();
 
-    const { affectedTables, affectedTableClasses } = await runCascadeDelete(
-      this.db,
-      ObjectRegistry,
-      {
-        // R5-canon: the qualified name, not the bare constructor name —
-        // two packages can register a same-named class, and a simple-name
-        // lookup in ObjectRegistry.getClass()/findClass() can silently
-        // resolve the cascade plan against the wrong package's class,
-        // leaving its @crossPackageRef references and polymorphic
-        // meta_type rows uncleaned (the orphaned-reference bug #2371
-        // exists to close, moved to the cross-package case).
-        className: this.getResolvedQualifiedName(),
-        tableName: this.tableName,
-        id: this.id,
-      },
-      (db) => db.delete(this.tableName, { id: this.id }).then(() => undefined),
-    );
+    const { affectedTables, affectedTableClasses } =
+      await withEmbeddedWriteQueue(this.db, isEmbeddedDatabase(this.db), () =>
+        runCascadeDelete(
+          this.db,
+          ObjectRegistry,
+          {
+            // R5-canon: the qualified name, not the bare constructor name —
+            // two packages can register a same-named class, and a simple-name
+            // lookup in ObjectRegistry.getClass()/findClass() can silently
+            // resolve the cascade plan against the wrong package's class,
+            // leaving its @crossPackageRef references and polymorphic
+            // meta_type rows uncleaned (the orphaned-reference bug #2371
+            // exists to close, moved to the cross-package case).
+            className: this.getResolvedQualifiedName(),
+            tableName: this.tableName,
+            id: this.id,
+          },
+          (db) =>
+            db.delete(this.tableName, { id: this.id }).then(() => undefined),
+        ),
+      );
 
     // The backing row is gone — a later save() should go through the
     // natural-key insert path again rather than targeting a deleted id.

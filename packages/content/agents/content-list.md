@@ -107,6 +107,12 @@ must terminate at the same `createContentListActionAdapter()` instance used by
 agent actions; separate human-only mutation handlers would bypass the shared
 preview and authorization contract.
 
+The server adapter also requires a `workflowStorage` capability declaration.
+PostgreSQL, SQLite, ordinary DuckDB, and non-immediate exported-file modes are
+supported. JSON's default/immediate mode and DuckDB `writeStrategy:
+'immediate'` fail before adapter setup because those SDK modes export writes
+before the surrounding transaction commits and cannot roll the file back.
+
 ## ContentList migration (#2451)
 
 `ContentList` no longer holds bespoke local state. `src/svelte/content-list-controller.ts`

@@ -980,10 +980,23 @@ describe('SessionService', () => {
       db: { type: 'sqlite', url: dbPath },
     });
 
-    const sessionId = await sessionService.createSession(user.id!);
+    const sessionId = await sessionService.createSession(user.id!, undefined, {
+      ttl: 60,
+    });
+    const sessions = await SessionCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const before = await sessions.get(sessionId);
+    if (!before) throw new Error('expected inactive user session');
+    const expiresAt = before.expiresAt.getTime();
+    const lastAccessedAt = before.lastAccessedAt.getTime();
 
     // Should return null because user is not active
     const context = await sessionService.loadSessionContext(sessionId);
     expect(context).toBeNull();
+
+    const after = await sessions.get(sessionId);
+    expect(after?.expiresAt.getTime()).toBe(expiresAt);
+    expect(after?.lastAccessedAt.getTime()).toBe(lastAccessedAt);
   });
 });

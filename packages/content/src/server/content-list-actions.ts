@@ -419,7 +419,66 @@ export interface ContentListWorkflowHandlers {
   ) => Promise<void>;
 }
 
+export interface ContentListWorkflowStorage {
+  adapterType: 'sqlite' | 'postgres' | 'duckdb' | 'json';
+  writeStrategy?: 'immediate' | 'manual' | 'none';
+}
+
+export class UnsupportedContentListWorkflowStorageError extends Error {
+  readonly code = 'UNSUPPORTED_CONTENT_LIST_WORKFLOW_STORAGE';
+
+  constructor(storage: ContentListWorkflowStorage) {
+    super(
+      `ContentList workflows do not support ${storage.adapterType} with ` +
+        'immediate write-back because exported files are not transactionally ' +
+        'rolled back. Use PostgreSQL, SQLite, ordinary DuckDB, or a ' +
+        'non-immediate write strategy.',
+    );
+    this.name = 'UnsupportedContentListWorkflowStorageError';
+  }
+}
+
+export function assertContentListWorkflowStorageSupported(
+  storage: ContentListWorkflowStorage,
+): void {
+  const adapterType: unknown = storage?.adapterType;
+  const writeStrategy: unknown = storage?.writeStrategy;
+  if (
+    adapterType !== 'sqlite' &&
+    adapterType !== 'postgres' &&
+    adapterType !== 'duckdb' &&
+    adapterType !== 'json'
+  ) {
+    throw new TypeError(
+      'ContentList workflow storage adapterType must be sqlite, postgres, duckdb, or json.',
+    );
+  }
+  if (
+    writeStrategy !== undefined &&
+    writeStrategy !== 'immediate' &&
+    writeStrategy !== 'manual' &&
+    writeStrategy !== 'none'
+  ) {
+    throw new TypeError(
+      'ContentList workflow storage writeStrategy must be immediate, manual, or none.',
+    );
+  }
+  const effectiveStrategy =
+    adapterType === 'json' ? (writeStrategy ?? 'immediate') : writeStrategy;
+  if (
+    (adapterType === 'json' || adapterType === 'duckdb') &&
+    effectiveStrategy === 'immediate'
+  ) {
+    throw new UnsupportedContentListWorkflowStorageError({
+      adapterType,
+      writeStrategy: effectiveStrategy,
+    });
+  }
+}
+
 export interface ContentListActionAdapterOptions {
+  /** Public adapter capability contract; validated before any workflow state is created. */
+  workflowStorage: ContentListWorkflowStorage;
   state: DataSurfaceActionStateStore;
   collection(
     run: PrincipalRun,
@@ -1024,6 +1083,7 @@ export interface ContentListActionAdapter extends DataSurfaceActionAdapter {
 export function createContentListActionAdapter(
   options: ContentListActionAdapterOptions,
 ): ContentListActionAdapter {
+  assertContentListWorkflowStorageSupported(options.workflowStorage);
   const handlers = options.handlers ?? {};
   const maxSelectionSize =
     options.maxSelectionSize ??

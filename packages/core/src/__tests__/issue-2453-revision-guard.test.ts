@@ -73,6 +73,134 @@ describe('issue #2453 revision-guarded saves', () => {
     expect(stored?.title).toBe('concurrent');
   });
 
+  it('does not resurrect a row deleted while an embedded revision claim is pending', async () => {
+    const created = await rows.create({ title: 'original' });
+    const guarded = await rows.get(String(created.id));
+    const deleting = await rows.get(String(created.id));
+    if (!guarded?.updated_at || !deleting) {
+      throw new Error('expected two persisted snapshots');
+    }
+
+    const originalGet = db.get.bind(db);
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enteredRead = resolve;
+    });
+    let paused = false;
+    vi.spyOn(db, 'get').mockImplementation(async (table, filter) => {
+      if (!paused && table === 'issue_2453_revision_rows') {
+        paused = true;
+        enteredRead();
+        await readReleased;
+      }
+      return originalGet(table, filter);
+    });
+
+    guarded.title = 'guarded write';
+    const guardedSave = guarded.save({
+      expectedUpdatedAt: guarded.updated_at,
+    });
+    await readEntered;
+    const deleteWrite = deleting.delete();
+    releaseRead();
+    await guardedSave;
+    await deleteWrite;
+
+    expect(await rows.get(String(created.id))).toBeNull();
+  });
+
+  it('rejects a stale ordinary save queued behind an embedded revision compare', async () => {
+    const created = await rows.create({ title: 'original' });
+    const guarded = await rows.get(String(created.id));
+    const ordinary = await rows.get(String(created.id));
+    if (!guarded?.updated_at || !ordinary) {
+      throw new Error('expected two persisted snapshots');
+    }
+
+    const originalGet = db.get.bind(db);
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enteredRead = resolve;
+    });
+    let paused = false;
+    vi.spyOn(db, 'get').mockImplementation(async (table, filter) => {
+      if (!paused && table === 'issue_2453_revision_rows') {
+        paused = true;
+        enteredRead();
+        await readReleased;
+      }
+      return originalGet(table, filter);
+    });
+
+    guarded.title = 'guarded write';
+    const guardedSave = guarded.save({
+      expectedUpdatedAt: guarded.updated_at,
+    });
+    await readEntered;
+    ordinary.title = 'ordinary winner';
+    const ordinarySave = ordinary.save();
+    releaseRead();
+    await guardedSave;
+    await expect(ordinarySave).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+
+    expect((await rows.get(String(created.id)))?.title).toBe('guarded write');
+  });
+
+  it('orders a natural-key create after a pending embedded revision compare', async () => {
+    const created = await rows.create({ title: 'original' });
+    const guarded = await rows.get(String(created.id));
+    if (!guarded?.updated_at) throw new Error('expected persisted snapshot');
+
+    const originalGet = db.get.bind(db);
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enteredRead = resolve;
+    });
+    let paused = false;
+    vi.spyOn(db, 'get').mockImplementation(async (table, filter) => {
+      if (!paused && table === 'issue_2453_revision_rows') {
+        paused = true;
+        enteredRead();
+        await readReleased;
+      }
+      return originalGet(table, filter);
+    });
+
+    guarded.title = 'guarded write';
+    const guardedSave = guarded.save({
+      expectedUpdatedAt: guarded.updated_at,
+    });
+    await readEntered;
+    const naturalWrite = rows.create({
+      slug: created.slug,
+      context: created.context,
+      title: 'natural-key winner',
+    });
+    releaseRead();
+    await guardedSave;
+    await naturalWrite;
+
+    const stored = await db.list('issue_2453_revision_rows', {});
+    expect(stored).toHaveLength(1);
+    expect((stored[0] as Record<string, unknown>).title).toBe(
+      'natural-key winner',
+    );
+  });
+
   it('hydrates the framework revision alongside legacy timestamp aliases', async () => {
     const created = await rows.create({ title: 'legacy timestamp model' });
     const hydrated = await rows.get(String(created.id));

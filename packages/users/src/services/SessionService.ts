@@ -153,6 +153,12 @@ export class SessionService {
       const session = await this.sessionCollection.findValidSession(sessionId);
       if (!session) return null;
 
+      // Reject a principal that is already inactive before persisting activity.
+      // Otherwise a suspended user's probe can keep extending an otherwise
+      // valid session indefinitely even though no context is returned.
+      const initialUser = await this.userCollection.get(session.userId);
+      if (!initialUser?.isActive()) return null;
+
       // Activity persistence can conflict-reload the instance. Establish the
       // authorization snapshot only after that reload has converged.
       if (!(await session.recordActivity(this.autoExtend, this.defaultTTL))) {

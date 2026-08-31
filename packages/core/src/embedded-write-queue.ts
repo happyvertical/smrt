@@ -12,15 +12,17 @@
  * with `tenant_id` leading every tenant-scoped default key, EVERY NULL-tenant
  * (global) create takes it, so the collision became the steady state.
  *
- * The queue makes the process a single writer per database for exactly the
- * two participants of that collision:
+ * The queue makes the process a single writer per embedded database for:
  *
  * - a `save()` whose upsert conflict values contain NULL (the only shape the
  *   SDK routes through a second-connection transaction), and
  * - the change-feed append (a root-connection write that follows every save).
+ * - every model save and delete, so the embedded revision-CAS compare/upsert
+ *   fallback cannot race an ordinary save, natural-key create, or delete.
  *
- * Each hold is a LEAF database call — never an interceptor or hook — so the
- * queue cannot deadlock on nested saves. PostgreSQL is never serialized here:
+ * Each hold contains database calls only — never an interceptor or hook — so
+ * the queue cannot deadlock on nested model saves. PostgreSQL is never
+ * serialized here:
  * its null-aware upsert already arbitrates through advisory locks
  * server-side, and cross-process writers exist that an in-process queue could
  * not order anyway (which is also why this queue is a mitigation for embedded

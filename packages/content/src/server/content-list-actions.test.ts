@@ -288,6 +288,9 @@ function harness(
     revision?: Parameters<typeof createContentListActionAdapter>[0]['revision'];
     allowedTools?: string[];
     maxSelectionSize?: number;
+    workflowStorage?: Parameters<
+      typeof createContentListActionAdapter
+    >[0]['workflowStorage'];
     resolveDeferredPrincipal?: Parameters<
       typeof createContentListActionAdapter
     >[0]['resolveDeferredPrincipal'];
@@ -324,6 +327,7 @@ function harness(
       run,
     )) as typeof import('@happyvertical/smrt-agents').executeAsPrincipal;
   const adapter = createContentListActionAdapter({
+    workflowStorage: options.workflowStorage ?? { adapterType: 'sqlite' },
     state: new InMemoryDataSurfaceActionStateStore(),
     collection: async () => collection,
     revision: options.revision ?? (async () => 7),
@@ -361,6 +365,38 @@ function harness(
 }
 
 describe('ContentList bulk workflow server adapter (#2453)', () => {
+  it.each([
+    { adapterType: 'json' as const },
+    { adapterType: 'json' as const, writeStrategy: 'immediate' as const },
+    { adapterType: 'duckdb' as const, writeStrategy: 'immediate' as const },
+  ])('rejects non-transactional exported-file storage before setup: %j', (workflowStorage) => {
+    let stateRead = false;
+    expect(() =>
+      createContentListActionAdapter({
+        workflowStorage,
+        get state() {
+          stateRead = true;
+          throw new Error('state must not be read');
+        },
+        collection: async () => new MemoryContentCollection(rows()),
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'UNSUPPORTED_CONTENT_LIST_WORKFLOW_STORAGE',
+      }),
+    );
+    expect(stateRead).toBe(false);
+  });
+
+  it.each([
+    { adapterType: 'sqlite' as const },
+    { adapterType: 'postgres' as const },
+    { adapterType: 'duckdb' as const },
+    { adapterType: 'json' as const, writeStrategy: 'manual' as const },
+  ])('accepts transaction-safe workflow storage: %j', (workflowStorage) => {
+    expect(() => harness({ workflowStorage })).not.toThrow();
+  });
+
   it('applies a revision-guarded archive to native DuckDB UUID rows', async () => {
     const db = await getTestDatabase({
       type: 'duckdb',
@@ -397,6 +433,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
           run,
         )) as typeof import('@happyvertical/smrt-agents').executeAsPrincipal;
       const adapter = createContentListActionAdapter({
+        workflowStorage: { adapterType: 'duckdb' },
         state: new InMemoryDataSurfaceActionStateStore(),
         collection: async () => contents,
         revision: async () => 7,
