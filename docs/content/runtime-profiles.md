@@ -222,6 +222,10 @@ contract. Task and schedule processes call `createTaskWorker()` or
 `createScheduleWorker()` and then start the returned ordinary s-m-r-t runner.
 Application code still enqueues through `bg()` or
 `background(...).enqueue()`; profile selection does not alter that API.
+Runtime shutdown drains in-flight readiness/session/worker initialization,
+stops every runner returned by that runtime, and then closes PostgreSQL. A
+caller may stop a runner earlier, but must not restart it after runtime shutdown
+has begun.
 
 Health reports whether this runtime instance is live. Readiness rechecks
 PostgreSQL, authentication, assets, and secrets. It deliberately does not claim

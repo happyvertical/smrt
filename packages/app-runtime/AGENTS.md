@@ -34,6 +34,9 @@ Application infrastructure composition for the validated runtime profiles in
 - `createTaskWorker()` and `createScheduleWorker()` initialize the normal jobs
   package runners against the shared PostgreSQL database. They are intended for
   separate processes; the web process does not start them automatically.
+- `close()` drains in-flight readiness/session/worker initialization, stops
+  every runner returned by the runtime, and then closes PostgreSQL. Returned
+  runners must not be restarted after runtime shutdown begins.
 - `health()` is process liveness. `readiness()` probes database/auth/assets/
   secrets; it does not claim that an external worker fleet is running.
 - Cloud must keep required tenant context and must never introduce a root or

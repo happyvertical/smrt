@@ -160,6 +160,11 @@ const scheduleWorker = await initialized.createScheduleWorker();
 await scheduleWorker.start();
 ```
 
+`initialized.close()` drains in-flight readiness/session/worker initialization,
+stops every runner returned by this runtime, and only then closes PostgreSQL.
+Callers may stop a runner earlier, but must not restart a returned runner after
+its runtime has begun shutdown.
+
 Self-hosted deployments may select OIDC or magic-link authentication, explicit
 single- or multi-tenancy, local or S3-compatible assets, and environment,
 local-file, or external secrets. Cloud requires hosted identity, PostgreSQL,

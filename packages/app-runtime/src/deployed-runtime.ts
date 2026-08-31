@@ -10,7 +10,6 @@ import {
   type AssetStorageProvider,
   type AuthenticationProvider,
   type ResolvedApplicationRuntime,
-  RuntimeProfileValidationError,
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
   type SecretProvider,
@@ -301,8 +300,7 @@ function resolveDeployedRuntime(
   }
   try {
     return resolveApplicationRuntime({ profile, providers });
-  } catch (error) {
-    if (error instanceof RuntimeProfileValidationError) throw error;
+  } catch {
     throw new DeployedRuntimeError(
       'invalid_configuration',
       'Deployed runtime provider options could not be read safely.',
@@ -568,9 +566,10 @@ class InitializedDeployedApplicationRuntime
 {
   private state: 'running' | 'closing' | 'close-failed' | 'stopped' = 'running';
   private closeAttempt?: Promise<void>;
+  private readonly pendingReadinessChecks = new Set<Promise<unknown>>();
   private readonly pendingSessionRestorations = new Set<Promise<unknown>>();
   private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
-  private readonly pendingWorkerCleanups = new Set<() => Promise<void>>();
+  private readonly workerCleanups = new Set<() => Promise<void>>();
   private readonly sessionService: SessionService;
   private sessionServiceReady?: Promise<void>;
   private readonly snapshot: DeployedRuntimeDiagnostics;
@@ -609,21 +608,25 @@ class InitializedDeployedApplicationRuntime
       this.resolvedRuntime.providers.tenancy.context === 'required'
     ) {
       let tenantId: unknown;
-      let membershipActive: unknown;
       try {
         tenantId = context.tenantId;
-        membershipActive = context.membership?.isActive();
       } catch {
         throw unavailable('authentication');
       }
-      if (!tenantId) {
+      if (typeof tenantId !== 'string' || tenantId.trim().length === 0) {
         throw new DeployedRuntimeError(
           'tenant_context_required',
           'The authenticated session does not include the required tenant context.',
           'authentication',
         );
       }
-      if (!membershipActive) {
+      let membershipActive: unknown;
+      try {
+        membershipActive = context.membership?.isActive();
+      } catch {
+        throw unavailable('authentication');
+      }
+      if (membershipActive !== true) {
         throw new DeployedRuntimeError(
           'tenant_context_unauthorized',
           'The authenticated session is not authorized for its tenant context.',
@@ -639,7 +642,9 @@ class InitializedDeployedApplicationRuntime
     const operation = this.initializeTaskWorker(config);
     this.pendingWorkerInitializations.add(operation);
     try {
-      return await operation;
+      const runner = await operation;
+      this.retainWorkerCleanup(runner);
+      return runner;
     } finally {
       this.pendingWorkerInitializations.delete(operation);
     }
@@ -652,7 +657,9 @@ class InitializedDeployedApplicationRuntime
     const operation = this.initializeScheduleWorker(config);
     this.pendingWorkerInitializations.add(operation);
     try {
-      return await operation;
+      const runner = await operation;
+      this.retainWorkerCleanup(runner);
+      return runner;
     } finally {
       this.pendingWorkerInitializations.delete(operation);
     }
@@ -676,6 +683,16 @@ class InitializedDeployedApplicationRuntime
     if (this.state !== 'running')
       return createStoppedReadiness(this.resolvedRuntime.profile);
 
+    const operation = this.checkReadinessWhileRunning();
+    this.pendingReadinessChecks.add(operation);
+    try {
+      return await operation;
+    } finally {
+      this.pendingReadinessChecks.delete(operation);
+    }
+  }
+
+  private async checkReadinessWhileRunning(): Promise<DeployedRuntimeReadiness> {
     const results = await Promise.all([
       probe(() => checkDatabase(this.bindings.database, this.db)),
       probe(() => this.bindings.authentication.readiness()),
@@ -699,12 +716,13 @@ class InitializedDeployedApplicationRuntime
 
     this.state = 'closing';
     const pendingOperations = [
+      ...this.pendingReadinessChecks,
       ...this.pendingSessionRestorations,
       ...this.pendingWorkerInitializations,
     ];
     const attempt = Promise.resolve().then(async () => {
       await Promise.allSettled(pendingOperations);
-      await this.cleanupUnreturnedWorkers();
+      await this.cleanupWorkers();
       await this.closeConnection();
     });
     this.closeAttempt = attempt.finally(() => {
@@ -756,19 +774,29 @@ class InitializedDeployedApplicationRuntime
     try {
       await cleanup();
     } catch {
-      this.pendingWorkerCleanups.add(cleanup);
+      this.workerCleanups.add(cleanup);
     }
   }
 
-  private async cleanupUnreturnedWorkers(): Promise<void> {
-    for (const cleanup of [...this.pendingWorkerCleanups]) {
-      try {
-        await cleanup();
-        this.pendingWorkerCleanups.delete(cleanup);
-      } catch {
-        this.state = 'close-failed';
-        throw unavailable('database');
-      }
+  private retainWorkerCleanup(runner: { stop(): Promise<void> }): void {
+    this.workerCleanups.add(() => runner.stop());
+  }
+
+  private async cleanupWorkers(): Promise<void> {
+    const cleanups = [...this.workerCleanups];
+    const results = await Promise.allSettled(
+      cleanups.map((cleanup) => Promise.resolve().then(cleanup)),
+    );
+    let cleanupFailed = false;
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        const cleanup = cleanups[index];
+        if (cleanup) this.workerCleanups.delete(cleanup);
+      } else cleanupFailed = true;
+    }
+    if (cleanupFailed) {
+      this.state = 'close-failed';
+      throw unavailable('database');
     }
   }
 
