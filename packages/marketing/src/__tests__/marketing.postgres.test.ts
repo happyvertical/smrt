@@ -8,6 +8,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CampaignChannelCollection,
   CampaignCollection,
   CampaignMetricSnapshotCollection,
 } from '../collections/index.js';
@@ -20,6 +21,7 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
   let isolated: IsolatedTestDbResult | undefined;
   let db: DatabaseInterface;
   let campaigns: CampaignCollection;
+  let channels: CampaignChannelCollection;
   let customers: CustomerCollection;
   let snapshots: CampaignMetricSnapshotCollection;
 
@@ -35,6 +37,7 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
     db = isolated.db;
     customers = await CustomerCollection.create({ db });
     campaigns = await CampaignCollection.create({ db });
+    channels = await CampaignChannelCollection.create({ db });
     snapshots = await CampaignMetricSnapshotCollection.create({ db });
   });
 
@@ -187,5 +190,67 @@ describePostgres('marketing natural keys on PostgreSQL', () => {
          AND column_name = 'customer_id'`,
     );
     expect(column.rows).toEqual([{ data_type: 'uuid' }]);
+  });
+
+  it('projects grouped campaign reporting with native PostgreSQL UUID scope', async () => {
+    const tenantId = randomUUID();
+    const customer = await customers.create({ tenantId });
+    const campaign = await campaigns.create({
+      tenantId,
+      customerId: customer.id,
+      campaignKey: 'postgres-reporting',
+      name: 'PostgreSQL reporting',
+      status: 'active',
+      startAt: new Date('2026-08-01T00:00:00.000Z'),
+      endAt: new Date('2026-09-01T00:00:00.000Z'),
+      budgetCents: 20_000,
+    });
+    const channel = await channels.create({
+      tenantId,
+      campaignId: campaign.id,
+      channelKind: 'ad_group',
+      channelRef: 'postgres-reporting-channel',
+    });
+    await snapshots.create({
+      tenantId,
+      campaignId: campaign.id,
+      campaignChannelId: channel.id,
+      periodStart: new Date('2026-08-01T00:00:00.000Z'),
+      periodEnd: new Date('2026-08-07T23:59:59.000Z'),
+      spendCents: 2_000,
+      impressions: 20_000,
+      clicks: 800,
+      conversions: 40,
+      leads: 25,
+      revenueCents: 8_000,
+      source: 'postgres-test',
+      dedupeKey: 'postgres-reporting-period-one',
+    });
+
+    const page = await campaigns.listReportingByCustomer(
+      tenantId,
+      customer.id ?? '',
+      { at: new Date('2026-08-15T00:00:00.000Z') },
+    );
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0]).toMatchObject({
+      campaign: { id: campaign.id },
+      channelCount: 1,
+      channelMix: [{ channelKind: 'ad_group', count: 1 }],
+      metricTotals: {
+        spendCents: 2_000,
+        impressions: 20_000,
+        clicks: 800,
+        conversions: 40,
+        leads: 25,
+        revenueCents: 8_000,
+      },
+      pacing: {
+        campaignId: campaign.id,
+        spendCents: 2_000,
+        snapshotCount: 1,
+        usedCampaignRollups: false,
+      },
+    });
   });
 });

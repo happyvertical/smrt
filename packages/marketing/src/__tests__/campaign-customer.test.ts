@@ -62,6 +62,9 @@ describe('Campaign customer scope', () => {
     expect(
       typeof marketing.CampaignCollection.prototype.summarizeByCustomers,
     ).toBe('function');
+    expect(
+      typeof marketing.CampaignCollection.prototype.listReportingByCustomer,
+    ).toBe('function');
   });
 
   it('requires exact Campaign and Customer tenant agreement before save', async () => {

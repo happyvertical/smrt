@@ -55,9 +55,11 @@ All generated surfaces are explicit; never omit `api`, `mcp`, or `cli` config.
   uses a five-percent budget tolerance around schedule-derived expected spend.
 - **CampaignCollection** exposes bounded, tenant-and-Customer-scoped cursor
   pages ordered by `start_at DESC, id DESC` and bounded batch summaries for
-  total count, active count, and latest start time. Customer scope is validated
-  through runtime relationship metadata; there is no static commerce import or
-  tenant-wide campaign materialization.
+  total count, active count, and latest start time. Its reporting-page variant
+  preserves that order/cursor and adds channel count/mix, immutable metric
+  totals, and canonical pacing with two page-wide grouped reads. Customer scope
+  is validated through runtime relationship metadata; there is no static
+  commerce import, per-campaign callback, or tenant-wide materialization.
 
 ## Svelte
 
