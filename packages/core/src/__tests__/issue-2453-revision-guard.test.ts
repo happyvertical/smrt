@@ -117,6 +117,34 @@ describe('issue #2453 revision-guarded saves', () => {
       });
       await direct.initialize();
       expect(typeof direct.id).toBe('string');
+
+      const bySlug = new Issue2453RevisionRow({
+        db: duckDb,
+        slug: created.slug,
+        context: created.context,
+      });
+      await bySlug.initialize();
+      expect(typeof bySlug.id).toBe('string');
+      bySlug.title = 'duckdb slug update';
+      await bySlug.save();
+
+      const savedIdProbe = new Issue2453RevisionRow({ db: duckDb });
+      await savedIdProbe.initialize();
+      savedIdProbe.slug = created.slug;
+      savedIdProbe.context = created.context;
+      expect(typeof (await savedIdProbe.getSavedId())).toBe('string');
+      expect(typeof (await savedIdProbe.getId())).toBe('string');
+
+      const [rawHydrated] = await duckRows.query(
+        'SELECT * FROM issue_2453_revision_rows WHERE id = ?',
+        [String(created.id)],
+      );
+      expect(typeof rawHydrated.id).toBe('string');
+      rawHydrated.title = 'duckdb raw query update';
+      await rawHydrated.save();
+      expect((await duckRows.get(String(created.id)))?.title).toBe(
+        'duckdb raw query update',
+      );
     } finally {
       await duckDb.close?.();
     }

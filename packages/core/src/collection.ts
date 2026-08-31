@@ -52,6 +52,15 @@ import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 const logger = createLogger({ level: 'info' });
 
+function isDuckDbHugeInt(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'hugeint' in value &&
+      (typeof value.hugeint === 'number' || typeof value.hugeint === 'bigint'),
+  );
+}
+
 /**
  * `_smrt_contexts.owner_id` value for collection-level (as opposed to
  * per-object) memory. Tenant-scoped collections suffix the active tenant id
@@ -1966,7 +1975,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           relatedFieldColumns.get(fieldName) ??
           relatedCollection.toDbColumnName(fieldName);
         const alias = relatedAlias(fieldName);
-        return `${relatedCollection.quoteProjectionIdentifier(column)} AS ${relatedCollection.quoteProjectionIdentifier(alias)}`;
+        const quotedColumn =
+          relatedCollection.quoteProjectionIdentifier(column);
+        const relatedSchema =
+          ObjectRegistry.getSchema(relatedQualifiedName) ??
+          ObjectRegistry.getSchema(relatedItemClassName);
+        const source = `r.${quotedColumn}`;
+        const value =
+          relatedCollection.getDatabaseEngine() === 'duckdb' &&
+          String(relatedSchema?.columns[column]?.type).toUpperCase() === 'UUID'
+            ? `CAST(${source} AS VARCHAR)`
+            : source;
+        return `${value} AS ${relatedCollection.quoteProjectionIdentifier(alias)}`;
       },
     );
     const relatedRankOrder = [
@@ -1979,11 +1999,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       relatedCollection.quoteProjectionIdentifier('__smrt_latest_rank');
     const latestRelatedAlias = (fieldName: string): string =>
       relatedCollection.quoteProjectionIdentifier(relatedAlias(fieldName));
-    const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions
-      .map((expression) => `r.${expression}`)
-      .join(
-        ', ',
-      )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS ${latestRankAlias} FROM ${relatedCollection.tableName} r${relatedWhereSql ? ` ${relatedWhereSql}` : ''}) `;
+    const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions.join(
+      ', ',
+    )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS ${latestRankAlias} FROM ${relatedCollection.tableName} r${relatedWhereSql ? ` ${relatedWhereSql}` : ''}) `;
 
     const parentWhere = this.convertWhereKeys(where || {});
     const { sql: rawWhereSql, values: parentWhereValues } =
@@ -2065,11 +2083,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       .join(
         ', ',
       )} FROM ${this.quoteProjectionIdentifier(this.tableName)} LEFT JOIN ranked_latest_related rr ON ${relatedJoinConditions.join(' AND ')} ${parentWhereSql} ${orderFragments.length > 0 ? `ORDER BY ${orderFragments.join(', ')}` : ''}${limitOffsetSql}`;
-    const rows = await this.db.query(
+    const queried = await this.db.query(
       sql,
       ...relatedWhereValues,
       ...parentWhereValues,
       ...limitOffsetValues,
+    );
+    const queryValues = [
+      ...relatedWhereValues,
+      ...parentWhereValues,
+      ...limitOffsetValues,
+    ];
+    const rows = await this.canonicalizeDuckDbSelectRows(
+      sql,
+      queryValues,
+      queried.rows,
     );
 
     // Hydrate in result order. initialize() hooks may issue queries through
@@ -2081,7 +2109,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       string,
       Record<string, CollectionFieldDefinition>
     >();
-    for (const row of rows.rows as Record<string, unknown>[]) {
+    for (const row of rows) {
       const parentRow = Object.fromEntries(
         Object.entries(row).filter(([key]) => !relatedAliasNames.has(key)),
       );
@@ -2100,7 +2128,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // array-index pairing after those hooks could attach one parent's related
     // data to another parent.
     const relatedByParentId = new Map<string, Record<string, unknown> | null>();
-    for (const row of rows.rows as Record<string, unknown>[]) {
+    for (const row of rows) {
       const parentId = row[parentPrimaryKey.column];
       if (parentId === null || parentId === undefined) continue;
 
@@ -2601,7 +2629,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   ): Promise<Record<string, unknown>[]> {
     if (!cacheConfig) {
       const result = await this.db.query(sql, ...params);
-      return result.rows;
+      return await this.canonicalizeDuckDbSelectRows(sql, params, result.rows);
     }
 
     const dbKey = resolveDbCacheKey(this.db);
@@ -2627,13 +2655,61 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // caching it for the full TTL.
     const generation = getCacheGeneration(dbKey, this.tableName);
     const result = await this.db.query(sql, ...params);
+    const rows = await this.canonicalizeDuckDbSelectRows(
+      sql,
+      params,
+      result.rows,
+    );
     setCachedRows(
       dbKey,
       this.tableName,
       queryKey,
-      result.rows,
+      rows,
       cacheConfig.ttl,
       generation,
+    );
+    return rows;
+  }
+
+  /**
+   * Re-run a native DuckDB SELECT through a projection that casts any UUID
+   * wrapper columns exposed by the first result. This catches polymorphic STI
+   * fields and caller-authored raw SELECT projections without naming columns
+   * that are absent from a partially provisioned table.
+   */
+  private async canonicalizeDuckDbSelectRows(
+    sql: string,
+    params: unknown[],
+    rows: Record<string, unknown>[],
+  ): Promise<Record<string, unknown>[]> {
+    if (this.getDatabaseEngine() !== 'duckdb' || rows.length === 0) return rows;
+    const wrapperColumns = new Set<string>();
+    for (const row of rows) {
+      for (const [column, value] of Object.entries(row)) {
+        if (isDuckDbHugeInt(value)) wrapperColumns.add(column);
+      }
+    }
+    if (wrapperColumns.size === 0) return rows;
+    // query() is documented as a SELECT hydration surface but remains a raw
+    // escape hatch. Never replay a mutating statement merely to normalize its
+    // RETURNING rows.
+    if (
+      /\b(?:insert\s+into|update\s+[^\s(]+|delete\s+from|merge\s+into|truncate\s+table|replace\s+into)\b/i.test(
+        sql,
+      )
+    ) {
+      return rows;
+    }
+    const readSql = sql.trim().replace(/;$/, '');
+    if (!/^(?:select|with)\b/i.test(readSql)) return rows;
+    const alias = this.quoteProjectionIdentifier('__smrt_uuid_rows');
+    const replacements = Array.from(wrapperColumns, (column) => {
+      const quoted = this.quoteProjectionIdentifier(column);
+      return `CAST(${alias}.${quoted} AS VARCHAR) AS ${quoted}`;
+    }).join(', ');
+    const result = await this.db.query(
+      `SELECT ${alias}.* REPLACE (${replacements}) FROM (${readSql}) AS ${alias}`,
+      ...params,
     );
     return result.rows;
   }
@@ -4264,7 +4340,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const isSTI = tableStrategy === 'sti';
 
-    const instances = await this.hydrateResultRows(result.rows, fields, isSTI);
+    const rows = await this.canonicalizeDuckDbSelectRows(
+      interceptedQuery.sql,
+      interceptedQuery.params,
+      result.rows,
+    );
+    const instances = await this.hydrateResultRows(rows, fields, isSTI);
 
     // Execute afterQuery interceptors
     return await GlobalInterceptors.executeAfterQuery(

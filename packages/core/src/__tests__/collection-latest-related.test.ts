@@ -593,6 +593,47 @@ describe('SmrtCollection.listWithLatestRelated()', () => {
     }
   });
 
+  it('canonicalizes native DuckDB UUIDs in latest-related projections', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: [
+        'LatestRelatedStiParent',
+        'LatestRelatedStiEvaluation',
+        'LatestRelatedStiScoreEvaluation',
+      ],
+      omitForeignKeyConstraints: true,
+    });
+    try {
+      const duckParents = await LatestRelatedStiParentCollection.create({
+        db: duckDb,
+      });
+      const duckEvaluations =
+        await LatestRelatedStiScoreEvaluationCollection.create({ db: duckDb });
+      const parent = await duckParents.create({ name: 'uuid parent' });
+      const evaluation = await duckEvaluations.create({
+        parentId: String(parent.id),
+        sequence: 1,
+      });
+
+      const [row] = await duckParents.listWithLatestRelated({
+        latestRelated: {
+          relation: 'evaluations',
+          orderBy: 'sequence DESC',
+          select: ['id', 'parentId'],
+        },
+      });
+
+      expect(row.parent.id).toBe(String(parent.id));
+      expect(row.latestRelated).toMatchObject({
+        id: String(evaluation.id),
+        parentId: String(parent.id),
+      });
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
   it('uses the same window-query shape on JSON-on-DuckDB', async () => {
     const jsonPath = join(tmpdir(), `latest-related-${randomUUID()}`);
     const jsonDb = await getTestDatabase({

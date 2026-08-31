@@ -19,6 +19,7 @@ import {
   buildContentQuerySchema,
   executeContentQuery,
 } from '../content-query.js';
+import { Mirror } from '../content-types.js';
 import { Contents } from '../contents.js';
 import { CONTENT_LIST_WORKFLOW_OPTIONS } from '../svelte/content-list-workflows.js';
 import {
@@ -417,7 +418,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
         rowIds: [String(created.id)],
       };
       const target = { expectedCount: 1 };
-      await executeContentQuery(
+      const projected = await executeContentQuery(
         contents,
         {
           version: 1,
@@ -439,6 +440,10 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
           },
         },
       );
+      expect(projected.rows[0]).toMatchObject({
+        id: String(created.id),
+        title: 'DuckDB content',
+      });
       const hydratedBeforePreview = await contents.get(String(created.id));
       expect(hydratedBeforePreview?.status).toBe('draft');
       const preview = await adapter.preview(
@@ -461,6 +466,37 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       const persisted = await contents.get(String(created.id));
       expect(typeof persisted?.id).toBe('string');
       expect(persisted?.status).toBe('archived');
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it('canonicalizes native DuckDB STI-child UUIDs through the base collection', async () => {
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Content', 'Mirror'],
+      omitForeignKeyConstraints: true,
+    });
+    try {
+      const feedSourceId = '55555555-5555-4555-8555-555555555555';
+      const mirror = new Mirror({
+        db,
+        id: '66666666-6666-4666-8666-666666666666',
+        title: 'DuckDB mirror',
+        status: 'draft',
+        feedSourceId,
+      });
+      await mirror.initialize();
+      await mirror.save();
+      const contents = await Contents.create({ db });
+      const loaded = await contents.get(String(mirror.id));
+
+      expect(loaded).toBeInstanceOf(Mirror);
+      expect((loaded as Mirror).feedSourceId).toBe(feedSourceId);
+      loaded.status = 'archived';
+      await loaded.save();
+      expect((await contents.get(String(mirror.id)))?.status).toBe('archived');
     } finally {
       await db.close?.();
     }

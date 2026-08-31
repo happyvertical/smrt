@@ -1038,9 +1038,8 @@ export class SmrtObject extends SmrtClass {
   /** Rebind native DuckDB UUID wrappers to their persisted textual values. */
   protected async canonicalizePersistedUuidRow(
     row: Record<string, unknown>,
-    lookupId: unknown = this.id,
+    lookup: unknown = this.id,
   ): Promise<Record<string, unknown>> {
-    if (typeof lookupId !== 'string' || !this.isNativeDuckDb()) return row;
     const schema =
       ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
       ObjectRegistry.getSchema(this.getResolvedClassName());
@@ -1067,16 +1066,46 @@ export class SmrtObject extends SmrtClass {
     ) {
       return row;
     }
+    if (!this.isNativeDuckDb()) return row;
     const quote = (identifier: string) =>
       `"${identifier.replaceAll('"', '""')}"`;
+    const filter =
+      typeof lookup === 'string'
+        ? { id: lookup }
+        : lookup && typeof lookup === 'object' && !Array.isArray(lookup)
+          ? (lookup as Record<string, unknown>)
+          : null;
+    if (!filter || Object.keys(filter).length === 0) return row;
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    for (const [fieldName, value] of Object.entries(filter)) {
+      const columnName = toSnakeCase(fieldName);
+      if (!schema?.columns[columnName]) return row;
+      if (value === null) {
+        conditions.push(`${quote(columnName)} IS NULL`);
+        continue;
+      }
+      if (
+        typeof value !== 'string' &&
+        typeof value !== 'number' &&
+        typeof value !== 'boolean' &&
+        !(value instanceof Date)
+      ) {
+        return row;
+      }
+      conditions.push(`${quote(columnName)} = ?`);
+      values.push(value instanceof Date ? value.toISOString() : value);
+    }
     const { rows } = await this.db.query(
       `SELECT ${uuidColumns
         .map((columnName) => {
           const quoted = quote(columnName);
           return `CAST(${quoted} AS VARCHAR) AS ${quoted}`;
         })
-        .join(', ')} FROM ${quote(this.tableName)} WHERE "id" = ? LIMIT 1`,
-      lookupId,
+        .join(', ')} FROM ${quote(this.tableName)} WHERE ${conditions.join(
+        ' AND ',
+      )} LIMIT 1`,
+      ...values,
     );
     return rows[0] ? { ...row, ...rows[0] } : row;
   }
@@ -1654,15 +1683,24 @@ export class SmrtObject extends SmrtClass {
       await this.verifyStorageReady();
 
       // lookup by slug and context using adapter method
-      const saved = await this.db.get(
-        this.tableName,
-        await this.interceptGetFilter({
-          slug: this.slug,
-          context: this.context,
-        }),
-      );
+      const filter = await this.interceptGetFilter({
+        slug: this.slug,
+        context: this.context,
+      });
+      const saved = await this.db.get(this.tableName, filter);
       if (saved) {
-        this.id = saved.id;
+        const persistedId = (
+          await this.canonicalizePersistedUuidRow(saved, filter)
+        ).id;
+        if (typeof persistedId !== 'string') {
+          throw RuntimeError.invalidState(
+            'Persisted object id is not a string',
+            {
+              className: this.getResolvedClassName(),
+            },
+          );
+        }
+        this.id = persistedId;
       }
     }
 
@@ -1742,20 +1780,18 @@ export class SmrtObject extends SmrtClass {
 
     // Try to find by id first
     if (this.id) {
-      const byId = await this.db.get(
-        this.tableName,
-        await this.interceptGetFilter({ id: this.id }),
-      );
-      if (byId) return byId.id;
+      const filter = await this.interceptGetFilter({ id: this.id });
+      const byId = await this.db.get(this.tableName, filter);
+      if (byId)
+        return (await this.canonicalizePersistedUuidRow(byId, filter)).id;
     }
 
     // Fall back to finding by slug
     if (this.slug) {
-      const bySlug = await this.db.get(
-        this.tableName,
-        await this.interceptGetFilter({ slug: this.slug }),
-      );
-      if (bySlug) return bySlug.id;
+      const filter = await this.interceptGetFilter({ slug: this.slug });
+      const bySlug = await this.db.get(this.tableName, filter);
+      if (bySlug)
+        return (await this.canonicalizePersistedUuidRow(bySlug, filter)).id;
     }
 
     return null;
@@ -2867,15 +2903,15 @@ export class SmrtObject extends SmrtClass {
 
     // Route the natural-key lookup through beforeGet interceptors so slug
     // hydration carries the same read predicate as collection reads (#2365).
-    const existing = await this.db.get(
-      this.tableName,
-      await this.interceptGetFilter({
-        slug: this._slug,
-        context: this._context || '',
-      }),
-    );
+    const filter = await this.interceptGetFilter({
+      slug: this._slug,
+      context: this._context || '',
+    });
+    const existing = await this.db.get(this.tableName, filter);
     if (existing) {
-      await this.loadDataFromDb(existing);
+      await this.loadDataFromDb(
+        await this.canonicalizePersistedUuidRow(existing, filter),
+      );
     }
   }
 
