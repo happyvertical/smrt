@@ -1,5 +1,6 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import { buildWhere } from '@happyvertical/sql';
 import { runCascadeDelete } from './cascade';
 import {
   CHANGE_FEED_WAS_PERSISTED_KEY,
@@ -1087,37 +1088,20 @@ export class SmrtObject extends SmrtClass {
     const quote = (identifier: string) =>
       `"${identifier.replaceAll('"', '""')}"`;
     if (Object.keys(filter).length === 0) return null;
-    const conditions: string[] = [];
-    const values: unknown[] = [];
-    for (const [fieldName, value] of Object.entries(filter)) {
-      const columnName = toSnakeCase(fieldName);
+    for (const fieldName of Object.keys(filter)) {
+      const [, rawColumnName] =
+        fieldName.match(/^(.*?)(?:\s+(?:not in|in|like|>=|<=|!=|>|<|=))?$/i) ??
+        [];
+      const columnName = toSnakeCase(rawColumnName ?? fieldName);
       if (!schema?.columns[columnName]) {
         throw RuntimeError.invalidState('Invalid persisted-row filter column', {
           className: this.getResolvedClassName(),
           fieldName,
         });
       }
-      if (value === null) {
-        conditions.push(`${quote(columnName)} IS NULL`);
-        continue;
-      }
-      if (
-        typeof value !== 'string' &&
-        typeof value !== 'number' &&
-        typeof value !== 'boolean' &&
-        !(value instanceof Date)
-      ) {
-        throw RuntimeError.invalidState('Invalid persisted-row filter value', {
-          className: this.getResolvedClassName(),
-          fieldName,
-        });
-      }
-      conditions.push(`${quote(columnName)} = ?`);
-      values.push(value instanceof Date ? value.toISOString() : value);
     }
-    const readSql = `SELECT * FROM ${quote(this.tableName)} WHERE ${conditions.join(
-      ' AND ',
-    )} LIMIT 1`;
+    const { sql: whereSql, values } = buildWhere(filter, 1, 'duckdb');
+    const readSql = `SELECT * FROM ${quote(this.tableName)} ${whereSql} LIMIT 1`;
     const described = await this.db.query(`DESCRIBE ${readSql}`, ...values);
     const uuidColumns = described.rows
       .filter((column) => String(column.column_type).toUpperCase() === 'UUID')

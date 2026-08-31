@@ -216,6 +216,47 @@ describe('issue #2453 revision-guarded saves', () => {
     }
   });
 
+  it('preserves interceptor operator filters in canonical DuckDB reads', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    const interceptorName = 'issue-2453-duckdb-operator-filter';
+    try {
+      const duckRows = (await Issue2453RevisionRows.create({
+        db: duckDb,
+      })) as Issue2453RevisionRows;
+      const created = await duckRows.create({ title: 'authorized operator' });
+      GlobalInterceptors.register({
+        name: interceptorName,
+        beforeGet(className, filter) {
+          if (
+            className !== 'Issue2453RevisionRow' ||
+            typeof filter !== 'object' ||
+            !filter ||
+            !('id' in filter)
+          ) {
+            return undefined;
+          }
+          return { 'id in': [filter.id] };
+        },
+      });
+
+      const loaded = new Issue2453RevisionRow({
+        db: duckDb,
+        id: String(created.id),
+      });
+      await loaded.initialize();
+
+      expect(loaded.id).toBe(String(created.id));
+      expect(loaded.title).toBe('authorized operator');
+    } finally {
+      GlobalInterceptors.unregister(interceptorName);
+      await duckDb.close?.();
+    }
+  });
+
   it('uses conditional updates for remote LibSQL revision guards', async () => {
     const created = await rows.create({ title: 'original' });
     const first = await rows.get(String(created.id));
