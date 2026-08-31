@@ -79,7 +79,7 @@ export interface ListCampaignReportingByCustomerOptions
 }
 
 export interface CampaignChannelMixEntry {
-  channelKind: string;
+  channelKind: CampaignChannelKind;
   count: number;
 }
 

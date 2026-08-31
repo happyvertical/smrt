@@ -125,6 +125,7 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
           normalizedCustomerId,
           limit,
           cursor,
+          'CampaignCollection.listByCustomer',
         ),
       ),
     );
@@ -168,6 +169,7 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
           normalizedCustomerId,
           limit,
           cursor,
+          'CampaignCollection.listReportingByCustomer',
         );
         return bound.projectReportingPage(normalizedTenantId, page, at);
       }),
@@ -268,7 +270,16 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
     const tenantParams = tenantId === null ? [] : [tenantId];
     const result = await db.query(
       `WITH scoped_snapshots AS (
-         SELECT *
+         SELECT campaign_id,
+                campaign_channel_id,
+                period_start,
+                period_end,
+                spend_cents,
+                impressions,
+                clicks,
+                conversions,
+                leads,
+                revenue_cents
          FROM ${snapshots.tableName}
          WHERE ${tenantPredicate} AND campaign_id IN (${placeholders})
        ), rollup_periods AS (
@@ -308,12 +319,13 @@ export class CampaignCollection extends SmrtCollection<Campaign> {
     customerId: string,
     limit: number,
     cursor: CampaignCustomerCursor | null,
+    operation: string,
   ): Promise<CampaignCustomerPage> {
     await assertCustomersBelongToTenant(
       this.options,
       tenantId,
       [customerId],
-      'CampaignCollection.listByCustomer',
+      operation,
       'share',
     );
     const items =
@@ -586,7 +598,7 @@ function requireDatabase(options: { db?: unknown }): QueryDatabase {
   const db = options.db;
   if (!db || typeof db !== 'object' || !('query' in db)) {
     throw new Error(
-      'Campaign customer summaries require an initialized database connection.',
+      'Campaign reporting and summaries require an initialized database connection.',
     );
   }
   return db as QueryDatabase;

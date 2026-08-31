@@ -243,6 +243,9 @@ describe('Campaign customer reporting page', () => {
       customer.id ?? '',
     );
     await expect(mismatch).rejects.toBeInstanceOf(CampaignCustomerScopeError);
+    await expect(mismatch).rejects.toThrow(
+      /CampaignCollection\.listReportingByCustomer/,
+    );
     await expect(mismatch).rejects.not.toThrow(customer.id);
     await expect(
       campaigns.listReportingByCustomer(tenantA, customer.id ?? '', {
