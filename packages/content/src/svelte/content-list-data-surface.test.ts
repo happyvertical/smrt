@@ -1,3 +1,9 @@
+import {
+  createDataSurfaceCommandBridge,
+  type DataSurfaceBridgeConnectionState,
+  type DataSurfaceBridgeMessage,
+  type DataSurfaceBridgePeer,
+} from '@happyvertical/smrt-chat';
 import { createDataSurfaceRegistry } from '@happyvertical/smrt-ui/data';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -25,6 +31,35 @@ function context(
       warnings: [],
     },
     ...overrides,
+  };
+}
+
+function disconnectedTransport() {
+  const listeners = new Set<
+    (message: unknown, peer: DataSurfaceBridgePeer) => void
+  >();
+  const statuses = new Set<(state: DataSurfaceBridgeConnectionState) => void>();
+  const messages: DataSurfaceBridgeMessage[] = [];
+  return {
+    messages,
+    send(message: DataSurfaceBridgeMessage) {
+      messages.push(message);
+    },
+    subscribe(
+      listener: (message: unknown, peer: DataSurfaceBridgePeer) => void,
+    ) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    subscribeStatus(
+      listener: (state: DataSurfaceBridgeConnectionState) => void,
+    ) {
+      statuses.add(listener);
+      return () => statuses.delete(listener);
+    },
+    disconnect() {
+      for (const listener of statuses) listener('disconnected');
+    },
   };
 }
 
@@ -134,5 +169,35 @@ describe('ContentList mounted data surface', () => {
     });
     handle.destroy();
     expect(registry.inspect(identity)).toBeUndefined();
+  });
+
+  it('fails a visible ContentList command closed when its browser disconnects', async () => {
+    const transport = disconnectedTransport();
+    const bridge = createDataSurfaceCommandBridge({
+      transport,
+      sessionId: 'content-session',
+      source: 'content-agent',
+      peerSource: 'content-browser',
+      authorize: (command) =>
+        command.identity.surfaceId === 'content-list-disconnect',
+      timeoutMs: 100,
+    });
+    const pending = bridge.send({
+      version: 1,
+      commandId: 'change-view',
+      identity: { surfaceId: 'content-list-disconnect', kind: 'table' },
+      expectedRevision: 0,
+      controlId: 'set-view',
+      payload: { view: 'compact' },
+    });
+    await vi.waitFor(() => expect(transport.messages).toHaveLength(1));
+
+    transport.disconnect();
+
+    await expect(pending).resolves.toMatchObject({
+      ok: false,
+      reason: 'disconnected',
+    });
+    bridge.dispose();
   });
 });
