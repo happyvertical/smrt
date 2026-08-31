@@ -983,6 +983,12 @@ describe('deployed application runtime', () => {
     vi.spyOn(ScheduleRunner.prototype, 'initialize').mockRejectedValue(
       new Error(credential),
     );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
     const initialized = await initializeDeployedApplicationRuntime(
       selfHostedOptions(db),
     );
@@ -1003,6 +1009,32 @@ describe('deployed application runtime', () => {
       });
       expect((failure as Error).message).not.toContain(credential);
     }
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(scheduleStop).toHaveBeenCalledOnce();
+  });
+
+  it('retains failed cleanup after worker initialization rejects', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockRejectedValue(
+      new Error('partial initialization failure'),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error('cleanup failure'))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    await expect(initialized.createTaskWorker()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(closeDatabase).not.toHaveBeenCalled();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).toHaveBeenCalledOnce();
   });
 
   it('redacts database errors from session restoration', async () => {

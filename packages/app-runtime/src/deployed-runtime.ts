@@ -694,20 +694,16 @@ class InitializedDeployedApplicationRuntime
   private async initializeTaskWorker(
     config: TaskRunnerConfig,
   ): Promise<TaskRunner> {
-    let runner: TaskRunner;
+    let runner: TaskRunner | undefined;
     try {
       runner = new TaskRunner(config);
       await runner.initialize(this.db);
     } catch {
+      if (runner) await this.stopOrRetainUnreturnedWorker(runner);
       throw unavailable('database');
     }
     if (this.state !== 'running') {
-      const cleanup = () => runner.stop();
-      try {
-        await cleanup();
-      } catch {
-        this.pendingWorkerCleanups.add(cleanup);
-      }
+      await this.stopOrRetainUnreturnedWorker(runner);
       this.assertRunning();
     }
     return runner;
@@ -716,23 +712,30 @@ class InitializedDeployedApplicationRuntime
   private async initializeScheduleWorker(
     config: ScheduleRunnerConfig,
   ): Promise<ScheduleRunner> {
-    let runner: ScheduleRunner;
+    let runner: ScheduleRunner | undefined;
     try {
       runner = new ScheduleRunner(config);
       await runner.initialize(this.db);
     } catch {
+      if (runner) await this.stopOrRetainUnreturnedWorker(runner);
       throw unavailable('database');
     }
     if (this.state !== 'running') {
-      const cleanup = () => runner.stop();
-      try {
-        await cleanup();
-      } catch {
-        this.pendingWorkerCleanups.add(cleanup);
-      }
+      await this.stopOrRetainUnreturnedWorker(runner);
       this.assertRunning();
     }
     return runner;
+  }
+
+  private async stopOrRetainUnreturnedWorker(runner: {
+    stop(): Promise<void>;
+  }): Promise<void> {
+    const cleanup = () => runner.stop();
+    try {
+      await cleanup();
+    } catch {
+      this.pendingWorkerCleanups.add(cleanup);
+    }
   }
 
   private async cleanupUnreturnedWorkers(): Promise<void> {
