@@ -70,6 +70,12 @@ Which membership feeds step 2 above:
 3. **No qualifying ancestor** → empty set (byte-identical to the
    pre-inheritance resolver; with no role flagged, nothing changes).
 
+`SessionService.loadSessionContext()` preserves this decision in
+`tenantAuthorization`: direct resolution exposes its membership id with no
+ancestor, while inherited resolution exposes both the selected membership id
+and `inheritedFromTenantId`. Consumers that require a tenant-authorized session
+must validate this provenance instead of treating `membership: null` as denial.
+
 All later layers run unchanged against the **target** tenant: the tenant
 cascade and tenant-DENY hard block come from the target tenant (a child can
 carve authority out of an inherited role), group roles stay exact-tenant (only

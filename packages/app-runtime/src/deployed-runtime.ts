@@ -551,11 +551,11 @@ async function checkDatabase(
   db: DatabaseInterface,
 ): Promise<void> {
   try {
-    if (binding.readiness) await binding.readiness(db);
-    else {
-      const result = await db.query('SELECT 1 AS smrt_runtime_probe');
-      if (!isValidDatabaseProbe(result)) throw new Error('invalid probe');
-    }
+    await binding.readiness?.(db);
+    const result = await db.query(
+      "SELECT current_setting('server_version_num') AS smrt_postgres_version",
+    );
+    if (!isValidPostgresProbe(result)) throw new Error('invalid probe');
   } catch {
     throw unavailable('database');
   }
@@ -569,6 +569,7 @@ class InitializedDeployedApplicationRuntime
   private readonly pendingReadinessChecks = new Set<Promise<unknown>>();
   private readonly pendingSessionRestorations = new Set<Promise<unknown>>();
   private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
+  private readonly pendingWorkerStarts = new Set<Promise<unknown>>();
   private readonly workerCleanups = new Set<() => Promise<void>>();
   private readonly sessionService: SessionService;
   private sessionServiceReady?: Promise<void>;
@@ -620,13 +621,28 @@ class InitializedDeployedApplicationRuntime
           'authentication',
         );
       }
+      let membership: unknown;
       let membershipActive: unknown;
       try {
+        membership = context.membership;
         membershipActive = context.membership?.isActive();
       } catch {
         throw unavailable('authentication');
       }
-      if (membershipActive !== true) {
+      let tenantAuthorized = membershipActive === true;
+      if (!tenantAuthorized && membership === null) {
+        try {
+          const authorization = context.tenantAuthorization;
+          tenantAuthorized =
+            typeof authorization?.membershipId === 'string' &&
+            authorization.membershipId.trim().length > 0 &&
+            typeof authorization.inheritedFromTenantId === 'string' &&
+            authorization.inheritedFromTenantId.trim().length > 0;
+        } catch {
+          throw unavailable('authentication');
+        }
+      }
+      if (!tenantAuthorized) {
         throw new DeployedRuntimeError(
           'tenant_context_unauthorized',
           'The authenticated session is not authorized for its tenant context.',
@@ -643,8 +659,7 @@ class InitializedDeployedApplicationRuntime
     this.pendingWorkerInitializations.add(operation);
     try {
       const runner = await operation;
-      this.retainWorkerCleanup(runner);
-      return runner;
+      return this.retainWorker(runner);
     } finally {
       this.pendingWorkerInitializations.delete(operation);
     }
@@ -658,8 +673,7 @@ class InitializedDeployedApplicationRuntime
     this.pendingWorkerInitializations.add(operation);
     try {
       const runner = await operation;
-      this.retainWorkerCleanup(runner);
-      return runner;
+      return this.retainWorker(runner);
     } finally {
       this.pendingWorkerInitializations.delete(operation);
     }
@@ -719,6 +733,7 @@ class InitializedDeployedApplicationRuntime
       ...this.pendingReadinessChecks,
       ...this.pendingSessionRestorations,
       ...this.pendingWorkerInitializations,
+      ...this.pendingWorkerStarts,
     ];
     const attempt = Promise.resolve().then(async () => {
       await Promise.allSettled(pendingOperations);
@@ -778,8 +793,44 @@ class InitializedDeployedApplicationRuntime
     }
   }
 
-  private retainWorkerCleanup(runner: { stop(): Promise<void> }): void {
-    this.workerCleanups.add(() => runner.stop());
+  private retainWorker<Runner extends TaskRunner | ScheduleRunner>(
+    runner: Runner,
+  ): Runner {
+    const start = runner.start.bind(runner);
+    const stop = runner.stop.bind(runner);
+    const ownedStart = async (): Promise<void> => {
+      this.assertRunning();
+      const operation = Promise.resolve().then(() => {
+        this.assertRunning();
+        return start();
+      });
+      this.pendingWorkerStarts.add(operation);
+      try {
+        await operation;
+        this.assertRunning();
+      } catch {
+        if (this.state !== 'running') this.assertRunning();
+        throw unavailable('database');
+      } finally {
+        this.pendingWorkerStarts.delete(operation);
+      }
+    };
+    Object.defineProperties(runner, {
+      start: {
+        configurable: false,
+        enumerable: false,
+        value: ownedStart,
+        writable: false,
+      },
+      stop: {
+        configurable: false,
+        enumerable: false,
+        value: () => stop(),
+        writable: false,
+      },
+    });
+    this.workerCleanups.add(stop);
+    return runner;
   }
 
   private async cleanupWorkers(): Promise<void> {
@@ -926,18 +977,17 @@ function isDatabaseInterface(value: unknown): value is DatabaseInterface {
   );
 }
 
-function isValidDatabaseProbe(
+function isValidPostgresProbe(
   value: unknown,
-): value is { rows: Array<{ smrt_runtime_probe: 1 }> } {
+): value is { rows: Array<{ smrt_postgres_version: string }> } {
   if (typeof value !== 'object' || value === null) return false;
   const rows = (value as { rows?: unknown }).rows;
   if (!Array.isArray(rows) || rows.length !== 1) return false;
   const row = rows[0];
-  return (
-    typeof row === 'object' &&
-    row !== null &&
-    (row as { smrt_runtime_probe?: unknown }).smrt_runtime_probe === 1
-  );
+  if (typeof row !== 'object' || row === null) return false;
+  const version = (row as { smrt_postgres_version?: unknown })
+    .smrt_postgres_version;
+  return typeof version === 'string' && /^\d+$/.test(version);
 }
 
 async function cleanupAfterStartupFailure(

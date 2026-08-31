@@ -138,6 +138,9 @@ a selector mismatch, an unavailable provider, a failed
 PostgreSQL probe, or a failed migration rejects startup. Provider failures are
 reported with stable component codes and omit the underlying provider message
 so credentials cannot leak into HTTP or orchestration payloads.
+A custom database readiness callback is additive; the runtime always runs its
+own PostgreSQL-specific server-version probe before startup or readiness can
+succeed.
 If cleanup after a startup failure also fails,
 `DeployedRuntimeCleanupError.retryCleanup()` retains the redacted, idempotent
 ownership path until the provider closes successfully.
@@ -163,7 +166,7 @@ await scheduleWorker.start();
 `initialized.close()` drains in-flight readiness/session/worker initialization,
 stops every runner returned by this runtime, and only then closes PostgreSQL.
 Callers may stop a runner earlier, but must not restart a returned runner after
-its runtime has begun shutdown.
+its runtime has begun shutdown; lifecycle-gated `start()` calls then reject.
 
 Self-hosted deployments may select OIDC or magic-link authentication, explicit
 single- or multi-tenancy, local or S3-compatible assets, and environment,

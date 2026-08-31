@@ -704,6 +704,49 @@ describe('SessionService', () => {
     expect(context?.permissions).toContain('articles.create');
   });
 
+  it('reports inherited membership provenance in session context', async () => {
+    const parent = await tenants.create({ name: 'Parent Membership Org' });
+    await parent.save();
+    const child = await tenants.createChild(parent.id!, {
+      name: 'Child Membership Org',
+    });
+
+    const user = await users.create({
+      email: 'inherited-membership-session@example.com',
+    });
+    await user.save();
+    const role = await roles.create({
+      name: 'Inherited Administrator',
+      inheritsToDescendants: true,
+    });
+    await role.save();
+    const permission = await permissions.create({
+      slug: 'descendants.manage',
+      name: 'Manage descendants',
+    });
+    await permission.save();
+    await rolePermissions.addPermission(role.id!, permission.id!);
+    const ancestorMembership = await memberships.create({
+      roleId: role.id!,
+      tenantId: parent.id!,
+      userId: user.id!,
+    });
+    await ancestorMembership.save();
+
+    const sessionService = await SessionService.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const sessionId = await sessionService.createSession(user.id!, child.id!);
+    const context = await sessionService.loadSessionContext(sessionId);
+
+    expect(context?.membership).toBeNull();
+    expect(context?.permissions).toContain('descendants.manage');
+    expect(context?.tenantAuthorization).toEqual({
+      membershipId: ancestorMembership.id,
+      inheritedFromTenantId: parent.id,
+    });
+  });
+
   it('should destroy session', async () => {
     const user = await users.create({ email: 'destroy@example.com' });
     await user.save();

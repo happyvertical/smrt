@@ -39,6 +39,8 @@ Application infrastructure composition for the validated runtime profiles in
   runners must not be restarted after runtime shutdown begins.
 - `health()` is process liveness. `readiness()` probes database/auth/assets/
   secrets; it does not claim that an external worker fleet is running.
+- Database-provider readiness is additive; a PostgreSQL-specific server-version
+  probe always gates startup and live readiness.
 - Cloud must keep required tenant context and must never introduce a root or
   unscoped tenant fallback. RLS remains an explicit deployment/migration choice.
 

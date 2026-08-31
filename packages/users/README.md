@@ -677,7 +677,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `PermissionCatalogService`, `syncPermissionCatalog()` | Discovers manifest/config/runtime permissions and upserts them into `Permission` rows. |
 | `registerPermissionDefinitions()` | Register app or integration permissions at runtime and receive an unregister cleanup function. |
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
-| `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`. |
+| `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`; tenant contexts include direct or inherited membership provenance. |
 | `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `backfillUserEmailKeys` | Idempotently populate durable normalized-email keys after migrating legacy Users; fails closed on duplicates. |
 | `OidcProfileResolver` | Transaction-bound pre-provision hook for application identity reconciliation. |

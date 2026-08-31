@@ -16,7 +16,9 @@ import {
 } from './deployed-runtime.js';
 
 function databaseFixture() {
-  const query = vi.fn(async () => ({ rows: [{ smrt_runtime_probe: 1 }] }));
+  const query = vi.fn(async () => ({
+    rows: [{ smrt_postgres_version: '170000' }],
+  }));
   const close = vi.fn(async () => undefined);
   const db = { query, close } as unknown as DatabaseInterface;
   return { db, query, close };
@@ -64,7 +66,9 @@ describe('deployed application runtime', () => {
       prepareDatabase,
     });
 
-    expect(query).toHaveBeenCalledWith('SELECT 1 AS smrt_runtime_probe');
+    expect(query).toHaveBeenCalledWith(
+      "SELECT current_setting('server_version_num') AS smrt_postgres_version",
+    );
     expect(prepareDatabase).toHaveBeenCalledWith(db);
     expect(initialized.db).toBe(db);
     expect(initialized.resolvedRuntime.profile).toBe('self-hosted');
@@ -280,6 +284,46 @@ describe('deployed application runtime', () => {
     expect(initialize).toHaveBeenCalledOnce();
   });
 
+  it('accepts inherited required tenant authorization provenance', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    vi.spyOn(SessionService.prototype, 'loadSessionContext').mockResolvedValue({
+      user: {} as never,
+      membership: null,
+      permissions: [],
+      tenantAuthorization: {
+        membershipId: 'ancestor-membership',
+        inheritedFromTenantId: 'ancestor-tenant',
+      },
+      tenantId: 'descendant-tenant',
+      sessionId: 'inherited-session',
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    await expect(
+      initialized.restoreSession('inherited-session'),
+    ).resolves.toMatchObject({ tenantId: 'descendant-tenant' });
+  });
+
   it('redacts errors from required tenant context accessors', async () => {
     const { db } = databaseFixture();
     const credential = 'hosted-identity://operator:secret@example.com/session';
@@ -328,8 +372,22 @@ describe('deployed application runtime', () => {
         },
       } as never,
     };
+    const throwingAuthorization = {
+      user: {} as never,
+      permissions: [],
+      sessionId: 'throwing-authorization',
+      tenantId: 'tenant',
+      membership: null,
+      get tenantAuthorization(): never {
+        throw new Error(credential);
+      },
+    };
 
-    for (const context of [throwingTenant, throwingMembership]) {
+    for (const context of [
+      throwingTenant,
+      throwingMembership,
+      throwingAuthorization,
+    ]) {
       loadSession.mockResolvedValueOnce(context as never);
       let failure: unknown;
       try {
@@ -402,6 +460,24 @@ describe('deployed application runtime', () => {
         component: 'authentication',
       });
     }
+
+    loadSession.mockResolvedValueOnce({
+      user: {} as never,
+      permissions: [],
+      sessionId: 'malformed-inheritance',
+      tenantId: 'tenant',
+      membership: null,
+      tenantAuthorization: {
+        membershipId: {} as never,
+        inheritedFromTenantId: 'ancestor-tenant',
+      },
+    });
+    await expect(
+      initialized.restoreSession('malformed-inheritance'),
+    ).rejects.toMatchObject({
+      code: 'tenant_context_unauthorized',
+      component: 'authentication',
+    });
   });
 
   it.each([
@@ -955,6 +1031,35 @@ describe('deployed application runtime', () => {
     });
   });
 
+  it('rejects a non-PostgreSQL handle even with custom readiness', async () => {
+    const query = vi.fn(async () => {
+      throw new Error('no such function: current_setting');
+    });
+    const close = vi.fn(async () => undefined);
+    const db = { query } as unknown as DatabaseInterface;
+    const readiness = vi.fn(async () => undefined);
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres',
+          connect: async () => db,
+          readiness,
+          close,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(readiness).toHaveBeenCalledOnce();
+    expect(query).toHaveBeenCalledWith(
+      "SELECT current_setting('server_version_num') AS smrt_postgres_version",
+    );
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
   it('does not report ready after shutdown begins during a probe', async () => {
     const { db, query, close: closeDatabase } = databaseFixture();
     let blockDatabase = false;
@@ -964,7 +1069,7 @@ describe('deployed application runtime', () => {
     });
     const databaseReadiness = vi.fn(async (connection: DatabaseInterface) => {
       if (blockDatabase) await databaseBlocked;
-      await connection.query('SELECT 1 AS smrt_runtime_probe');
+      await connection.query('SELECT 1 AS custom_readiness_probe');
     });
     const initialized = await initializeDeployedApplicationRuntime({
       ...selfHostedOptions(db),
@@ -993,8 +1098,8 @@ describe('deployed application runtime', () => {
         secrets: { status: 'not-ready' },
       },
     });
-    expect(query).toHaveBeenCalledTimes(2);
-    expect(query.mock.invocationCallOrder[1]).toBeLessThan(
+    expect(query).toHaveBeenCalledTimes(4);
+    expect(query.mock.invocationCallOrder[3]).toBeLessThan(
       closeDatabase.mock.invocationCallOrder[0] ?? 0,
     );
   });
@@ -1070,6 +1175,42 @@ describe('deployed application runtime', () => {
     await initialized.close();
     expect(taskStop).toHaveBeenCalledTimes(2);
     expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('drains worker starts and revokes them when shutdown begins', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseStart!: () => void;
+    const startBlocked = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStart = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockReturnValue(startBlocked);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    await vi.waitFor(() => expect(taskStart).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    releaseStart();
+
+    await expect(starting).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await close;
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+    await expect(task.start()).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    expect(taskStart).toHaveBeenCalledOnce();
   });
 
   it('does not return workers whose initialization finishes after shutdown', async () => {

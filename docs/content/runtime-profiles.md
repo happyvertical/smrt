@@ -213,6 +213,9 @@ probes the database, and runs the explicit idempotent migration hook. Any
 failure closes the acquired database and rejects startup. Stable failures,
 diagnostics, health, and readiness never include the provider's private error
 text or returned secret values.
+Provider-specific database readiness is additive: the runtime always performs
+a PostgreSQL-specific server-version probe before startup or readiness can
+succeed.
 If that startup cleanup fails, the redacted
 `DeployedRuntimeCleanupError.retryCleanup()` remains the explicit owner until
 the provider closes successfully.
@@ -225,7 +228,7 @@ Application code still enqueues through `bg()` or
 Runtime shutdown drains in-flight readiness/session/worker initialization,
 stops every runner returned by that runtime, and then closes PostgreSQL. A
 caller may stop a runner earlier, but must not restart it after runtime shutdown
-has begun.
+has begun; the lifecycle-gated `start()` method rejects at that point.
 
 Health reports whether this runtime instance is live. Readiness rechecks
 PostgreSQL, authentication, assets, and secrets. It deliberately does not claim
