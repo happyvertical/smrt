@@ -549,10 +549,14 @@ describe('deployed application runtime', () => {
   it('retains a retryable redacted cleanup owner when startup cleanup fails', async () => {
     const { db } = databaseFixture();
     const credential = 'postgresql://operator:secret@example.com/app';
+    let finishCleanup: (() => void) | undefined;
+    const concurrentCleanup = new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+    });
     const close = vi
       .fn<() => Promise<void>>()
       .mockRejectedValueOnce(new Error(credential))
-      .mockResolvedValue(undefined);
+      .mockReturnValueOnce(concurrentCleanup);
 
     let failure: unknown;
     try {
@@ -579,7 +583,13 @@ describe('deployed application runtime', () => {
     expect((failure as Error).message).not.toContain(credential);
     expect(close).toHaveBeenCalledOnce();
 
-    await (failure as DeployedRuntimeCleanupError).retryCleanup();
+    const firstRetry = (failure as DeployedRuntimeCleanupError).retryCleanup();
+    const concurrentRetry = (
+      failure as DeployedRuntimeCleanupError
+    ).retryCleanup();
+    expect(close).toHaveBeenCalledTimes(2);
+    finishCleanup?.();
+    await Promise.all([firstRetry, concurrentRetry]);
     await (failure as DeployedRuntimeCleanupError).retryCleanup();
     expect(close).toHaveBeenCalledTimes(2);
   });

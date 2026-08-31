@@ -147,6 +147,7 @@ export class DeployedRuntimeError extends Error {
 /** Startup failure that retains the only safe retry path for database cleanup. */
 export class DeployedRuntimeCleanupError extends DeployedRuntimeError {
   private cleaned = false;
+  private cleanupAttempt?: Promise<void>;
 
   constructor(private readonly cleanup: () => Promise<void>) {
     super(
@@ -159,12 +160,19 @@ export class DeployedRuntimeCleanupError extends DeployedRuntimeError {
 
   async retryCleanup(): Promise<void> {
     if (this.cleaned) return;
-    try {
-      await this.cleanup();
-      this.cleaned = true;
-    } catch {
-      throw this;
+    if (!this.cleanupAttempt) {
+      this.cleanupAttempt = this.cleanup()
+        .then(() => {
+          this.cleaned = true;
+        })
+        .catch(() => {
+          throw this;
+        })
+        .finally(() => {
+          this.cleanupAttempt = undefined;
+        });
     }
+    return this.cleanupAttempt;
   }
 }
 
