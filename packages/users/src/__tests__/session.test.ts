@@ -10,6 +10,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getDatabase, syncSchema } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroupCollection } from '../collections/GroupCollection.js';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
@@ -203,6 +204,54 @@ describe('SessionCollection', () => {
     ).resolves.toEqual([true, true]);
 
     expect(await sessions.findValidSession(String(created.id))).not.toBeNull();
+  });
+
+  it('persists concurrent activity with native DuckDB UUID columns', async () => {
+    const duckDb = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    try {
+      await syncSchema({
+        db: duckDb,
+        schema: `
+          CREATE TABLE sessions (
+            id UUID PRIMARY KEY,
+            slug TEXT NOT NULL,
+            context TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+            updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+            user_id UUID NOT NULL,
+            tenant_id UUID,
+            status TEXT,
+            expires_at TIMESTAMP,
+            user_agent TEXT DEFAULT '',
+            ip_address TEXT DEFAULT '',
+            last_accessed_at TIMESTAMP,
+            data JSON DEFAULT '{}'
+          );
+          CREATE UNIQUE INDEX sessions_slug_context_idx
+            ON sessions (slug, context);
+        `,
+      });
+      const duckSessions = await SessionCollection.create({ db: duckDb });
+      const created = await duckSessions.createSession({
+        userId: crypto.randomUUID(),
+      });
+      const first = await duckSessions.get(String(created.id));
+      const second = await duckSessions.get(String(created.id));
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      if (!first || !second)
+        throw new Error('Expected persisted DuckDB session instances');
+
+      await expect(
+        Promise.all([first.recordActivity(), second.recordActivity()]),
+      ).resolves.toEqual([true, true]);
+
+      expect(
+        await duckSessions.findValidSession(String(created.id)),
+      ).not.toBeNull();
+    } finally {
+      await duckDb.close?.();
+    }
   });
 
   it('keeps valid authentication available after activity conflicts exhaust', async () => {

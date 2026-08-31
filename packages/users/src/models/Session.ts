@@ -198,7 +198,7 @@ export class Session extends SmrtObject {
 
   private async reloadValidActivityState(): Promise<boolean> {
     if (!this.id) return false;
-    const current = await this.db.get(this.tableName, { id: this.id });
+    const current = await this.getCanonicalPersistedRow({ id: this.id });
     if (!current) return false;
     await this.loadDataFromDb(current);
     return this.isValid();
