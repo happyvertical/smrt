@@ -764,14 +764,21 @@ describe('commercial usage tracer', () => {
       await transactionReady;
       ordinaryCharge.amount = 20;
       const ordinarySave = ordinaryCharge.save();
+      const outcomes = Promise.allSettled([rolledBack, ordinarySave]);
       // Let the ordinary save reach the embedded writer boundary. Before the
       // root transaction joined that queue it could enter the same native
       // transaction and be rolled back with the adjustment.
       await new Promise<void>((resolve) => setImmediate(resolve));
       releaseTransaction();
 
-      await expect(rolledBack).rejects.toThrow('forced adjustment rollback');
-      await ordinarySave;
+      const [rolledBackResult, ordinarySaveResult] = await outcomes;
+      expect(rolledBackResult).toMatchObject({
+        status: 'rejected',
+        reason: expect.objectContaining({
+          message: expect.stringContaining('forced adjustment rollback'),
+        }),
+      });
+      expect(ordinarySaveResult).toMatchObject({ status: 'fulfilled' });
       expect(
         await localAdjustments.list({
           where: { clientChargeId: String(adjustedCharge.id) },
