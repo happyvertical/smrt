@@ -27,6 +27,8 @@ Application infrastructure composition for the validated runtime profiles in
 - The database binding must expose a provider-owned `close` callback before
   `connect` can run. The runtime owns that cleanup boundary and runs the
   application's explicit, idempotent `prepareDatabase` hook.
+- A failed startup cleanup throws `DeployedRuntimeCleanupError`; callers retain
+  and retry its idempotent `retryCleanup()` boundary until it succeeds.
 - Public authentication, asset storage, and secret bindings are mandatory and
   readiness-checked before startup succeeds.
 - `createTaskWorker()` and `createScheduleWorker()` initialize the normal jobs

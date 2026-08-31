@@ -10,6 +10,7 @@ import {
   type AssetStorageProvider,
   type AuthenticationProvider,
   type ResolvedApplicationRuntime,
+  RuntimeProfileValidationError,
   type RuntimeProviderOverrides,
   resolveApplicationRuntime,
   type SecretProvider,
@@ -143,6 +144,30 @@ export class DeployedRuntimeError extends Error {
   }
 }
 
+/** Startup failure that retains the only safe retry path for database cleanup. */
+export class DeployedRuntimeCleanupError extends DeployedRuntimeError {
+  private cleaned = false;
+
+  constructor(private readonly cleanup: () => Promise<void>) {
+    super(
+      'provider_unavailable',
+      "The database connection could not be closed after startup failed; retry cleanup and inspect the provider's private logs.",
+      'database',
+    );
+    this.name = 'DeployedRuntimeCleanupError';
+  }
+
+  async retryCleanup(): Promise<void> {
+    if (this.cleaned) return;
+    try {
+      await this.cleanup();
+      this.cleaned = true;
+    } catch {
+      throw this;
+    }
+  }
+}
+
 export interface DeployedApplicationRuntime {
   readonly db: DatabaseInterface;
   readonly resolvedRuntime: ResolvedApplicationRuntime;
@@ -176,6 +201,7 @@ export async function initializeDeployedApplicationRuntime(
 ): Promise<DeployedApplicationRuntime> {
   const resolvedRuntime = resolveDeployedRuntime(options);
   const bindings = validateBindings(options, resolvedRuntime);
+  const prepareDatabase = snapshotPrepareDatabase(options);
 
   await checkProvider('authentication', () =>
     bindings.authentication.readiness(),
@@ -196,27 +222,32 @@ export async function initializeDeployedApplicationRuntime(
     // Treat throwing accessors on an untrusted handle as malformed.
   }
   if (!validDatabase) {
-    await closeDatabaseQuietly(bindings.database, db);
-    throw new DeployedRuntimeError(
-      'invalid_configuration',
-      'The database adapter did not return a valid database connection.',
-      'database',
+    await cleanupAfterStartupFailure(
+      bindings.database,
+      db,
+      new DeployedRuntimeError(
+        'invalid_configuration',
+        'The database adapter did not return a valid database connection.',
+        'database',
+      ),
     );
   }
   try {
     await checkDatabase(bindings.database, db);
   } catch (error) {
-    await closeDatabaseQuietly(bindings.database, db);
-    throw error;
+    await cleanupAfterStartupFailure(bindings.database, db, error);
   }
   try {
-    await options.prepareDatabase?.(db);
+    await prepareDatabase?.(db);
   } catch {
-    await closeDatabaseQuietly(bindings.database, db);
-    throw new DeployedRuntimeError(
-      'provider_unavailable',
-      'The PostgreSQL migration step failed; inspect the application migration logs.',
-      'database',
+    await cleanupAfterStartupFailure(
+      bindings.database,
+      db,
+      new DeployedRuntimeError(
+        'provider_unavailable',
+        'The PostgreSQL migration step failed; inspect the application migration logs.',
+        'database',
+      ),
     );
   }
 
@@ -230,56 +261,138 @@ export async function initializeDeployedApplicationRuntime(
 function resolveDeployedRuntime(
   options: DeployedApplicationRuntimeOptions,
 ): ResolvedApplicationRuntime {
-  if (!isPlainRecord(options)) {
+  let plainOptions = false;
+  try {
+    plainOptions = isPlainRecord(options);
+  } catch {
+    // Proxies and throwing prototype traps are invalid options.
+  }
+  if (!plainOptions) {
     throw new DeployedRuntimeError(
       'invalid_configuration',
       'Deployed runtime options must be an object.',
     );
   }
-  if (options.profile !== 'self-hosted' && options.profile !== 'cloud') {
+  let profile: unknown;
+  let providers: RuntimeProviderOverrides | undefined;
+  try {
+    profile = options.profile;
+    providers = options.providers;
+  } catch {
+    throw new DeployedRuntimeError(
+      'invalid_configuration',
+      'Deployed runtime options could not be read safely.',
+    );
+  }
+  if (profile !== 'self-hosted' && profile !== 'cloud') {
     throw new DeployedRuntimeError(
       'invalid_configuration',
       'Deployed runtime initialization requires the self-hosted or cloud profile.',
     );
   }
-  return resolveApplicationRuntime({
-    profile: options.profile,
-    providers: options.providers,
-  });
+  try {
+    return resolveApplicationRuntime({ profile, providers });
+  } catch (error) {
+    if (error instanceof RuntimeProfileValidationError) throw error;
+    throw new DeployedRuntimeError(
+      'invalid_configuration',
+      'Deployed runtime provider options could not be read safely.',
+    );
+  }
 }
 
 function validateBindings(
   options: DeployedApplicationRuntimeOptions,
   runtime: ResolvedApplicationRuntime,
 ): ValidatedBindings {
+  const databaseSource = readBindingOption(options, 'database', 'database');
   const database = requireObjectBinding<DeployedDatabaseBinding>(
-    options.database,
+    databaseSource,
     'database',
   );
-  requireFunction(database.connect, 'database', 'connect');
-  requireOptionalFunction(database.readiness, 'database', 'readiness');
-  requireFunction(database.close, 'database', 'close');
-  if (database.engine !== runtime.providers.database.engine) {
+  let engine: unknown;
+  let connect: unknown;
+  let readiness: unknown;
+  let close: unknown;
+  try {
+    engine = database.engine;
+    connect = database.connect;
+    readiness = database.readiness;
+    close = database.close;
+  } catch {
+    throw invalidBinding('database');
+  }
+  requireFunction(connect, 'database', 'connect');
+  requireOptionalFunction(readiness, 'database', 'readiness');
+  requireFunction(close, 'database', 'close');
+  if (engine !== runtime.providers.database.engine) {
     throw mismatch('database', runtime.providers.database.engine);
   }
+  const databaseSnapshot: DeployedDatabaseBinding = Object.freeze({
+    engine: engine as 'postgres',
+    connect: (connect as DeployedDatabaseBinding['connect']).bind(database),
+    readiness:
+      typeof readiness === 'function'
+        ? (readiness as NonNullable<DeployedDatabaseBinding['readiness']>).bind(
+            database,
+          )
+        : undefined,
+    close: (close as DeployedDatabaseBinding['close']).bind(database),
+  });
 
   const authentication = requireProviderBinding(
-    options.authentication,
+    readBindingOption(options, 'authentication', 'authentication'),
     'authentication',
     runtime.providers.authentication.provider,
   ) as DeployedProviderBinding<PublicAuthenticationProvider>;
   const assets = requireProviderBinding(
-    options.assets,
+    readBindingOption(options, 'assets', 'assets'),
     'assets',
     runtime.providers.assets.provider,
   ) as DeployedProviderBinding<AssetStorageProvider>;
   const secrets = requireProviderBinding(
-    options.secrets,
+    readBindingOption(options, 'secrets', 'secrets'),
     'secrets',
     runtime.providers.secrets.provider,
   ) as DeployedProviderBinding<SecretProvider>;
 
-  return { database, authentication, assets, secrets };
+  return {
+    database: databaseSnapshot,
+    authentication,
+    assets,
+    secrets,
+  };
+}
+
+function snapshotPrepareDatabase(
+  options: DeployedApplicationRuntimeOptions,
+): DeployedApplicationRuntimeOptions['prepareDatabase'] {
+  let prepareDatabase: unknown;
+  try {
+    prepareDatabase = options.prepareDatabase;
+  } catch {
+    throw invalidBinding('database');
+  }
+  requireOptionalFunction(prepareDatabase, 'database', 'prepareDatabase');
+  return typeof prepareDatabase === 'function'
+    ? (
+        prepareDatabase as NonNullable<
+          DeployedApplicationRuntimeOptions['prepareDatabase']
+        >
+      ).bind(options)
+    : undefined;
+}
+
+function readBindingOption(
+  options: DeployedApplicationRuntimeOptions,
+  field: 'database' | 'authentication' | 'assets' | 'secrets',
+  component: DeployedRuntimeComponent,
+): unknown {
+  try {
+    return options[field];
+  } catch {
+    throw invalidBinding(component);
+  }
 }
 
 function requireProviderBinding(
@@ -291,18 +404,38 @@ function requireProviderBinding(
     value,
     component,
   );
-  if (binding.provider !== expectedProvider) {
+  let provider: unknown;
+  let readiness: unknown;
+  try {
+    provider = binding.provider;
+    readiness = binding.readiness;
+  } catch {
+    throw invalidBinding(component);
+  }
+  if (provider !== expectedProvider) {
     throw mismatch(component, expectedProvider);
   }
-  requireFunction(binding.readiness, component, 'readiness');
-  return binding;
+  requireFunction(readiness, component, 'readiness');
+  return Object.freeze({
+    provider: provider as string,
+    readiness: (readiness as DeployedProviderBinding<string>['readiness']).bind(
+      binding,
+    ),
+  });
 }
 
 function requireObjectBinding<T>(
   value: unknown,
   component: DeployedRuntimeComponent,
 ): T {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+  let valid = false;
+  try {
+    valid =
+      typeof value === 'object' && value !== null && !Array.isArray(value);
+  } catch {
+    // Revoked proxies and throwing shape traps are invalid bindings.
+  }
+  if (!valid) {
     throw new DeployedRuntimeError(
       'invalid_configuration',
       `The ${component} provider binding is required.`,
@@ -310,6 +443,16 @@ function requireObjectBinding<T>(
     );
   }
   return value as T;
+}
+
+function invalidBinding(
+  component: DeployedRuntimeComponent,
+): DeployedRuntimeError {
+  return new DeployedRuntimeError(
+    'invalid_configuration',
+    `The ${component} provider binding could not be read safely.`,
+    component,
+  );
 }
 
 function requireFunction(
@@ -644,15 +787,18 @@ function isValidDatabaseProbe(
   );
 }
 
-async function closeDatabaseQuietly(
+async function cleanupAfterStartupFailure(
   binding: DeployedDatabaseBinding,
   db: unknown,
-): Promise<void> {
+  startupError: unknown,
+): Promise<never> {
+  const cleanup = () => binding.close(db as DatabaseInterface);
   try {
-    await binding.close(db as DatabaseInterface);
+    await cleanup();
   } catch {
-    // Preserve the primary startup failure without exposing cleanup details.
+    throw new DeployedRuntimeCleanupError(cleanup);
   }
+  throw startupError;
 }
 
 function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {

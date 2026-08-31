@@ -138,6 +138,9 @@ a selector mismatch, an unavailable provider, a failed
 PostgreSQL probe, or a failed migration rejects startup. Provider failures are
 reported with stable component codes and omit the underlying provider message
 so credentials cannot leak into HTTP or orchestration payloads.
+If cleanup after a startup failure also fails,
+`DeployedRuntimeCleanupError.retryCleanup()` retains the redacted, idempotent
+ownership path until the provider closes successfully.
 
 `health()` reports process liveness. `readiness()` rechecks PostgreSQL,
 authentication, assets, and secrets and returns only `ready` / `not-ready`

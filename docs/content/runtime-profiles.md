@@ -213,6 +213,9 @@ probes the database, and runs the explicit idempotent migration hook. Any
 failure closes the acquired database and rejects startup. Stable failures,
 diagnostics, health, and readiness never include the provider's private error
 text or returned secret values.
+If that startup cleanup fails, the redacted
+`DeployedRuntimeCleanupError.retryCleanup()` remains the explicit owner until
+the provider closes successfully.
 
 The web, task-worker, and schedule-worker processes use the same initialization
 contract. Task and schedule processes call `createTaskWorker()` or

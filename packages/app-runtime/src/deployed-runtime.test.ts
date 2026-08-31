@@ -8,6 +8,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   type DeployedApplicationRuntimeOptions,
+  DeployedRuntimeCleanupError,
   DeployedRuntimeError,
   initializeDeployedApplicationRuntime,
 } from './deployed-runtime.js';
@@ -392,6 +393,73 @@ describe('deployed application runtime', () => {
     expect(connect).not.toHaveBeenCalled();
   });
 
+  it('redacts throwing top-level and provider binding accessors before connecting', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+
+    for (const field of ['profile', 'secrets'] as const) {
+      const connect = vi.fn(async () => db);
+      const options = {
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres' as const,
+          connect,
+          close: closeDatabase,
+        },
+      };
+      Object.defineProperty(options, field, {
+        get: () => {
+          throw new Error(credential);
+        },
+      });
+
+      let failure: unknown;
+      try {
+        await initializeDeployedApplicationRuntime(
+          options as DeployedApplicationRuntimeOptions,
+        );
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toBeInstanceOf(DeployedRuntimeError);
+      expect(failure).toMatchObject({ code: 'invalid_configuration' });
+      expect((failure as Error).message).not.toContain(credential);
+      expect(connect).not.toHaveBeenCalled();
+    }
+  });
+
+  it('snapshots a validated cleanup callback before connecting', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const close = vi.fn(async () => undefined);
+    let closeReads = 0;
+    const database = {
+      engine: 'postgres' as const,
+      connect: async () => db,
+      get close() {
+        closeReads += 1;
+        if (closeReads > 1) throw new Error(credential);
+        return close;
+      },
+    };
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database,
+        prepareDatabase: async () => {
+          throw new Error('migration failure');
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(closeReads).toBe(1);
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
   it('supports provider adapter instances and preserves their method receiver', async () => {
     const { db } = databaseFixture();
     class AssetAdapter {
@@ -476,6 +544,44 @@ describe('deployed application runtime', () => {
         'The PostgreSQL migration step failed; inspect the application migration logs.',
     });
     expect(migrationFixture.close).toHaveBeenCalledOnce();
+  });
+
+  it('retains a retryable redacted cleanup owner when startup cleanup fails', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const close = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error(credential))
+      .mockResolvedValue(undefined);
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres',
+          connect: async () => db,
+          close,
+        },
+        prepareDatabase: async () => {
+          throw new Error('migration failure');
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DeployedRuntimeCleanupError);
+    expect(failure).toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+    expect(close).toHaveBeenCalledOnce();
+
+    await (failure as DeployedRuntimeCleanupError).retryCleanup();
+    await (failure as DeployedRuntimeCleanupError).retryCleanup();
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   it('uses the binding close callback for a malformed connection handle', async () => {
