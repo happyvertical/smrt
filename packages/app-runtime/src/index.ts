@@ -310,13 +310,12 @@ export async function initializeLocalApplicationRuntime(
   const appId = normalizeAppId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
+  let db: DatabaseInterface | undefined;
   try {
     await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
-    const { canonicalSourceRoot, db } = await acquireLocalDatabase(
-      paths,
-      sourceRoot,
-      appId,
-    );
+    const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
+    db = acquired.db;
+    const { canonicalSourceRoot } = acquired;
     await prepareLocalFilesystem(paths, canonicalSourceRoot);
     await tuneLocalSqlite(db);
     await options.prepareDatabase?.(db);
@@ -340,6 +339,9 @@ export async function initializeLocalApplicationRuntime(
       bootstrap,
       diagnostics: await runtime.diagnostics(),
     };
+  } catch (error) {
+    if (db) throw await closeDatabaseAfterFailure(db, error);
+    throw error;
   } finally {
     await initializationLock.release();
   }
@@ -973,9 +975,34 @@ async function acquireLocalDatabase(
   // Once SQLite acquisition succeeds, the database is an authoritative
   // artifact. Keep the pending marker through every promotion failure so a
   // later startup can resume rather than seeing an unmarked populated root.
-  await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
-  await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+  try {
+    await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
+    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+  } catch (error) {
+    throw await closeDatabaseAfterFailure(db, error);
+  }
   return { canonicalSourceRoot, db };
+}
+
+async function closeDatabaseAfterFailure(
+  db: DatabaseInterface,
+  primaryFailure: unknown,
+): Promise<unknown> {
+  try {
+    await db.close?.();
+  } catch (cleanupFailure) {
+    if (primaryFailure instanceof Error) {
+      Object.defineProperty(primaryFailure, 'databaseCleanupError', {
+        value: cleanupFailure,
+      });
+      return primaryFailure;
+    }
+    return new AggregateError(
+      [primaryFailure, cleanupFailure],
+      'Local runtime initialization and database cleanup both failed.',
+    );
+  }
+  return primaryFailure;
 }
 
 async function prepareLocalFilesystem(

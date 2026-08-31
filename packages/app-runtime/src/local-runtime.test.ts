@@ -1080,6 +1080,17 @@ describe('local application runtime', () => {
 
   it('holds the root lease through migrations and releases it after failure', async () => {
     const directories = await localDirectories('migration-lease');
+    const originalGetDatabase = sql.getDatabase;
+    let databaseCloseCalls = 0;
+    vi.spyOn(sql, 'getDatabase').mockImplementation(async (...args) => {
+      const db = await originalGetDatabase(...args);
+      const originalClose = db.close?.bind(db);
+      db.close = async () => {
+        databaseCloseCalls += 1;
+        await originalClose?.();
+      };
+      return db;
+    });
     let active = 0;
     let maximumActive = 0;
     let calls = 0;
@@ -1120,6 +1131,7 @@ describe('local application runtime', () => {
     expect(maximumActive).toBe(1);
     releaseFirst?.();
     await expect(first).rejects.toThrow('injected migration failure');
+    expect(databaseCloseCalls).toBe(1);
     await expect(second).resolves.toMatchObject({
       diagnostics: { runtime: { profile: 'local' } },
     });
@@ -1237,6 +1249,17 @@ describe('local application runtime', () => {
 
   it('retains a recoverable pending claim when promotion fails after database acquisition', async () => {
     const directories = await localDirectories('pending-promotion');
+    const originalGetDatabase = sql.getDatabase;
+    let databaseCloseCalls = 0;
+    vi.spyOn(sql, 'getDatabase').mockImplementation(async (...args) => {
+      const db = await originalGetDatabase(...args);
+      const originalClose = db.close?.bind(db);
+      db.close = async () => {
+        databaseCloseCalls += 1;
+        await originalClose?.();
+      };
+      return db;
+    });
     const pendingMarker = join(
       directories.dataDirectory,
       '.smrt-local-runtime-lolaus.pending',
@@ -1258,6 +1281,7 @@ describe('local application runtime', () => {
     await expect(
       initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
     ).rejects.toThrow('injected pending-marker deletion failure');
+    expect(databaseCloseCalls).toBe(1);
     expect(injected).toBe(true);
     expect(
       (
