@@ -167,6 +167,9 @@ await scheduleWorker.start();
 stops every runner returned by this runtime, and only then closes PostgreSQL.
 Callers may stop a runner earlier, but must not restart a returned runner after
 its runtime has begun shutdown; lifecycle-gated `start()` calls then reject.
+An awaited `close()` request made from inside a tracked provider or worker
+operation acknowledges shutdown so that operation can unwind; callers outside
+the operation continue to await complete worker and database cleanup.
 
 Self-hosted deployments may select OIDC or magic-link authentication, explicit
 single- or multi-tenancy, local or S3-compatible assets, and environment,

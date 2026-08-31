@@ -5,6 +5,8 @@
  * connection lifecycle, and exposes orchestration-safe diagnostics.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import {
   type ApplicationRuntimeProfile,
   type AssetStorageProvider,
@@ -570,6 +572,8 @@ class InitializedDeployedApplicationRuntime
   private readonly pendingSessionRestorations = new Set<Promise<unknown>>();
   private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
   private readonly pendingWorkerStarts = new Set<Promise<unknown>>();
+  private readonly lifecycleOperationContext = new AsyncLocalStorage<symbol>();
+  private readonly activeLifecycleOperations = new Set<symbol>();
   private readonly workerCleanups = new Set<() => Promise<void>>();
   private readonly sessionService: SessionService;
   private sessionServiceReady?: Promise<void>;
@@ -586,7 +590,7 @@ class InitializedDeployedApplicationRuntime
 
   async restoreSession(sessionId: string) {
     this.assertRunning();
-    const operation = Promise.resolve().then(() =>
+    const operation = this.beginLifecycleOperation(() =>
       this.restoreSessionWhileRunning(sessionId),
     );
     this.pendingSessionRestorations.add(operation);
@@ -657,7 +661,7 @@ class InitializedDeployedApplicationRuntime
 
   async createTaskWorker(config: TaskRunnerConfig = {}): Promise<TaskRunner> {
     this.assertRunning();
-    const operation = Promise.resolve().then(() =>
+    const operation = this.beginLifecycleOperation(() =>
       this.initializeTaskWorker(config),
     );
     this.pendingWorkerInitializations.add(operation);
@@ -673,7 +677,7 @@ class InitializedDeployedApplicationRuntime
     config: ScheduleRunnerConfig = {},
   ): Promise<ScheduleRunner> {
     this.assertRunning();
-    const operation = Promise.resolve().then(() =>
+    const operation = this.beginLifecycleOperation(() =>
       this.initializeScheduleWorker(config),
     );
     this.pendingWorkerInitializations.add(operation);
@@ -703,7 +707,7 @@ class InitializedDeployedApplicationRuntime
     if (this.state !== 'running')
       return createStoppedReadiness(this.resolvedRuntime.profile);
 
-    const operation = Promise.resolve().then(() =>
+    const operation = this.beginLifecycleOperation(() =>
       this.checkReadinessWhileRunning(),
     );
     this.pendingReadinessChecks.add(operation);
@@ -733,8 +737,15 @@ class InitializedDeployedApplicationRuntime
   }
 
   async close(): Promise<void> {
+    const operationToken = this.lifecycleOperationContext.getStore();
+    const requestedFromLifecycleOperation =
+      operationToken !== undefined &&
+      this.activeLifecycleOperations.has(operationToken);
     if (this.state === 'stopped') return;
-    if (this.closeAttempt) return this.closeAttempt;
+    if (this.closeAttempt) {
+      if (requestedFromLifecycleOperation) return;
+      return this.closeAttempt;
+    }
 
     this.state = 'closing';
     const pendingOperations = [
@@ -743,14 +754,23 @@ class InitializedDeployedApplicationRuntime
       ...this.pendingWorkerInitializations,
       ...this.pendingWorkerStarts,
     ];
-    const attempt = Promise.resolve().then(async () => {
-      await Promise.allSettled(pendingOperations);
-      await this.cleanupWorkers();
-      await this.closeConnection();
-    });
+    const shutdownToken = Symbol('deployed-runtime-shutdown');
+    this.activeLifecycleOperations.add(shutdownToken);
+    const attempt = Promise.resolve()
+      .then(() =>
+        this.lifecycleOperationContext.run(shutdownToken, async () => {
+          await Promise.allSettled(pendingOperations);
+          await this.cleanupWorkers();
+          await this.closeConnection();
+        }),
+      )
+      .finally(() => {
+        this.activeLifecycleOperations.delete(shutdownToken);
+      });
     this.closeAttempt = attempt.finally(() => {
       this.closeAttempt = undefined;
     });
+    if (requestedFromLifecycleOperation) return;
     return this.closeAttempt;
   }
 
@@ -808,7 +828,7 @@ class InitializedDeployedApplicationRuntime
     const stop = runner.stop.bind(runner);
     const ownedStart = async (): Promise<void> => {
       this.assertRunning();
-      const operation = Promise.resolve().then(() => {
+      const operation = this.beginLifecycleOperation(() => {
         this.assertRunning();
         return start();
       });
@@ -869,6 +889,16 @@ class InitializedDeployedApplicationRuntime
         });
     }
     return this.sessionServiceReady;
+  }
+
+  private beginLifecycleOperation<T>(operation: () => Promise<T>): Promise<T> {
+    const token = Symbol('deployed-runtime-operation');
+    this.activeLifecycleOperations.add(token);
+    return Promise.resolve()
+      .then(() => this.lifecycleOperationContext.run(token, operation))
+      .finally(() => {
+        this.activeLifecycleOperations.delete(token);
+      });
   }
 
   private async closeConnection(): Promise<void> {

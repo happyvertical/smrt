@@ -1151,7 +1151,10 @@ describe('deployed application runtime', () => {
     let closeDuringReadiness: Promise<void> | undefined;
     let triggerClose = false;
     const databaseReadiness = vi.fn(async () => {
-      if (triggerClose) closeDuringReadiness = initialized.close();
+      if (triggerClose) {
+        closeDuringReadiness = initialized.close();
+        await closeDuringReadiness;
+      }
     });
     initialized = await initializeDeployedApplicationRuntime({
       ...selfHostedOptions(db),
@@ -1166,7 +1169,7 @@ describe('deployed application runtime', () => {
     triggerClose = true;
     const readiness = initialized.readiness();
     await vi.waitFor(() => expect(closeDuringReadiness).toBeDefined());
-    await closeDuringReadiness;
+    await initialized.close();
 
     await expect(readiness).resolves.toMatchObject({ status: 'not-ready' });
     expect(query).toHaveBeenCalledTimes(2);
@@ -1282,6 +1285,42 @@ describe('deployed application runtime', () => {
       code: 'runtime_stopped',
     });
     expect(taskStart).toHaveBeenCalledOnce();
+  });
+
+  it('lets a worker start await its re-entrant shutdown request', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringStart: Promise<void> | undefined;
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStart = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockImplementation(async () => {
+        closeDuringStart = initialized.close();
+        await closeDuringStart;
+      });
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    const startRejected = expect(starting).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    await vi.waitFor(() => expect(closeDuringStart).toBeDefined());
+    await initialized.close();
+
+    await startRejected;
+    expect(taskStart).toHaveBeenCalledOnce();
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it('does not return workers whose initialization finishes after shutdown', async () => {
@@ -1562,6 +1601,7 @@ describe('deployed application runtime', () => {
     vi.spyOn(SessionService.prototype, 'initialize').mockImplementation(
       async () => {
         closeDuringInitialization = initialized.close();
+        await closeDuringInitialization;
       },
     );
     const loadSession = vi
@@ -1608,6 +1648,29 @@ describe('deployed application runtime', () => {
     await expect(initialized.createTaskWorker()).rejects.toMatchObject({
       code: 'runtime_stopped',
     });
+  });
+
+  it('lets database cleanup await a re-entrant shutdown request', async () => {
+    const { db } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    const close = vi.fn(async () => {
+      await initialized.close();
+    });
+    initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close,
+      },
+    });
+
+    await initialized.close();
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(initialized.health().status).toBe('stopped');
   });
 
   it('redacts close failures, stops use immediately, and permits cleanup retry', async () => {
