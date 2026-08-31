@@ -29,6 +29,7 @@ import {
 export {
   AppCliRequestError,
   type AppCliResultMetadata,
+  assertSecureServerUrl,
   type CliConfig,
   type CliConfigContext,
   clearStoredToken,
@@ -95,6 +96,12 @@ export {
   type McpStdioBridgeOptions,
   runMcpStdioBridge,
 } from './bridge.js';
+export {
+  type AppCliExecutableConfig,
+  parseAppCliExecutableConfig,
+  type RunAppCliExecutableOptions,
+  runAppCliExecutable,
+} from './executable.js';
 
 /* ── public API ───────────────────────────────────────────────────────── */
 
@@ -136,6 +143,8 @@ export interface CreateAppCliOptions {
   configDir?: string;
   /** Baked-in default server URL when neither env nor config sets one. */
   defaultServerUrl?: string;
+  /** Enforce HTTPS or loopback HTTP for every effective server URL. */
+  requireSecureServerUrl?: boolean;
   /**
    * App-specific commands. Dispatched BEFORE built-ins (`auth`,
    * `resources`, `mcp`) and before the resource-slug dispatcher, so an
@@ -179,6 +188,7 @@ export function createAppCli(options: CreateAppCliOptions): AppCli {
     envPrefix,
     appSlug: configDir,
     defaultServerUrl: options.defaultServerUrl,
+    requireSecureServerUrl: options.requireSecureServerUrl,
   };
 
   const extraByName = new Map<string, AppCliCommand>();

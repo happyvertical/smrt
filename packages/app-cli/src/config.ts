@@ -59,9 +59,43 @@ export interface CliConfigContext {
   appSlug?: string;
   /** Fallback server URL if neither env nor config sets one. */
   defaultServerUrl?: string;
+  /**
+   * Require HTTPS for every resolved or request-level server URL, while still
+   * permitting loopback HTTP for local development.
+   */
+  requireSecureServerUrl?: boolean;
 }
 
 const DEFAULT_LOCAL_SERVER = 'http://localhost:5173';
+
+/** Enforce the executable-safe server URL policy without echoing URL values. */
+export function assertSecureServerUrl(value: string): void {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Invalid server URL configuration.');
+  }
+  if (
+    !['http:', 'https:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error('Invalid server URL configuration.');
+  }
+  const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+  if (url.protocol === 'http:' && !localHosts.has(url.hostname)) {
+    throw new Error('Invalid server URL configuration.');
+  }
+}
+
+function normalizeServerUrl(context: CliConfigContext, value: string): string {
+  const normalized = value.replace(/\/+$/u, '');
+  if (context.requireSecureServerUrl) assertSecureServerUrl(normalized);
+  return normalized;
+}
 
 function configFilePath(context: CliConfigContext): string {
   const override = process.env[`${context.envPrefix}_CLI_CONFIG`];
@@ -144,7 +178,7 @@ export async function getServerUrl(
     resolved.serverUrl ??
     context.defaultServerUrl ??
     DEFAULT_LOCAL_SERVER;
-  return url.replace(/\/+$/u, '');
+  return normalizeServerUrl(context, url);
 }
 
 /** Resolve a bearer token only when it is bound to the exact target server. */
@@ -317,9 +351,10 @@ export async function requestJsonResult<T = unknown>(
   // Reuse the caller's pre-loaded config when supplied, otherwise read
   // from disk. (#1311 review P2.)
   const config = options.loadedConfig ?? (await loadCliConfig(context));
-  const serverUrl = (
-    options.serverUrl ?? (await getServerUrl(context, config))
-  ).replace(/\/+$/u, '');
+  const serverUrl = normalizeServerUrl(
+    context,
+    options.serverUrl ?? (await getServerUrl(context, config)),
+  );
   const token = await getStoredToken(context, config, serverUrl);
   const headers = new Headers(init.headers);
 

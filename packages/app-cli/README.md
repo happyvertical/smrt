@@ -17,6 +17,45 @@ pnpm add @happyvertical/smrt-app-cli
 
 Node.js 24.18 or newer is required.
 
+The published package also exposes a configuration-driven `smrt-app` binary.
+It lets policy runners and app operators use the canonical CLI outside a
+consumer repository without maintaining a branded wrapper:
+
+```bash
+SMRT_APP_NAME=work \
+SMRT_APP_ENV_PREFIX=WORK \
+SMRT_APP_CONFIG_DIR=happyvertical-work \
+SMRT_APP_DEFAULT_SERVER_URL=https://work.example \
+pnpm dlx --package @happyvertical/smrt-app-cli@X.Y.Z \
+  smrt-app -- auth status
+```
+
+Pin the exact published package version in automation. The four application
+settings are required and are non-secret; command arguments after `--` are
+forwarded unchanged to `createAppCli`. The same values may be passed as
+`--name`, `--env-prefix`, `--config-dir`, and `--default-server-url` before the
+delimiter. Invalid or incomplete configuration fails before the CLI performs
+network or credential access. The executable also applies the HTTPS/loopback
+policy to the effective server URL selected from app-specific environment or
+persisted configuration, and to command-level server overrides.
+
+To run the same CLI's stdio MCP bridge, configure its explicit identity and
+select bridge mode:
+
+```bash
+SMRT_APP_NAME=work \
+SMRT_APP_ENV_PREFIX=WORK \
+SMRT_APP_CONFIG_DIR=happyvertical-work \
+SMRT_APP_DEFAULT_SERVER_URL=https://work.example \
+SMRT_APP_MCP_SERVER_NAME=work-mcp \
+SMRT_APP_MCP_SERVER_VERSION=1.0.0 \
+smrt-app --stdio-mcp
+```
+
+`SMRT_APP_*` is reserved for non-secret executable configuration. Runtime
+credentials continue to use the app-specific environment/config resolution
+implemented by `createAppCli`; never pass bearer tokens as executable options.
+
 ## Quick start
 
 ```ts
@@ -114,6 +153,8 @@ await cli.startMcpBridge({ name: 'acme-mcp', version: '1.0.0' });
 The package also ships the generic `smrt-mcp-bridge` binary. The remote app
 surface is typically mounted with
 [`@happyvertical/smrt-app-mcp`](../smrt-app-mcp/README.md).
+The binary rejects non-loopback plaintext HTTP origins before resolving or
+sending stored credentials; use HTTPS for remote application servers.
 
 The bridge canonicalizes its `tools/list` catalog by tool name and emits a
 one-day `private` cache lifetime. The catalog is tied to the configured local

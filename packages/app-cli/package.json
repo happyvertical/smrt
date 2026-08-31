@@ -12,6 +12,7 @@
     }
   },
   "bin": {
+    "smrt-app": "./dist/bin/smrt-app.js",
     "smrt-mcp-bridge": "./dist/bin/smrt-mcp-bridge.js"
   },
   "files": [

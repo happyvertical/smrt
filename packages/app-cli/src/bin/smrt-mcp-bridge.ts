@@ -57,5 +57,6 @@ await runMcpStdioBridge({
   envPrefix,
   appSlug,
   defaultServerUrl,
+  requireSecureServerUrl: true,
   serverInfo: { name: serverName, version: serverVersion },
 });
