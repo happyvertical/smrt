@@ -43,6 +43,75 @@ visible with their error and retry affordance, so error recovery cannot report
 success or refresh as though the action applied. The tracker is exported from
 `@happyvertical/smrt-content/svelte` for the bulk-action slice to reuse rather
 than creating a second pending-state machine.
+## Cross-page bulk workflows (#2453)
+
+Server-backed lists can opt into one shared preview/apply workflow contract for
+human and agent callers. The browser integration is exported from
+`@happyvertical/smrt-content/svelte`; the principal-bound adapter is exported
+from `@happyvertical/smrt-content/server`.
+
+The supported workflows are move to trash, mark draft, submit for review,
+publish, archive, restore, automated review, body formatting, categorization,
+and optimization. Applications inject body-formatting and optimization
+handlers because those AI pipelines are application-owned; the content package
+does not guess a model or rewrite policy.
+
+Important invariants:
+
+- `all-matching` is the canonical server query plus its query fingerprint and
+  exact count. It is never expanded from the IDs loaded in the browser.
+- Preview is read-only and returns the resolved scope, exact count,
+  representative labels, eligibility outcomes, and consequences. Apply uses
+  the opaque preview token and an idempotency key.
+- Apply resolves the query again under the same principal and tenant scope,
+  rechecks tool/operation authorization and eligibility, and compares the
+  aggregate `updated_at` row revision. Every content save also includes that
+  revision in its database `UPDATE`, so an edit racing the final write fails
+  atomically instead of being overwritten. Application formatting/optimization
+  handlers mutate the supplied object but must not call `save()`; the adapter
+  owns the guarded save. Query, count, membership, or row drift returns a stale
+  failure before mutation.
+- Publication-producing workflows require every read used to construct their
+  version snapshot, including `contentassets:read` and `assets:read`. Keep those
+  explicit catalog assertions in sync with `ContentVersion.createSnapshot()`;
+  they are the authorization boundary on adapters without PostgreSQL RLS.
+- Workflow queries must project `id`, `title`, `status`, and `updated_at` so the
+  server can bind labels, eligibility, and row revisions. The standard
+  ContentList query projection already includes them; a host-supplied projection
+  override must retain them.
+- The default workflow cap is 200 rows across explicit, current-page, and
+  all-matching scopes. Set the same `maxSelectionSize` on the server adapter and
+  browser workflow binding when overriding it. The UI does not offer
+  all-matching selection above that cap, and the server returns
+  `limit_exceeded` for forged or agent requests above it.
+- Automated review, formatting, and optimization are background actions. A
+  successful apply returns a job ID; the queue callback repeats the guarded
+  apply, and idempotency prevents duplicate execution. Hosts must supply
+  `resolveDeferredPrincipal` to re-resolve the complete live persona/TenantAgent
+  binding before queued mutations; missing, mismatched, or incomplete bindings
+  fail closed. Hosts can configure the
+  authenticated `jobStatusPath` transport (or supply `client.status`) so the
+  list can keep an identical intent locked while queued/running, reconcile
+  terminal row outcomes, and unlock a failed or cancelled intent for retry.
+  Selection controls are disabled while a status request is in flight, and the
+  captured intent is rechecked before any returned outcomes are reconciled.
+- Foreground results report accepted, skipped, and failed rows separately. The
+  client clears only accepted IDs; a failed request never reports success or
+  clears selection.
+
+`createContentListWorkflowTransport()` supplies the default JSON transport.
+Hosts that already have an RPC layer can instead provide a structural workflow
+client with the same `preview(request)` and `apply(request)` methods, plus the
+optional `status(jobId)` method when background progress is shown. Both paths
+must terminate at the same `createContentListActionAdapter()` instance used by
+agent actions; separate human-only mutation handlers would bypass the shared
+preview and authorization contract.
+
+The server adapter also requires a `workflowStorage` capability declaration.
+PostgreSQL, SQLite, ordinary DuckDB, and non-immediate exported-file modes are
+supported. JSON's default/immediate mode and DuckDB `writeStrategy:
+'immediate'` fail before adapter setup because those SDK modes export writes
+before the surrounding transaction commits and cannot roll the file back.
 
 ## ContentList migration (#2451)
 

@@ -35,6 +35,31 @@ export interface CreateSessionOptions {
 export class SessionCollection extends SmrtCollection<Session> {
   static readonly _itemClass = Session;
 
+  private async revokeWithRetry(sessionId: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const session = await this.get(sessionId);
+      if (!session) return false;
+      if (session.status !== SessionStatus.ACTIVE) return true;
+      session.revoke();
+      try {
+        await session.save();
+        return true;
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'RUNTIME_REVISION_CONFLICT'
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
+    return false;
+  }
+
   /**
    * Create a new session with a secure ID
    */
@@ -103,12 +128,7 @@ export class SessionCollection extends SmrtCollection<Session> {
     const session = await this.findValidSession(sessionId);
     if (!session) return false;
 
-    session.touch();
-    if (extendTtl) {
-      session.extend(ttl);
-    }
-    await session.save();
-    return true;
+    return session.recordActivity(extendTtl, ttl);
   }
 
   /**
@@ -157,9 +177,7 @@ export class SessionCollection extends SmrtCollection<Session> {
 
     let count = 0;
     for (const session of sessions) {
-      session.revoke();
-      await session.save();
-      count++;
+      if (session.id && (await this.revokeWithRetry(session.id))) count++;
     }
 
     return count;
@@ -169,12 +187,7 @@ export class SessionCollection extends SmrtCollection<Session> {
    * Revoke a specific session
    */
   async revokeSession(sessionId: string): Promise<boolean> {
-    const session = await this.get(sessionId);
-    if (!session) return false;
-
-    session.revoke();
-    await session.save();
-    return true;
+    return this.revokeWithRetry(sessionId);
   }
 
   /**

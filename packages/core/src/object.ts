@@ -1,6 +1,11 @@
 import type { AITextCompletionOptions, AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
+import { buildWhere } from '@happyvertical/sql';
 import { runCascadeDelete } from './cascade';
+import {
+  CHANGE_FEED_WAS_PERSISTED_KEY,
+  recordInstanceChange,
+} from './change-feed';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -16,7 +21,9 @@ import {
 } from './db-errors';
 import {
   isEmbeddedDatabase,
+  usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
+  withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
@@ -37,6 +44,7 @@ import {
 } from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
+import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   executeToolCall as executeToolCallInternal,
@@ -57,6 +65,15 @@ const logger = createLogger({
   level: process.env.DEBUG_STI ? 'debug' : 'info',
 });
 
+function isDuckDbHugeInt(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'hugeint' in value &&
+      (typeof value.hugeint === 'number' || typeof value.hugeint === 'bigint'),
+  );
+}
+
 /**
  * Default maximum number of characters of serialized object data injected into
  * the AI prompts built by `is()`, `do()`, and `describe()`.
@@ -68,6 +85,15 @@ const logger = createLogger({
  * cases. Override per call with the `maxDataLength` option.
  */
 const AI_PROMPT_DATA_MAX_LENGTH = 100_000;
+
+/** Optional optimistic-concurrency guard for persisted-object saves. */
+export interface SmrtSaveOptions {
+  /**
+   * Update only when the stored row still has this revision. A mismatch throws
+   * `RUNTIME_REVISION_CONFLICT` without writing the row.
+   */
+  expectedUpdatedAt?: Date | string;
+}
 
 /**
  * Validate that _meta_type matches the expected class (Issue #713)
@@ -607,6 +633,53 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Run work for this object in a root database transaction.
+   *
+   * Database rollback cannot undo JavaScript mutations made by save(). This
+   * helper therefore restores persistence identity and revision metadata when
+   * the transaction rejects, allowing the same instance to be corrected and
+   * retried without a false revision conflict. Domain-field mutations remain
+   * caller-owned so the caller can inspect or amend them before retrying.
+   */
+  public async withTransaction<T>(
+    operation: (bound: this) => Promise<T>,
+  ): Promise<T> {
+    const database = this.db;
+    if (!database.transaction) {
+      throw new Error('Object transaction requires transaction support');
+    }
+    const persistence = {
+      id: this._id,
+      slug: this._slug,
+      context: this._context,
+      createdAt:
+        this.created_at instanceof Date
+          ? new Date(this.created_at)
+          : this.created_at,
+      updatedAt:
+        this.updated_at instanceof Date
+          ? new Date(this.updated_at)
+          : this.updated_at,
+      persisted: this._persisted,
+    };
+    try {
+      return await withEmbeddedWriteTransaction(
+        database,
+        isEmbeddedDatabase(database),
+        (transaction) => this.withDatabase(transaction, operation),
+      );
+    } catch (error) {
+      this._id = persistence.id;
+      this._slug = persistence.slug;
+      this._context = persistence.context;
+      this.created_at = persistence.createdAt;
+      this.updated_at = persistence.updatedAt;
+      this._persisted = persistence.persisted;
+      throw error;
+    }
+  }
+
+  /**
    * Protected setter for STI discriminator to maintain type safety
    * Used internally for Single Table Inheritance support
    * @internal
@@ -855,6 +928,7 @@ export class SmrtObject extends SmrtClass {
    * @throws Error if STI validation fails
    */
   async loadDataFromDb(data: Record<string, unknown>) {
+    data = await this.canonicalizePersistedUuidRow(data);
     const className = this.getResolvedClassName();
 
     if (process.env.DEBUG_STI) {
@@ -978,6 +1052,24 @@ export class SmrtObject extends SmrtClass {
       }
     }
 
+    // Framework timestamps keep their snake_case property names even when a
+    // legacy model also declares `createdAt` / `updatedAt`. formatDataJs()
+    // correctly hydrates that model alias, but one database column cannot emit
+    // both keys; restore the framework slots from the same converted value so
+    // persisted saves always retain their revision guard.
+    if (Object.hasOwn(data, 'created_at')) {
+      this.created_at = (formattedData.created_at ?? formattedData.createdAt) as
+        | Date
+        | null
+        | undefined;
+    }
+    if (Object.hasOwn(data, 'updated_at')) {
+      this.updated_at = (formattedData.updated_at ?? formattedData.updatedAt) as
+        | Date
+        | null
+        | undefined;
+    }
+
     if (process.env.DEBUG_STI) {
       logger.debug('[loadDataFromDb] Hydration complete', {
         class: className,
@@ -990,6 +1082,114 @@ export class SmrtObject extends SmrtClass {
     // The data came from an existing row, so subsequent saves must update
     // that row by primary key even if natural-key fields change (issue #1472).
     this._persisted = true;
+  }
+
+  /** Fail closed if a caller tries to hydrate a lossy DuckDB UUID wrapper. */
+  protected async canonicalizePersistedUuidRow(
+    row: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const schema =
+      ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
+      ObjectRegistry.getSchema(this.getResolvedClassName());
+    const registeredFields =
+      ObjectRegistry.getFields(this.getResolvedQualifiedName()).size > 0
+        ? ObjectRegistry.getFields(this.getResolvedQualifiedName())
+        : ObjectRegistry.getFields(this.getResolvedClassName());
+    const instanceColumns = new Set([
+      'id',
+      ...Array.from(registeredFields.keys(), (fieldName) =>
+        toSnakeCase(fieldName),
+      ),
+    ]);
+    const uuidColumns = Object.entries(schema?.columns ?? {})
+      .filter(
+        ([columnName, column]) =>
+          instanceColumns.has(columnName) &&
+          String(column.type).toUpperCase() === 'UUID',
+      )
+      .map(([columnName]) => columnName);
+    if (
+      uuidColumns.length === 0 ||
+      !uuidColumns.some((columnName) => isDuckDbHugeInt(row[columnName]))
+    ) {
+      return row;
+    }
+    throw RuntimeError.invalidState(
+      'Native DuckDB UUID row was not canonicalized before hydration',
+      { className: this.getResolvedClassName() },
+    );
+  }
+
+  /** Fetch one exact row while casting native DuckDB UUIDs in that same read. */
+  protected async getCanonicalPersistedRow(
+    filter: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    if (!this.isNativeDuckDb()) {
+      return (await this.db.get(this.tableName, filter)) as Record<
+        string,
+        unknown
+      > | null;
+    }
+    const schema =
+      ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
+      ObjectRegistry.getSchema(this.getResolvedClassName());
+    const quote = (identifier: string) =>
+      `"${identifier.replaceAll('"', '""')}"`;
+    if (Object.keys(filter).length === 0) return null;
+    for (const fieldName of Object.keys(filter)) {
+      const [, rawColumnName] =
+        fieldName.match(/^(.*?)(?:\s+(?:not in|in|like|>=|<=|!=|>|<|=))?$/i) ??
+        [];
+      const columnName = toSnakeCase(rawColumnName ?? fieldName);
+      if (!schema?.columns[columnName]) {
+        throw RuntimeError.invalidState('Invalid persisted-row filter column', {
+          className: this.getResolvedClassName(),
+          fieldName,
+        });
+      }
+    }
+    const { sql: whereSql, values } = buildWhere(filter, 1, 'duckdb');
+    const readSql = `SELECT * FROM ${quote(this.tableName)} ${whereSql} LIMIT 1`;
+    const described = await this.db.query(`DESCRIBE ${readSql}`, ...values);
+    const uuidColumns = described.rows
+      .filter((column) => String(column.column_type).toUpperCase() === 'UUID')
+      .map((column) => String(column.column_name));
+    const alias = quote('__smrt_uuid_row');
+    const sql =
+      uuidColumns.length === 0
+        ? readSql
+        : `SELECT ${alias}.* REPLACE (${uuidColumns
+            .map((columnName) => {
+              const quoted = quote(columnName);
+              return `CAST(${alias}.${quoted} AS VARCHAR) AS ${quoted}`;
+            })
+            .join(', ')}) FROM (${readSql}) AS ${alias}`;
+    const { rows } = await this.db.query(sql, ...values);
+    return rows[0] ?? null;
+  }
+
+  private isNativeDuckDb(): boolean {
+    const db = this.db as typeof this.db & {
+      config?: { type?: string; url?: string };
+      type?: string;
+      client?: { constructor?: { name?: string }; connection?: unknown };
+      exportTable?: unknown;
+    };
+    const clientName = db.client?.constructor?.name?.toLowerCase() ?? '';
+    const isDuckDbConnection =
+      clientName.includes('duckdb') ||
+      (typeof db.exportTable === 'function' &&
+        db.client !== undefined &&
+        'connection' in db.client);
+    return (
+      detectEngine(
+        db.url || db.config?.url || '',
+        this.getDatabaseEngineHint() ||
+          db.type ||
+          db.config?.type ||
+          (isDuckDbConnection ? 'duckdb' : undefined),
+      ) === 'duckdb'
+    );
   }
 
   /**
@@ -1541,15 +1741,22 @@ export class SmrtObject extends SmrtClass {
       await this.verifyStorageReady();
 
       // lookup by slug and context using adapter method
-      const saved = await this.db.get(
-        this.tableName,
-        await this.interceptGetFilter({
-          slug: this.slug,
-          context: this.context,
-        }),
-      );
+      const filter = await this.interceptGetFilter({
+        slug: this.slug,
+        context: this.context,
+      });
+      const saved = await this.getCanonicalPersistedRow(filter);
       if (saved) {
-        this.id = saved.id;
+        const persistedId = saved.id;
+        if (typeof persistedId !== 'string') {
+          throw RuntimeError.invalidState(
+            'Persisted object id is not a string',
+            {
+              className: this.getResolvedClassName(),
+            },
+          );
+        }
+        this.id = persistedId;
       }
     }
 
@@ -1629,19 +1836,15 @@ export class SmrtObject extends SmrtClass {
 
     // Try to find by id first
     if (this.id) {
-      const byId = await this.db.get(
-        this.tableName,
-        await this.interceptGetFilter({ id: this.id }),
-      );
+      const filter = await this.interceptGetFilter({ id: this.id });
+      const byId = await this.getCanonicalPersistedRow(filter);
       if (byId) return byId.id;
     }
 
     // Fall back to finding by slug
     if (this.slug) {
-      const bySlug = await this.db.get(
-        this.tableName,
-        await this.interceptGetFilter({ slug: this.slug }),
-      );
+      const filter = await this.interceptGetFilter({ slug: this.slug });
+      const bySlug = await this.getCanonicalPersistedRow(filter);
       if (bySlug) return bySlug.id;
     }
 
@@ -1861,10 +2064,32 @@ export class SmrtObject extends SmrtClass {
    * await product.save();
    * ```
    */
-  async save() {
+  async save(options: SmrtSaveOptions = {}) {
     const className = this.getResolvedClassName();
+    const expectedUpdatedAt = options.expectedUpdatedAt;
+    const previousUpdatedAt = this.updated_at;
+    let revisionPersisted = false;
+    // Persisted objects always write through a compare-and-swap predicate.
+    // This makes revision advancement atomic at the database boundary across
+    // processes: only the writer whose loaded revision is still current can
+    // replace it, even when separate runtimes propose the same next timestamp.
+    const loadedRevision =
+      expectedUpdatedAt ??
+      (this._persisted ? (this.updated_at ?? undefined) : undefined);
+    // Snapshot Date objects as immutable strings before hooks or timestamp
+    // issuance can touch instance state during the save lifecycle.
+    const revisionGuard =
+      loadedRevision instanceof Date
+        ? loadedRevision.toISOString()
+        : loadedRevision;
 
     try {
+      if (expectedUpdatedAt !== undefined && (!this._persisted || !this.id)) {
+        throw RuntimeError.invalidState(
+          'A revision-guarded save requires a persisted object',
+          { className },
+        );
+      }
       // Validate object state before saving
       await this.validateBeforeSave();
 
@@ -1883,8 +2108,10 @@ export class SmrtObject extends SmrtClass {
         this.slug = await this.getSlug();
       }
 
-      // Update the updated_at timestamp
-      this.updated_at = new Date();
+      // Every persisted write must advance beyond the loaded revision. If an
+      // ordinary writer saves in the same clock millisecond and keeps the old
+      // timestamp, a later guarded writer could still match and overwrite it.
+      this.updated_at = this.nextRevisionTimestamp(revisionGuard);
 
       if (!this.created_at) {
         this.created_at = new Date();
@@ -1968,6 +2195,10 @@ export class SmrtObject extends SmrtClass {
           data[toSnakeCase(key)] = value;
         }
       }
+      // `updated_at` is the framework revision token. A legacy model field
+      // named `updatedAt` also snake-cases to this column, so assert the
+      // freshly issued framework value after serializing model fields.
+      data.updated_at = this.updated_at;
 
       // Coerce empty-string values to NULL for native UUID columns (declared
       // FKs / cross-package refs). The TypeScript default for an unset
@@ -1995,6 +2226,8 @@ export class SmrtObject extends SmrtClass {
       // natural-key columns — its legacy-STI probe semantics are unchanged.
       const upsertConflictColumns =
         this._persisted && data.id ? ['id'] : conflictColumns;
+      const useEmbeddedRevisionFallback =
+        revisionGuard !== undefined && usesEmbeddedRevisionFallback(this.db);
 
       // A NULL among the conflict values routes the SDK's upsert through its
       // null-aware path — on file-backed SQLite a write transaction on a
@@ -2003,24 +2236,65 @@ export class SmrtObject extends SmrtClass {
       // target (#2360) every NULL-tenant create takes that path, and
       // concurrent creates livelocked into SQLITE_BUSY against the
       // change-feed append on the root connection.
-      const serializeEmbeddedWrite =
-        writePlan.type !== 'updateById' &&
-        !(this._insertOnly && !this._persisted) &&
-        isEmbeddedDatabase(this.db) &&
-        upsertConflictColumns.some((column) => data[column] == null);
+      // Embedded revision CAS is a process-local compare/upsert sequence. All
+      // same-process writes must join the same queue or an ordinary save can
+      // slip between the compare and upsert and be silently overwritten.
+      const serializeEmbeddedWrite = isEmbeddedDatabase(this.db);
 
+      let revisionMatched = true;
       await withEmbeddedWriteQueue(this.db, serializeEmbeddedWrite, () =>
         ErrorUtils.withRetry(
           async () => {
             try {
-              if (writePlan.type === 'updateById') {
+              if (
+                writePlan.type === 'updateById' ||
+                revisionGuard !== undefined
+              ) {
                 const { id: _id, ...updateData } = data;
-                await this.db.update(
-                  this.tableName,
-                  { id: data.id },
-                  updateData,
-                );
-                this.setMetaType(writePlan.qualifiedMetaType);
+                // Embedded adapters have no cross-process writers in supported
+                // deployments, and DuckDB cannot type a TIMESTAMP predicate in
+                // this generic UPDATE API. Compare then upsert while holding
+                // the shared per-database embedded-write queue instead.
+                if (useEmbeddedRevisionFallback) {
+                  const current = await this.db.get(this.tableName, {
+                    id: data.id,
+                  });
+                  if (
+                    !current ||
+                    !this.revisionsEqual(
+                      (current as Record<string, unknown>).updated_at,
+                      revisionGuard,
+                    )
+                  ) {
+                    revisionMatched = false;
+                    return;
+                  }
+                }
+                const updateResult = useEmbeddedRevisionFallback
+                  ? await this.db.upsert(this.tableName, ['id'], data)
+                  : await this.db.update(
+                      this.tableName,
+                      {
+                        id: data.id,
+                        ...(revisionGuard !== undefined
+                          ? {
+                              updated_at:
+                                this.revisionPredicateValue(revisionGuard),
+                            }
+                          : {}),
+                      },
+                      updateData,
+                    );
+                if (
+                  revisionGuard !== undefined &&
+                  updateResult.affected !== 1
+                ) {
+                  revisionMatched = false;
+                  return;
+                }
+                if (writePlan.type === 'updateById') {
+                  this.setMetaType(writePlan.qualifiedMetaType);
+                }
               } else if (this._insertOnly && !this._persisted) {
                 // Strict-insert mode (#1759): row identity is an explicit
                 // client-supplied id, so never adopt an existing row via
@@ -2062,7 +2336,7 @@ export class SmrtObject extends SmrtClass {
                   throw ValidationError.requiredField(field, className);
                 }
                 const operation =
-                  writePlan.type === 'updateById'
+                  writePlan.type === 'updateById' || revisionGuard !== undefined
                     ? `UPDATE ${this.tableName} (id-targeted)`
                     : this._insertOnly && !this._persisted
                       ? `INSERT INTO ${this.tableName}`
@@ -2076,6 +2350,15 @@ export class SmrtObject extends SmrtClass {
           500,
         ),
       );
+
+      if (!revisionMatched) {
+        throw new RuntimeError(
+          `Revision conflict while saving ${className}`,
+          'RUNTIME_REVISION_CONFLICT',
+          { className, id: this.id },
+        );
+      }
+      revisionPersisted = true;
 
       // The row now exists, so any further save() must update it by primary
       // key even if natural-key fields change afterwards (issue #1472).
@@ -2121,6 +2404,14 @@ export class SmrtObject extends SmrtClass {
 
       return this;
     } catch (error) {
+      // A failed database write did not commit the newly issued revision.
+      // Restore the loaded token so correcting the data and retrying this same
+      // instance does not compare against a timestamp that never reached the
+      // row. Failures after persistence (for example an afterSave hook) keep
+      // the committed revision.
+      if (!revisionPersisted) {
+        this.updated_at = previousUpdatedAt;
+      }
       // Re-throw SMRT errors as-is (ValidationError, DatabaseError,
       // TenantIsolationError, etc. all extend SmrtError) so their stable
       // `code`/`instanceof` contract survives the save() boundary.
@@ -2145,6 +2436,138 @@ export class SmrtObject extends SmrtClass {
         error instanceof Error ? error : new Error(String(error)),
       );
     }
+  }
+
+  /**
+   * Atomically claim the current row revision without running model save hooks.
+   *
+   * Artifact-producing workflows use this immediately before persisting their
+   * artifacts in the same transaction. It provides the same compare-and-swap
+   * conflict contract as `save({ expectedUpdatedAt })`, while deliberately not
+   * re-running domain mutation, publication, embedding, or relationship hooks.
+   */
+  async claimRevision(expectedUpdatedAt: Date | string): Promise<this> {
+    const className = this.getResolvedClassName();
+    if (!this._persisted || !this.id) {
+      throw RuntimeError.invalidState(
+        'A revision claim requires a persisted object',
+        { className },
+      );
+    }
+
+    // A revision claim is still a write for tenant isolation purposes. Run the
+    // same pre-save security interceptors as save(), while intentionally
+    // omitting domain mutation and after-save hooks.
+    await GlobalInterceptors.executeBeforeSave(
+      this,
+      createInterceptorContext(className, 'save'),
+    );
+
+    const updatedAt = this.nextRevisionTimestamp(expectedUpdatedAt);
+    let result: Awaited<ReturnType<typeof this.db.update>> | undefined;
+    let revisionMatched = true;
+    const useEmbeddedRevisionFallback = usesEmbeddedRevisionFallback(this.db);
+    await withEmbeddedWriteQueue(
+      this.db,
+      useEmbeddedRevisionFallback,
+      async () => {
+        let current: Record<string, unknown> | null = null;
+        if (useEmbeddedRevisionFallback) {
+          const persisted = await this.getCanonicalPersistedRow({
+            id: this.id,
+          });
+          current = persisted;
+          if (
+            !current ||
+            !this.revisionsEqual(current.updated_at, expectedUpdatedAt)
+          ) {
+            revisionMatched = false;
+            return;
+          }
+        }
+        result = useEmbeddedRevisionFallback
+          ? await this.db.upsert(this.tableName, ['id'], {
+              ...current,
+              updated_at: updatedAt.toISOString(),
+            })
+          : await this.db.update(
+              this.tableName,
+              {
+                id: this.id,
+                updated_at: this.revisionPredicateValue(expectedUpdatedAt),
+              },
+              { updated_at: updatedAt.toISOString() },
+            );
+      },
+    );
+    if (!revisionMatched || result?.affected !== 1) {
+      throw new RuntimeError(
+        `Revision conflict while claiming ${className}`,
+        'RUNTIME_REVISION_CONFLICT',
+        { className, id: this.id },
+      );
+    }
+
+    this.updated_at = updatedAt;
+    this.invalidateCollectionReadCache();
+    // claimRevision intentionally skips domain afterSave hooks, but the public
+    // row revision still changed and must remain visible to ETags, delta pull,
+    // and SSE. When transaction-bound this feed row shares the transaction.
+    await recordInstanceChange(this, 'update');
+    return this;
+  }
+
+  /**
+   * Complete the observation lifecycle for a guarded update implemented by an
+   * owning subclass outside save(). The confirmed durable row is hydrated
+   * before observers run so cache invalidation, tenant-scoped change feeds,
+   * and other after-save consumers all see authoritative state.
+   */
+  protected async completePersistedUpdate(
+    durableRow: Record<string, unknown>,
+  ): Promise<void> {
+    await this.loadDataFromDb(durableRow);
+    this.invalidateCollectionReadCache();
+    const context = createInterceptorContext(
+      this.getResolvedClassName(),
+      'save',
+    );
+    context.metadata = {
+      ...context.metadata,
+      [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
+    };
+    await GlobalInterceptors.executeAfterSave(this, context);
+  }
+
+  private revisionPredicateValue(revision: Date | string): Date | string {
+    return revision instanceof Date ? revision.toISOString() : revision;
+  }
+
+  private revisionsEqual(left: unknown, right: Date | string): boolean {
+    const leftTime =
+      left instanceof Date
+        ? left.getTime()
+        : typeof left === 'string'
+          ? Date.parse(left)
+          : Number.NaN;
+    const rightTime =
+      right instanceof Date ? right.getTime() : Date.parse(right);
+    return Number.isFinite(leftTime) && leftTime === rightTime;
+  }
+
+  private nextRevisionTimestamp(expectedUpdatedAt?: Date | string): Date {
+    const revisionTimes = [this.updated_at, expectedUpdatedAt]
+      .filter((revision): revision is Date | string => revision != null)
+      .map((revision) =>
+        revision instanceof Date ? revision.getTime() : Date.parse(revision),
+      )
+      .filter(Number.isFinite);
+    const revisionFloor =
+      revisionTimes.length > 0
+        ? Math.max(...revisionTimes)
+        : Number.NEGATIVE_INFINITY;
+    const nextRevisionTime = Math.max(Date.now(), revisionFloor + 1);
+    return new Date(nextRevisionTime);
   }
 
   /**
@@ -2478,7 +2901,7 @@ export class SmrtObject extends SmrtClass {
       await ErrorUtils.withRetry(
         async () => {
           try {
-            const existing = await this.db.get(this.tableName, filter);
+            const existing = await this.getCanonicalPersistedRow(filter);
             if (existing) {
               await this.loadDataFromDb(existing);
             }
@@ -2529,13 +2952,11 @@ export class SmrtObject extends SmrtClass {
 
     // Route the natural-key lookup through beforeGet interceptors so slug
     // hydration carries the same read predicate as collection reads (#2365).
-    const existing = await this.db.get(
-      this.tableName,
-      await this.interceptGetFilter({
-        slug: this._slug,
-        context: this._context || '',
-      }),
-    );
+    const filter = await this.interceptGetFilter({
+      slug: this._slug,
+      context: this._context || '',
+    });
+    const existing = await this.getCanonicalPersistedRow(filter);
     if (existing) {
       await this.loadDataFromDb(existing);
     }
@@ -2887,23 +3308,27 @@ export class SmrtObject extends SmrtClass {
 
     await this.verifyStorageReady();
 
-    const { affectedTables, affectedTableClasses } = await runCascadeDelete(
-      this.db,
-      ObjectRegistry,
-      {
-        // R5-canon: the qualified name, not the bare constructor name —
-        // two packages can register a same-named class, and a simple-name
-        // lookup in ObjectRegistry.getClass()/findClass() can silently
-        // resolve the cascade plan against the wrong package's class,
-        // leaving its @crossPackageRef references and polymorphic
-        // meta_type rows uncleaned (the orphaned-reference bug #2371
-        // exists to close, moved to the cross-package case).
-        className: this.getResolvedQualifiedName(),
-        tableName: this.tableName,
-        id: this.id,
-      },
-      (db) => db.delete(this.tableName, { id: this.id }).then(() => undefined),
-    );
+    const { affectedTables, affectedTableClasses } =
+      await withEmbeddedWriteQueue(this.db, isEmbeddedDatabase(this.db), () =>
+        runCascadeDelete(
+          this.db,
+          ObjectRegistry,
+          {
+            // R5-canon: the qualified name, not the bare constructor name —
+            // two packages can register a same-named class, and a simple-name
+            // lookup in ObjectRegistry.getClass()/findClass() can silently
+            // resolve the cascade plan against the wrong package's class,
+            // leaving its @crossPackageRef references and polymorphic
+            // meta_type rows uncleaned (the orphaned-reference bug #2371
+            // exists to close, moved to the cross-package case).
+            className: this.getResolvedQualifiedName(),
+            tableName: this.tableName,
+            id: this.id,
+          },
+          (db) =>
+            db.delete(this.tableName, { id: this.id }).then(() => undefined),
+        ),
+      );
 
     // The backing row is gone — a later save() should go through the
     // natural-key insert path again rather than targeting a deleted id.

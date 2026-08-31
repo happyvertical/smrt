@@ -1,15 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { getTestDatabase } from '@happyvertical/smrt-core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
   BillingAdjustmentCollection,
+  ClientCharge,
   ClientChargeCollection,
   PricingRule,
   PricingRuleCollection,
   SpendingPolicyCollection,
 } from '../models/commercial.js';
 import {
+  assertCommercialBillingStorageSupported,
+  CommercialBillingStorageConfigurationError,
   CommercialUsageService,
   SpendingPolicyEvaluator,
+  UnsupportedCommercialBillingStorageError,
 } from '../services/commercial.js';
 
 describe('commercial usage tracer', () => {
@@ -29,9 +37,313 @@ describe('commercial usage tracer', () => {
     charges = await ClientChargeCollection.create(options);
     adjustments = await BillingAdjustmentCollection.create(options);
     policies = await SpendingPolicyCollection.create(options);
-    service = new CommercialUsageService(usage, rules, charges, adjustments);
+    service = new CommercialUsageService(usage, rules, charges, adjustments, {
+      adapterType: 'sqlite',
+    });
+  });
+
+  it('rejects non-transactional billing write-back adapters before setup', async () => {
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'json',
+          url: './unused-commercial-json',
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'duckdb',
+          url: ':memory:',
+          writeStrategy: 'immediate',
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'UNSUPPORTED_COMMERCIAL_BILLING_STORAGE',
+    });
+    await expect(
+      CommercialUsageService.create({ db: usage.db }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+    await expect(
+      CommercialUsageService.create({ persistence: usage.db }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+    await expect(
+      CommercialUsageService.create({
+        persistence: {
+          type: 'duckdb',
+          url: ':memory:',
+          writeStrategy: 'immediate',
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'json',
+          url: './unused-commercial-json',
+          writeStrategy: 'immediate',
+        },
+        billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it('uses SQL environment precedence when the adapter type is omitted', async () => {
+    vi.stubEnv('HAVE_SQL_TYPE', 'json');
+    await expect(
+      CommercialUsageService.create({
+        db: { url: 'file:billing-json' },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+    vi.stubEnv('HAVE_SQL_TYPE', 'duckdb');
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'immediate');
+    await expect(CommercialUsageService.create()).rejects.toBeInstanceOf(
+      UnsupportedCommercialBillingStorageError,
+    );
+    vi.stubEnv('HAVE_SQL_TYPE', 'sqlite');
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', '');
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
+    try {
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing.db'),
+          billingStorage: { adapterType: 'sqlite' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    'jsno',
+    'SQLite',
+    ' ',
+  ])('rejects invalid nonempty HAVE_SQL_TYPE %j before adapter inference', async (type) => {
+    vi.stubEnv('HAVE_SQL_TYPE', type);
+    await expect(
+      CommercialUsageService.create({
+        db: 'file:billing.db',
+        billingStorage: { adapterType: 'sqlite' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it.each([
+    'manul',
+    'Immediate',
+    ' ',
+  ])('rejects invalid nonempty HAVE_SQL_WRITE_STRATEGY %j before setup', async (strategy) => {
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', strategy);
+    await expect(
+      CommercialUsageService.create({
+        db: { type: 'sqlite', url: ':memory:' },
+        billingStorage: { adapterType: 'sqlite' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it.each([
+    'db',
+    'persistence',
+  ] as const)('rejects invalid nonempty HAVE_SQL_TYPE before explicit typed %s setup', async (option) => {
+    vi.stubEnv('HAVE_SQL_TYPE', 'jsno');
+    await expect(
+      CommercialUsageService.create({
+        [option]: { type: 'sqlite', url: ':memory:' },
+        billingStorage: { adapterType: 'sqlite' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it('normalizes environment values over explicitly undefined options', async () => {
+    vi.stubEnv('HAVE_SQL_TYPE', 'json');
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'immediate');
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: undefined,
+          url: './unused-commercial-json',
+          writeStrategy: undefined,
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+
+    vi.stubEnv('HAVE_SQL_WRITE_STRATEGY', 'manual');
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
+    try {
+      await expect(
+        CommercialUsageService.create({
+          db: {
+            type: 'json',
+            url: join(directory, 'billing.json'),
+            writeStrategy: undefined,
+          },
+          billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it.each([
+    '',
+    false,
+    'later',
+  ])('rejects invalid configured write strategy %j before setup', async (writeStrategy) => {
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'json',
+          url: './unused-commercial-json',
+          writeStrategy: writeStrategy as never,
+        },
+        billingStorage: { adapterType: 'json', writeStrategy: 'manual' },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it.each([
+    '',
+    false,
+    'later',
+  ])('rejects invalid declared write strategy %j before use', (writeStrategy) => {
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'json',
+        writeStrategy: writeStrategy as never,
+      }),
+    ).toThrow(CommercialBillingStorageConfigurationError);
+    expect(
+      () =>
+        new CommercialUsageService(usage, rules, charges, adjustments, {
+          adapterType: 'json',
+          writeStrategy: writeStrategy as never,
+        }),
+    ).toThrow(CommercialBillingStorageConfigurationError);
+  });
+
+  it('validates declarations before default resolution and snapshots accessors', async () => {
+    await expect(
+      CommercialUsageService.create({
+        billingStorage: {
+          adapterType: 'sqlite',
+          writeStrategy: '' as never,
+        },
+      }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+
+    let storageReads = 0;
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'json',
+        get writeStrategy() {
+          storageReads += 1;
+          return storageReads === 1 ? 'manual' : (false as never);
+        },
+      }),
+    ).not.toThrow();
+    expect(storageReads).toBe(1);
+
+    let configReads = 0;
+    await expect(
+      CommercialUsageService.create({
+        db: {
+          type: 'duckdb',
+          url: ':memory:',
+          get writeStrategy() {
+            configReads += 1;
+            return configReads === 1 ? undefined : 'immediate';
+          },
+        },
+      }),
+    ).resolves.toBeInstanceOf(CommercialUsageService);
+    expect(configReads).toBe(1);
+  });
+
+  it.each([
+    undefined,
+    false,
+    'bogus',
+  ])('rejects invalid declared adapter type %j before resolved-handle use', async (adapterType) => {
+    const billingStorage = {
+      adapterType: adapterType as never,
+      writeStrategy: 'manual' as const,
+    };
+    expect(() =>
+      assertCommercialBillingStorageSupported(billingStorage),
+    ).toThrow(CommercialBillingStorageConfigurationError);
+    await expect(
+      CommercialUsageService.create({ db: usage.db, billingStorage }),
+    ).rejects.toBeInstanceOf(CommercialBillingStorageConfigurationError);
+  });
+
+  it('normalizes explicit contracts for ambiguous database strings', async () => {
+    vi.stubEnv('HAVE_SQL_TYPE', '');
+    const directory = await mkdtemp(join(tmpdir(), 'smrt-commercial-'));
+    try {
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing-db-option.db'),
+          billingStorage: { adapterType: 'sqlite' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing.duckdb'),
+          billingStorage: {
+            adapterType: 'duckdb',
+            writeStrategy: 'manual',
+          },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+      await expect(
+        CommercialUsageService.create({
+          db: join(directory, 'billing.json'),
+          billingStorage: {
+            adapterType: 'json',
+            writeStrategy: 'immediate',
+          },
+        }),
+      ).rejects.toBeInstanceOf(UnsupportedCommercialBillingStorageError);
+      await expect(
+        CommercialUsageService.create({
+          persistence: join(directory, 'billing-persistence-option.db'),
+          billingStorage: { adapterType: 'sqlite' },
+        }),
+      ).resolves.toBeInstanceOf(CommercialUsageService);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it('preserves relational and ordinary DuckDB billing storage', () => {
+    expect(() =>
+      assertCommercialBillingStorageSupported({ adapterType: 'sqlite' }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({ adapterType: 'postgres' }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({ adapterType: 'duckdb' }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'duckdb',
+        writeStrategy: 'none',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertCommercialBillingStorageSupported({
+        adapterType: 'duckdb',
+        writeStrategy: 'manual',
+      }),
+    ).not.toThrow();
   });
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await usage.db.close?.();
   });
 
@@ -291,6 +603,231 @@ describe('commercial usage tracer', () => {
       await adjustments.list({ where: { clientChargeId: charge.id } }),
     ).toHaveLength(1);
     expect((await charges.get(String(charge.id)))?.status).toBe('adjusted');
+  });
+
+  it('serializes concurrent sourced adjustments on one DuckDB handle', async () => {
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: [
+        'TenantUsageMetric',
+        'PricingRule',
+        'ClientCharge',
+        'BillingAdjustment',
+      ],
+      omitForeignKeyConstraints: true,
+    });
+    const duckUsage = await TenantUsageMetricCollection.create({ db });
+    const options = { db };
+    const duckRules = await PricingRuleCollection.create(options);
+    const duckCharges = await ClientChargeCollection.create(options);
+    const duckAdjustments = await BillingAdjustmentCollection.create(options);
+    const duckService = new CommercialUsageService(
+      duckUsage,
+      duckRules,
+      duckCharges,
+      duckAdjustments,
+      { adapterType: 'duckdb' },
+    );
+
+    try {
+      const event = await duckUsage.create({
+        id: '33333333-3333-4333-8333-333333333333',
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        metricKey: 'ai.tokens',
+        quantity: 5,
+        windowStart: new Date('2026-07-01T00:00:00Z'),
+        windowEnd: new Date('2026-07-01T00:01:00Z'),
+      });
+      await duckRules.create({
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        ruleKey: 'duckdb-tokens-v1',
+        metricKey: 'ai.tokens',
+        strategy: 'fixed_unit',
+        effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+        terms: JSON.stringify({ unitPrice: 2 }),
+      });
+      const draft = await duckService.price({
+        usageEventId: String(event.id),
+      });
+      const charge = await duckService.price({
+        usageEventId: String(event.id),
+        approved: true,
+      });
+
+      expect(typeof charge.id).toBe('string');
+      expect(charge.id).toBe(draft.id);
+      expect(charge.amount).toBe(10);
+      expect(charge.status).toBe('approved');
+
+      const [first, second] = await Promise.all([
+        duckService.adjust(
+          String(charge.id),
+          -1,
+          'provider credit',
+          'provider-credit',
+          'duckdb-credit-1',
+        ),
+        duckService.adjust(
+          String(charge.id),
+          -1,
+          'provider credit',
+          'provider-credit',
+          'duckdb-credit-1',
+        ),
+      ]);
+
+      expect(second.id).toBe(first.id);
+      expect(
+        await duckAdjustments.list({
+          where: { clientChargeId: String(charge.id) },
+        }),
+      ).toHaveLength(1);
+      expect((await duckCharges.get(String(charge.id)))?.status).toBe(
+        'adjusted',
+      );
+    } finally {
+      await db.close?.();
+    }
+  });
+
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('keeps an ordinary %s charge write outside a rolled-back adjustment transaction', async (type) => {
+    const db = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: [
+        'TenantUsageMetric',
+        'PricingRule',
+        'ClientCharge',
+        'BillingAdjustment',
+      ],
+      omitForeignKeyConstraints: true,
+    });
+    const options = { db };
+    const localUsage = await TenantUsageMetricCollection.create(options);
+    const localRules = await PricingRuleCollection.create(options);
+    const localCharges = await ClientChargeCollection.create(options);
+    const localAdjustments = await BillingAdjustmentCollection.create(options);
+    const localService = new CommercialUsageService(
+      localUsage,
+      localRules,
+      localCharges,
+      localAdjustments,
+      { adapterType: type },
+    );
+    const originalTransaction = db.transaction;
+    if (!originalTransaction) throw new Error('expected transaction support');
+    let transactionEntered!: () => void;
+    const transactionReady = new Promise<void>((resolve) => {
+      transactionEntered = resolve;
+    });
+    let releaseTransaction!: () => void;
+    const transactionReleased = new Promise<void>((resolve) => {
+      releaseTransaction = resolve;
+    });
+    const transactionSpy = vi
+      .spyOn(db, 'transaction')
+      .mockImplementation((operation) =>
+        originalTransaction.call(db, async (transaction) => {
+          transactionEntered();
+          await transactionReleased;
+          await operation(transaction);
+          throw new Error('forced adjustment rollback');
+        }),
+      );
+
+    try {
+      const adjustedCharge = await localCharges.create({
+        id: '33333333-3333-4333-8333-333333333331',
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        usageEventId: '44444444-4444-4444-8444-444444444441',
+        amount: 10,
+        status: 'approved',
+        approvedAt: new Date('2026-07-01T00:00:00Z'),
+      });
+      const ordinaryCharge = await localCharges.create({
+        id: '33333333-3333-4333-8333-333333333332',
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        usageEventId: '44444444-4444-4444-8444-444444444442',
+        amount: 10,
+        status: 'draft',
+      });
+
+      const rolledBack = localService.adjust(
+        String(adjustedCharge.id),
+        -1,
+        'forced rollback',
+      );
+      await transactionReady;
+      ordinaryCharge.amount = 20;
+      const ordinarySave = ordinaryCharge.save();
+      const outcomes = Promise.allSettled([rolledBack, ordinarySave]);
+      // Let the ordinary save reach the embedded writer boundary. Before the
+      // root transaction joined that queue it could enter the same native
+      // transaction and be rolled back with the adjustment.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      releaseTransaction();
+
+      const [rolledBackResult, ordinarySaveResult] = await outcomes;
+      expect(rolledBackResult).toMatchObject({
+        status: 'rejected',
+        reason: expect.objectContaining({
+          message: expect.stringContaining('forced adjustment rollback'),
+        }),
+      });
+      expect(ordinarySaveResult).toMatchObject({ status: 'fulfilled' });
+      expect(
+        await localAdjustments.list({
+          where: { clientChargeId: String(adjustedCharge.id) },
+        }),
+      ).toHaveLength(0);
+      expect((await localCharges.get(String(adjustedCharge.id)))?.status).toBe(
+        'approved',
+      );
+      expect((await localCharges.get(String(ordinaryCharge.id)))?.amount).toBe(
+        20,
+      );
+    } finally {
+      transactionSpy.mockRestore();
+      await db.close?.();
+    }
+  });
+
+  it('rolls back an unsourced adjustment when the charge revision drifts', async () => {
+    await seedUsageEvent(
+      'usage-adjustment-race',
+      '11111111-1111-4111-8111-111111111111',
+    );
+    const charge = await charges.create({
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      usageEventId: 'usage-adjustment-race',
+      amount: 10,
+      status: 'approved',
+      approvedAt: new Date('2026-07-01T00:00:00Z'),
+    });
+    const originalSave = ClientCharge.prototype.save;
+    vi.spyOn(ClientCharge.prototype, 'save').mockImplementationOnce(
+      async function (this: ClientCharge, ...args) {
+        await this.db.update(
+          this.tableName,
+          { id: this.id },
+          { updated_at: new Date(Date.now() + 1_000) },
+        );
+        return originalSave.apply(this, args);
+      },
+    );
+
+    await expect(
+      service.adjust(String(charge.id), -1, 'provider credit'),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    expect(
+      await adjustments.list({ where: { clientChargeId: charge.id } }),
+    ).toHaveLength(0);
+    expect((await charges.get(String(charge.id)))?.status).toBe('approved');
   });
 
   // Terms are minor units per unit of usage and may be fractional (a per-token

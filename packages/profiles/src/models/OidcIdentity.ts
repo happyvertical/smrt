@@ -172,7 +172,27 @@ export class OidcIdentity extends SmrtObject {
    * Record usage of this identity
    */
   async recordUsage(): Promise<void> {
-    this.lastUsedAt = new Date();
-    await this.save();
+    // Trusted provisioning or another authentication may refresh this exact
+    // identity through a second instance. Rehydrate before each bounded attempt
+    // so this usage-only write preserves those changes while retaining CAS.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await this.loadFromId();
+      this.lastUsedAt = new Date();
+      try {
+        await this.save();
+        return;
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'RUNTIME_REVISION_CONFLICT'
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
   }
 }

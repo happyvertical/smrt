@@ -462,6 +462,44 @@ describe('content list data surface descriptor', () => {
     ]);
   });
 
+  it('publishes every bulk workflow with the same preview/confirmation scopes as the human UI', () => {
+    const descriptor = buildContentListSurfaceDescriptor({
+      includeWorkflows: true,
+    });
+    const workflowIds = [
+      'move-to-trash',
+      'mark-draft',
+      'submit-review',
+      'publish',
+      'archive',
+      'restore',
+      'automated-review',
+      'format-body',
+      'categorize',
+      'optimize',
+    ];
+
+    expect(descriptor.schemaVersion).toBe(2);
+    expect(descriptor.limits.maxSelectionSize).toBe(200);
+    for (const id of workflowIds) {
+      expect(
+        descriptor.actions.find((action) => action.id === id),
+      ).toMatchObject({
+        requiresConfirmation: true,
+        selectionScopes: ['current-page', 'explicit-ids', 'all-matching'],
+      });
+    }
+  });
+
+  it('does not advertise workflows when no execution binding is mounted', () => {
+    const descriptor = buildContentListSurfaceDescriptor();
+    expect(descriptor.actions.map((action) => action.id)).toEqual([
+      'view',
+      'edit',
+      'delete',
+    ]);
+  });
+
   it('accepts a host surface id, subject, and translated labels', () => {
     const descriptor = buildContentListSurfaceDescriptor({
       surfaceId: 'site-content-list',

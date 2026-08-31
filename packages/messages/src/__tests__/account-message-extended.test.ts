@@ -12,11 +12,17 @@
  * models/collections/DB are real.
  */
 
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  ensureChangeFeedTable,
+  GlobalInterceptors,
+  getChangesSince,
+  getTestDatabase,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const sendMock = vi.fn();
+const terminalObserverName = 'messages-terminal-observer-test';
 vi.mock('@happyvertical/messages', () => ({
   getMessageClient: async () => ({
     connect: async () => undefined,
@@ -46,6 +52,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  GlobalInterceptors.unregister(terminalObserverName);
   vi.clearAllMocks();
   if (db && typeof db.close === 'function') {
     await db.close();
@@ -330,25 +337,74 @@ describe('Message.send orchestration', () => {
     account.setSettings({ botToken: 'xoxb-token' });
     await account.save();
 
-    sendMock.mockResolvedValueOnce({
-      success: true,
-      messageId: 'slack-1',
-      providerResponse: { ok: true },
-      timestamp: new Date(),
-    });
-
     const msg = new SlackMessage({
       body: 'hi',
       channelId: 'C1',
       accountId: account.id!,
+      tenantId: 'tenant-before-send',
       db,
     });
     await msg.initialize();
     await msg.save();
+    await ensureChangeFeedTable(db);
+    const beforeSendCursor = (await getChangesSince(db, { since: 0 })).cursor;
+
+    const observedTerminalStates: Array<{
+      operation: string;
+      sendStatus: string;
+      tenantId: string | null;
+    }> = [];
+    GlobalInterceptors.register({
+      name: terminalObserverName,
+      priority: -20,
+      afterSave(instance, context) {
+        if (instance !== msg) return;
+        observedTerminalStates.push({
+          operation: context.operation,
+          sendStatus: msg.sendStatus,
+          tenantId: msg.tenantId,
+        });
+      },
+    });
+    sendMock.mockImplementationOnce(async () => {
+      await db.update(
+        'messages',
+        { id: msg.id },
+        { tenant_id: 'tenant-after-send' },
+      );
+      return {
+        success: true,
+        messageId: 'slack-1',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      };
+    });
 
     const first = await msg.send();
     expect(first.success).toBe(true);
     expect(sendMock).toHaveBeenCalledTimes(1);
+    await expect(
+      getChangesSince(db, {
+        since: beforeSendCursor,
+        table: 'messages',
+      }),
+    ).resolves.toMatchObject({
+      changes: [
+        expect.objectContaining({
+          operation: 'update',
+          rowId: msg.id,
+          table: 'messages',
+          tenantId: 'tenant-after-send',
+        }),
+      ],
+    });
+    expect(observedTerminalStates).toEqual([
+      {
+        operation: 'save',
+        sendStatus: 'sent',
+        tenantId: 'tenant-after-send',
+      },
+    ]);
 
     // A second send on the already-'sent' instance must be rejected without
     // touching the provider.
@@ -412,5 +468,180 @@ describe('Message.send orchestration', () => {
     // The losing sender was told the message was already in flight.
     const loser = ra.success ? rb : ra;
     expect(loser.error).toContain('already');
+  });
+
+  it('accepts a DuckDB-shaped Date revision when claiming a persisted send', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+    sendMock.mockResolvedValueOnce({
+      success: true,
+      messageId: 'slack-date-revision',
+      providerResponse: { ok: true },
+      timestamp: new Date(),
+    });
+    const message = new SlackMessage({
+      body: 'date-shaped revision',
+      channelId: 'C1',
+      accountId: account.id!,
+      db,
+    });
+    await message.initialize();
+    await message.save();
+
+    const originalGet = db.get.bind(db);
+    vi.spyOn(db, 'get').mockImplementation(async (...args) => {
+      const row = await originalGet(...args);
+      return row?.updated_at
+        ? { ...row, updated_at: new Date(row.updated_at as string) }
+        : row;
+    });
+
+    await expect(message.send()).resolves.toMatchObject({ success: true });
+    expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('claims and sends a native DuckDB message with canonical UUID identity', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Account', 'SlackAccount', 'Message', 'SlackMessage'],
+      omitForeignKeyConstraints: true,
+    });
+    try {
+      const account = new SlackAccount({
+        id: '55555555-5555-4555-8555-555555555555',
+        name: 'DuckDB workspace',
+        botUserId: 'U-BOT',
+        isActive: true,
+        db: duckDb,
+      });
+      await account.initialize();
+      account.setSettings({ botToken: 'xoxb-token' });
+      await account.save();
+      sendMock.mockResolvedValueOnce({
+        success: true,
+        messageId: 'slack-duckdb-uuid',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      });
+      const seeded = new SlackMessage({
+        id: '66666666-6666-4666-8666-666666666666',
+        body: 'native DuckDB UUID',
+        channelId: 'C1',
+        accountId: String(account.id),
+        db: duckDb,
+      });
+      await seeded.initialize();
+      await seeded.save();
+      const messages = await (MessageCollection as any).create({ db: duckDb });
+      const message = await messages.get({ id: String(seeded.id) });
+
+      expect(typeof message.id).toBe('string');
+      await expect(message.send()).resolves.toMatchObject({ success: true });
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect((await messages.get({ id: String(seeded.id) })).sendStatus).toBe(
+        'sent',
+      );
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
+  it('rejects a stale send claim after another writer edits the message', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+    if (!account.id) throw new Error('Test setup failed');
+
+    const seed = new SlackMessage({
+      body: 'original body',
+      channelId: 'C1',
+      accountId: account.id,
+      db,
+    });
+    await seed.initialize();
+    await seed.save();
+
+    const messages = await (MessageCollection as any).create({ db });
+    const staleSender = await messages.get({ id: seed.id });
+    const editor = await messages.get({ id: seed.id });
+    editor.body = 'authoritative edit';
+    await editor.save();
+
+    const result = await staleSender.send();
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('already');
+    expect(sendMock).not.toHaveBeenCalled();
+    expect((await messages.get({ id: seed.id }))?.body).toBe(
+      'authoritative edit',
+    );
+  });
+
+  it('preserves a concurrent read update while finalizing a successful send', async () => {
+    const account = new SlackAccount({
+      name: 'WS',
+      botUserId: 'U-BOT',
+      isActive: true,
+      db,
+    });
+    await account.initialize();
+    account.setSettings({ botToken: 'xoxb-token' });
+    await account.save();
+
+    let providerStarted!: () => void;
+    let releaseProvider!: () => void;
+    const started = new Promise<void>((resolve) => {
+      providerStarted = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      releaseProvider = resolve;
+    });
+    sendMock.mockImplementationOnce(async () => {
+      providerStarted();
+      await release;
+      return {
+        success: true,
+        messageId: 'slack-concurrent-read',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      };
+    });
+
+    const seed = new SlackMessage({
+      body: 'hi',
+      channelId: 'C1',
+      accountId: account.id!,
+      db,
+    });
+    await seed.initialize();
+    await seed.save();
+    const messages = await (MessageCollection as any).create({ db });
+    const sender = await messages.get({ id: seed.id });
+
+    const sending = sender.send();
+    await started;
+    const reader = await messages.get({ id: seed.id });
+    await reader.markRead();
+    releaseProvider();
+
+    await expect(sending).resolves.toMatchObject({ success: true });
+    const stored = await messages.get({ id: seed.id });
+    expect(stored?.sendStatus).toBe('sent');
+    expect(stored?.sentAt).toBeInstanceOf(Date);
+    expect(stored?.isRead).toBe(true);
   });
 });

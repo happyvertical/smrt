@@ -28,6 +28,10 @@
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
     },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
     "./mock-smrt-client": {
       "types": "./dist/mock-smrt-client.d.ts",
       "import": "./dist/mock-smrt-client.js"
@@ -67,6 +71,7 @@
     "@happyvertical/ocr": "catalog:",
     "@happyvertical/pdf": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
+    "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-facts": "workspace:*",

@@ -27,6 +27,20 @@ subsystem you are editing. This file keeps what holds across all of them.
 
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
+- Persisted `save()` calls use the object's loaded `updated_at` revision in the
+  database `UPDATE`; zero affected rows throws `RUNTIME_REVISION_CONFLICT`
+  without overwriting the newer row. `save({ expectedUpdatedAt })` supplies an
+  explicit revision when a caller binds the mutation to an earlier preview or
+  selection snapshot. Embedded adapters serialize every same-process model
+  save, delete, and complete `SmrtObject.withTransaction()` callback through
+  one queue; bound saves re-enter that hold. Custom write paths must use those
+  public APIs rather than bypassing the CAS ordering contract.
+- Native DuckDB UUID columns are hydrated as canonical strings before model
+  initialization, natural-key lookup, and embedded revision claims. Exact
+  natural-key probes retain the interceptor-authorized filter when
+  canonicalizing a wrapped identity. Custom embedded-CAS paths that consume
+  persisted rows must use `getCanonicalPersistedRow()` so UUID identities are
+  cast in the same coherent read before reuse.
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
@@ -58,6 +72,15 @@ documented in [agents/collection-reads.md](agents/collection-reads.md).
 an `initialize()` hook may query through the same transaction-bound PostgreSQL
 client. Keep this serialization invariant; use `select` when callers need plain
 rows without model hydration.
+
+Native DuckDB model hydration casts declared UUID columns to `VARCHAR` in the
+read query because its JavaScript binding otherwise returns lossy HUGEINT
+wrapper objects. Explicit projections apply the same cast for selected UUID
+fields so bounded query envelopes preserve canonical row and relationship ids.
+For STI child columns, raw `query()` SELECTs, and latest-related projections,
+the read path describes the output types without evaluating the query, then
+performs one data-bearing SELECT with UUID result columns cast to `VARCHAR`;
+mutation statements are never reinterpreted or replayed.
 
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
 Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`
@@ -259,7 +282,7 @@ use this option to hide an otherwise invalid schema.
 ## Gotchas
 
 - **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
-- **Transaction-bound instances**: `SmrtClass.withDatabase(db, callback)` temporarily binds an initialized instance (including its public `options.db`) to a supplied transaction database and restores the original binding on success or failure. Use it when domain validation and persistence must share one transaction; never reach into `_db`, and do not use the same instance concurrently during the callback.
+- **Transaction-bound instances**: `SmrtClass.withDatabase(db, callback)` temporarily binds an initialized instance (including its public `options.db`) to a caller-owned transaction database and restores only the database binding. Transaction owners persisting one object should use `SmrtObject.withTransaction(callback)`, which restores identity/revision metadata after rollback and serializes its embedded callback with ordinary writes. Bound saves re-enter that hold. Never reach into `_db`, and do not use the same instance concurrently during either callback.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check

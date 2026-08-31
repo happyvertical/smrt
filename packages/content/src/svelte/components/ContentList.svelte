@@ -33,6 +33,8 @@ export interface ContentListUrlStateBinding {
 <script lang="ts">
 import {
   DataTable,
+  type DataSurfaceActionResult,
+  type DataSurfaceIdentity,
   type DataTableColumn,
   type DataTableViewState,
 } from '@happyvertical/smrt-ui/data';
@@ -74,6 +76,7 @@ import {
 } from '../content-list-controller.js';
 import {
   CONTENT_LIST_QUERY_DEFAULT_PAGE_SIZE,
+  type ContentListDataQueryRequest,
   type ContentListQueryDrop,
   type ContentListQueryDropReason,
   type ContentListQueryNotices,
@@ -94,6 +97,7 @@ import {
   type ContentListJob,
   type ContentListJobBinding,
   type ContentListJobSnapshot,
+  type ContentListJobTarget,
 } from '../content-list-runtime.js';
 import {
   type ContentListSavedView,
@@ -101,6 +105,15 @@ import {
   restoreContentListSavedView,
   toContentListSavedViewInput,
 } from '../content-list-saved-views.js';
+import {
+  type ContentListWorkflowBinding,
+  ContentListWorkflowError,
+  type ContentListWorkflowErrorReason,
+  type ContentListWorkflowId,
+  type ContentListWorkflowRequest,
+  CONTENT_LIST_WORKFLOW_OPTIONS,
+  contentListWorkflowOutcomes,
+} from '../content-list-workflows.js';
 import {
   applyContentListViewState,
   type ContentListStateDrop,
@@ -113,6 +126,165 @@ import { M } from '../i18n.contribution.js';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
+
+const WORKFLOW_LABEL_MESSAGES: Record<
+  ContentListWorkflowId,
+  keyof typeof M
+> = {
+  'move-to-trash': M['content.content_list.workflow_move_to_trash'],
+  'mark-draft': M['content.content_list.workflow_mark_draft'],
+  'submit-review': M['content.content_list.workflow_submit_review'],
+  publish: M['content.content_list.workflow_publish'],
+  archive: M['content.content_list.workflow_archive'],
+  restore: M['content.content_list.workflow_restore'],
+  'automated-review': M['content.content_list.workflow_automated_review'],
+  'format-body': M['content.content_list.workflow_format_body'],
+  categorize: M['content.content_list.workflow_categorize'],
+  optimize: M['content.content_list.workflow_optimize'],
+};
+
+const WORKFLOW_CONSEQUENCE_MESSAGES: Record<string, keyof typeof M> = {
+  'Content leaves active views and becomes restorable from trash.':
+    M['content.content_list.workflow_consequence_trash'],
+  'Published content is no longer public.':
+    M['content.content_list.workflow_consequence_unpublished'],
+  'Content enters the review queue.':
+    M['content.content_list.workflow_consequence_review_queue'],
+  'Content becomes public and may create a publication snapshot.':
+    M['content.content_list.workflow_consequence_published'],
+  'Content leaves trash.':
+    M['content.content_list.workflow_consequence_leave_trash'],
+  'Publishing makes content public.':
+    M['content.content_list.workflow_consequence_restore_published'],
+  'Creates a review result and may create a review version.':
+    M['content.content_list.workflow_consequence_review_result'],
+  'The persisted content body may change.':
+    M['content.content_list.workflow_consequence_body_change'],
+  'The content category changes.':
+    M['content.content_list.workflow_consequence_category_change'],
+  'Content fields may be revised or completed.':
+    M['content.content_list.workflow_consequence_fields_change'],
+};
+
+const WORKFLOW_REASON_MESSAGES: Record<string, keyof typeof M> = {
+  not_deleted: M['content.content_list.workflow_reason_not_deleted'],
+  publish_readiness_failed:
+    M['content.content_list.workflow_reason_publish_readiness_failed'],
+  deleted: M['content.content_list.workflow_reason_deleted'],
+  already_draft: M['content.content_list.workflow_reason_already_draft'],
+  requires_draft: M['content.content_list.workflow_reason_requires_draft'],
+  invalid_status: M['content.content_list.workflow_reason_invalid_status'],
+  already_archived: M['content.content_list.workflow_reason_already_archived'],
+  governance_unavailable:
+    M['content.content_list.workflow_reason_governance_unavailable'],
+  review_policy_unavailable:
+    M['content.content_list.workflow_reason_review_policy_unavailable'],
+  review_kind_mismatch:
+    M['content.content_list.workflow_reason_review_kind_mismatch'],
+  handler_unavailable:
+    M['content.content_list.workflow_reason_handler_unavailable'],
+  requires_draft_or_review:
+    M['content.content_list.workflow_reason_requires_draft_or_review'],
+  not_found_or_denied:
+    M['content.content_list.workflow_reason_not_found_or_denied'],
+  row_revision_drifted:
+    M['content.content_list.workflow_reason_row_revision_drifted'],
+  permission_denied:
+    M['content.content_list.workflow_reason_permission_denied'],
+  not_found: M['content.content_list.workflow_reason_not_found'],
+  stale_query_fingerprint:
+    M['content.content_list.workflow_reason_stale_query_fingerprint'],
+  matching_count_drifted:
+    M['content.content_list.workflow_reason_matching_count_drifted'],
+  limit_exceeded: M['content.content_list.workflow_reason_limit_exceeded'],
+  invalid_request: M['content.content_list.workflow_reason_invalid_request'],
+  invalid_payload: M['content.content_list.workflow_reason_invalid_payload'],
+  confirmation_required:
+    M['content.content_list.workflow_reason_confirmation_required'],
+  stale_preview: M['content.content_list.workflow_reason_stale_preview'],
+  denied: M['content.content_list.workflow_reason_denied'],
+  unknown_permission:
+    M['content.content_list.workflow_reason_unknown_permission'],
+  execution_failed:
+    M['content.content_list.workflow_reason_execution_failed'],
+  idempotency_conflict:
+    M['content.content_list.workflow_reason_idempotency_conflict'],
+};
+
+const WORKFLOW_TRANSPORT_MESSAGES: Record<
+  ContentListWorkflowErrorReason,
+  keyof typeof M
+> = {
+  network_failure: M['content.content_list.workflow_transport_network_failure'],
+  invalid_json: M['content.content_list.workflow_transport_invalid_json'],
+  http_error: M['content.content_list.workflow_transport_http_error'],
+  invalid_result: M['content.content_list.workflow_transport_invalid_result'],
+  invalid_job_status:
+    M['content.content_list.workflow_transport_invalid_job_status'],
+  invalid_job_result:
+    M['content.content_list.workflow_transport_invalid_job_result'],
+};
+
+function workflowLabel(id: ContentListWorkflowId): string {
+  return t(WORKFLOW_LABEL_MESSAGES[id]);
+}
+
+function workflowConsequenceLabel(consequence: string): string {
+  return t(
+    WORKFLOW_CONSEQUENCE_MESSAGES[consequence] ??
+      M['content.content_list.workflow_consequence_unknown'],
+  );
+}
+
+function workflowReasonLabel(
+  reason: string | undefined,
+  fallback: keyof typeof M,
+  params?: Record<string, string | number>,
+): string {
+  return t((reason && WORKFLOW_REASON_MESSAGES[reason]) ?? fallback, params);
+}
+
+function workflowExceptionMessage(
+  error: unknown,
+  fallback: keyof typeof M,
+): string {
+  if (error instanceof ContentListWorkflowError) {
+    return t(WORKFLOW_TRANSPORT_MESSAGES[error.reason], {
+      status: error.status ?? '',
+    });
+  }
+  return t(fallback);
+}
+
+function workflowScopeLabel(scope: string): string {
+  switch (scope) {
+    case 'explicit-ids':
+      return t(M['content.content_list.workflow_scope_explicit_ids']);
+    case 'current-page':
+      return t(M['content.content_list.workflow_scope_current_page']);
+    case 'all-matching':
+      return t(M['content.content_list.workflow_scope_all_matching']);
+    default:
+      return scope;
+  }
+}
+
+function workflowJobStatusLabel(status: string): string {
+  switch (status) {
+    case 'queued':
+      return t(M['content.content_list.job_queued']);
+    case 'running':
+      return t(M['content.content_list.job_running']);
+    case 'succeeded':
+      return t(M['content.content_list.job_succeeded']);
+    case 'failed':
+      return t(M['content.content_list.job_failed']);
+    case 'cancelled':
+      return t(M['content.content_list.workflow_status_cancelled']);
+    default:
+      return status;
+  }
+}
 
 /** One reported refusal, from a restore or from the query translation. */
 type ContentListDropNotice = ContentListStateDrop | ContentListQueryDrop;
@@ -153,6 +325,8 @@ interface Props {
   savedViews?: ContentListSavedViewStore;
   /** Shared background-workflow state. The same binding guards submissions. */
   jobs?: ContentListJobBinding;
+  /** Opt-in, authenticated preview/apply client for bulk workflows (#2453). */
+  workflows?: ContentListWorkflowBinding;
 }
 
 let {
@@ -173,6 +347,7 @@ let {
   urlState = undefined,
   savedViews = undefined,
   jobs = undefined,
+  workflows = undefined,
 }: Props = $props();
 
 const initialQuery = untrack(() => query);
@@ -391,6 +566,34 @@ $effect(() => {
     }
   });
 });
+let settledWorkflowQuery = $state<ContentListDataQueryRequest | null>(null);
+let settledWorkflowFingerprint = $state<string | null>(null);
+let settledWorkflowRevision = $state<string | null>(null);
+let selectedWorkflow = $state<ContentListWorkflowId>('mark-draft');
+let workflowCategory = $state('');
+let workflowRestoreStatus = $state<'draft' | 'review' | 'published'>('draft');
+let workflowFormat = $state<'markdown' | 'html'>('markdown');
+let workflowReviewKind = $state('');
+let workflowPolicyKey = $state('');
+let workflowInstructions = $state('');
+let workflowPending = $state(false);
+let pageHeaderSelectionOnly = $state(false);
+let workflowPreview = $state<import('@happyvertical/smrt-ui/data').DataSurfaceActionResult | null>(null);
+let workflowResult = $state<import('@happyvertical/smrt-ui/data').DataSurfaceActionResult | null>(null);
+let workflowError = $state<string | null>(null);
+let workflowConfirmOpen = $state(false);
+let workflowIntentAtPreview = '';
+let workflowIdempotencyKey = '';
+let workflowQueuedJobs = $state<
+  Array<{
+    intent: string;
+    jobId: string;
+    actionId: ContentListWorkflowId;
+    requestId: string;
+    identity: DataSurfaceIdentity;
+    target: ContentListJobTarget;
+  }>
+>([]);
 
 $effect(() =>
   controller.subscribe((transition) => {
@@ -637,6 +840,36 @@ function refreshQuery(): void {
     })
     .catch(() => undefined);
 }
+
+function settleWorkflowQueryResult(
+  result: unknown,
+  request: ContentListDataQueryRequest,
+  signature: string,
+): void {
+  settledSignature = signature;
+  resultNotices = readContentListQueryNotices(result);
+  if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+    const envelope = result as Record<string, unknown>;
+    settledWorkflowQuery = request;
+    settledWorkflowFingerprint =
+      typeof envelope.queryFingerprint === 'string'
+        ? envelope.queryFingerprint
+        : null;
+    const freshness = envelope.freshness;
+    settledWorkflowRevision =
+      freshness !== null &&
+      typeof freshness === 'object' &&
+      !Array.isArray(freshness) &&
+      typeof (freshness as Record<string, unknown>).asOf === 'string'
+        ? String((freshness as Record<string, unknown>).asOf)
+        : null;
+    return;
+  }
+  settledWorkflowQuery = null;
+  settledWorkflowFingerprint = null;
+  settledWorkflowRevision = null;
+}
+
 /**
  * A retry re-reads the same query, so its answer replaces the rendered rows —
  * and therefore has to replace the completeness flags that describe them too.
@@ -648,13 +881,20 @@ function refreshQuery(): void {
 function retryQuery(): void {
   if (!queryBinding) return;
   const signature = executedSignature;
+  const request = executedWorkflowQuery;
   void queryBinding
     .retry()
     .then((result) => {
       // `retry()` resolves undefined when there is no request to repeat, and a
       // newer query may have superseded this one while it was in flight.
-      if (result === undefined || executedSignature !== signature) return;
-      resultNotices = readContentListQueryNotices(result);
+      if (
+        result === undefined ||
+        request === null ||
+        executedSignature !== signature ||
+        signature === undefined
+      )
+        return;
+      settleWorkflowQueryResult(result, request, signature);
     })
     .catch(() => undefined);
 }
@@ -680,8 +920,8 @@ const querySignature = $derived(
 );
 
 let executedSignature: string | undefined;
+let executedWorkflowQuery: ContentListDataQueryRequest | null = null;
 let publishedUrlSignature: string | undefined;
-
 
 $effect(() => {
   const signature = querySignature;
@@ -727,15 +967,16 @@ $effect(() => {
       // unhandled one. The resolved envelope carries the server's completeness
       // flags, which the binding itself does not expose.
       activeQueryKey = contentListQueryRequestKey(translated.request);
+      executedWorkflowQuery = translated.request;
       void queryBinding
         .execute(translated.request)
         .then((result) => {
           // A newer query may have superseded this one while it was in flight.
           if (executedSignature !== signature) return;
           // The binding's rows and total now describe THIS query, so the page
-          // may be clamped against them.
-          settledSignature = signature;
-          resultNotices = readContentListQueryNotices(result);
+          // may be clamped against them and workflows may bind to the exact
+          // settled request.
+          settleWorkflowQueryResult(result, translated.request, signature);
         })
         .catch(() => undefined);
     }
@@ -833,15 +1074,48 @@ const identifiedRowKeys = $derived(
 const selectablePageRowIds = $derived(
   selectableContentListRowIds(pageRows.filter((row) => !rowPending(row))),
 );
+const allMatchingSelected = $derived(tableState.selection.scope === 'allMatching');
 const allPageSelected = $derived(
-  selectablePageRowIds.length > 0 &&
-    selectablePageRowIds.every((rowId) => selectedRowKeys.has(String(rowId))),
+  allMatchingSelected ||
+    (selectablePageRowIds.length > 0 &&
+      selectablePageRowIds.every((rowId) => selectedRowKeys.has(String(rowId)))),
 );
 const somePageSelected = $derived(
   !allPageSelected &&
     selectablePageRowIds.some((rowId) => selectedRowKeys.has(String(rowId))),
 );
-const selectedCount = $derived(tableState.selectedRowIds.length);
+const selectedCount = $derived(
+  tableState.selection.scope === 'allMatching'
+    ? tableState.selection.expectedCount
+    : tableState.selectedRowIds.length,
+);
+const exactMatchingCount = $derived(
+  settledSignature === querySignature
+    ? contentListQueryExactTotal(queryBinding?.total)
+    : undefined,
+);
+const canSelectAllMatching = $derived(
+  Boolean(
+    workflows &&
+      serverBacked &&
+      settledWorkflowQuery &&
+      settledWorkflowFingerprint &&
+      settledWorkflowRevision &&
+      exactMatchingCount !== undefined &&
+      exactMatchingCount > 0 &&
+      exactMatchingCount <= (workflows?.maxSelectionSize ?? 200),
+  ),
+);
+const workflowPayloadValid = $derived(
+  selectedWorkflow !== 'categorize' || workflowCategory.trim().length > 0,
+);
+const workflowDuplicateQueued = $derived(
+  workflowQueuedJobs.some((job) => job.intent === workflowIntentSignature()),
+);
+const workflowQueuedJob = $derived(
+  workflowQueuedJobs.find((job) => job.intent === workflowIntentSignature()) ??
+    workflowQueuedJobs[0],
+);
 
 /** Synthetic ids the adapter minted for rows that carry no durable identity. */
 const unidentifiedRowKeys = $derived(
@@ -976,7 +1250,22 @@ const surfaceOptions = $derived(
         registry: dataSurface.registry,
         descriptor:
           dataSurface.descriptor ??
-          buildContentListSurfaceDescriptor({ columnLabels }),
+          (() => {
+            const descriptor = buildContentListSurfaceDescriptor({
+              columnLabels,
+              includeWorkflows: workflows !== undefined,
+            });
+            return {
+              ...descriptor,
+              identity: workflows?.identity ?? descriptor.identity,
+              limits: {
+                ...descriptor.limits,
+                ...(workflows?.maxSelectionSize === undefined
+                  ? {}
+                  : { maxSelectionSize: workflows.maxSelectionSize }),
+              },
+            };
+          })(),
       }
     : undefined,
 );
@@ -1154,14 +1443,19 @@ async function deleteSelectedView() {
 }
 
 function isSelected(row: ContentListRow): boolean {
-  return selectedRowKeys.has(String(row.id));
+  return allMatchingSelected || selectedRowKeys.has(String(row.id));
 }
 
 function rowPending(row: ContentListRow): boolean {
   return (
     jobSnapshot.pendingRowIds.has(String(row.id)) ||
     (activeQueryKey !== undefined &&
-      jobSnapshot.pendingQueryKeys.has(activeQueryKey))
+      jobSnapshot.pendingQueryKeys.has(activeQueryKey)) ||
+    workflowQueuedJobs.some((job) =>
+      job.target.kind === 'query'
+        ? activeQueryKey !== undefined && job.target.queryKey === activeQueryKey
+        : job.target.rowIds.includes(String(row.id)),
+    )
   );
 }
 
@@ -1185,27 +1479,556 @@ function formattedLastUpdated(value: number): string {
 }
 
 function toggleRow(row: ContentListRow) {
-  if (!row.identified || rowPending(row)) return;
+  if (
+    workflowPending ||
+    !row.identified ||
+    rowPending(row) ||
+    allMatchingSelected
+  )
+    return;
+  pageHeaderSelectionOnly = false;
   controller.dispatch({ type: 'toggleRowSelection', rowId: row.id });
 }
 
 function togglePageSelection() {
-  const remaining = tableState.selectedRowIds.filter(
-    (rowId) =>
-      !selectablePageRowIds.some(
-        (pageRowId) => String(pageRowId) === String(rowId),
+  if (workflowPending) return;
+  if (allMatchingSelected) {
+    clearSelection();
+    return;
+  }
+  const rowKey = (rowId: string | number) =>
+    `${typeof rowId}:${String(rowId)}`;
+  const pageKeys = new Set(selectablePageRowIds.map(rowKey));
+  if (allPageSelected) {
+    pageHeaderSelectionOnly = false;
+    controller.dispatch({
+      type: 'setSelectedRows',
+      rowIds: tableState.selectedRowIds.filter(
+        (rowId) => !pageKeys.has(rowKey(rowId)),
       ),
+    });
+    return;
+  }
+  const selected = new Map(
+    tableState.selectedRowIds.map((rowId) => [rowKey(rowId), rowId]),
   );
+  pageHeaderSelectionOnly =
+    serverBacked && tableState.selectedRowIds.length === 0;
+  for (const rowId of selectablePageRowIds) selected.set(rowKey(rowId), rowId);
   controller.dispatch({
     type: 'setSelectedRows',
-    rowIds: allPageSelected
-      ? remaining
-      : [...remaining, ...selectablePageRowIds],
+    rowIds: [...selected.values()],
+  });
+}
+
+function selectAllMatching() {
+  if (
+    workflowPending ||
+    !canSelectAllMatching ||
+    !settledWorkflowFingerprint ||
+    !settledWorkflowRevision ||
+    exactMatchingCount === undefined
+  ) return;
+  pageHeaderSelectionOnly = false;
+  controller.dispatch({
+    type: 'selectAllMatching',
+    queryFingerprint: settledWorkflowFingerprint,
+    queryRevision: settledWorkflowRevision,
+    expectedCount: exactMatchingCount,
   });
 }
 
 function clearSelection() {
+  if (workflowPending) return;
+  pageHeaderSelectionOnly = false;
   controller.dispatch({ type: 'setSelectedRows', rowIds: [] });
+}
+
+function workflowPayload(): Record<string, string> | undefined {
+  switch (selectedWorkflow) {
+    case 'categorize':
+      return { category: workflowCategory.trim() };
+    case 'restore':
+      return { status: workflowRestoreStatus };
+    case 'format-body':
+      return { format: workflowFormat };
+    case 'automated-review': {
+      const payload: Record<string, string> = {};
+      if (workflowReviewKind.trim()) payload.kind = workflowReviewKind.trim();
+      if (workflowPolicyKey.trim()) payload.policyKey = workflowPolicyKey.trim();
+      return payload;
+    }
+    case 'optimize':
+      return workflowInstructions.trim()
+        ? { instructions: workflowInstructions.trim() }
+        : {};
+    default:
+      return {};
+  }
+}
+
+function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
+  const selection = tableState.selection;
+  if (selection.scope === 'allMatching') {
+    return { scope: 'all-matching', queryFingerprint: selection.queryFingerprint };
+  }
+  const currentPageKeys = new Set(pageRows.map((row) => String(row.id)));
+  const selectablePageKeys = new Set(selectablePageRowIds.map(String));
+  const effectiveRowIds =
+    selection.scope === 'page' || pageHeaderSelectionOnly
+      ? selection.rowIds.filter((rowId) => {
+          const key = String(rowId);
+          return !currentPageKeys.has(key) || selectablePageKeys.has(key);
+        })
+      : selection.rowIds;
+  if (
+    serverBacked &&
+    pageHeaderSelectionOnly &&
+    selectablePageRowIds.length === pageRows.length &&
+    effectiveRowIds.length === selectablePageRowIds.length &&
+    selectablePageRowIds.every((rowId) =>
+      effectiveRowIds.some(
+        (selectedId) => String(selectedId) === String(rowId),
+      ),
+    )
+  ) {
+    return { scope: 'current-page' };
+  }
+  if (effectiveRowIds.length === 0) return null;
+  return { scope: 'explicit-ids', rowIds: effectiveRowIds };
+}
+
+function workflowJobTarget(
+  request: ContentListWorkflowRequest,
+): ContentListJobTarget {
+  if (request.selection.scope === 'all-matching' && activeQueryKey !== undefined)
+    return { kind: 'query', queryKey: activeQueryKey };
+  if (request.selection.scope === 'explicit-ids')
+    return { kind: 'rows', rowIds: request.selection.rowIds.map(String) };
+  return { kind: 'rows', rowIds: selectablePageRowIds.map(String) };
+}
+
+function workflowIntentSignature(): string {
+  const selection = workflowSelection();
+  if (selection?.scope === 'explicit-ids') {
+    return JSON.stringify([
+      selectedWorkflow,
+      workflowPayload(),
+      {
+        scope: selection.scope,
+        rowIds: [...selection.rowIds].sort((left, right) => {
+          const leftKey = `${typeof left}:${String(left)}`;
+          const rightKey = `${typeof right}:${String(right)}`;
+          return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+        }),
+      },
+    ]);
+  }
+  return JSON.stringify([
+    selectedWorkflow,
+    workflowPayload(),
+    tableState.selection,
+    settledWorkflowFingerprint,
+    querySignature,
+  ]);
+}
+
+function createWorkflowRequest(
+  phase: 'preview' | 'apply',
+): ContentListWorkflowRequest | null {
+  const selection = workflowSelection();
+  if (!selection) return null;
+  const queryRequired = selection.scope !== 'explicit-ids';
+  if (
+    queryRequired &&
+    (!settledWorkflowQuery || settledSignature !== querySignature)
+  ) return null;
+  if (
+    selection.scope === 'all-matching' &&
+    selection.queryFingerprint !== settledWorkflowFingerprint
+  ) return null;
+  return {
+    version: 1,
+    requestId: globalThis.crypto?.randomUUID?.() ?? `content-workflow-${Date.now()}`,
+    identity: workflows?.identity ?? { surfaceId: 'content-list', kind: 'table' },
+    actionId: selectedWorkflow,
+    phase,
+    selection,
+    payload: workflowPayload(),
+    expectedRevision: workflows?.revision ?? 0,
+    target: {
+      ...(queryRequired && settledWorkflowQuery
+        ? { query: settledWorkflowQuery }
+        : {}),
+      expectedCount:
+        selection.scope === 'explicit-ids'
+          ? selection.rowIds.length
+          : selectedCount,
+    },
+  };
+}
+
+function workflowIdentityMatches(
+  actual: DataSurfaceIdentity | null | undefined,
+  expected: DataSurfaceIdentity,
+): boolean {
+  return (
+    actual !== null &&
+    actual !== undefined &&
+    actual.surfaceId === expected.surfaceId &&
+    actual.kind === expected.kind &&
+    (expected.subject
+      ? actual.subject?.type === expected.subject.type &&
+        actual.subject.id === expected.subject.id
+      : actual.subject === undefined)
+  );
+}
+
+function workflowResultMatchesRequest(
+  result: DataSurfaceActionResult,
+  request: ContentListWorkflowRequest,
+): boolean {
+  return (
+    result.version === 1 &&
+    result.requestId === request.requestId &&
+    result.phase === request.phase &&
+    result.actionId === request.actionId &&
+    workflowIdentityMatches(result.identity, request.identity)
+  );
+}
+
+function workflowResultMessage(result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult): string {
+  const details = result.details ?? {};
+  const accepted = typeof details.accepted === 'number' ? details.accepted : 0;
+  if (details.background === true) {
+    return t(M['content.content_list.workflow_result_background'], {
+      accepted,
+    });
+  }
+  const skipped = typeof details.skipped === 'number' ? details.skipped : 0;
+  const failed = typeof details.failed === 'number' ? details.failed : 0;
+  return t(M['content.content_list.workflow_result_summary'], {
+    accepted,
+    skipped,
+    failed,
+  });
+}
+
+function applyWorkflowSelectionOutcomes(
+  result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult,
+): boolean {
+  const outcomes = contentListWorkflowOutcomes(result);
+  const rowKey = (rowId: string | number) =>
+    `${typeof rowId}:${String(rowId)}`;
+  if (tableState.selection.scope === 'allMatching') {
+    const uniqueOutcomes = new Set(outcomes.map((outcome) => rowKey(outcome.rowId)));
+    if (
+      outcomes.length !== tableState.selection.expectedCount ||
+      uniqueOutcomes.size !== outcomes.length
+    ) {
+      workflowError = t(
+        M['content.content_list.workflow_incomplete_outcomes'],
+      );
+      return false;
+    }
+    controller.dispatch({
+      type: 'setSelectedRows',
+      rowIds: outcomes
+        .filter((outcome) => outcome.status !== 'accepted')
+        .map((outcome) => outcome.rowId),
+    });
+    return true;
+  }
+  const accepted = new Set(
+    outcomes
+      .filter((outcome) => outcome.status === 'accepted')
+      .map((outcome) => rowKey(outcome.rowId)),
+  );
+  controller.dispatch({
+    type: 'setSelectedRows',
+    rowIds: tableState.selectedRowIds.filter(
+      (rowId) => !accepted.has(rowKey(rowId)),
+    ),
+  });
+  return true;
+}
+
+function workflowPreviewMessage(): string {
+  const details = workflowPreview?.details ?? {};
+  const count = typeof details.count === 'number' ? details.count : selectedCount;
+  const labels = Array.isArray(details.representativeLabels)
+    ? details.representativeLabels.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const consequences = Array.isArray(details.consequences)
+    ? details.consequences.filter((entry): entry is string => typeof entry === 'string')
+    : [];
+  const skipped = typeof details.skipped === 'number' ? details.skipped : 0;
+  const resolvedScope =
+    typeof details.resolvedScope === 'string'
+      ? details.resolvedScope
+      : workflowSelection()?.scope;
+  const ineligible = Array.isArray(details.ineligible)
+    ? details.ineligible.flatMap((entry) => {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry))
+          return [];
+        const outcome = entry as Record<string, unknown>;
+        if (
+          typeof outcome.rowId !== 'string' &&
+          typeof outcome.rowId !== 'number'
+        )
+          return [];
+        const reason =
+          typeof outcome.reason === 'string'
+            ? ` (${workflowReasonLabel(
+                outcome.reason,
+                M['content.content_list.workflow_reason_unknown'],
+              )})`
+            : '';
+        return [`${String(outcome.rowId)}${reason}`];
+      })
+    : [];
+  return [
+    resolvedScope
+      ? t(M['content.content_list.workflow_preview_scope'], {
+          scope: workflowScopeLabel(resolvedScope),
+        })
+      : '',
+    t(
+      count === 1
+        ? M['content.content_list.workflow_preview_count_one']
+        : M['content.content_list.workflow_preview_count_many'],
+      { count },
+    ),
+    labels.length
+      ? t(M['content.content_list.workflow_preview_examples'], {
+          labels: labels.join(', '),
+        })
+      : '',
+    skipped
+      ? t(M['content.content_list.workflow_preview_ineligible_count'], {
+          count: skipped,
+        })
+      : '',
+    ineligible.length
+      ? t(M['content.content_list.workflow_preview_ineligible'], {
+          items: ineligible.join(', '),
+        })
+      : '',
+    ...consequences.map(workflowConsequenceLabel),
+  ].filter(Boolean).join(' ');
+}
+
+async function previewWorkflow() {
+  if (!workflows || workflowPending || workflowDuplicateQueued) return;
+  const request = createWorkflowRequest('preview');
+  if (!request) return;
+  workflowPending = true;
+  workflowError = null;
+  workflowResult = null;
+  workflowIdempotencyKey = '';
+  try {
+    const result = await workflows.client.preview(request);
+    if (!workflowResultMatchesRequest(result, request)) {
+      workflowError = t(M['content.content_list.workflow_preview_mismatch']);
+      return;
+    }
+    if (!result.ok) {
+      workflowError = workflowReasonLabel(
+        result.reason,
+        M['content.content_list.workflow_preview_failed'],
+      );
+      return;
+    }
+    workflowPreview = result;
+    workflowIntentAtPreview = workflowIntentSignature();
+    workflowIdempotencyKey =
+      globalThis.crypto?.randomUUID?.() ?? `content-workflow-apply-${Date.now()}`;
+    workflowConfirmOpen = true;
+  } catch (error) {
+    workflowError = workflowExceptionMessage(
+      error,
+      M['content.content_list.workflow_preview_failed'],
+    );
+  } finally {
+    workflowPending = false;
+  }
+}
+
+async function applyWorkflow() {
+  if (!workflows || workflowPending || !workflowPreview?.confirmationToken) return;
+  if (workflowIntentAtPreview !== workflowIntentSignature()) {
+    workflowConfirmOpen = false;
+    workflowPreview = null;
+    workflowIdempotencyKey = '';
+    workflowError = t(M['content.content_list.workflow_selection_changed']);
+    return;
+  }
+  const request = createWorkflowRequest('apply');
+  if (!request) return;
+  request.confirmationToken = workflowPreview.confirmationToken;
+  request.idempotencyKey = workflowIdempotencyKey;
+  const appliedIntent = workflowIntentAtPreview;
+  const appliedTarget = workflowJobTarget(request);
+  workflowPending = true;
+  workflowError = null;
+  try {
+    const result = await workflows.client.apply(request);
+    if (!workflowResultMatchesRequest(result, request)) {
+      workflowError = t(M['content.content_list.workflow_apply_mismatch']);
+      return;
+    }
+    if (appliedIntent !== workflowIntentSignature()) {
+      if (
+        result.ok &&
+        result.details?.background === true &&
+        typeof result.details.jobId === 'string' &&
+        !workflowQueuedJobs.some((job) => job.intent === appliedIntent)
+      ) {
+        workflowQueuedJobs = [
+          ...workflowQueuedJobs,
+          {
+            intent: appliedIntent,
+            jobId: result.details.jobId,
+            actionId: request.actionId,
+            requestId:
+              typeof result.details.jobRequestId === 'string'
+                ? result.details.jobRequestId
+                : request.requestId,
+            identity: request.identity,
+            target: appliedTarget,
+          },
+        ];
+      }
+      workflowError = t(M['content.content_list.workflow_changed_applying']);
+      workflowPreview = null;
+      workflowIdempotencyKey = '';
+      workflowConfirmOpen = false;
+      return;
+    }
+    workflowResult = result;
+    if (!result.ok) {
+      workflowError = workflowReasonLabel(
+        result.reason,
+        M['content.content_list.workflow_failed'],
+      );
+      workflowPreview = null;
+      workflowIdempotencyKey = '';
+      workflowConfirmOpen = false;
+      return;
+    }
+    if (result.details?.background !== true) {
+      applyWorkflowSelectionOutcomes(result);
+      refreshQuery();
+    } else if (
+      typeof result.details.jobId === 'string' &&
+      !workflowQueuedJobs.some((job) => job.intent === workflowIntentAtPreview)
+    ) {
+      workflowQueuedJobs = [
+        ...workflowQueuedJobs,
+        {
+          intent: workflowIntentAtPreview,
+          jobId: result.details.jobId,
+          actionId: request.actionId,
+          requestId:
+            typeof result.details.jobRequestId === 'string'
+              ? result.details.jobRequestId
+              : request.requestId,
+          identity: request.identity,
+          target: appliedTarget,
+        },
+      ];
+    }
+    workflowPreview = null;
+    workflowIdempotencyKey = '';
+    workflowConfirmOpen = false;
+  } catch (error) {
+    workflowError = workflowExceptionMessage(
+      error,
+      M['content.content_list.workflow_failed'],
+    );
+  } finally {
+    workflowPending = false;
+  }
+}
+
+async function checkWorkflowJob() {
+  if (!workflows?.client.status || !workflowQueuedJob || workflowPending) return;
+  const queuedJob = workflowQueuedJob;
+  workflowPending = true;
+  workflowError = null;
+  try {
+    const job = await workflows.client.status(queuedJob.jobId);
+    const matchesCurrentIntent =
+      queuedJob.intent === workflowIntentSignature();
+    if (job.status === 'queued' || job.status === 'running') {
+      workflowError = t(M['content.content_list.workflow_job_still'], {
+        id: job.jobId,
+        status: workflowJobStatusLabel(job.status),
+      });
+      return;
+    }
+    if (job.status === 'succeeded' && !job.result) {
+      workflowError = t(M['content.content_list.workflow_job_missing_result'], {
+        id: job.jobId,
+      });
+      return;
+    }
+    if (
+      job.result &&
+      (job.result.version !== 1 ||
+        job.result.phase !== 'apply' ||
+        job.result.actionId !== queuedJob.actionId ||
+        job.result.requestId !== queuedJob.requestId ||
+        !workflowIdentityMatches(job.result.identity, queuedJob.identity))
+    ) {
+      workflowError = t(M['content.content_list.workflow_job_wrong_workflow'], {
+        id: job.jobId,
+      });
+      return;
+    }
+    workflowQueuedJobs = workflowQueuedJobs.filter(
+      (queued) => queued.jobId !== job.jobId,
+    );
+    if (!matchesCurrentIntent) {
+      if (job.status === 'succeeded' && job.result?.ok) refreshQuery();
+      workflowError = t(
+        M['content.content_list.workflow_changed_checking_job'],
+      );
+      return;
+    }
+    if (job.status === 'succeeded' && job.result) {
+      if (matchesCurrentIntent) workflowResult = job.result;
+      if (!job.result.ok) {
+        workflowError = workflowReasonLabel(
+          job.result.reason,
+          M['content.content_list.workflow_job_failed'],
+          { id: job.jobId },
+        );
+      } else if (matchesCurrentIntent) {
+        applyWorkflowSelectionOutcomes(job.result);
+      }
+      if (job.result.ok) refreshQuery();
+    }
+    if (job.status !== 'succeeded') {
+      workflowError = workflowReasonLabel(
+        job.reason,
+        M['content.content_list.workflow_job_status'],
+        { id: job.jobId, status: workflowJobStatusLabel(job.status) },
+      );
+    }
+  } catch (error) {
+    workflowError = workflowExceptionMessage(
+      error,
+      M['content.content_list.workflow_job_failed'],
+    );
+  } finally {
+    workflowPending = false;
+  }
+}
+
+function cancelWorkflowConfirmation() {
+  if (workflowPending) return;
+  workflowConfirmOpen = false;
 }
 
 function handlePageChange(page: number) {
@@ -1303,6 +2126,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   <Checkbox
     checked={allPageSelected}
     indeterminate={somePageSelected}
+    disabled={workflowPending}
     aria-label={t(M['content.content_list.select_all'])}
     onchange={togglePageSelection}
   />
@@ -1311,7 +2135,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 {#snippet selectCell({ row }: { row: ContentListRow })}
   <Checkbox
     checked={isSelected(row)}
-    disabled={!row.identified || rowPending(row)}
+    disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
     aria-label={selectRowLabel(row)}
     title={row.identified
       ? rowPending(row)
@@ -1526,6 +2350,18 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <rect x="3" y="14" width="7" height="7"></rect>
           </svg>
         </Button>
+
+        {#if workflowQueuedJobs.length > 0 && workflows?.client.status}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            disabled={workflowPending}
+            onclick={() => void checkWorkflowJob()}
+          >
+            {t(M['content.content_list.check_job'])}
+          </Button>
+        {/if}
         <Button
           variant="ghost"
           size="sm"
@@ -1694,6 +2530,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           <Checkbox
             checked={allPageSelected}
             indeterminate={somePageSelected}
+            disabled={workflowPending}
             aria-label={t(M['content.content_list.select_all'])}
             onchange={togglePageSelection}
           />
@@ -1702,11 +2539,134 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           {t(M['content.content_list.selection_count'], { count: selectedCount })}
         </span>
         {#if selectedCount > 0}
-          <Button variant="ghost" size="sm" type="button" class="clear-selection" onclick={clearSelection}>
+          <Button variant="ghost" size="sm" type="button" class="clear-selection" disabled={workflowPending} onclick={clearSelection}>
             {t(M['content.content_list.clear_selection'])}
           </Button>
         {/if}
+        {#if canSelectAllMatching && !allMatchingSelected && exactMatchingCount !== undefined && exactMatchingCount > selectedCount}
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            class="select-all-matching"
+            disabled={workflowPending}
+            onclick={selectAllMatching}
+          >
+            {t(M['content.content_list.select_all_matching'], {
+              count: exactMatchingCount,
+            })}
+          </Button>
+        {/if}
       </div>
+    {/if}
+
+    {#if workflows && (selectedCount > 0 || workflowError || workflowResult)}
+      <section class="content-workflows" aria-label={t(M['content.content_list.bulk_workflows'])}>
+        <Select
+          aria-label={t(M['content.content_list.bulk_workflow'])}
+          value={selectedWorkflow}
+          disabled={workflowPending}
+          onchange={(event: Event) => {
+            selectedWorkflow = (event.currentTarget as HTMLSelectElement).value as ContentListWorkflowId;
+            workflowPreview = null;
+            workflowIdempotencyKey = '';
+            workflowResult = null;
+            workflowError = null;
+          }}
+        >
+          {#each CONTENT_LIST_WORKFLOW_OPTIONS as option (option.id)}
+            <option value={option.id}>{workflowLabel(option.id)}</option>
+          {/each}
+        </Select>
+
+        {#if selectedWorkflow === 'categorize'}
+          <Input
+            aria-label={t(M['content.content_list.category_path'])}
+            placeholder={t(M['content.content_list.category_path'])}
+            value={workflowCategory}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowCategory = (event.currentTarget as HTMLInputElement).value}
+          />
+        {:else if selectedWorkflow === 'restore'}
+          <Select
+            aria-label={t(M['content.content_list.restore_status'])}
+            value={workflowRestoreStatus}
+            disabled={workflowPending}
+            onchange={(event: Event) => workflowRestoreStatus = (event.currentTarget as HTMLSelectElement).value as typeof workflowRestoreStatus}
+          >
+            <option value="draft">{t(M['content.content_list.workflow_draft'])}</option>
+            <option value="review">{t(M['content.content_list.workflow_review'])}</option>
+            <option value="published">{t(M['content.content_list.workflow_published'])}</option>
+          </Select>
+        {:else if selectedWorkflow === 'format-body'}
+          <Select
+            aria-label={t(M['content.content_list.body_format'])}
+            value={workflowFormat}
+            disabled={workflowPending}
+            onchange={(event: Event) => workflowFormat = (event.currentTarget as HTMLSelectElement).value as typeof workflowFormat}
+          >
+            <option value="markdown">{t(M['content.content_list.workflow_markdown'])}</option>
+            <option value="html">{t(M['content.content_list.workflow_html'])}</option>
+          </Select>
+        {:else if selectedWorkflow === 'automated-review'}
+          <Select
+            aria-label={t(M['content.content_list.review_kind'])}
+            value={workflowReviewKind}
+            disabled={workflowPending}
+            onchange={(event: Event) => workflowReviewKind = (event.currentTarget as HTMLSelectElement).value}
+          >
+            <option value="">{t(M['content.content_list.default_review_kind'])}</option>
+            <option value="facts">{t(M['content.content_list.workflow_facts'])}</option>
+            <option value="safety">{t(M['content.content_list.workflow_safety'])}</option>
+            <option value="custom">{t(M['content.content_list.workflow_custom'])}</option>
+          </Select>
+          <Input
+            aria-label={t(M['content.content_list.review_policy_key'])}
+            placeholder={t(M['content.content_list.policy_key_optional'])}
+            value={workflowPolicyKey}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowPolicyKey = (event.currentTarget as HTMLInputElement).value}
+          />
+        {:else if selectedWorkflow === 'optimize'}
+          <Input
+            aria-label={t(M['content.content_list.optimization_instructions'])}
+            placeholder={t(M['content.content_list.optimization_instructions_optional'])}
+            value={workflowInstructions}
+            disabled={workflowPending}
+            oninput={(event: Event) => workflowInstructions = (event.currentTarget as HTMLInputElement).value}
+          />
+        {/if}
+
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          disabled={
+            workflowPending || !workflowPayloadValid || workflowDuplicateQueued
+          }
+          onclick={() => void previewWorkflow()}
+        >
+          {workflowPending
+            ? t(M['content.content_list.workflow_working'])
+            : workflowDuplicateQueued
+              ? t(M['content.content_list.workflow_job_queued'])
+              : t(M['content.content_list.workflow_preview'])}
+        </Button>
+
+        {#if workflowError}
+          <p class="content-workflows__error" role="alert">{workflowError}</p>
+        {/if}
+        {#if workflowResult?.ok}
+          <p class="content-workflows__result" role="status">
+            {workflowResultMessage(workflowResult)}
+            {#if typeof workflowResult.details?.jobId === 'string'}
+              {t(M['content.content_list.job_queued_progress'], {
+                id: workflowResult.details.jobId,
+              })}
+            {/if}
+          </p>
+        {/if}
+      </section>
     {/if}
 
     {#if refreshing && viewMode !== 'compact'}
@@ -1754,7 +2714,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             <div class="content-row__select">
               <Checkbox
                 checked={isSelected(row)}
-                disabled={!row.identified || rowPending(row)}
+                disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
                 aria-label={selectRowLabel(row)}
                 title={row.identified
                   ? rowPending(row)
@@ -1848,7 +2808,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
               <div class="content-header__eyebrow">
                 <Checkbox
                   checked={isSelected(row)}
-                  disabled={!row.identified || rowPending(row)}
+                  disabled={workflowPending || !row.identified || rowPending(row) || allMatchingSelected}
                   aria-label={selectRowLabel(row)}
                   title={row.identified
                     ? rowPending(row)
@@ -1943,6 +2903,23 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   destructive
   onconfirm={confirmDelete}
   oncancel={cancelDelete}
+/>
+
+<ConfirmDialog
+  open={workflowConfirmOpen}
+  title={t(M['content.content_list.workflow_confirm'], {
+    workflow: selectedWorkflow
+      ? workflowLabel(selectedWorkflow)
+      : t(M['content.content_list.workflow_noun']),
+  })}
+  message={workflowPreviewMessage()}
+  confirmLabel={workflowPending
+    ? t(M['content.content_list.workflow_applying'])
+    : t(M['content.content_list.workflow_apply'])}
+  cancelLabel={t(M['content.content_list.cancel'])}
+  destructive={CONTENT_LIST_WORKFLOW_OPTIONS.find((option) => option.id === selectedWorkflow)?.sensitivity === 'sensitive'}
+  onconfirm={() => void applyWorkflow()}
+  oncancel={cancelWorkflowConfirmation}
 />
 
 <style>
@@ -2057,6 +3034,33 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
   .content-selection :global(input[type='checkbox']) {
     cursor: pointer;
+  }
+
+  .content-workflows {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.65rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+
+  .content-workflows__error,
+  .content-workflows__result {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+  }
+
+  .content-workflows__error {
+    color: var(--smrt-color-error);
+  }
+
+  .content-workflows__result {
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .content-header__eyebrow,

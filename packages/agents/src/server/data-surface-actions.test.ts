@@ -13,6 +13,7 @@ import type {
 import { executeAsPrincipal } from '../execute-as-principal.js';
 import {
   createDataSurfaceActionAdapter,
+  type DataSurfaceActionInvocation,
   type DataSurfaceActionStateStore,
   type DataSurfaceBackgroundActionJob,
   type DataSurfaceServerActionDefinition,
@@ -67,7 +68,10 @@ function harness(options: {
   now?: () => number;
   authorize?: () => boolean;
   eligible?: (rowId: string | number) => { eligible: boolean; reason?: string };
-  apply?: (rowId: string | number) => Promise<void> | void;
+  apply?: (
+    rowId: string | number,
+    invocation: DataSurfaceActionInvocation,
+  ) => Promise<void> | void;
   revision?: () => number;
   queryFingerprint?: () => string;
   rowIds?: () => Array<string | number>;
@@ -77,6 +81,14 @@ function harness(options: {
   runAsPrincipal?: typeof executeAsPrincipal;
   confirmation?: DataSurfaceServerActionDefinition['confirmation'];
   surfaceIdentity?: DataSurfaceIdentity;
+  requestFingerprintExtension?: () => string;
+  mapError?: (error: unknown) => string;
+  declaredSelectionScopes?: DataSurfaceActionDescriptor['selectionScopes'];
+  resolveDeferredPrincipal?:
+    | Parameters<
+        typeof createDataSurfaceActionAdapter
+      >[0]['resolveDeferredPrincipal']
+    | null;
 }) {
   const calls: ExecuteAsPrincipalOptions[] = [];
   const resolveSelectionCalls: DataSurfaceSelectionReference[] = [];
@@ -125,8 +137,20 @@ function harness(options: {
     eligible: (_invocation, rowId) =>
       options.eligible?.(rowId) ?? { eligible: true },
     apply: async (_invocation, rowId) => {
-      await options.apply?.(rowId);
+      await options.apply?.(rowId, _invocation);
       return undefined;
+    },
+  };
+  const context = {
+    principal: {
+      db: 'test.db',
+      principal: {
+        runAsUserId: 'principal-a',
+        tenantId: 'tenant-a',
+        allowedTools,
+      },
+      onBehalfOfUserId: 'originator-a',
+      audit: vi.fn(),
     },
   };
   const adapter = createDataSurfaceActionAdapter({
@@ -138,7 +162,14 @@ function harness(options: {
       descriptor: {
         ...descriptor,
         identity: options.surfaceIdentity ?? descriptor.identity,
-        actions: [definition.descriptor],
+        actions: [
+          {
+            ...definition.descriptor,
+            selectionScopes:
+              options.declaredSelectionScopes ??
+              definition.descriptor.selectionScopes,
+          },
+        ],
       },
       revision: options.revision?.() ?? 7,
       actions: { archive: definition },
@@ -158,21 +189,33 @@ function harness(options: {
     ...(options.enqueue
       ? { backgroundQueue: { enqueue: options.enqueue } }
       : {}),
+    requestFingerprintExtension: options.requestFingerprintExtension,
+    mapError: options.mapError,
+    ...(options.resolveDeferredPrincipal === null
+      ? {}
+      : {
+          resolveDeferredPrincipal:
+            options.resolveDeferredPrincipal ?? (async () => context.principal),
+        }),
   });
-  const context = {
-    principal: {
-      db: 'test.db',
-      principal: {
-        runAsUserId: 'principal-a',
-        tenantId: 'tenant-a',
-        allowedTools,
-      },
-      onBehalfOfUserId: 'originator-a',
-      audit: vi.fn(),
-    },
-  };
   return { adapter, assertOperation, calls, context, resolveSelectionCalls };
 }
+
+it('rejects a selection scope excluded by the mounted surface descriptor', async () => {
+  const { adapter, context, resolveSelectionCalls } = harness({
+    declaredSelectionScopes: ['explicit-ids'],
+  });
+
+  await expect(
+    adapter.preview(
+      request('preview', {
+        selection: { scope: 'all-matching', queryFingerprint: 'query-v1' },
+      }),
+      context,
+    ),
+  ).resolves.toMatchObject({ ok: false, reason: 'selection_not_supported' });
+  expect(resolveSelectionCalls).toEqual([]);
+});
 
 async function previewToken(
   setup: ReturnType<typeof harness>,
@@ -388,10 +431,13 @@ describe('data-surface action adapter', () => {
 
     const first = await setup.adapter.apply(applyRequest, setup.context);
     now += 5 * 60 * 1_000;
-    const retry = await setup.adapter.apply(applyRequest, setup.context);
+    const retry = await setup.adapter.apply(
+      { ...applyRequest, requestId: 'apply-retry-2' },
+      setup.context,
+    );
 
     expect(first).toMatchObject({ ok: true, details: { accepted: 2 } });
-    expect(retry).toEqual(first);
+    expect(retry).toEqual({ ...first, requestId: 'apply-retry-2' });
     expect(applyRow).toHaveBeenCalledTimes(2);
   });
 
@@ -493,6 +539,19 @@ describe('data-surface action adapter', () => {
 
     expect(preview).toMatchObject({ ok: false, reason: 'invalid_request' });
     expect(setup.resolveSelectionCalls).toHaveLength(0);
+  });
+
+  it('rejects circular payloads before request snapshotting', async () => {
+    const setup = harness({});
+    const payload: Record<string, unknown> = { reason: 'circular' };
+    payload.self = payload;
+
+    await expect(
+      setup.adapter.preview(
+        request('preview', { payload: payload as never }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'invalid_request' });
   });
 
   it('rechecks authorization, revision, query fingerprint, and resolved rows at apply', async () => {
@@ -716,6 +775,19 @@ describe('data-surface action adapter', () => {
     });
   });
 
+  it('binds a domain request extension into idempotency', async () => {
+    let extension = 'target-a';
+    const setup = harness({ requestFingerprintExtension: () => extension });
+    const token = await previewToken(setup);
+    const applyRequest = request('apply', { confirmationToken: token });
+    await setup.adapter.apply(applyRequest, setup.context);
+
+    extension = 'target-b';
+    await expect(
+      setup.adapter.apply(applyRequest, setup.context),
+    ).resolves.toMatchObject({ ok: false, reason: 'idempotency_conflict' });
+  });
+
   it('allows the same idempotency key to retry after a non-terminal adapter failure', async () => {
     let applyAuthorizationAttempts = 0;
     const setup = harness({
@@ -755,14 +827,28 @@ describe('data-surface action adapter', () => {
       },
     });
     const token = await previewToken(setup);
-    const accepted = await setup.adapter.apply(
-      request('apply', { confirmationToken: token }),
+    const applyRequest = request('apply', { confirmationToken: token });
+    const accepted = await setup.adapter.apply(applyRequest, setup.context);
+    const replayed = await setup.adapter.apply(
+      { ...applyRequest, requestId: 'background-apply-retry' },
       setup.context,
     );
 
     expect(accepted).toMatchObject({
       ok: true,
-      details: { background: true, jobId: 'job-1', accepted: 2 },
+      details: {
+        background: true,
+        jobId: 'job-1',
+        jobRequestId: accepted.requestId,
+        accepted: 2,
+      },
+    });
+    expect(replayed).toMatchObject({
+      requestId: 'background-apply-retry',
+      details: {
+        jobId: 'job-1',
+        jobRequestId: applyRequest.requestId,
+      },
     });
     expect(applyRow).not.toHaveBeenCalled();
     expect(setup.calls).toHaveLength(2);
@@ -782,5 +868,443 @@ describe('data-surface action adapter', () => {
     expect(redelivery).toEqual(completed);
     expect(applyRow).toHaveBeenCalledTimes(2);
     expect(setup.calls).toHaveLength(3);
+  });
+
+  it('resolves permissions live when deferred work starts', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let permissionsRevoked = false;
+    const applyRow = vi.fn();
+    const runAsPrincipal = (async <T>(
+      principalOptions: ExecuteAsPrincipalOptions,
+      fn: (principalRun: PrincipalRun) => Promise<T>,
+    ): Promise<T> => {
+      const allowedTools = ['orders.archive'];
+      return fn({
+        context: {} as PrincipalRun['context'],
+        permissions: principalOptions.permissions ?? [],
+        allowedTools,
+        isToolAllowed: (tool) => allowedTools.includes(tool),
+        assertToolAllowed(tool) {
+          if (!allowedTools.includes(tool)) throw new Error('tool denied');
+        },
+        async assertOperation() {
+          if (principalOptions.permissions === undefined && permissionsRevoked)
+            throw new Error('permission revoked');
+          return {} as Awaited<ReturnType<PrincipalRun['assertOperation']>>;
+        },
+      });
+    }) as typeof executeAsPrincipal;
+    const setup = harness({
+      execution: 'background',
+      apply: applyRow,
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-live-permissions' };
+      },
+      runAsPrincipal,
+    });
+    Object.assign(setup.context.principal, {
+      permissions: ['orders:update'],
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    permissionsRevoked = true;
+    await expect(queued?.run()).rejects.toThrow('permission revoked');
+    expect(applyRow).not.toHaveBeenCalled();
+  });
+
+  it('resolves the persona tool ceiling live when deferred work starts', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let allowedTools = ['orders.archive'];
+    const applyRow = vi.fn();
+    const runAsPrincipal = (async <T>(
+      principalOptions: ExecuteAsPrincipalOptions,
+      fn: (principalRun: PrincipalRun) => Promise<T>,
+    ): Promise<T> => {
+      const currentTools = principalOptions.principal.allowedTools ?? [];
+      return fn({
+        context: {} as PrincipalRun['context'],
+        permissions: ['orders:update'],
+        allowedTools: currentTools,
+        isToolAllowed: (tool) => currentTools.includes(tool),
+        assertToolAllowed(tool) {
+          if (!currentTools.includes(tool)) throw new Error('tool revoked');
+        },
+        async assertOperation() {
+          return {} as Awaited<ReturnType<PrincipalRun['assertOperation']>>;
+        },
+      });
+    }) as typeof executeAsPrincipal;
+    const setup = harness({
+      execution: 'background',
+      apply: applyRow,
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-live-tools' };
+      },
+      runAsPrincipal,
+      resolveDeferredPrincipal: async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          actsAsProfileId: reference.actsAsProfileId,
+          allowedTools,
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+      }),
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    allowedTools = [];
+    await expect(queued?.run()).rejects.toThrow('tool revoked');
+    expect(applyRow).not.toHaveBeenCalled();
+  });
+
+  it('fails deferred execution closed for an incomplete live principal binding', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-missing-binding' };
+      },
+      resolveDeferredPrincipal: async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+      }),
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).rejects.toThrow(
+      'principal binding could not be resolved safely',
+    );
+  });
+
+  it('rejects background execution when no deferred principal resolver exists', async () => {
+    const enqueue = vi.fn();
+    const setup = harness({
+      execution: 'background',
+      enqueue,
+      resolveDeferredPrincipal: null,
+    });
+    const token = await previewToken(setup);
+
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: token }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'background_unavailable' });
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('binds deferred execution to the immutable enqueue principal', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const references: Array<{
+      runAsUserId: string;
+      tenantId: string | null;
+      agentClass?: string;
+    }> = [];
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-bound-principal' };
+      },
+      resolveDeferredPrincipal: async (reference) => {
+        references.push({
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          agentClass: reference.agentClass,
+        });
+        return {
+          db: 'test.db',
+          principal: {
+            runAsUserId: reference.runAsUserId,
+            tenantId: reference.tenantId,
+            actsAsProfileId: reference.actsAsProfileId,
+            allowedTools: ['orders.archive'],
+          },
+          onBehalfOfUserId: reference.onBehalfOfUserId,
+          agentClass: reference.agentClass,
+        };
+      },
+    });
+    setup.context.principal.agentClass = 'orders-agent';
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    setup.context.principal.principal.runAsUserId = 'replacement-user';
+    setup.context.principal.principal.tenantId = 'replacement-tenant';
+    setup.context.principal.agentClass = 'replacement-agent';
+
+    await expect(queued?.run()).resolves.toMatchObject({ ok: true });
+    expect(references).toEqual([
+      {
+        runAsUserId: 'principal-a',
+        tenantId: 'tenant-a',
+        agentClass: 'orders-agent',
+      },
+    ]);
+  });
+
+  it('executes deferred work from an immutable confirmed request snapshot', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const executions: Array<{
+      payload: DataSurfaceActionInvocation['request']['payload'];
+      idempotencyKey: string | undefined;
+    }> = [];
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-request-snapshot' };
+      },
+      apply: (_rowId, invocation) => {
+        executions.push({
+          payload: structuredClone(invocation.request.payload),
+          idempotencyKey: invocation.request.idempotencyKey,
+        });
+      },
+    });
+    const payload = { reason: 'confirmed' };
+    const preview = await setup.adapter.preview(
+      request('preview', { payload }),
+      setup.context,
+    );
+    if (!preview.confirmationToken) throw new Error('Missing preview token');
+    const applyRequest = request('apply', {
+      payload,
+      confirmationToken: preview.confirmationToken,
+      idempotencyKey: 'snapshot-key',
+    });
+    await setup.adapter.apply(applyRequest, setup.context);
+
+    payload.reason = 'mutated-after-enqueue';
+    applyRequest.idempotencyKey = 'mutated-key';
+    await expect(queued?.run()).resolves.toMatchObject({ ok: true });
+    expect(executions).toEqual([
+      { payload: { reason: 'confirmed' }, idempotencyKey: 'snapshot-key' },
+      { payload: { reason: 'confirmed' }, idempotencyKey: 'snapshot-key' },
+    ]);
+  });
+
+  it('fails deferred execution closed when the live agent class changes', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    const setup = harness({
+      execution: 'background',
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-agent-class-mismatch' };
+      },
+      resolveDeferredPrincipal: async (reference) => ({
+        db: 'test.db',
+        principal: {
+          runAsUserId: reference.runAsUserId,
+          tenantId: reference.tenantId,
+          actsAsProfileId: reference.actsAsProfileId,
+          allowedTools: ['orders.archive'],
+        },
+        onBehalfOfUserId: reference.onBehalfOfUserId,
+        agentClass: 'replacement-agent',
+      }),
+    });
+    setup.context.principal.agentClass = 'orders-agent';
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).rejects.toThrow(
+      'principal binding could not be resolved safely',
+    );
+  });
+
+  it('binds confirmation tokens to the previewing agent class', async () => {
+    const setup = harness({});
+    setup.context.principal.agentClass = 'orders-agent-a';
+    const token = await previewToken(setup);
+
+    setup.context.principal.agentClass = 'orders-agent-b';
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: token }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'confirmation_mismatch' });
+  });
+
+  it('binds pending apply authorization to the entry principal snapshot', async () => {
+    let releaseLookup: (() => void) | undefined;
+    let lookupStarted = false;
+    class DelayedState extends InMemoryDataSurfaceActionStateStore {
+      override async getIdempotency(key: string) {
+        lookupStarted = true;
+        await new Promise<void>((resolve) => {
+          releaseLookup = resolve;
+        });
+        return super.getIdempotency(key);
+      }
+    }
+    const setup = harness({ state: new DelayedState() });
+    const auditMetadata = {
+      binding: { actor: 'a' },
+      tags: ['confirmed'],
+    };
+    const permissions = ['orders:update'];
+    const allowedTools = ['orders.archive'];
+    Object.assign(setup.context.principal, {
+      agentClass: 'orders-agent-a',
+      onBehalfOfUserId: 'originator-a',
+      permissions,
+      auditMetadata,
+    });
+    Object.assign(setup.context.principal.principal, {
+      actsAsProfileId: 'profile-a',
+      allowedTools,
+    });
+    const token = await previewToken(setup);
+    const applying = setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+    await vi.waitFor(() => expect(lookupStarted).toBe(true));
+
+    Object.assign(setup.context.principal, {
+      agentClass: 'orders-agent-b',
+      onBehalfOfUserId: 'originator-b',
+      auditMetadata: { binding: 'b' },
+    });
+    Object.assign(setup.context.principal.principal, {
+      runAsUserId: 'principal-b',
+      tenantId: 'tenant-b',
+      actsAsProfileId: 'profile-b',
+    });
+    permissions[0] = 'orders:admin';
+    allowedTools[0] = 'orders.delete';
+    auditMetadata.binding.actor = 'b';
+    auditMetadata.tags[0] = 'mutated';
+    releaseLookup?.();
+
+    await expect(applying).resolves.toMatchObject({ ok: true });
+    expect(setup.calls.at(-1)).toMatchObject({
+      agentClass: 'orders-agent-a',
+      onBehalfOfUserId: 'originator-a',
+      permissions: ['orders:update'],
+      auditMetadata: expect.objectContaining({
+        binding: { actor: 'a' },
+        tags: ['confirmed'],
+      }),
+      principal: {
+        runAsUserId: 'principal-a',
+        tenantId: 'tenant-a',
+        actsAsProfileId: 'profile-a',
+        allowedTools: ['orders.archive'],
+      },
+    });
+  });
+
+  it('isolates idempotency across agent-class authority bindings', async () => {
+    const applyRow = vi.fn();
+    const setup = harness({ apply: applyRow });
+    setup.context.principal.agentClass = 'orders-agent-a';
+    const firstToken = await previewToken(setup);
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: firstToken }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+
+    setup.context.principal.agentClass = 'orders-agent-b';
+    const secondToken = await previewToken(setup);
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: secondToken }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(applyRow).toHaveBeenCalledTimes(4);
+  });
+
+  it('maps deferred failures into a structured background result', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let authorizationChecks = 0;
+    const setup = harness({
+      execution: 'background',
+      authorize: () => {
+        authorizationChecks += 1;
+        if (authorizationChecks === 3) throw new Error('domain drift');
+        return true;
+      },
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-failure' };
+      },
+      mapError: () => 'domain_drifted',
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: false,
+      reason: 'domain_drifted',
+    });
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: false,
+      reason: 'domain_drifted',
+    });
+  });
+
+  it('releases unexpected deferred failures so the queue can retry', async () => {
+    let queued: DataSurfaceBackgroundActionJob | undefined;
+    let authorizationChecks = 0;
+    const setup = harness({
+      execution: 'background',
+      authorize: () => {
+        authorizationChecks += 1;
+        if (authorizationChecks === 3) throw new Error('transient outage');
+        return true;
+      },
+      enqueue: async (job) => {
+        queued = job;
+        return { jobId: 'job-retry' };
+      },
+    });
+    const token = await previewToken(setup);
+    await setup.adapter.apply(
+      request('apply', { confirmationToken: token }),
+      setup.context,
+    );
+
+    await expect(queued?.run()).rejects.toThrow('transient outage');
+    await expect(queued?.run()).resolves.toMatchObject({
+      ok: true,
+      details: { accepted: 2 },
+    });
   });
 });

@@ -6,6 +6,7 @@
  */
 
 import { startRestServer } from '@happyvertical/smrt-core';
+import './__smrt-register__.js';
 import { Content } from './content';
 
 async function startServer() {
@@ -46,4 +47,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   startServer().catch(console.error);
 }
 
+export * from './server/content-list-actions.js';
 export { startServer };

@@ -40,12 +40,16 @@ export {
   TenantUsageMetric,
 } from './models/index.js';
 export type {
+  CommercialBillingStorage,
+  CommercialUsageServiceOptions,
   CustomPricingContext,
   CustomPricingStrategy,
   PriceUsageOptions,
   SpendingDecision,
 } from './services/index.js';
 export {
+  assertCommercialBillingStorageSupported,
+  CommercialBillingStorageConfigurationError,
   CommercialUsageService,
   evaluateThreshold,
   evaluateThresholds,
@@ -55,6 +59,7 @@ export {
   type SubscriptionResolverReaders,
   type TenantSubscriptionReader,
   TenantUsageMeter,
+  UnsupportedCommercialBillingStorageError,
   type UsageSummaryReader,
 } from './services/index.js';
 export type {

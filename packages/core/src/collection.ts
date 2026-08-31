@@ -52,6 +52,97 @@ import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 const logger = createLogger({ level: 'info' });
 
+/** SQL words outside comments and quoted literals/identifiers. */
+function executableSqlWords(sql: string): string[] {
+  const words: string[] = [];
+  let index = 0;
+  while (index < sql.length) {
+    const character = sql[index];
+    const next = sql[index + 1];
+    if (character === '-' && next === '-') {
+      index = sql.indexOf('\n', index + 2);
+      if (index === -1) break;
+      continue;
+    }
+    if (character === '/' && next === '*') {
+      let depth = 1;
+      index += 2;
+      while (index < sql.length && depth > 0) {
+        if (sql[index] === '/' && sql[index + 1] === '*') {
+          depth += 1;
+          index += 2;
+        } else if (sql[index] === '*' && sql[index + 1] === '/') {
+          depth -= 1;
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+      if (depth > 0) break;
+      continue;
+    }
+    if (character === "'" || character === '"' || character === '`') {
+      const quote = character;
+      const backslashEscapes =
+        quote === "'" &&
+        index > 0 &&
+        /[eE]/.test(sql[index - 1]) &&
+        (index === 1 || !/[A-Za-z0-9_$]/.test(sql[index - 2]));
+      index += 1;
+      while (index < sql.length) {
+        if (backslashEscapes && sql[index] === '\\') {
+          index += 2;
+          continue;
+        }
+        if (sql[index] === quote) {
+          if (sql[index + 1] === quote) {
+            index += 2;
+            continue;
+          }
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+    if (character === '$') {
+      const tag = sql
+        .slice(index)
+        .match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)?.[0];
+      if (tag) {
+        const end = sql.indexOf(tag, index + tag.length);
+        if (end === -1) break;
+        index = end + tag.length;
+        continue;
+      }
+    }
+    if (/[A-Za-z_]/.test(character)) {
+      const start = index;
+      index += 1;
+      while (index < sql.length && /[A-Za-z0-9_$]/.test(sql[index])) index += 1;
+      words.push(sql.slice(start, index).toLowerCase());
+      continue;
+    }
+    index += 1;
+  }
+  return words;
+}
+
+function isMutatingSql(words: readonly string[]): boolean {
+  return words.some((word, index) => {
+    const next = words[index + 1];
+    return (
+      word === 'update' ||
+      (word === 'insert' && next === 'into') ||
+      (word === 'delete' && next === 'from') ||
+      (word === 'merge' && next === 'into') ||
+      (word === 'truncate' && next === 'table') ||
+      (word === 'replace' && next === 'into')
+    );
+  });
+}
+
 /**
  * `_smrt_contexts.owner_id` value for collection-level (as opposed to
  * per-object) memory. Tenant-scoped collections suffix the active tenant id
@@ -1455,6 +1546,61 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  private getHydrationSelectSql(
+    schema = ObjectRegistry.getSchema(this.getResolvedItemQualifiedName()) ??
+      ObjectRegistry.getSchema(this.getResolvedItemClassName()),
+  ): string {
+    if (this.getDatabaseEngine() !== 'duckdb') return '*';
+    const registeredFields =
+      ObjectRegistry.getFields(this.getResolvedItemQualifiedName()).size > 0
+        ? ObjectRegistry.getFields(this.getResolvedItemQualifiedName())
+        : ObjectRegistry.getFields(this.getResolvedItemClassName());
+    const itemColumns = new Set([
+      'id',
+      ...Array.from(registeredFields.keys(), (fieldName) =>
+        this.toDbColumnName(fieldName),
+      ),
+    ]);
+    const uuidColumns = Object.entries(schema?.columns ?? {})
+      .filter(
+        ([columnName, column]) =>
+          itemColumns.has(columnName) &&
+          String(column.type).toUpperCase() === 'UUID',
+      )
+      .map(([columnName]) => columnName);
+    if (uuidColumns.length === 0) return '*';
+    return `* REPLACE (${uuidColumns
+      .map((columnName) => {
+        const quoted = this.quoteProjectionIdentifier(columnName);
+        return `CAST(${quoted} AS VARCHAR) AS ${quoted}`;
+      })
+      .join(', ')})`;
+  }
+
+  private hasDuckDbUuidColumnsOutsideHydrationSelect(): boolean {
+    if (this.getDatabaseEngine() !== 'duckdb') return false;
+    const qualifiedName = this.getResolvedItemQualifiedName();
+    const className = this.getResolvedItemClassName();
+    const schema =
+      ObjectRegistry.getSchema(qualifiedName) ??
+      ObjectRegistry.getSchema(className);
+    const registeredFields =
+      ObjectRegistry.getFields(qualifiedName).size > 0
+        ? ObjectRegistry.getFields(qualifiedName)
+        : ObjectRegistry.getFields(className);
+    const selectedColumns = new Set([
+      'id',
+      ...Array.from(registeredFields.keys(), (fieldName) =>
+        this.toDbColumnName(fieldName),
+      ),
+    ]);
+    return Object.entries(schema?.columns ?? {}).some(
+      ([columnName, column]) =>
+        !selectedColumns.has(columnName) &&
+        String(column.type).toUpperCase() === 'UUID',
+    );
+  }
+
   private isOmittedCustomPrimaryKeySystemField(
     fieldName: string,
     hasCustomPrimaryKey: boolean,
@@ -1571,8 +1717,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       const columnName = this.toDbColumnName(fieldName);
+      const quotedColumn = this.quoteProjectionIdentifier(columnName);
+      const selectValue =
+        this.getDatabaseEngine() === 'duckdb' &&
+        String(schema?.columns[columnName]?.type).toUpperCase() === 'UUID'
+          ? `CAST(${quotedColumn} AS VARCHAR)`
+          : quotedColumn;
       selectExpressions.push(
-        `${this.quoteProjectionIdentifier(columnName)} AS ${this.quoteProjectionIdentifier(fieldName)}`,
+        `${selectValue} AS ${this.quoteProjectionIdentifier(fieldName)}`,
       );
       outputFields.push(fieldName);
     }
@@ -1905,7 +2057,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const parentSelectSql =
       parentColumnNames.length > 0
         ? parentColumnNames
-            .map((columnName) => this.quoteProjectionIdentifier(columnName))
+            .map((columnName) => {
+              const quoted = this.quoteProjectionIdentifier(columnName);
+              return this.getDatabaseEngine() === 'duckdb' &&
+                String(
+                  parentSchema?.columns[columnName]?.type,
+                ).toUpperCase() === 'UUID'
+                ? `CAST(${quoted} AS VARCHAR) AS ${quoted}`
+                : quoted;
+            })
             .join(', ')
         : '*';
     const relatedAlias = (fieldName: string): string => {
@@ -1921,7 +2081,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           relatedFieldColumns.get(fieldName) ??
           relatedCollection.toDbColumnName(fieldName);
         const alias = relatedAlias(fieldName);
-        return `${relatedCollection.quoteProjectionIdentifier(column)} AS ${relatedCollection.quoteProjectionIdentifier(alias)}`;
+        const quotedColumn =
+          relatedCollection.quoteProjectionIdentifier(column);
+        const relatedSchema =
+          ObjectRegistry.getSchema(relatedQualifiedName) ??
+          ObjectRegistry.getSchema(relatedItemClassName);
+        const source = `r.${quotedColumn}`;
+        const value =
+          relatedCollection.getDatabaseEngine() === 'duckdb' &&
+          String(relatedSchema?.columns[column]?.type).toUpperCase() === 'UUID'
+            ? `CAST(${source} AS VARCHAR)`
+            : source;
+        return `${value} AS ${relatedCollection.quoteProjectionIdentifier(alias)}`;
       },
     );
     const relatedRankOrder = [
@@ -1934,11 +2105,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       relatedCollection.quoteProjectionIdentifier('__smrt_latest_rank');
     const latestRelatedAlias = (fieldName: string): string =>
       relatedCollection.quoteProjectionIdentifier(relatedAlias(fieldName));
-    const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions
-      .map((expression) => `r.${expression}`)
-      .join(
-        ', ',
-      )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS ${latestRankAlias} FROM ${relatedCollection.tableName} r${relatedWhereSql ? ` ${relatedWhereSql}` : ''}) `;
+    const relatedCte = `WITH ranked_latest_related AS (SELECT ${relatedSelectExpressions.join(
+      ', ',
+    )}, ROW_NUMBER() OVER (PARTITION BY r.${relatedCollection.quoteProjectionIdentifier(relatedCollection.toDbColumnName(inverseForeignKey.fieldName))} ORDER BY ${relatedRankOrder}) AS ${latestRankAlias} FROM ${relatedCollection.tableName} r${relatedWhereSql ? ` ${relatedWhereSql}` : ''}) `;
 
     const parentWhere = this.convertWhereKeys(where || {});
     const { sql: rawWhereSql, values: parentWhereValues } =
@@ -2020,12 +2189,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       .join(
         ', ',
       )} FROM ${this.quoteProjectionIdentifier(this.tableName)} LEFT JOIN ranked_latest_related rr ON ${relatedJoinConditions.join(' AND ')} ${parentWhereSql} ${orderFragments.length > 0 ? `ORDER BY ${orderFragments.join(', ')}` : ''}${limitOffsetSql}`;
-    const rows = await this.db.query(
-      sql,
+    const queryValues = [
       ...relatedWhereValues,
       ...parentWhereValues,
       ...limitOffsetValues,
-    );
+    ];
+    const rows = await this.queryDuckDbCanonicalSelectRows(sql, queryValues);
 
     // Hydrate in result order. initialize() hooks may issue queries through
     // the same transaction-bound PostgreSQL client, so overlapping hydration
@@ -2036,7 +2205,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       string,
       Record<string, CollectionFieldDefinition>
     >();
-    for (const row of rows.rows as Record<string, unknown>[]) {
+    for (const row of rows) {
       const parentRow = Object.fromEntries(
         Object.entries(row).filter(([key]) => !relatedAliasNames.has(key)),
       );
@@ -2055,7 +2224,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // array-index pairing after those hooks could attach one parent's related
     // data to another parent.
     const relatedByParentId = new Map<string, Record<string, unknown> | null>();
-    for (const row of rows.rows as Record<string, unknown>[]) {
+    for (const row of rows) {
       const parentId = row[parentPrimaryKey.column];
       if (parentId === null || parentId === undefined) continue;
 
@@ -2553,10 +2722,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     sql: string,
     params: unknown[],
     cacheConfig: CollectionCacheConfig | undefined,
+    describeUuidOutputs: boolean,
   ): Promise<Record<string, unknown>[]> {
     if (!cacheConfig) {
-      const result = await this.db.query(sql, ...params);
-      return result.rows;
+      return await this.queryDuckDbCanonicalSelectRows(
+        sql,
+        params,
+        describeUuidOutputs,
+      );
     }
 
     const dbKey = resolveDbCacheKey(this.db);
@@ -2581,16 +2754,68 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // sees the bumped generation and drops the now-stale result instead of
     // caching it for the full TTL.
     const generation = getCacheGeneration(dbKey, this.tableName);
-    const result = await this.db.query(sql, ...params);
+    const rows = await this.queryDuckDbCanonicalSelectRows(
+      sql,
+      params,
+      describeUuidOutputs,
+    );
     setCachedRows(
       dbKey,
       this.tableName,
       queryKey,
-      result.rows,
+      rows,
       cacheConfig.ttl,
       generation,
     );
-    return result.rows;
+    return rows;
+  }
+
+  /**
+   * Describe a native DuckDB SELECT before executing it, then cast UUID output
+   * columns in the one data-bearing execution. DuckDB's JavaScript binding
+   * exposes UUID values as lossy HUGEINT wrappers, so they cannot be repaired
+   * from the first result without replaying volatile SELECT expressions or
+   * combining two different database snapshots.
+   */
+  private async queryDuckDbCanonicalSelectRows(
+    sql: string,
+    params: unknown[],
+    describeUuidOutputs = true,
+  ): Promise<Record<string, unknown>[]> {
+    if (this.getDatabaseEngine() !== 'duckdb' || !describeUuidOutputs) {
+      return (await this.db.query(sql, ...params)).rows;
+    }
+    const readSql = sql.trim().replace(/;$/, '');
+    const words = executableSqlWords(readSql);
+    // query() is documented as a SELECT hydration surface but remains a raw
+    // escape hatch. Never reinterpret a mutating statement as a subquery, but
+    // do ignore mutation words inside caller-authored comments and literals.
+    if (isMutatingSql(words)) {
+      return (await this.db.query(sql, ...params)).rows;
+    }
+    if (words[0] !== 'select' && words[0] !== 'with') {
+      return (await this.db.query(sql, ...params)).rows;
+    }
+    const described = await this.db.query(`DESCRIBE ${readSql}`, ...params);
+    const uuidColumns = described.rows
+      .filter((row) => String(row.column_type).toUpperCase() === 'UUID')
+      .map((row) => String(row.column_name));
+    if (uuidColumns.length === 0) {
+      return (await this.db.query(sql, ...params)).rows;
+    }
+    const alias = this.quoteProjectionIdentifier('__smrt_uuid_rows');
+    const replacements = uuidColumns
+      .map((column) => {
+        const quoted = this.quoteProjectionIdentifier(column);
+        return `CAST(${alias}.${quoted} AS VARCHAR) AS ${quoted}`;
+      })
+      .join(', ');
+    return (
+      await this.db.query(
+        `SELECT ${alias}.* REPLACE (${replacements}) FROM (${readSql}) AS ${alias}`,
+        ...params,
+      )
+    ).rows;
   }
 
   /**
@@ -2689,11 +2914,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // hydrates none of them. The literal is safe to interpolate: it is not
     // caller-derived, and `$n` placeholders here would have to be numbered after
     // the WHERE values on PostgreSQL.
-    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql} LIMIT 1`;
+    const fullSQL = `SELECT ${this.getHydrationSelectSql()} FROM ${this.tableName} ${whereSql} LIMIT 1`;
     const rows = await this.queryRowsWithCache(
       fullSQL,
       whereValues,
       this.resolveReadCacheConfig(options.cache),
+      this.hasDuckDbUuidColumnsOutsideHydrationSelect(),
     );
 
     if (!rows?.[0]) {
@@ -2886,7 +3112,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       limitOffsetValues.push(boundedOffset);
     }
 
-    const selectSql = projection ? projection.sql : '*';
+    const selectSql = projection
+      ? projection.sql
+      : this.getHydrationSelectSql();
     const sql = `SELECT ${selectSql} FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 
@@ -2899,6 +3127,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.resolveReadCacheConfig(
         (interceptedOptions as { cache?: CollectionCacheConfig | false }).cache,
       ),
+      !projection && this.hasDuckDbUuidColumnsOutsideHydrationSelect(),
     );
 
     if (projection) {
@@ -4187,9 +4416,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       interceptorContext,
     );
 
-    const result = await this.db.query(
+    const rows = await this.queryDuckDbCanonicalSelectRows(
       interceptedQuery.sql,
-      ...interceptedQuery.params,
+      interceptedQuery.params,
     );
 
     // query() is a raw escape hatch documented for SELECTs, but it can run any
@@ -4217,7 +4446,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const isSTI = tableStrategy === 'sti';
 
-    const instances = await this.hydrateResultRows(result.rows, fields, isSTI);
+    const instances = await this.hydrateResultRows(rows, fields, isSTI);
 
     // Execute afterQuery interceptors
     return await GlobalInterceptors.executeAfterQuery(

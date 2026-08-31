@@ -1,0 +1,710 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SmrtCollection } from '../collection';
+import { field } from '../decorators';
+import { GlobalInterceptors } from '../interceptors';
+import { SmrtObject } from '../object';
+import { ObjectRegistry, smrt } from '../registry';
+import { getTestDatabase } from '../testing/database';
+
+@smrt({ tableName: 'issue_2453_revision_rows' })
+class Issue2453RevisionRow extends SmrtObject {
+  @field()
+  title: string = '';
+
+  // Existing domain models may still expose these legacy camelCase aliases.
+  // They share database columns with the framework timestamps and must not
+  // prevent the framework revision token from hydrating.
+  @field({ type: 'datetime' })
+  createdAt = new Date();
+
+  @field({ type: 'datetime' })
+  updatedAt = new Date();
+}
+
+class Issue2453RevisionRows extends SmrtCollection<Issue2453RevisionRow> {
+  static readonly _itemClass = Issue2453RevisionRow;
+}
+
+describe('issue #2453 revision-guarded saves', () => {
+  let db: Awaited<ReturnType<typeof getTestDatabase>>;
+  let rows: Issue2453RevisionRows;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ classes: ['Issue2453RevisionRow'] });
+    ObjectRegistry.registerCollection(
+      'Issue2453RevisionRow',
+      Issue2453RevisionRows,
+    );
+    rows = (await Issue2453RevisionRows.create({
+      db,
+    })) as Issue2453RevisionRows;
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await db.close?.();
+  });
+
+  it('atomically rejects an update after another writer changes the row', async () => {
+    const created = await rows.create({ title: 'original' });
+    const first = await rows.get(String(created.id));
+    if (!first) throw new Error('expected persisted row');
+
+    const expectedUpdatedAt = first.updated_at;
+    await db.update(
+      'issue_2453_revision_rows',
+      { id: created.id },
+      {
+        title: 'concurrent',
+        updated_at: '2026-08-27T22:30:00.000Z',
+      },
+    );
+    const [concurrentRow] = await db.list('issue_2453_revision_rows', {});
+    expect((concurrentRow as Record<string, unknown>).updated_at).toBe(
+      '2026-08-27T22:30:00.000Z',
+    );
+
+    first.title = 'stale overwrite';
+    await expect(first.save({ expectedUpdatedAt })).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+
+    const stored = await rows.get(String(created.id));
+    expect(stored?.title).toBe('concurrent');
+  });
+
+  it('does not resurrect a row deleted while an embedded revision claim is pending', async () => {
+    const created = await rows.create({ title: 'original' });
+    const guarded = await rows.get(String(created.id));
+    const deleting = await rows.get(String(created.id));
+    if (!guarded?.updated_at || !deleting) {
+      throw new Error('expected two persisted snapshots');
+    }
+
+    const originalGet = db.get.bind(db);
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enteredRead = resolve;
+    });
+    let paused = false;
+    vi.spyOn(db, 'get').mockImplementation(async (table, filter) => {
+      if (!paused && table === 'issue_2453_revision_rows') {
+        paused = true;
+        enteredRead();
+        await readReleased;
+      }
+      return originalGet(table, filter);
+    });
+
+    guarded.title = 'guarded write';
+    const guardedSave = guarded.save({
+      expectedUpdatedAt: guarded.updated_at,
+    });
+    await readEntered;
+    const deleteWrite = deleting.delete();
+    releaseRead();
+    await guardedSave;
+    await deleteWrite;
+
+    expect(await rows.get(String(created.id))).toBeNull();
+  });
+
+  it('rejects a stale ordinary save queued behind an embedded revision compare', async () => {
+    const created = await rows.create({ title: 'original' });
+    const guarded = await rows.get(String(created.id));
+    const ordinary = await rows.get(String(created.id));
+    if (!guarded?.updated_at || !ordinary) {
+      throw new Error('expected two persisted snapshots');
+    }
+
+    const originalGet = db.get.bind(db);
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enteredRead = resolve;
+    });
+    let paused = false;
+    vi.spyOn(db, 'get').mockImplementation(async (table, filter) => {
+      if (!paused && table === 'issue_2453_revision_rows') {
+        paused = true;
+        enteredRead();
+        await readReleased;
+      }
+      return originalGet(table, filter);
+    });
+
+    guarded.title = 'guarded write';
+    const guardedSave = guarded.save({
+      expectedUpdatedAt: guarded.updated_at,
+    });
+    await readEntered;
+    ordinary.title = 'ordinary winner';
+    const ordinarySave = ordinary.save();
+    releaseRead();
+    await guardedSave;
+    await expect(ordinarySave).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+
+    expect((await rows.get(String(created.id)))?.title).toBe('guarded write');
+  });
+
+  it('orders a natural-key create after a pending embedded revision compare', async () => {
+    const created = await rows.create({ title: 'original' });
+    const guarded = await rows.get(String(created.id));
+    if (!guarded?.updated_at) throw new Error('expected persisted snapshot');
+
+    const originalGet = db.get.bind(db);
+    let releaseRead!: () => void;
+    const readReleased = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let enteredRead!: () => void;
+    const readEntered = new Promise<void>((resolve) => {
+      enteredRead = resolve;
+    });
+    let paused = false;
+    vi.spyOn(db, 'get').mockImplementation(async (table, filter) => {
+      if (!paused && table === 'issue_2453_revision_rows') {
+        paused = true;
+        enteredRead();
+        await readReleased;
+      }
+      return originalGet(table, filter);
+    });
+
+    guarded.title = 'guarded write';
+    const guardedSave = guarded.save({
+      expectedUpdatedAt: guarded.updated_at,
+    });
+    await readEntered;
+    const naturalWrite = rows.create({
+      slug: created.slug,
+      context: created.context,
+      title: 'natural-key winner',
+    });
+    releaseRead();
+    await guardedSave;
+    await naturalWrite;
+
+    const stored = await db.list('issue_2453_revision_rows', {});
+    expect(stored).toHaveLength(1);
+    expect((stored[0] as Record<string, unknown>).title).toBe(
+      'natural-key winner',
+    );
+  });
+
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('keeps an ordinary %s write outside a concurrent rolled-back transaction', async (type) => {
+    const transactionDb = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    try {
+      const transactionRows = (await Issue2453RevisionRows.create({
+        db: transactionDb,
+      })) as Issue2453RevisionRows;
+      const first = await transactionRows.create({ title: 'first original' });
+      const second = await transactionRows.create({
+        title: 'second original',
+      });
+      const transactionRow = await transactionRows.get(String(first.id));
+      const ordinaryRow = await transactionRows.get(String(second.id));
+      if (!transactionRow || !ordinaryRow) {
+        throw new Error('expected transaction test rows');
+      }
+
+      let releaseTransaction!: () => void;
+      const transactionReleased = new Promise<void>((resolve) => {
+        releaseTransaction = resolve;
+      });
+      let transactionEntered!: () => void;
+      const transactionReady = new Promise<void>((resolve) => {
+        transactionEntered = resolve;
+      });
+
+      const rolledBack = transactionRow.withTransaction(async (bound) => {
+        bound.title = 'must roll back';
+        await bound.save();
+        transactionEntered();
+        await transactionReleased;
+        throw new Error('forced rollback');
+      });
+      await transactionReady;
+      ordinaryRow.title = 'ordinary survivor';
+      const ordinarySave = ordinaryRow.save();
+      releaseTransaction();
+
+      await expect(rolledBack).rejects.toThrow('forced rollback');
+      await ordinarySave;
+      expect((await transactionRows.get(String(first.id)))?.title).toBe(
+        'first original',
+      );
+      expect((await transactionRows.get(String(second.id)))?.title).toBe(
+        'ordinary survivor',
+      );
+    } finally {
+      await transactionDb.close?.();
+    }
+  });
+
+  it('hydrates the framework revision alongside legacy timestamp aliases', async () => {
+    const created = await rows.create({ title: 'legacy timestamp model' });
+    const hydrated = await rows.get(String(created.id));
+
+    expect(hydrated?.updatedAt).toBeInstanceOf(Date);
+    expect(hydrated?.updated_at).toBeInstanceOf(Date);
+    expect(hydrated?.updated_at?.getTime()).toBe(hydrated?.updatedAt.getTime());
+  });
+
+  it('canonicalizes native DuckDB UUIDs for guarded saves and revision claims', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    try {
+      const duckRows = (await Issue2453RevisionRows.create({
+        db: duckDb,
+      })) as Issue2453RevisionRows;
+      const created = await duckRows.create({ title: 'duckdb original' });
+      const loaded = await duckRows.get(String(created.id));
+      if (!loaded?.updated_at) throw new Error('expected persisted DuckDB row');
+
+      expect(typeof loaded.id).toBe('string');
+      loaded.title = 'duckdb guarded update';
+      await loaded.save({ expectedUpdatedAt: loaded.updated_at });
+      expect((await duckRows.get(String(created.id)))?.title).toBe(
+        'duckdb guarded update',
+      );
+
+      const claimant = await duckRows.get(String(created.id));
+      if (!claimant?.updated_at) throw new Error('expected updated DuckDB row');
+      claimant.title = 'must not persist';
+      await claimant.claimRevision(claimant.updated_at);
+      expect((await duckRows.get(String(created.id)))?.title).toBe(
+        'duckdb guarded update',
+      );
+
+      const direct = new Issue2453RevisionRow({
+        db: duckDb,
+        id: String(created.id),
+      });
+      await direct.initialize();
+      expect(typeof direct.id).toBe('string');
+
+      const bySlug = new Issue2453RevisionRow({
+        db: duckDb,
+        slug: created.slug,
+        context: created.context,
+      });
+      await bySlug.initialize();
+      expect(typeof bySlug.id).toBe('string');
+      bySlug.title = 'duckdb slug update';
+      await bySlug.save();
+
+      const savedIdProbe = new Issue2453RevisionRow({ db: duckDb });
+      await savedIdProbe.initialize();
+      savedIdProbe.slug = created.slug;
+      savedIdProbe.context = created.context;
+      expect(typeof (await savedIdProbe.getSavedId())).toBe('string');
+      expect(typeof (await savedIdProbe.getId())).toBe('string');
+
+      const [rawHydrated] = await duckRows.query(
+        'SELECT * FROM issue_2453_revision_rows WHERE id = ?',
+        [String(created.id)],
+      );
+      expect(typeof rawHydrated.id).toBe('string');
+      rawHydrated.title = 'duckdb raw query update';
+      await rawHydrated.save();
+      expect((await duckRows.get(String(created.id)))?.title).toBe(
+        'duckdb raw query update',
+      );
+
+      await duckDb.query('CREATE SEQUENCE issue_2453_read_once START 1');
+      const [commented] = await duckRows.query(
+        `/* caller-authored query */ SELECT *, nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof commented.id).toBe('string');
+      const [{ sequence_value: sequenceValue }] = await duckDb
+        .query(`SELECT currval('issue_2453_read_once') AS sequence_value`)
+        .then((result) => result.rows);
+      expect(
+        Number(
+          sequenceValue && typeof sequenceValue === 'object'
+            ? (sequenceValue as { hugeint?: number }).hugeint
+            : sequenceValue,
+        ),
+      ).toBe(1);
+
+      const [lexical] = await duckRows.query(
+        `SELECT *, 'update issue_2453_revision_rows' AS note,
+                /* delete from issue_2453_revision_rows */
+                nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof lexical.id).toBe('string');
+      const [{ sequence_value: lexicalSequence }] = await duckDb
+        .query(`SELECT currval('issue_2453_read_once') AS sequence_value`)
+        .then((result) => result.rows);
+      expect(
+        Number(
+          lexicalSequence && typeof lexicalSequence === 'object'
+            ? (lexicalSequence as { hugeint?: number }).hugeint
+            : lexicalSequence,
+        ),
+      ).toBe(2);
+
+      const [escapedLiteral] = await duckRows.query(
+        `SELECT *, E'escaped\\' update issue_2453_revision_rows' AS note,
+                nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof escapedLiteral.id).toBe('string');
+
+      const [nestedComment] = await duckRows.query(
+        `SELECT *, /* outer /* delete from issue_2453_revision_rows */ update issue_2453_revision_rows */
+                nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof nestedComment.id).toBe('string');
+      const [{ sequence_value: extendedLexicalSequence }] = await duckDb
+        .query(`SELECT currval('issue_2453_read_once') AS sequence_value`)
+        .then((result) => result.rows);
+      expect(
+        Number(
+          extendedLexicalSequence && typeof extendedLexicalSequence === 'object'
+            ? (extendedLexicalSequence as { hugeint?: number }).hugeint
+            : extendedLexicalSequence,
+        ),
+      ).toBe(4);
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
+  it('hydrates one coherent DuckDB natural-key snapshot after replacement', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    try {
+      const duckRows = (await Issue2453RevisionRows.create({
+        db: duckDb,
+      })) as Issue2453RevisionRows;
+      const original = await duckRows.create({ title: 'old snapshot' });
+      const replacementId = '77777777-7777-4777-8777-777777777777';
+      const rawQuery = duckDb.query.bind(duckDb);
+      let replaced = false;
+      vi.spyOn(duckDb, 'query').mockImplementation(async (sql, ...params) => {
+        if (
+          !replaced &&
+          sql.startsWith('DESCRIBE SELECT * FROM') &&
+          params[0] === original.slug
+        ) {
+          replaced = true;
+          await rawQuery(
+            `UPDATE issue_2453_revision_rows
+             SET id = CAST(? AS UUID), title = ?
+             WHERE id = CAST(? AS UUID)`,
+            replacementId,
+            'new snapshot',
+            String(original.id),
+          );
+        }
+        return await rawQuery(sql, ...params);
+      });
+
+      const loaded = new Issue2453RevisionRow({
+        db: duckDb,
+        slug: original.slug,
+        context: original.context,
+      });
+      await loaded.initialize();
+
+      expect(replaced).toBe(true);
+      expect(loaded.id).toBe(replacementId);
+      expect(loaded.title).toBe('new snapshot');
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
+  it('preserves interceptor operator filters in canonical DuckDB reads', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    const interceptorName = 'issue-2453-duckdb-operator-filter';
+    try {
+      const duckRows = (await Issue2453RevisionRows.create({
+        db: duckDb,
+      })) as Issue2453RevisionRows;
+      const created = await duckRows.create({ title: 'authorized operator' });
+      GlobalInterceptors.register({
+        name: interceptorName,
+        beforeGet(className, filter) {
+          if (
+            className !== 'Issue2453RevisionRow' ||
+            typeof filter !== 'object' ||
+            !filter ||
+            !('id' in filter)
+          ) {
+            return undefined;
+          }
+          return { 'id in': [filter.id] };
+        },
+      });
+
+      const loaded = new Issue2453RevisionRow({
+        db: duckDb,
+        id: String(created.id),
+      });
+      await loaded.initialize();
+
+      expect(loaded.id).toBe(String(created.id));
+      expect(loaded.title).toBe('authorized operator');
+    } finally {
+      GlobalInterceptors.unregister(interceptorName);
+      await duckDb.close?.();
+    }
+  });
+
+  it('uses conditional updates for remote LibSQL revision guards', async () => {
+    const created = await rows.create({ title: 'original' });
+    const first = await rows.get(String(created.id));
+    const stale = await rows.get(String(created.id));
+    if (!first?.updated_at || !stale?.updated_at) {
+      throw new Error('expected two persisted snapshots');
+    }
+    const expectedUpdatedAt = first.updated_at;
+    const originalUrl = db.url;
+    db.url = 'libsql://shared.turso.io';
+    const update = vi.spyOn(db, 'update');
+    const upsert = vi.spyOn(db, 'upsert');
+
+    try {
+      first.title = 'winner';
+      await first.save({ expectedUpdatedAt });
+      stale.title = 'stale overwrite';
+      await expect(stale.save({ expectedUpdatedAt })).rejects.toMatchObject({
+        code: 'RUNTIME_REVISION_CONFLICT',
+      });
+      const claimant = await rows.get(String(created.id));
+      if (!claimant?.updated_at) throw new Error('expected winning revision');
+      claimant.title = 'claim must not persist this';
+      await claimant.claimRevision(claimant.updated_at);
+
+      expect(update).toHaveBeenCalledWith(
+        'issue_2453_revision_rows',
+        {
+          id: created.id,
+          updated_at: expectedUpdatedAt.toISOString(),
+        },
+        expect.objectContaining({ title: 'winner' }),
+      );
+      expect(
+        upsert.mock.calls.some(
+          ([table]) => table === 'issue_2453_revision_rows',
+        ),
+      ).toBe(false);
+      expect((await rows.get(String(created.id)))?.title).toBe('winner');
+    } finally {
+      db.url = originalUrl;
+    }
+  });
+
+  it('advances an ordinary save so a same-millisecond stale writer is rejected', async () => {
+    const created = await rows.create({ title: 'original' });
+    const first = await rows.get(String(created.id));
+    const stale = await rows.get(String(created.id));
+    if (!first || !stale || !first.updated_at) {
+      throw new Error('expected two persisted snapshots');
+    }
+    const expectedUpdatedAt = first.updated_at;
+    const expectedTime = new Date(expectedUpdatedAt).getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(expectedTime);
+
+    first.title = 'first writer';
+    await first.save();
+
+    expect((await rows.get(String(created.id)))?.updated_at?.getTime()).toBe(
+      expectedTime + 1,
+    );
+
+    stale.title = 'second ordinary writer';
+    await expect(stale.save()).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    expect((await rows.get(String(created.id)))?.updated_at?.getTime()).toBe(
+      expectedTime + 1,
+    );
+
+    stale.title = 'stale overwrite';
+    await expect(stale.save({ expectedUpdatedAt })).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    expect((await rows.get(String(created.id)))?.title).toBe('first writer');
+  });
+
+  it('restores the loaded revision after a failed write so the same instance can retry', async () => {
+    const first = await rows.create({ title: 'first' });
+    const second = await rows.create({ title: 'second' });
+    const retrying = await rows.get(String(second.id));
+    if (!first.slug || !retrying?.updated_at) {
+      throw new Error('expected persisted rows');
+    }
+    const loadedRevision = retrying.updated_at.getTime();
+
+    retrying.slug = first.slug;
+    await expect(retrying.save()).rejects.toMatchObject({
+      code: 'VALIDATION_UNIQUE_CONSTRAINT',
+    });
+    expect(retrying.updated_at.getTime()).toBe(loadedRevision);
+
+    retrying.slug = 'retry-after-unique-conflict';
+    retrying.title = 'retried';
+    await expect(retrying.save()).resolves.toBe(retrying);
+    expect((await rows.get(String(second.id)))?.title).toBe('retried');
+  });
+
+  it('restores an existing instance after transaction rollback so it can retry', async () => {
+    const created = await rows.create({ title: 'before transaction' });
+    const retrying = await rows.get(String(created.id));
+    if (!retrying?.updated_at) throw new Error('expected persisted row');
+    const loadedRevision = retrying.updated_at.getTime();
+
+    await expect(
+      retrying.withTransaction(async (bound) => {
+        bound.title = 'rolled back';
+        await bound.save();
+        throw new Error('rollback existing save');
+      }),
+    ).rejects.toThrow('rollback existing save');
+    expect(retrying.updated_at?.getTime()).toBe(loadedRevision);
+    expect((await rows.get(String(created.id)))?.title).toBe(
+      'before transaction',
+    );
+
+    retrying.title = 'retry committed';
+    await expect(retrying.save()).resolves.toBe(retrying);
+    expect((await rows.get(String(created.id)))?.title).toBe('retry committed');
+  });
+
+  it('restores new-instance persistence metadata after transaction rollback', async () => {
+    const retrying = new Issue2453RevisionRow({
+      db,
+      title: 'new transaction row',
+    });
+    await retrying.initialize();
+    const initial = {
+      id: retrying.id,
+      slug: retrying.slug,
+      createdAt: retrying.created_at,
+      updatedAt: retrying.updated_at,
+    };
+
+    await expect(
+      retrying.withTransaction(async (bound) => {
+        await bound.save();
+        throw new Error('rollback inserted row');
+      }),
+    ).rejects.toThrow('rollback inserted row');
+    expect(retrying.isPersisted).toBe(false);
+    expect(retrying.id).toBe(initial.id);
+    expect(retrying.slug).toBe(initial.slug);
+    expect(retrying.created_at).toBe(initial.createdAt);
+    expect(retrying.updated_at).toBe(initial.updatedAt);
+    expect(await rows.list()).toHaveLength(0);
+
+    await expect(retrying.save()).resolves.toBe(retrying);
+    expect(retrying.isPersisted).toBe(true);
+    expect(await rows.list()).toHaveLength(1);
+  });
+
+  it('does not advance unrelated revisions after a future-dated CAS fails', async () => {
+    const staleTarget = await rows.create({ title: 'stale target' });
+    const unrelated = await rows.create({ title: 'unrelated' });
+    const claimant = await rows.get(String(staleTarget.id));
+    const writer = await rows.get(String(unrelated.id));
+    if (!claimant?.updated_at || !writer?.updated_at) {
+      throw new Error('expected persisted rows');
+    }
+    const writerRevision = writer.updated_at.getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(writerRevision);
+
+    await expect(
+      claimant.claimRevision('2999-01-01T00:00:00.000Z'),
+    ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+    writer.title = 'unrelated update';
+    await writer.save();
+    expect(writer.updated_at.getTime()).toBe(writerRevision + 1);
+  });
+
+  it('claims a revision without persisting other in-memory mutations', async () => {
+    const created = await rows.create({ title: 'original' });
+    const claimant = await rows.get(String(created.id));
+    if (!claimant?.updated_at) {
+      throw new Error('expected persisted row');
+    }
+    const expectedUpdatedAt = claimant.updated_at;
+    const expectedTime = new Date(expectedUpdatedAt).getTime();
+    vi.useFakeTimers();
+    vi.setSystemTime(expectedTime);
+    claimant.title = 'must not persist';
+
+    await claimant.claimRevision(expectedUpdatedAt);
+
+    const stored = await rows.get(String(created.id));
+    expect(stored?.title).toBe('original');
+    expect(stored?.updated_at?.getTime()).toBe(expectedTime + 1);
+  });
+
+  it('runs tenant save interception before claiming a revision', async () => {
+    const created = await rows.create({ title: 'original' });
+    const claimant = await rows.get(String(created.id));
+    if (!claimant?.updated_at) {
+      throw new Error('expected persisted row');
+    }
+    const originalRevision = claimant.updated_at.getTime();
+    GlobalInterceptors.register({
+      name: 'issue-2453-tenant-denial',
+      beforeSave() {
+        throw Object.assign(new Error('tenant denied'), {
+          code: 'TENANT_ISOLATION_VIOLATION',
+        });
+      },
+    });
+
+    try {
+      await expect(
+        claimant.claimRevision(claimant.updated_at),
+      ).rejects.toMatchObject({ code: 'TENANT_ISOLATION_VIOLATION' });
+    } finally {
+      GlobalInterceptors.unregister('issue-2453-tenant-denial');
+    }
+
+    const stored = await rows.get(String(created.id));
+    expect(stored?.updated_at?.getTime()).toBe(originalRevision);
+  });
+});

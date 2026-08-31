@@ -117,6 +117,163 @@ export const M = defineMessages({
   'content.content_list.job_failed': 'Failed',
   'content.content_list.job_progress': '{completed} of {total} completed',
   'content.content_list.retry_job': 'Retry job',
+  'content.content_list.check_job': 'Check job',
+  'content.content_list.select_all_matching': 'Select all {count} matching',
+  'content.content_list.bulk_workflows': 'Bulk content workflows',
+  'content.content_list.bulk_workflow': 'Bulk workflow',
+  'content.content_list.category_path': 'Category path',
+  'content.content_list.restore_status': 'Restore status',
+  'content.content_list.body_format': 'Body format',
+  'content.content_list.review_kind': 'Review kind',
+  'content.content_list.default_review_kind': 'Default review kind',
+  'content.content_list.review_policy_key': 'Review policy key',
+  'content.content_list.policy_key_optional': 'Policy key (optional)',
+  'content.content_list.optimization_instructions': 'Optimization instructions',
+  'content.content_list.optimization_instructions_optional':
+    'Optimization instructions (optional)',
+  'content.content_list.job_queued_progress':
+    'Job {id} queued. Progress is available from the job runner.',
+  'content.content_list.workflow_move_to_trash': 'Move to trash',
+  'content.content_list.workflow_mark_draft': 'Mark draft',
+  'content.content_list.workflow_submit_review': 'Submit for review',
+  'content.content_list.workflow_publish': 'Publish',
+  'content.content_list.workflow_archive': 'Archive',
+  'content.content_list.workflow_restore': 'Restore',
+  'content.content_list.workflow_automated_review': 'Automated review',
+  'content.content_list.workflow_format_body': 'Format body',
+  'content.content_list.workflow_categorize': 'Categorize',
+  'content.content_list.workflow_optimize': 'Optimize / complete',
+  'content.content_list.workflow_result_background':
+    '{accepted} queued for background processing; results pending',
+  'content.content_list.workflow_result_summary':
+    '{accepted} accepted, {skipped} skipped, {failed} failed',
+  'content.content_list.workflow_incomplete_outcomes':
+    'The workflow returned incomplete row outcomes; the selection was preserved.',
+  'content.content_list.workflow_preview_scope': 'Resolved scope: {scope}.',
+  'content.content_list.workflow_preview_count_one':
+    '{count} matching content item.',
+  'content.content_list.workflow_preview_count_many':
+    '{count} matching content items.',
+  'content.content_list.workflow_preview_examples': 'Examples: {labels}.',
+  'content.content_list.workflow_preview_ineligible_count':
+    '{count} currently ineligible.',
+  'content.content_list.workflow_preview_ineligible': 'Ineligible: {items}.',
+  'content.content_list.workflow_consequence_trash':
+    'Content leaves active views and becomes restorable from trash.',
+  'content.content_list.workflow_consequence_unpublished':
+    'Published content is no longer public.',
+  'content.content_list.workflow_consequence_review_queue':
+    'Content enters the review queue.',
+  'content.content_list.workflow_consequence_published':
+    'Content becomes public and may create a publication snapshot.',
+  'content.content_list.workflow_consequence_leave_trash':
+    'Content leaves trash.',
+  'content.content_list.workflow_consequence_restore_published':
+    'Publishing makes content public.',
+  'content.content_list.workflow_consequence_review_result':
+    'Creates a review result and may create a review version.',
+  'content.content_list.workflow_consequence_body_change':
+    'The persisted content body may change.',
+  'content.content_list.workflow_consequence_category_change':
+    'The content category changes.',
+  'content.content_list.workflow_consequence_fields_change':
+    'Content fields may be revised or completed.',
+  'content.content_list.workflow_consequence_unknown':
+    'Review the workflow details before continuing.',
+  'content.content_list.workflow_reason_not_deleted': 'not deleted',
+  'content.content_list.workflow_reason_publish_readiness_failed':
+    'publication requirements were not met',
+  'content.content_list.workflow_reason_deleted': 'deleted',
+  'content.content_list.workflow_reason_already_draft': 'already a draft',
+  'content.content_list.workflow_reason_requires_draft': 'requires a draft',
+  'content.content_list.workflow_reason_invalid_status': 'invalid status',
+  'content.content_list.workflow_reason_already_archived': 'already archived',
+  'content.content_list.workflow_reason_governance_unavailable':
+    'content governance is unavailable',
+  'content.content_list.workflow_reason_review_policy_unavailable':
+    'review policy is unavailable',
+  'content.content_list.workflow_reason_review_kind_mismatch':
+    'review kind does not match the policy',
+  'content.content_list.workflow_reason_handler_unavailable':
+    'the workflow handler is unavailable',
+  'content.content_list.workflow_reason_requires_draft_or_review':
+    'requires draft or review status',
+  'content.content_list.workflow_reason_not_found_or_denied':
+    'not found or access denied',
+  'content.content_list.workflow_reason_row_revision_drifted':
+    'content changed after selection',
+  'content.content_list.workflow_reason_permission_denied': 'access denied',
+  'content.content_list.workflow_reason_not_found': 'not found',
+  'content.content_list.workflow_reason_stale_query_fingerprint':
+    'the selected query is no longer current',
+  'content.content_list.workflow_reason_matching_count_drifted':
+    'the number of matching items changed',
+  'content.content_list.workflow_reason_limit_exceeded':
+    'the selection exceeds the workflow limit',
+  'content.content_list.workflow_reason_invalid_request': 'invalid request',
+  'content.content_list.workflow_reason_invalid_payload': 'invalid input',
+  'content.content_list.workflow_reason_confirmation_required':
+    'confirmation is required',
+  'content.content_list.workflow_reason_stale_preview':
+    'the preview is no longer current',
+  'content.content_list.workflow_reason_denied': 'access denied',
+  'content.content_list.workflow_reason_unknown_permission':
+    'the required permission is unavailable',
+  'content.content_list.workflow_reason_execution_failed':
+    'workflow execution failed',
+  'content.content_list.workflow_reason_idempotency_conflict':
+    'this request conflicts with an earlier attempt',
+  'content.content_list.workflow_reason_unknown': 'not eligible',
+  'content.content_list.workflow_transport_network_failure':
+    'The content workflow request could not be completed.',
+  'content.content_list.workflow_transport_invalid_json':
+    'The content workflow returned an unreadable response.',
+  'content.content_list.workflow_transport_http_error':
+    'The content workflow request failed (HTTP {status}).',
+  'content.content_list.workflow_transport_invalid_result':
+    'The content workflow returned an invalid result.',
+  'content.content_list.workflow_transport_invalid_job_status':
+    'The content workflow returned an invalid job status.',
+  'content.content_list.workflow_transport_invalid_job_result':
+    'The content workflow returned an invalid job result.',
+  'content.content_list.workflow_preview_mismatch':
+    'The workflow response did not match the preview request.',
+  'content.content_list.workflow_preview_failed': 'Preview failed.',
+  'content.content_list.workflow_selection_changed':
+    'The selection or query changed. Preview the workflow again.',
+  'content.content_list.workflow_apply_mismatch':
+    'The workflow response did not match the apply request.',
+  'content.content_list.workflow_changed_applying':
+    'The selection or workflow changed while applying; its result was not applied.',
+  'content.content_list.workflow_failed': 'Workflow failed.',
+  'content.content_list.workflow_changed_checking_job':
+    'The selection or workflow changed while checking the job; its result was not applied.',
+  'content.content_list.workflow_job_still': 'Job {id} is still {status}.',
+  'content.content_list.workflow_job_missing_result':
+    'Job {id} completed without an action result; check the job runner before retrying.',
+  'content.content_list.workflow_job_wrong_workflow':
+    'Job {id} returned a result for another workflow.',
+  'content.content_list.workflow_job_failed': 'Job {id} failed.',
+  'content.content_list.workflow_job_status': 'Job {id} {status}.',
+  'content.content_list.workflow_scope_explicit_ids': 'explicit-ids',
+  'content.content_list.workflow_scope_current_page': 'current-page',
+  'content.content_list.workflow_scope_all_matching': 'all-matching',
+  'content.content_list.workflow_status_cancelled': 'Cancelled',
+  'content.content_list.workflow_draft': 'Draft',
+  'content.content_list.workflow_review': 'Review',
+  'content.content_list.workflow_published': 'Published',
+  'content.content_list.workflow_markdown': 'Markdown',
+  'content.content_list.workflow_html': 'HTML',
+  'content.content_list.workflow_facts': 'Facts',
+  'content.content_list.workflow_safety': 'Safety',
+  'content.content_list.workflow_custom': 'Custom',
+  'content.content_list.workflow_working': 'Working…',
+  'content.content_list.workflow_job_queued': 'Job queued',
+  'content.content_list.workflow_preview': 'Preview workflow',
+  'content.content_list.workflow_confirm': 'Confirm {workflow}',
+  'content.content_list.workflow_applying': 'Applying…',
+  'content.content_list.workflow_apply': 'Apply workflow',
+  'content.content_list.workflow_noun': 'workflow',
   'content.content_list.pagination': 'Content pages',
   'content.content_list.error_title': 'Contents could not be loaded',
   'content.content_list.retry': 'Retry',

@@ -275,6 +275,187 @@ async function prepareGovernanceSchemas(db: DatabaseInterface) {
 }
 
 describe('Content governance', () => {
+  it('writes no review artifacts when content changes during the AI review', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
+      configureContentGovernance({
+        assignments: [{ contentType: 'document', enabled: true }],
+      });
+      let contentId = '';
+      const content = new Content({
+        name: 'concurrent-review',
+        title: 'Original title',
+        body: 'Original body',
+        type: 'document',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn(async () => {
+            await db.update(
+              'contents',
+              { id: contentId },
+              {
+                title: 'Concurrent title',
+                updated_at: '2026-08-27T23:00:00.000Z',
+              },
+            );
+            return JSON.stringify({
+              status: 'passed',
+              summary: 'Stale review',
+              findings: [],
+            });
+          }),
+        },
+      });
+      await content.initialize();
+      await content.save();
+      contentId = String(content.id);
+      const expectedUpdatedAt = content.updated_at;
+
+      await expect(
+        content.runReview({
+          kind: 'custom',
+          createVersion: false,
+          expectedUpdatedAt: expectedUpdatedAt ?? undefined,
+        }),
+      ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+
+      const reviews = await db.list('content_reviews', {});
+      expect(reviews).toHaveLength(0);
+      const stored = await db.get('contents', { id: contentId });
+      expect((stored as Record<string, unknown>).title).toBe(
+        'Concurrent title',
+      );
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('rolls back the review version and revision claim when review creation fails', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      configureContentGovernance({
+        assignments: [{ contentType: 'document', enabled: true }],
+      });
+      const content = new Content({
+        name: 'atomic-review-artifacts',
+        title: 'Atomic review artifacts',
+        body: 'Original body',
+        type: 'document',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              status: 'passed',
+              summary: 'Review should roll back',
+              findings: [],
+            }),
+          ),
+        },
+      });
+      await content.initialize();
+      await content.save();
+      const contentId = String(content.id);
+      const expectedUpdatedAt = content.updated_at;
+      const storedBefore = await db.get('contents', { id: contentId });
+
+      await db.query(`
+        CREATE TRIGGER fail_content_review_insert
+        BEFORE INSERT ON content_reviews
+        BEGIN
+          SELECT RAISE(ABORT, 'forced review insert failure');
+        END
+      `);
+
+      await expect(
+        content.runReview({
+          kind: 'custom',
+          expectedUpdatedAt: expectedUpdatedAt ?? undefined,
+        }),
+      ).rejects.toThrow();
+
+      expect(await db.list('content_versions', {})).toHaveLength(0);
+      expect(await db.list('content_reviews', {})).toHaveLength(0);
+      const storedAfter = await db.get('contents', { id: contentId });
+      expect((storedAfter as Record<string, unknown>).updated_at).toEqual(
+        (storedBefore as Record<string, unknown>).updated_at,
+      );
+      expect(content.updated_at).toEqual(expectedUpdatedAt);
+
+      content.title = 'Retry after rolled-back review';
+      await expect(content.save()).resolves.toBe(content);
+      expect((await db.get('contents', { id: contentId }))?.title).toBe(
+        'Retry after rolled-back review',
+      );
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
+  it('claims a published row revision without re-running publish readiness', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
+      configureContentGovernance({
+        assignments: [{ contentType: 'document', enabled: true }],
+      });
+      const content = new Content({
+        name: 'published-review-replacement',
+        title: 'Published review replacement',
+        body: 'Published body',
+        type: 'document',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              status: 'passed',
+              summary: 'Replacement review',
+              findings: [],
+            }),
+          ),
+        },
+      });
+      await content.initialize();
+      await content.save();
+      const expectedUpdatedAt = content.updated_at;
+      content.status = 'published';
+      const save = vi
+        .spyOn(content, 'save')
+        .mockRejectedValue(new Error('publish readiness is stale'));
+
+      const review = await content.runReview({
+        kind: 'custom',
+        createVersion: false,
+        expectedUpdatedAt: expectedUpdatedAt ?? undefined,
+      });
+
+      expect(review.status).toBe('passed');
+      expect(save).not.toHaveBeenCalled();
+      expect(await db.list('content_reviews', {})).toHaveLength(1);
+    } finally {
+      if (typeof db.close === 'function') await db.close();
+    }
+  });
+
   it('keeps plain Content publish/save compatible without governance tables', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',

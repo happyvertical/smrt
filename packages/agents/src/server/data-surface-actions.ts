@@ -143,6 +143,7 @@ export interface DataSurfacePreviewTokenRecord {
   tenantId: string | null;
   onBehalfOfUserId: string | null;
   actsAsProfileId: string | null;
+  agentClass: string | null;
   identityKey: string;
   actionId: string;
   actionFingerprint: string;
@@ -294,8 +295,31 @@ export interface DataSurfaceActionAdapterOptions {
   now?: () => number;
   createToken?: () => string;
   runAsPrincipal?: typeof executeAsPrincipal;
+  /**
+   * Re-resolve the complete current binding immediately before deferred work.
+   * Background execution fails closed when this seam is absent or returns a
+   * binding for a different principal.
+   */
+  resolveDeferredPrincipal?(
+    reference: Readonly<{
+      runAsUserId: string;
+      tenantId: string | null;
+      actsAsProfileId: string | null;
+      onBehalfOfUserId: string | null;
+      agentClass?: string;
+    }>,
+  ): ExecuteAsPrincipalOptions | Promise<ExecuteAsPrincipalOptions>;
   idempotencyPollIntervalMs?: number;
   idempotencyWaitTimeoutMs?: number;
+  /** Domain-specific request input that must participate in confirmation/idempotency. */
+  requestFingerprintExtension?(
+    request: DataSurfaceServerActionRequest,
+  ): DataSurfaceJsonValue | undefined;
+  /** Maps terminal domain failures; return undefined to preserve queue retries. */
+  mapError?(
+    error: unknown,
+    request: DataSurfaceServerActionRequest,
+  ): string | undefined;
 }
 
 export interface DataSurfaceActionAdapter {
@@ -339,6 +363,13 @@ function isBoundedJsonValue(
       !FORBIDDEN_JSON_KEYS.has(key) &&
       isBoundedJsonValue(item, depth + 1, seen),
   );
+}
+
+/** Validates untrusted extension values before they enter canonical hashing. */
+export function isBoundedDataSurfaceJsonValue(
+  value: unknown,
+): value is DataSurfaceJsonValue {
+  return isBoundedJsonValue(value);
 }
 
 function validIdentifier(value: unknown): value is string {
@@ -428,14 +459,60 @@ function canonicalSelection(
   return { scope: selection.scope, rowIds: canonicalRowIds(selection.rowIds) };
 }
 
-function requestFingerprint(request: DataSurfaceServerActionRequest): string {
+function requestFingerprint(
+  request: DataSurfaceServerActionRequest,
+  extension?: DataSurfaceJsonValue,
+): string {
   return fingerprint({
     identity: canonicalIdentity(request.identity),
     actionId: request.actionId,
     selection: canonicalSelection(request.selection),
     payload: request.payload,
     expectedRevision: request.expectedRevision,
+    ...(extension === undefined ? {} : { extension }),
   });
+}
+
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreeze(nested, seen);
+  Object.freeze(value);
+  return value;
+}
+
+function snapshotRequest(
+  request: DataSurfaceServerActionRequest,
+): DataSurfaceServerActionRequest {
+  return deepFreeze(structuredClone(request));
+}
+
+function snapshotActionContext(
+  context: DataSurfaceActionContext,
+): DataSurfaceActionContext {
+  const principal = {
+    ...context.principal.principal,
+    ...(context.principal.principal.allowedTools
+      ? { allowedTools: [...context.principal.principal.allowedTools] }
+      : {}),
+  };
+  if (principal.allowedTools) Object.freeze(principal.allowedTools);
+  Object.freeze(principal);
+  const permissions = context.principal.permissions
+    ? [...context.principal.permissions]
+    : undefined;
+  if (permissions) Object.freeze(permissions);
+  const auditMetadata = context.principal.auditMetadata
+    ? deepFreeze(structuredClone(context.principal.auditMetadata))
+    : undefined;
+  const principalOptions: ExecuteAsPrincipalOptions = {
+    ...context.principal,
+    principal,
+    ...(permissions ? { permissions } : {}),
+    ...(auditMetadata ? { auditMetadata } : {}),
+  };
+  Object.freeze(principalOptions);
+  return Object.freeze({ principal: principalOptions });
 }
 
 function actionFingerprint(action: DataSurfaceServerActionDefinition): string {
@@ -469,6 +546,16 @@ function result(
     ...(details ? { details } : {}),
     ...(confirmationToken ? { confirmationToken } : {}),
   };
+}
+
+function replayResult(
+  request: DataSurfaceServerActionRequest,
+  stored: DataSurfaceActionResult,
+): DataSurfaceActionResult {
+  // Idempotency keys identify one logical execution, but each transport retry
+  // has its own correlation id. Preserve the stored outcome while binding the
+  // replay envelope to the request that is receiving it.
+  return { ...stored, requestId: request.requestId };
 }
 
 function outcomesDetails(
@@ -542,6 +629,8 @@ export function createDataSurfaceActionAdapter(
     0,
     options.idempotencyWaitTimeoutMs ?? 5_000,
   );
+  const fingerprintRequest = (request: DataSurfaceServerActionRequest) =>
+    requestFingerprint(request, options.requestFingerprintExtension?.(request));
 
   async function resolveInvocation(
     request: DataSurfaceServerActionRequest,
@@ -584,7 +673,10 @@ export function createDataSurfaceActionAdapter(
         false,
         payloadValidation.reason ?? 'invalid_payload',
       );
-    if (!action.descriptor.selectionScopes.includes(request.selection.scope)) {
+    if (
+      !declared.selectionScopes.includes(request.selection.scope) ||
+      !action.descriptor.selectionScopes.includes(request.selection.scope)
+    ) {
       return result(request, false, 'selection_not_supported');
     }
     const base = {
@@ -617,12 +709,13 @@ export function createDataSurfaceActionAdapter(
   ): Promise<DataSurfaceActionResult> {
     const invalid = validateRequest(request, 'preview');
     if (invalid) return result(request, false, invalid);
+    const boundContext = snapshotActionContext(context);
     return runAsPrincipal(
       {
-        ...context.principal,
+        ...boundContext.principal,
         action: 'data_surface.action.preview',
         auditMetadata: {
-          ...context.principal.auditMetadata,
+          ...boundContext.principal.auditMetadata,
           surfaceId: request.identity.surfaceId,
           actionId: request.actionId,
           requestId: request.requestId,
@@ -650,14 +743,16 @@ export function createDataSurfaceActionAdapter(
         const selectionFingerprint = fingerprint(
           canonicalSelection(request.selection),
         );
-        const requestFingerprintValue = requestFingerprint(request);
+        const requestFingerprintValue = fingerprintRequest(request);
         const expiresAt = now() + tokenTtlMs;
         await state.putToken(confirmationToken, {
           expiresAt,
-          actorUserId: context.principal.principal.runAsUserId,
-          tenantId: context.principal.principal.tenantId,
-          onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
-          actsAsProfileId: context.principal.principal.actsAsProfileId ?? null,
+          actorUserId: boundContext.principal.principal.runAsUserId,
+          tenantId: boundContext.principal.principal.tenantId,
+          onBehalfOfUserId: boundContext.principal.onBehalfOfUserId ?? null,
+          actsAsProfileId:
+            boundContext.principal.principal.actsAsProfileId ?? null,
+          agentClass: boundContext.principal.agentClass ?? null,
           identityKey: identityKey(request.identity),
           actionId: request.actionId,
           actionFingerprint: actionFingerprint(invocation.action),
@@ -703,11 +798,11 @@ export function createDataSurfaceActionAdapter(
         }
         await invocation.action.apply(invocation, rowId);
         outcomes.push({ rowId, status: 'accepted' });
-      } catch {
+      } catch (error) {
         outcomes.push({
           rowId,
           status: 'failed',
-          reason: 'execution_failed',
+          reason: options.mapError?.(error, request) ?? 'execution_failed',
         });
       }
     }
@@ -718,24 +813,27 @@ export function createDataSurfaceActionAdapter(
     request: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
     token: DataSurfacePreviewTokenRecord | undefined,
+    reference: Readonly<{
+      runAsUserId: string;
+      tenantId: string | null;
+      actsAsProfileId: string | null;
+      onBehalfOfUserId: string | null;
+      agentClass?: string;
+    }>,
   ): Promise<DataSurfaceActionResult> {
     const ownerToken = randomBytes(16).toString('base64url');
     const executionFingerprint = fingerprint({
       kind: 'background-execution',
-      request: token?.requestFingerprint ?? requestFingerprint(request),
+      request: token?.requestFingerprint ?? fingerprintRequest(request),
       action: token?.actionFingerprint ?? request.actionId,
     });
     const executionScope = fingerprint({
       kind: 'background-execution',
-      actorUserId:
-        token?.actorUserId ?? context.principal.principal.runAsUserId,
-      tenantId: token?.tenantId ?? context.principal.principal.tenantId,
-      onBehalfOfUserId:
-        token?.onBehalfOfUserId ?? context.principal.onBehalfOfUserId ?? null,
-      actsAsProfileId:
-        token?.actsAsProfileId ??
-        context.principal.principal.actsAsProfileId ??
-        null,
+      actorUserId: reference.runAsUserId,
+      tenantId: reference.tenantId,
+      onBehalfOfUserId: reference.onBehalfOfUserId,
+      actsAsProfileId: reference.actsAsProfileId,
+      agentClass: reference.agentClass ?? null,
       identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
       idempotencyKey: request.idempotencyKey,
@@ -752,14 +850,46 @@ export function createDataSurfaceActionAdapter(
       });
       if (winner.requestFingerprint !== executionFingerprint)
         return result(request, false, 'idempotency_conflict');
-      if (winner.status === 'completed') return winner.result;
+      if (winner.status === 'completed')
+        return replayResult(request, winner.result);
       if (winner.ownerToken === ownerToken) {
         let executed: DataSurfaceActionResult;
         try {
-          executed = await authorizedApply(request, context, token, false);
+          // A queued job may run long after the request that created it. The
+          // complete persona binding (including the TenantAgent-capped tool
+          // allow-list) must therefore be resolved again at execution time.
+          const refreshed = await options.resolveDeferredPrincipal?.(reference);
+          if (
+            !refreshed ||
+            refreshed.principal.runAsUserId !== reference.runAsUserId ||
+            refreshed.principal.tenantId !== reference.tenantId ||
+            (refreshed.principal.actsAsProfileId ?? null) !==
+              reference.actsAsProfileId ||
+            (refreshed.onBehalfOfUserId ?? null) !==
+              reference.onBehalfOfUserId ||
+            (refreshed.agentClass ?? null) !== (reference.agentClass ?? null) ||
+            !Array.isArray(refreshed.principal.allowedTools)
+          ) {
+            throw new Error(
+              'Deferred data-surface action principal binding could not be resolved safely',
+            );
+          }
+          // Permission snapshots are never carried across the queue boundary;
+          // executeAsPrincipal resolves current RBAC/membership immediately.
+          const { permissions: _permissions, ...livePrincipal } = refreshed;
+          executed = await authorizedApply(
+            request,
+            { ...context, principal: livePrincipal },
+            token,
+            false,
+          );
         } catch (error) {
-          await state.releaseIdempotency(executionScope, ownerToken);
-          throw error;
+          const reason = options.mapError?.(error, request);
+          if (!reason) {
+            await state.releaseIdempotency(executionScope, ownerToken);
+            throw error;
+          }
+          executed = result(request, false, reason);
         }
         if (
           !(await state.completeIdempotency(
@@ -777,7 +907,8 @@ export function createDataSurfaceActionAdapter(
           setTimeout(resolve, idempotencyPollIntervalMs),
         );
         const current = await state.getIdempotency(executionScope);
-        if (current?.status === 'completed') return current.result;
+        if (current?.status === 'completed')
+          return replayResult(request, current.result);
       }
     }
     return result(request, false, 'idempotency_in_progress');
@@ -791,6 +922,17 @@ export function createDataSurfaceActionAdapter(
   ): Promise<DataSurfaceActionResult> {
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
+    // Capture the immutable binding before any asynchronous authorization.
+    // The host may reuse or mutate its request context after enqueue returns.
+    const deferredPrincipalReference = Object.freeze({
+      runAsUserId: context.principal.principal.runAsUserId,
+      tenantId: context.principal.principal.tenantId,
+      actsAsProfileId: context.principal.principal.actsAsProfileId ?? null,
+      onBehalfOfUserId: context.principal.onBehalfOfUserId ?? null,
+      ...(context.principal.agentClass
+        ? { agentClass: context.principal.agentClass }
+        : {}),
+    });
     return runAsPrincipal(
       {
         ...context.principal,
@@ -808,6 +950,7 @@ export function createDataSurfaceActionAdapter(
         if ('ok' in invocation) return invocation;
         if (token) {
           if (
+            fingerprintRequest(request) !== token.requestFingerprint ||
             invocation.selection.revision !== token.revision ||
             invocation.selection.revision !== request.expectedRevision ||
             invocation.selection.queryFingerprint !== token.queryFingerprint ||
@@ -825,7 +968,7 @@ export function createDataSurfaceActionAdapter(
           return result(request, false, 'stale_revision');
         }
         if (invocation.action.execution === 'background' && allowBackground) {
-          if (!options.backgroundQueue) {
+          if (!options.backgroundQueue || !options.resolveDeferredPrincipal) {
             return result(request, false, 'background_unavailable');
           }
           const queued = await options.backgroundQueue.enqueue({
@@ -833,15 +976,25 @@ export function createDataSurfaceActionAdapter(
             identity: request.identity,
             actionId: request.actionId,
             rowIds: invocation.selection.rowIds,
-            run: () => executeBackgroundOnce(request, context, token),
+            run: () =>
+              executeBackgroundOnce(
+                request,
+                context,
+                token,
+                deferredPrincipalReference,
+              ),
           });
           return result(request, true, undefined, {
             accepted: invocation.selection.rowIds.length,
             skipped: 0,
             failed: 0,
+            ...(queued.details ?? {}),
             background: true,
             jobId: queued.jobId,
-            ...(queued.details ?? {}),
+            // A replayed apply has a new transport request id, while the
+            // already-queued job still returns the original execution result.
+            // Preserve that correlation id across the replay envelope.
+            jobRequestId: request.requestId,
           });
         }
         return executeForeground(request, invocation);
@@ -850,24 +1003,29 @@ export function createDataSurfaceActionAdapter(
   }
 
   async function apply(
-    request: DataSurfaceServerActionRequest,
+    input: DataSurfaceServerActionRequest,
     context: DataSurfaceActionContext,
   ): Promise<DataSurfaceActionResult> {
-    const invalid = validateRequest(request, 'apply');
-    if (invalid) return result(request, false, invalid);
+    const invalid = validateRequest(input, 'apply');
+    if (invalid) return result(input, false, invalid);
+    const request = snapshotRequest(input);
+    const boundContext = snapshotActionContext(context);
     const confirmationToken = request.confirmationToken;
     const idempotencyKey = request.idempotencyKey;
     if (!idempotencyKey) return result(request, false, 'invalid_request');
-    const actorUserId = context.principal.principal.runAsUserId;
-    const tenantId = context.principal.principal.tenantId;
-    const onBehalfOfUserId = context.principal.onBehalfOfUserId ?? null;
-    const actsAsProfileId = context.principal.principal.actsAsProfileId ?? null;
-    const requestFingerprintValue = requestFingerprint(request);
+    const actorUserId = boundContext.principal.principal.runAsUserId;
+    const tenantId = boundContext.principal.principal.tenantId;
+    const onBehalfOfUserId = boundContext.principal.onBehalfOfUserId ?? null;
+    const actsAsProfileId =
+      boundContext.principal.principal.actsAsProfileId ?? null;
+    const agentClass = boundContext.principal.agentClass ?? null;
+    const requestFingerprintValue = fingerprintRequest(request);
     const idempotencyScope = fingerprint({
       actorUserId,
       tenantId,
       onBehalfOfUserId,
       actsAsProfileId,
+      agentClass,
       identity: canonicalIdentity(request.identity),
       actionId: request.actionId,
       idempotencyKey,
@@ -877,7 +1035,8 @@ export function createDataSurfaceActionAdapter(
       return result(request, false, 'idempotency_conflict');
     // A completed durable result is safe to replay from its actor/tenant-bound
     // idempotency scope even when the one-time confirmation has expired.
-    if (prior?.status === 'completed') return prior.result;
+    if (prior?.status === 'completed')
+      return replayResult(request, prior.result);
 
     let token: DataSurfacePreviewTokenRecord | undefined;
     if (confirmationToken) {
@@ -890,6 +1049,7 @@ export function createDataSurfaceActionAdapter(
         token.tenantId !== tenantId ||
         token.onBehalfOfUserId !== onBehalfOfUserId ||
         token.actsAsProfileId !== actsAsProfileId ||
+        token.agentClass !== agentClass ||
         token.identityKey !== identityKey(request.identity) ||
         token.actionId !== request.actionId ||
         token.requestFingerprint !== requestFingerprintValue
@@ -916,11 +1076,12 @@ export function createDataSurfaceActionAdapter(
       });
       if (winner.requestFingerprint !== requestFingerprintValue)
         return result(request, false, 'idempotency_conflict');
-      if (winner.status === 'completed') return winner.result;
+      if (winner.status === 'completed')
+        return replayResult(request, winner.result);
       if (winner.ownerToken === ownerToken) {
         let applied: DataSurfaceActionResult;
         try {
-          applied = await authorizedApply(request, context, token, true);
+          applied = await authorizedApply(request, boundContext, token, true);
         } catch (error) {
           await state.releaseIdempotency(idempotencyScope, ownerToken);
           throw error;
@@ -950,7 +1111,8 @@ export function createDataSurfaceActionAdapter(
           setTimeout(resolve, idempotencyPollIntervalMs),
         );
         const current = await state.getIdempotency(idempotencyScope);
-        if (current?.status === 'completed') return current.result;
+        if (current?.status === 'completed')
+          return replayResult(request, current.result);
       }
     }
     return result(request, false, 'idempotency_in_progress');

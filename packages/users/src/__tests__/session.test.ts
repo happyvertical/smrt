@@ -10,7 +10,8 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { getDatabase, syncSchema } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroupCollection } from '../collections/GroupCollection.js';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
 import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
@@ -28,6 +29,7 @@ import {
   generateSessionId,
   Session,
 } from '../models/Session.js';
+import { PermissionResolver } from '../services/PermissionResolver.js';
 import { SessionService } from '../services/SessionService.js';
 import { SessionStatus } from '../types/index.js';
 
@@ -186,6 +188,109 @@ describe('SessionCollection', () => {
     expect(found?.id).toBe(session.id);
   });
 
+  it('persists concurrent activity for the same valid session', async () => {
+    const user = await users.create({ email: 'parallel@example.com' });
+    await user.save();
+    const created = await sessions.createSession({ userId: String(user.id) });
+    const first = await sessions.get(String(created.id));
+    const second = await sessions.get(String(created.id));
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    if (!first || !second)
+      throw new Error('Expected persisted session instances');
+
+    await expect(
+      Promise.all([first.recordActivity(), second.recordActivity()]),
+    ).resolves.toEqual([true, true]);
+
+    expect(await sessions.findValidSession(String(created.id))).not.toBeNull();
+  });
+
+  it('persists concurrent activity with native DuckDB UUID columns', async () => {
+    const duckDb = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    try {
+      await syncSchema({
+        db: duckDb,
+        schema: `
+          CREATE TABLE sessions (
+            id UUID PRIMARY KEY,
+            slug TEXT NOT NULL,
+            context TEXT NOT NULL DEFAULT '',
+            created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+            updated_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+            user_id UUID NOT NULL,
+            tenant_id UUID,
+            status TEXT,
+            expires_at TIMESTAMP,
+            user_agent TEXT DEFAULT '',
+            ip_address TEXT DEFAULT '',
+            last_accessed_at TIMESTAMP,
+            data JSON DEFAULT '{}'
+          );
+          CREATE UNIQUE INDEX sessions_slug_context_idx
+            ON sessions (slug, context);
+        `,
+      });
+      const duckSessions = await SessionCollection.create({ db: duckDb });
+      const created = await duckSessions.createSession({
+        userId: crypto.randomUUID(),
+      });
+      const first = await duckSessions.get(String(created.id));
+      const second = await duckSessions.get(String(created.id));
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      if (!first || !second)
+        throw new Error('Expected persisted DuckDB session instances');
+
+      await expect(
+        Promise.all([first.recordActivity(), second.recordActivity()]),
+      ).resolves.toEqual([true, true]);
+
+      expect(
+        await duckSessions.findValidSession(String(created.id)),
+      ).not.toBeNull();
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
+  it('keeps valid authentication available after activity conflicts exhaust', async () => {
+    const user = await users.create({ email: 'busy-session@example.com' });
+    await user.save();
+    const created = await sessions.createSession({ userId: String(user.id) });
+    const contended = await sessions.get(String(created.id));
+    expect(contended).not.toBeNull();
+    if (!contended) throw new Error('Expected persisted session');
+    const conflict = Object.assign(new Error('busy'), {
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    const save = vi.spyOn(contended, 'save').mockRejectedValue(conflict);
+
+    await expect(contended.recordActivity()).resolves.toBe(true);
+    expect(save).toHaveBeenCalledTimes(4);
+  });
+
+  it('fails closed when a conflicting activity reload finds revocation', async () => {
+    const user = await users.create({ email: 'revoked-race@example.com' });
+    await user.save();
+    const created = await sessions.createSession({ userId: String(user.id) });
+    const stale = await sessions.get(String(created.id));
+    expect(stale).not.toBeNull();
+    if (!stale) throw new Error('Expected persisted session');
+    await sessions.db.update(
+      'sessions',
+      { id: created.id },
+      { status: SessionStatus.REVOKED },
+    );
+    const conflict = Object.assign(new Error('revoked concurrently'), {
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    const save = vi.spyOn(stale, 'save').mockRejectedValue(conflict);
+
+    await expect(stale.recordActivity()).resolves.toBe(false);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
   it('should return null for invalid session', async () => {
     const notFound = await sessions.findValidSession('non-existent-id');
     expect(notFound).toBeNull();
@@ -237,6 +342,35 @@ describe('SessionCollection', () => {
 
     const found = await sessions.findValidSession(session.id!);
     expect(found).toBeNull();
+  });
+
+  it('retries revocation when activity wins the first revision race', async () => {
+    const user = await users.create({ email: 'revoke-race@example.com' });
+    await user.save();
+    const session = await sessions.createSession({ userId: user.id! });
+    const originalSave = Session.prototype.save;
+    let raced = false;
+    const saveSpy = vi
+      .spyOn(Session.prototype, 'save')
+      .mockImplementation(async function (...args) {
+        if (
+          !raced &&
+          this.id === session.id &&
+          this.status === SessionStatus.REVOKED
+        ) {
+          raced = true;
+          const concurrent = await sessions.get(session.id!);
+          if (!concurrent) throw new Error('Missing concurrent session');
+          concurrent.touch();
+          await originalSave.apply(concurrent, args);
+        }
+        return originalSave.apply(this, args);
+      });
+
+    await expect(sessions.revokeSession(session.id!)).resolves.toBe(true);
+    saveSpy.mockRestore();
+    expect(raced).toBe(true);
+    expect(await sessions.findValidSession(session.id!)).toBeNull();
   });
 
   it('should revoke all user sessions', async () => {
@@ -461,6 +595,61 @@ describe('SessionService', () => {
     expect(context).toBeDefined();
     expect(context?.tenantId).toBe(tenant.id);
     expect(context?.permissions).toContain('articles.create');
+  });
+
+  it('rebuilds authorization context after concurrent tenant reassignment', async () => {
+    const user = await users.create({ email: 'tenant-race@example.com' });
+    await user.save();
+    const tenantA = await tenants.create({ name: 'Tenant A' });
+    await tenantA.save();
+    const tenantB = await tenants.create({ name: 'Tenant B' });
+    await tenantB.save();
+    const role = await roles.create({ name: 'Tenant A editor' });
+    await role.save();
+    const permission = await permissions.create({
+      slug: 'articles.create',
+      name: 'Create Articles',
+    });
+    await permission.save();
+    await rolePermissions.addPermission(String(role.id), String(permission.id));
+    const membership = await memberships.create({
+      userId: String(user.id),
+      tenantId: String(tenantA.id),
+      roleId: String(role.id),
+    });
+    await membership.save();
+
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+    const sessionService = await SessionService.create(options);
+    const sessionStore = await SessionCollection.create(options);
+    const sessionId = await sessionService.createSession(
+      String(user.id),
+      String(tenantA.id),
+    );
+    const originalResolve = PermissionResolver.prototype.resolvePermissions;
+    const resolve = vi
+      .spyOn(PermissionResolver.prototype, 'resolvePermissions')
+      .mockImplementationOnce(async function (
+        this: PermissionResolver,
+        resolvedUserId,
+        resolvedTenantId,
+        resolveOptions,
+      ) {
+        await sessionStore.setSessionTenant(sessionId, String(tenantB.id));
+        return originalResolve.call(
+          this,
+          resolvedUserId,
+          resolvedTenantId,
+          resolveOptions,
+        );
+      });
+
+    const context = await sessionService.loadSessionContext(sessionId);
+
+    expect(resolve).toHaveBeenCalledTimes(2);
+    expect(context?.tenantId).toBe(tenantB.id);
+    expect(context?.permissions).not.toContain('articles.create');
+    expect(context?.membership).toBeNull();
   });
 
   it('should include inherited tenant permissions in session context', async () => {
@@ -791,10 +980,23 @@ describe('SessionService', () => {
       db: { type: 'sqlite', url: dbPath },
     });
 
-    const sessionId = await sessionService.createSession(user.id!);
+    const sessionId = await sessionService.createSession(user.id!, undefined, {
+      ttl: 60,
+    });
+    const sessions = await SessionCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const before = await sessions.get(sessionId);
+    if (!before) throw new Error('expected inactive user session');
+    const expiresAt = before.expiresAt.getTime();
+    const lastAccessedAt = before.lastAccessedAt.getTime();
 
     // Should return null because user is not active
     const context = await sessionService.loadSessionContext(sessionId);
     expect(context).toBeNull();
+
+    const after = await sessions.get(sessionId);
+    expect(after?.expiresAt.getTime()).toBe(expiresAt);
+    expect(after?.lastAccessedAt.getTime()).toBe(lastAccessedAt);
   });
 });

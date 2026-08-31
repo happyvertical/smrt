@@ -58,6 +58,7 @@ export {
   type DataSurfaceServerActionDefinition,
   type DataSurfaceServerActionRequest,
   InMemoryDataSurfaceActionStateStore,
+  isBoundedDataSurfaceJsonValue,
   type ResolvedDataSurfaceActions,
   type ResolvedDataSurfaceSelection,
 } from './data-surface-actions.js';

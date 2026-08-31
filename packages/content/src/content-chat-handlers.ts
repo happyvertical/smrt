@@ -762,6 +762,16 @@ export async function sendContentEditorChatThreadMessage(
     kind: 'assistant',
   });
 
+  // sendAgentReply records message activity on the session. Return and update
+  // the latest persisted session rather than the pre-message snapshot.
+  const refreshedSession = await chatService.getAgentSession({
+    agentSessionId: (session as { id: string }).id,
+    tenantId,
+  });
+  if (!refreshedSession) {
+    throw new Error('Active session not found');
+  }
+
   const updates = buildContentChatModelUpdates(
     sessionContext,
     input.model,
@@ -780,13 +790,15 @@ export async function sendContentEditorChatThreadMessage(
     )
   ) {
     await (
-      session as { updateSessionContext: (value: unknown) => Promise<void> }
+      refreshedSession as {
+        updateSessionContext: (value: unknown) => Promise<void>;
+      }
     ).updateSessionContext(updates);
   }
 
   return {
     chatService,
-    session,
+    session: refreshedSession,
     thread,
     userMessage,
     agentMessage,

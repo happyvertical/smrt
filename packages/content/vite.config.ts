@@ -34,6 +34,7 @@ export default defineConfig(async ({ mode }) => {
         'playground',
         'workbench',
         'publish-readiness',
+        'server',
       ],
       svelte: 'svelte',
       dtsExclude: ['src/routes/**/*', 'src/hooks.server.ts'],

@@ -1,5 +1,8 @@
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtObjectOptions,
+  SmrtSaveOptions,
+} from '@happyvertical/smrt-core';
 import {
   crossPackageRef,
   field,
@@ -965,7 +968,7 @@ export class Content
     );
   }
 
-  override async save() {
+  override async save(options: SmrtSaveOptions = {}) {
     const shouldConsiderPublicationSnapshot = this.status === 'published';
 
     let governance: ResolvedContentGovernance | null = null;
@@ -982,7 +985,7 @@ export class Content
       }
     }
 
-    await super.save();
+    await super.save(options);
     await this.syncPendingReferenceIds();
     await this.syncPendingAssetIds();
 
@@ -3781,36 +3784,52 @@ export class Content
       promptMessageOptions(resolvedPrompt.ai),
     );
     const result = parseContentReviewResponse(rawResponse);
-    const version =
-      options.createVersion === false
-        ? null
-        : await this.createVersion({
-            kind: 'review',
-            summary: result.summary,
-            metadata: {
-              kind,
-              policyKey,
-              reviewFingerprint,
-            },
-          });
+    const persistReview = async (content: Content) => {
+      if (options.expectedUpdatedAt !== undefined) {
+        await content.claimRevision(options.expectedUpdatedAt);
+      }
+      const version =
+        options.createVersion === false
+          ? null
+          : await content.createVersion({
+              kind: 'review',
+              summary: result.summary,
+              metadata: {
+                kind,
+                policyKey,
+                reviewFingerprint,
+              },
+            });
 
-    const reviews = await this.getContentReviewCollection();
-    return reviews.createFromResult({
-      contentId: this.id as string,
-      contentVersionId: version?.id as string | undefined,
-      kind,
-      policyKey,
-      reviewer: options.reviewer || 'system',
-      result,
-      metadata: {
-        ...(options.metadata || {}),
-        prompt: resolvedPrompt.text,
-        rawResponse,
-        reviewFingerprint,
-        factIds: filteredFacts.map((fact) => fact.id),
-      },
-      tenantId: this.tenantId,
-    });
+      const reviews = await content.getContentReviewCollection();
+      return reviews.createFromResult({
+        contentId: content.id as string,
+        contentVersionId: version?.id as string | undefined,
+        kind,
+        policyKey,
+        reviewer: options.reviewer || 'system',
+        result,
+        metadata: {
+          ...(options.metadata || {}),
+          prompt: resolvedPrompt.text,
+          rawResponse,
+          reviewFingerprint,
+          factIds: filteredFacts.map((fact) => fact.id),
+        },
+        tenantId: content.tenantId,
+      });
+    };
+
+    if (options.expectedUpdatedAt !== undefined) {
+      const db = this.db;
+      if (!db.transaction) {
+        throw new Error(
+          'Atomic content review persistence requires transaction support',
+        );
+      }
+      return this.withTransaction(persistReview);
+    }
+    return persistReview(this);
   }
 
   public async runReviewAction(options: RunContentReviewOptions = {}) {

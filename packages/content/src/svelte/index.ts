@@ -309,6 +309,21 @@ export {
   readContentListViewStateFromSearchParams,
   sanitizeContentListViewState,
 } from './content-list-url-state.js';
+// Browser-safe ContentList bulk workflow binding and transport (#2453).
+export {
+  CONTENT_LIST_WORKFLOW_IDS,
+  CONTENT_LIST_WORKFLOW_OPTIONS,
+  type ContentListWorkflowBinding,
+  type ContentListWorkflowClient,
+  ContentListWorkflowError,
+  type ContentListWorkflowId,
+  type ContentListWorkflowJobStatus,
+  type ContentListWorkflowOption,
+  type ContentListWorkflowRequest,
+  type ContentListWorkflowTransportOptions,
+  contentListWorkflowOutcomes,
+  createContentListWorkflowTransport,
+} from './content-list-workflows.js';
 export type ContentContributionFormProps = ComponentProps<
   typeof ContentContributionForm
 >;

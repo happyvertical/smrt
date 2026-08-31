@@ -124,8 +124,26 @@ export class ApiKey extends SmrtObject {
    * Record usage of this key
    */
   async recordUsage(): Promise<void> {
-    this.lastUsedAt = new Date();
-    await this.save();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      if (this.isPersisted) await this.loadFromId();
+      if (!this.isValid()) return;
+      this.lastUsedAt = new Date();
+      try {
+        await this.save();
+        return;
+      } catch (error) {
+        if (
+          attempt === 3 ||
+          !(
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'RUNTIME_REVISION_CONFLICT'
+          )
+        ) {
+          throw error;
+        }
+      }
+    }
   }
 
   /**
@@ -192,6 +210,10 @@ export class ApiKey extends SmrtObject {
 
     // Record usage
     await apiKey.recordUsage();
+
+    // A concurrent revocation may have been observed while recordUsage()
+    // rehydrated after a revision conflict. Never authenticate that key.
+    if (!apiKey.isValid()) return null;
 
     return apiKey;
   }

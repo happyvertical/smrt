@@ -163,6 +163,12 @@ export {
 } from './decorators/index';
 // Dispatch system (inter-agent communication)
 export * from './dispatch/index';
+export {
+  isEmbeddedDatabase,
+  usesEmbeddedRevisionFallback,
+  withEmbeddedWriteQueue,
+  withEmbeddedWriteTransaction,
+} from './embedded-write-queue';
 // Embeddings support (semantic search)
 export * from './embeddings/index';
 export * from './errors';

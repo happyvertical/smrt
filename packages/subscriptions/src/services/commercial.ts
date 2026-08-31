@@ -1,4 +1,11 @@
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  type DatabaseConfig,
+  isDatabaseInterface,
+  isEmbeddedDatabase,
+  type SmrtClassOptions,
+  withEmbeddedWriteTransaction,
+} from '@happyvertical/smrt-core';
+import type { SqlAdapterType } from '@happyvertical/sql';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import {
   BillingAdjustmentCollection,
@@ -31,6 +38,305 @@ export type CustomPricingStrategy = (
   context: CustomPricingContext,
 ) => number | Promise<number>;
 
+export interface CommercialBillingStorage {
+  adapterType: SqlAdapterType;
+  writeStrategy?: 'immediate' | 'manual' | 'none';
+}
+
+export interface CommercialUsageServiceOptions extends SmrtClassOptions {
+  /**
+   * Required when `db` is an already-resolved database handle, whose public
+   * interface does not expose its adapter/write-back configuration.
+   */
+  billingStorage?: CommercialBillingStorage;
+}
+
+const embeddedAdjustmentLocks = new Map<string | object, Promise<void>>();
+
+async function withEmbeddedSourcedAdjustmentLock<T>(
+  db: { url?: string },
+  storage: CommercialBillingStorage,
+  sourced: boolean,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!sourced || storage.adapterType === 'postgres') return operation();
+
+  const key = db.url ? `${storage.adapterType}:${db.url}` : (db as object);
+  const previous = embeddedAdjustmentLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.then(() => current);
+  embeddedAdjustmentLocks.set(key, queued);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (embeddedAdjustmentLocks.get(key) === queued) {
+      embeddedAdjustmentLocks.delete(key);
+    }
+  }
+}
+
+export class UnsupportedCommercialBillingStorageError extends Error {
+  readonly code = 'UNSUPPORTED_COMMERCIAL_BILLING_STORAGE';
+
+  constructor(storage: CommercialBillingStorage) {
+    super(
+      `Commercial billing does not support ${storage.adapterType} ` +
+        `with immediate JSON write-back because exported files are not ` +
+        `transactionally rolled back. Use PostgreSQL, SQLite, ordinary ` +
+        `DuckDB, or a non-immediate write strategy.`,
+    );
+    this.name = 'UnsupportedCommercialBillingStorageError';
+  }
+}
+
+export class CommercialBillingStorageConfigurationError extends Error {
+  readonly code = 'COMMERCIAL_BILLING_STORAGE_CONFIGURATION_REQUIRED';
+
+  constructor(message?: string) {
+    super(
+      message ??
+        'Commercial billing requires billingStorage when db is an already-resolved handle because adapter write-back capabilities are not public on that interface.',
+    );
+    this.name = 'CommercialBillingStorageConfigurationError';
+  }
+}
+
+function assertValidCommercialBillingWriteStrategy(
+  writeStrategy: unknown,
+): asserts writeStrategy is CommercialBillingStorage['writeStrategy'] {
+  if (
+    writeStrategy !== undefined &&
+    writeStrategy !== 'immediate' &&
+    writeStrategy !== 'manual' &&
+    writeStrategy !== 'none'
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billing database writeStrategy must be immediate, manual, or none.',
+    );
+  }
+}
+
+function snapshotCommercialBillingStorage(
+  storage: CommercialBillingStorage,
+): CommercialBillingStorage {
+  const adapterType: unknown = storage.adapterType;
+  if (
+    adapterType !== 'sqlite' &&
+    adapterType !== 'postgres' &&
+    adapterType !== 'duckdb' &&
+    adapterType !== 'json'
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billing storage adapterType must be sqlite, postgres, duckdb, or json.',
+    );
+  }
+  const writeStrategy: unknown = storage.writeStrategy;
+  assertValidCommercialBillingWriteStrategy(writeStrategy);
+  return { adapterType, writeStrategy };
+}
+
+function snapshotCommercialUsageServiceOptions(
+  options: CommercialUsageServiceOptions,
+): CommercialUsageServiceOptions {
+  const snapshot = { ...options };
+  if (snapshot.billingStorage) {
+    snapshot.billingStorage = snapshotCommercialBillingStorage(
+      snapshot.billingStorage,
+    );
+  }
+  for (const key of ['db', 'persistence'] as const) {
+    const database = snapshot[key];
+    if (
+      database &&
+      typeof database !== 'string' &&
+      !isDatabaseInterface(database)
+    ) {
+      snapshot[key] = { ...database };
+    }
+  }
+  return snapshot;
+}
+
+export function assertCommercialBillingStorageSupported(
+  storage: CommercialBillingStorage,
+): void {
+  const snapshot = snapshotCommercialBillingStorage(storage);
+  const writeStrategy =
+    snapshot.adapterType === 'json'
+      ? (snapshot.writeStrategy ?? 'immediate')
+      : snapshot.writeStrategy;
+  if (
+    (snapshot.adapterType === 'json' || snapshot.adapterType === 'duckdb') &&
+    writeStrategy === 'immediate'
+  ) {
+    throw new UnsupportedCommercialBillingStorageError({
+      ...snapshot,
+      writeStrategy,
+    });
+  }
+}
+
+function inferAdapterType(url: string): SqlAdapterType | undefined {
+  if (/^postgres(?:ql)?:/iu.test(url)) return 'postgres';
+  if (/^(?:https?|libsql):\/\//iu.test(url)) return 'sqlite';
+  if (/\.duckdb(?:$|\?)/iu.test(url)) return 'duckdb';
+  if (url === ':memory:' || url.startsWith('file:')) return 'sqlite';
+  return undefined;
+}
+
+function environmentAdapterType(): SqlAdapterType | undefined {
+  const type = process.env.HAVE_SQL_TYPE;
+  if (type === undefined || type === '') return undefined;
+  if (
+    type === 'sqlite' ||
+    type === 'postgres' ||
+    type === 'duckdb' ||
+    type === 'json'
+  ) {
+    return type;
+  }
+  throw new CommercialBillingStorageConfigurationError(
+    'Commercial billing HAVE_SQL_TYPE must be sqlite, postgres, duckdb, or json.',
+  );
+}
+
+function environmentWriteStrategy(): CommercialBillingStorage['writeStrategy'] {
+  const strategy = process.env.HAVE_SQL_WRITE_STRATEGY;
+  if (strategy === undefined || strategy === '') return undefined;
+  if (
+    strategy === 'immediate' ||
+    strategy === 'manual' ||
+    strategy === 'none'
+  ) {
+    return strategy;
+  }
+  throw new CommercialBillingStorageConfigurationError(
+    'Commercial billing HAVE_SQL_WRITE_STRATEGY must be immediate, manual, or none.',
+  );
+}
+
+function billingStorageFromConfig(
+  config: DatabaseConfig | undefined,
+  declared?: CommercialBillingStorage,
+): CommercialBillingStorage {
+  // Validate a configured environment value even when an explicit config type
+  // wins adapter precedence. Otherwise normalization below could hide an SDK
+  // configuration error by replacing the invalid environment value.
+  const environmentType = environmentAdapterType();
+  if (config === undefined) {
+    if (environmentType)
+      return {
+        adapterType: environmentType,
+        writeStrategy: environmentWriteStrategy(),
+      };
+    return { adapterType: 'sqlite' };
+  }
+  if (isDatabaseInterface(config)) {
+    throw new CommercialBillingStorageConfigurationError();
+  }
+  if (typeof config === 'string') {
+    const adapterType =
+      environmentType ?? inferAdapterType(config) ?? declared?.adapterType;
+    if (adapterType)
+      return {
+        adapterType,
+        writeStrategy: environmentWriteStrategy() ?? declared?.writeStrategy,
+      };
+    throw new Error(
+      'Commercial billing requires an explicit billingStorage adapter contract for ambiguous database URLs.',
+    );
+  }
+  const adapterType =
+    config.type ??
+    environmentType ??
+    inferAdapterType(String(config.url ?? '')) ??
+    declared?.adapterType;
+  if (!adapterType) {
+    throw new Error(
+      'Commercial billing requires an explicit database type or billingStorage adapter contract.',
+    );
+  }
+  const configuredWriteStrategy = config.writeStrategy;
+  assertValidCommercialBillingWriteStrategy(configuredWriteStrategy);
+  const writeStrategy =
+    configuredWriteStrategy === 'immediate' ||
+    configuredWriteStrategy === 'manual' ||
+    configuredWriteStrategy === 'none'
+      ? configuredWriteStrategy
+      : (environmentWriteStrategy() ?? declared?.writeStrategy);
+  return { adapterType, writeStrategy };
+}
+
+function effectiveWriteStrategy(
+  storage: CommercialBillingStorage,
+): CommercialBillingStorage['writeStrategy'] {
+  if (storage.writeStrategy) return storage.writeStrategy;
+  if (storage.adapterType === 'json') return 'immediate';
+  if (storage.adapterType === 'duckdb') return 'none';
+  return undefined;
+}
+
+function resolveCommercialBillingStorage(
+  options: CommercialUsageServiceOptions,
+): CommercialBillingStorage {
+  // Environment declarations are configuration contracts, even when explicit
+  // options win precedence. Reject invalid nonempty values before setup.
+  environmentAdapterType();
+  environmentWriteStrategy();
+  const configuredDatabase = options.db ?? options.persistence;
+  if (isDatabaseInterface(configuredDatabase)) {
+    if (!options.billingStorage) {
+      throw new CommercialBillingStorageConfigurationError();
+    }
+    return options.billingStorage;
+  }
+  const configured = billingStorageFromConfig(
+    configuredDatabase,
+    options.billingStorage,
+  );
+  if (
+    options.billingStorage &&
+    (options.billingStorage.adapterType !== configured.adapterType ||
+      effectiveWriteStrategy(options.billingStorage) !==
+        effectiveWriteStrategy(configured))
+  ) {
+    throw new CommercialBillingStorageConfigurationError(
+      'Commercial billingStorage must match the configured database adapter and write strategy.',
+    );
+  }
+  return configured;
+}
+
+function normalizedCommercialClassOptions(
+  options: CommercialUsageServiceOptions,
+  billingStorage: CommercialBillingStorage,
+): SmrtClassOptions {
+  const { billingStorage: _billingStorage, ...classOptions } = options;
+  const configuredDatabase = options.db ?? options.persistence;
+  if (configuredDatabase && !isDatabaseInterface(configuredDatabase)) {
+    const normalizedDatabase =
+      typeof configuredDatabase === 'string'
+        ? {
+            type: billingStorage.adapterType,
+            url: configuredDatabase,
+            writeStrategy: billingStorage.writeStrategy,
+          }
+        : {
+            ...configuredDatabase,
+            type: billingStorage.adapterType,
+            writeStrategy: billingStorage.writeStrategy,
+          };
+    if (options.db !== undefined) classOptions.db = normalizedDatabase;
+    else classOptions.persistence = normalizedDatabase;
+  }
+  return classOptions;
+}
+
 export class CommercialUsageService {
   private readonly customStrategies = new Map<string, CustomPricingStrategy>();
   constructor(
@@ -38,18 +344,32 @@ export class CommercialUsageService {
     private readonly rules: PricingRuleCollection,
     private readonly charges: ClientChargeCollection,
     private readonly adjustments: BillingAdjustmentCollection,
-  ) {}
+    private readonly billingStorage: CommercialBillingStorage,
+  ) {
+    if (!billingStorage) {
+      throw new CommercialBillingStorageConfigurationError();
+    }
+    assertCommercialBillingStorageSupported(billingStorage);
+  }
 
   static async create(
-    options: SmrtClassOptions = {},
+    options: CommercialUsageServiceOptions = {},
   ): Promise<CommercialUsageService> {
-    const usage = await TenantUsageMetricCollection.create(options);
-    const sharedOptions = { ...options, db: usage.db };
+    const optionSnapshot = snapshotCommercialUsageServiceOptions(options);
+    const billingStorage = resolveCommercialBillingStorage(optionSnapshot);
+    assertCommercialBillingStorageSupported(billingStorage);
+    const classOptions = normalizedCommercialClassOptions(
+      optionSnapshot,
+      billingStorage,
+    );
+    const usage = await TenantUsageMetricCollection.create(classOptions);
+    const sharedOptions = { ...classOptions, db: usage.db };
     return new CommercialUsageService(
       usage,
       await PricingRuleCollection.create(sharedOptions),
       await ClientChargeCollection.create(sharedOptions),
       await BillingAdjustmentCollection.create(sharedOptions),
+      billingStorage,
     );
   }
 
@@ -165,9 +485,29 @@ export class CommercialUsageService {
           `(cents) — got ${amount}. Money is exact: -$0.25 is -25, not -0.25.`,
       );
     }
-    const charge = await this.charges.get(chargeId);
-    if (!charge) throw new Error(`Client charge ${chargeId} was not found.`);
-    if (charge.status !== 'approved' && charge.status !== 'adjusted') {
+    const sourced = Boolean(source && sourceId);
+    return withEmbeddedSourcedAdjustmentLock(
+      this.charges.db,
+      this.billingStorage,
+      sourced,
+      () => this.adjustWithinLock(chargeId, amount, reason, source, sourceId),
+    );
+  }
+
+  private async adjustWithinLock(
+    chargeId: string,
+    amount: number,
+    reason: string,
+    source: string,
+    sourceId: string,
+  ) {
+    const initialCharge = await this.charges.get(chargeId);
+    if (!initialCharge)
+      throw new Error(`Client charge ${chargeId} was not found.`);
+    if (
+      initialCharge.status !== 'approved' &&
+      initialCharge.status !== 'adjusted'
+    ) {
       throw new Error(
         `Client charge ${chargeId} must be approved before it can be adjusted.`,
       );
@@ -176,38 +516,68 @@ export class CommercialUsageService {
       source && sourceId
         ? await deterministicUuid([
             'billing-adjustment',
-            String(charge.tenantId),
+            String(initialCharge.tenantId),
             chargeId,
             source,
             sourceId,
           ])
         : null;
-    let adjustment = sourcedId
-      ? await this.adjustments.get(sourcedId)
-      : undefined;
-    if (!adjustment) {
-      try {
-        adjustment = await this.adjustments.create({
-          ...(sourcedId ? { id: sourcedId } : {}),
-          tenantId: charge.tenantId,
-          clientChargeId: chargeId,
-          amount,
-          currency: charge.currency,
-          reason,
-          source,
-          sourceId,
-          _insertOnly: Boolean(sourcedId),
-        });
-      } catch (error) {
-        if (sourcedId) adjustment = await this.adjustments.get(sourcedId);
-        if (!adjustment) throw error;
+    const db = this.charges.db;
+    if (!db.transaction) {
+      throw new Error('Atomic billing adjustment requires transaction support');
+    }
+    try {
+      return await withEmbeddedWriteTransaction(
+        db,
+        isEmbeddedDatabase(db),
+        async (transaction) => {
+          const options = { db: transaction };
+          const charges = await ClientChargeCollection.create(options);
+          const adjustments = await BillingAdjustmentCollection.create(options);
+          const charge = await charges.get(chargeId);
+          if (!charge)
+            throw new Error(`Client charge ${chargeId} was not found.`);
+          if (charge.status !== 'approved' && charge.status !== 'adjusted') {
+            throw new Error(
+              `Client charge ${chargeId} must be approved before it can be adjusted.`,
+            );
+          }
+          let adjustment = sourcedId
+            ? await adjustments.get(sourcedId)
+            : undefined;
+          if (!adjustment) {
+            adjustment = await adjustments.create({
+              ...(sourcedId ? { id: sourcedId } : {}),
+              tenantId: charge.tenantId,
+              clientChargeId: chargeId,
+              amount,
+              currency: charge.currency,
+              reason,
+              source,
+              sourceId,
+              _insertOnly: Boolean(sourcedId),
+            });
+          }
+          if (charge.status === 'approved') {
+            charge.status = 'adjusted';
+            await charge.save();
+          }
+          return adjustment;
+        },
+      );
+    } catch (error) {
+      // A concurrent sourced adjustment may win the deterministic insert. Its
+      // transaction also owns the charge-state transition, so it is safe to
+      // return only after both durable records are visible.
+      if (sourcedId) {
+        // Embedded adapters multiplex one native handle. Keep recovery reads
+        // sequential just like the transaction flow protected above.
+        const adjustment = await this.adjustments.get(sourcedId);
+        const charge = await this.charges.get(chargeId);
+        if (adjustment && charge?.status === 'adjusted') return adjustment;
       }
+      throw error;
     }
-    if (charge.status === 'approved') {
-      charge.status = 'adjusted';
-      await charge.save();
-    }
-    return adjustment;
   }
 
   /**

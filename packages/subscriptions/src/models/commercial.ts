@@ -105,7 +105,7 @@ export class ClientCharge extends SmrtObject {
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
     if (!this.id) return;
-    const row = await this.db.get(this.tableName, { id: this.id });
+    const row = await this.getCanonicalPersistedRow({ id: this.id });
     if (!row || (row.status !== 'approved' && row.status !== 'adjusted'))
       return;
     if (
