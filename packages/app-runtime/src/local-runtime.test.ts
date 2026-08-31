@@ -15,7 +15,7 @@ import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
-import { getDatabase } from '@happyvertical/sql';
+import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
 import {
@@ -56,6 +56,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
   filesystemInterleave.beforeUnlink = undefined;
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryRoots
       .splice(0)
@@ -221,7 +222,7 @@ describe('local application runtime', () => {
       email: 'owner@example.com',
     });
     const roleCount = await countRows(secondBeforeClaim.runtime.db, 'roles');
-    const reopenedDb = await getDatabase({
+    const reopenedDb = await sql.getDatabase({
       type: 'sqlite',
       url: first.runtime.paths.database,
       secureFile: {
@@ -410,6 +411,10 @@ describe('local application runtime', () => {
     -1,
     Number.NaN,
     Number.POSITIVE_INFINITY,
+    Number.MIN_VALUE,
+    0.0001,
+    0.0009,
+    1.5,
   ])('refuses invalid session TTL %s before filesystem mutation', async (sessionTtlSeconds) => {
     const directories = await localDirectories('session-ttl');
     await expect(
@@ -421,6 +426,36 @@ describe('local application runtime', () => {
     ).rejects.toMatchObject({ code: 'invalid_configuration' });
     await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
       code: 'ENOENT',
+    });
+  });
+
+  it('accepts the one-second session TTL boundary without early expiry', async () => {
+    const directories = await localDirectories('session-ttl-minimum');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      sessionTtlSeconds: 1,
+    });
+    const beforeClaim = Date.now();
+    const claim = await initialized.runtime.claimOwner({
+      token: initialized.bootstrap?.token as string,
+      name: 'Owner',
+      email: 'owner@example.com',
+    });
+
+    const stored = await initialized.runtime.db.query(
+      'SELECT expires_at FROM sessions WHERE id = ?',
+      claim.sessionId,
+    );
+    const expiresAt = new Date(
+      (stored.rows[0] as { expires_at: string }).expires_at,
+    ).getTime();
+    expect(expiresAt).toBeGreaterThanOrEqual(beforeClaim + 1000);
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 1000);
+    await expect(
+      initialized.runtime.restoreSession(claim.sessionId),
+    ).resolves.toMatchObject({
+      user: { id: claim.userId },
     });
   });
 
@@ -652,6 +687,77 @@ describe('local application runtime', () => {
         )
       ).size,
     ).toBe(0);
+  });
+
+  it('preserves an inherited pending claim when database reacquisition fails', async () => {
+    const directories = await localDirectories('pending-reacquisition');
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+    const pendingMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus.pending',
+    );
+    const database = join(directories.dataDirectory, 'application.sqlite');
+    await writeFile(pendingMarker, '', { mode: 0o600 });
+    await writeFile(database, '', { mode: 0o600 });
+    vi.spyOn(sql, 'getDatabase').mockRejectedValueOnce(
+      new Error('injected database reacquisition failure'),
+    );
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).rejects.toThrow('injected database reacquisition failure');
+    expect((await stat(pendingMarker)).isFile()).toBe(true);
+    expect((await stat(database)).isFile()).toBe(true);
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    await expect(stat(pendingMarker)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await stat(database)).isFile()).toBe(true);
+  });
+
+  it('rejects an inherited pending claim with unrelated contents', async () => {
+    const directories = await localDirectories('pending-unrelated');
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+    const pendingMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus.pending',
+    );
+    const database = join(directories.dataDirectory, 'application.sqlite');
+    const unrelated = join(directories.dataDirectory, 'unrelated.txt');
+    await writeFile(pendingMarker, '', { mode: 0o600 });
+    await writeFile(database, '', { mode: 0o600 });
+    await writeFile(unrelated, 'keep me\n', { mode: 0o600 });
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(await readFile(unrelated, 'utf8')).toBe('keep me\n');
+    expect((await stat(pendingMarker)).isFile()).toBe(true);
+    expect((await stat(database)).isFile()).toBe(true);
+  });
+
+  it('rejects a malformed inherited pending marker', async () => {
+    const directories = await localDirectories('pending-malformed');
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+    const pendingMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus.pending',
+    );
+    const database = join(directories.dataDirectory, 'application.sqlite');
+    await writeFile(pendingMarker, 'not-empty\n', { mode: 0o600 });
+    await writeFile(database, '', { mode: 0o600 });
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(await readFile(pendingMarker, 'utf8')).toBe('not-empty\n');
+    expect((await stat(database)).isFile()).toBe(true);
   });
 
   it('retains a recoverable pending claim when promotion fails after database acquisition', async () => {

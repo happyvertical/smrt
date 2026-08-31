@@ -38,7 +38,8 @@ unrelated private directory fails without changing its contents. A pending
 marker makes the claim crash-recoverable while the database is first acquired;
 it is promoted atomically after the released SQL custody boundary verifies the
 complete ancestor/root chain, including macOS ACLs. Failed custody removes the
-pending claim and every directory created by that attempt.
+pending claim and every directory only when they were created by that attempt;
+an inherited pending claim and its database remain authoritative for retry.
 Every existing path component is opened without following symbolic links and
 checked against its canonical path before descendants or secret bytes are
 written. The runtime then acquires SQLite through `@happyvertical/sql`'s
@@ -62,6 +63,8 @@ Owner onboarding binds to `127.0.0.1` by default and rejects non-loopback hosts.
 The first valid claim creates a real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session` atomically. Startup and
 setup are idempotent; replayed, expired, or concurrent claims fail closed.
+Authenticated session TTLs are configured in whole seconds with a minimum of
+one second, and invalid values are rejected before filesystem mutation.
 
 Background jobs and application-defined paid capabilities remain disabled until
 explicitly enabled. With embedded job topology, `createEmbeddedJobRunner()`

@@ -113,7 +113,8 @@ owned by the current user with mode `0700`, and a failed proof leaves its mode
 and contents untouched. Empty roots receive an app-specific atomic ownership
 marker; populated roots require that marker. A pending marker safely resumes a
 crash between root claim and database acquisition, while failed SQL custody
-validation removes the pending claim and attempt-created directories. The SQL
+validation removes only a claim and directories created by the failing attempt;
+an inherited pending claim and database remain available for retry. The SQL
 boundary proves ancestor ownership/modes and macOS ACL safety before database,
 asset, or secret artifacts are created. Directories are mode `0700`; the database and
 generated application-secret file are mode `0600`. SQLite enables foreign keys,
@@ -141,6 +142,8 @@ transaction that creates the real global `Person`, `User`, default `Tenant`,
 owner `Role` / `Membership`, and server-side `Session`. Repeated setup or startup
 does not duplicate those records. Tenancy can remain hidden in the local UI, but
 the durable default tenant is preserved for later logical migration.
+Authenticated session TTLs are whole seconds with a minimum of one second;
+invalid TTL configuration is rejected before any filesystem mutation.
 
 Background work and application-defined paid capabilities are disabled by
 default. An explicit background opt-in exposes the regular embedded

@@ -90,7 +90,7 @@ export interface LocalApplicationRuntimeOptions
   providers?: RuntimeProviderOverrides;
   /** Short-lived bootstrap token lifetime. Range: 1..900 seconds. */
   bootstrapTtlSeconds?: number;
-  /** Normal authenticated session lifetime. */
+  /** Normal authenticated session lifetime in whole seconds. Minimum 1. */
   sessionTtlSeconds?: number;
   /** Explicit opt-in for persisted background work. Default false. */
   backgroundJobs?: boolean;
@@ -704,6 +704,7 @@ async function tuneLocalSqlite(db: DatabaseInterface): Promise<void> {
 interface PreparedLocalRoot {
   createdDirectories: string[];
   pendingMarker: string | null;
+  pendingMarkerCreatedByAttempt: boolean;
   finalMarker: string;
 }
 
@@ -734,8 +735,10 @@ async function acquireLocalDatabase(
       },
     });
   } catch (error) {
-    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-    await removeCreatedDirectories(prepared.createdDirectories);
+    if (prepared.pendingMarkerCreatedByAttempt) {
+      await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+      await removeCreatedDirectories(prepared.createdDirectories);
+    }
     throw error;
   }
 
@@ -782,6 +785,7 @@ async function prepareDedicatedRoot(
     return {
       createdDirectories,
       pendingMarker: hasPendingMarker ? pendingMarker : null,
+      pendingMarkerCreatedByAttempt: false,
       finalMarker,
     };
   }
@@ -802,6 +806,7 @@ async function prepareDedicatedRoot(
     return {
       createdDirectories,
       pendingMarker,
+      pendingMarkerCreatedByAttempt: false,
       finalMarker,
     };
   }
@@ -811,10 +816,14 @@ async function prepareDedicatedRoot(
       'Existing local application data root is populated but has no valid ownership marker.',
     );
   }
-  await publishRootMarker(pendingMarker, canonicalSourceRoot);
+  const pendingMarkerCreatedByAttempt = await publishRootMarker(
+    pendingMarker,
+    canonicalSourceRoot,
+  );
   return {
     createdDirectories,
     pendingMarker,
+    pendingMarkerCreatedByAttempt,
     finalMarker,
   };
 }
@@ -900,8 +909,9 @@ async function assertExistingDedicatedRoot(
 async function publishRootMarker(
   path: string,
   canonicalSourceRoot: string,
-): Promise<void> {
+): Promise<boolean> {
   let marker: FileHandle | undefined;
+  let created = false;
   try {
     marker = await openSafeFile(
       path,
@@ -910,6 +920,7 @@ async function publishRootMarker(
       'Local application root marker',
       canonicalSourceRoot,
     );
+    created = true;
     await marker.sync();
   } catch (error) {
     if (!isFileAlreadyExists(error)) throw error;
@@ -918,6 +929,7 @@ async function publishRootMarker(
   }
   await validateRootMarker(path, canonicalSourceRoot);
   await syncDirectory(resolve(path, '..'), canonicalSourceRoot);
+  return created;
 }
 
 async function validateRootMarker(
@@ -1257,10 +1269,10 @@ function validateBootstrapTtl(value: number): number {
 }
 
 function validateSessionTtl(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
+  if (!Number.isInteger(value) || value < 1) {
     throw new LocalRuntimeError(
       'invalid_configuration',
-      'Session TTL must be a finite positive number of seconds.',
+      'Session TTL must be a whole number of seconds greater than or equal to 1.',
     );
   }
   return value;
