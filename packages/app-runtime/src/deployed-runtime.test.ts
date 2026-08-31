@@ -460,6 +460,49 @@ describe('deployed application runtime', () => {
     expect(close).toHaveBeenCalledWith(db);
   });
 
+  it('binds validated callbacks without reading caller-controlled bind properties', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const connect = vi.fn(async () => db);
+    const close = vi.fn(async () => undefined);
+    const authentication = vi.fn(async () => undefined);
+    const assets = vi.fn(async () => undefined);
+    const secrets = vi.fn(async () => undefined);
+    const prepareDatabase = vi.fn(async () => undefined);
+
+    for (const callback of [
+      connect,
+      close,
+      authentication,
+      assets,
+      secrets,
+      prepareDatabase,
+    ]) {
+      Object.defineProperty(callback, 'bind', {
+        get: () => {
+          throw new Error(credential);
+        },
+      });
+    }
+
+    const runtime = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: { engine: 'postgres', connect, close },
+      authentication: { provider: 'oidc', readiness: authentication },
+      assets: { provider: 's3-compatible', readiness: assets },
+      secrets: { provider: 'environment', readiness: secrets },
+      prepareDatabase,
+    });
+    await runtime.close();
+
+    expect(connect).toHaveBeenCalledOnce();
+    expect(authentication).toHaveBeenCalledOnce();
+    expect(assets).toHaveBeenCalledOnce();
+    expect(secrets).toHaveBeenCalledOnce();
+    expect(prepareDatabase).toHaveBeenCalledWith(db);
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
   it('supports provider adapter instances and preserves their method receiver', async () => {
     const { db } = databaseFixture();
     class AssetAdapter {
@@ -587,10 +630,42 @@ describe('deployed application runtime', () => {
     const concurrentRetry = (
       failure as DeployedRuntimeCleanupError
     ).retryCleanup();
+    await Promise.resolve();
     expect(close).toHaveBeenCalledTimes(2);
     finishCleanup?.();
     await Promise.all([firstRetry, concurrentRetry]);
     await (failure as DeployedRuntimeCleanupError).retryCleanup();
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it('redacts synchronous provider failures during cleanup retries', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    let closeAttempts = 0;
+    const close = vi.fn(() => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) return Promise.reject(new Error(credential));
+      throw new Error(credential);
+    });
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: { engine: 'postgres', connect: async () => db, close },
+        prepareDatabase: async () => {
+          throw new Error('migration failure');
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DeployedRuntimeCleanupError);
+    await expect(
+      (failure as DeployedRuntimeCleanupError).retryCleanup(),
+    ).rejects.toBe(failure);
+    expect((failure as Error).message).not.toContain(credential);
     expect(close).toHaveBeenCalledTimes(2);
   });
 

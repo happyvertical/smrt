@@ -161,7 +161,8 @@ export class DeployedRuntimeCleanupError extends DeployedRuntimeError {
   async retryCleanup(): Promise<void> {
     if (this.cleaned) return;
     if (!this.cleanupAttempt) {
-      this.cleanupAttempt = this.cleanup()
+      this.cleanupAttempt = Promise.resolve()
+        .then(() => this.cleanup())
         .then(() => {
           this.cleaned = true;
         })
@@ -338,14 +339,24 @@ function validateBindings(
   }
   const databaseSnapshot: DeployedDatabaseBinding = Object.freeze({
     engine: engine as 'postgres',
-    connect: (connect as DeployedDatabaseBinding['connect']).bind(database),
+    connect: bindCallback(
+      connect as DeployedDatabaseBinding['connect'],
+      database,
+      'database',
+    ),
     readiness:
       typeof readiness === 'function'
-        ? (readiness as NonNullable<DeployedDatabaseBinding['readiness']>).bind(
+        ? bindCallback(
+            readiness as NonNullable<DeployedDatabaseBinding['readiness']>,
             database,
+            'database',
           )
         : undefined,
-    close: (close as DeployedDatabaseBinding['close']).bind(database),
+    close: bindCallback(
+      close as DeployedDatabaseBinding['close'],
+      database,
+      'database',
+    ),
   });
 
   const authentication = requireProviderBinding(
@@ -383,11 +394,13 @@ function snapshotPrepareDatabase(
   }
   requireOptionalFunction(prepareDatabase, 'database', 'prepareDatabase');
   return typeof prepareDatabase === 'function'
-    ? (
+    ? bindCallback(
         prepareDatabase as NonNullable<
           DeployedApplicationRuntimeOptions['prepareDatabase']
-        >
-      ).bind(options)
+        >,
+        options,
+        'database',
+      )
     : undefined;
 }
 
@@ -426,8 +439,10 @@ function requireProviderBinding(
   requireFunction(readiness, component, 'readiness');
   return Object.freeze({
     provider: provider as string,
-    readiness: (readiness as DeployedProviderBinding<string>['readiness']).bind(
+    readiness: bindCallback(
+      readiness as DeployedProviderBinding<string>['readiness'],
       binding,
+      component,
     ),
   });
 }
@@ -461,6 +476,22 @@ function invalidBinding(
     `The ${component} provider binding could not be read safely.`,
     component,
   );
+}
+
+function bindCallback<T>(
+  callback: T,
+  receiver: unknown,
+  component: DeployedRuntimeComponent,
+): T {
+  try {
+    return Reflect.apply(
+      Function.prototype.bind,
+      callback as (...args: never[]) => unknown,
+      [receiver],
+    ) as T;
+  } catch {
+    throw invalidBinding(component);
+  }
 }
 
 function requireFunction(
