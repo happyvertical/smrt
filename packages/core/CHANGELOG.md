@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.43.8
+
+### Patch Changes
+
+- ### Features
+
+  - add configuration-driven executable (#2558) (app-cli)
+  - make ContentList realtime job-aware (#2534) (content)
+  - define validated application runtime profiles (#2548) (config)
+
+  ### Bug Fixes
+
+  - make PostgreSQL FK orphan probes safe (#2552) (core)
+
+  ### Other Changes
+
+  - chore: reserve partial v0.43.7 (#2563) (release)
+  - chore: sync sdk packages to v0.88.1 (#2553) (deps)
+  - chore: reconcile Generation 29 agent policy (#2550)
+  - @happyvertical/smrt-config@0.43.8
+  - @happyvertical/smrt-types@0.43.8
+  - @happyvertical/smrt-scanner@0.43.8
+
 ## 0.43.7
 
 ### Patch Changes

@@ -1,5 +1,13 @@
 # @happyvertical/smrt-workbench
 
+## 0.43.8
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.43.8
+- @happyvertical/smrt-playground@0.43.8
+- @happyvertical/smrt-ui@0.43.8
+
 ## 0.43.7
 
 ### Patch Changes

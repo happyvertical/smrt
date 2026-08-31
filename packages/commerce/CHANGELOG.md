@@ -1,5 +1,16 @@
 # @happyvertical/smrt-commerce
 
+## 0.43.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.43.8
+  - @happyvertical/smrt-ledgers@0.43.8
+  - @happyvertical/smrt-tenancy@0.43.8
+  - @happyvertical/smrt-types@0.43.8
+  - @happyvertical/smrt-ui@0.43.8
+
 ## 0.43.7
 
 ### Patch Changes
