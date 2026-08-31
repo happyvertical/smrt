@@ -31,12 +31,10 @@ subsystem you are editing. This file keeps what holds across all of them.
   database `UPDATE`; zero affected rows throws `RUNTIME_REVISION_CONFLICT`
   without overwriting the newer row. `save({ expectedUpdatedAt })` supplies an
   explicit revision when a caller binds the mutation to an earlier preview or
-  selection snapshot. Embedded adapters implement that comparison as a
-  process-local compare/upsert, so every same-process model save and delete is
-  serialized with it. `SmrtObject.withTransaction()` holds the same queue for
-  the complete root transaction, while saves on its bound instance re-enter
-  that hold; custom write paths must use the public transaction/queue APIs
-  rather than bypassing the CAS ordering contract.
+  selection snapshot. Embedded adapters serialize every same-process model
+  save, delete, and complete `SmrtObject.withTransaction()` callback through
+  one queue; bound saves re-enter that hold. Custom write paths must use those
+  public APIs rather than bypassing the CAS ordering contract.
 - Native DuckDB UUID columns are hydrated as canonical strings before model
   initialization, natural-key lookup, and embedded revision claims. Exact
   natural-key probes retain the interceptor-authorized filter when
@@ -284,7 +282,7 @@ use this option to hide an otherwise invalid schema.
 ## Gotchas
 
 - **Filesystem support is a lazy boundary (#1979)**: `SmrtClass` acquires `options.fs` adapters via `createFilesystemAdapter()` (`src/filesystem-loader.ts`), never a static `@happyvertical/files` import — the files SDK statically pulls @aws-sdk/client-s3 and reaches googleapis, and a static edge here would land it in every downstream SSR bundle. Node/tsx/vite-dev runtimes resolve it on first use; fully-bundled deployments import `@happyvertical/smrt-core/filesystem` at startup. Use `importOptionalDependency()` (`src/lazy-external.ts`) for any similar optional heavyweight dependency.
-- **Transaction-bound instances**: `SmrtClass.withDatabase(db, callback)` temporarily binds an initialized instance (including its public `options.db`) to a caller-owned transaction database and restores only the database binding. Transaction owners persisting one object should use `SmrtObject.withTransaction(callback)`, which also restores identity/revision metadata after rollback so the same instance can retry and serializes the complete callback with ordinary model writes on embedded adapters. Bound saves re-enter that transaction hold. Never reach into `_db`, and do not use the same instance concurrently during either callback.
+- **Transaction-bound instances**: `SmrtClass.withDatabase(db, callback)` temporarily binds an initialized instance (including its public `options.db`) to a caller-owned transaction database and restores only the database binding. Transaction owners persisting one object should use `SmrtObject.withTransaction(callback)`, which restores identity/revision metadata after rollback and serializes its embedded callback with ordinary writes. Bound saves re-enter that hold. Never reach into `_db`, and do not use the same instance concurrently during either callback.
 - **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`
 - **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)
 - **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime verification is `tableExists()` only (`src/schema/table-verifier.ts`) — no column, type, or index check
