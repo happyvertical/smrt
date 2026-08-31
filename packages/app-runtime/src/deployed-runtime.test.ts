@@ -2,7 +2,12 @@ import {
   RuntimeProfileValidationError,
   resolveApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import { ScheduleRunner, TaskRunner } from '@happyvertical/smrt-jobs';
+import {
+  ScheduleRunner,
+  type ScheduleRunnerConfig,
+  TaskRunner,
+  type TaskRunnerConfig,
+} from '@happyvertical/smrt-jobs';
 import { SessionService } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -876,6 +881,12 @@ describe('deployed application runtime', () => {
     vi.spyOn(ScheduleRunner.prototype, 'initialize').mockReturnValue(
       scheduleBlocked,
     );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
     const initialized = await initializeDeployedApplicationRuntime(
       selfHostedOptions(db),
     );
@@ -883,14 +894,50 @@ describe('deployed application runtime', () => {
     const taskWorker = initialized.createTaskWorker();
     const scheduleWorker = initialized.createScheduleWorker();
     await Promise.resolve();
-    await initialized.close();
+    const close = initialized.close();
     releaseTask();
     releaseSchedule();
+    await close;
 
     await expect(taskWorker).rejects.toMatchObject({ code: 'runtime_stopped' });
     await expect(scheduleWorker).rejects.toMatchObject({
       code: 'runtime_stopped',
     });
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(scheduleStop).toHaveBeenCalledOnce();
+  });
+
+  it('redacts synchronous failures from hostile worker configuration', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys: () => {
+          throw new Error(credential);
+        },
+      },
+    );
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    for (const createWorker of [
+      () => initialized.createTaskWorker(hostile as TaskRunnerConfig),
+      () => initialized.createScheduleWorker(hostile as ScheduleRunnerConfig),
+    ]) {
+      let failure: unknown;
+      try {
+        await createWorker();
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: 'provider_unavailable',
+        component: 'database',
+      });
+      expect((failure as Error).message).not.toContain(credential);
+    }
   });
 
   it('redacts database errors from worker initialization', async () => {

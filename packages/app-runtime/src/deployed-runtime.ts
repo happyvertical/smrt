@@ -568,6 +568,7 @@ class InitializedDeployedApplicationRuntime
 {
   private state: 'running' | 'closing' | 'close-failed' | 'stopped' = 'running';
   private closeAttempt?: Promise<void>;
+  private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
   private readonly sessionService: SessionService;
   private sessionServiceReady?: Promise<void>;
   private readonly snapshot: DeployedRuntimeDiagnostics;
@@ -615,28 +616,26 @@ class InitializedDeployedApplicationRuntime
 
   async createTaskWorker(config: TaskRunnerConfig = {}): Promise<TaskRunner> {
     this.assertRunning();
-    const runner = new TaskRunner(config);
+    const operation = this.initializeTaskWorker(config);
+    this.pendingWorkerInitializations.add(operation);
     try {
-      await runner.initialize(this.db);
-    } catch {
-      throw unavailable('database');
+      return await operation;
+    } finally {
+      this.pendingWorkerInitializations.delete(operation);
     }
-    this.assertRunning();
-    return runner;
   }
 
   async createScheduleWorker(
     config: ScheduleRunnerConfig = {},
   ): Promise<ScheduleRunner> {
     this.assertRunning();
-    const runner = new ScheduleRunner(config);
+    const operation = this.initializeScheduleWorker(config);
+    this.pendingWorkerInitializations.add(operation);
     try {
-      await runner.initialize(this.db);
-    } catch {
-      throw unavailable('database');
+      return await operation;
+    } finally {
+      this.pendingWorkerInitializations.delete(operation);
     }
-    this.assertRunning();
-    return runner;
   }
 
   diagnostics(): DeployedRuntimeDiagnostics {
@@ -679,9 +678,55 @@ class InitializedDeployedApplicationRuntime
     if (this.closeAttempt) return this.closeAttempt;
 
     this.state = 'closing';
-    const attempt = Promise.resolve().then(() => this.closeConnection());
+    const pendingWorkers = [...this.pendingWorkerInitializations];
+    const attempt = Promise.resolve().then(async () => {
+      await Promise.allSettled(pendingWorkers);
+      await this.closeConnection();
+    });
     this.closeAttempt = attempt;
     return attempt;
+  }
+
+  private async initializeTaskWorker(
+    config: TaskRunnerConfig,
+  ): Promise<TaskRunner> {
+    let runner: TaskRunner;
+    try {
+      runner = new TaskRunner(config);
+      await runner.initialize(this.db);
+    } catch {
+      throw unavailable('database');
+    }
+    if (this.state !== 'running') {
+      try {
+        await runner.stop();
+      } catch {
+        throw unavailable('database');
+      }
+      this.assertRunning();
+    }
+    return runner;
+  }
+
+  private async initializeScheduleWorker(
+    config: ScheduleRunnerConfig,
+  ): Promise<ScheduleRunner> {
+    let runner: ScheduleRunner;
+    try {
+      runner = new ScheduleRunner(config);
+      await runner.initialize(this.db);
+    } catch {
+      throw unavailable('database');
+    }
+    if (this.state !== 'running') {
+      try {
+        await runner.stop();
+      } catch {
+        throw unavailable('database');
+      }
+      this.assertRunning();
+    }
+    return runner;
   }
 
   private initializeSessionService(): Promise<void> {
