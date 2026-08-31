@@ -968,7 +968,7 @@ export function createDataSurfaceActionAdapter(
           return result(request, false, 'stale_revision');
         }
         if (invocation.action.execution === 'background' && allowBackground) {
-          if (!options.backgroundQueue) {
+          if (!options.backgroundQueue || !options.resolveDeferredPrincipal) {
             return result(request, false, 'background_unavailable');
           }
           const queued = await options.backgroundQueue.enqueue({

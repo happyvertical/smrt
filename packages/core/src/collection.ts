@@ -52,6 +52,77 @@ import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 const logger = createLogger({ level: 'info' });
 
+/** SQL words outside comments and quoted literals/identifiers. */
+function executableSqlWords(sql: string): string[] {
+  const words: string[] = [];
+  let index = 0;
+  while (index < sql.length) {
+    const character = sql[index];
+    const next = sql[index + 1];
+    if (character === '-' && next === '-') {
+      index = sql.indexOf('\n', index + 2);
+      if (index === -1) break;
+      continue;
+    }
+    if (character === '/' && next === '*') {
+      const end = sql.indexOf('*/', index + 2);
+      if (end === -1) break;
+      index = end + 2;
+      continue;
+    }
+    if (character === "'" || character === '"' || character === '`') {
+      const quote = character;
+      index += 1;
+      while (index < sql.length) {
+        if (sql[index] === quote) {
+          if (sql[index + 1] === quote) {
+            index += 2;
+            continue;
+          }
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+    if (character === '$') {
+      const tag = sql
+        .slice(index)
+        .match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)?.[0];
+      if (tag) {
+        const end = sql.indexOf(tag, index + tag.length);
+        if (end === -1) break;
+        index = end + tag.length;
+        continue;
+      }
+    }
+    if (/[A-Za-z_]/.test(character)) {
+      const start = index;
+      index += 1;
+      while (index < sql.length && /[A-Za-z0-9_$]/.test(sql[index])) index += 1;
+      words.push(sql.slice(start, index).toLowerCase());
+      continue;
+    }
+    index += 1;
+  }
+  return words;
+}
+
+function isMutatingSql(words: readonly string[]): boolean {
+  return words.some((word, index) => {
+    const next = words[index + 1];
+    return (
+      word === 'update' ||
+      (word === 'insert' && next === 'into') ||
+      (word === 'delete' && next === 'from') ||
+      (word === 'merge' && next === 'into') ||
+      (word === 'truncate' && next === 'table') ||
+      (word === 'replace' && next === 'into')
+    );
+  });
+}
+
 /**
  * `_smrt_contexts.owner_id` value for collection-level (as opposed to
  * per-object) memory. Tenant-scoped collections suffix the active tenant id
@@ -2695,19 +2766,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return (await this.db.query(sql, ...params)).rows;
     }
     const readSql = sql.trim().replace(/;$/, '');
-    const uncommented = readSql
-      .replace(/^(?:(?:--[^\r\n]*(?:\r?\n|$))|(?:\/\*[\s\S]*?\*\/)|\s)+/, '')
-      .trimStart();
+    const words = executableSqlWords(readSql);
     // query() is documented as a SELECT hydration surface but remains a raw
-    // escape hatch. Never reinterpret a mutating statement as a subquery.
-    if (
-      /\b(?:insert\s+into|update\s+[^\s(]+|delete\s+from|merge\s+into|truncate\s+table|replace\s+into)\b/i.test(
-        uncommented,
-      )
-    ) {
+    // escape hatch. Never reinterpret a mutating statement as a subquery, but
+    // do ignore mutation words inside caller-authored comments and literals.
+    if (isMutatingSql(words)) {
       return (await this.db.query(sql, ...params)).rows;
     }
-    if (!/^(?:select|with)\b/i.test(uncommented)) {
+    if (words[0] !== 'select' && words[0] !== 'with') {
       return (await this.db.query(sql, ...params)).rows;
     }
     const described = await this.db.query(`DESCRIBE ${readSql}`, ...params);

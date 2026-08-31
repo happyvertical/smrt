@@ -84,9 +84,11 @@ function harness(options: {
   requestFingerprintExtension?: () => string;
   mapError?: (error: unknown) => string;
   declaredSelectionScopes?: DataSurfaceActionDescriptor['selectionScopes'];
-  resolveDeferredPrincipal?: Parameters<
-    typeof createDataSurfaceActionAdapter
-  >[0]['resolveDeferredPrincipal'];
+  resolveDeferredPrincipal?:
+    | Parameters<
+        typeof createDataSurfaceActionAdapter
+      >[0]['resolveDeferredPrincipal']
+    | null;
 }) {
   const calls: ExecuteAsPrincipalOptions[] = [];
   const resolveSelectionCalls: DataSurfaceSelectionReference[] = [];
@@ -189,8 +191,12 @@ function harness(options: {
       : {}),
     requestFingerprintExtension: options.requestFingerprintExtension,
     mapError: options.mapError,
-    resolveDeferredPrincipal:
-      options.resolveDeferredPrincipal ?? (async () => context.principal),
+    ...(options.resolveDeferredPrincipal === null
+      ? {}
+      : {
+          resolveDeferredPrincipal:
+            options.resolveDeferredPrincipal ?? (async () => context.principal),
+        }),
   });
   return { adapter, assertOperation, calls, context, resolveSelectionCalls };
 }
@@ -989,6 +995,24 @@ describe('data-surface action adapter', () => {
     await expect(queued?.run()).rejects.toThrow(
       'principal binding could not be resolved safely',
     );
+  });
+
+  it('rejects background execution when no deferred principal resolver exists', async () => {
+    const enqueue = vi.fn();
+    const setup = harness({
+      execution: 'background',
+      enqueue,
+      resolveDeferredPrincipal: null,
+    });
+    const token = await previewToken(setup);
+
+    await expect(
+      setup.adapter.apply(
+        request('apply', { confirmationToken: token }),
+        setup.context,
+      ),
+    ).resolves.toMatchObject({ ok: false, reason: 'background_unavailable' });
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it('binds deferred execution to the immutable enqueue principal', async () => {

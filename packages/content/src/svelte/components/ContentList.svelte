@@ -97,6 +97,7 @@ import {
   type ContentListJob,
   type ContentListJobBinding,
   type ContentListJobSnapshot,
+  type ContentListJobTarget,
 } from '../content-list-runtime.js';
 import {
   type ContentListSavedView,
@@ -589,6 +590,7 @@ let workflowQueuedJobs = $state<
     actionId: ContentListWorkflowId;
     requestId: string;
     identity: DataSurfaceIdentity;
+    target: ContentListJobTarget;
   }>
 >([]);
 
@@ -1110,7 +1112,8 @@ const workflowDuplicateQueued = $derived(
   workflowQueuedJobs.some((job) => job.intent === workflowIntentSignature()),
 );
 const workflowQueuedJob = $derived(
-  workflowQueuedJobs.find((job) => job.intent === workflowIntentSignature()),
+  workflowQueuedJobs.find((job) => job.intent === workflowIntentSignature()) ??
+    workflowQueuedJobs[0],
 );
 
 /** Synthetic ids the adapter minted for rows that carry no durable identity. */
@@ -1446,7 +1449,12 @@ function rowPending(row: ContentListRow): boolean {
   return (
     jobSnapshot.pendingRowIds.has(String(row.id)) ||
     (activeQueryKey !== undefined &&
-      jobSnapshot.pendingQueryKeys.has(activeQueryKey))
+      jobSnapshot.pendingQueryKeys.has(activeQueryKey)) ||
+    workflowQueuedJobs.some((job) =>
+      job.target.kind === 'query'
+        ? activeQueryKey !== undefined && job.target.queryKey === activeQueryKey
+        : job.target.rowIds.includes(String(row.id)),
+    )
   );
 }
 
@@ -1567,6 +1575,16 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
   }
   if (effectiveRowIds.length === 0) return null;
   return { scope: 'explicit-ids', rowIds: effectiveRowIds };
+}
+
+function workflowJobTarget(
+  request: ContentListWorkflowRequest,
+): ContentListJobTarget {
+  if (request.selection.scope === 'all-matching' && activeQueryKey !== undefined)
+    return { kind: 'query', queryKey: activeQueryKey };
+  if (request.selection.scope === 'explicit-ids')
+    return { kind: 'rows', rowIds: request.selection.rowIds.map(String) };
+  return { kind: 'rows', rowIds: selectablePageRowIds.map(String) };
 }
 
 function workflowIntentSignature(): string {
@@ -1853,6 +1871,7 @@ async function applyWorkflow() {
                 ? result.details.jobRequestId
                 : request.requestId,
             identity: request.identity,
+            target: workflowJobTarget(request),
           },
         ];
       }
@@ -1875,6 +1894,7 @@ async function applyWorkflow() {
     }
     if (result.details?.background !== true) {
       applyWorkflowSelectionOutcomes(result);
+      refreshQuery();
     } else if (
       typeof result.details.jobId === 'string' &&
       !workflowQueuedJobs.some((job) => job.intent === workflowIntentAtPreview)
@@ -1890,6 +1910,7 @@ async function applyWorkflow() {
               ? result.details.jobRequestId
               : request.requestId,
           identity: request.identity,
+          target: workflowJobTarget(request),
         },
       ];
     }
@@ -1913,12 +1934,8 @@ async function checkWorkflowJob() {
   workflowError = null;
   try {
     const job = await workflows.client.status(queuedJob.jobId);
-    if (queuedJob.intent !== workflowIntentSignature()) {
-      workflowError = t(
-        M['content.content_list.workflow_changed_checking_job'],
-      );
-      return;
-    }
+    const matchesCurrentIntent =
+      queuedJob.intent === workflowIntentSignature();
     if (job.status === 'queued' || job.status === 'running') {
       workflowError = t(M['content.content_list.workflow_job_still'], {
         id: job.jobId,
@@ -1948,17 +1965,25 @@ async function checkWorkflowJob() {
     workflowQueuedJobs = workflowQueuedJobs.filter(
       (queued) => queued.jobId !== job.jobId,
     );
+    if (!matchesCurrentIntent) {
+      if (job.status === 'succeeded' && job.result?.ok) refreshQuery();
+      workflowError = t(
+        M['content.content_list.workflow_changed_checking_job'],
+      );
+      return;
+    }
     if (job.status === 'succeeded' && job.result) {
-      workflowResult = job.result;
+      if (matchesCurrentIntent) workflowResult = job.result;
       if (!job.result.ok) {
         workflowError = workflowReasonLabel(
           job.result.reason,
           M['content.content_list.workflow_job_failed'],
           { id: job.jobId },
         );
-      } else {
+      } else if (matchesCurrentIntent) {
         applyWorkflowSelectionOutcomes(job.result);
       }
+      if (job.result.ok) refreshQuery();
     }
     if (job.status !== 'succeeded') {
       workflowError = workflowReasonLabel(
@@ -2302,7 +2327,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           </svg>
         </Button>
 
-        {#if workflowDuplicateQueued && workflows?.client.status}
+        {#if workflowQueuedJobs.length > 0 && workflows?.client.status}
           <Button
             variant="ghost"
             size="sm"

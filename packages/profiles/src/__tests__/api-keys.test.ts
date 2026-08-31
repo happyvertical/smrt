@@ -208,6 +208,24 @@ describe('ApiKeyCollection', () => {
     expect(await collection.verify('sk_live_unknown')).toBeNull();
   });
 
+  it('fails closed when usage recording observes a concurrent revocation', async () => {
+    const { db, profile } = await createProfileFixture(dbUrl);
+    const collection = await ApiKeyCollection.create({ db });
+    const { key, apiKey } = await collection.generateForProfile(profile, {
+      name: 'revoked-during-verification',
+    });
+    const recordUsage = apiKey.recordUsage.bind(apiKey);
+
+    collection.findByHash = async () => apiKey;
+    apiKey.recordUsage = async () => {
+      await apiKey.revoke();
+      await recordUsage();
+    };
+
+    await expect(collection.verify(key)).resolves.toBeNull();
+    expect(apiKey.revokedAt).toBeInstanceOf(Date);
+  });
+
   it('revokes all active keys for a profile', async () => {
     const { db, profile } = await createProfileFixture(dbUrl);
     const collection = await ApiKeyCollection.create({ db });

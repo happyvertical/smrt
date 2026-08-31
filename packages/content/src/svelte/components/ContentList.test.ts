@@ -286,6 +286,82 @@ describe('ContentList presentations', () => {
 });
 
 describe('ContentList bulk workflows', () => {
+  it('refreshes a non-live server query after foreground success', async () => {
+    const query = createFakeContentListQuery();
+    const workflow = workflowBinding();
+    const target = renderList({
+      query: { bind: () => query.binding },
+      workflows: workflow,
+    });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    await vi.waitFor(() =>
+      expect(
+        checkboxByLabel(target, 'Select Council budget explained'),
+      ).toBeTruthy(),
+    );
+
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+
+    await vi.waitFor(() => expect(query.refreshes).toBe(1));
+  });
+
+  it('locks queued workflow rows and refreshes after background success', async () => {
+    const query = createFakeContentListQuery();
+    let applied: ContentListWorkflowRequest | undefined;
+    const status = vi.fn(async () => ({
+      jobId: 'job-workflow-refresh',
+      status: 'succeeded' as const,
+      result: applied ? { ...applied, ok: true } : undefined,
+    }));
+    const workflow = workflowBinding({
+      apply: async (request) => {
+        applied = request;
+        return {
+          ...request,
+          ok: true,
+          details: {
+            accepted: 1,
+            skipped: 0,
+            failed: 0,
+            background: true,
+            jobId: 'job-workflow-refresh',
+          },
+        };
+      },
+      status,
+    });
+    const target = renderList({
+      query: { bind: () => query.binding },
+      workflows: workflow,
+    });
+    query.resolve([serverRow('content-1', 'Council budget explained')]);
+    await vi.waitFor(() =>
+      expect(
+        checkboxByLabel(target, 'Select Council budget explained'),
+      ).toBeTruthy(),
+    );
+
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    expect(buttonsByText(target, 'Edit')[0]?.disabled).toBe(true);
+
+    click(buttonsByText(target, 'Check job')[0]);
+    await vi.waitFor(() => expect(status).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(query.refreshes).toBe(1));
+  });
+
   it('localizes workflow controls, confirmation details, and failures', async () => {
     const workflows = workflowBinding({
       preview: async (request) => ({

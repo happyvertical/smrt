@@ -48,6 +48,10 @@ export class ApiKeyCollection extends SmrtCollection<ApiKey> {
     // Record usage
     await apiKey.recordUsage();
 
+    // recordUsage() reloads after a concurrent-write conflict. A revocation
+    // observed by that reload must fail this authentication attempt closed.
+    if (!apiKey.isValid()) return null;
+
     return apiKey;
   }
 
