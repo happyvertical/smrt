@@ -42,6 +42,7 @@ import {
 } from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
+import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   executeToolCall as executeToolCallInternal,
@@ -61,6 +62,15 @@ import {
 const logger = createLogger({
   level: process.env.DEBUG_STI ? 'debug' : 'info',
 });
+
+function isDuckDbHugeInt(value: unknown): boolean {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'hugeint' in value &&
+      (typeof value.hugeint === 'number' || typeof value.hugeint === 'bigint'),
+  );
+}
 
 /**
  * Default maximum number of characters of serialized object data injected into
@@ -869,6 +879,7 @@ export class SmrtObject extends SmrtClass {
    * @throws Error if STI validation fails
    */
   async loadDataFromDb(data: Record<string, unknown>) {
+    data = await this.canonicalizePersistedUuidRow(data);
     const className = this.getResolvedClassName();
 
     if (process.env.DEBUG_STI) {
@@ -1022,6 +1033,76 @@ export class SmrtObject extends SmrtClass {
     // The data came from an existing row, so subsequent saves must update
     // that row by primary key even if natural-key fields change (issue #1472).
     this._persisted = true;
+  }
+
+  /** Rebind native DuckDB UUID wrappers to their persisted textual values. */
+  protected async canonicalizePersistedUuidRow(
+    row: Record<string, unknown>,
+    lookupId: unknown = this.id,
+  ): Promise<Record<string, unknown>> {
+    if (typeof lookupId !== 'string' || !this.isNativeDuckDb()) return row;
+    const schema =
+      ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
+      ObjectRegistry.getSchema(this.getResolvedClassName());
+    const registeredFields =
+      ObjectRegistry.getFields(this.getResolvedQualifiedName()).size > 0
+        ? ObjectRegistry.getFields(this.getResolvedQualifiedName())
+        : ObjectRegistry.getFields(this.getResolvedClassName());
+    const instanceColumns = new Set([
+      'id',
+      ...Array.from(registeredFields.keys(), (fieldName) =>
+        toSnakeCase(fieldName),
+      ),
+    ]);
+    const uuidColumns = Object.entries(schema?.columns ?? {})
+      .filter(
+        ([columnName, column]) =>
+          instanceColumns.has(columnName) &&
+          String(column.type).toUpperCase() === 'UUID',
+      )
+      .map(([columnName]) => columnName);
+    if (
+      uuidColumns.length === 0 ||
+      !uuidColumns.some((columnName) => isDuckDbHugeInt(row[columnName]))
+    ) {
+      return row;
+    }
+    const quote = (identifier: string) =>
+      `"${identifier.replaceAll('"', '""')}"`;
+    const { rows } = await this.db.query(
+      `SELECT ${uuidColumns
+        .map((columnName) => {
+          const quoted = quote(columnName);
+          return `CAST(${quoted} AS VARCHAR) AS ${quoted}`;
+        })
+        .join(', ')} FROM ${quote(this.tableName)} WHERE "id" = ? LIMIT 1`,
+      lookupId,
+    );
+    return rows[0] ? { ...row, ...rows[0] } : row;
+  }
+
+  private isNativeDuckDb(): boolean {
+    const db = this.db as typeof this.db & {
+      config?: { type?: string; url?: string };
+      type?: string;
+      client?: { constructor?: { name?: string }; connection?: unknown };
+      exportTable?: unknown;
+    };
+    const clientName = db.client?.constructor?.name?.toLowerCase() ?? '';
+    const isDuckDbConnection =
+      clientName.includes('duckdb') ||
+      (typeof db.exportTable === 'function' &&
+        db.client !== undefined &&
+        'connection' in db.client);
+    return (
+      detectEngine(
+        db.url || db.config?.url || '',
+        this.getDatabaseEngineHint() ||
+          db.type ||
+          db.config?.type ||
+          (isDuckDbConnection ? 'duckdb' : undefined),
+      ) === 'duckdb'
+    );
   }
 
   /**
@@ -2305,9 +2386,12 @@ export class SmrtObject extends SmrtClass {
       async () => {
         let current: Record<string, unknown> | null = null;
         if (useEmbeddedRevisionFallback) {
-          current = (await this.db.get(this.tableName, {
+          const persisted = (await this.db.get(this.tableName, {
             id: this.id,
           })) as Record<string, unknown> | null;
+          current = persisted
+            ? await this.canonicalizePersistedUuidRow(persisted)
+            : null;
           if (
             !current ||
             !this.revisionsEqual(current.updated_at, expectedUpdatedAt)

@@ -45,8 +45,7 @@ that reverted to DECIMAL passes every SQLite suite.
 - **Embedded sourced adjustments serialize per database.** SQLite, DuckDB, and
   supported non-immediate JSON handles multiplex local writes; the complete
   deterministic adjustment flow, including recovery reads, runs under one
-  database-scoped lock. Native DuckDB UUID values are rebound from persisted
-  `VARCHAR` casts before adjustment inserts and charge CAS updates.
+  database-scoped lock.
 - **UI formats by dividing, never by `toFixed`.** `PlanPicker` and
   `CommercialOverview` scale back to major units using the currency's own
   minor-unit exponent, so zero-decimal currencies (JPY, KRW) are not divided.

@@ -635,17 +635,30 @@ describe('commercial usage tracer', () => {
         id: '33333333-3333-4333-8333-333333333333',
         tenantId: '11111111-1111-4111-8111-111111111111',
         metricKey: 'ai.tokens',
-        quantity: 0,
+        quantity: 5,
         windowStart: new Date('2026-07-01T00:00:00Z'),
         windowEnd: new Date('2026-07-01T00:01:00Z'),
       });
-      const charge = await duckCharges.create({
+      await duckRules.create({
         tenantId: '11111111-1111-4111-8111-111111111111',
-        usageEventId: String(event.id),
-        amount: 10,
-        status: 'approved',
-        approvedAt: new Date('2026-07-01T00:00:00Z'),
+        ruleKey: 'duckdb-tokens-v1',
+        metricKey: 'ai.tokens',
+        strategy: 'fixed_unit',
+        effectiveFrom: new Date('2026-01-01T00:00:00Z'),
+        terms: JSON.stringify({ unitPrice: 2 }),
       });
+      const draft = await duckService.price({
+        usageEventId: String(event.id),
+      });
+      const charge = await duckService.price({
+        usageEventId: String(event.id),
+        approved: true,
+      });
+
+      expect(typeof charge.id).toBe('string');
+      expect(charge.id).toBe(draft.id);
+      expect(charge.amount).toBe(10);
+      expect(charge.status).toBe('approved');
 
       const [first, second] = await Promise.all([
         duckService.adjust(

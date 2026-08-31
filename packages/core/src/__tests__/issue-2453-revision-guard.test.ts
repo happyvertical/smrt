@@ -82,6 +82,46 @@ describe('issue #2453 revision-guarded saves', () => {
     expect(hydrated?.updated_at?.getTime()).toBe(hydrated?.updatedAt.getTime());
   });
 
+  it('canonicalizes native DuckDB UUIDs for guarded saves and revision claims', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    try {
+      const duckRows = (await Issue2453RevisionRows.create({
+        db: duckDb,
+      })) as Issue2453RevisionRows;
+      const created = await duckRows.create({ title: 'duckdb original' });
+      const loaded = await duckRows.get(String(created.id));
+      if (!loaded?.updated_at) throw new Error('expected persisted DuckDB row');
+
+      expect(typeof loaded.id).toBe('string');
+      loaded.title = 'duckdb guarded update';
+      await loaded.save({ expectedUpdatedAt: loaded.updated_at });
+      expect((await duckRows.get(String(created.id)))?.title).toBe(
+        'duckdb guarded update',
+      );
+
+      const claimant = await duckRows.get(String(created.id));
+      if (!claimant?.updated_at) throw new Error('expected updated DuckDB row');
+      claimant.title = 'must not persist';
+      await claimant.claimRevision(claimant.updated_at);
+      expect((await duckRows.get(String(created.id)))?.title).toBe(
+        'duckdb guarded update',
+      );
+
+      const direct = new Issue2453RevisionRow({
+        db: duckDb,
+        id: String(created.id),
+      });
+      await direct.initialize();
+      expect(typeof direct.id).toBe('string');
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
   it('uses conditional updates for remote LibSQL revision guards', async () => {
     const created = await rows.create({ title: 'original' });
     const first = await rows.get(String(created.id));

@@ -507,6 +507,53 @@ describe('Message.send orchestration', () => {
     expect(sendMock).toHaveBeenCalledTimes(1);
   });
 
+  it('claims and sends a native DuckDB message with canonical UUID identity', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Account', 'SlackAccount', 'Message', 'SlackMessage'],
+      omitForeignKeyConstraints: true,
+    });
+    try {
+      const account = new SlackAccount({
+        id: '55555555-5555-4555-8555-555555555555',
+        name: 'DuckDB workspace',
+        botUserId: 'U-BOT',
+        isActive: true,
+        db: duckDb,
+      });
+      await account.initialize();
+      account.setSettings({ botToken: 'xoxb-token' });
+      await account.save();
+      sendMock.mockResolvedValueOnce({
+        success: true,
+        messageId: 'slack-duckdb-uuid',
+        providerResponse: { ok: true },
+        timestamp: new Date(),
+      });
+      const seeded = new SlackMessage({
+        id: '66666666-6666-4666-8666-666666666666',
+        body: 'native DuckDB UUID',
+        channelId: 'C1',
+        accountId: String(account.id),
+        db: duckDb,
+      });
+      await seeded.initialize();
+      await seeded.save();
+      const messages = await (MessageCollection as any).create({ db: duckDb });
+      const message = await messages.get({ id: String(seeded.id) });
+
+      expect(typeof message.id).toBe('string');
+      await expect(message.send()).resolves.toMatchObject({ success: true });
+      expect(sendMock).toHaveBeenCalledTimes(1);
+      expect((await messages.get({ id: String(seeded.id) })).sendStatus).toBe(
+        'sent',
+      );
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
   it('rejects a stale send claim after another writer edits the message', async () => {
     const account = new SlackAccount({
       name: 'WS',

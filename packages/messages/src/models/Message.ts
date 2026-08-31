@@ -115,7 +115,10 @@ export class Message extends SmrtObject {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       let nextRevision: Date | undefined;
       await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
-        const current = await this.db.get(this.tableName, { id: this.id });
+        const persisted = await this.db.get(this.tableName, { id: this.id });
+        const current = persisted
+          ? await this.canonicalizePersistedUuidRow(persisted)
+          : null;
         if (current?.send_status !== 'sending') return;
         const currentRevision = current.updated_at;
         const currentRevisionMs = new Date(String(currentRevision)).getTime();
@@ -376,7 +379,10 @@ export class Message extends SmrtObject {
       let claimed = false;
       await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
         if (useEmbeddedFallback) {
-          const current = await this.db.get(this.tableName, { id: this.id });
+          const persisted = await this.db.get(this.tableName, { id: this.id });
+          const current = persisted
+            ? await this.canonicalizePersistedUuidRow(persisted)
+            : null;
           const storedRevision = current?.updated_at;
           const currentRevision =
             storedRevision instanceof Date

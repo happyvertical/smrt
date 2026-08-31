@@ -78,44 +78,6 @@ async function withEmbeddedSourcedAdjustmentLock<T>(
   }
 }
 
-interface CanonicalChargeIdentity {
-  id: string;
-  tenantId: string;
-  usageEventId: string;
-  pricingRuleId: string;
-}
-
-async function readCanonicalDuckDbChargeIdentity(
-  db: {
-    query: (
-      sql: string,
-      ...values: unknown[]
-    ) => Promise<{ rows: Record<string, unknown>[] }>;
-  },
-  chargeId: string,
-): Promise<CanonicalChargeIdentity | undefined> {
-  const { rows } = await db.query(
-    `SELECT CAST(id AS VARCHAR) AS id,
-            CAST(tenant_id AS VARCHAR) AS tenant_id,
-            CAST(usage_event_id AS VARCHAR) AS usage_event_id,
-            CAST(pricing_rule_id AS VARCHAR) AS pricing_rule_id
-       FROM _smrt_client_charges
-      WHERE id = ?`,
-    chargeId,
-  );
-  const row = rows[0];
-  if (!row) return undefined;
-  return {
-    id: String(row.id),
-    tenantId: String(row.tenant_id),
-    usageEventId: String(row.usage_event_id),
-    pricingRuleId:
-      row.pricing_rule_id === null || row.pricing_rule_id === undefined
-        ? ''
-        : String(row.pricing_rule_id),
-  };
-}
-
 export class UnsupportedCommercialBillingStorageError extends Error {
   readonly code = 'UNSUPPORTED_COMMERCIAL_BILLING_STORAGE';
 
@@ -537,10 +499,6 @@ export class CommercialUsageService {
     source: string,
     sourceId: string,
   ) {
-    const canonicalChargeIdentity =
-      this.billingStorage.adapterType === 'duckdb'
-        ? await readCanonicalDuckDbChargeIdentity(this.charges.db, chargeId)
-        : undefined;
     const initialCharge = await this.charges.get(chargeId);
     if (!initialCharge)
       throw new Error(`Client charge ${chargeId} was not found.`);
@@ -556,7 +514,7 @@ export class CommercialUsageService {
       source && sourceId
         ? await deterministicUuid([
             'billing-adjustment',
-            canonicalChargeIdentity?.tenantId ?? String(initialCharge.tenantId),
+            String(initialCharge.tenantId),
             chargeId,
             source,
             sourceId,
@@ -574,15 +532,6 @@ export class CommercialUsageService {
         const charge = await charges.get(chargeId);
         if (!charge)
           throw new Error(`Client charge ${chargeId} was not found.`);
-        if (canonicalChargeIdentity) {
-          // DuckDB's native binding hydrates UUID columns as HUGEINT wrapper
-          // objects. Restore the persisted textual UUIDs before those values
-          // are reused by the adjustment insert or charge CAS update.
-          charge.id = canonicalChargeIdentity.id;
-          charge.tenantId = canonicalChargeIdentity.tenantId;
-          charge.usageEventId = canonicalChargeIdentity.usageEventId;
-          charge.pricingRuleId = canonicalChargeIdentity.pricingRuleId;
-        }
         if (charge.status !== 'approved' && charge.status !== 'adjusted') {
           throw new Error(
             `Client charge ${chargeId} must be approved before it can be adjusted.`,
@@ -594,7 +543,7 @@ export class CommercialUsageService {
         if (!adjustment) {
           adjustment = await adjustments.create({
             ...(sourcedId ? { id: sourcedId } : {}),
-            tenantId: canonicalChargeIdentity?.tenantId ?? charge.tenantId,
+            tenantId: charge.tenantId,
             clientChargeId: chargeId,
             amount,
             currency: charge.currency,
@@ -603,11 +552,6 @@ export class CommercialUsageService {
             sourceId,
             _insertOnly: Boolean(sourcedId),
           });
-        }
-        if (canonicalChargeIdentity) {
-          if (sourcedId) adjustment.id = sourcedId;
-          adjustment.tenantId = canonicalChargeIdentity.tenantId;
-          adjustment.clientChargeId = canonicalChargeIdentity.id;
         }
         if (charge.status === 'approved') {
           charge.status = 'adjusted';
@@ -624,14 +568,7 @@ export class CommercialUsageService {
         // sequential just like the transaction flow protected above.
         const adjustment = await this.adjustments.get(sourcedId);
         const charge = await this.charges.get(chargeId);
-        if (adjustment && charge?.status === 'adjusted') {
-          if (canonicalChargeIdentity) {
-            adjustment.id = sourcedId;
-            adjustment.tenantId = canonicalChargeIdentity.tenantId;
-            adjustment.clientChargeId = canonicalChargeIdentity.id;
-          }
-          return adjustment;
-        }
+        if (adjustment && charge?.status === 'adjusted') return adjustment;
       }
       throw error;
     }

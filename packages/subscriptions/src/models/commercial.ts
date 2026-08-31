@@ -105,7 +105,10 @@ export class ClientCharge extends SmrtObject {
   protected async validateBeforeSave(): Promise<void> {
     await super.validateBeforeSave();
     if (!this.id) return;
-    const row = await this.db.get(this.tableName, { id: this.id });
+    const persistedRow = await this.db.get(this.tableName, { id: this.id });
+    const row = persistedRow
+      ? await this.canonicalizePersistedUuidRow(persistedRow)
+      : null;
     if (!row || (row.status !== 'approved' && row.status !== 'adjusted'))
       return;
     if (
@@ -118,30 +121,9 @@ export class ClientCharge extends SmrtObject {
         'Approved client charges cannot be reverted to an editable status.',
       );
     }
-    let persistedTenantId = row.tenant_id;
-    let persistedUsageEventId = row.usage_event_id;
-    let persistedPricingRuleId = row.pricing_rule_id;
-    if (
-      isDuckDbHugeInt(persistedTenantId) ||
-      isDuckDbHugeInt(persistedUsageEventId) ||
-      isDuckDbHugeInt(persistedPricingRuleId)
-    ) {
-      const { rows } = await this.db.query(
-        `SELECT CAST(tenant_id AS VARCHAR) AS tenant_id,
-                CAST(usage_event_id AS VARCHAR) AS usage_event_id,
-                CAST(pricing_rule_id AS VARCHAR) AS pricing_rule_id
-           FROM ${this.tableName}
-          WHERE id = ?`,
-        this.id,
-      );
-      const canonical = rows[0];
-      persistedTenantId = canonical?.tenant_id;
-      persistedUsageEventId = canonical?.usage_event_id;
-      persistedPricingRuleId = canonical?.pricing_rule_id;
-    }
     const persisted = [
-      persistedTenantId,
-      persistedUsageEventId,
+      row.tenant_id,
+      row.usage_event_id,
       row.subscriber_kind,
       row.subscriber_external_id,
       row.project_id,
@@ -153,7 +135,7 @@ export class ClientCharge extends SmrtObject {
       row.quantity,
       row.amount,
       row.currency,
-      persistedPricingRuleId,
+      row.pricing_rule_id,
       row.pricing_snapshot,
       row.approved_at,
     ];
@@ -300,13 +282,4 @@ function normalizeSnapshot(value: unknown): string {
     if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString();
   }
   return String(value ?? '');
-}
-
-function isDuckDbHugeInt(value: unknown): boolean {
-  return Boolean(
-    value &&
-      typeof value === 'object' &&
-      'hugeint' in value &&
-      (typeof value.hugeint === 'number' || typeof value.hugeint === 'bigint'),
-  );
 }

@@ -9,12 +9,17 @@ import {
 } from '@happyvertical/smrt-agents/server';
 import {
   createDataQueryFingerprint,
+  getTestDatabase,
   normalizeDataQueryRequest,
 } from '@happyvertical/smrt-core';
 import type { DataQueryRequest } from '@happyvertical/smrt-types';
 import { describe, expect, it, vi } from 'vitest';
 import type { Content } from '../content.js';
-import { buildContentQuerySchema } from '../content-query.js';
+import {
+  buildContentQuerySchema,
+  executeContentQuery,
+} from '../content-query.js';
+import { Contents } from '../contents.js';
 import { CONTENT_LIST_WORKFLOW_OPTIONS } from '../svelte/content-list-workflows.js';
 import {
   CONTENT_LIST_WORKFLOWS,
@@ -355,6 +360,112 @@ function harness(
 }
 
 describe('ContentList bulk workflow server adapter (#2453)', () => {
+  it('applies a revision-guarded archive to native DuckDB UUID rows', async () => {
+    const db = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Content'],
+      omitForeignKeyConstraints: true,
+    });
+    try {
+      const contents = await Contents.create({ db });
+      const created = await contents.create({
+        id: '44444444-4444-4444-8444-444444444444',
+        tenantId: '11111111-1111-4111-8111-111111111111',
+        title: 'DuckDB content',
+        status: 'draft',
+      });
+      const allowedTools = ['content.workflow.archive'];
+      const run: PrincipalRun = {
+        context: {
+          tenantId: '11111111-1111-4111-8111-111111111111',
+        } as PrincipalRun['context'],
+        permissions: ['contents:update'],
+        allowedTools,
+        isToolAllowed: (tool) => allowedTools.includes(tool),
+        assertToolAllowed(tool) {
+          if (!allowedTools.includes(tool)) throw new Error('tool denied');
+        },
+        assertOperation: vi.fn(),
+      };
+      const runAsPrincipal = (async <T>(
+        _principalOptions: ExecuteAsPrincipalOptions,
+        callback: (principalRun: PrincipalRun) => Promise<T>,
+      ): Promise<T> =>
+        callback(
+          run,
+        )) as typeof import('@happyvertical/smrt-agents').executeAsPrincipal;
+      const adapter = createContentListActionAdapter({
+        state: new InMemoryDataSurfaceActionStateStore(),
+        collection: async () => contents,
+        revision: async () => 7,
+        runAsPrincipal,
+      });
+      const context = {
+        principal: {
+          db: 'test.db',
+          principal: {
+            runAsUserId: 'principal-a',
+            tenantId: '11111111-1111-4111-8111-111111111111',
+            allowedTools,
+          },
+          audit: vi.fn(),
+        },
+      };
+      const selection = {
+        scope: 'explicit-ids' as const,
+        rowIds: [String(created.id)],
+      };
+      const target = { expectedCount: 1 };
+      await executeContentQuery(
+        contents,
+        {
+          version: 1,
+          requestId: 'duckdb-content-query',
+          mode: 'rows',
+          projection: ['id', 'title', 'status', 'updated_at'],
+          filter: {
+            kind: 'condition',
+            field: 'id',
+            operator: 'in',
+            value: [String(created.id)],
+          },
+          sort: [{ field: 'id', direction: 'asc' }],
+          page: { kind: 'offset', offset: 0, limit: 1 },
+        },
+        {
+          scope: {
+            tenantId: '11111111-1111-4111-8111-111111111111',
+          },
+        },
+      );
+      const hydratedBeforePreview = await contents.get(String(created.id));
+      expect(hydratedBeforePreview?.status).toBe('draft');
+      const preview = await adapter.preview(
+        actionRequest('preview', 'archive', selection, target),
+        context,
+      );
+      expect(preview).toMatchObject({ ok: true });
+
+      const result = await adapter.apply(
+        actionRequest('apply', 'archive', selection, target, {
+          confirmationToken: preview.confirmationToken,
+        }),
+        context,
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        details: { accepted: 1, failed: 0 },
+      });
+      const persisted = await contents.get(String(created.id));
+      expect(typeof persisted?.id).toBe('string');
+      expect(persisted?.status).toBe('archived');
+    } finally {
+      await db.close?.();
+    }
+  });
+
   it('keeps browser and server workflow catalogs in parity', () => {
     expect(CONTENT_LIST_WORKFLOW_OPTIONS).toEqual(
       CONTENT_LIST_WORKFLOWS.map(({ id, label, execution, sensitivity }) => ({

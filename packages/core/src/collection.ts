@@ -1455,6 +1455,37 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
   }
 
+  private getHydrationSelectSql(
+    schema = ObjectRegistry.getSchema(this.getResolvedItemQualifiedName()) ??
+      ObjectRegistry.getSchema(this.getResolvedItemClassName()),
+  ): string {
+    if (this.getDatabaseEngine() !== 'duckdb') return '*';
+    const registeredFields =
+      ObjectRegistry.getFields(this.getResolvedItemQualifiedName()).size > 0
+        ? ObjectRegistry.getFields(this.getResolvedItemQualifiedName())
+        : ObjectRegistry.getFields(this.getResolvedItemClassName());
+    const itemColumns = new Set([
+      'id',
+      ...Array.from(registeredFields.keys(), (fieldName) =>
+        this.toDbColumnName(fieldName),
+      ),
+    ]);
+    const uuidColumns = Object.entries(schema?.columns ?? {})
+      .filter(
+        ([columnName, column]) =>
+          itemColumns.has(columnName) &&
+          String(column.type).toUpperCase() === 'UUID',
+      )
+      .map(([columnName]) => columnName);
+    if (uuidColumns.length === 0) return '*';
+    return `* REPLACE (${uuidColumns
+      .map((columnName) => {
+        const quoted = this.quoteProjectionIdentifier(columnName);
+        return `CAST(${quoted} AS VARCHAR) AS ${quoted}`;
+      })
+      .join(', ')})`;
+  }
+
   private isOmittedCustomPrimaryKeySystemField(
     fieldName: string,
     hasCustomPrimaryKey: boolean,
@@ -1571,8 +1602,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       const columnName = this.toDbColumnName(fieldName);
+      const quotedColumn = this.quoteProjectionIdentifier(columnName);
+      const selectValue =
+        this.getDatabaseEngine() === 'duckdb' &&
+        String(schema?.columns[columnName]?.type).toUpperCase() === 'UUID'
+          ? `CAST(${quotedColumn} AS VARCHAR)`
+          : quotedColumn;
       selectExpressions.push(
-        `${this.quoteProjectionIdentifier(columnName)} AS ${this.quoteProjectionIdentifier(fieldName)}`,
+        `${selectValue} AS ${this.quoteProjectionIdentifier(fieldName)}`,
       );
       outputFields.push(fieldName);
     }
@@ -1905,7 +1942,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const parentSelectSql =
       parentColumnNames.length > 0
         ? parentColumnNames
-            .map((columnName) => this.quoteProjectionIdentifier(columnName))
+            .map((columnName) => {
+              const quoted = this.quoteProjectionIdentifier(columnName);
+              return this.getDatabaseEngine() === 'duckdb' &&
+                String(
+                  parentSchema?.columns[columnName]?.type,
+                ).toUpperCase() === 'UUID'
+                ? `CAST(${quoted} AS VARCHAR) AS ${quoted}`
+                : quoted;
+            })
             .join(', ')
         : '*';
     const relatedAlias = (fieldName: string): string => {
@@ -2689,7 +2734,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // hydrates none of them. The literal is safe to interpolate: it is not
     // caller-derived, and `$n` placeholders here would have to be numbered after
     // the WHERE values on PostgreSQL.
-    const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql} LIMIT 1`;
+    const fullSQL = `SELECT ${this.getHydrationSelectSql()} FROM ${this.tableName} ${whereSql} LIMIT 1`;
     const rows = await this.queryRowsWithCache(
       fullSQL,
       whereValues,
@@ -2886,7 +2931,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       limitOffsetValues.push(boundedOffset);
     }
 
-    const selectSql = projection ? projection.sql : '*';
+    const selectSql = projection
+      ? projection.sql
+      : this.getHydrationSelectSql();
     const sql = `SELECT ${selectSql} FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 

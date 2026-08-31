@@ -31,6 +31,10 @@ subsystem you are editing. This file keeps what holds across all of them.
   objects. The expected revision is included in the database `UPDATE`; zero
   affected rows throws `RUNTIME_REVISION_CONFLICT` without overwriting the
   newer row.
+- Native DuckDB UUID columns are hydrated as canonical strings before model
+  initialization and embedded revision claims. Custom embedded-CAS paths that
+  consume raw adapter rows must call `canonicalizePersistedUuidRow()` before
+  reusing UUID identity or relationship values.
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
@@ -62,6 +66,11 @@ documented in [agents/collection-reads.md](agents/collection-reads.md).
 an `initialize()` hook may query through the same transaction-bound PostgreSQL
 client. Keep this serialization invariant; use `select` when callers need plain
 rows without model hydration.
+
+Native DuckDB model hydration casts declared UUID columns to `VARCHAR` in the
+read query because its JavaScript binding otherwise returns lossy HUGEINT
+wrapper objects. Explicit projections apply the same cast for selected UUID
+fields so bounded query envelopes preserve canonical row and relationship ids.
 
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
 Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`
