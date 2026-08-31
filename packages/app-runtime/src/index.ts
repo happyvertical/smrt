@@ -1584,9 +1584,15 @@ function sameFilesystemPath(
 ): boolean {
   const normalizedLeft = resolve(left);
   const normalizedRight = resolve(right);
-  return runtimePlatform === 'win32'
+  return usesCaseInsensitivePathGuards(runtimePlatform)
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+function usesCaseInsensitivePathGuards(
+  runtimePlatform: NodeJS.Platform,
+): boolean {
+  return runtimePlatform === 'win32' || runtimePlatform === 'darwin';
 }
 
 function unsafeFilesystemEntry(message: string, cause?: unknown) {
@@ -1679,10 +1685,9 @@ function isInside(
   child: string,
   runtimePlatform: NodeJS.Platform = platform(),
 ): boolean {
-  const normalizedParent =
-    runtimePlatform === 'win32' ? parent.toLowerCase() : parent;
-  const normalizedChild =
-    runtimePlatform === 'win32' ? child.toLowerCase() : child;
+  const caseInsensitive = usesCaseInsensitivePathGuards(runtimePlatform);
+  const normalizedParent = caseInsensitive ? parent.toLowerCase() : parent;
+  const normalizedChild = caseInsensitive ? child.toLowerCase() : child;
   const path = relative(normalizedParent, normalizedChild);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }

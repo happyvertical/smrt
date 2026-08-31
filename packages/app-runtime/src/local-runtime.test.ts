@@ -1494,14 +1494,17 @@ describe('local runtime paths', () => {
     ).toThrow('dedicated directory');
   });
 
-  it('applies the platform override to case-insensitive custody guards', () => {
+  it.each([
+    'win32',
+    'darwin',
+  ] as const)('applies the %s platform override to conservative case-insensitive custody guards', (runtimePlatform) => {
     expect(() =>
       resolveLocalRuntimePaths({
         appId: 'lolaus',
         sourceRoot: '/workspace/lolaus',
         dataDirectory: '/users/test',
         homeDirectory: '/Users/Test',
-        platform: 'win32',
+        platform: runtimePlatform,
       }),
     ).toThrow('dedicated directory');
     expect(() =>
@@ -1510,7 +1513,7 @@ describe('local runtime paths', () => {
         sourceRoot: '/Workspace/Lolaus',
         dataDirectory: '/workspace/lolaus/data',
         homeDirectory: '/Users/Test',
-        platform: 'win32',
+        platform: runtimePlatform,
       }),
     ).toThrow('does not overlap the source tree');
   });
