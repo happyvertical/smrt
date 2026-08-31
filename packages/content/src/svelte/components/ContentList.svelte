@@ -51,6 +51,11 @@ import {
   reconcileContentListLifecycleSelection,
 } from '../content-list-lifecycle.js';
 import {
+  registerContentListDataSurface,
+  type ContentListSurfaceContext,
+  type ContentListSurfaceHandle,
+} from '../content-list-data-surface.js';
+import {
   applyContentListFilter,
   buildContentListColumns,
   buildContentListSurfaceDescriptor,
@@ -324,7 +329,7 @@ interface Props {
   error?: string | null;
   /** Retry affordance rendered with an error. */
   onRetry?: () => void;
-  /** Opt-in agent addressability. Non-table presentations land with #2456. */
+  /** Opt-in agent addressability shared by every list presentation. */
   dataSurface?: ContentListDataSurface;
   /**
    * Opt-in server-backed rows (#2452). `bind()` is called exactly once, during
@@ -563,6 +568,9 @@ let completedJobs = $state<ContentListJob[]>([]);
 let completedJobsOverflowed = $state(false);
 let activeQueryKey = $state<string | undefined>(undefined);
 let lifecycleRefreshPending = $state(false);
+let surfaceRoot: HTMLDivElement | undefined;
+let surfaceHighlighted = $state(false);
+let surfaceHandle: ContentListSurfaceHandle | undefined;
 
 // Job state is subscribed once so hosts can use a framework-free controller.
 // Only transitions observed after the initial snapshot are completion events;
@@ -1389,6 +1397,9 @@ const surfaceOptions = $derived(
           (() => {
             const descriptor = buildContentListSurfaceDescriptor({
               columnLabels,
+              serverBacked: initialQuery !== undefined,
+              lifecycle: lifecycle !== undefined,
+              lifecycleMode,
               includeWorkflows: workflows !== undefined,
             });
             return {
@@ -1440,6 +1451,84 @@ const queryWarnings = $derived<ReadonlyArray<string>>(
     boundResultNotices?.warnings ??
     resultNotices.warnings,
 );
+
+function surfaceLastUpdated(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return null;
+}
+
+const surfaceContext = $derived<ContentListSurfaceContext>({
+  viewMode,
+  queryFingerprint: activeQueryKey ?? null,
+  totalRows: Number.isSafeInteger(totalRowCount) ? totalRowCount : null,
+  freshness: {
+    stale,
+    refreshing,
+    offline,
+    lastUpdated: surfaceLastUpdated(lastUpdated),
+    truncated: queryTruncated,
+    warnings: queryWarnings,
+  },
+});
+
+function focusSurface(): void {
+  if (!surfaceRoot) return;
+  surfaceRoot.tabIndex = -1;
+  surfaceRoot.focus();
+}
+
+// ContentList owns the registration so grid, detailed, compact, empty, and
+// loading presentations all expose one stable identity and revision stream.
+$effect(() => {
+  const surface = surfaceOptions;
+  if (!surface) {
+    surfaceHandle = undefined;
+    return;
+  }
+  const handle = registerContentListDataSurface({
+    ...surface,
+    controller,
+    context: untrack(() => surfaceContext),
+    setViewMode: (next) => {
+      viewMode = next;
+    },
+    ...(queryBinding?.refresh
+      ? {
+          refresh: async () => {
+            await refreshQuery();
+            return true;
+          },
+        }
+      : {}),
+    retry: async () => {
+      const handler = retryHandler;
+      if (!handler) return false;
+      await handler();
+      return true;
+    },
+    focus: focusSurface,
+    reveal: () => surfaceRoot?.scrollIntoView({ block: 'nearest' }),
+    highlight: () => {
+      surfaceHighlighted = true;
+      setTimeout(() => {
+        surfaceHighlighted = false;
+      }, 1_000);
+    },
+  });
+  surfaceHandle = handle;
+  return () => {
+    if (surfaceHandle === handle) surfaceHandle = undefined;
+    handle.destroy();
+  };
+});
+
+$effect(() => {
+  surfaceHandle?.update(surfaceContext);
+});
 /** Identity of the current set of refusals, so a dismissal is not permanent. */
 const dropNoticeKey = $derived(
   dropNotices.length > 0 || queryTruncated || queryWarnings.length > 0
@@ -2380,7 +2469,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   </div>
 {/snippet}
 
-<div class="content-list-wrapper">
+<div
+  class="content-list-wrapper"
+  class:data-surface-highlighted={surfaceHighlighted}
+  bind:this={surfaceRoot}
+>
 
   <div class="content-controls">
     <div class="search-filters">
@@ -2855,9 +2948,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     {#if viewMode === 'compact'}
       <!--
-        The compact table stays mounted for empty and loading results: it owns
-        the mounted data surface, so unmounting it on a zero-row query would
-        unregister the surface and leave an agent unable to undo its own search.
+        The compact table stays mounted for empty and loading results so its
+        table semantics and operator affordances remain stable across queries.
+        ContentList itself owns the agent-addressable surface in every view.
       -->
       <div class="content-table-wrapper">
         <DataTable
@@ -2870,7 +2963,6 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           loading={isLoading}
           caption={t(M['content.content_list.table_caption'])}
           rowLabel={(row: ContentListRow) => row.title}
-          dataSurface={surfaceOptions}
           empty={tableEmptyState}
         />
       </div>
@@ -3106,6 +3198,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     display: flex;
     flex-direction: column;
     width: 100%;
+  }
+
+  .content-list-wrapper.data-surface-highlighted {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 0.25rem;
   }
 
   .content-controls {

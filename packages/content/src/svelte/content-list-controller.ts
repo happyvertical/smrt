@@ -179,6 +179,12 @@ export interface ContentListSurfaceDescriptorOptions {
   limits?: Partial<DataSurfaceLimits>;
   /** Publish bulk workflow actions only when the mounted list can execute them. */
   includeWorkflows?: boolean;
+  /** Narrows discovery to operations the server query translator can execute. */
+  serverBacked?: boolean;
+  /** Publish the server-authoritative lifecycle actions available to this list. */
+  lifecycle?: boolean;
+  /** Trash lists expose restore/delete rather than active editing actions. */
+  lifecycleMode?: 'active' | 'trash';
 }
 
 /**
@@ -241,8 +247,26 @@ const DEFAULT_SURFACE_LIMITS: DataSurfaceLimits = {
   maxSelectionSize: 200,
 };
 
+/** Operators shared by the local evaluator and server query translator. */
+const CONTENT_LIST_FILTER_OPERATORS = [
+  'equals',
+  'notEquals',
+  'contains',
+  'startsWith',
+  'endsWith',
+  'in',
+  'notIn',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'isNull',
+  'isNotNull',
+];
+
 /** Local table commands a mounted content list accepts from a data surface. */
 const CONTENT_LIST_CONTROLS: Array<{ id: string; label: string }> = [
+  { id: 'set-view', label: 'Change list presentation' },
   { id: 'set-search', label: 'Search contents' },
   { id: 'set-filters', label: 'Filter contents' },
   { id: 'set-sorting', label: 'Sort contents' },
@@ -252,6 +276,8 @@ const CONTENT_LIST_CONTROLS: Array<{ id: string; label: string }> = [
   { id: 'set-selected-rows', label: 'Replace the row selection' },
   { id: 'toggle-row-selection', label: 'Toggle one row selection' },
   { id: 'reset', label: 'Reset the list view' },
+  { id: 'refresh', label: 'Refresh contents' },
+  { id: 'retry', label: 'Retry the content query' },
   { id: 'focus', label: 'Focus the list' },
   { id: 'reveal', label: 'Scroll the list into view' },
   { id: 'highlight', label: 'Highlight the list' },
@@ -1102,14 +1128,11 @@ function surfaceColumn(
   labels: ContentListColumnLabels,
   order: number,
   column: DataTableColumn<ContentListRow>,
+  queryable = true,
 ): DataSurfaceColumnDescriptor {
-  const capabilities: DataSurfaceColumnDescriptor['capabilities'] = [
-    'read',
-    'filter',
-    'sort',
-    'project',
-  ];
-  if (column.searchable !== false) capabilities.push('search');
+  const capabilities: DataSurfaceColumnDescriptor['capabilities'] = ['read'];
+  if (queryable) capabilities.push('filter', 'sort', 'project');
+  if (queryable && column.searchable !== false) capabilities.push('search');
   const fieldName = CONTENT_LIST_COLUMN_FIELD_NAMES[id];
   return {
     id,
@@ -1119,6 +1142,21 @@ function surfaceColumn(
     visibility: 'basic',
     order,
     role: column.role === 'status' ? 'status' : 'data',
+    readable: true,
+    ...(queryable
+      ? {
+          operators: {
+            ...(column.searchable !== false ? { search: ['contains'] } : {}),
+            filter: [...CONTENT_LIST_FILTER_OPERATORS],
+            sort: ['asc', 'desc'],
+          },
+          ...(column.searchable !== false
+            ? { searchOperators: ['contains'] }
+            : {}),
+          filterOperators: [...CONTENT_LIST_FILTER_OPERATORS],
+          sortOperators: ['asc', 'desc'],
+        }
+      : {}),
   };
 }
 
@@ -1137,7 +1175,13 @@ export function buildContentListSurfaceDescriptor(
     if (!column) {
       throw new Error(`Missing content list column definition: ${id}`);
     }
-    return surfaceColumn(id, columnLabels, index, column);
+    return surfaceColumn(
+      id,
+      columnLabels,
+      index,
+      column,
+      !(options.serverBacked && id === 'site'),
+    );
   });
   // The row-key column must be declared even though the table renders identity
   // through Svelte keys rather than a visible column.
@@ -1147,11 +1191,15 @@ export function buildContentListSurfaceDescriptor(
     capabilities: ['read', 'project'],
     fieldName: CONTENT_LIST_ROW_KEY,
     role: 'row-key',
+    readable: true,
   };
-  const columnIds = visibleColumns.map((column) => column.id);
+  const columnIds = visibleColumns
+    .filter((column) => column.capabilities.includes('project'))
+    .map((column) => column.id);
   const searchableColumnIds = visibleColumns
     .filter((column) => column.capabilities.includes('search'))
     .map((column) => column.id);
+  const lifecycleMode = options.lifecycleMode ?? 'active';
   const actions: DataSurfaceActionDescriptor[] = [
     {
       id: 'view',
@@ -1159,20 +1207,68 @@ export function buildContentListSurfaceDescriptor(
       selectionScopes: ['explicit-ids'],
       columnIds: ['title'],
     },
-    {
-      id: 'edit',
-      label: actionLabels.edit ?? DEFAULT_ACTION_LABELS.edit,
-      selectionScopes: ['explicit-ids'],
-    },
-    {
-      id: 'delete',
-      label: actionLabels.delete ?? DEFAULT_ACTION_LABELS.delete,
-      sensitivity: 'sensitive',
-      selectionScopes: ['explicit-ids', 'current-page'],
-      requiresConfirmation: true,
-    },
+    ...(lifecycleMode === 'active'
+      ? [
+          {
+            id: 'edit',
+            label: actionLabels.edit ?? DEFAULT_ACTION_LABELS.edit,
+            selectionScopes: ['explicit-ids' as const],
+          },
+          options.lifecycle
+            ? {
+                id: 'move-to-trash',
+                label: 'Move to trash',
+                sensitivity: 'sensitive' as const,
+                selectionScopes: [
+                  'explicit-ids' as const,
+                  'current-page' as const,
+                  'all-matching' as const,
+                ],
+                requiresConfirmation: true,
+              }
+            : {
+                id: 'delete',
+                label: actionLabels.delete ?? DEFAULT_ACTION_LABELS.delete,
+                sensitivity: 'sensitive' as const,
+                selectionScopes: [
+                  'explicit-ids' as const,
+                  'current-page' as const,
+                ],
+                requiresConfirmation: true,
+              },
+        ]
+      : options.lifecycle
+        ? [
+            {
+              id: 'restore',
+              label: 'Restore',
+              sensitivity: 'sensitive' as const,
+              selectionScopes: [
+                'explicit-ids' as const,
+                'current-page' as const,
+                'all-matching' as const,
+              ],
+              requiresConfirmation: true,
+            },
+            {
+              id: 'permanent-delete',
+              label: 'Delete permanently',
+              sensitivity: 'sensitive' as const,
+              selectionScopes: [
+                'explicit-ids' as const,
+                'current-page' as const,
+                'all-matching' as const,
+              ],
+              requiresConfirmation: true,
+            },
+          ]
+        : []),
     ...(options.includeWorkflows
-      ? CONTENT_LIST_WORKFLOW_OPTIONS.map((workflow) => ({
+      ? CONTENT_LIST_WORKFLOW_OPTIONS.filter(
+          (workflow) =>
+            !(options.lifecycle && workflow.id === 'move-to-trash') &&
+            !(lifecycleMode === 'trash' && workflow.id === 'restore'),
+        ).map((workflow) => ({
           id: workflow.id,
           label: workflow.label,
           sensitivity: workflow.sensitivity,
@@ -1201,8 +1297,12 @@ export function buildContentListSurfaceDescriptor(
       modes: ['rows', 'count'],
       projectableColumnIds: [CONTENT_LIST_ROW_KEY, ...columnIds],
       searchableColumnIds,
-      filterableColumnIds: columnIds,
-      sortableColumnIds: columnIds,
+      filterableColumnIds: visibleColumns
+        .filter((column) => column.capabilities.includes('filter'))
+        .map((column) => column.id),
+      sortableColumnIds: visibleColumns
+        .filter((column) => column.capabilities.includes('sort'))
+        .map((column) => column.id),
     },
     controls: CONTENT_LIST_CONTROLS.map((control) => ({ ...control })),
     actions,

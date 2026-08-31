@@ -2522,11 +2522,11 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
 });
 
 describe('ContentList data surface', () => {
-  it('registers the compact table and drives the shared controller from a command', async () => {
+  it('registers every presentation and drives the shared controller from a command', async () => {
     const registry = createDataSurfaceRegistry();
     const identity = { surfaceId: 'content-list', kind: 'table' as const };
     const target = renderList({
-      defaultViewMode: 'compact',
+      defaultViewMode: 'grid',
       dataSurface: { registry },
     });
 
@@ -2549,8 +2549,21 @@ describe('ContentList data surface', () => {
     flushSync();
 
     expect(result.ok).toBe(true);
-    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
     expect(searchInput(target).value).toBe('zoning');
+
+    const viewResult = await registry.execute({
+      version: 1,
+      commandId: 'show-compact',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-view',
+      payload: { view: 'compact' },
+    });
+    flushSync();
+    expect(viewResult.ok).toBe(true);
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(registry.inspect(identity)?.state.viewMode).toBe('compact');
   });
 
   it('advertises bulk actions only when a workflow binding is mounted', async () => {
