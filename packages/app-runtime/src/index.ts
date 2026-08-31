@@ -47,6 +47,8 @@ import {
 } from '@happyvertical/smrt-users';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 
+export * from './deployed-runtime.js';
+
 const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;
 const MAX_BOOTSTRAP_TTL_SECONDS = 15 * 60;
