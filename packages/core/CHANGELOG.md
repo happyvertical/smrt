@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.43.9
+
+### Patch Changes
+
+- ### Features
+
+  - add safe local SQLite runtime (#2565) (app-runtime)
+
+  ### Other Changes
+
+  - chore: sync sdk packages to v0.89.4 (#2564) (deps)
+  - @happyvertical/smrt-config@0.43.9
+  - @happyvertical/smrt-types@0.43.9
+  - @happyvertical/smrt-scanner@0.43.9
+
 ## 0.43.8
 
 ### Patch Changes
