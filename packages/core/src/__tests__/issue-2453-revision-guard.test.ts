@@ -145,6 +145,72 @@ describe('issue #2453 revision-guarded saves', () => {
       expect((await duckRows.get(String(created.id)))?.title).toBe(
         'duckdb raw query update',
       );
+
+      await duckDb.query('CREATE SEQUENCE issue_2453_read_once START 1');
+      const [commented] = await duckRows.query(
+        `/* caller-authored query */ SELECT *, nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof commented.id).toBe('string');
+      const [{ sequence_value: sequenceValue }] = await duckDb
+        .query(`SELECT currval('issue_2453_read_once') AS sequence_value`)
+        .then((result) => result.rows);
+      expect(
+        Number(
+          sequenceValue && typeof sequenceValue === 'object'
+            ? (sequenceValue as { hugeint?: number }).hugeint
+            : sequenceValue,
+        ),
+      ).toBe(1);
+    } finally {
+      await duckDb.close?.();
+    }
+  });
+
+  it('hydrates one coherent DuckDB natural-key snapshot after replacement', async () => {
+    const duckDb = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    try {
+      const duckRows = (await Issue2453RevisionRows.create({
+        db: duckDb,
+      })) as Issue2453RevisionRows;
+      const original = await duckRows.create({ title: 'old snapshot' });
+      const replacementId = '77777777-7777-4777-8777-777777777777';
+      const rawQuery = duckDb.query.bind(duckDb);
+      let replaced = false;
+      vi.spyOn(duckDb, 'query').mockImplementation(async (sql, ...params) => {
+        if (
+          !replaced &&
+          sql.startsWith('DESCRIBE SELECT * FROM') &&
+          params[0] === original.slug
+        ) {
+          replaced = true;
+          await rawQuery(
+            `UPDATE issue_2453_revision_rows
+             SET id = CAST(? AS UUID), title = ?
+             WHERE id = CAST(? AS UUID)`,
+            replacementId,
+            'new snapshot',
+            String(original.id),
+          );
+        }
+        return await rawQuery(sql, ...params);
+      });
+
+      const loaded = new Issue2453RevisionRow({
+        db: duckDb,
+        slug: original.slug,
+        context: original.context,
+      });
+      await loaded.initialize();
+
+      expect(replaced).toBe(true);
+      expect(loaded.id).toBe(replacementId);
+      expect(loaded.title).toBe('new snapshot');
     } finally {
       await duckDb.close?.();
     }

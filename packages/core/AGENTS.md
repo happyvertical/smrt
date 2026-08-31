@@ -35,8 +35,8 @@ subsystem you are editing. This file keeps what holds across all of them.
   initialization, natural-key lookup, and embedded revision claims. Exact
   natural-key probes retain the interceptor-authorized filter when
   canonicalizing a wrapped identity. Custom embedded-CAS paths that consume
-  raw adapter rows must call `canonicalizePersistedUuidRow()` before reusing
-  UUID identity or relationship values.
+  persisted rows must use `getCanonicalPersistedRow()` so UUID identities are
+  cast in the same coherent read before reuse.
 - `is(criteria)` / `do(instructions)` / `describe()`: AI operations via function calling. They inject the object's own `toPublicJSON()` (sensitive fields stripped) as a "content body" so the model reasons over the instance. Options: `includeData: false` skips injection (for callers that already curate the relevant fields into the instruction); `maxDataLength` overrides the truncation budget. Neither key is forwarded to `ai.message()`. (#1567)
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
 - `getSlug()`: auto-generates from name → title → label → id
@@ -74,9 +74,9 @@ read query because its JavaScript binding otherwise returns lossy HUGEINT
 wrapper objects. Explicit projections apply the same cast for selected UUID
 fields so bounded query envelopes preserve canonical row and relationship ids.
 For STI child columns, raw `query()` SELECTs, and latest-related projections,
-the read path detects any remaining wrapper-valued columns and performs one
-read-only wrapped SELECT with those result columns cast to `VARCHAR`; mutation
-statements are never replayed.
+the read path describes the output types without evaluating the query, then
+performs one data-bearing SELECT with UUID result columns cast to `VARCHAR`;
+mutation statements are never reinterpreted or replayed.
 
 **WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`.
 Arrays auto-detect `IN`. NULL is a value, not an operator: `{ deletedAt: null }`

@@ -1035,10 +1035,9 @@ export class SmrtObject extends SmrtClass {
     this._persisted = true;
   }
 
-  /** Rebind native DuckDB UUID wrappers to their persisted textual values. */
+  /** Fail closed if a caller tries to hydrate a lossy DuckDB UUID wrapper. */
   protected async canonicalizePersistedUuidRow(
     row: Record<string, unknown>,
-    lookup: unknown = this.id,
   ): Promise<Record<string, unknown>> {
     const schema =
       ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
@@ -1066,21 +1065,38 @@ export class SmrtObject extends SmrtClass {
     ) {
       return row;
     }
-    if (!this.isNativeDuckDb()) return row;
+    throw RuntimeError.invalidState(
+      'Native DuckDB UUID row was not canonicalized before hydration',
+      { className: this.getResolvedClassName() },
+    );
+  }
+
+  /** Fetch one exact row while casting native DuckDB UUIDs in that same read. */
+  protected async getCanonicalPersistedRow(
+    filter: Record<string, unknown>,
+  ): Promise<Record<string, unknown> | null> {
+    if (!this.isNativeDuckDb()) {
+      return (await this.db.get(this.tableName, filter)) as Record<
+        string,
+        unknown
+      > | null;
+    }
+    const schema =
+      ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
+      ObjectRegistry.getSchema(this.getResolvedClassName());
     const quote = (identifier: string) =>
       `"${identifier.replaceAll('"', '""')}"`;
-    const filter =
-      typeof lookup === 'string'
-        ? { id: lookup }
-        : lookup && typeof lookup === 'object' && !Array.isArray(lookup)
-          ? (lookup as Record<string, unknown>)
-          : null;
-    if (!filter || Object.keys(filter).length === 0) return row;
+    if (Object.keys(filter).length === 0) return null;
     const conditions: string[] = [];
     const values: unknown[] = [];
     for (const [fieldName, value] of Object.entries(filter)) {
       const columnName = toSnakeCase(fieldName);
-      if (!schema?.columns[columnName]) return row;
+      if (!schema?.columns[columnName]) {
+        throw RuntimeError.invalidState('Invalid persisted-row filter column', {
+          className: this.getResolvedClassName(),
+          fieldName,
+        });
+      }
       if (value === null) {
         conditions.push(`${quote(columnName)} IS NULL`);
         continue;
@@ -1091,23 +1107,33 @@ export class SmrtObject extends SmrtClass {
         typeof value !== 'boolean' &&
         !(value instanceof Date)
       ) {
-        return row;
+        throw RuntimeError.invalidState('Invalid persisted-row filter value', {
+          className: this.getResolvedClassName(),
+          fieldName,
+        });
       }
       conditions.push(`${quote(columnName)} = ?`);
       values.push(value instanceof Date ? value.toISOString() : value);
     }
-    const { rows } = await this.db.query(
-      `SELECT ${uuidColumns
-        .map((columnName) => {
-          const quoted = quote(columnName);
-          return `CAST(${quoted} AS VARCHAR) AS ${quoted}`;
-        })
-        .join(', ')} FROM ${quote(this.tableName)} WHERE ${conditions.join(
-        ' AND ',
-      )} LIMIT 1`,
-      ...values,
-    );
-    return rows[0] ? { ...row, ...rows[0] } : row;
+    const readSql = `SELECT * FROM ${quote(this.tableName)} WHERE ${conditions.join(
+      ' AND ',
+    )} LIMIT 1`;
+    const described = await this.db.query(`DESCRIBE ${readSql}`, ...values);
+    const uuidColumns = described.rows
+      .filter((column) => String(column.column_type).toUpperCase() === 'UUID')
+      .map((column) => String(column.column_name));
+    const alias = quote('__smrt_uuid_row');
+    const sql =
+      uuidColumns.length === 0
+        ? readSql
+        : `SELECT ${alias}.* REPLACE (${uuidColumns
+            .map((columnName) => {
+              const quoted = quote(columnName);
+              return `CAST(${alias}.${quoted} AS VARCHAR) AS ${quoted}`;
+            })
+            .join(', ')}) FROM (${readSql}) AS ${alias}`;
+    const { rows } = await this.db.query(sql, ...values);
+    return rows[0] ?? null;
   }
 
   private isNativeDuckDb(): boolean {
@@ -1687,11 +1713,9 @@ export class SmrtObject extends SmrtClass {
         slug: this.slug,
         context: this.context,
       });
-      const saved = await this.db.get(this.tableName, filter);
+      const saved = await this.getCanonicalPersistedRow(filter);
       if (saved) {
-        const persistedId = (
-          await this.canonicalizePersistedUuidRow(saved, filter)
-        ).id;
+        const persistedId = saved.id;
         if (typeof persistedId !== 'string') {
           throw RuntimeError.invalidState(
             'Persisted object id is not a string',
@@ -1781,17 +1805,15 @@ export class SmrtObject extends SmrtClass {
     // Try to find by id first
     if (this.id) {
       const filter = await this.interceptGetFilter({ id: this.id });
-      const byId = await this.db.get(this.tableName, filter);
-      if (byId)
-        return (await this.canonicalizePersistedUuidRow(byId, filter)).id;
+      const byId = await this.getCanonicalPersistedRow(filter);
+      if (byId) return byId.id;
     }
 
     // Fall back to finding by slug
     if (this.slug) {
       const filter = await this.interceptGetFilter({ slug: this.slug });
-      const bySlug = await this.db.get(this.tableName, filter);
-      if (bySlug)
-        return (await this.canonicalizePersistedUuidRow(bySlug, filter)).id;
+      const bySlug = await this.getCanonicalPersistedRow(filter);
+      if (bySlug) return bySlug.id;
     }
 
     return null;
@@ -2422,12 +2444,10 @@ export class SmrtObject extends SmrtClass {
       async () => {
         let current: Record<string, unknown> | null = null;
         if (useEmbeddedRevisionFallback) {
-          const persisted = (await this.db.get(this.tableName, {
+          const persisted = await this.getCanonicalPersistedRow({
             id: this.id,
-          })) as Record<string, unknown> | null;
-          current = persisted
-            ? await this.canonicalizePersistedUuidRow(persisted)
-            : null;
+          });
+          current = persisted;
           if (
             !current ||
             !this.revisionsEqual(current.updated_at, expectedUpdatedAt)
@@ -2852,7 +2872,7 @@ export class SmrtObject extends SmrtClass {
       await ErrorUtils.withRetry(
         async () => {
           try {
-            const existing = await this.db.get(this.tableName, filter);
+            const existing = await this.getCanonicalPersistedRow(filter);
             if (existing) {
               await this.loadDataFromDb(existing);
             }
@@ -2907,11 +2927,9 @@ export class SmrtObject extends SmrtClass {
       slug: this._slug,
       context: this._context || '',
     });
-    const existing = await this.db.get(this.tableName, filter);
+    const existing = await this.getCanonicalPersistedRow(filter);
     if (existing) {
-      await this.loadDataFromDb(
-        await this.canonicalizePersistedUuidRow(existing, filter),
-      );
+      await this.loadDataFromDb(existing);
     }
   }
 

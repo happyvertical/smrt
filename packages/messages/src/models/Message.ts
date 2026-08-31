@@ -115,10 +115,7 @@ export class Message extends SmrtObject {
     for (let attempt = 0; attempt < 8; attempt += 1) {
       let nextRevision: Date | undefined;
       await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
-        const persisted = await this.db.get(this.tableName, { id: this.id });
-        const current = persisted
-          ? await this.canonicalizePersistedUuidRow(persisted)
-          : null;
+        const current = await this.getCanonicalPersistedRow({ id: this.id });
         if (current?.send_status !== 'sending') return;
         const currentRevision = current.updated_at;
         const currentRevisionMs = new Date(String(currentRevision)).getTime();
@@ -153,7 +150,7 @@ export class Message extends SmrtObject {
       // DuckDB's generic update result reports one affected row even when the
       // predicate matched none. Verify the durable lifecycle value instead of
       // trusting adapter row-count metadata before declaring finalization.
-      const verified = await this.db.get(this.tableName, { id: this.id });
+      const verified = await this.getCanonicalPersistedRow({ id: this.id });
       if (verified?.send_status === sendStatus) {
         await this.completePersistedUpdate(verified);
         return;
@@ -379,10 +376,7 @@ export class Message extends SmrtObject {
       let claimed = false;
       await withEmbeddedWriteQueue(this.db, useEmbeddedFallback, async () => {
         if (useEmbeddedFallback) {
-          const persisted = await this.db.get(this.tableName, { id: this.id });
-          const current = persisted
-            ? await this.canonicalizePersistedUuidRow(persisted)
-            : null;
+          const current = await this.getCanonicalPersistedRow({ id: this.id });
           const storedRevision = current?.updated_at;
           const currentRevision =
             storedRevision instanceof Date
