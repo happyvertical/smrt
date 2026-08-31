@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.43.7
+
+### Patch Changes
+
+- ### Features
+
+  - make ContentList realtime job-aware (#2534) (content)
+  - define validated application runtime profiles (#2548) (config)
+  - @happyvertical/smrt-config@0.43.7
+  - @happyvertical/smrt-types@0.43.7
+  - @happyvertical/smrt-scanner@0.43.7
+
 ## 0.43.6
 
 ### Patch Changes
