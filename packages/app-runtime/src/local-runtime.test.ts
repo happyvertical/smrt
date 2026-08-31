@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import {
   chmod,
   mkdir,
@@ -9,11 +11,12 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { JobHandle, SmrtJobCollection } from '@happyvertical/smrt-jobs';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
 import {
   initializeLocalApplicationRuntime,
@@ -22,8 +25,27 @@ import {
 } from './index.js';
 
 const temporaryRoots: string[] = [];
+const execFileAsync = promisify(execFile);
+
+const secretPublishInterleave = vi.hoisted(() => ({
+  beforeLink: undefined as undefined | (() => Promise<void>),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    link: async (existingPath: string, newPath: string) => {
+      if (newPath.endsWith('/application.secret')) {
+        await secretPublishInterleave.beforeLink?.();
+      }
+      return actual.link(existingPath, newPath);
+    },
+  };
+});
 
 afterEach(async () => {
+  secretPublishInterleave.beforeLink = undefined;
   await Promise.all(
     temporaryRoots
       .splice(0)
@@ -240,6 +262,50 @@ describe('local application runtime', () => {
     expect(await countRows(startups[0].runtime.db, 'users')).toBe(1);
   });
 
+  it('atomically publishes one complete secret under a forced concurrent first-start interleaving', async () => {
+    const directories = await localDirectories('secret-race');
+    let arrivals = 0;
+    let releaseFirst: (() => void) | undefined;
+    const firstPaused = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    secretPublishInterleave.beforeLink = async () => {
+      arrivals += 1;
+      if (arrivals === 1) await firstPaused;
+      else releaseFirst?.();
+    };
+
+    const startups = await Promise.all([
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+    ]);
+    expect(arrivals).toBeGreaterThanOrEqual(2);
+    const invitations = startups.flatMap((startup) =>
+      startup.bootstrap ? [startup.bootstrap] : [],
+    );
+    expect(invitations).toHaveLength(1);
+
+    const secret = await readFile(
+      startups[0].runtime.paths.applicationSecret,
+      'utf8',
+    );
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}\n$/);
+    const stored = await startups[0].runtime.db.query(
+      'SELECT token_hash FROM _smrt_local_owner_bootstrap WHERE slot = 1',
+    );
+    expect((stored.rows[0] as { token_hash: string }).token_hash).toBe(
+      createHmac('sha256', secret.trim())
+        .update(invitations[0].token)
+        .digest('hex'),
+    );
+  });
+
   it('serializes concurrent owner claims so exactly one creates records', async () => {
     const directories = await localDirectories('concurrent');
     const initialized = await initializeLocalApplicationRuntime({
@@ -329,13 +395,53 @@ describe('local application runtime', () => {
     });
   });
 
+  it.each([
+    0,
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])('refuses invalid session TTL %s before filesystem mutation', async (sessionTtlSeconds) => {
+    const directories = await localDirectories('session-ttl');
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        sessionTtlSeconds,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    await expect(stat(directories.dataDirectory)).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('refuses symlinked secret material instead of following it', async () => {
     const directories = await localDirectories('secret-symlink');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
     const target = join(directories.root, 'outside-secret');
-    const secrets = join(directories.dataDirectory, 'secrets');
-    await mkdir(secrets, { recursive: true });
+    const secretPath = initialized.runtime.paths.applicationSecret;
+    await rm(secretPath);
     await writeFile(target, 'must-not-be-used\n');
-    await symlink(target, join(secrets, 'application.secret'));
+    await symlink(target, secretPath);
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+    ).rejects.toThrow(/leaf|symbolic link|unsafe component/i);
+    expect(await readFile(target, 'utf8')).toBe('must-not-be-used\n');
+  });
+
+  it('rejects an interrupted partial secret without replacing it', async () => {
+    const directories = await localDirectories('partial-secret');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await writeFile(initialized.runtime.paths.applicationSecret, 'partial');
 
     await expect(
       initializeLocalApplicationRuntime({
@@ -343,7 +449,54 @@ describe('local application runtime', () => {
         ...directories,
       }),
     ).rejects.toMatchObject({ code: 'invalid_configuration' });
-    expect(await readFile(target, 'utf8')).toBe('must-not-be-used\n');
+    expect(
+      await readFile(initialized.runtime.paths.applicationSecret, 'utf8'),
+    ).toBe('partial');
+  });
+
+  it('rejects a complete-looking secret with unsafe permissions', async () => {
+    const directories = await localDirectories('permissive-secret');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await chmod(initialized.runtime.paths.applicationSecret, 0o644);
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(
+      (await stat(initialized.runtime.paths.applicationSecret)).mode & 0o777,
+    ).toBe(0o644);
+  });
+
+  it('recovers from an interrupted temporary secret publication', async () => {
+    const directories = await localDirectories('stale-secret-temp');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    const secretPath = initialized.runtime.paths.applicationSecret;
+    await rm(secretPath);
+    const staleTemp = join(
+      initialized.runtime.paths.secrets,
+      '.application.secret.tmp-interrupted',
+    );
+    await writeFile(staleTemp, 'partial', { mode: 0o600 });
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    expect(await readFile(secretPath, 'utf8')).toMatch(/^[A-Za-z0-9_-]{43}\n$/);
+    await expect(stat(staleTemp)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('refuses a symlinked ancestor that redirects storage into the source tree', async () => {
@@ -411,6 +564,130 @@ describe('local application runtime', () => {
       code: 'ENOENT',
     });
   });
+
+  it('rejects an unrelated populated private root without changing its contents', async () => {
+    const directories = await localDirectories('unmarked-root');
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+    const unrelated = join(directories.dataDirectory, 'personal.txt');
+    await writeFile(unrelated, 'keep me\n');
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+
+    expect(await readFile(unrelated, 'utf8')).toBe('keep me\n');
+    await expect(
+      stat(join(directories.dataDirectory, 'application.sqlite')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      stat(join(directories.dataDirectory, '.smrt-local-runtime-lolaus')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('marks an empty private root and reopens it idempotently', async () => {
+    const directories = await localDirectories('marked-root');
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+
+    await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    const marker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus',
+    );
+    expect((await stat(marker)).size).toBe(0);
+    expect((await stat(marker)).mode & 0o777).toBe(0o600);
+    await expect(
+      stat(
+        join(directories.dataDirectory, '.smrt-local-runtime-lolaus.pending'),
+      ),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+  });
+
+  it('recovers an atomically pending root claim after an interrupted acquisition', async () => {
+    const directories = await localDirectories('pending-root');
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+    const pendingMarker = join(
+      directories.dataDirectory,
+      '.smrt-local-runtime-lolaus.pending',
+    );
+    await writeFile(pendingMarker, '', { mode: 0o600 });
+    await writeFile(join(directories.dataDirectory, 'application.sqlite'), '', {
+      mode: 0o600,
+    });
+
+    await expect(
+      initializeLocalApplicationRuntime({ appId: 'lolaus', ...directories }),
+    ).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    await expect(stat(pendingMarker)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(
+      (
+        await stat(
+          join(directories.dataDirectory, '.smrt-local-runtime-lolaus'),
+        )
+      ).size,
+    ).toBe(0);
+  });
+
+  it('delegates unsafe ancestor custody to secure SQLite and leaves zero artifacts', async () => {
+    const directories = await localDirectories('unsafe-ancestor');
+    const unsafeAncestor = join(directories.root, 'shared');
+    const dataDirectory = join(unsafeAncestor, 'lolaus');
+    await mkdir(unsafeAncestor, { mode: 0o777 });
+    await chmod(unsafeAncestor, 0o777);
+
+    await expect(
+      initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        sourceRoot: directories.sourceRoot,
+        dataDirectory,
+      }),
+    ).rejects.toThrow(/custody|writable|replacement/i);
+
+    expect((await stat(unsafeAncestor)).mode & 0o777).toBe(0o777);
+    await expect(stat(dataDirectory)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it.runIf(platform() === 'darwin')(
+    'delegates permissive macOS ancestor ACL rejection and leaves zero artifacts',
+    async () => {
+      const directories = await localDirectories('unsafe-acl');
+      const aclAncestor = join(directories.root, 'acl-parent');
+      const dataDirectory = join(aclAncestor, 'lolaus');
+      await mkdir(aclAncestor, { mode: 0o700 });
+      await execFileAsync('/bin/chmod', [
+        '+a',
+        'everyone allow add_file,add_subdirectory,delete_child',
+        aclAncestor,
+      ]);
+
+      await expect(
+        initializeLocalApplicationRuntime({
+          appId: 'lolaus',
+          sourceRoot: directories.sourceRoot,
+          dataDirectory,
+        }),
+      ).rejects.toThrow(/access control list|custody/i);
+      await expect(stat(dataDirectory)).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    },
+  );
 
   it('refuses a data root containing the source tree before changing its mode or contents', async () => {
     const directories = await localDirectories('source-ancestor');
@@ -485,7 +762,13 @@ describe('local application runtime', () => {
   it('refuses an existing symlinked database leaf without touching its target', async () => {
     const directories = await localDirectories('database-symlink');
     const target = join(directories.root, 'outside-database');
-    await mkdir(directories.dataDirectory);
+    await mkdir(directories.dataDirectory, { mode: 0o700 });
+    await chmod(directories.dataDirectory, 0o700);
+    await writeFile(
+      join(directories.dataDirectory, '.smrt-local-runtime-lolaus'),
+      '',
+      { mode: 0o600 },
+    );
     await writeFile(target, 'must-not-be-opened\n');
     await symlink(
       target,
@@ -497,7 +780,7 @@ describe('local application runtime', () => {
         appId: 'lolaus',
         ...directories,
       }),
-    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    ).rejects.toThrow(/leaf|symbolic link/i);
     expect(await readFile(target, 'utf8')).toBe('must-not-be-opened\n');
   });
 

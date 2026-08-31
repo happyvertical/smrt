@@ -12,10 +12,14 @@ import { createHmac, randomBytes } from 'node:crypto';
 import {
   constants,
   type FileHandle,
+  link,
   lstat,
   mkdir,
   open,
+  readdir,
   realpath,
+  rmdir,
+  unlink,
 } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { isAbsolute, parse, relative, resolve, sep } from 'node:path';
@@ -47,6 +51,7 @@ const DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
+const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
 
 /** Paths owned by the local user, outside the source tree by default. */
 export interface LocalRuntimePaths {
@@ -245,22 +250,21 @@ export async function initializeLocalApplicationRuntime(
   const bootstrapTtlSeconds = validateBootstrapTtl(
     options.bootstrapTtlSeconds ?? DEFAULT_BOOTSTRAP_TTL_SECONDS,
   );
+  const sessionTtlSeconds = validateSessionTtl(
+    options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS,
+  );
   const resolvedRuntime = resolveApplicationRuntime({
     profile: 'local',
     providers: options.providers,
   });
   const paths = resolveLocalRuntimePaths(options);
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
-  const canonicalSourceRoot = await prepareLocalFilesystem(paths, sourceRoot);
-  const db = await getDatabase({
-    type: 'sqlite',
-    url: paths.database,
-    secureFile: {
-      driver: 'node:sqlite',
-      custody: 'trusted-parent',
-      root: paths.root,
-    },
-  });
+  const { canonicalSourceRoot, db } = await acquireLocalDatabase(
+    paths,
+    sourceRoot,
+    normalizeAppId(options.appId),
+  );
+  await prepareLocalFilesystem(paths, canonicalSourceRoot);
   await tuneLocalSqlite(db);
   await options.prepareDatabase?.(db);
   await ensureBootstrapTable(db);
@@ -271,7 +275,7 @@ export async function initializeLocalApplicationRuntime(
     bindHost,
     resolvedRuntime,
     bootstrapTtlSeconds,
-    sessionTtlSeconds: options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS,
+    sessionTtlSeconds,
     backgroundJobs: options.backgroundJobs === true,
     paidCapabilities: options.paidCapabilities === true,
     now: options.now ?? (() => new Date()),
@@ -544,10 +548,9 @@ class InitializedLocalApplicationRuntime implements LocalApplicationRuntime {
   }
 
   private async hashBootstrapToken(token: string): Promise<string> {
-    const secret = await readSafeFile(
+    const secret = await validateApplicationSecret(
       this.paths.applicationSecret,
       this.canonicalSourceRoot,
-      'Application secret',
     );
     return createHmac('sha256', secret.trim()).update(token).digest('hex');
   }
@@ -698,37 +701,126 @@ async function tuneLocalSqlite(db: DatabaseInterface): Promise<void> {
   await db.query('PRAGMA busy_timeout = 5000');
 }
 
-async function prepareLocalFilesystem(
+interface PreparedLocalRoot {
+  createdDirectories: string[];
+  pendingMarker: string | null;
+  finalMarker: string;
+}
+
+async function acquireLocalDatabase(
   paths: LocalRuntimePaths,
   sourceRoot: string,
-): Promise<string> {
+  appId: string,
+): Promise<{
+  canonicalSourceRoot: string;
+  db: DatabaseInterface;
+}> {
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
-  await ensureSafeDirectoryTree(paths.root, canonicalSourceRoot, true);
+  const prepared = await prepareDedicatedRoot(
+    paths.root,
+    canonicalSourceRoot,
+    appId,
+  );
+  try {
+    const db = await getDatabase({
+      type: 'sqlite',
+      url: paths.database,
+      secureFile: {
+        driver: 'node:sqlite',
+        custody: 'trusted-parent',
+        root: paths.root,
+      },
+    });
+    await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
+    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+    return { canonicalSourceRoot, db };
+  } catch (error) {
+    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+    await removeCreatedDirectories(prepared.createdDirectories);
+    throw error;
+  }
+}
+
+async function prepareLocalFilesystem(
+  paths: LocalRuntimePaths,
+  canonicalSourceRoot: string,
+): Promise<void> {
   await ensureSafeDirectoryTree(paths.assets, canonicalSourceRoot);
   await ensureSafeDirectoryTree(paths.secrets, canonicalSourceRoot);
-
-  const database = await openSafeFile(
-    paths.database,
-    constants.O_RDWR | constants.O_CREAT,
-    0o600,
-    'SQLite database',
-    canonicalSourceRoot,
-  );
-  await database.chmod(0o600);
-  await database.close();
-  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
-
   await ensureApplicationSecret(paths.applicationSecret, canonicalSourceRoot);
-  return canonicalSourceRoot;
+}
+
+async function prepareDedicatedRoot(
+  path: string,
+  canonicalSourceRoot: string,
+  appId: string,
+): Promise<PreparedLocalRoot> {
+  const createdDirectories = await ensureSafeDirectoryTree(
+    path,
+    canonicalSourceRoot,
+    true,
+  );
+  const finalMarker = resolve(path, `${ROOT_MARKER_PREFIX}${appId}`);
+  const pendingMarker = resolve(path, `${ROOT_MARKER_PREFIX}${appId}.pending`);
+  const entries = await readdir(path);
+  const hasFinalMarker = entries.includes(finalMarker.slice(path.length + 1));
+  const hasPendingMarker = entries.includes(
+    pendingMarker.slice(path.length + 1),
+  );
+
+  if (hasFinalMarker) {
+    await validateRootMarker(finalMarker, canonicalSourceRoot);
+    if (hasPendingMarker) {
+      await validateRootMarker(pendingMarker, canonicalSourceRoot);
+    }
+    return {
+      createdDirectories,
+      pendingMarker: hasPendingMarker ? pendingMarker : null,
+      finalMarker,
+    };
+  }
+
+  if (hasPendingMarker) {
+    await validateRootMarker(pendingMarker, canonicalSourceRoot);
+    const permittedInterruptedEntries = new Set([
+      pendingMarker.slice(path.length + 1),
+      DATABASE_FILE_NAME,
+      `${DATABASE_FILE_NAME}-shm`,
+      `${DATABASE_FILE_NAME}-wal`,
+    ]);
+    if (entries.some((entry) => !permittedInterruptedEntries.has(entry))) {
+      throw unsafeFilesystemEntry(
+        'Interrupted local application root contains unexpected artifacts.',
+      );
+    }
+    return {
+      createdDirectories,
+      pendingMarker,
+      finalMarker,
+    };
+  }
+
+  if (entries.length > 0) {
+    throw unsafeFilesystemEntry(
+      'Existing local application data root is populated but has no valid ownership marker.',
+    );
+  }
+  await publishRootMarker(pendingMarker, canonicalSourceRoot);
+  return {
+    createdDirectories,
+    pendingMarker,
+    finalMarker,
+  };
 }
 
 async function ensureSafeDirectoryTree(
   path: string,
   canonicalSourceRoot: string,
   dedicatedRoot = false,
-): Promise<void> {
+): Promise<string[]> {
   const components = absolutePathComponents(path);
+  const createdDirectories: string[] = [];
   for (const component of components) {
     let created = false;
     try {
@@ -743,6 +835,7 @@ async function ensureSafeDirectoryTree(
       try {
         await mkdir(component, { mode: 0o700 });
         created = true;
+        createdDirectories.push(component);
       } catch (mkdirError) {
         // A concurrent initializer may have created the component. It is still
         // opened and validated without following links below.
@@ -768,6 +861,7 @@ async function ensureSafeDirectoryTree(
     }
   }
   await validateExistingPathChain(path, canonicalSourceRoot, 'directory');
+  return createdDirectories;
 }
 
 async function assertExistingDedicatedRoot(
@@ -798,61 +892,190 @@ async function assertExistingDedicatedRoot(
   }
 }
 
+async function publishRootMarker(
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  let marker: FileHandle | undefined;
+  try {
+    marker = await openSafeFile(
+      path,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
+      0o600,
+      'Local application root marker',
+      canonicalSourceRoot,
+    );
+    await marker.sync();
+  } catch (error) {
+    if (!isFileAlreadyExists(error)) throw error;
+  } finally {
+    await marker?.close();
+  }
+  await validateRootMarker(path, canonicalSourceRoot);
+  await syncDirectory(resolve(path, '..'), canonicalSourceRoot);
+}
+
+async function validateRootMarker(
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  await validateExistingPathChain(path, canonicalSourceRoot, 'file');
+  const marker = await openSafeFile(
+    path,
+    constants.O_RDONLY,
+    0o600,
+    'Local application root marker',
+    canonicalSourceRoot,
+  );
+  try {
+    const details = await marker.stat();
+    const currentUid = process.getuid?.();
+    if (
+      currentUid === undefined ||
+      details.uid !== currentUid ||
+      (details.mode & 0o777) !== 0o600 ||
+      details.size !== 0
+    ) {
+      throw unsafeFilesystemEntry(
+        `Local application root marker must be an empty current-user-owned mode-0600 file: ${path}`,
+      );
+    }
+  } finally {
+    await marker.close();
+  }
+}
+
+async function removeMarkerIfPresent(
+  path: string | null,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  if (path === null) return;
+  try {
+    await validateRootMarker(path, canonicalSourceRoot);
+    await unlink(path);
+    await syncDirectory(resolve(path, '..'), canonicalSourceRoot);
+  } catch (error) {
+    if (!isMissingFile(error) && !hasMissingFileCause(error)) throw error;
+  }
+}
+
+async function removeCreatedDirectories(paths: string[]): Promise<void> {
+  for (const path of paths.toReversed()) {
+    try {
+      await rmdir(path);
+    } catch (error) {
+      if (!isMissingFile(error) && !isDirectoryNotEmpty(error)) throw error;
+    }
+  }
+}
+
 async function ensureApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
 ): Promise<void> {
-  let secret: FileHandle;
+  const directoryPath = resolve(path, '..');
+  const temporaryPath = resolve(
+    directoryPath,
+    `.${SECRET_FILE_NAME}.tmp-${randomBytes(16).toString('hex')}`,
+  );
+  let temporary: FileHandle | undefined;
+  let failure: unknown;
   try {
-    secret = await openSafeFile(
-      path,
+    temporary = await openSafeFile(
+      temporaryPath,
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL,
       0o600,
-      'Application secret',
+      'Temporary application secret',
       canonicalSourceRoot,
     );
-    await secret.writeFile(
+    await temporary.writeFile(
       `${randomBytes(32).toString('base64url')}\n`,
       'utf8',
     );
-    await secret.sync();
+    await temporary.sync();
+    await temporary.close();
+    temporary = undefined;
+
+    try {
+      await link(temporaryPath, path);
+    } catch (error) {
+      if (!isFileAlreadyExists(error)) throw error;
+    }
+
+    await validateApplicationSecret(path, canonicalSourceRoot);
+    await syncDirectory(directoryPath, canonicalSourceRoot);
   } catch (error) {
-    if (!isFileAlreadyExists(error)) throw error;
-    secret = await openSafeFile(
-      path,
-      constants.O_RDONLY,
-      0o600,
-      'Application secret',
-      canonicalSourceRoot,
-    );
+    failure = error;
   }
   try {
-    await secret.chmod(0o600);
-  } finally {
-    await secret.close();
+    await temporary?.close();
+  } catch (error) {
+    failure ??= error;
   }
-  await validateExistingPathChain(path, canonicalSourceRoot, 'file');
+  try {
+    await unlink(temporaryPath);
+  } catch (error) {
+    if (!isMissingFile(error)) failure ??= error;
+  }
+  if (failure !== undefined) throw failure;
+  await removeStaleSecretTemps(directoryPath);
 }
 
-async function readSafeFile(
+async function validateApplicationSecret(
   path: string,
   canonicalSourceRoot: string,
-  label: string,
 ): Promise<string> {
   await validateExistingPathChain(path, canonicalSourceRoot, 'file');
   const file = await openSafeFile(
     path,
     constants.O_RDONLY,
     0o600,
-    label,
+    'Application secret',
     canonicalSourceRoot,
   );
   try {
-    const contents = await file.readFile('utf8');
+    const details = await file.stat();
+    const currentUid = process.getuid?.();
+    const secret = await file.readFile('utf8');
     await validateExistingPathChain(path, canonicalSourceRoot, 'file');
-    return contents;
+    if (
+      currentUid === undefined ||
+      details.uid !== currentUid ||
+      (details.mode & 0o777) !== 0o600 ||
+      details.size !== 44 ||
+      !/^[A-Za-z0-9_-]{43}\n$/.test(secret)
+    ) {
+      throw unsafeFilesystemEntry(
+        'Application secret must be a complete current-user-owned mode-0600 value in the expected format.',
+      );
+    }
+    return secret;
   } finally {
     await file.close();
+  }
+}
+
+async function syncDirectory(
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  const directory = await openSafeDirectory(path, canonicalSourceRoot);
+  try {
+    await directory.sync();
+  } finally {
+    await directory.close();
+  }
+}
+
+async function removeStaleSecretTemps(directoryPath: string): Promise<void> {
+  const prefix = `.${SECRET_FILE_NAME}.tmp-`;
+  for (const entry of await readdir(directoryPath)) {
+    if (!entry.startsWith(prefix)) continue;
+    try {
+      await unlink(resolve(directoryPath, entry));
+    } catch (error) {
+      if (!isMissingFile(error)) throw error;
+    }
   }
 }
 
@@ -1028,6 +1251,16 @@ function validateBootstrapTtl(value: number): number {
   return value;
 }
 
+function validateSessionTtl(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new LocalRuntimeError(
+      'invalid_configuration',
+      'Session TTL must be a finite positive number of seconds.',
+    );
+  }
+  return value;
+}
+
 function validateOwnerInput(input: ClaimLocalOwnerInput): void {
   if (!input.token || !input.name.trim() || !input.email.trim()) {
     throw new LocalRuntimeError(
@@ -1109,11 +1342,29 @@ function isMissingFile(error: unknown): boolean {
   );
 }
 
+function hasMissingFileCause(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'cause' in error &&
+    isMissingFile((error as { cause?: unknown }).cause)
+  );
+}
+
 function isFileAlreadyExists(error: unknown): boolean {
   return (
     typeof error === 'object' &&
     error !== null &&
     'code' in error &&
     (error as { code?: unknown }).code === 'EEXIST'
+  );
+}
+
+function isDirectoryNotEmpty(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'ENOTEMPTY'
   );
 }

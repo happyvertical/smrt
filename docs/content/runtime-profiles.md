@@ -110,7 +110,12 @@ never the source checkout, one of its ancestors, the user home itself, or the
 filesystem root. The application root is a dedicated directory; when an
 explicit root already exists, it must already be
 owned by the current user with mode `0700`, and a failed proof leaves its mode
-and contents untouched. Directories are mode `0700`; the database and
+and contents untouched. Empty roots receive an app-specific atomic ownership
+marker; populated roots require that marker. A pending marker safely resumes a
+crash between root claim and database acquisition, while failed SQL custody
+validation removes the pending claim and attempt-created directories. The SQL
+boundary proves ancestor ownership/modes and macOS ACL safety before database,
+asset, or secret artifacts are created. Directories are mode `0700`; the database and
 generated application-secret file are mode `0600`. SQLite enables foreign keys,
 WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
@@ -122,6 +127,10 @@ establishing its mode-0700 data root, the runtime acquires SQLite through the
 `@happyvertical/sql` `node:sqlite` trusted-parent custody boundary. That boundary
 rejects unsafe ownership, write permissions, static links, macOS ACLs, and
 unsupported platforms or Node runtimes before opening the database.
+The application secret is written and synced to a private temporary file, then
+published with a no-overwrite atomic hard link. Concurrent startup reuses the
+single complete winner; malformed existing values fail closed and interrupted
+temporary files are cleaned only after a valid final secret exists.
 It protects the custodied directory from other OS principals, not hostile code
 already running as the same user; that stronger boundary requires OS sandboxing
 and a descriptor-relative SQLite VFS.

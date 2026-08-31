@@ -32,12 +32,25 @@ refused, as is choosing the user home itself or the filesystem root. An
 explicitly configured root that already exists must already be
 owned by the current user with mode `0700`; initialization rejects it without
 changing permissions or creating artifacts when that custody proof fails.
+An empty root is claimed with an app-specific, empty mode-0600 marker. A
+populated root is accepted only with that valid marker, so selecting an
+unrelated private directory fails without changing its contents. A pending
+marker makes the claim crash-recoverable while the database is first acquired;
+it is promoted atomically after the released SQL custody boundary verifies the
+complete ancestor/root chain, including macOS ACLs. Failed custody removes the
+pending claim and every directory created by that attempt.
 Every existing path component is opened without following symbolic links and
 checked against its canonical path before descendants or secret bytes are
 written. The runtime then acquires SQLite through `@happyvertical/sql`'s
 explicit `node:sqlite` trusted-parent custody boundary, rooted at the mode-0700
 application data directory. Unsupported runtimes or platforms and unsafe
 ownership, permissions, ACLs, or path components fail closed.
+
+The application secret is published by atomically linking a fully written,
+synced mode-0600 temporary file into place. Concurrent installers validate and
+reuse the one winning value; an incomplete or malformed existing secret is
+rejected rather than overwritten, and stale interrupted temporary files are
+removed after a complete value is durably available.
 
 The custody boundary prevents static link traversal and mutation by other OS
 principals while the application retains control of that directory. Hostile
