@@ -122,7 +122,10 @@ WAL, full synchronous durability, and a busy timeout. The local server binds to
 `127.0.0.1` by default, and owner bootstrap refuses a non-loopback bind.
 Concurrent initializers are serialized across processes by a kernel-owned Unix
 socket in a private per-user lock directory. Socket liveness avoids PID-reuse
-ambiguity, and a crash-stale pathname is reclaimed only after connection refusal.
+ambiguity, and a crash-stale pathname is reclaimed only after connection refusal
+and an immediate match with the originally observed socket inode. The lease is
+held through secret publication, SQLite tuning, application migrations, and
+bootstrap construction; contenders wait up to two minutes for completion.
 Initialization walks every existing storage-path component without following
 symbolic links, verifies canonical source-tree separation, and performs chmod
 through validated file descriptors. A platform without the required no-follow

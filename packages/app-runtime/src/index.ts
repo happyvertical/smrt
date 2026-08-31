@@ -262,34 +262,40 @@ export async function initializeLocalApplicationRuntime(
   });
   const paths = resolveLocalRuntimePaths(options);
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
-  const { canonicalSourceRoot, db } = await acquireLocalDatabase(
-    paths,
-    sourceRoot,
-    normalizeAppId(options.appId),
-  );
-  await prepareLocalFilesystem(paths, canonicalSourceRoot);
-  await tuneLocalSqlite(db);
-  await options.prepareDatabase?.(db);
-  await ensureBootstrapTable(db);
+  const appId = normalizeAppId(options.appId);
+  const initializationLock = await acquireInitializationLock(paths.root);
+  try {
+    const { canonicalSourceRoot, db } = await acquireLocalDatabase(
+      paths,
+      sourceRoot,
+      appId,
+    );
+    await prepareLocalFilesystem(paths, canonicalSourceRoot);
+    await tuneLocalSqlite(db);
+    await options.prepareDatabase?.(db);
+    await ensureBootstrapTable(db);
 
-  const runtime = new InitializedLocalApplicationRuntime({
-    db,
-    paths,
-    bindHost,
-    resolvedRuntime,
-    bootstrapTtlSeconds,
-    sessionTtlSeconds,
-    backgroundJobs: options.backgroundJobs === true,
-    paidCapabilities: options.paidCapabilities === true,
-    now: options.now ?? (() => new Date()),
-    canonicalSourceRoot,
-  });
-  const bootstrap = await runtime.ensureBootstrapInvitation();
-  return {
-    runtime,
-    bootstrap,
-    diagnostics: await runtime.diagnostics(),
-  };
+    const runtime = new InitializedLocalApplicationRuntime({
+      db,
+      paths,
+      bindHost,
+      resolvedRuntime,
+      bootstrapTtlSeconds,
+      sessionTtlSeconds,
+      backgroundJobs: options.backgroundJobs === true,
+      paidCapabilities: options.paidCapabilities === true,
+      now: options.now ?? (() => new Date()),
+      canonicalSourceRoot,
+    });
+    const bootstrap = await runtime.ensureBootstrapInvitation();
+    return {
+      runtime,
+      bootstrap,
+      diagnostics: await runtime.diagnostics(),
+    };
+  } finally {
+    await initializationLock.release();
+  }
 }
 
 interface LocalApplicationRuntimeState {
@@ -715,6 +721,12 @@ interface LocalInitializationLock {
   release(): Promise<void>;
 }
 
+interface InitializationSocketIdentity {
+  device: number;
+  inode: number;
+  uid: number;
+}
+
 async function acquireLocalDatabase(
   paths: LocalRuntimePaths,
   sourceRoot: string,
@@ -725,55 +737,42 @@ async function acquireLocalDatabase(
 }> {
   requireNoFollowSupport();
   const canonicalSourceRoot = await realpath(sourceRoot);
-  const initializationLock = await acquireInitializationLock(paths.root);
-  let createdDirectories: string[] = [];
-  let removeAttemptDirectories = false;
+  const createdDirectories = await ensureSafeDirectoryTree(
+    paths.root,
+    canonicalSourceRoot,
+    true,
+  );
+  const prepared = await prepareDedicatedRoot(
+    paths.root,
+    canonicalSourceRoot,
+    appId,
+    createdDirectories,
+  );
+  let db: DatabaseInterface;
   try {
-    createdDirectories = await ensureSafeDirectoryTree(
-      paths.root,
-      canonicalSourceRoot,
-      true,
-    );
-    const prepared = await prepareDedicatedRoot(
-      paths.root,
-      canonicalSourceRoot,
-      appId,
-      createdDirectories,
-    );
-    let db: DatabaseInterface;
-    try {
-      db = await getDatabase({
-        type: 'sqlite',
-        url: paths.database,
-        secureFile: {
-          driver: 'node:sqlite',
-          custody: 'trusted-parent',
-          root: paths.root,
-        },
-      });
-    } catch (error) {
-      if (prepared.pendingMarkerCreatedByAttempt) {
-        await removeMarkerIfPresent(
-          prepared.pendingMarker,
-          canonicalSourceRoot,
-        );
-        removeAttemptDirectories = true;
-      }
-      throw error;
-    }
-
-    // Once SQLite acquisition succeeds, the database is an authoritative
-    // artifact. Keep the pending marker through every promotion failure so a
-    // later startup can resume rather than seeing an unmarked populated root.
-    await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
-    await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
-    return { canonicalSourceRoot, db };
-  } finally {
-    await initializationLock.release();
-    if (removeAttemptDirectories) {
+    db = await getDatabase({
+      type: 'sqlite',
+      url: paths.database,
+      secureFile: {
+        driver: 'node:sqlite',
+        custody: 'trusted-parent',
+        root: paths.root,
+      },
+    });
+  } catch (error) {
+    if (prepared.pendingMarkerCreatedByAttempt) {
+      await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
       await removeCreatedDirectories(createdDirectories);
     }
+    throw error;
   }
+
+  // Once SQLite acquisition succeeds, the database is an authoritative
+  // artifact. Keep the pending marker through every promotion failure so a
+  // later startup can resume rather than seeing an unmarked populated root.
+  await publishRootMarker(prepared.finalMarker, canonicalSourceRoot);
+  await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
+  return { canonicalSourceRoot, db };
 }
 
 async function prepareLocalFilesystem(
@@ -908,9 +907,11 @@ async function acquireInitializationLock(
       if (!isAddressInUse(error)) throw error;
     }
 
+    const observed = await readInitializationSocketIdentity(path, currentUid);
+    if (observed === null) continue;
     const state = await probeInitializationSocket(path);
     if (state === 'stale') {
-      await removeStaleInitializationSocket(path);
+      await removeStaleInitializationSocket(path, observed);
       continue;
     }
     if (Date.now() >= deadline) {
@@ -961,25 +962,46 @@ async function probeInitializationSocket(
   });
 }
 
-async function removeStaleInitializationSocket(path: string): Promise<void> {
+async function readInitializationSocketIdentity(
+  path: string,
+  currentUid: number,
+): Promise<InitializationSocketIdentity | null> {
   let details: Awaited<ReturnType<typeof lstat>>;
   try {
     details = await lstat(path);
   } catch (error) {
-    if (isMissingFile(error)) return;
+    if (isMissingFile(error)) return null;
     throw error;
   }
-  const currentUid = process.getuid?.();
-  if (
-    !details.isSocket() ||
-    currentUid === undefined ||
-    details.uid !== currentUid
-  ) {
+  if (!details.isSocket() || details.uid !== currentUid) {
     throw unsafeFilesystemEntry(
-      `Refusing to replace an invalid local runtime initialization lock: ${path}`,
+      `Local runtime initialization lock must be a current-user-owned socket: ${path}`,
     );
   }
-  await unlink(path);
+  return { device: details.dev, inode: details.ino, uid: details.uid };
+}
+
+async function removeStaleInitializationSocket(
+  path: string,
+  expected: InitializationSocketIdentity,
+): Promise<boolean> {
+  const currentUid = process.getuid?.();
+  if (currentUid === undefined || expected.uid !== currentUid) return false;
+  const current = await readInitializationSocketIdentity(path, currentUid);
+  if (
+    current === null ||
+    current.device !== expected.device ||
+    current.inode !== expected.inode
+  ) {
+    return false;
+  }
+  try {
+    await unlink(path);
+    return true;
+  } catch (error) {
+    if (isMissingFile(error)) return false;
+    throw error;
+  }
 }
 
 async function removeOwnedSocketIfPresent(

@@ -30,6 +30,11 @@ const execFileAsync = promisify(execFile);
 
 const filesystemInterleave = vi.hoisted(() => ({
   beforeLink: undefined as undefined | (() => Promise<void>),
+  beforeLstat: undefined as
+    | undefined
+    | ((
+        path: Parameters<typeof import('node:fs/promises').lstat>[0],
+      ) => Promise<void>),
   beforeUnlink: undefined as
     | undefined
     | ((
@@ -47,6 +52,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return actual.link(existingPath, newPath);
     },
+    lstat: async (path: Parameters<typeof actual.lstat>[0]) => {
+      await filesystemInterleave.beforeLstat?.(path);
+      return actual.lstat(path);
+    },
     unlink: async (path: Parameters<typeof actual.unlink>[0]) => {
       await filesystemInterleave.beforeUnlink?.(path);
       return actual.unlink(path);
@@ -56,6 +65,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
+  filesystemInterleave.beforeLstat = undefined;
   filesystemInterleave.beforeUnlink = undefined;
   vi.restoreAllMocks();
   await Promise.all(
@@ -84,6 +94,23 @@ async function initializationLockPath(dataDirectory: string): Promise<string> {
     .digest('hex')
     .slice(0, 32);
   return join(lockRoot, `${lockKey}.sock`);
+}
+
+async function leaveCrashStaleSocket(lockPath: string): Promise<void> {
+  await mkdir(join(lockPath, '..'), { recursive: true, mode: 0o700 });
+  await rm(lockPath, { force: true });
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      "const net=require('node:net');const server=net.createServer();server.listen(process.argv[1],()=>process.stdout.write('ready\\n'));",
+      lockPath,
+    ],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  );
+  await once(child.stdout as NodeJS.ReadableStream, 'data');
+  child.kill('SIGKILL');
+  await once(child, 'exit');
 }
 
 async function countRows(
@@ -289,26 +316,35 @@ describe('local application runtime', () => {
     const directories = await localDirectories('secret-race');
     let arrivals = 0;
     let releaseFirst: (() => void) | undefined;
+    let enterFirst: (() => void) | undefined;
+    const firstEntered = new Promise<void>((resolve) => {
+      enterFirst = resolve;
+    });
     const firstPaused = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
     filesystemInterleave.beforeLink = async () => {
       arrivals += 1;
-      if (arrivals === 1) await firstPaused;
-      else releaseFirst?.();
+      if (arrivals === 1) {
+        enterFirst?.();
+        await firstPaused;
+      }
     };
 
-    const startups = await Promise.all([
-      initializeLocalApplicationRuntime({
-        appId: 'lolaus',
-        ...directories,
-      }),
-      initializeLocalApplicationRuntime({
-        appId: 'lolaus',
-        ...directories,
-      }),
-    ]);
-    expect(arrivals).toBeGreaterThanOrEqual(2);
+    const first = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await firstEntered;
+    const second = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(arrivals).toBe(1);
+    releaseFirst?.();
+    const startups = await Promise.all([first, second]);
+    expect(arrivals).toBe(2);
     const invitations = startups.flatMap((startup) =>
       startup.bootstrap ? [startup.bootstrap] : [],
     );
@@ -814,20 +850,7 @@ describe('local application runtime', () => {
   it('reclaims a kernel-stale initialization socket after its owner crashes', async () => {
     const directories = await localDirectories('stale-initializer');
     const lockPath = await initializationLockPath(directories.dataDirectory);
-    await mkdir(join(lockPath, '..'), { recursive: true, mode: 0o700 });
-    await rm(lockPath, { force: true });
-    const child = spawn(
-      process.execPath,
-      [
-        '-e',
-        "const net=require('node:net');const server=net.createServer();server.listen(process.argv[1],()=>process.stdout.write('ready\\n'));",
-        lockPath,
-      ],
-      { stdio: ['ignore', 'pipe', 'inherit'] },
-    );
-    await once(child.stdout as NodeJS.ReadableStream, 'data');
-    child.kill('SIGKILL');
-    await once(child, 'exit');
+    await leaveCrashStaleSocket(lockPath);
     expect((await stat(lockPath)).isSocket()).toBe(true);
 
     await expect(
@@ -836,6 +859,124 @@ describe('local application runtime', () => {
       diagnostics: { runtime: { profile: 'local' } },
     });
     await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('binds stale reclaim to the observed inode with two simultaneous successors', async () => {
+    const directories = await localDirectories('stale-successors');
+    const lockPath = await initializationLockPath(directories.dataDirectory);
+    await leaveCrashStaleSocket(lockPath);
+    const staleInode = (await stat(lockPath)).ino;
+    let lockLstats = 0;
+    let releaseInitialObservers: (() => void) | undefined;
+    const initialObserversReady = new Promise<void>((resolve) => {
+      releaseInitialObservers = resolve;
+    });
+    filesystemInterleave.beforeLstat = async (path) => {
+      if (String(path) !== lockPath) return;
+      lockLstats += 1;
+      if (lockLstats === 1) await initialObserversReady;
+      else if (lockLstats === 2) releaseInitialObservers?.();
+      else if (lockLstats === 4) {
+        for (;;) {
+          try {
+            if ((await stat(lockPath)).ino !== staleInode) break;
+          } catch (error) {
+            if (!String(error).includes('ENOENT')) throw error;
+          }
+          await new Promise((resolve) => setImmediate(resolve));
+        }
+      }
+    };
+
+    let activeMigrations = 0;
+    let maximumActiveMigrations = 0;
+    let releaseFirstMigration: (() => void) | undefined;
+    const firstMigrationPaused = new Promise<void>((resolve) => {
+      releaseFirstMigration = resolve;
+    });
+    let enterFirstMigration: (() => void) | undefined;
+    const firstMigrationEntered = new Promise<void>((resolve) => {
+      enterFirstMigration = resolve;
+    });
+    const prepareDatabase = async () => {
+      activeMigrations += 1;
+      maximumActiveMigrations = Math.max(
+        maximumActiveMigrations,
+        activeMigrations,
+      );
+      if (maximumActiveMigrations === 1 && activeMigrations === 1) {
+        enterFirstMigration?.();
+        await firstMigrationPaused;
+      }
+      activeMigrations -= 1;
+    };
+    const first = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase,
+    });
+    const second = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase,
+    });
+    await firstMigrationEntered;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(maximumActiveMigrations).toBe(1);
+    releaseFirstMigration?.();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(maximumActiveMigrations).toBe(1);
+    expect(lockLstats).toBeGreaterThanOrEqual(5);
+    await expect(stat(lockPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('holds the root lease through migrations and releases it after failure', async () => {
+    const directories = await localDirectories('migration-lease');
+    let active = 0;
+    let maximumActive = 0;
+    let calls = 0;
+    let enterFirst: (() => void) | undefined;
+    let releaseFirst: (() => void) | undefined;
+    const firstEntered = new Promise<void>((resolve) => {
+      enterFirst = resolve;
+    });
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const prepareDatabase = async () => {
+      calls += 1;
+      const call = calls;
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      if (call === 1) {
+        enterFirst?.();
+        await firstReleased;
+      }
+      active -= 1;
+      if (call === 1) throw new Error('injected migration failure');
+    };
+
+    const first = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase,
+    });
+    await firstEntered;
+    const second = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(calls).toBe(1);
+    expect(maximumActive).toBe(1);
+    releaseFirst?.();
+    await expect(first).rejects.toThrow('injected migration failure');
+    await expect(second).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    expect(calls).toBe(2);
+    expect(maximumActive).toBe(1);
   });
 
   it('rejects an inherited pending claim with unrelated contents', async () => {
