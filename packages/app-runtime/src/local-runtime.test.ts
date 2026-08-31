@@ -32,6 +32,11 @@ const execFileAsync = promisify(execFile);
 
 const filesystemInterleave = vi.hoisted(() => ({
   beforeLink: undefined as undefined | (() => Promise<void>),
+  afterReaddir: undefined as
+    | undefined
+    | ((
+        path: Parameters<typeof import('node:fs/promises').readdir>[0],
+      ) => Promise<void>),
   beforeUnlink: undefined as
     | undefined
     | ((
@@ -49,6 +54,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return actual.link(existingPath, newPath);
     },
+    readdir: async (...args: unknown[]) => {
+      const entries = await Reflect.apply(actual.readdir, actual, args);
+      await filesystemInterleave.afterReaddir?.(
+        args[0] as Parameters<typeof actual.readdir>[0],
+      );
+      return entries;
+    },
     unlink: async (path: Parameters<typeof actual.unlink>[0]) => {
       await filesystemInterleave.beforeUnlink?.(path);
       return actual.unlink(path);
@@ -58,6 +70,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 afterEach(async () => {
   filesystemInterleave.beforeLink = undefined;
+  filesystemInterleave.afterReaddir = undefined;
   filesystemInterleave.beforeUnlink = undefined;
   vi.restoreAllMocks();
   await Promise.all(
@@ -781,6 +794,67 @@ describe('local application runtime', () => {
     });
     await expect(stat(pendingMarker)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await stat(database)).isFile()).toBe(true);
+  });
+
+  it('retries read-only preflight when a concurrent initializer removes its pending marker', async () => {
+    const directories = await localDirectories('preflight-marker-race');
+    const originalGetDatabase = sql.getDatabase;
+    let databaseCalls = 0;
+    let enterFirst: (() => void) | undefined;
+    let releaseFirst: (() => void) | undefined;
+    let captureSecondSnapshot: (() => void) | undefined;
+    let resumeSecondPreflight: (() => void) | undefined;
+    const firstEntered = new Promise<void>((resolve) => {
+      enterFirst = resolve;
+    });
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const secondSnapshotCaptured = new Promise<void>((resolve) => {
+      captureSecondSnapshot = resolve;
+    });
+    const secondPreflightResumed = new Promise<void>((resolve) => {
+      resumeSecondPreflight = resolve;
+    });
+    vi.spyOn(sql, 'getDatabase').mockImplementation(async (...args) => {
+      databaseCalls += 1;
+      if (databaseCalls === 1) {
+        enterFirst?.();
+        await firstReleased;
+        throw new Error('injected first acquisition failure');
+      }
+      return originalGetDatabase(...args);
+    });
+
+    const first = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await firstEntered;
+
+    let snapshotPaused = false;
+    filesystemInterleave.afterReaddir = async (path) => {
+      if (!snapshotPaused && String(path) === directories.dataDirectory) {
+        snapshotPaused = true;
+        captureSecondSnapshot?.();
+        await secondPreflightResumed;
+      }
+    };
+    const second = initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+    });
+    await secondSnapshotCaptured;
+
+    releaseFirst?.();
+    await expect(first).rejects.toThrow('injected first acquisition failure');
+    filesystemInterleave.afterReaddir = undefined;
+    resumeSecondPreflight?.();
+
+    await expect(second).resolves.toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
+    expect(databaseCalls).toBe(2);
   });
 
   it('serializes failed and crashing initializers without losing recovery authority', async () => {

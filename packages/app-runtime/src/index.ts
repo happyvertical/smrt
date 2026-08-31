@@ -55,6 +55,7 @@ const BOOTSTRAP_TABLE = '_smrt_local_owner_bootstrap';
 const SECRET_FILE_NAME = 'application.secret';
 const DATABASE_FILE_NAME = 'application.sqlite';
 const ROOT_MARKER_PREFIX = '.smrt-local-runtime-';
+const PREFLIGHT_RETRY_LIMIT = 4;
 const INITIALIZATION_LOCK_TIMEOUT_MS = 120_000;
 const INITIALIZATION_LOCK_WORKER = `
   const { parentPort, workerData } = require('node:worker_threads');
@@ -768,6 +769,28 @@ interface LocalInitializationLock {
 }
 
 async function preflightLocalApplicationRoot(
+  root: string,
+  sourceRoot: string,
+  appId: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < PREFLIGHT_RETRY_LIMIT; attempt += 1) {
+    try {
+      await preflightLocalApplicationRootOnce(root, sourceRoot, appId);
+      return;
+    } catch (error) {
+      if (!isMissingFile(error) && !hasMissingFileCause(error)) throw error;
+      if (attempt === PREFLIGHT_RETRY_LIMIT - 1) {
+        throw unsafeFilesystemEntry(
+          'Local application data changed repeatedly during read-only preflight.',
+          error,
+        );
+      }
+      await new Promise<void>((resolveRetry) => setImmediate(resolveRetry));
+    }
+  }
+}
+
+async function preflightLocalApplicationRootOnce(
   root: string,
   sourceRoot: string,
   appId: string,
