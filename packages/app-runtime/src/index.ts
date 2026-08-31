@@ -1038,10 +1038,15 @@ function preservePrimaryFailure(
   aggregateMessage: string,
 ): unknown {
   if (primaryFailure instanceof Error) {
-    Object.defineProperty(primaryFailure, secondaryProperty, {
-      value: secondaryFailure,
-      configurable: true,
-    });
+    try {
+      Object.defineProperty(primaryFailure, secondaryProperty, {
+        value: secondaryFailure,
+        configurable: true,
+      });
+    } catch {
+      // A frozen application error must remain primary even when secondary
+      // failure context cannot be attached to it.
+    }
     return primaryFailure;
   }
   return new AggregateError(

@@ -1240,6 +1240,31 @@ describe('local application runtime', () => {
     expect(databaseCloseCalls).toBe(1);
   });
 
+  it('does not mask a frozen initialization error when lock release also fails', async () => {
+    const directories = await localDirectories('release-failure-frozen');
+    const primaryFailure = Object.freeze(
+      new Error('injected frozen migration failure'),
+    );
+    initializationLockWorkerInterleave.releaseFailure = new Error(
+      'injected lock release failure',
+    );
+
+    let failure: unknown;
+    try {
+      await initializeLocalApplicationRuntime({
+        appId: 'lolaus',
+        ...directories,
+        prepareDatabase: async () => {
+          throw primaryFailure;
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBe(primaryFailure);
+  });
+
   it.runIf(platform() === 'darwin')(
     'serializes differently cased aliases of one macOS application root',
     async () => {
