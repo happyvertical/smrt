@@ -225,10 +225,11 @@ contract. Task and schedule processes call `createTaskWorker()` or
 `createScheduleWorker()` and then start the returned ordinary s-m-r-t runner.
 Application code still enqueues through `bg()` or
 `background(...).enqueue()`; profile selection does not alter that API.
-Runtime shutdown drains in-flight readiness/session/worker initialization,
-stops every runner returned by that runtime, and then closes PostgreSQL. A
-caller may stop a runner earlier, but must not restart it after runtime shutdown
-has begun; the lifecycle-gated `start()` method rejects at that point.
+Runtime shutdown drains in-flight readiness/session/worker initialization and
+serialized runner start/stop operations, stops every runner returned by that
+runtime, and then closes PostgreSQL. A caller may stop a runner earlier, but
+must not restart it after runtime shutdown has begun; the lifecycle-gated
+`start()` method rejects at that point.
 An awaited `close()` request from inside a tracked provider or worker operation
 acknowledges shutdown so the operation can unwind; external callers still await
 complete worker and database cleanup.

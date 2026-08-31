@@ -571,7 +571,7 @@ class InitializedDeployedApplicationRuntime
   private readonly pendingReadinessChecks = new Set<Promise<unknown>>();
   private readonly pendingSessionRestorations = new Set<Promise<unknown>>();
   private readonly pendingWorkerInitializations = new Set<Promise<unknown>>();
-  private readonly pendingWorkerStarts = new Set<Promise<unknown>>();
+  private readonly pendingWorkerOperations = new Set<Promise<unknown>>();
   private readonly lifecycleOperationContext = new AsyncLocalStorage<symbol>();
   private readonly activeLifecycleOperations = new Set<symbol>();
   private readonly workerCleanups = new Set<() => Promise<void>>();
@@ -752,7 +752,7 @@ class InitializedDeployedApplicationRuntime
       ...this.pendingReadinessChecks,
       ...this.pendingSessionRestorations,
       ...this.pendingWorkerInitializations,
-      ...this.pendingWorkerStarts,
+      ...this.pendingWorkerOperations,
     ];
     const shutdownToken = Symbol('deployed-runtime-shutdown');
     this.activeLifecycleOperations.add(shutdownToken);
@@ -770,7 +770,14 @@ class InitializedDeployedApplicationRuntime
     this.closeAttempt = attempt.finally(() => {
       this.closeAttempt = undefined;
     });
-    if (requestedFromLifecycleOperation) return;
+    if (requestedFromLifecycleOperation) {
+      // The lifecycle callback cannot await the shutdown pipeline without
+      // deadlocking on itself. It receives an acknowledgement instead, but the
+      // internally owned attempt still needs a rejection observer until an
+      // outside caller can retry the failed cleanup.
+      void this.closeAttempt.catch(() => undefined);
+      return;
+    }
     return this.closeAttempt;
   }
 
@@ -826,23 +833,57 @@ class InitializedDeployedApplicationRuntime
   ): Runner {
     const start = runner.start.bind(runner);
     const stop = runner.stop.bind(runner);
+    let operationTail = Promise.resolve();
+    const queueOperation = (callback: () => Promise<void>): Promise<void> => {
+      const previous = operationTail;
+      const operation = this.beginLifecycleOperation(async () => {
+        await previous;
+        await callback();
+      });
+      operationTail = operation.catch(() => undefined);
+      this.pendingWorkerOperations.add(operation);
+      void operation.then(
+        () => {
+          this.pendingWorkerOperations.delete(operation);
+        },
+        () => {
+          this.pendingWorkerOperations.delete(operation);
+        },
+      );
+      return operation;
+    };
     const ownedStart = async (): Promise<void> => {
       this.assertRunning();
-      const operation = this.beginLifecycleOperation(() => {
+      return queueOperation(async () => {
         this.assertRunning();
-        return start();
+        try {
+          await start();
+          this.assertRunning();
+        } catch {
+          // A runner can reject after it has made itself live (for example,
+          // when a runner:started listener throws). Keep this cleanup inside
+          // the tracked lifecycle operation so shutdown cannot call stop()
+          // concurrently on the same runner.
+          if (this.state === 'running') {
+            try {
+              await stop();
+            } catch {
+              // The runtime-owned cleanup is already retained in workerCleanups.
+            }
+          }
+          if (this.state !== 'running') this.assertRunning();
+          throw unavailable('database');
+        }
       });
-      this.pendingWorkerStarts.add(operation);
-      try {
-        await operation;
-        this.assertRunning();
-      } catch {
-        if (this.state !== 'running') this.assertRunning();
-        throw unavailable('database');
-      } finally {
-        this.pendingWorkerStarts.delete(operation);
-      }
     };
+    const ownedStop = (): Promise<void> =>
+      queueOperation(async () => {
+        try {
+          await stop();
+        } catch {
+          throw unavailable('database');
+        }
+      });
     Object.defineProperties(runner, {
       start: {
         configurable: false,
@@ -853,11 +894,11 @@ class InitializedDeployedApplicationRuntime
       stop: {
         configurable: false,
         enumerable: false,
-        value: () => stop(),
+        value: ownedStop,
         writable: false,
       },
     });
-    this.workerCleanups.add(stop);
+    this.workerCleanups.add(ownedStop);
     return runner;
   }
 

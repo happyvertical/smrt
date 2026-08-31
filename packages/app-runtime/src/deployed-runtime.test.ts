@@ -1251,6 +1251,36 @@ describe('deployed application runtime', () => {
     expect(closeDatabase).toHaveBeenCalledOnce();
   });
 
+  it('redacts a public worker stop failure and retains cleanup for shutdown', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/jobs';
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error(credential))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    let failure: unknown;
+    try {
+      await task.stop();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
   it('drains worker starts and revokes them when shutdown begins', async () => {
     const { db, close: closeDatabase } = databaseFixture();
     let releaseStart!: () => void;
@@ -1285,6 +1315,160 @@ describe('deployed application runtime', () => {
       code: 'runtime_stopped',
     });
     expect(taskStart).toHaveBeenCalledOnce();
+  });
+
+  it('stops a task worker whose start rejects after becoming live', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    vi.spyOn(TaskRunner.prototype, 'start').mockRejectedValue(
+      new Error('runner:started listener failed'),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    await expect(task.start()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(taskStop).toHaveBeenCalledOnce();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops a schedule worker whose start rejects after becoming live', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(ScheduleRunner.prototype, 'initialize').mockResolvedValue(
+      undefined,
+    );
+    vi.spyOn(ScheduleRunner.prototype, 'start').mockRejectedValue(
+      new Error('runner:started listener failed'),
+    );
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const schedule = await initialized.createScheduleWorker();
+
+    await expect(schedule.start()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(scheduleStop).toHaveBeenCalledOnce();
+
+    await initialized.close();
+    expect(scheduleStop).toHaveBeenCalledTimes(2);
+  });
+
+  it('drains failed-start cleanup before shutdown stops the worker again', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseFirstStop!: () => void;
+    const firstStopBlocked = new Promise<void>((resolve) => {
+      releaseFirstStop = resolve;
+    });
+    let activeStops = 0;
+    let maximumConcurrentStops = 0;
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    vi.spyOn(TaskRunner.prototype, 'start').mockRejectedValue(
+      new Error('runner:started listener failed'),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockImplementation(async () => {
+        activeStops += 1;
+        maximumConcurrentStops = Math.max(maximumConcurrentStops, activeStops);
+        if (taskStop.mock.calls.length === 1) await firstStopBlocked;
+        activeStops -= 1;
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    await vi.waitFor(() => expect(taskStop).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    expect(maximumConcurrentStops).toBe(1);
+    releaseFirstStop();
+
+    await expect(starting).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await close;
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(maximumConcurrentStops).toBe(1);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('serializes a public stop requested immediately after start', async () => {
+    const { db } = databaseFixture();
+    const lifecycleOrder: string[] = [];
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStart = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockImplementation(async () => {
+        lifecycleOrder.push('start');
+      });
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockImplementation(async () => {
+        lifecycleOrder.push('stop');
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    const stopping = task.stop();
+    await Promise.all([starting, stopping]);
+
+    expect(taskStart).toHaveBeenCalledOnce();
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(lifecycleOrder).toEqual(['start', 'stop']);
+    await initialized.close();
+  });
+
+  it('drains an in-flight public worker stop before closing the database', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseFirstStop!: () => void;
+    const firstStopBlocked = new Promise<void>((resolve) => {
+      releaseFirstStop = resolve;
+    });
+    let activeStops = 0;
+    let maximumConcurrentStops = 0;
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockImplementation(async () => {
+        activeStops += 1;
+        maximumConcurrentStops = Math.max(maximumConcurrentStops, activeStops);
+        if (taskStop.mock.calls.length === 1) await firstStopBlocked;
+        activeStops -= 1;
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const stopping = task.stop();
+    await vi.waitFor(() => expect(taskStop).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    expect(maximumConcurrentStops).toBe(1);
+    releaseFirstStop();
+
+    await stopping;
+    await close;
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(maximumConcurrentStops).toBe(1);
+    expect(closeDatabase).toHaveBeenCalledOnce();
   });
 
   it('lets a worker start await its re-entrant shutdown request', async () => {
@@ -1670,6 +1854,48 @@ describe('deployed application runtime', () => {
     await initialized.close();
 
     expect(close).toHaveBeenCalledOnce();
+    expect(initialized.health().status).toBe('stopped');
+  });
+
+  it('observes a failed cleanup from callback-initiated shutdown and permits retry', async () => {
+    const { db } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringReadiness: Promise<void> | undefined;
+    let closeAttempts = 0;
+    let triggerClose = false;
+    const close = vi.fn(async () => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) throw new Error('private cleanup failure');
+    });
+    const readiness = vi.fn(async () => {
+      if (!triggerClose) return;
+      closeDuringReadiness = initialized.close();
+      await closeDuringReadiness;
+    });
+    initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close,
+      },
+      authentication: {
+        provider: 'oidc',
+        readiness,
+      },
+    });
+
+    triggerClose = true;
+    await expect(initialized.readiness()).resolves.toMatchObject({
+      status: 'not-ready',
+    });
+    await expect(closeDuringReadiness).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+
+    await initialized.close();
+    expect(close).toHaveBeenCalledTimes(2);
     expect(initialized.health().status).toBe('stopped');
   });
 

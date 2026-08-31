@@ -163,8 +163,9 @@ const scheduleWorker = await initialized.createScheduleWorker();
 await scheduleWorker.start();
 ```
 
-`initialized.close()` drains in-flight readiness/session/worker initialization,
-stops every runner returned by this runtime, and only then closes PostgreSQL.
+`initialized.close()` drains in-flight readiness/session/worker initialization
+and serialized runner start/stop operations, stops every runner returned by
+this runtime, and only then closes PostgreSQL.
 Callers may stop a runner earlier, but must not restart a returned runner after
 its runtime has begun shutdown; lifecycle-gated `start()` calls then reject.
 An awaited `close()` request made from inside a tracked provider or worker
