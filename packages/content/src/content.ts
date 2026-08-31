@@ -3827,19 +3827,7 @@ export class Content
           'Atomic content review persistence requires transaction support',
         );
       }
-      const previousUpdatedAt = this.updated_at;
-      try {
-        return await db.transaction((transaction) =>
-          this.withDatabase(transaction, persistReview),
-        );
-      } catch (error) {
-        // claimRevision mutates the bound instance after its UPDATE succeeds.
-        // If a later review artifact fails, the transaction rolls that UPDATE
-        // back but cannot roll back in-memory state, so restore the committed
-        // token before callers correct the failure and retry this instance.
-        this.updated_at = previousUpdatedAt;
-        throw error;
-      }
+      return this.withTransaction(persistReview);
     }
     return persistReview(this);
   }

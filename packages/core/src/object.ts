@@ -632,6 +632,51 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Run work for this object in a root database transaction.
+   *
+   * Database rollback cannot undo JavaScript mutations made by save(). This
+   * helper therefore restores persistence identity and revision metadata when
+   * the transaction rejects, allowing the same instance to be corrected and
+   * retried without a false revision conflict. Domain-field mutations remain
+   * caller-owned so the caller can inspect or amend them before retrying.
+   */
+  public async withTransaction<T>(
+    operation: (bound: this) => Promise<T>,
+  ): Promise<T> {
+    const database = this.db;
+    if (!database.transaction) {
+      throw new Error('Object transaction requires transaction support');
+    }
+    const persistence = {
+      id: this._id,
+      slug: this._slug,
+      context: this._context,
+      createdAt:
+        this.created_at instanceof Date
+          ? new Date(this.created_at)
+          : this.created_at,
+      updatedAt:
+        this.updated_at instanceof Date
+          ? new Date(this.updated_at)
+          : this.updated_at,
+      persisted: this._persisted,
+    };
+    try {
+      return await database.transaction((transaction) =>
+        this.withDatabase(transaction, operation),
+      );
+    } catch (error) {
+      this._id = persistence.id;
+      this._slug = persistence.slug;
+      this._context = persistence.context;
+      this.created_at = persistence.createdAt;
+      this.updated_at = persistence.updatedAt;
+      this._persisted = persistence.persisted;
+      throw error;
+    }
+  }
+
+  /**
    * Protected setter for STI discriminator to maintain type safety
    * Used internally for Single Table Inheritance support
    * @internal

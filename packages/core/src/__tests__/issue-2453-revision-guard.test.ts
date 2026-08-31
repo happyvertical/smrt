@@ -401,6 +401,60 @@ describe('issue #2453 revision-guarded saves', () => {
     expect((await rows.get(String(second.id)))?.title).toBe('retried');
   });
 
+  it('restores an existing instance after transaction rollback so it can retry', async () => {
+    const created = await rows.create({ title: 'before transaction' });
+    const retrying = await rows.get(String(created.id));
+    if (!retrying?.updated_at) throw new Error('expected persisted row');
+    const loadedRevision = retrying.updated_at.getTime();
+
+    await expect(
+      retrying.withTransaction(async (bound) => {
+        bound.title = 'rolled back';
+        await bound.save();
+        throw new Error('rollback existing save');
+      }),
+    ).rejects.toThrow('rollback existing save');
+    expect(retrying.updated_at?.getTime()).toBe(loadedRevision);
+    expect((await rows.get(String(created.id)))?.title).toBe(
+      'before transaction',
+    );
+
+    retrying.title = 'retry committed';
+    await expect(retrying.save()).resolves.toBe(retrying);
+    expect((await rows.get(String(created.id)))?.title).toBe('retry committed');
+  });
+
+  it('restores new-instance persistence metadata after transaction rollback', async () => {
+    const retrying = new Issue2453RevisionRow({
+      db,
+      title: 'new transaction row',
+    });
+    await retrying.initialize();
+    const initial = {
+      id: retrying.id,
+      slug: retrying.slug,
+      createdAt: retrying.created_at,
+      updatedAt: retrying.updated_at,
+    };
+
+    await expect(
+      retrying.withTransaction(async (bound) => {
+        await bound.save();
+        throw new Error('rollback inserted row');
+      }),
+    ).rejects.toThrow('rollback inserted row');
+    expect(retrying.isPersisted).toBe(false);
+    expect(retrying.id).toBe(initial.id);
+    expect(retrying.slug).toBe(initial.slug);
+    expect(retrying.created_at).toBe(initial.createdAt);
+    expect(retrying.updated_at).toBe(initial.updatedAt);
+    expect(await rows.list()).toHaveLength(0);
+
+    await expect(retrying.save()).resolves.toBe(retrying);
+    expect(retrying.isPersisted).toBe(true);
+    expect(await rows.list()).toHaveLength(1);
+  });
+
   it('does not advance unrelated revisions after a future-dated CAS fails', async () => {
     const staleTarget = await rows.create({ title: 'stale target' });
     const unrelated = await rows.create({ title: 'unrelated' });
