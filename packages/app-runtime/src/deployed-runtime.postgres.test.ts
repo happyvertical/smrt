@@ -51,6 +51,9 @@ describePostgres('deployed runtime on PostgreSQL', () => {
             ...postgresConfig,
             dbid: 'app-runtime-deployed-integration',
           }),
+        close: async (db) => {
+          await db.close?.();
+        },
       },
       authentication: {
         provider: 'hosted-identity',

@@ -55,7 +55,11 @@ export interface DeployedDatabaseBinding {
   readonly engine: 'postgres';
   readonly connect: () => Promise<DatabaseInterface>;
   readonly readiness?: (db: DatabaseInterface) => Promise<void>;
-  readonly close?: (db: DatabaseInterface) => Promise<void>;
+  /**
+   * Provider-owned cleanup boundary, required before a connection is opened.
+   * Keeping cleanup on the binding also covers malformed connection handles.
+   */
+  readonly close: (db: DatabaseInterface) => Promise<void>;
 }
 
 export interface DeployedApplicationRuntimeOptions {
@@ -193,14 +197,6 @@ export async function initializeDeployedApplicationRuntime(
       'database',
     );
   }
-  if (!bindings.database.close && typeof db.close !== 'function') {
-    throw new DeployedRuntimeError(
-      'invalid_configuration',
-      'The database adapter must provide a close callback.',
-      'database',
-    );
-  }
-
   try {
     await checkDatabase(bindings.database, db);
   } catch (error) {
@@ -256,7 +252,7 @@ function validateBindings(
   );
   requireFunction(database.connect, 'database', 'connect');
   requireOptionalFunction(database.readiness, 'database', 'readiness');
-  requireOptionalFunction(database.close, 'database', 'close');
+  requireFunction(database.close, 'database', 'close');
   if (database.engine !== runtime.providers.database.engine) {
     throw mismatch('database', runtime.providers.database.engine);
   }
@@ -473,6 +469,9 @@ class InitializedDeployedApplicationRuntime
       probe(() => this.bindings.assets.readiness()),
       probe(() => this.bindings.secrets.readiness()),
     ]);
+    if (this.state !== 'running') {
+      return createStoppedReadiness(this.resolvedRuntime.profile);
+    }
     const [database, authentication, assets, secrets] = results;
     return freezeReadiness(
       this.resolvedRuntime.profile,
@@ -505,11 +504,7 @@ class InitializedDeployedApplicationRuntime
 
   private async closeConnection(): Promise<void> {
     try {
-      if (this.bindings.database.close) {
-        await this.bindings.database.close(this.db);
-      } else {
-        await this.db.close?.();
-      }
+      await this.bindings.database.close(this.db);
       this.state = 'stopped';
     } catch {
       this.state = 'close-failed';
@@ -628,18 +623,19 @@ async function closeDatabaseQuietly(
   db: unknown,
 ): Promise<void> {
   try {
-    if (binding.close) await binding.close(db as DatabaseInterface);
-    else if (isDatabaseInterface(db)) await db.close?.();
+    await binding.close(db as DatabaseInterface);
   } catch {
     // Preserve the primary startup failure without exposing cleanup details.
   }
 }
 
-function deepFreeze<T>(value: T): T {
+function deepFreeze<T>(value: T, seen = new WeakSet<object>()): T {
   if (value && typeof value === 'object') {
+    if (seen.has(value)) return value;
+    seen.add(value);
     if (!Object.isFrozen(value)) Object.freeze(value);
     for (const child of Object.values(value as Record<string, unknown>)) {
-      deepFreeze(child);
+      deepFreeze(child, seen);
     }
   }
   return value;

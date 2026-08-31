@@ -186,6 +186,9 @@ const runtime = await initializeDeployedApplicationRuntime({
   database: {
     engine: 'postgres',
     connect: () => getDatabase(postgresPrivateConfig),
+    close: async (db) => {
+      await db.close?.();
+    },
   },
   authentication: {
     provider: 'magic-link',
@@ -203,8 +206,9 @@ const runtime = await initializeDeployedApplicationRuntime({
 });
 ```
 
-The initializer validates the profile and exact adapter identities before
-opening PostgreSQL. It then checks public authentication, assets, and secrets,
+The initializer validates the profile, exact adapter identities, and a
+provider-owned database cleanup boundary before opening PostgreSQL. It then
+checks public authentication, assets, and secrets,
 probes the database, and runs the explicit idempotent migration hook. Any
 failure closes the acquired database and rejects startup. Stable failures,
 diagnostics, health, and readiness never include the provider's private error

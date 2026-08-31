@@ -112,6 +112,9 @@ const initialized = await initializeDeployedApplicationRuntime({
       type: 'postgres',
       url: requirePrivateSetting('DATABASE_URL'),
     }),
+    close: async (db) => {
+      await db.close?.();
+    },
   },
   authentication: {
     provider: 'oidc',
@@ -129,8 +132,9 @@ const initialized = await initializeDeployedApplicationRuntime({
 });
 ```
 
-Startup validates every binding before returning. A missing public-auth or
-secret binding, a selector mismatch, an unavailable provider, a failed
+Startup validates every binding, including the provider-owned database cleanup
+boundary, before opening a connection. A missing public-auth or secret binding,
+a selector mismatch, an unavailable provider, a failed
 PostgreSQL probe, or a failed migration rejects startup. Provider failures are
 reported with stable component codes and omit the underlying provider message
 so credentials cannot leak into HTTP or orchestration payloads.

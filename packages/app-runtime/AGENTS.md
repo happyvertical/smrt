@@ -24,8 +24,9 @@ Application infrastructure composition for the validated runtime profiles in
   `cloud`; it rejects local initialization and provider/binding mismatches.
 - Provider bindings own credentials, vendor clients, and readiness checks.
   Runtime diagnostics contain selectors and status only.
-- The runtime acquires and closes the injected PostgreSQL connection and runs
-  the application's explicit, idempotent `prepareDatabase` hook.
+- The database binding must expose a provider-owned `close` callback before
+  `connect` can run. The runtime owns that cleanup boundary and runs the
+  application's explicit, idempotent `prepareDatabase` hook.
 - Public authentication, asset storage, and secret bindings are mandatory and
   readiness-checked before startup succeeds.
 - `createTaskWorker()` and `createScheduleWorker()` initialize the normal jobs

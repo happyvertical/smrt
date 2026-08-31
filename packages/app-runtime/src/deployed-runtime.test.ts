@@ -19,6 +19,10 @@ function databaseFixture() {
   return { db, query, close };
 }
 
+async function closeDatabase(db: DatabaseInterface): Promise<void> {
+  await db.close?.();
+}
+
 function selfHostedOptions(
   db: DatabaseInterface,
 ): DeployedApplicationRuntimeOptions {
@@ -27,6 +31,7 @@ function selfHostedOptions(
     database: {
       engine: 'postgres',
       connect: async () => db,
+      close: closeDatabase,
     },
     authentication: {
       provider: 'oidc',
@@ -122,7 +127,11 @@ describe('deployed application runtime', () => {
     const { db } = databaseFixture();
     const initialized = await initializeDeployedApplicationRuntime({
       profile: 'cloud',
-      database: { engine: 'postgres', connect: async () => db },
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
       authentication: {
         provider: 'hosted-identity',
         readiness: async () => undefined,
@@ -162,7 +171,11 @@ describe('deployed application runtime', () => {
     });
     const initialized = await initializeDeployedApplicationRuntime({
       profile: 'cloud',
-      database: { engine: 'postgres', connect: async () => db },
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
       authentication: {
         provider: 'hosted-identity',
         readiness: async () => undefined,
@@ -197,7 +210,11 @@ describe('deployed application runtime', () => {
     });
     const initialized = await initializeDeployedApplicationRuntime({
       profile: 'cloud',
-      database: { engine: 'postgres', connect: async () => db },
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
       authentication: {
         provider: 'hosted-identity',
         readiness: async () => undefined,
@@ -234,7 +251,11 @@ describe('deployed application runtime', () => {
     });
     const initialized = await initializeDeployedApplicationRuntime({
       profile: 'cloud',
-      database: { engine: 'postgres', connect: async () => db },
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
       authentication: {
         provider: 'hosted-identity',
         readiness: async () => undefined,
@@ -282,7 +303,7 @@ describe('deployed application runtime', () => {
       initializeDeployedApplicationRuntime({
         profile: 'cloud',
         providers,
-        database: { engine: 'postgres', connect },
+        database: { engine: 'postgres', connect, close: closeDatabase },
         authentication: {
           provider: 'hosted-identity',
           readiness: async () => undefined,
@@ -313,7 +334,7 @@ describe('deployed application runtime', () => {
       initializeDeployedApplicationRuntime({
         ...selfHostedOptions(db),
         providers,
-        database: { engine: 'postgres', connect },
+        database: { engine: 'postgres', connect, close: closeDatabase },
       }),
     ).rejects.toBeInstanceOf(RuntimeProfileValidationError);
     expect(connect).not.toHaveBeenCalled();
@@ -324,7 +345,7 @@ describe('deployed application runtime', () => {
     const connect = vi.fn(async () => db);
     const options = {
       ...selfHostedOptions(db),
-      database: { engine: 'postgres' as const, connect },
+      database: { engine: 'postgres' as const, connect, close: closeDatabase },
       authentication: undefined,
     } as unknown as DeployedApplicationRuntimeOptions;
 
@@ -339,7 +360,7 @@ describe('deployed application runtime', () => {
     await expect(
       initializeDeployedApplicationRuntime({
         ...selfHostedOptions(db),
-        database: { engine: 'postgres', connect },
+        database: { engine: 'postgres', connect, close: closeDatabase },
         secrets: undefined,
       } as unknown as DeployedApplicationRuntimeOptions),
     ).rejects.toMatchObject({
@@ -357,7 +378,7 @@ describe('deployed application runtime', () => {
     await expect(
       initializeDeployedApplicationRuntime({
         ...selfHostedOptions(db),
-        database: { engine: 'postgres', connect },
+        database: { engine: 'postgres', connect, close: closeDatabase },
         authentication: {
           provider: 'magic-link',
           readiness: authReadiness,
@@ -480,13 +501,18 @@ describe('deployed application runtime', () => {
   it('requires a usable database close boundary', async () => {
     const query = vi.fn(async () => ({ rows: [] }));
     const db = { query } as unknown as DatabaseInterface;
+    const connect = vi.fn(async () => db);
 
     await expect(
-      initializeDeployedApplicationRuntime(selfHostedOptions(db)),
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: { engine: 'postgres', connect } as never,
+      }),
     ).rejects.toMatchObject({
       code: 'invalid_configuration',
       component: 'database',
     });
+    expect(connect).not.toHaveBeenCalled();
     expect(query).not.toHaveBeenCalled();
   });
 
@@ -522,6 +548,40 @@ describe('deployed application runtime', () => {
       components: { assets: { status: 'not-ready' } },
     });
     expect(JSON.stringify(notReady)).not.toContain(credential);
+  });
+
+  it('does not report ready after shutdown begins during a probe', async () => {
+    const { db } = databaseFixture();
+    let blockAuthentication = false;
+    let releaseAuthentication!: () => void;
+    const authenticationBlocked = new Promise<void>((resolve) => {
+      releaseAuthentication = resolve;
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      authentication: {
+        provider: 'oidc',
+        readiness: async () => {
+          if (blockAuthentication) await authenticationBlocked;
+        },
+      },
+    });
+
+    blockAuthentication = true;
+    const readiness = initialized.readiness();
+    await Promise.resolve();
+    await initialized.close();
+    releaseAuthentication();
+
+    await expect(readiness).resolves.toMatchObject({
+      status: 'not-ready',
+      components: {
+        database: { status: 'not-ready' },
+        authentication: { status: 'not-ready' },
+        assets: { status: 'not-ready' },
+        secrets: { status: 'not-ready' },
+      },
+    });
   });
 
   it('creates separate job and schedule workers against the shared database', async () => {
