@@ -182,6 +182,32 @@ describe('issue #2453 revision-guarded saves', () => {
             : lexicalSequence,
         ),
       ).toBe(2);
+
+      const [escapedLiteral] = await duckRows.query(
+        `SELECT *, E'escaped\\' update issue_2453_revision_rows' AS note,
+                nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof escapedLiteral.id).toBe('string');
+
+      const [nestedComment] = await duckRows.query(
+        `SELECT *, /* outer /* delete from issue_2453_revision_rows */ update issue_2453_revision_rows */
+                nextval('issue_2453_read_once') AS observed_sequence
+         FROM issue_2453_revision_rows WHERE id = ?`,
+        [String(created.id)],
+      );
+      expect(typeof nestedComment.id).toBe('string');
+      const [{ sequence_value: extendedLexicalSequence }] = await duckDb
+        .query(`SELECT currval('issue_2453_read_once') AS sequence_value`)
+        .then((result) => result.rows);
+      expect(
+        Number(
+          extendedLexicalSequence && typeof extendedLexicalSequence === 'object'
+            ? (extendedLexicalSequence as { hugeint?: number }).hugeint
+            : extendedLexicalSequence,
+        ),
+      ).toBe(4);
     } finally {
       await duckDb.close?.();
     }

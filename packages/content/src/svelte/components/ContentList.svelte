@@ -1846,6 +1846,7 @@ async function applyWorkflow() {
   request.confirmationToken = workflowPreview.confirmationToken;
   request.idempotencyKey = workflowIdempotencyKey;
   const appliedIntent = workflowIntentAtPreview;
+  const appliedTarget = workflowJobTarget(request);
   workflowPending = true;
   workflowError = null;
   try {
@@ -1871,7 +1872,7 @@ async function applyWorkflow() {
                 ? result.details.jobRequestId
                 : request.requestId,
             identity: request.identity,
-            target: workflowJobTarget(request),
+            target: appliedTarget,
           },
         ];
       }
@@ -1910,7 +1911,7 @@ async function applyWorkflow() {
               ? result.details.jobRequestId
               : request.requestId,
           identity: request.identity,
-          target: workflowJobTarget(request),
+          target: appliedTarget,
         },
       ];
     }

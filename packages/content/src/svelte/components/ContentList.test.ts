@@ -362,6 +362,62 @@ describe('ContentList bulk workflows', () => {
     await vi.waitFor(() => expect(query.refreshes).toBe(1));
   });
 
+  it('snapshots an all-matching job target before asynchronous apply', async () => {
+    const query = createFakeContentListQuery();
+    query.setEnvelope({
+      queryFingerprint: 'dq1-before-apply',
+      freshness: { state: 'fresh', asOf: '2026-08-27T18:00:00.000Z' },
+    });
+    let resolveApply: ((result: DataSurfaceActionResult) => void) | undefined;
+    const workflow = workflowBinding({
+      apply: (request) =>
+        new Promise((resolve) => {
+          resolveApply = resolve;
+        }),
+      status: async () => ({
+        jobId: 'job-snapshotted-query',
+        status: 'running',
+      }),
+    });
+    const target = renderList({
+      query: { bind: () => query.binding },
+      workflows: workflow,
+    });
+    query.resolve([serverRow('content-1', 'Original query row')], 2);
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Select all 2 matching')).toHaveLength(1),
+    );
+    click(buttonsByText(target, 'Select all 2 matching')[0]);
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() =>
+      expect(buttonsByText(document.body, 'Apply workflow')).toHaveLength(1),
+    );
+    click(buttonsByText(document.body, 'Apply workflow')[0]);
+    await vi.waitFor(() => expect(workflow.apply).toHaveBeenCalledTimes(1));
+
+    typeText(searchInput(target), 'replacement');
+    await vi.waitFor(() => expect(query.requests.length).toBeGreaterThan(1));
+    query.resolve([serverRow('content-2', 'Replacement query row')], 1);
+    const request = workflow.apply.mock.calls[0]?.[0];
+    if (!request || !resolveApply) throw new Error('Apply was not pending');
+    resolveApply({
+      ...request,
+      ok: true,
+      details: {
+        accepted: 2,
+        skipped: 0,
+        failed: 0,
+        background: true,
+        jobId: 'job-snapshotted-query',
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(buttonsByText(target, 'Check job')).toHaveLength(1),
+    );
+    expect(buttonsByText(target, 'Edit')[0]?.disabled).toBe(false);
+  });
+
   it('localizes workflow controls, confirmation details, and failures', async () => {
     const workflows = workflowBinding({
       preview: async (request) => ({

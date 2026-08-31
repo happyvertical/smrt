@@ -65,15 +65,35 @@ function executableSqlWords(sql: string): string[] {
       continue;
     }
     if (character === '/' && next === '*') {
-      const end = sql.indexOf('*/', index + 2);
-      if (end === -1) break;
-      index = end + 2;
+      let depth = 1;
+      index += 2;
+      while (index < sql.length && depth > 0) {
+        if (sql[index] === '/' && sql[index + 1] === '*') {
+          depth += 1;
+          index += 2;
+        } else if (sql[index] === '*' && sql[index + 1] === '/') {
+          depth -= 1;
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+      if (depth > 0) break;
       continue;
     }
     if (character === "'" || character === '"' || character === '`') {
       const quote = character;
+      const backslashEscapes =
+        quote === "'" &&
+        index > 0 &&
+        /[eE]/.test(sql[index - 1]) &&
+        (index === 1 || !/[A-Za-z0-9_$]/.test(sql[index - 2]));
       index += 1;
       while (index < sql.length) {
+        if (backslashEscapes && sql[index] === '\\') {
+          index += 2;
+          continue;
+        }
         if (sql[index] === quote) {
           if (sql[index + 1] === quote) {
             index += 2;
