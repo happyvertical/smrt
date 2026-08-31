@@ -201,6 +201,63 @@ describe('issue #2453 revision-guarded saves', () => {
     );
   });
 
+  it.each([
+    'sqlite',
+    'duckdb',
+  ] as const)('keeps an ordinary %s write outside a concurrent rolled-back transaction', async (type) => {
+    const transactionDb = await getTestDatabase({
+      type,
+      url: ':memory:',
+      classes: ['Issue2453RevisionRow'],
+    });
+    try {
+      const transactionRows = (await Issue2453RevisionRows.create({
+        db: transactionDb,
+      })) as Issue2453RevisionRows;
+      const first = await transactionRows.create({ title: 'first original' });
+      const second = await transactionRows.create({
+        title: 'second original',
+      });
+      const transactionRow = await transactionRows.get(String(first.id));
+      const ordinaryRow = await transactionRows.get(String(second.id));
+      if (!transactionRow || !ordinaryRow) {
+        throw new Error('expected transaction test rows');
+      }
+
+      let releaseTransaction!: () => void;
+      const transactionReleased = new Promise<void>((resolve) => {
+        releaseTransaction = resolve;
+      });
+      let transactionEntered!: () => void;
+      const transactionReady = new Promise<void>((resolve) => {
+        transactionEntered = resolve;
+      });
+
+      const rolledBack = transactionRow.withTransaction(async (bound) => {
+        bound.title = 'must roll back';
+        await bound.save();
+        transactionEntered();
+        await transactionReleased;
+        throw new Error('forced rollback');
+      });
+      await transactionReady;
+      ordinaryRow.title = 'ordinary survivor';
+      const ordinarySave = ordinaryRow.save();
+      releaseTransaction();
+
+      await expect(rolledBack).rejects.toThrow('forced rollback');
+      await ordinarySave;
+      expect((await transactionRows.get(String(first.id)))?.title).toBe(
+        'first original',
+      );
+      expect((await transactionRows.get(String(second.id)))?.title).toBe(
+        'ordinary survivor',
+      );
+    } finally {
+      await transactionDb.close?.();
+    }
+  });
+
   it('hydrates the framework revision alongside legacy timestamp aliases', async () => {
     const created = await rows.create({ title: 'legacy timestamp model' });
     const hydrated = await rows.get(String(created.id));

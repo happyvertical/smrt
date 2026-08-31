@@ -129,6 +129,9 @@ class MemoryContentCollection implements ContentListActionCollection {
           _db: unknown,
           operation: (bound: typeof content) => Promise<T>,
         ) => operation(content),
+        withTransaction: async <T>(
+          operation: (bound: typeof content) => Promise<T>,
+        ) => content.db.transaction(() => operation(content)),
         save: async (options?: { expectedUpdatedAt?: Date | string }) => {
           this.saveCalls.push(row.id);
           if (this.failOnSave.has(row.id))

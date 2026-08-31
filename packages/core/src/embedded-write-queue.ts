@@ -1,3 +1,6 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import type { DatabaseInterface } from '@happyvertical/sql';
+
 /**
  * In-process write serialization for embedded database engines (#2360).
  *
@@ -19,9 +22,12 @@
  * - the change-feed append (a root-connection write that follows every save).
  * - every model save and delete, so the embedded revision-CAS compare/upsert
  *   fallback cannot race an ordinary save, natural-key create, or delete.
+ * - a complete root `SmrtObject.withTransaction()` callback, with writes on
+ *   its bound handle re-entering the same hold instead of self-deadlocking.
  *
- * Each hold contains database calls only — never an interceptor or hook — so
- * the queue cannot deadlock on nested model saves. PostgreSQL is never
+ * Ordinary save/delete holds contain database calls only — never an
+ * interceptor or hook. Explicit transaction callbacks are caller-controlled,
+ * so their bound model writes re-enter the existing hold. PostgreSQL is never
  * serialized here:
  * its null-aware upsert already arbitrates through advisory locks
  * server-side, and cross-process writers exist that an in-process queue could
@@ -33,6 +39,7 @@
 /** Queue tail per database identity (URL string, or the handle itself). */
 const urlQueues = new Map<string, Promise<unknown>>();
 const handleQueues = new WeakMap<object, Promise<unknown>>();
+const activeQueueKeys = new AsyncLocalStorage<ReadonlySet<string | object>>();
 
 interface QueueableDatabase {
   url?: string;
@@ -77,10 +84,14 @@ export async function withEmbeddedWriteQueue<T>(
   if (!serialize) return operation();
 
   const key = queueKey(db);
+  const active = activeQueueKeys.getStore();
+  if (active?.has(key)) return operation();
   const previous =
     (typeof key === 'string' ? urlQueues.get(key) : handleQueues.get(key)) ??
     Promise.resolve();
-  const next = previous.then(operation, operation);
+  const run = () =>
+    activeQueueKeys.run(new Set([...(active ?? []), key]), operation);
+  const next = previous.then(run, run);
   // The stored tail must never reject, or one failed write would poison the
   // queue for every later writer.
   const tail = next.catch(() => undefined);
@@ -93,4 +104,31 @@ export async function withEmbeddedWriteQueue<T>(
     handleQueues.set(key, tail);
   }
   return next;
+}
+
+/**
+ * Serialize a complete embedded root transaction with ordinary model writes.
+ * The transaction handle is registered as a reentrant alias so saves and
+ * change-feed appends inside the callback do not queue behind their own root
+ * transaction.
+ */
+export async function withEmbeddedWriteTransaction<T>(
+  db: DatabaseInterface,
+  serialize: boolean,
+  operation: (transaction: DatabaseInterface) => Promise<T>,
+): Promise<T> {
+  const transaction = db.transaction?.bind(db);
+  if (!transaction) {
+    throw new Error('Database transaction support is required');
+  }
+  return withEmbeddedWriteQueue(db, serialize, () =>
+    transaction((bound) => {
+      if (!serialize) return operation(bound);
+      const active = activeQueueKeys.getStore();
+      return activeQueueKeys.run(
+        new Set([...(active ?? []), queueKey(bound)]),
+        () => operation(bound),
+      );
+    }),
+  );
 }

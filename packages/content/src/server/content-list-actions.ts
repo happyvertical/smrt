@@ -766,17 +766,7 @@ async function applyWorkflow(
 ): Promise<void> {
   const input = payloadRecord(payload);
   const save = async () => {
-    const db = content.db;
-    if (!db.transaction) {
-      throw new Error(
-        'Atomic content workflow persistence requires transaction support',
-      );
-    }
-    await db.transaction((transaction) =>
-      content.withDatabase(transaction, (bound) =>
-        bound.save({ expectedUpdatedAt }),
-      ),
-    );
+    await content.withTransaction((bound) => bound.save({ expectedUpdatedAt }));
   };
   const mutationDraft = (): ContentListWorkflowDraft => ({
     contentId: String(content.id),

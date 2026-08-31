@@ -166,6 +166,7 @@ export * from './dispatch/index';
 export {
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
+  withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
 // Embeddings support (semantic search)
 export * from './embeddings/index';

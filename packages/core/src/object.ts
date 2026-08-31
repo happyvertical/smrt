@@ -23,6 +23,7 @@ import {
   isEmbeddedDatabase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
+  withEmbeddedWriteTransaction,
 } from './embedded-write-queue';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
@@ -662,8 +663,10 @@ export class SmrtObject extends SmrtClass {
       persisted: this._persisted,
     };
     try {
-      return await database.transaction((transaction) =>
-        this.withDatabase(transaction, operation),
+      return await withEmbeddedWriteTransaction(
+        database,
+        isEmbeddedDatabase(database),
+        (transaction) => this.withDatabase(transaction, operation),
       );
     } catch (error) {
       this._id = persistence.id;
