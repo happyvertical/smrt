@@ -158,6 +158,24 @@ describe('copyTemplate', () => {
     expect(pkg.name).toBe('@example/my-app');
   });
 
+  it('normalizes an invalid explicitly scoped package identity', () => {
+    copyTemplate(tempDir, { name: '@Example/My App', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@example/my-app');
+  });
+
+  it('falls back to the app scope when an explicit scope has no package segment', () => {
+    copyTemplate(tempDir, { name: '@Example', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@smrt-app/example');
+  });
+
   it('falls back to a valid package identity when the name has no slug characters', () => {
     copyTemplate(tempDir, { name: '???', overwrite: true });
 

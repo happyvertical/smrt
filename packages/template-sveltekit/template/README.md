@@ -328,9 +328,10 @@ mobile surfaces. Those concerns are intentionally absent here.
 - `local`: SQLite, loopback single-use owner bootstrap, user-owned files, and
   embedded/on-demand jobs.
 - `self-hosted`: PostgreSQL, public authentication, operator providers, and
-  separate workers. Copy `.env.self-hosted.example`, put `DATABASE_URL` and
-  `POSTGRES_PASSWORD` in the ignored `.env` file, then use Compose. Compose
-  refuses to start when either secret is absent.
+  separate workers. Copy `.env.self-hosted.example` to `.env.self-hosted` for
+  the service configuration. Separately create the ignored plain `.env` file
+  with `DATABASE_URL` and `POSTGRES_PASSWORD` for Compose interpolation, then
+  use Compose. Compose refuses to start when either secret is absent.
 - `cloud`: hosted identity, managed providers, required tenant context, and
   scalable workers. `.env.cloud.example` records the composition boundary.
 

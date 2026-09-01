@@ -31,12 +31,21 @@ export function getTemplatePath() {
   return join(__dirname, 'template');
 }
 
-function packageNameForProject(name) {
-  const normalized = name
+function normalizePackageSegment(value) {
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return name.startsWith('@') ? name : `@smrt-app/${normalized || 'app'}`;
+}
+
+function packageNameForProject(name) {
+  if (name.startsWith('@')) {
+    const slash = name.indexOf('/');
+    const scope = normalizePackageSegment(name.slice(1, slash));
+    const packageName = normalizePackageSegment(name.slice(slash + 1));
+    if (slash > 1 && scope && packageName) return `@${scope}/${packageName}`;
+  }
+  return `@smrt-app/${normalizePackageSegment(name) || 'app'}`;
 }
 
 /**
