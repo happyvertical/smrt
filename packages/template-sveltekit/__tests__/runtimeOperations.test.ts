@@ -1,4 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -64,6 +66,13 @@ const healthRoute = readFileSync(
   'utf8',
 );
 const dockerfile = readFileSync(join(template, 'Dockerfile'), 'utf8');
+const templatePackage = JSON.parse(
+  readFileSync(join(template, 'package.json'), 'utf8'),
+);
+const viteDriver = readFileSync(
+  join(template, 'scripts', 'smrt-vite.mjs'),
+  'utf8',
+);
 
 describe('profile-aware application operations', () => {
   it('uses app-runtime paths and emits secret-free recovery diagnostics', () => {
@@ -137,6 +146,84 @@ describe('profile-aware application operations', () => {
     expect(setupAction).toContain(
       'pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open',
     );
+  });
+
+  it('loads the source environment before Vite evaluates runtime identity', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'smrt-vite-env-test-'));
+    const appIdKey = 'SMRT_APP_ID';
+    const dataDirectoryKey = 'SMRT_DATA_DIR';
+    try {
+      writeFileSync(
+        join(directory, '.env'),
+        `${appIdKey}=file-app\n${dataDirectoryKey}=data-root\n`,
+      );
+
+      writeFileSync(
+        join(directory, 'package.json'),
+        JSON.stringify({ type: 'module' }),
+      );
+      const scripts = join(directory, 'scripts');
+      const viteRoot = join(directory, 'node_modules', 'vite');
+      mkdirSync(scripts);
+      mkdirSync(join(viteRoot, 'bin'), { recursive: true });
+      copyFileSync(
+        join(template, 'scripts', 'smrt-vite.mjs'),
+        join(scripts, 'smrt-vite.mjs'),
+      );
+      writeFileSync(
+        join(viteRoot, 'package.json'),
+        JSON.stringify({
+          name: 'vite',
+          type: 'module',
+          exports: { './package.json': './package.json' },
+          bin: { vite: './bin/vite.mjs' },
+        }),
+      );
+      writeFileSync(
+        join(viteRoot, 'bin', 'vite.mjs'),
+        'process.stdout.write(JSON.stringify({ appId: process.env.SMRT_APP_ID, dataDirectory: process.env.SMRT_DATA_DIR, args: process.argv.slice(2) }));',
+      );
+      const environment = { ...process.env, [appIdKey]: 'shell-app' };
+      delete environment[dataDirectoryKey];
+      const result = spawnSync(
+        process.execPath,
+        [
+          '--env-file-if-exists=.env',
+          join(scripts, 'smrt-vite.mjs'),
+          'dev',
+          '--host',
+          '127.0.0.1',
+        ],
+        { cwd: directory, env: environment, encoding: 'utf8' },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout)).toEqual({
+        appId: 'shell-app',
+        dataDirectory: 'data-root',
+        args: ['dev', '--host', '127.0.0.1'],
+      });
+      expect(templatePackage.scripts.dev).toBe(
+        'node --env-file-if-exists=.env scripts/smrt-vite.mjs dev',
+      );
+      expect(templatePackage.scripts.build).toBe(
+        'node --env-file-if-exists=.env scripts/smrt-vite.mjs build',
+      );
+      expect(viteDriver).not.toContain('node_modules/vite/bin');
+      rmSync(join(directory, '.env'));
+      const missingResult = spawnSync(
+        process.execPath,
+        [
+          '--env-file-if-exists=.env',
+          join(scripts, 'smrt-vite.mjs'),
+          '--version',
+        ],
+        { cwd: directory, encoding: 'utf8' },
+      );
+      expect(missingResult.status, missingResult.stderr).toBe(0);
+      expect(JSON.parse(missingResult.stdout).args).toEqual(['--version']);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('treats an already-exited process as successfully terminated', () => {

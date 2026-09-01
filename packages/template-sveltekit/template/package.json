@@ -9,8 +9,8 @@
     "pnpm": "10.34.4"
   },
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
+    "dev": "node --env-file-if-exists=.env scripts/smrt-vite.mjs dev",
+    "build": "node --env-file-if-exists=.env scripts/smrt-vite.mjs build",
     "preview": "node scripts/smrt-app.mjs start",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

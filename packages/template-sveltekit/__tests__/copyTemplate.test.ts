@@ -51,6 +51,7 @@ describe('copyTemplate', () => {
       readFileSync(join(getTemplatePath(), '.gitignore'), 'utf8'),
     );
     expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-vite.mjs'))).toBe(true);
     expect(
       existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),
     ).toBe(true);
