@@ -71,7 +71,10 @@ human applies or discards them in the form's local review surface. Keep this
 state machine in smrt-ui; smrt-svelte contributes Provider-backed field
 registration and consumes the shared component rather than duplicating it.
 The generated WebMCP form tool proposes registry stages; it never writes or
-submits field values directly.
+submits field values directly. It declares itself write-class (never
+destructive) and, being an explicit `<Form webmcp>` opt-in, falls back to a
+`['read', 'write']` exposure policy only when no ancestor Provider declares an
+explicit `webmcp.effects` — an explicit Provider policy always wins (#2586).
 Rich `FieldDefinition` registrations may carry a `subject` for record-qualified
 identity. The Form bridge also folds live DOM disabled/read-only state into the
 registry and omits those fields from WebMCP schemas and staging.

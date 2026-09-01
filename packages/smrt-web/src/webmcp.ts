@@ -628,14 +628,20 @@ function actionSemantics(
 /**
  * Translate a bespoke tool's optional MCP-shaped `annotations` into the
  * `declared` input `actionSemantics` already accepts for an undeclared
- * custom model action, so both paths share one fail-closed default. Only an
- * explicit `readOnlyHint: true` declares `read`; an explicit
- * `destructiveHint: false` (with `readOnlyHint` not `true`) declares the
- * `write` effect BUCKET used for exposure-policy filtering — a write tool
- * still requires an explicit `effects` opt-in separate from `read`. Anything
- * else — no annotations, `destructiveHint: true`, or `destructiveHint` left
- * undeclared — resolves through `actionSemantics`'s own default to
- * destructive, non-idempotent, open-world.
+ * custom model action, so both paths share one fail-closed default. Checks
+ * run in this fixed order, and `destructiveHint: true` always wins even when
+ * `readOnlyHint: true` is also present — a contradictory pair (an author
+ * error, or an attempted downgrade) must fail closed to `destructive`
+ * rather than being read through as `read`:
+ *
+ *   1. `destructiveHint === true` -> `destructive`, regardless of `readOnlyHint`.
+ *   2. otherwise `readOnlyHint === true` -> `read`.
+ *   3. otherwise `destructiveHint === false` -> the `write` effect BUCKET
+ *      used for exposure-policy filtering — a write tool still requires an
+ *      explicit `effects` opt-in separate from `read`.
+ *   4. Anything else — no annotations, or both hints left undeclared —
+ *      resolves through `actionSemantics`'s own default to destructive,
+ *      non-idempotent, open-world.
  *
  * The re-emitted `destructiveHint` annotation does not simply echo the
  * caller's input: `actionSemantics`'s default branch sets
@@ -651,11 +657,13 @@ function bespokeDeclaredSemantics(
 ): Partial<Pick<WebMcpToolDefinition, 'effect' | 'idempotent' | 'openWorld'>> {
   if (!annotations) return {};
   const effect: WebMcpToolEffect | undefined =
-    annotations.readOnlyHint === true
-      ? 'read'
-      : annotations.destructiveHint === false
-        ? 'write'
-        : undefined;
+    annotations.destructiveHint === true
+      ? 'destructive'
+      : annotations.readOnlyHint === true
+        ? 'read'
+        : annotations.destructiveHint === false
+          ? 'write'
+          : undefined;
   return {
     ...(effect ? { effect } : {}),
     ...(annotations.idempotentHint !== undefined

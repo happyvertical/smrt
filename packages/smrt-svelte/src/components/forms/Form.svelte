@@ -929,19 +929,30 @@ async function stageForWebMcp(args: Record<string, unknown>): Promise<string> {
     : `Staged ${completed} changes for review; ${rejected} rejected`;
 }
 
-useWebMcpTool(() => {
-  if (!webmcp) return null;
-  const options = typeof webmcp === 'object' ? webmcp : {};
-  return {
-    name: options.name ?? `${collection ?? resolvedFormId}_stage_changes`,
-    description:
-      options.description ??
-      `Propose changes to the ${collection ?? name ?? resolvedFormId} form for local human review`,
-    inputSchema: formInputSchema(),
-    annotations: { readOnlyHint: false },
-    execute: stageForWebMcp,
-  };
-});
+useWebMcpTool(
+  () => {
+    if (!webmcp) return null;
+    const options = typeof webmcp === 'object' ? webmcp : {};
+    return {
+      name: options.name ?? `${collection ?? resolvedFormId}_stage_changes`,
+      description:
+        options.description ??
+        `Propose changes to the ${collection ?? name ?? resolvedFormId} form for local human review`,
+      inputSchema: formInputSchema(),
+      // This tool only ever stages a proposal into local review state — it
+      // never writes or submits data on its own (a human gesture still
+      // applies it) — so it is write-class, not destructive.
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      execute: stageForWebMcp,
+    };
+  },
+  // `<Form webmcp>` is an explicit component-level opt-in, so it supplies
+  // its own `['read', 'write']` fallback for when no Provider ancestor
+  // declares an `effects` policy. A Provider's explicit policy still wins
+  // when present — a narrower Provider policy fails closed over this
+  // default — and this default never includes `destructive`.
+  { effects: ['read', 'write'] },
+);
 
 // Clean up extracted values based on field type
 function cleanValue(value: unknown, fieldType: string): unknown {

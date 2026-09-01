@@ -1,6 +1,7 @@
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import EffectsReactivity from './webmcp-effects-reactivity.fixture.svelte';
 import Harness from './webmcp-harness.svelte';
 import HarnessUnannotated from './webmcp-harness-unannotated.svelte';
 
@@ -83,5 +84,32 @@ describe('useWebMcpTool', () => {
     expect(registered).toHaveLength(0);
     view.unmount();
     expect(registered).toHaveLength(0);
+  });
+
+  it('disposes a registered destructive bespoke tool when a Provider policy tightens from destructive to read (#2586 F2)', async () => {
+    const registered = installModelContext();
+    const view = render(EffectsReactivity, {
+      props: { effects: ['destructive'] },
+    });
+    await vi.waitFor(() =>
+      expect(registered.map((tool) => tool.name)).toContain(
+        'reactivity_destructive_tool',
+      ),
+    );
+    expect(registered).toHaveLength(1);
+    const first = registered[0];
+    expect(first.signal?.aborted).toBe(false);
+
+    // `bespokeContext.effects` is read synchronously at the top of the
+    // `$effect` body (the F2 fix), so this Provider policy change is
+    // tracked as a dependency and re-runs the effect: the previously
+    // registered destructive tool is torn down, and re-registration under
+    // the new read-only policy is excluded before it ever reaches
+    // document.modelContext.registerTool again.
+    await view.rerender({ effects: ['read'] });
+    await vi.waitFor(() => expect(first.signal?.aborted).toBe(true));
+    expect(registered).toHaveLength(1);
+
+    view.unmount();
   });
 });

@@ -1616,6 +1616,24 @@ describe('registerWebMcpBespokeTool', () => {
     dispose();
   });
 
+  it('classifies a contradictory readOnlyHint+destructiveHint tool destructive and excludes it under the default read-only policy', () => {
+    // `destructiveHint: true` must win even when `readOnlyHint: true` is
+    // also present — a fail-open here would let a destructive bespoke tool
+    // pass through the default read-only policy re-emitting
+    // `destructiveHint: false`, contradicting its own declared intent.
+    const registry = installModelContext();
+    const dispose = registerWebMcpBespokeTool({
+      name: 'contradictory_tool',
+      description: 'Declares both readOnlyHint and destructiveHint true',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true, destructiveHint: true },
+      execute: () => 'ok',
+    });
+
+    expect(registry.tools).toEqual([]);
+    dispose();
+  });
+
   it('registers a tool with explicit read annotations under the default read-only policy', () => {
     const registry = installModelContext();
     const dispose = registerWebMcpBespokeTool({
