@@ -24,7 +24,9 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - Every supported local web writer (`app:start` or `pnpm dev`)
   acquires the same external writer lease. Logical imports and filesystem
   backups fail closed while any writer is alive; logical exports take one
-  database transaction snapshot and report that uploaded assets are excluded.
+  database transaction snapshot and include filesystem assets referenced by
+  exported asset rows in a digest-verified, provider-neutral manifest. Imports
+  stage and verify those assets before committing database rows.
   Direct production startup must set an explicit loopback `HOST`.
 - Local `app:start` proves readiness against the loopback-only identity fields
   on the runtime health route using the canonical application ID, random

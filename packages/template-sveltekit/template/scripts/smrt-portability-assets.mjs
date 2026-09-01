@@ -35,6 +35,7 @@ export const MAX_BUNDLE_BYTES = 512 * 1024 * 1024;
 const ASSET_URI_PREFIX = 'smrt-bundle://asset/';
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const MAX_BASE64_ASSET_LENGTH = Math.ceil(MAX_ASSET_BYTES / 3) * 4;
 
 function fail(code) {
   const error = new Error(`Asset portability validation failed (${code}).`);
@@ -245,14 +246,22 @@ export function collectFilesystemAssets({
   };
 }
 
-function decodePayload(payload) {
+function decodePayload(payload, expectedByteLength) {
   if (
     payload?.encoding !== 'base64' ||
     typeof payload.data !== 'string' ||
+    payload.data.length > MAX_BASE64_ASSET_LENGTH ||
     !BASE64_PATTERN.test(payload.data)
   ) {
     throw fail('invalid-asset-payload');
   }
+  const padding = payload.data.endsWith('==')
+    ? 2
+    : payload.data.endsWith('=')
+      ? 1
+      : 0;
+  const decodedLength = (payload.data.length / 4) * 3 - padding;
+  if (decodedLength !== expectedByteLength) throw fail('asset-size-mismatch');
   const bytes = Buffer.from(payload.data, 'base64');
   if (bytes.toString('base64') !== payload.data) {
     throw fail('invalid-asset-payload');
@@ -311,14 +320,14 @@ export function verifyFilesystemAssets({ assetBundle, tables, sourceRoot, assetR
     if (!DIGEST_PATTERN.test(entry.contentDigest || '')) {
       throw fail('invalid-asset-digest');
     }
+    totalBytes += entry.byteLength;
+    if (totalBytes > MAX_TOTAL_ASSET_BYTES) throw fail('asset-total-too-large');
     const payload = payloadByPath.get(payloadPath);
     if (!payload) throw fail('missing-asset-payload');
-    const bytes = decodePayload(payload);
+    const bytes = decodePayload(payload, entry.byteLength);
     if (bytes.byteLength !== entry.byteLength) throw fail('asset-size-mismatch');
     if (digestBytes(bytes) !== entry.contentDigest) throw fail('asset-digest-mismatch');
     if (!rowByKey.has(key)) throw fail('unreferenced-asset-payload');
-    totalBytes += bytes.byteLength;
-    if (totalBytes > MAX_TOTAL_ASSET_BYTES) throw fail('asset-total-too-large');
     verified.push({
       key,
       bytes,
@@ -426,11 +435,15 @@ export function publishFilesystemAssets(staged, options = {}) {
   journal.phase = 'published';
   writeJournal(path, journal);
   for (const entry of journal.entries) {
-    verifyPublishedEntry(journal, entry, false);
+    verifyPublishedEntry(journal, entry);
   }
 }
 
-function verifyPublishedEntry(journal, entry, allowMissing) {
+function verifyPublishedEntry(
+  journal,
+  entry,
+  { allowMissing = false, verifyDigest = true } = {},
+) {
   const destination = join(
     journal.assetRoot,
     normalizeDestinationPath(entry.relativePath),
@@ -439,15 +452,17 @@ function verifyPublishedEntry(journal, entry, allowMissing) {
     if (allowMissing) return false;
     throw fail('missing-published-asset');
   }
-  const details = lstatSync(destination);
-  if (details.isSymbolicLink() || !details.isFile()) throw fail('unsafe-published-asset');
-  if (digestBytes(readFileSync(destination)) !== entry.contentDigest) {
+  const bytes = readRegularFile(destination, realpathSync(journal.assetRoot));
+  if (
+    verifyDigest &&
+    digestBytes(bytes) !== entry.contentDigest
+  ) {
     throw fail('published-asset-digest-mismatch');
   }
   return true;
 }
 
-function verifyPublishedTree(journal) {
+function verifyPublishedTree(journal, { verifyDigest = true } = {}) {
   assertRealDirectory(journal.assetRoot, 'unsafe-published-asset');
   const rootEntries = readdirSync(journal.assetRoot);
   if (rootEntries.length !== 1 || rootEntries[0] !== 'portable') {
@@ -464,7 +479,13 @@ function verifyPublishedTree(journal) {
   if (actual.length !== expected.size || actual.some((name) => !expected.has(name))) {
     throw fail('unexpected-published-asset');
   }
-  for (const entry of journal.entries) verifyPublishedEntry(journal, entry, false);
+  for (const entry of journal.entries) {
+    verifyPublishedEntry(journal, entry, { verifyDigest });
+  }
+}
+
+export function verifyPublishedFilesystemAssets(staged) {
+  if (staged) verifyPublishedTree(staged.journal);
 }
 
 function removePublishedTree(journal) {
@@ -472,7 +493,7 @@ function removePublishedTree(journal) {
   renameSync(journal.assetRoot, quarantine);
   const quarantinedJournal = { ...journal, assetRoot: quarantine };
   try {
-    verifyPublishedTree(quarantinedJournal);
+    verifyPublishedTree(quarantinedJournal, { verifyDigest: false });
   } catch (error) {
     if (!existsSync(journal.assetRoot)) renameSync(quarantine, journal.assetRoot);
     throw error;

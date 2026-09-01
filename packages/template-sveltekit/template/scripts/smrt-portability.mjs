@@ -21,6 +21,7 @@ import {
   rollbackFilesystemAssets,
   stageFilesystemAssets,
   verifyFilesystemAssets,
+  verifyPublishedFilesystemAssets,
 } from './smrt-portability-assets.mjs';
 import { assertExternalArtifactPath } from './smrt-runtime-identity.mjs';
 
@@ -28,7 +29,7 @@ const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const NON_PORTABLE_TABLE_PATTERN =
   /(?:^|_)(?:api_keys?|audit_logs?|credentials?|magic_link_tokens?|secrets?|sessions?|tokens?)(?:_|$)/;
 const NON_PORTABLE_COLUMN_PATTERN =
-  /(?:^|_)(?:api_key|cookie|credential|password|secret|token)(?:_|$)/;
+  /(?:^|_)(?:api_key|ciphertext|cookie|credential|encrypted|encryption|password|private_key|privkey|secret|token)(?:_|$)/;
 
 function quoteIdentifier(value) {
   if (!SAFE_IDENTIFIER.test(value)) {
@@ -436,6 +437,8 @@ export async function importApplication(context) {
         publishFilesystemAssets(staged);
         await context.onImportPhase?.('assets-published');
         rowCount = await executeImportPlan(tx, plan, exportedByName);
+        await context.onImportPhase?.('database-staged');
+        verifyPublishedFilesystemAssets(staged);
       });
       finishFilesystemAssets(staged);
     } catch (error) {

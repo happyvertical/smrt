@@ -39,12 +39,23 @@ const APP_ID = 'runtime-profile-reference';
 const ASSET_ID = 'asset-reference-1';
 const ASSET_BYTES = Buffer.from('{"fixture":"runtime-profile-reference"}\n');
 const SESSION_CREDENTIAL = 'must-never-enter-the-portability-bundle';
+const ENCRYPTED_PRIVATE_KEY = 'must-never-export-encrypted-private-key-material';
 
 const tableDefinitions = [
   {
     className: 'Session',
     tableName: 'sessions',
     columns: { id: { primaryKey: true }, credential_token: {} },
+  },
+  {
+    className: 'NostrIdentity',
+    tableName: 'nostr_identities',
+    columns: {
+      id: { primaryKey: true },
+      encrypted_privkey: {},
+      encryption_iv: {},
+      encryption_tag: {},
+    },
   },
   {
     className: 'Profile',
@@ -104,6 +115,7 @@ const tableDefinitions = [
 const createStatements = [
   'CREATE TABLE profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL)',
   'CREATE TABLE sessions (id TEXT PRIMARY KEY, credential_token TEXT NOT NULL)',
+  'CREATE TABLE nostr_identities (id TEXT PRIMARY KEY, encrypted_privkey TEXT NOT NULL, encryption_iv TEXT NOT NULL, encryption_tag TEXT NOT NULL)',
   'CREATE TABLE tenants (id TEXT PRIMARY KEY, slug TEXT NOT NULL)',
   'CREATE TABLE tenant_memberships (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id), tenant_id TEXT NOT NULL REFERENCES tenants(id), role TEXT NOT NULL)',
   'CREATE TABLE reference_work_items (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), title TEXT NOT NULL, status TEXT NOT NULL)',
@@ -184,6 +196,13 @@ async function seedSource(fixture: FixtureContext, assetPath?: string) {
     'INSERT INTO sessions (id, credential_token) VALUES (?, ?)',
     'session-1',
     SESSION_CREDENTIAL,
+  );
+  await db.query(
+    'INSERT INTO nostr_identities (id, encrypted_privkey, encryption_iv, encryption_tag) VALUES (?, ?, ?, ?)',
+    'nostr-identity-1',
+    ENCRYPTED_PRIVATE_KEY,
+    'private-iv',
+    'private-tag',
   );
   await db.query('INSERT INTO tenants (id, slug) VALUES (?, ?)', 'tenant-1', 'default-tenant');
   await db.query(
@@ -335,6 +354,7 @@ describe('asset-aware runtime portability', () => {
     });
     expect(serialized).not.toContain(fixture.sourceAssetRoot);
     expect(serialized).not.toContain(SESSION_CREDENTIAL);
+    expect(serialized).not.toContain(ENCRYPTED_PRIVATE_KEY);
     await expect(
       exportApplication({
         ...portabilityContext(
@@ -358,6 +378,12 @@ describe('asset-aware runtime portability', () => {
       { role: 'owner' },
     ]);
     expect(Number((await db.query('SELECT COUNT(*) AS count FROM sessions')).rows[0].count)).toBe(0);
+    expect(
+      Number(
+        (await db.query('SELECT COUNT(*) AS count FROM nostr_identities')).rows[0]
+          .count,
+      ),
+    ).toBe(0);
     expect((await db.query('SELECT slug FROM tenants')).rows).toEqual([
       { slug: 'default-tenant' },
     ]);
@@ -625,6 +651,37 @@ describe('asset-aware runtime portability', () => {
         importApplication({ ...target.context, path: fixture.bundlePath }),
       ).resolves.toMatchObject({ assetCount: 1 });
     }
+  });
+
+  it('verifies published bytes before commit and rolls back tampering for retry', async () => {
+    const fixture = fixtureContext();
+    await exportFixture(fixture);
+    const target = await emptyTarget(fixture, 'precommit-tamper');
+    await expect(
+      importApplication({
+        ...target.context,
+        path: fixture.bundlePath,
+        onImportPhase(current: string) {
+          if (current === 'database-staged') {
+            writeFileSync(
+              join(target.assetRoot, 'portable', hash(ASSET_ID)),
+              'tampered-after-publication',
+              { mode: 0o600 },
+            );
+          }
+        },
+      }),
+    ).rejects.toThrow(/published-asset-digest-mismatch/);
+    expect(readdirSync(target.assetRoot)).toEqual([]);
+    const db = await getDatabase({ type: 'sqlite', url: target.databasePath });
+    expect(
+      Number((await db.query('SELECT COUNT(*) AS count FROM profiles')).rows[0]
+        .count),
+    ).toBe(0);
+    await db.close?.();
+    await expect(
+      importApplication({ ...target.context, path: fixture.bundlePath }),
+    ).resolves.toMatchObject({ assetCount: 1 });
   });
 
   it('recovers an interrupted partial publication journal before retrying', async () => {
