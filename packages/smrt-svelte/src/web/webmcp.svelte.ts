@@ -1,17 +1,8 @@
+import type { WebMcpBespokeToolSpec } from '@happyvertical/smrt-web';
+import { tryGetWebMcpBespokeContext } from './webmcp-bespoke-context.js';
+
 /** A tool exposed to the browser's WebMCP model context. */
-export interface WebMcpToolSpec {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  annotations?: {
-    readOnlyHint?: boolean;
-    destructiveHint?: boolean;
-    idempotentHint?: boolean;
-    openWorldHint?: boolean;
-    untrustedContentHint?: boolean;
-  };
-  execute: (args: Record<string, unknown>) => string | Promise<string>;
-}
+export type WebMcpToolSpec = WebMcpBespokeToolSpec;
 
 // Keep the ambient contract on the public hook declaration too, so consumers
 // importing only the package root still receive `document.modelContext` types.
@@ -42,24 +33,52 @@ function getModelContext(): WebMcpModelContext | undefined {
  * Register a component-owned WebMCP intent for exactly that component's
  * lifetime. The factory runs inside the effect so rune dependencies used by a
  * bespoke intent cause the tool to be replaced when its spec changes.
+ *
+ * Routes through `@happyvertical/smrt-web`'s `registerWebMcpBespokeTool` so a
+ * bespoke tool is subject to the same fail-closed `effects` exposure policy
+ * as generated model tools (#2586): a spec with no `annotations`, or with
+ * annotations that leave its effect undeclared, classifies destructive,
+ * non-idempotent, open-world, and is excluded unless policy allows
+ * `destructive`. The policy is the nearest Provider's `webmcp.effects` (read
+ * from context so a bespoke and a generated tool share one policy); absent a
+ * Provider ancestor, it falls back to the registrar's own read-only default.
+ * `namespace` and `maxTools` deliberately do not apply to a bespoke tool.
+ *
+ * `@happyvertical/smrt-web` loads lazily, on first use, so a page that only
+ * calls `useWebMcpTool` never bundles the client-data engine.
  */
 export function useWebMcpTool(
   factory: () => WebMcpToolSpec | null | undefined,
 ): void {
+  const bespokeContext = tryGetWebMcpBespokeContext();
+
   $effect(() => {
-    const context = getModelContext();
-    if (!context) return;
+    if (typeof window === 'undefined') return;
+    // Feature-detect locally first so a browser without WebMCP never pays for
+    // the dynamic import below.
+    if (!getModelContext()) return;
 
     const spec = factory();
     if (!spec) return;
-    const controller = new AbortController();
-    const registration = context.registerTool(spec, {
-      signal: controller.signal,
-    });
-    if (registration) {
-      void Promise.resolve(registration).catch(() => controller.abort());
-    }
 
-    return () => controller.abort();
+    let cancelled = false;
+    let dispose: () => void = () => {};
+
+    void import('@happyvertical/smrt-web')
+      .then(({ registerWebMcpBespokeTool }) => {
+        if (cancelled) return;
+        dispose = registerWebMcpBespokeTool(spec, {
+          effects: bespokeContext?.effects,
+        });
+      })
+      .catch(() => {
+        // No registrar available in this bundle profile — treat like WebMCP
+        // being unavailable and no-op.
+      });
+
+    return () => {
+      cancelled = true;
+      dispose();
+    };
   });
 }

@@ -266,6 +266,13 @@ describe('composed Provider WebMCP surface (#2523)', () => {
       source: 'bespoke-component',
     });
 
+    // #2586: a bespoke tool with no declared effect classifies destructive
+    // and is excluded under the Provider's default read-only policy — it
+    // must never reach document.modelContext.registerTool.
+    expect(
+      registered.some((tool) => tool.name === 'fixture_component_unannotated'),
+    ).toBe(false);
+
     await view.rerender({
       dataSurfaceRegistry,
       generatedDefinitions,
