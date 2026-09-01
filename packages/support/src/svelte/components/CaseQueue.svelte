@@ -14,8 +14,11 @@ import {
 } from '../types.js';
 
 export interface CaseQueueProps {
+  /** Array of support cases to display in the queue. */
   cases: SupportCaseView[];
+  /** Callback invoked with the case ID when a case is selected. */
   onselect?: (caseId: string) => void;
+  /** Message displayed when the case queue is empty. */
   emptyMessage?: string;
   /** Show the assigned-specialist column (default true). */
   showAssignee?: boolean;

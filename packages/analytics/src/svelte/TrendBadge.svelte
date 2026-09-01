@@ -1,8 +1,8 @@
 <script lang="ts">
 interface Props {
+  /** Direction of change: up, down, or flat. */
   trend: 'up' | 'down' | 'flat';
-  // `null` means growth from a zero baseline \u2014 no finite percentage exists, so
-  // the badge shows "new" instead of a misleading 0%.
+  /** Percentage change; null shows 'new', otherwise the absolute value. */
   percent: number | null;
 }
 

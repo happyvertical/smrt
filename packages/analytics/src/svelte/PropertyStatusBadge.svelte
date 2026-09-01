@@ -1,5 +1,6 @@
 <script lang="ts">
 interface Props {
+  /** Connection status of the analytics property. */
   status: 'active' | 'inactive' | 'pending';
 }
 

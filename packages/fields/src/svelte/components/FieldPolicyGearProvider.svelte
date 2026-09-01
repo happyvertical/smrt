@@ -20,9 +20,13 @@ import type { ObjectFormFieldDefinition } from '../types.js';
 import FieldPolicyEditor from './FieldPolicyEditor.svelte';
 
 interface Props {
+  /** Identifier for the object whose field policies are being managed. */
   objectRef: string;
+  /** Field definitions for the object being edited. */
   fields: Readonly<Record<string, ObjectFormFieldDefinition>>;
+  /** Transport and mutation handler for field policy operations. */
   adapter: FieldPolicyEditorAdapter;
+  /** Optional registry of custom field input components. */
   inputRegistry?: FieldInputRegistry;
   /** Hosts in an app-wide context pass app; tenant hosts retain the default. */
   organizationScope?: FieldPolicyOrganizationScope;

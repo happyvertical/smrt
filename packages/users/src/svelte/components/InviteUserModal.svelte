@@ -10,15 +10,21 @@ import { M } from '../i18n.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Controls whether the invitation modal is visible. */
   open: boolean;
+  /** Tenant context for the invitation. */
   tenant: Tenant;
+  /** Available roles that can be assigned to the invited user. */
   roles: Role[];
+  /** Callback invoked with email, role, and send preference when form is submitted. */
   onsubmit: (data: {
     email: string;
     roleId: string;
     sendEmail: boolean;
   }) => void;
+  /** Callback invoked to close the invitation modal. */
   onclose: () => void;
+  /** Blocks form submission while invitation is being processed. */
   loading?: boolean;
 }
 

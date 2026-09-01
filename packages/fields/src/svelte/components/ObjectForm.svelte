@@ -15,11 +15,11 @@ import type {
 } from '../input-registry.js';
 import { resolveObjectFormFields } from '../object-form.js';
 import { tryGetObjectFormSource } from '../object-form-source-context.svelte.js';
-import {
-  type FieldInputProps,
-  type ObjectFormField,
-  type ObjectFormFieldDefinition,
-  type ObjectFormFieldSnippetProps,
+import type {
+  FieldInputProps,
+  ObjectFormField,
+  ObjectFormFieldDefinition,
+  ObjectFormFieldSnippetProps,
 } from '../types.js';
 import {
   collectFieldUsageEntries,
@@ -34,6 +34,7 @@ import ModeSwitch from './ModeSwitch.svelte';
 import PolicyField from './PolicyField.svelte';
 
 export interface ObjectFormProps {
+  /** Identifier for the object being edited. */
   objectRef: string;
   /**
    * Generated browser-safe definitions — never pass raw server registry fields.
@@ -53,10 +54,13 @@ export interface ObjectFormProps {
    * create session automatically.
    */
   createSessionKey?: string | number;
+  /** Blocks form input and submission. */
   disabled?: boolean;
+  /** Shows the mode toggle between basic and advanced fields. */
   showModeSwitch?: boolean;
   /** Render a provider-registered policy gear next to the mode control. */
   showPolicyGear?: boolean;
+  /** Optional registry of custom field input components. */
   inputRegistry?: FieldInputRegistry;
   /** Per-field custom widget snippets, keyed by field name. */
   renderers?: Readonly<Record<string, Snippet<[ObjectFormFieldSnippetProps]>>>;
@@ -68,6 +72,7 @@ export interface ObjectFormProps {
    * server-derived.
    */
   usageReporter?: FieldUsageReporter;
+  /** CSS class forwarded to the form element. */
   class?: string;
   /** Return true only after the host has persisted this record successfully. */
   onsubmit?: ObjectFormSubmitHandler;

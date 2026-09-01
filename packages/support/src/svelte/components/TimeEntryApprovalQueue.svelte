@@ -17,9 +17,13 @@ import {
 } from '../types.js';
 
 export interface TimeEntryApprovalQueueProps {
+  /** Array of time entries awaiting approval review. */
   entries: SupportTimeEntryView[];
+  /** Callback invoked with entry ID when approving a time entry. */
   onapprove?: (id: string) => void;
+  /** Callback invoked with entry ID and rejection reason when rejecting a time entry. */
   onreject?: (id: string, reason: string) => void;
+  /** Message displayed when the approval queue is empty. */
   emptyMessage?: string;
 }
 

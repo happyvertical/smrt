@@ -2,8 +2,11 @@
 import type { Profile } from '@happyvertical/smrt-profiles';
 
 export interface Props {
+  /** User profile containing name and avatar details. */
   profile: Profile;
+  /** Avatar size: sm, md, lg, or xl. */
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Displays the user's name next to the avatar. */
   showName?: boolean;
 }
 

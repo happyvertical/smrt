@@ -9,9 +9,13 @@ import {
 } from '../suggestions.js';
 
 export interface FieldPolicySuggestionQueueProps {
+  /** Transport for loading and reviewing suggestions. */
   adapter: FieldPolicySuggestionAdapter;
+  /** Optional list of object identifiers to filter suggestions. */
   objectRefs?: readonly string[];
+  /** Section heading for the suggestion queue. */
   heading?: string;
+  /** Callback invoked after a suggestion is approved or dismissed. */
   onchanged?: () => void;
 }
 
