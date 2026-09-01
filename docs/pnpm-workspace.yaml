@@ -1,3 +1,10 @@
 allowBuilds:
   core-js: true
   sharp: true
+
+# browserslist <=4.28.6 is vulnerable to unbounded query-cache growth and
+# unsafe custom statistics normalization (GHSA-c83g-rgw3-j3cx,
+# GHSA-73wf-gq98-2v4g). Keep the documentation site's independent lockfile
+# on the patched 4.x release as well.
+overrides:
+  'browserslist@<=4.28.6': 4.28.7
