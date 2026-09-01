@@ -94,7 +94,13 @@ export function resolveCustomActionMetadata(
       : {}),
     isStatic: options.method?.isStatic === true,
     effect,
-    idempotent: configured.idempotent ?? effect === 'read',
+    // Per-field fail-closed default (#2587, CapabilityDeclaration in
+    // @happyvertical/smrt-types): an omitted `idempotent` resolves to
+    // `false` regardless of the declared `effect` — a declared 'read'
+    // action is not guaranteed idempotent (e.g. a dequeue-shaped read that
+    // advances state), so a caller who wants the idempotent hint must
+    // declare it explicitly.
+    idempotent: configured.idempotent ?? false,
     openWorld: configured.openWorld ?? true,
   };
 }

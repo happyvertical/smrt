@@ -39,8 +39,16 @@ import { registerWebMcpTools } from './webmcp.js';
 
 @smrt({
   api: {
-    include: ['list', 'get', 'create', 'update', 'delete', 'run'],
-    routes: { run: { method: 'POST', scope: 'item', path: 'run' } },
+    include: ['list', 'get', 'create', 'update', 'delete', 'run', 'peek'],
+    routes: {
+      run: { method: 'POST', scope: 'item', path: 'run' },
+      // Partial declaration — only `effect` is declared, `idempotent` and
+      // `openWorld` are omitted. Proves per-field fail-closed defaulting
+      // (#2587 codex finding): a declared 'read' effect does NOT imply
+      // idempotent, so the omitted fields must resolve independently to
+      // `false` / `true` rather than being inferred from `effect`.
+      peek: { method: 'GET', effect: 'read' },
+    },
   },
 })
 class CapabilityFixtureItem extends SmrtObject {
@@ -61,6 +69,15 @@ class CapabilityFixtureItem extends SmrtObject {
   async run(options: { value?: string } = {}) {
     return { accepted: options.value ?? 'default' };
   }
+
+  /**
+   * Declares `effect: 'read'` only — `idempotent`/`openWorld` are left for
+   * the fail-closed per-field default to resolve. See the `routes.peek`
+   * config above.
+   */
+  async peek(options: { value?: string } = {}) {
+    return { seen: options.value ?? 'default' };
+  }
 }
 
 interface CapturedAnnotations {
@@ -78,10 +95,14 @@ interface CapturedTool {
 /**
  * The one capability table this fixture enforces (mirrors the JSDoc on
  * `CapabilityClassification` in `@happyvertical/smrt-types`). `run` is the
- * undeclared custom action, so its row IS the fail-closed default.
+ * undeclared custom action, so its row IS the fail-closed default. `peek`
+ * PARTIALLY declares its classification (`effect: 'read'` only), so its row
+ * proves the per-field fail-closed default applies independently to the
+ * omitted `idempotent`/`openWorld` fields instead of being inferred from the
+ * declared `effect`.
  */
 const EXPECTED: Record<
-  'list' | 'get' | 'create' | 'update' | 'delete' | 'run',
+  'list' | 'get' | 'create' | 'update' | 'delete' | 'run' | 'peek',
   { readOnlyHint: boolean; idempotentHint: boolean; openWorldHint: boolean }
 > = {
   list: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
@@ -90,6 +111,7 @@ const EXPECTED: Record<
   update: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
   delete: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
   run: { readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+  peek: { readOnlyHint: true, idempotentHint: false, openWorldHint: true },
 };
 
 function stubFetchers(): SmrtCrudFetchers {
@@ -236,7 +258,10 @@ describe('WebMCP capability classification conformance (#2587)', () => {
     // Simulate a hand-authored legacy definition carrying NO metadata
     // (#2587): strip the optional fields a generated definition would
     // otherwise carry, forcing smrt-web's actionSemantics() CRUD switch and
-    // its fail-closed default for the custom action.
+    // its fail-closed default for the custom action. `peek` is excluded
+    // here — stripping its declared `effect` too is indistinguishable from
+    // `run`'s fully undeclared case, so it is covered by the dedicated
+    // partial-declaration test below instead.
     const strippedDescriptors = legacyDefinition.toolDescriptors?.map(
       (descriptor) => {
         const {
@@ -259,7 +284,10 @@ describe('WebMCP capability classification conformance (#2587)', () => {
     });
     await registration.ready;
 
-    for (const action of Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]) {
+    const strippedActions = (
+      Object.keys(EXPECTED) as (keyof typeof EXPECTED)[]
+    ).filter((action) => action !== 'peek');
+    for (const action of strippedActions) {
       const tool = tools.find((candidate) =>
         candidate.name.endsWith(`_${action}`),
       );
@@ -284,6 +312,57 @@ describe('WebMCP capability classification conformance (#2587)', () => {
         openWorldHint: canonical?.openWorld,
       });
     }
+
+    registration();
+  });
+
+  it('legacy fallback resolves a PARTIAL declaration (effect only) with the same per-field default as core (#2587)', async () => {
+    const { tools } = installModelContext();
+    // `peek` declares only `effect: 'read'` (see routes.peek above). Strip
+    // ONLY `idempotent`/`openWorld` — keep the declared `effect` intact, the
+    // way a hand-authored legacy definition that copies just the effect
+    // would look. This is codex's finding: the original fixture only proved
+    // the fully-undeclared case (`run`); it never proved that an omitted
+    // `idempotent`/`openWorld` resolves independently of a DECLARED effect.
+    const partialDescriptors = legacyDefinition.toolDescriptors?.map(
+      (descriptor) => {
+        if (descriptor.action !== 'peek') return descriptor;
+        const {
+          idempotent: _idempotent,
+          openWorld: _openWorld,
+          ...rest
+        } = descriptor;
+        return rest as WebToolDescriptor;
+      },
+    );
+    const partialDefinition: SmrtWebCollectionDefinition = {
+      ...legacyDefinition,
+      toolDescriptors: partialDescriptors,
+    };
+
+    const registration = registerWebMcpTools([partialDefinition], {
+      effects: ['read', 'write', 'destructive'],
+      resolveFetchers: () => stubFetchers(),
+    });
+    await registration.ready;
+
+    const tool = tools.find((candidate) => candidate.name.endsWith('_peek'));
+    if (!tool)
+      throw new Error('legacy fallback tool for peek was not registered');
+    const actual = {
+      readOnlyHint: tool.annotations?.readOnlyHint,
+      idempotentHint: tool.annotations?.idempotentHint,
+      openWorldHint: tool.annotations?.openWorldHint,
+    };
+    // Agrees with the documented smrt-types contract...
+    expect(actual).toEqual(EXPECTED.peek);
+    // ...AND with core's REAL emission for `peek` on the same fixture model.
+    const canonical = canonicalDefinitions.find((d) => d.action === 'peek');
+    expect(actual).toEqual({
+      readOnlyHint: canonical?.effect === 'read',
+      idempotentHint: canonical?.idempotent,
+      openWorldHint: canonical?.openWorld,
+    });
 
     registration();
   });

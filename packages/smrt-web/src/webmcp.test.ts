@@ -445,8 +445,8 @@ describe('registerWebMcpTools', () => {
   it('trusts a canonical declared effect while legacy CRUD effects stay intrinsic (#2587)', () => {
     const registry = installModelContext();
     // Canonical definitions arrive pre-classified by core's `tool-schema.ts`
-    // (#2587): a canonical `delete` that DECLARES `effect: 'read'` is trusted
-    // verbatim, not forced back to 'destructive' by its action name.
+    // (#2587): a canonical `delete` whose EMITTED `effect` is 'read' is
+    // trusted verbatim, not forced back to 'destructive' by its action name.
     const trustedCanonicalDelete = canonicalTool('delete', {
       effect: 'read',
       readOnly: true,
