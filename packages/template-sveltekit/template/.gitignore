@@ -21,6 +21,9 @@ dist
 # SMRT auto-generated
 .smrt/
 src/routes/api/**/+server.ts
+# The runtime readiness endpoint is authored infrastructure, not generated API
+# output, and must remain in the installable scaffold.
+!src/routes/api/_runtime/health/+server.ts
 src/lib/server/smrt-register.ts
 src/lib/types/smrt-generated/
 src/types/smrt-generated/
