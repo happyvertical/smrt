@@ -114,9 +114,15 @@ export function projectRuntimeDiagnostics(
   input: RuntimeDiagnosticsProjectionInput,
 ): RuntimeDiagnostics {
   const source = plainRecord(input);
-  const observedAt = coarseTimestamp(read(source, 'observedAt')) ?? EPOCH;
+  const observedAtValue = read(source, 'observedAt');
+  const observedAtMilliseconds = timestampMilliseconds(observedAtValue);
+  const observedAt = coarseTimestamp(observedAtValue) ?? EPOCH;
   const profile = runtimeProfile(read(source, 'profile'));
-  const worker = projectWorker(read(source, 'worker'), observedAt);
+  const worker = projectWorker(
+    read(source, 'worker'),
+    observedAt,
+    observedAtMilliseconds,
+  );
   const capabilities = projectCapabilities(read(source, 'capabilities'));
   const tools = canonicalTools(read(source, 'toolNames'));
 
@@ -212,17 +218,20 @@ function isPublicIdentifier(value: string): boolean {
 function projectWorker(
   value: unknown,
   observedAt: string,
+  observedAtMilliseconds: number | null,
 ): RuntimeDiagnostics['worker'] {
   const source = plainRecord(value);
   const topology = oneOf(read(source, 'topology'), WORKER_TOPOLOGIES, 'inline');
   const required = read(source, 'required') === true;
-  const heartbeatAt = coarseTimestamp(read(source, 'heartbeatAt'));
+  const heartbeatValue = read(source, 'heartbeatAt');
+  const heartbeatMilliseconds = timestampMilliseconds(heartbeatValue);
+  const heartbeatAt = coarseTimestamp(heartbeatValue);
   let liveness: RuntimeDiagnostics['worker']['liveness'] = 'not-required';
   if (required) {
     liveness = 'unknown';
-    if (heartbeatAt) {
+    if (heartbeatMilliseconds !== null && observedAtMilliseconds !== null) {
       const ageSeconds =
-        (Date.parse(observedAt) - Date.parse(heartbeatAt)) / 1_000;
+        (observedAtMilliseconds - heartbeatMilliseconds) / 1_000;
       if (ageSeconds >= 0) {
         liveness =
           ageSeconds <= RUNTIME_WORKER_FRESHNESS_SECONDS ? 'alive' : 'stale';
@@ -268,13 +277,18 @@ function capabilityStatus(
 }
 
 function coarseTimestamp(value: unknown): string | null {
+  const milliseconds = timestampMilliseconds(value);
+  if (milliseconds === null) return null;
+  const minute = Math.floor(milliseconds / 60_000) * 60_000;
+  return new Date(minute).toISOString();
+}
+
+function timestampMilliseconds(value: unknown): number | null {
   try {
     if (!(typeof value === 'string' || value instanceof Date)) return null;
     const milliseconds =
       value instanceof Date ? value.getTime() : Date.parse(value);
-    if (!Number.isFinite(milliseconds)) return null;
-    const minute = Math.floor(milliseconds / 60_000) * 60_000;
-    return new Date(minute).toISOString();
+    return Number.isFinite(milliseconds) ? milliseconds : null;
   } catch {
     return null;
   }

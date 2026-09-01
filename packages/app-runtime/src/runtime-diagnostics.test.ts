@@ -99,6 +99,21 @@ describe('public runtime diagnostics projection', () => {
       heartbeatAt: '2026-09-01T12:30:00.000Z',
     });
 
+    const truncatedBoundary = projectRuntimeDiagnostics({
+      ...baseInput(),
+      observedAt: '2026-09-01T12:34:59.000Z',
+      worker: {
+        topology: 'external',
+        required: true,
+        heartbeatAt: '2026-09-01T12:32:01.000Z',
+      },
+    });
+    expect(truncatedBoundary.worker).toMatchObject({
+      liveness: 'stale',
+      heartbeatAt: '2026-09-01T12:32:00.000Z',
+      observedAt: '2026-09-01T12:34:00.000Z',
+    });
+
     const webOnly = projectRuntimeDiagnostics({
       ...baseInput(),
       worker: {
