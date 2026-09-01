@@ -15,10 +15,15 @@ export type ContentGovernanceToolSection =
   | 'transparency';
 
 export interface Props {
+  /** The governance tool section to display (claimAudit, corrections, versions, or transparency). */
   section: ContentGovernanceToolSection;
+  /** Base URL for API requests to fetch governance data. */
   apiBaseUrl?: string;
+  /** Identifier of the content being governed. */
   contentId: string;
+  /** Fired when governance state changes (e.g., from transparency tool). */
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
+  /** Fired when fact audit state changes (e.g., from claim audit tool). */
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
 }
 

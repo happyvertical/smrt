@@ -12,8 +12,11 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for API requests to fetch fact audit data. */
   apiBaseUrl?: string;
+  /** Identifier of the content to audit for factual claims. */
   contentId: string;
+  /** Fired when the fact audit state changes or is loaded. */
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
 }
 

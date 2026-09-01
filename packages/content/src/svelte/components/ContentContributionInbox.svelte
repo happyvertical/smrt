@@ -8,19 +8,27 @@ import { M } from '../i18n.contribution.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** List of contributions pending review. */
   contributions?: ContentContributionData[];
+  /** ID of the contribution currently selected for review. */
   selectedId?: string | null;
+  /** Message shown when the contributions list is empty. */
   emptyMessage?: string;
+  /** URL for workflow form submission to handle approve/reject server-side. */
   workflowFormAction?: string;
+  /** Fired when the user selects a contribution from the list. */
   onSelect?: (contribution: ContentContributionData) => void;
+  /** Fired when the user approves a contribution and optionally promotes it. */
   onApprove?: (
     contribution: ContentContributionData,
     options: { targetStatus: 'draft' | 'review'; note: string },
   ) => void;
+  /** Fired when the user requests changes to a contribution. */
   onRequestChanges?: (
     contribution: ContentContributionData,
     options: { note: string },
   ) => void;
+  /** Fired when the user rejects a contribution. */
   onReject?: (
     contribution: ContentContributionData,
     options: { note: string },

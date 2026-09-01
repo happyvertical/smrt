@@ -8,8 +8,11 @@ import { M } from '../i18n.contribution.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** List of approved contributors and their trust levels. */
   contributors?: ContentContributorData[];
+  /** Fired when the user saves a new or edited contributor. */
   onSave: (contributor: Partial<ContentContributorData>) => void;
+  /** Fired when the user removes a contributor. */
   onDelete?: (contributor: ContentContributorData) => void;
 }
 

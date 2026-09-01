@@ -10,9 +10,13 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for API requests to fetch and create corrections. */
   apiBaseUrl?: string;
+  /** Identifier of the content being corrected. */
   contentId: string;
+  /** Default relationship type for new corrections (e.g., supports, contradicts). */
   defaultRelationship?: string;
+  /** Fired when corrections are loaded or a new correction is created. */
   onCorrectionsChange?: (corrections: ContentCorrectionData[]) => void;
 }
 

@@ -8,8 +8,11 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** The review policy to edit, or an empty object for new. */
   policy?: Partial<ContentReviewPolicyData>;
+  /** Fired when the user saves the policy configuration. */
   onSave: (policy: Partial<ContentReviewPolicyData>) => void;
+  /** Fired when the user cancels editing. */
   onCancel?: () => void;
 }
 

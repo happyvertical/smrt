@@ -7,10 +7,15 @@ import { M } from '../i18n.contribution.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** List of contributions submitted by the user. */
   contributions?: ContentContributionData[];
+  /** ID of the contribution currently displayed for detail viewing. */
   selectedId?: string | null;
+  /** Message shown when the contributions list is empty. */
   emptyMessage?: string;
+  /** Fired when the user selects a contribution from the list. */
   onSelect?: (contribution: ContentContributionData) => void;
+  /** Fired when the user withdraws a pending contribution. */
   onWithdraw?: (contribution: ContentContributionData) => void;
 }
 
