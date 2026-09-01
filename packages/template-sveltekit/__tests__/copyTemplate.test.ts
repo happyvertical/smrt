@@ -52,6 +52,22 @@ describe('copyTemplate', () => {
     expect(
       existsSync(join(tempDir, 'scripts', 'smrt-runtime-identity.mjs')),
     ).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-writer-lease.mjs'))).toBe(
+      true,
+    );
+    expect(
+      existsSync(
+        join(
+          tempDir,
+          'src',
+          'routes',
+          'api',
+          '_runtime',
+          'health',
+          '+server.ts',
+        ),
+      ),
+    ).toBe(true);
     expect(existsSync(join(tempDir, 'scripts', 'smrt-worker.mjs'))).toBe(true);
     expect(existsSync(join(tempDir, 'Dockerfile'))).toBe(true);
     expect(existsSync(join(tempDir, '.dockerignore'))).toBe(true);

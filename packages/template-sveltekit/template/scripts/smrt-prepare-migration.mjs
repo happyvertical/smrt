@@ -1,12 +1,16 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { resolveLocalRuntimePaths } from '@happyvertical/smrt-app-runtime';
+import { prepareLocalDatabaseStorage } from '@happyvertical/smrt-app-runtime';
 import {
   loadConfig,
   resolveConfiguredApplicationRuntime,
 } from '@happyvertical/smrt-config';
-import { resolveApplicationId } from './smrt-runtime-identity.mjs';
+import {
+  resolveApplicationId,
+  resolveApplicationStateRoot,
+} from './smrt-runtime-identity.mjs';
+import { readActiveWriterLease } from './smrt-writer-lease.mjs';
 
 const sourceRoot = process.cwd();
 const packageJson = JSON.parse(
@@ -21,11 +25,16 @@ const appId = resolveApplicationId({
 await loadConfig({ cache: false });
 const runtime = resolveConfiguredApplicationRuntime();
 if (runtime.profile === 'local') {
-  const paths = resolveLocalRuntimePaths({
+  const stateRoot = resolveApplicationStateRoot({
+    appId,
+    explicitStateDirectory: process.env.SMRT_STATE_DIR,
+  });
+  if (readActiveWriterLease(stateRoot)) {
+    throw new Error('Stop the local application before preparing its schema.');
+  }
+  await prepareLocalDatabaseStorage({
     appId,
     dataDirectory: process.env.SMRT_DATA_DIR,
     sourceRoot,
   });
-  mkdirSync(paths.root, { recursive: true, mode: 0o700 });
-  mkdirSync(paths.assets, { recursive: true, mode: 0o700 });
 }

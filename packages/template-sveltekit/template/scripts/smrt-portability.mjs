@@ -143,24 +143,31 @@ export function validateImportBundle(bundle, expected) {
 
 export async function exportApplication(context) {
   const tables = manifestTables(context.sourceRoot);
-  const bundle = {
-    schemaVersion: 1,
-    application: context.appId,
-    profile: context.runtime.profile,
-    exportedAt: new Date().toISOString(),
-    tables: [],
-  };
+  let bundle;
   await withDatabase(context, async (db) => {
-    for (const table of tables) {
-      const result = await db.query(
-        `SELECT ${table.columns.map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table.name)}`,
-      );
-      bundle.tables.push({
-        name: table.name,
-        columns: table.columns,
-        rows: result.rows,
-      });
+    if (typeof db.transaction !== 'function') {
+      throw new Error('Logical export requires transactional database support.');
     }
+    bundle = await db.transaction(async (tx) => {
+      const exported = {
+        schemaVersion: 1,
+        application: context.appId,
+        profile: context.runtime.profile,
+        exportedAt: new Date().toISOString(),
+        tables: [],
+      };
+      for (const table of tables) {
+        const result = await tx.query(
+          `SELECT ${table.columns.map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table.name)}`,
+        );
+        exported.tables.push({
+          name: table.name,
+          columns: table.columns,
+          rows: result.rows,
+        });
+      }
+      return exported;
+    });
   });
   const outputPath =
     context.path ||
@@ -170,8 +177,54 @@ export async function exportApplication(context) {
       `${context.appId}-${Date.now()}.json`,
     );
   mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
-  writeFileSync(outputPath, `${JSON.stringify(bundle, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(outputPath, `${JSON.stringify(bundle, null, 2)}\n`, {
+    mode: 0o600,
+  });
   return { path: outputPath, tableCount: bundle.tables.length };
+}
+
+/** Execute a prevalidated parent-first import against one database transaction. */
+export async function executeImportPlan(tx, plan, exportedByName) {
+  const deferredUpdates = [];
+  let rowCount = 0;
+  for (const table of plan) {
+    const exported = exportedByName.get(table.name);
+    const count = await tx.query(
+      `SELECT COUNT(*) AS count FROM ${quoteIdentifier(table.name)}`,
+    );
+    if (Number(count.rows[0]?.count || 0) !== 0) {
+      throw new Error(`Import target table ${table.name} is not empty.`);
+    }
+    for (const row of exported.rows) {
+      const columns = Object.keys(row);
+      await tx.query(
+        `INSERT INTO ${quoteIdentifier(table.name)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+        ...columns.map((column) =>
+          table.deferredColumns.has(column) ? null : row[column],
+        ),
+      );
+      for (const column of table.deferredColumns) {
+        if (row[column] != null) {
+          deferredUpdates.push({
+            table,
+            column,
+            value: row[column],
+            primaryKey: table.primaryKeys[0],
+            primaryValue: row[table.primaryKeys[0]],
+          });
+        }
+      }
+      rowCount += 1;
+    }
+  }
+  for (const update of deferredUpdates) {
+    await tx.query(
+      `UPDATE ${quoteIdentifier(update.table.name)} SET ${quoteIdentifier(update.column)} = ? WHERE ${quoteIdentifier(update.primaryKey)} = ?`,
+      update.value,
+      update.primaryValue,
+    );
+  }
+  return rowCount;
 }
 
 export async function importApplication(context) {
@@ -219,44 +272,7 @@ export async function importApplication(context) {
       throw new Error('Logical import requires transactional database support.');
     }
     await db.transaction(async (tx) => {
-      const deferredUpdates = [];
-      for (const table of plan) {
-        const exported = exportedByName.get(table.name);
-        const count = await tx.query(
-          `SELECT COUNT(*) AS count FROM ${quoteIdentifier(table.name)}`,
-        );
-        if (Number(count.rows[0]?.count || 0) !== 0) {
-          throw new Error(`Import target table ${table.name} is not empty.`);
-        }
-        for (const row of exported.rows) {
-          const columns = Object.keys(row);
-          await tx.query(
-            `INSERT INTO ${quoteIdentifier(table.name)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
-            ...columns.map((column) =>
-              table.deferredColumns.has(column) ? null : row[column],
-            ),
-          );
-          for (const column of table.deferredColumns) {
-            if (row[column] != null) {
-              deferredUpdates.push({
-                table,
-                column,
-                value: row[column],
-                primaryKey: table.primaryKeys[0],
-                primaryValue: row[table.primaryKeys[0]],
-              });
-            }
-          }
-          rowCount += 1;
-        }
-      }
-      for (const update of deferredUpdates) {
-        await tx.query(
-          `UPDATE ${quoteIdentifier(update.table.name)} SET ${quoteIdentifier(update.column)} = ? WHERE ${quoteIdentifier(update.primaryKey)} = ?`,
-          update.value,
-          update.primaryValue,
-        );
-      }
+      rowCount = await executeImportPlan(tx, plan, exportedByName);
     });
   });
   return { path: context.path, rowCount };

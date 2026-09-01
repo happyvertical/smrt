@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { homedir, platform } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
+import {
+  encodeApplicationId,
+  validateApplicationId,
+} from '@happyvertical/smrt-app-runtime';
 
 /**
  * Resolve one stable identity for CLI, development, and app operations.
@@ -14,10 +18,12 @@ export function resolveApplicationId(options = {}) {
       readFileSync(join(sourceRoot, 'package.json'), 'utf8'),
     ).name;
   }
-  return String(options.explicitId || packageName || basename(sourceRoot))
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  if (typeof packageName !== 'string' || packageName.trim() === '') {
+    throw new Error('package.json must declare a non-empty package name.');
+  }
+  return options.explicitId
+    ? validateApplicationId(options.explicitId)
+    : encodeApplicationId(packageName);
 }
 
 /**

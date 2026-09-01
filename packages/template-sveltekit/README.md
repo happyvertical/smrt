@@ -155,3 +155,9 @@ The generated project has one canonical `runtime.profile` and deterministic
 uses adapter-node and includes a container plus separate task/schedule workers;
 Compose requires operator-supplied database secrets, and cloud examples
 describe provider composition without pretending to provision it.
+
+Every local web entry point (`app:start`, `pnpm dev`, and direct `node build`)
+shares one writer lease outside the source checkout. Filesystem backup and
+logical import fail closed while a writer is alive; logical export reads every
+model table from one transaction snapshot. The production image retains the
+generated manifest and operator CLI required by doctor/export/import.

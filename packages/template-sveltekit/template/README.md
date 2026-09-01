@@ -336,9 +336,13 @@ mobile surfaces. Those concerns are intentionally absent here.
 
 The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
 Compose gates the web and both workers on the one-shot, idempotent migration
-service. `pnpm worker` and `pnpm worker:schedule` are separate from the web process.
+service. The runtime image retains the generated manifest and operator CLI for
+doctor/export/import. `pnpm worker` and `pnpm worker:schedule` are separate from
+the web process.
 Logical export/import is manifest-driven JSON and refuses a non-empty target;
 it orders parent tables first and defers nullable cycle edges until every row
-exists. Stop local web before import. For deployed import, stop web/workers and
-set `SMRT_MAINTENANCE_MODE=true`. Extend `scripts/smrt-portability.mjs` for
-domain-specific transformations.
+exists. Export reads all model tables from one transaction snapshot. Every
+local web entry point (`app:start`, `pnpm dev`, or direct `node build`) holds a
+shared writer lease; stop it before backup/import. For deployed import, stop
+web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
+`scripts/smrt-portability.mjs` for domain-specific transformations.

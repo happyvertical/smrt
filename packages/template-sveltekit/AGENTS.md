@@ -17,7 +17,15 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `runtime.profile` is the canonical infrastructure selector. Generated apps
   expose deterministic `app:*` operations and keep runtime state outside source.
 - The production baseline uses adapter-node with separate web, task-worker, and
-  schedule-worker processes.
+  schedule-worker processes. Its runtime image retains the generated manifest
+  and operator CLI needed by `app:doctor`, `app:export`, and `app:import`.
+- Every local web writer (`app:start`, `pnpm dev`, or direct `node build`)
+  acquires the same external writer lease. Logical imports and filesystem
+  backups fail closed while any writer is alive; logical exports take one
+  database transaction snapshot.
+- `app:start` proves readiness against the scaffold's private runtime health
+  route using both the canonical application ID and its random process instance;
+  a different server on the configured port is never accepted as this app.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
   its binary. The template includes `@happyvertical/smrt-web` because the root

@@ -33,6 +33,7 @@ import {
   resolveApplicationStateRoot,
 } from './smrt-runtime-identity.mjs';
 import { withOperationLock } from './smrt-operation-lock.mjs';
+import { readActiveWriterLease } from './smrt-writer-lease.mjs';
 
 const sourceRoot = process.cwd();
 const packageJson = JSON.parse(
@@ -182,6 +183,14 @@ async function initializeLocal(runtime, env, options = {}) {
 
 async function setup() {
   const runtime = await resolveRuntime();
+  if (
+    runtime.profile === 'local' &&
+    readActiveWriterLease(stateRoot())
+  ) {
+    throw new Error(
+      'Stop the local application before preparing its schema.',
+    );
+  }
   const { env } = runtimeEnvironment(runtime);
 
   run('pnpm', ['build'], { env });
@@ -208,9 +217,9 @@ async function setup() {
   }
   await initialized?.runtime.db.close?.();
 
+  const retainedOnboardingUrl = onboardingUrl || readOnboardingUrl();
   const onboardingAvailable =
-    runtime.profile === 'local' &&
-    (onboardingUrl !== null || readOnboardingUrl() !== null);
+    runtime.profile === 'local' && retainedOnboardingUrl !== null;
   const report = {
     schemaVersion: 1,
     status: 'ready',
@@ -220,7 +229,7 @@ async function setup() {
     secretValuesIncluded: false,
   };
   console.log(JSON.stringify(report, null, 2));
-  return { ...report, onboardingUrl };
+  return { ...report, onboardingUrl: retainedOnboardingUrl };
 }
 
 async function recoverOnboarding() {
@@ -246,11 +255,23 @@ async function recoverOnboarding() {
   );
 }
 
-async function waitForReady(url, pid) {
+async function waitForReady(url, pid, instance) {
+  const healthUrl = new URL('/api/_runtime/health', url);
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      const response = await fetch(url, { redirect: 'manual' });
-      if (response.status < 500) return;
+      const response = await fetch(healthUrl, { redirect: 'manual' });
+      if (response.status === 200) {
+        const health = await response.json();
+        if (
+          health?.status === 'ready' &&
+          health.application === appId &&
+          health.instance === instance
+        ) {
+          process.kill(pid, 0);
+          return;
+        }
+      }
+      process.kill(pid, 0);
     } catch {
       try {
         process.kill(pid, 0);
@@ -287,6 +308,7 @@ async function start() {
         HOST:
           runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
         PORT: env.PORT || '5173',
+        SMRT_PROCESS_INSTANCE: instance,
       },
       detached: true,
       stdio: 'ignore',
@@ -296,7 +318,7 @@ async function start() {
   writeProcessRecord(pidPath(), { pid: child.pid, instance });
   const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
   try {
-    await waitForReady(url, child.pid);
+    await waitForReady(url, child.pid, instance);
   } catch (error) {
     try {
       process.kill(child.pid, 'SIGTERM');
@@ -501,7 +523,7 @@ async function backup() {
       'This scaffold delegates deployed backups to the selected operator or managed provider.',
     );
   }
-  if (readPid()) {
+  if (readActiveWriterLease(stateRoot())) {
     throw new Error(
       'Stop the application before creating a consistent local backup.',
     );
@@ -536,7 +558,7 @@ async function portability(operation) {
     ...runtimeEnvironment(runtime),
   };
   if (operation === 'import') {
-    if (runtime.profile === 'local' && readPid()) {
+    if (runtime.profile === 'local' && readActiveWriterLease(stateRoot())) {
       throw new Error('Stop the local application before importing data.');
     }
     if (

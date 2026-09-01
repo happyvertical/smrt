@@ -5,6 +5,9 @@ Application infrastructure composition for the validated runtime profiles in
 
 ## Local profile
 
+- `validateApplicationId()` is the canonical strict validator for explicit app
+  IDs. `encodeApplicationId()` derives a length-bounded, collision-resistant
+  ID from package names; generated operational surfaces must share these APIs.
 - `initializeLocalApplicationRuntime()` owns user data paths, SQLite tuning,
   local application-secret creation, and the single-use owner bootstrap flow.
 - SQLite is acquired through `@happyvertical/sql`'s explicit
@@ -12,6 +15,9 @@ Application infrastructure composition for the validated runtime profiles in
   runtime establishes its user-owned mode-0700 data root.
 - Application migrations are explicit through `prepareDatabase`; runtime never
   creates application model tables implicitly.
+- Standalone migration commands must call `prepareLocalDatabaseStorage()`
+  before opening SQLite so custody is established without creating schema or
+  bootstrap records.
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /
   `Membership`, and `Session` records in one transaction.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.
