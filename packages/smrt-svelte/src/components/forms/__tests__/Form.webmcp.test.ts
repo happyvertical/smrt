@@ -1999,11 +1999,33 @@ describe('Form WebMCP staged-edit intent', () => {
         }
       ).properties.address.properties;
     };
+    // `registered.at(-1)` is a snapshot: a registry-driven side effect from
+    // an earlier step in this test (e.g. an "apply" attempt) can retrigger
+    // the reactive tool spec and replace that snapshot before `.execute()`
+    // runs against it. Retry against whatever is current rather than
+    // asserting the specific instance stays live for the whole test.
+    const executeLive = async (
+      args: Record<string, unknown>,
+    ): Promise<string> => {
+      for (let attempt = 0; ; attempt += 1) {
+        const tool = registered.at(-1);
+        if (!tool) throw new Error('WebMCP tool was not registered');
+        try {
+          return await tool.execute(args);
+        } catch (error) {
+          const stale =
+            error instanceof Error &&
+            error.message.includes('is no longer registered');
+          if (!stale || attempt >= 9) throw error;
+          await tick();
+        }
+      }
+    };
     expect(addressProperties()).toEqual({
       province: { type: 'string', enum: ['', 'AB'] },
       country: { type: 'string', enum: ['CA'] },
     });
-    await registered.at(-1)?.execute({
+    await executeLive({
       address: { province: 'AB', country: 'CA' },
     });
     const identity = { formId: 'structured-fields', controlId: 'address' };
@@ -2047,7 +2069,7 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toMatchObject({ ok: false });
     expect(addressChanged).not.toHaveBeenCalled();
 
-    await registered.at(-1)?.execute({
+    await executeLive({
       address: { province: 'IDF', country: 'FR' },
     });
     expect(registry.get(identity)?.state.staged).toMatchObject({ valid: true });
@@ -2069,7 +2091,7 @@ describe('Form WebMCP staged-edit intent', () => {
       country: 'FR',
     });
 
-    await registered.at(-1)?.execute({
+    await executeLive({
       address: { province: 'XX', country: 'FR' },
     });
     expect(registry.get(identity)?.state.staged).toMatchObject({
