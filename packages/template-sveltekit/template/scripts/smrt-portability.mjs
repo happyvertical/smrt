@@ -46,6 +46,48 @@ async function withDatabase(context, callback) {
   }
 }
 
+export function validateImportBundle(bundle, expected) {
+  const providedNames = bundle.tables.map((table) => table?.name);
+  if (
+    providedNames.length !== expected.size ||
+    new Set(providedNames).size !== expected.size ||
+    providedNames.some((name) => !expected.has(name))
+  ) {
+    throw new Error(
+      'The export does not contain the complete application schema.',
+    );
+  }
+  for (const exported of bundle.tables) {
+    const table = expected.get(exported.name);
+    if (
+      !table ||
+      !Array.isArray(exported.rows) ||
+      !Array.isArray(exported.columns)
+    ) {
+      throw new Error('The export does not match the generated application schema.');
+    }
+    if (
+      exported.columns.length !== table.columns.length ||
+      new Set(exported.columns).size !== table.columns.length ||
+      exported.columns.some((column) => !table.columns.includes(column))
+    ) {
+      throw new Error(`The export schema does not match ${table.name}.`);
+    }
+    for (const row of exported.rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        throw new Error(`The export has an invalid row for ${table.name}.`);
+      }
+      const columns = Object.keys(row);
+      if (
+        columns.length !== table.columns.length ||
+        columns.some((column) => !table.columns.includes(column))
+      ) {
+        throw new Error(`The export has incomplete columns for ${table.name}.`);
+      }
+    }
+  }
+}
+
 export async function exportApplication(context) {
   const tables = manifestTables(context.sourceRoot);
   const bundle = {
@@ -91,6 +133,7 @@ export async function importApplication(context) {
   const expected = new Map(
     manifestTables(context.sourceRoot).map((table) => [table.name, table]),
   );
+  validateImportBundle(bundle, expected);
   let rowCount = 0;
   await withDatabase(context, async (db) => {
     if (typeof db.transaction !== 'function') {
@@ -99,11 +142,7 @@ export async function importApplication(context) {
     await db.transaction(async (tx) => {
       for (const exported of bundle.tables) {
         const table = expected.get(exported.name);
-        if (!table || !Array.isArray(exported.rows)) {
-          throw new Error(
-            'The export does not match the generated application schema.',
-          );
-        }
+        if (!table) throw new Error('The export schema changed during import.');
         const count = await tx.query(
           `SELECT COUNT(*) AS count FROM ${quoteIdentifier(table.name)}`,
         );
@@ -112,9 +151,6 @@ export async function importApplication(context) {
         }
         for (const row of exported.rows) {
           const columns = Object.keys(row);
-          if (columns.some((column) => !table.columns.includes(column))) {
-            throw new Error(`The export has unknown columns for ${table.name}.`);
-          }
           await tx.query(
             `INSERT INTO ${quoteIdentifier(table.name)} (${columns.map(quoteIdentifier).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
             ...columns.map((column) => row[column]),

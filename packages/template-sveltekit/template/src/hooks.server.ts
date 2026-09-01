@@ -14,13 +14,16 @@
 
 import { getCurrentTenant, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
-import type { Handle } from '@sveltejs/kit';
+import type { Handle, ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 
 import { getSmrtConfig } from '$lib/server/smrt';
+import { ensureApplicationRuntimeReady } from '$lib/server/application-runtime';
 import { resolveTenant } from '$lib/server/tenancy';
 
 enableTenancy();
+
+export const init: ServerInit = ensureApplicationRuntimeReady;
 
 const tenantSelectionHandle: Handle = async ({ event, resolve }) => {
   const selection = await resolveTenant(event);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
   accessSync,
   constants,
@@ -23,6 +24,10 @@ import {
   loadConfig,
   resolveConfiguredApplicationRuntime,
 } from '@happyvertical/smrt-config';
+import {
+  readOwnedProcess,
+  writeProcessRecord,
+} from './smrt-process.mjs';
 
 const sourceRoot = process.cwd();
 const packageJson = JSON.parse(
@@ -62,14 +67,7 @@ function pidPath() {
 }
 
 function readPid() {
-  try {
-    const pid = Number.parseInt(readFileSync(pidPath(), 'utf8').trim(), 10);
-    if (!Number.isSafeInteger(pid) || pid < 1) return null;
-    process.kill(pid, 0);
-    return pid;
-  } catch {
-    return null;
-  }
+  return readOwnedProcess(pidPath())?.pid || null;
 }
 
 function run(binary, args, options = {}) {
@@ -208,18 +206,24 @@ async function start() {
   const runtime = await resolveRuntime();
   const { env } = runtimeEnvironment(runtime);
   ensurePrivateDirectory(stateRoot());
-  const child = spawn(process.execPath, ['build'], {
-    cwd: sourceRoot,
-    env: {
-      ...env,
-      HOST: runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
-      PORT: env.PORT || '5173',
+  const instance = randomBytes(16).toString('hex');
+  const child = spawn(
+    process.execPath,
+    ['scripts/smrt-web.mjs', `--smrt-instance=${instance}`],
+    {
+      cwd: sourceRoot,
+      env: {
+        ...env,
+        HOST:
+          runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
+        PORT: env.PORT || '5173',
+      },
+      detached: true,
+      stdio: 'ignore',
     },
-    detached: true,
-    stdio: 'ignore',
-  });
+  );
   child.unref();
-  writeFileSync(pidPath(), `${child.pid}\n`, { mode: 0o600 });
+  writeProcessRecord(pidPath(), { pid: child.pid, instance });
   const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
   try {
     await waitForReady(url, child.pid);
