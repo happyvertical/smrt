@@ -6,8 +6,11 @@ import { useAdminShell } from './context.js';
 import type { ShellActivityFilter } from './types.js';
 
 interface Props {
+  /** Criteria to filter activities. */
   filter?: ShellActivityFilter;
+  /** Hide the list entirely when no activities match the filter. */
   hideWhenEmpty?: boolean;
+  /** Text shown when no activities are available. */
   emptyLabel?: string;
 }
 

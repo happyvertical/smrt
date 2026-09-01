@@ -5,10 +5,15 @@ import { M } from '../../../i18n/strings.workspace.js';
 import type { ShellNavItem } from './types.js';
 
 interface Props {
+  /** Navigation items with href, label, icon, and optional children. */
   items: ShellNavItem[];
+  /** Current URL to highlight the active navigation link. */
   currentHref?: string;
+  /** Component used to render icon names as SVG or custom icons. */
   iconComponent?: Component<{ name: string; size?: number }>;
+  /** Hide labels and show only icons in a compact layout. */
   collapsed?: boolean;
+  /** Called when the user clicks a navigation link. */
   onNavigate?: () => void;
 }
 

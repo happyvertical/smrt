@@ -13,6 +13,7 @@ interface Toast {
 }
 
 interface Props {
+  /** Maximum number of simultaneous activity toasts to display. */
   max?: number;
   /**
    * Which lifecycle events raise a toast. Defaults to lifecycle-only:

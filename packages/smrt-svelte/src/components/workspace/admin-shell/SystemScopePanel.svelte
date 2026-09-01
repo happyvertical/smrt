@@ -5,7 +5,9 @@ import ActivityList from './ActivityList.svelte';
 import type { ShellSystemPanel } from './types.js';
 
 interface Props {
+  /** Array of system panel sections, each with a label and list of items. */
   panels: ShellSystemPanel[];
+  /** Show or hide the running activities section at the bottom. */
   showActivities?: boolean;
 }
 

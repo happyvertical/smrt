@@ -55,12 +55,17 @@ export interface Props {
   formId?: string;
   /** Default record-qualified identity for registered fields. */
   subject?: ControlSubject;
+  /** Registry for form control interactions and staged edits. */
   interactionRegistry?: ControlInteractionRegistry;
+  /** Called when a form control interaction event occurs. */
   oninteraction?: (event: ControlInteractionEvent) => void;
   /** Render the built-in human review surface for staged changes. */
   stagedReview?: boolean;
+  /** HTML id attribute for the form element. */
   id?: string;
+  /** HTML name attribute for the form element. */
   name?: string;
+  /** CSS classes to apply to the form element. */
   class?: string;
 }
 
