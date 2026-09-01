@@ -1,6 +1,18 @@
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Wrap the registrar in a spy so a test can observe *which* policy each
+// `useWebMcpTool` effect run handed it, including runs the policy excludes
+// before they ever reach document.modelContext.registerTool (#2599).
+const registerBespokeSpy = vi.hoisted(() => vi.fn());
+vi.mock('@happyvertical/smrt-web', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@happyvertical/smrt-web')>();
+  registerBespokeSpy.mockImplementation(actual.registerWebMcpBespokeTool);
+  return { ...actual, registerWebMcpBespokeTool: registerBespokeSpy };
+});
+
 import EffectsReactivity from './webmcp-effects-reactivity.fixture.svelte';
 import Harness from './webmcp-harness.svelte';
 import HarnessReactiveSameName from './webmcp-harness-reactive-samename.svelte';
@@ -54,6 +66,7 @@ function installModelContext() {
 
 afterEach(() => {
   delete document.modelContext;
+  registerBespokeSpy.mockClear();
 });
 
 describe('useWebMcpTool', () => {
@@ -169,6 +182,7 @@ describe('useWebMcpTool', () => {
 
     view.unmount();
     warnSpy.mockRestore();
+  });
 
   it('registers a previously-excluded bespoke tool when a Provider policy loosens to permit it (#2599)', async () => {
     const registered = installModelContext();
@@ -177,19 +191,28 @@ describe('useWebMcpTool', () => {
     });
     // The bespoke tool's static factory declares `destructiveHint: true` and
     // has no rune dependencies of its own, so under a read-only Provider
-    // policy it is classified destructive and excluded before it ever
-    // reaches document.modelContext.registerTool.
-    await tick();
-    await tick();
-    await tick();
+    // policy the registrar classifies it destructive and excludes it before
+    // it ever reaches document.modelContext.registerTool. Wait for that
+    // first evaluation to actually happen under the read-only policy — the
+    // registrar is reached through a dynamic import, so without this the
+    // policy change below could race ahead of the first evaluation and the
+    // test would pass even if the effect never re-ran.
+    await vi.waitFor(() => expect(registerBespokeSpy).toHaveBeenCalledTimes(1));
+    expect(registerBespokeSpy.mock.calls[0][1]).toEqual({
+      effects: ['read'],
+    });
     expect(registered).toHaveLength(0);
 
     // `bespokeContext.effects` is read synchronously at the top of the
-    // `$effect` body (the F2 fix), so this Provider policy change is
-    // tracked as a dependency and re-runs the effect even though the
-    // component's own factory never changed: the tool newly registers now
-    // that the policy permits `destructive`.
+    // `$effect` body, so this Provider policy change is tracked as a
+    // dependency and re-runs the effect even though the component's own
+    // factory never changed: the registrar is consulted again under the
+    // loosened policy and the tool newly registers.
     await view.rerender({ effects: ['destructive'] });
+    await vi.waitFor(() => expect(registerBespokeSpy).toHaveBeenCalledTimes(2));
+    expect(registerBespokeSpy.mock.calls[1][1]).toEqual({
+      effects: ['destructive'],
+    });
     await vi.waitFor(() =>
       expect(registered.map((tool) => tool.name)).toContain(
         'reactivity_destructive_tool',
