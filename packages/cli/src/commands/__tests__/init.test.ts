@@ -34,6 +34,9 @@ function writePackageJson(content: Record<string, unknown> | string): void {
 }
 
 const init = initCommands.init.handler;
+const INSTALLED_CLI_VERSION = JSON.parse(
+  readFileSync(new URL('../../../package.json', import.meta.url), 'utf-8'),
+).version as string;
 
 describe('init command', () => {
   beforeEach(() => {
@@ -73,6 +76,18 @@ describe('init command', () => {
     const config = readFileSync(join(tempDir, 'smrt.config.ts'), 'utf-8');
     expect(config).toContain("type: 'sqlite'");
     expect(config).toContain('./data/app.db');
+
+    const packageJson = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(packageJson.dependencies).toMatchObject({
+      '@happyvertical/smrt-core': `^${INSTALLED_CLI_VERSION}`,
+      '@happyvertical/smrt-config': `^${INSTALLED_CLI_VERSION}`,
+      '@modelcontextprotocol/server': '2.0.0',
+    });
+    expect(packageJson.devDependencies).toMatchObject({
+      '@happyvertical/smrt-cli': `^${INSTALLED_CLI_VERSION}`,
+    });
   });
 
   it('uses the postgres database type and url when requested', async () => {
@@ -198,18 +213,61 @@ describe('init command', () => {
     exitSpy.mockRestore();
   });
 
-  it('notes when smrt-core is already installed (no install hint)', async () => {
+  it('preserves existing package versions when promoting runtime dependencies', async () => {
     writePackageJson({
       name: 'demo',
       devDependencies: {
         '@sveltejs/kit': '^2.0.0',
         '@happyvertical/smrt-core': '^1.0.0',
+        '@happyvertical/smrt-cli': '^1.0.0',
+      },
+      dependencies: {
+        '@happyvertical/smrt-config': '^1.0.0',
+        '@modelcontextprotocol/server': '^3.0.0',
       },
     });
 
     await init([], { database: 'sqlite' });
 
+    const packageJson = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(packageJson.dependencies).toMatchObject({
+      '@happyvertical/smrt-core': '^1.0.0',
+      '@happyvertical/smrt-config': '^1.0.0',
+      '@modelcontextprotocol/server': '^3.0.0',
+    });
+    expect(packageJson.devDependencies).toMatchObject({
+      '@happyvertical/smrt-cli': '^1.0.0',
+    });
+    expect(
+      packageJson.devDependencies['@happyvertical/smrt-core'],
+    ).toBeUndefined();
+
     const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
-    expect(printed).not.toContain('npm install @happyvertical/smrt-core');
+    expect(printed).toContain('Added SMRT dependencies');
+  });
+
+  it('does not rewrite package.json when every dependency is already declared', async () => {
+    const packageJson = {
+      name: 'demo',
+      dependencies: {
+        '@happyvertical/smrt-core': '^1.0.0',
+        '@happyvertical/smrt-config': '^1.0.0',
+        '@modelcontextprotocol/server': '^3.0.0',
+      },
+      devDependencies: {
+        '@sveltejs/kit': '^2.0.0',
+        '@happyvertical/smrt-cli': '^1.0.0',
+      },
+    };
+    writePackageJson(packageJson);
+    const before = readFileSync(join(tempDir, 'package.json'), 'utf-8');
+
+    await init([], { database: 'sqlite' });
+
+    expect(readFileSync(join(tempDir, 'package.json'), 'utf-8')).toBe(before);
+    const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(printed).not.toContain('Added SMRT dependencies');
   });
 });

@@ -5,7 +5,8 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { CLICommand } from '../cli-generator.js';
 
 /**
@@ -22,8 +23,117 @@ interface InitOptions {
  * Subset of `package.json` fields the init command inspects.
  */
 interface InitPackageJson {
+  version?: string;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+const RUNTIME_DEPENDENCIES = [
+  '@happyvertical/smrt-core',
+  '@happyvertical/smrt-config',
+  '@modelcontextprotocol/server',
+] as const;
+
+const CLI_DEPENDENCY = '@happyvertical/smrt-cli';
+const MCP_SERVER_VERSION = '2.0.0';
+
+/**
+ * Find the SMRT monorepo root when init runs against one of its workspace
+ * projects. Consumer projects must use the published CLI release line instead.
+ */
+function findSmrtWorkspaceRoot(startDir: string): string | null {
+  let current = resolve(startDir);
+
+  while (true) {
+    if (
+      existsSync(join(current, 'pnpm-workspace.yaml')) &&
+      existsSync(
+        join(current, 'packages', 'smrt-playground', 'host', 'package.json'),
+      )
+    ) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+function getSmrtDependencyVersion(projectRoot: string): string {
+  if (findSmrtWorkspaceRoot(projectRoot)) {
+    return 'workspace:*';
+  }
+
+  let current = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const packageJsonPath = join(current, 'package.json');
+    if (existsSync(packageJsonPath)) {
+      const cliPackageJson = JSON.parse(
+        readFileSync(packageJsonPath, 'utf-8'),
+      ) as InitPackageJson;
+      if (cliPackageJson.name === CLI_DEPENDENCY && cliPackageJson.version) {
+        return `^${cliPackageJson.version}`;
+      }
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+
+  throw new Error('Could not determine the installed SMRT CLI version');
+}
+
+/**
+ * Declare the packages emitted by init and the default MCP generator. Generated
+ * MCP servers resolve from the host application under pnpm, so the CLI's own
+ * transitive dependencies are not sufficient.
+ */
+function ensureInitDependencies(
+  packageJsonPath: string,
+  packageJson: InitPackageJson,
+  projectRoot: string,
+): string[] {
+  const smrtVersion = getSmrtDependencyVersion(projectRoot);
+  const added: string[] = [];
+  packageJson.dependencies ??= {};
+  packageJson.devDependencies ??= {};
+
+  for (const dependency of RUNTIME_DEPENDENCIES) {
+    const existing = packageJson.dependencies[dependency];
+    if (existing) {
+      continue;
+    }
+
+    const version =
+      packageJson.devDependencies[dependency] ??
+      (dependency === '@modelcontextprotocol/server'
+        ? MCP_SERVER_VERSION
+        : smrtVersion);
+    packageJson.dependencies[dependency] = version;
+    delete packageJson.devDependencies[dependency];
+    added.push(`${dependency}@${version}`);
+  }
+
+  if (
+    !packageJson.dependencies[CLI_DEPENDENCY] &&
+    !packageJson.devDependencies[CLI_DEPENDENCY]
+  ) {
+    packageJson.devDependencies[CLI_DEPENDENCY] = smrtVersion;
+    added.push(`${CLI_DEPENDENCY}@${smrtVersion}`);
+  }
+
+  if (added.length > 0) {
+    writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  }
+
+  return added;
 }
 
 /**
@@ -273,6 +383,12 @@ export const initCommands: Record<string, CLICommand> = {
         );
       }
 
+      const dependenciesAdded = ensureInitDependencies(
+        packageJsonPath,
+        packageJson,
+        cwd,
+      );
+
       // Track what we create
       const created: string[] = [];
       const skipped: string[] = [];
@@ -356,11 +472,6 @@ export const initCommands: Record<string, CLICommand> = {
         }
       }
 
-      // 8. Check if @happyvertical/smrt-core is installed
-      const hasSmrt =
-        packageJson.dependencies?.['@happyvertical/smrt-core'] ||
-        packageJson.devDependencies?.['@happyvertical/smrt-core'];
-
       // Report results
       console.log('✅ Created files:');
       for (const file of created) {
@@ -377,9 +488,12 @@ export const initCommands: Record<string, CLICommand> = {
       // Next steps
       console.log('\n📋 Next steps:\n');
 
-      if (!hasSmrt) {
-        console.log('1. Install SMRT:');
-        console.log('   npm install @happyvertical/smrt-core\n');
+      if (dependenciesAdded.length > 0) {
+        console.log('1. Added SMRT dependencies to package.json:');
+        for (const dependency of dependenciesAdded) {
+          console.log(`   • ${dependency}`);
+        }
+        console.log('   Run your package manager install command.\n');
       }
 
       console.log('2. Update your vite.config.ts to add smrtPlugin:');
