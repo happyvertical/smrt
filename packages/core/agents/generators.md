@@ -45,11 +45,14 @@ extension decides what is written (#2279). `.ts`/`.mts` targets keep the source
 verbatim for `tsx` or Node type stripping — which is why the generated source
 must stay erasable-syntax-only (no parameter properties, enums, or namespaces).
 Every other target (`.smrt/mcp-server/index.js` by default) is transpiled to
-JavaScript with the `typescript` dependency before writing, because the printed
-run script and the generated `claude-config.example.json` both invoke it with
-plain `node`. A `.cjs`/`.cts` target is rejected outright: generated servers are
-ES modules. `src/generators/mcp-emit.ts` owns those decisions — do not
-reintroduce a bare `writeFile` of generated source.
+JavaScript with lazily loaded `oxc-transform` before writing, because the
+printed run script and the generated `claude-config.example.json` both invoke
+it with plain `node`. Ordinary core imports and `.ts`/`.mts` output therefore
+do not load OXC's native bindings.
+This keeps `typescript` dev-only in `@happyvertical/smrt-core`; generated MCP
+source must remain erasable-syntax-only. A `.cjs`/`.cts` target is rejected
+outright: generated servers are ES modules. `src/generators/mcp-emit.ts` owns
+those decisions — do not reintroduce a bare `writeFile` of generated source.
 
 Modular output writes `config`, `tools/index`, and `handlers/index` with the
 entry point's own extension, and emits the entry's relative import specifiers

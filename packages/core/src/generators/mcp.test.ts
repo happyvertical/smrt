@@ -740,14 +740,16 @@ describe('MCPGenerator with Custom Actions', () => {
           'utf-8',
         );
 
-        expect(handlers).toContain("case 'mcpconformanceagent_apply'");
-        expect(handlers).toContain("case 'mcpconformanceagent_rebalance'");
-        expect(handlers).toContain("case 'mcpconformanceagent_archive'");
-        expect(handlers).toContain(
-          "case 'mcpconformanceagent_restoreintocontent'",
+        expect(handlers).toMatch(/case ["']mcpconformanceagent_apply["']/);
+        expect(handlers).toMatch(/case ["']mcpconformanceagent_rebalance["']/);
+        expect(handlers).toMatch(/case ["']mcpconformanceagent_archive["']/);
+        expect(handlers).toMatch(
+          /case ["']mcpconformanceagent_restoreintocontent["']/,
         );
-        expect(handlers).toContain("case 'mcpconformanceagent_move'");
-        expect(handlers).toContain("case 'mcpconformancecollection_fanout'");
+        expect(handlers).toMatch(/case ["']mcpconformanceagent_move["']/);
+        expect(handlers).toMatch(
+          /case ["']mcpconformancecollection_fanout["']/,
+        );
         expect(handlers).toContain(
           'Custom action rebalance is collection-scoped and does not accept an ID',
         );
@@ -764,7 +766,9 @@ describe('MCPGenerator with Custom Actions', () => {
         );
         expect(handlers).toContain('const STI_TARGETS');
         expect(handlers).toContain('resolveCreateTarget');
-        expect(handlers).toContain("process.env.DATABASE_TYPE || 'sqlite'");
+        expect(handlers).toMatch(
+          /process\.env\.DATABASE_TYPE \|\| ["']sqlite["']/,
+        );
       } finally {
         await rm(outputDir, { recursive: true, force: true });
       }

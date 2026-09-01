@@ -201,8 +201,8 @@ describe('MCP Generator - Example Projects', () => {
       expect(toolsContent).toContain('article_list');
       expect(toolsContent).toContain('article_summarize');
       expect(toolsContent).toContain('article_analyze');
-      expect(handlersContent).toContain("case 'article_summarize'");
-      expect(handlersContent).toContain("case 'article_analyze'");
+      expect(handlersContent).toMatch(/case ["']article_summarize["']/);
+      expect(handlersContent).toMatch(/case ["']article_analyze["']/);
     });
   });
 

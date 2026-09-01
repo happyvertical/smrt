@@ -70,8 +70,8 @@ describe('MCPGenerator - Modular Generation', () => {
       });
 
       const content = await readFile(outputPath, 'utf-8');
-      expect(content).toContain(
-        "import { loadConfig } from '@happyvertical/smrt-config'",
+      expect(content).toMatch(
+        /import \{ loadConfig \} from ["']@happyvertical\/smrt-config["']/,
       );
       expect(content).toContain('await loadConfig()');
       expect(content).toContain('appConfig?.ai || {}');
@@ -187,14 +187,14 @@ describe('MCPGenerator - Modular Generation', () => {
       const indexContent = await readFile(join(outputDir, 'index.js'), 'utf-8');
 
       // Verify imports
-      expect(indexContent).toContain(
-        "import { SERVER_NAME, SERVER_VERSION, DEBUG } from './config.js'",
+      expect(indexContent).toMatch(
+        /import \{ SERVER_NAME, SERVER_VERSION, DEBUG \} from ["']\.\/config\.js["']/,
       );
-      expect(indexContent).toContain(
-        "import { tools } from './tools/index.js'",
+      expect(indexContent).toMatch(
+        /import \{ tools \} from ["']\.\/tools\/index\.js["']/,
       );
-      expect(indexContent).toContain(
-        "import { handleToolCall } from './handlers/index.js'",
+      expect(indexContent).toMatch(
+        /import \{ handleToolCall \} from ["']\.\/handlers\/index\.js["']/,
       );
 
       // Verify usage

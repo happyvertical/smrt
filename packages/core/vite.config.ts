@@ -177,9 +177,10 @@ export default defineConfig({
         'fill-range',
         'to-regex-range',
 
-        // OXC native bindings (Rust parser)
+        // OXC native packages (Rust parser and transformer)
         'oxc-parser',
         'oxc-resolver',
+        'oxc-transform',
         /^@oxc-project\//,
 
         // Internal SMRT packages

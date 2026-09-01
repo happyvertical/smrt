@@ -213,7 +213,7 @@ describe('MCPGenerator - Integration Tests', () => {
       expect(content).toContain('mcpintegrationtestproduct_analyze');
 
       // Verify handler logic
-      expect(content).toContain("case 'mcpintegrationtestproduct_analyze'");
+      expect(content).toMatch(/case ["']mcpintegrationtestproduct_analyze["']/);
     });
   });
 
@@ -254,20 +254,22 @@ describe('MCPGenerator - Integration Tests', () => {
       expect(toolsContent).toContain('mcpintegrationtestproduct_analyze');
 
       // Verify handlers include real object handlers
-      expect(handlersContent).toContain(
-        "case 'mcpintegrationtestproduct_list'",
+      expect(handlersContent).toMatch(
+        /case ["']mcpintegrationtestproduct_list["']/,
       );
-      expect(handlersContent).toContain("case 'mcpintegrationtestproduct_get'");
-      expect(handlersContent).toContain(
-        "case 'mcpintegrationtestproduct_analyze'",
+      expect(handlersContent).toMatch(
+        /case ["']mcpintegrationtestproduct_get["']/,
+      );
+      expect(handlersContent).toMatch(
+        /case ["']mcpintegrationtestproduct_analyze["']/,
       );
 
       // Verify index imports from modules
-      expect(indexContent).toContain(
-        "import { tools } from './tools/index.js'",
+      expect(indexContent).toMatch(
+        /import \{ tools \} from ["']\.\/tools\/index\.js["']/,
       );
-      expect(indexContent).toContain(
-        "import { handleToolCall } from './handlers/index.js'",
+      expect(indexContent).toMatch(
+        /import \{ handleToolCall \} from ["']\.\/handlers\/index\.js["']/,
       );
     });
   });
@@ -286,8 +288,8 @@ describe('MCPGenerator - Integration Tests', () => {
       const content = await readFile(outputPath, 'utf-8');
 
       // Verify @happyvertical/smrt-config usage
-      expect(content).toContain(
-        "import { loadConfig } from '@happyvertical/smrt-config'",
+      expect(content).toMatch(
+        /import \{ loadConfig \} from ["']@happyvertical\/smrt-config["']/,
       );
       expect(content).toContain('await loadConfig()');
       expect(content).toContain('appConfig?.ai || {}');
