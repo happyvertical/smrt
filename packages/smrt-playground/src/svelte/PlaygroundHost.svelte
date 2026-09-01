@@ -16,15 +16,20 @@ import type {
 } from './types.js';
 
 export interface Props {
+  /** Playground modules containing entries to display. */
   modules?: SmrtPlaygroundModule[];
+  /** Main heading text. */
   title?: string;
+  /** Subtitle or description text. */
   subtitle?: string;
+  /** Enables embedded mode which affects UI presentation. */
   embedded?: boolean;
   /**
    * Qualified entry ID controlled by the parent. Clearing a previously
    * controlled selection restores the playground's default selection.
    */
   selectedEntryId?: string | null;
+  /** Hides the entry list when true. */
   hideEntryList?: boolean;
 }
 

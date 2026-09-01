@@ -8,7 +8,9 @@ import type { ScheduleStatus } from '../types.js';
 import { getScheduleStatusVariant } from '../types.js';
 
 export interface Props {
+  /** The schedule status to display. */
   status: ScheduleStatus;
+  /** Badge size. */
   size?: 'sm' | 'md';
 }
 

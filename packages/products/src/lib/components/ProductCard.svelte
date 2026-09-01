@@ -3,8 +3,11 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import type { ProductData } from '../types';
 
 interface Props {
+  /** The product to display. */
   product: ProductData;
+  /** Fired when the user clicks to edit the product. */
   onEdit?: (product: ProductData) => void;
+  /** Fired when the user clicks to delete the product. */
   onDelete?: (id: string) => void;
 }
 

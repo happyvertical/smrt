@@ -11,12 +11,19 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 
 export interface Props {
+  /** The tenant to display. */
   tenant: Tenant;
+  /** Number of members in the tenant. */
   memberCount?: number;
+  /** Fired when the card is clicked. */
   onclick?: () => void;
+  /** Highlights the card when true. */
   selected?: boolean;
+  /** Shows edit and delete buttons when true. */
   actions?: boolean;
+  /** Fired when the user clicks the edit button. */
   onedit?: () => void;
+  /** Fired when the user clicks the delete button. */
   ondelete?: () => void;
 }
 

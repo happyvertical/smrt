@@ -11,8 +11,11 @@ import type { CampaignChannelView } from '../types.js';
 import { calculateChannelMix, campaignStatusBadgeVariant } from '../types.js';
 
 export interface Props {
+  /** Campaign channels to display. */
   channels?: CampaignChannelView[];
+  /** Currency code for formatting spending. */
   currency?: string;
+  /** Locale for formatting currency, numbers, and percentages. */
   locale?: string;
 }
 

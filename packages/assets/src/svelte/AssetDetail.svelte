@@ -23,21 +23,25 @@ export interface AssetDetailProps {
   open: boolean;
   /** Callback when detail is closed */
   onClose?: () => void;
+  /** Fired when the detail view is closed. */
   onclose?: () => void;
   /** Callback when asset is updated (save metadata) */
   onSave?: (
     asset: PersistedAsset,
     updates: AssetDetailUpdates,
   ) => void | Promise<void>;
+  /** Fired when the user saves metadata changes. */
   onsave?: (
     asset: PersistedAsset,
     updates: AssetDetailUpdates,
   ) => void | Promise<void>;
   /** Callback when asset is deleted */
   onDelete?: (asset: PersistedAsset) => void;
+  /** Fired when the user deletes the asset. */
   ondelete?: (asset: PersistedAsset) => void;
   /** Callback to open the image editor */
   onEdit?: (asset: PersistedAsset) => void;
+  /** Fired when the user clicks to edit the image. */
   onedit?: (asset: PersistedAsset) => void;
   /** Content references snippet (injected by smrt-content) */
   contentReferences?: Snippet<[{ assetId: string }]>;

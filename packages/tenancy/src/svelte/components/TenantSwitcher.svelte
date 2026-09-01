@@ -2,9 +2,13 @@
 import type { Membership, Tenant } from '@happyvertical/smrt-types';
 
 export interface Props {
+  /** User's tenant memberships. */
   memberships: Membership[];
+  /** Map of tenant IDs to tenant objects. */
   tenants: Map<string, Tenant>;
+  /** ID of the currently selected tenant. */
   currentTenantId: string;
+  /** Fired when the user selects a different tenant. */
   onchange?: (tenantId: string) => void;
 }
 
