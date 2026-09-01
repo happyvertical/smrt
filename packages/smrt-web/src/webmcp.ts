@@ -84,6 +84,14 @@ function getModelContext(): ModelContextLike | undefined {
   return undefined;
 }
 
+/**
+ * Structurally mirrors `CapabilityEffect` in `@happyvertical/smrt-types`
+ * (#2587) rather than importing it — this package's dependency-DAG
+ * guardrails keep it free of every `@happyvertical/*` dependency (see
+ * AGENTS.md "No inter-smrt dependencies"), the same reason `data-query.ts`
+ * mirrors that package's bounded query envelope structurally instead of
+ * importing it.
+ */
 export type WebMcpToolEffect = 'read' | 'write' | 'destructive';
 
 export interface WebMcpExposurePolicy {
@@ -399,7 +407,12 @@ function selectProspectiveTools(
   const tools: ProspectiveTool[] = [];
   for (const definition of stableDefinitions) {
     if (isCanonicalToolDefinition(definition)) {
-      const semantics = actionSemantics(definition.action, definition);
+      // #2587: canonical definitions arrive pre-classified by core's
+      // `tool-schema.ts` — trust the emitted effect/idempotent/openWorld
+      // directly rather than recomputing via the CRUD switch in
+      // `actionSemantics()`, which survives only as the legacy fallback
+      // below for definitions that carry no metadata.
+      const semantics = resolveDeclaredCapability(definition);
       if (!allowedEffects.has(semantics.effect)) continue;
       if (options.filter && !options.filterTool) {
         throw new Error(
@@ -472,6 +485,39 @@ function qualifiedToolName(name: string, namespace?: string): string {
   return namespace ? `${namespace}_${name}` : name;
 }
 
+/**
+ * Resolve a declared capability with no CRUD/action-based guess — the shared
+ * fail-closed default documented on `CapabilityClassification` in
+ * `@happyvertical/smrt-types` (#2587): an omitted `effect` resolves to
+ * `'destructive'`, an omitted `idempotent` to `false`, an omitted `openWorld`
+ * to `true`. Canonical WebMCP definitions are trusted through this helper
+ * directly (they arrive pre-classified by core); `actionSemantics()`'s CRUD
+ * switch below falls back to it only for a legacy custom action, which was
+ * never a fixed CRUD verb to begin with.
+ */
+function resolveDeclaredCapability(
+  declared: Partial<
+    Pick<WebMcpToolDefinition, 'effect' | 'idempotent' | 'openWorld'>
+  >,
+): ToolSemantics {
+  const effect = VALID_EFFECTS.includes(declared.effect as WebMcpToolEffect)
+    ? (declared.effect as WebMcpToolEffect)
+    : 'destructive';
+  return {
+    effect,
+    destructive: effect !== 'read',
+    idempotent: declared.idempotent ?? false,
+    openWorld: declared.openWorld ?? true,
+  };
+}
+
+/**
+ * Legacy-only classification fallback (#2587). A generated canonical
+ * definition is never routed through this switch — see the canonical branch
+ * of {@link selectProspectiveTools}, which trusts emitted metadata via
+ * {@link resolveDeclaredCapability} instead. This survives for legacy
+ * `SmrtWebCollectionDefinition` tool descriptors that carry no metadata.
+ */
 function actionSemantics(
   action: string,
   declared: Partial<
@@ -510,17 +556,8 @@ function actionSemantics(
         idempotent: true,
         openWorld: false,
       };
-    default: {
-      const effect = VALID_EFFECTS.includes(declared.effect as WebMcpToolEffect)
-        ? (declared.effect as WebMcpToolEffect)
-        : 'destructive';
-      return {
-        effect,
-        destructive: effect !== 'read',
-        idempotent: declared.idempotent ?? false,
-        openWorld: declared.openWorld ?? true,
-      };
-    }
+    default:
+      return resolveDeclaredCapability(declared);
   }
 }
 

@@ -134,6 +134,28 @@ describe('custom action conformance', () => {
     });
   });
 
+  it('defaults an omitted idempotent to false even when effect is declared read (#2587)', () => {
+    // Per-field fail-closed default (CapabilityDeclaration in
+    // @happyvertical/smrt-types): a declared 'read' effect does not, by
+    // itself, imply idempotent — a read that advances state (e.g. dequeuing
+    // the next item) is a legitimate non-idempotent read, proven by the
+    // sibling test above. An author who wants the idempotent hint must
+    // declare it explicitly; the resolver must never infer it from `effect`.
+    const metadata = resolveCustomActionMetadata({
+      actionName: 'peek',
+      method: { isStatic: true, parameters: [] },
+      apiConfig: {
+        routes: { peek: { method: 'GET', effect: 'read' } },
+      },
+    });
+
+    expect(metadata).toMatchObject({
+      effect: 'read',
+      idempotent: false,
+      openWorld: true,
+    });
+  });
+
   it('does not infer a safe effect from a custom route HTTP verb', () => {
     const metadata = resolveCustomActionMetadata({
       actionName: 'opaqueRead',
