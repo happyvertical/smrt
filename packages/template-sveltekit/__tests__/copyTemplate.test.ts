@@ -3,7 +3,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -98,6 +100,16 @@ describe('copyTemplate', () => {
     expect(readFileSync(join(tempDir, '.npmignore'), 'utf8')).toBe(
       'user-npm-ignore\n',
     );
+    expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
+  });
+
+  it('preserves an existing broken gitignore symlink without overwrite', () => {
+    const gitignore = join(tempDir, '.gitignore');
+    symlinkSync('missing-user-ignore', gitignore);
+
+    copyTemplate(tempDir, { name: 'my-app' });
+
+    expect(readlinkSync(gitignore)).toBe('missing-user-ignore');
     expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
   });
 

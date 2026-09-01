@@ -74,6 +74,9 @@ describe('profile-aware application operations', () => {
     expect(appDriver).toContain("code: 'unsafe-local-bind'");
     expect(appDriver).toContain("code: 'migration-required'");
     expect(appDriver).toContain('secretValuesIncluded: false');
+    expect(appDriver).toContain(
+      'Configure and verify the installed ${component} provider readiness module.',
+    );
     expect(appDriver).toContain('acquireWriterLease');
     expect(appDriver).toContain("flag: 'wx'");
     expect(appDriver).toContain('renameSync(temporary, destination)');
@@ -289,6 +292,29 @@ describe('profile-aware application operations', () => {
         DATABASE_URL: 'postgresql://user:second@other.example/app',
         HOST: '0.0.0.0',
         PORT: '3000',
+      }),
+    ).not.toBe(initial);
+    const sslRequired = runtimeConfigurationFingerprint(runtime, {
+      DATABASE_URL:
+        'postgresql://user:first@db.example/app?sslmode=require&password=hidden',
+      HOST: '0.0.0.0',
+      PORT: '3000',
+    });
+    expect(sslRequired).not.toBe(initial);
+    expect(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL:
+          'postgresql://other:changed@db.example/app?password=different&sslmode=require',
+        HOST: '0.0.0.0',
+        PORT: '3000',
+      }),
+    ).toBe(sslRequired);
+    expect(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL: 'postgresql://user:first@db.example/app',
+        HOST: '0.0.0.0',
+        PORT: '3000',
+        SMRT_AUTH_READINESS_MODULE: '@example/auth-readiness-v2',
       }),
     ).not.toBe(initial);
   });

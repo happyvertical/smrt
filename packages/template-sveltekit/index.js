@@ -7,6 +7,7 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
   renameSync,
@@ -25,6 +26,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * tests typecheck without first running `svelte-kit sync`).
  */
 const COPY_SKIP = new Set(['.svelte-kit', '__tests__', 'test', 'tests']);
+
+function pathEntryExists(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
 
 /**
  * Get the path to the template directory
@@ -90,7 +101,7 @@ export function copyTemplate(destination, options = {}) {
     throw new Error('Template package is missing gitignore.template');
   }
   const destinationGitignore = join(destination, '.gitignore');
-  if (existsSync(destinationGitignore) && !options.overwrite) {
+  if (pathEntryExists(destinationGitignore) && !options.overwrite) {
     rmSync(packagedGitignore, { force: true });
   } else {
     rmSync(destinationGitignore, { force: true });

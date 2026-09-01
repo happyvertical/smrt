@@ -483,16 +483,13 @@ async function doctor() {
             profile: runtime.profile,
             provider,
           })();
-        } catch (error) {
+        } catch {
           findings.push({
             code: 'provider-not-configured',
             component,
             severity: 'error',
             message: `The ${component} provider is not ready.`,
-            recovery:
-              error instanceof Error
-                ? error.message
-                : 'Configure an installed provider-owned readiness module.',
+            recovery: `Configure and verify the installed ${component} provider readiness module.`,
           });
         }
       }

@@ -68,10 +68,12 @@ function databaseTargetIdentity(value) {
   if (!value) return null;
   try {
     const target = new URL(value);
+    const sslMode = target.searchParams.get('sslmode');
     target.username = '';
     target.password = '';
     target.search = '';
     target.hash = '';
+    if (sslMode) target.searchParams.set('sslmode', sslMode);
     return target.toString();
   } catch {
     return resolve(value);
@@ -97,6 +99,11 @@ export function runtimeConfigurationFingerprint(
         host: environment.HOST || null,
         port: environment.PORT || null,
         backgroundJobs: environment.SMRT_BACKGROUND_JOBS === 'true',
+        readinessModules: {
+          authentication: environment.SMRT_AUTH_READINESS_MODULE || null,
+          assets: environment.SMRT_ASSETS_READINESS_MODULE || null,
+          secrets: environment.SMRT_SECRETS_READINESS_MODULE || null,
+        },
       }),
     )
     .digest('hex');
