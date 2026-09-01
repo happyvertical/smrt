@@ -4,6 +4,7 @@ import type { ServiceEvidenceView } from './delivery-types.js';
 import { M } from './i18n.js';
 
 export interface Props {
+  /** Service evidence entries showing participant charge and compensation details. */
   entries?: ServiceEvidenceView[];
 }
 

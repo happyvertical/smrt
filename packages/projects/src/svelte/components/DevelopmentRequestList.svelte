@@ -21,8 +21,11 @@ export interface DevelopmentRequestListItem {
 }
 
 export interface Props {
+  /** Filters requests to show only those from a specific requester. */
   requesterId?: string;
+  /** Development requests to display in the list. */
   requests: DevelopmentRequestListItem[];
+  /** Message shown when no requests match the filter. */
   emptyMessage?: string;
 }
 

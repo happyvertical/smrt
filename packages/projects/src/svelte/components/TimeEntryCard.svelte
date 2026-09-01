@@ -18,13 +18,21 @@ import {
 
 /** Props for TimeEntryCard component */
 export interface Props {
+  /** Time entry data to display. */
   entry: TimeEntry;
+  /** URL to navigate to when the card is clicked. */
   href?: string;
+  /** Invoked when the card content is clicked. */
   onclick?: () => void;
+  /** Shows a checkbox for selecting the entry. */
   selectable?: boolean;
+  /** Indicates whether the entry is selected. */
   selected?: boolean;
+  /** Invoked when the selection checkbox is toggled. */
   onselect?: (id: string, selected: boolean) => void;
+  /** Currency code for formatting hourly rates and amounts. */
   currency?: Currency;
+  /** Renders action buttons on the right side of the card. */
   actions?: Snippet;
 }
 

@@ -8,7 +8,9 @@ import type {
 import { M } from './i18n.js';
 
 export interface Props {
+  /** Development request to display. */
   request: DevelopmentRequestView;
+  /** Timeline of delivery status events. */
   events?: DeliveryEventView[];
 }
 

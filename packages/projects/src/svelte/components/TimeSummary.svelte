@@ -10,16 +10,27 @@ import { type Currency, formatCurrency, formatHours } from './utils.js';
 
 /** Props for TimeSummary component */
 export interface Props {
+  /** Total hours across all time entries. */
   totalHours: number;
+  /** Total charged or invoiced amount. */
   totalAmount: number;
+  /** Hours awaiting approval. */
   pendingHours?: number;
+  /** Amount awaiting approval. */
   pendingAmount?: number;
+  /** Hours that have been approved. */
   approvedHours?: number;
+  /** Amount that has been approved. */
   approvedAmount?: number;
+  /** Number of time entries included in the summary. */
   entryCount?: number;
+  /** Currency code for formatting amounts. */
   currency?: Currency;
+  /** Shows the pending hours and amount card when there are pending items. */
   showPending?: boolean;
+  /** Shows the approved hours and amount card when there are approved items. */
   showApproved?: boolean;
+  /** Arranges summary cards in a grid or flexbox layout. */
   layout?: 'horizontal' | 'grid';
 }
 

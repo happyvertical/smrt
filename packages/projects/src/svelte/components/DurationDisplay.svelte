@@ -8,9 +8,13 @@ import { formatHoursHHMM } from './utils.js';
 
 /** Props for DurationDisplay component */
 export interface Props {
+  /** Duration in hours to display. */
   hours: number;
+  /** Format duration as decimal (8.5) or hours:minutes (8:30). */
   format?: 'decimal' | 'hhmm';
+  /** Sets the font size of the duration display. */
   size?: 'sm' | 'md' | 'lg';
+  /** Shows the hour unit label. */
   showLabel?: boolean;
 }
 

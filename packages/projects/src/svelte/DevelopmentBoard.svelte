@@ -14,8 +14,11 @@ interface DevelopmentBoardCard extends BoardCard {
 }
 
 export interface Props {
+  /** Development requests to display as board cards. */
   requests?: DevelopmentRequestView[];
+  /** Column identifiers corresponding to request statuses. */
   columns?: string[];
+  /** Invoked when the user selects a request card. */
   onselect?: (request: DevelopmentRequestView) => void;
 }
 
