@@ -125,7 +125,7 @@ export interface ReferenceWorkItemActionEffect {
   readonly idempotent: boolean;
   readonly openWorld: boolean;
   /** The fixture's caller-facing approval rule, derived from the emitted effect. */
-  readonly requiresApproval: true;
+  readonly requiresApproval: boolean;
 }
 
 /**
@@ -152,7 +152,7 @@ export function referenceWorkItemActionEffects(
         effect: definition.effect,
         idempotent: definition.idempotent,
         openWorld: definition.openWorld,
-        requiresApproval: true,
+        requiresApproval: definition.effect !== 'read',
       },
     ]),
   ) as Readonly<Record<'prepareForReview' | 'archive', ReferenceWorkItemActionEffect>>;
