@@ -52,7 +52,7 @@ afterEach(async () => {
 });
 
 describe('runtime-profile reference workload fixture', () => {
-  it('copies one unchanged source tree for all supported profiles without leaking fixture files', () => {
+  it('copies and generates one unchanged source tree for all supported profiles without leaking fixture files', async () => {
     const { sourceRoot } = fixtureDirectories();
     const fixture = copyRuntimeProfileReference(sourceRoot);
     const copiedConfig = readFileSync(join(fixture.root, 'smrt.config.ts'), 'utf8');
@@ -62,6 +62,15 @@ describe('runtime-profile reference workload fixture', () => {
       expect(readFileSync(join(fixture.root, 'smrt.config.ts'), 'utf8')).toBe(
         copiedConfig,
       );
+      const profileFixture = copyRuntimeProfileReference(
+        join(temporaryDirectory as string, `profile-${profile}`),
+      );
+      const profileManifest = await generateReferenceFixtureManifest(profileFixture);
+      expect(
+        Object.values(profileManifest.objects).some(
+          (object) => object.className === 'ReferenceWorkItem',
+        ),
+      ).toBe(true);
     }
 
     expect(copiedConfig).toContain("process.env.SMRT_RUNTIME_PROFILE || 'local'");
@@ -145,7 +154,14 @@ describe('runtime-profile reference workload fixture', () => {
         },
       },
     });
-    expect(referenceWorkItemActionEffects).toEqual({
+    for (const transport of ['api', 'cli', 'mcp'] as const) {
+      expect(workItem?.decoratorConfig?.[transport]).toEqual(
+        expect.objectContaining({
+          include: expect.arrayContaining(['prepareForReview', 'archive']),
+        }),
+      );
+    }
+    expect(referenceWorkItemActionEffects(manifest)).toEqual({
       prepareForReview: {
         effect: 'write',
         idempotent: true,

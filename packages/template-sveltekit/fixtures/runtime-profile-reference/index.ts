@@ -22,6 +22,7 @@ import {
 } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { buildWebMcpToolDefinitions } from '@happyvertical/smrt-core/vite-plugin';
 import {
   type SmartObjectManifest,
   ManifestGenerator,
@@ -49,11 +50,8 @@ import { copyTemplate } from '../../index.js';
 import {
   ReferenceWorkItem,
   ReferenceWorkItemCollection,
-  referenceWorkItemActionEffects,
 } from './overlay/src/lib/objects/ReferenceWorkItem.js';
 import { ReferenceWorkItemAssetCollection } from './overlay/src/lib/objects/ReferenceWorkItemAsset.js';
-
-export { referenceWorkItemActionEffects };
 
 const fixtureRoot = dirname(fileURLToPath(import.meta.url));
 const overlayRoot = join(fixtureRoot, 'overlay');
@@ -119,6 +117,44 @@ export interface CanonicalReferenceFixture {
   };
 }
 
+export interface ReferenceWorkItemActionEffect {
+  readonly effect: 'write' | 'destructive';
+  readonly idempotent: boolean;
+  readonly openWorld: boolean;
+  /** The fixture's caller-facing approval rule, derived from the emitted effect. */
+  readonly requiresApproval: true;
+}
+
+/**
+ * Snapshot the action policy from the copied app's emitted WebMCP definitions.
+ * MCP shares the same descriptor builder, while the copied manifest retains the
+ * REST/CLI/MCP inclusion data consumed by their respective generators.
+ */
+export function referenceWorkItemActionEffects(
+  manifest: SmartObjectManifest,
+): Readonly<Record<'prepareForReview' | 'archive', ReferenceWorkItemActionEffect>> {
+  const definitions = buildWebMcpToolDefinitions(manifest).filter(
+    (definition) =>
+      definition.className === 'ReferenceWorkItem' &&
+      (definition.action === 'prepareForReview' || definition.action === 'archive'),
+  );
+  if (definitions.length !== 2) {
+    throw new Error('Reference fixture WebMCP action definitions are incomplete.');
+  }
+
+  return Object.fromEntries(
+    definitions.map((definition) => [
+      definition.action,
+      {
+        effect: definition.effect,
+        idempotent: definition.idempotent,
+        openWorld: definition.openWorld,
+        requiresApproval: true,
+      },
+    ]),
+  ) as Readonly<Record<'prepareForReview' | 'archive', ReferenceWorkItemActionEffect>>;
+}
+
 /**
  * Copy the public template, then apply the test-only workload overlay. The
  * copied app still receives its runtime profile exclusively through the normal
@@ -140,7 +176,7 @@ export function copyRuntimeProfileReference(
   if (!objectsIndex.includes('ReferenceWorkItem')) {
     writeFileSync(
       objectsIndexPath,
-      `${objectsIndex.trimEnd()}\n\nexport { ReferenceWorkItem, ReferenceWorkItemCollection, referenceWorkItemActionEffects } from './ReferenceWorkItem.js';\nexport { ReferenceWorkItemAsset, ReferenceWorkItemAssetCollection } from './ReferenceWorkItemAsset.js';\n`,
+      `${objectsIndex.trimEnd()}\n\nexport { ReferenceWorkItem, ReferenceWorkItemCollection } from './ReferenceWorkItem.js';\nexport { ReferenceWorkItemAsset, ReferenceWorkItemAssetCollection } from './ReferenceWorkItemAsset.js';\n`,
     );
   }
 

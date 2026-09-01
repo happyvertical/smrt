@@ -20,22 +20,6 @@ import {
 } from '@happyvertical/smrt-jobs';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
-/** The generated action contract shared by REST, CLI, MCP, and WebMCP. */
-export const referenceWorkItemActionEffects = Object.freeze({
-  prepareForReview: Object.freeze({
-    effect: 'write' as const,
-    idempotent: true,
-    openWorld: false,
-    requiresApproval: true,
-  }),
-  archive: Object.freeze({
-    effect: 'destructive' as const,
-    idempotent: true,
-    openWorld: false,
-    requiresApproval: true,
-  }),
-});
-
 @TenantScoped({ mode: 'required' })
 @smrt({
   // Collection persistence uses idempotent upserts; the normal UUID primary
