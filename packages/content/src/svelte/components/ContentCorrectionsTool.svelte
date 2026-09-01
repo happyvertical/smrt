@@ -14,7 +14,7 @@ export interface Props {
   apiBaseUrl?: string;
   /** Identifier of the content being corrected. */
   contentId: string;
-  /** Default relationship type for new corrections (e.g., supports, contradicts). */
+  /** Relationship type used to filter which related facts are loaded. */
   defaultRelationship?: string;
   /** Fired when corrections are loaded or a new correction is created. */
   onCorrectionsChange?: (corrections: ContentCorrectionData[]) => void;

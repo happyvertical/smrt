@@ -28,7 +28,7 @@ export interface Props {
   onclick?: (message: MessageData) => void;
   /** Called when user selects the message with checkbox. */
   onselect?: (message: MessageData) => void;
-  /** Called when user flags or unfags the message. */
+  /** Called when the user flags or unflags the message. */
   onflag?: (message: MessageData) => void;
   /** Account data for display if showAccount is true. */
   account?: AccountData;

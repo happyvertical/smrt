@@ -27,7 +27,7 @@ export interface Props {
   onmessageclick?: (message: MessageData) => void;
   /** Called when user selects a message with checkbox. */
   onselect?: (message: MessageData) => void;
-  /** Called when user flags or unfags a message. */
+  /** Called when the user flags or unflags a message. */
   onflag?: (message: MessageData) => void;
   /** Shows the message type badge on each row. */
   showType?: boolean;

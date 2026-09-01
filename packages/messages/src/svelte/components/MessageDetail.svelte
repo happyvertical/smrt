@@ -17,7 +17,7 @@ export interface Props {
   attachments?: AttachmentData[];
   /** Account that received the message. */
   account?: AccountData;
-  /** Renders body as HTML when true; as plain text when false. */
+  /** Reads the body from the HTML source, stripped of tags and shown as text. */
   showHtml?: boolean;
   /** Called when user clicks the reply button. */
   onreply?: (message: MessageData) => void;

@@ -4,7 +4,7 @@ import { type Snippet, tick } from 'svelte';
 export interface Props {
   /** Accessibility label and default trigger text for the popover. */
   label: string;
-  /** Custom content for the trigger button; replaces default label button. */
+  /** Content rendered inside the trigger button in place of the label text. */
   trigger?: Snippet;
   /** The popover content. */
   children?: Snippet;
