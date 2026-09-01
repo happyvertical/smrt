@@ -57,6 +57,22 @@ Application infrastructure composition for the validated runtime profiles in
 - Cloud must keep required tenant context and must never introduce a root or
   unscoped tenant fallback. RLS remains an explicit deployment/migration choice.
 
+## Public runtime diagnostics
+
+- `projectRuntimeDiagnostics()` is the only public diagnostic projection. It
+  constructs the schema-version-1 allowlist and never serializes the private
+  local or deployed diagnostics objects.
+- The allowlist is limited to active profile/coarse health, schema and
+  migration readiness, six fixed capability statuses, a sorted/capped public
+  tool inventory plus digest, explicit operational topology differences,
+  coarse worker heartbeat state, and eight stable code/timestamp errors.
+- Callers supply an explicit clock and worker-heartbeat seam. A missing
+  heartbeat is `unknown`; web-process liveness never proves worker liveness.
+- Error ingestion maps unknown codes to `runtime_error`, truncates timestamps
+  to the minute, and ignores messages, stacks, logs, records, and nested state.
+- Authentication and diagnostics-read authorization belong before every call
+  to the projector or its runtime probes.
+
 ## Invariants
 
 - Never expose application-secret bytes or bootstrap token hashes in diagnostics.

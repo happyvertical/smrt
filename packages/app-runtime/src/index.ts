@@ -48,6 +48,7 @@ import {
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 
 export * from './deployed-runtime.js';
+export * from './runtime-diagnostics.js';
 
 const DEFAULT_BIND_HOST = '127.0.0.1';
 const DEFAULT_BOOTSTRAP_TTL_SECONDS = 10 * 60;

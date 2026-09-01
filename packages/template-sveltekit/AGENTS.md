@@ -72,6 +72,12 @@ It is the ground-up alternative to `smrt-saas-starter`.
   page session. Write/destructive effects require an explicit page-owned policy.
   Live browser collections remain opt-in per page and must seed from SSR
   `initialData` to avoid a duplicate first request.
+- `RuntimeDiagnosticsWebMcp` owns exactly one additional read-only tool,
+  `smrt.runtime.diagnostics.read`. It uses same-origin page-session fetch to the
+  authored `/api/_runtime/diagnostics` route and aborts its registration on
+  unmount. The route requires a direct active tenant membership plus either the
+  owner role or the explicit `runtime_diagnostics.read` permission before any
+  runtime projection/probe; it never calls principal-bound server tools.
 
 ## Tests
 

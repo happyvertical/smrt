@@ -11,6 +11,12 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Regenerate them with `pnpm build` or `pnpm dev`; run `pnpm db:migrate` after
   object schema changes.
 - Keep `CLAUDE.md` as the one-line `@AGENTS.md` shim.
+- The root-owned `smrt.runtime.diagnostics.read` WebMCP tool calls only the
+  authenticated `/api/_runtime/diagnostics` route as the page user. Keep its
+  registration singular/read-only and preserve owner disposal. The route must
+  authorize a direct active tenant principal before projection or probing and
+  return only the schema-versioned allowlist; never expose private runtime
+  objects, identity fields, paths, URLs, secrets, PII, raw errors, or logs.
 - Never improvise setup internals. Run `pnpm app:install`; use individual
   `app:*` commands only for recovery or explicit operator control.
 - Recover an interrupted unclaimed owner invitation with `pnpm app:stop`, then

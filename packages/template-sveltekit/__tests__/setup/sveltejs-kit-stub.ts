@@ -16,3 +16,10 @@
 export function fail(status: number, data?: Record<string, unknown>) {
   return { status, data, __isActionFailure: true };
 }
+
+/** Behavioral stand-in for SvelteKit's JSON response helper. */
+export function json(data: unknown, init: ResponseInit = {}): Response {
+  const headers = new Headers(init.headers);
+  headers.set('content-type', 'application/json');
+  return new Response(JSON.stringify(data), { ...init, headers });
+}

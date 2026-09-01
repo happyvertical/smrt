@@ -1,8 +1,11 @@
 import {
   initializeDeployedApplicationRuntime,
   initializeLocalApplicationRuntime,
+  projectRuntimeDiagnostics,
   resolveLocalRuntimePaths,
   type LocalApplicationRuntime,
+  type RuntimeDiagnostics,
+  type RuntimeDiagnosticsProjectionInput,
 } from '@happyvertical/smrt-app-runtime';
 import {
   loadConfig,
@@ -157,4 +160,103 @@ export function getLocalApplicationRuntime(): Promise<LocalApplicationRuntime> {
       throw error;
     });
   return localRuntimePromise;
+}
+
+export interface ApplicationRuntimeDiagnosticsOptions {
+  readonly toolNames: readonly string[];
+  readonly observedAt: Date;
+  /** Application-owned schema verification seam; runtime liveness is not proof. */
+  readonly schemaStatus?: 'not-ready' | 'ready' | 'unknown';
+  /** Application-owned migration tracker seam; database liveness is not proof. */
+  readonly migrationStatus?: 'current' | 'failed' | 'pending' | 'unknown';
+  /** Bounded worker seam supplied by the deployment's lease/heartbeat adapter. */
+  readonly workerHeartbeatAt?: Date | string | null;
+  /** Stable code/timestamp pairs only; raw errors never cross this seam. */
+  readonly recentErrors?: readonly {
+    readonly code?: unknown;
+    readonly at?: unknown;
+  }[];
+}
+
+/**
+ * Read the private runtime only after the route has authenticated and
+ * authorized its caller, then immediately project onto the public allowlist.
+ */
+export async function readApplicationRuntimeDiagnostics(
+  options: ApplicationRuntimeDiagnosticsOptions,
+): Promise<RuntimeDiagnostics> {
+  await ensureApplicationRuntimeReady();
+
+  if (applicationRuntime.profile === 'local') {
+    const runtime = await getLocalApplicationRuntime();
+    const diagnostics = await runtime.diagnostics();
+    return projectRuntimeDiagnostics({
+      profile: 'local',
+      health: 'healthy',
+      schema: {
+        status: options.schemaStatus ?? 'unknown',
+        migrations: options.migrationStatus ?? 'unknown',
+      },
+      capabilities: {
+        'asset-storage': 'available',
+        authentication: 'available',
+        'background-jobs': diagnostics.jobs.backgroundEnabled
+          ? 'available'
+          : 'disabled',
+        database: 'available',
+        'paid-capabilities': diagnostics.paidCapabilitiesEnabled
+          ? 'available'
+          : 'disabled',
+        'secret-storage': 'available',
+      },
+      toolNames: options.toolNames,
+      worker: {
+        topology: diagnostics.jobs.topology,
+        required: diagnostics.jobs.backgroundEnabled,
+        heartbeatAt: options.workerHeartbeatAt,
+      },
+      recentErrors: options.recentErrors,
+      observedAt: options.observedAt,
+    });
+  }
+
+  const runtime = await deployedRuntimePromise;
+  if (!runtime) throw new Error('deployed_runtime_unavailable');
+  const readiness = await runtime.readiness();
+  const componentStatus = (
+    component: keyof typeof readiness.components,
+  ): 'available' | 'unavailable' =>
+    readiness.components[component].status === 'ready'
+      ? 'available'
+      : 'unavailable';
+  const input: RuntimeDiagnosticsProjectionInput = {
+    profile: applicationRuntime.profile,
+    health:
+      runtime.health().status === 'healthy'
+        ? readiness.status === 'ready'
+          ? 'healthy'
+          : 'degraded'
+        : 'stopped',
+    schema: {
+      status: options.schemaStatus ?? 'unknown',
+      migrations: options.migrationStatus ?? 'unknown',
+    },
+    capabilities: {
+      'asset-storage': componentStatus('assets'),
+      authentication: componentStatus('authentication'),
+      'background-jobs': 'available',
+      database: componentStatus('database'),
+      'paid-capabilities': 'unknown',
+      'secret-storage': componentStatus('secrets'),
+    },
+    toolNames: options.toolNames,
+    worker: {
+      topology: runtime.resolvedRuntime.providers.jobs.topology,
+      required: true,
+      heartbeatAt: options.workerHeartbeatAt,
+    },
+    recentErrors: options.recentErrors,
+    observedAt: options.observedAt,
+  };
+  return projectRuntimeDiagnostics(input);
 }
