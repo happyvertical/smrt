@@ -355,6 +355,17 @@ jobs:
       - name: Check raw UI primitives
         run: node scripts/check-raw-primitives.mjs
 
+      # Requires JSDoc on the props of exported Svelte components, so the
+      # comment reaches consumer editors and the public component reference
+      # through the published .d.ts (#2583). Report-only until a package sets
+      # "smrtJsdoc": "strict" in its own package.json. This job installs no
+      # workspace dependencies, so it borrows the trusted TypeScript the README
+      # validator already installs.
+      - name: Check exported component JSDoc
+        env:
+          SMRT_TYPESCRIPT_PATH: ${{ runner.temp }}/readme-validator/node_modules/typescript/lib/typescript.js
+        run: node scripts/check-jsdoc.mjs
+
       # Flags hardcoded user-facing strings in .svelte markup (Sweep S13,
       # #1418). Report-only in phase 1 (no package fully extracted yet); fails
       # only for packages in the script's STRICT_PACKAGES set. Node-only, no deps.
