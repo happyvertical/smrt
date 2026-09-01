@@ -1025,7 +1025,7 @@ async function acquireLocalDatabase(
     appId,
     createdDirectories,
   );
-  let db: DatabaseInterface;
+  let db: DatabaseInterface | undefined;
   try {
     db = await getDatabase({
       type: 'sqlite',
@@ -1044,6 +1044,9 @@ async function acquireLocalDatabase(
       await removeCreatedDirectories(createdDirectories);
     }
     throw error;
+  }
+  if (!db) {
+    throw new Error('Local runtime database acquisition returned no database.');
   }
 
   // Once SQLite acquisition succeeds, the database is an authoritative
