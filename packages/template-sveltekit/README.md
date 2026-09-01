@@ -153,4 +153,5 @@ becoming a second SaaS starter.
 The generated project has one canonical `runtime.profile` and deterministic
 `app:*` operations. Local state stays outside source. The production baseline
 uses adapter-node and includes a container plus separate task/schedule workers;
-cloud examples describe provider composition without pretending to provision it.
+Compose requires operator-supplied database secrets, and cloud examples
+describe provider composition without pretending to provision it.

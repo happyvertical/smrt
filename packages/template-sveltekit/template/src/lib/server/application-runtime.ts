@@ -11,16 +11,17 @@ import {
 } from '@happyvertical/smrt-config';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
+import { resolveApplicationId } from '../../../scripts/smrt-runtime-identity.mjs';
 
 const loadedConfig = await loadConfig();
 
 export const applicationRuntime = loadedConfig.runtime
   ? resolveConfiguredApplicationRuntime()
   : resolveApplicationRuntime({ profile: 'local' });
-const appId = String(process.env.SMRT_APP_ID || 'smrt-sveltekit-app')
-  .toLowerCase()
-  .replace(/[^a-z0-9._-]+/g, '-')
-  .replace(/^-+|-+$/g, '');
+const appId = resolveApplicationId({
+  sourceRoot: process.cwd(),
+  explicitId: process.env.SMRT_APP_ID,
+});
 
 export function getApplicationDatabaseConfig(): SmrtClassOptions['db'] {
   if (applicationRuntime.profile === 'local') {

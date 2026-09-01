@@ -43,6 +43,15 @@ describe('copyTemplate', () => {
     expect(existsSync(join(tempDir, 'AGENTS.md'))).toBe(true);
     expect(existsSync(join(tempDir, 'INSTALL_PROMPT.md'))).toBe(true);
     expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),
+    ).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-prepare-migration.mjs')),
+    ).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-runtime-identity.mjs')),
+    ).toBe(true);
     expect(existsSync(join(tempDir, 'scripts', 'smrt-worker.mjs'))).toBe(true);
     expect(existsSync(join(tempDir, 'Dockerfile'))).toBe(true);
     expect(existsSync(join(tempDir, '.dockerignore'))).toBe(true);
@@ -62,6 +71,7 @@ describe('copyTemplate', () => {
     for (const operation of [
       'install',
       'setup',
+      'recover',
       'start',
       'doctor',
       'open',

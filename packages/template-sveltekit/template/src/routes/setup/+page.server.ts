@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -5,6 +7,10 @@ import {
   applicationRuntime,
   getLocalApplicationRuntime,
 } from '$lib/server/application-runtime';
+import {
+  resolveApplicationId,
+  resolveApplicationStateRoot,
+} from '../../../scripts/smrt-runtime-identity.mjs';
 
 export const load: PageServerLoad = async ({ url, locals }) => {
   if (locals.user) throw redirect(303, '/');
@@ -47,9 +53,23 @@ export const actions: Actions = {
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60,
       });
+      const appId = resolveApplicationId({
+        sourceRoot: process.cwd(),
+        explicitId: process.env.SMRT_APP_ID,
+      });
+      rmSync(
+        join(
+          resolveApplicationStateRoot({
+            appId,
+            explicitStateDirectory: process.env.SMRT_STATE_DIR,
+          }),
+          'onboarding.json',
+        ),
+        { force: true },
+      );
     } catch {
       return fail(400, {
-        message: 'The setup invitation is invalid, expired, or already used. Run pnpm app:setup for recovery.',
+        message: 'The setup invitation is invalid, expired, or already used. Run pnpm app:recover, then pnpm app:open.',
       });
     }
     throw redirect(303, '/');

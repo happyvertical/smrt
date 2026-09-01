@@ -13,6 +13,8 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Keep `CLAUDE.md` as the one-line `@AGENTS.md` shim.
 - Never improvise setup internals. Run `pnpm app:install`; use individual
   `app:*` commands only for recovery or explicit operator control.
+- Recover an interrupted unclaimed owner invitation with `pnpm app:recover`,
+  then `pnpm app:start` and `pnpm app:open`; never print or copy its token.
 - Treat `smrt.config.ts` `runtime.profile` as the only infrastructure selector.
 
 ## Data and authorization
@@ -43,3 +45,5 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
 - Run task and schedule workers as separate deployed processes. Extend the
   portability adapter instead of converting database files.
+- Stop the local app before backup/import. Deployed imports require stopped
+  web/workers plus explicit `SMRT_MAINTENANCE_MODE=true`.

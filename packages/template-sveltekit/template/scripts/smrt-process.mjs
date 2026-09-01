@@ -14,21 +14,30 @@ function processCommand(pid) {
       ],
       { encoding: 'utf8', windowsHide: true },
     );
-    return result.status === 0 ? result.stdout.trim() : '';
+    return result.status === 0 ? result.stdout.trim() : null;
   }
   const result = spawnSync('ps', ['-p', String(pid), '-o', 'command='], {
     encoding: 'utf8',
   });
-  return result.status === 0 ? result.stdout.trim() : '';
+  return result.status === 0 ? result.stdout.trim() : null;
 }
 
 export function writeProcessRecord(path, record) {
   writeFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
 }
 
+export function matchesApplicationProcess(record, command) {
+  return (
+    typeof command === 'string' &&
+    command.includes('smrt-web.mjs') &&
+    command.includes(`--smrt-instance=${record.instance}`)
+  );
+}
+
 export function readOwnedProcess(path) {
+  let record;
   try {
-    const record = JSON.parse(readFileSync(path, 'utf8'));
+    record = JSON.parse(readFileSync(path, 'utf8'));
     if (
       !Number.isSafeInteger(record.pid) ||
       record.pid < 1 ||
@@ -37,17 +46,27 @@ export function readOwnedProcess(path) {
     ) {
       throw new Error('Invalid process record.');
     }
-    process.kill(record.pid, 0);
-    const command = processCommand(record.pid);
-    if (
-      !command.includes('smrt-web.mjs') ||
-      !command.includes(`--smrt-instance=${record.instance}`)
-    ) {
-      throw new Error('Process identity does not match.');
-    }
-    return record;
   } catch {
     rmSync(path, { force: true });
     return null;
   }
+  try {
+    process.kill(record.pid, 0);
+  } catch (error) {
+    if (error?.code !== 'EPERM' && error?.code !== 'EACCES') {
+      rmSync(path, { force: true });
+      return null;
+    }
+  }
+  const command = processCommand(record.pid);
+  if (command === null) {
+    throw new Error(
+      `Application process ${record.pid} is live but its identity cannot be verified.`,
+    );
+  }
+  if (!matchesApplicationProcess(record, command)) {
+    rmSync(path, { force: true });
+    return null;
+  }
+  return record;
 }

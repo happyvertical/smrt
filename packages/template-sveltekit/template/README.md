@@ -22,6 +22,12 @@ prints secret-free JSON diagnostics and recovery steps. Individual
 setup/start/doctor/open/stop/backup/export/import operations are available as
 `pnpm app:<operation>`.
 
+If installation is interrupted after the invitation is created, rerun
+`pnpm app:start` and `pnpm app:open`; the private state directory retains the
+loopback handoff without printing its token. If that invitation expired or was
+lost, run `pnpm app:recover`, then start/open again. Recovery rotates only an
+unclaimed invitation and cannot replace an existing owner.
+
 `pnpm db:migrate` first runs the Vite build so the manifest, runtime
 registration, generated routes, and types match the current objects; it then
 applies the manifest-derived schema to SQLite. Re-run it after object changes.
@@ -322,7 +328,9 @@ mobile surfaces. Those concerns are intentionally absent here.
 - `local`: SQLite, loopback single-use owner bootstrap, user-owned files, and
   embedded/on-demand jobs.
 - `self-hosted`: PostgreSQL, public authentication, operator providers, and
-  separate workers. Copy `.env.self-hosted.example`, then use Compose.
+  separate workers. Copy `.env.self-hosted.example`, put `DATABASE_URL` and
+  `POSTGRES_PASSWORD` in the ignored `.env` file, then use Compose. Compose
+  refuses to start when either secret is absent.
 - `cloud`: hosted identity, managed providers, required tenant context, and
   scalable workers. `.env.cloud.example` records the composition boundary.
 
@@ -330,4 +338,7 @@ The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
 Compose gates the web and both workers on the one-shot, idempotent migration
 service. `pnpm worker` and `pnpm worker:schedule` are separate from the web process.
 Logical export/import is manifest-driven JSON and refuses a non-empty target;
-extend `scripts/smrt-portability.mjs` for domain-specific transformations.
+it orders parent tables first and defers nullable cycle edges until every row
+exists. Stop local web before import. For deployed import, stop web/workers and
+set `SMRT_MAINTENANCE_MODE=true`. Extend `scripts/smrt-portability.mjs` for
+domain-specific transformations.

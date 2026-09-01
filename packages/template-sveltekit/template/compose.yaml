@@ -1,7 +1,11 @@
+x-runtime-environment: &runtime-environment
+  DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the ignored .env file}
+
 services:
   web:
     build: .
     env_file: .env.self-hosted
+    environment: *runtime-environment
     command: node build
     ports:
       - "3000:3000"
@@ -11,6 +15,7 @@ services:
   worker:
     build: .
     env_file: .env.self-hosted
+    environment: *runtime-environment
     command: node scripts/smrt-worker.mjs task
     depends_on:
       migrate:
@@ -18,6 +23,7 @@ services:
   schedule-worker:
     build: .
     env_file: .env.self-hosted
+    environment: *runtime-environment
     command: node scripts/smrt-worker.mjs schedule
     depends_on:
       migrate:
@@ -27,6 +33,7 @@ services:
       context: .
       target: build
     env_file: .env.self-hosted
+    environment: *runtime-environment
     command: pnpm app:setup
     depends_on:
       database:
@@ -36,7 +43,7 @@ services:
     environment:
       POSTGRES_DB: smrt_app
       POSTGRES_USER: smrt_app
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the ignored .env file}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U smrt_app"]
       interval: 5s
