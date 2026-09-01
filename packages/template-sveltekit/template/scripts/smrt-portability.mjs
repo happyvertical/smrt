@@ -27,7 +27,7 @@ import { assertExternalArtifactPath } from './smrt-runtime-identity.mjs';
 
 const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const NON_PORTABLE_TABLE_PATTERN =
-  /(?:^|_)(?:api_keys?|audit_logs?|credentials?|magic_link_tokens?|secrets?|sessions?|tokens?)(?:_|$)/;
+  /(?:^|_)(?:api_keys?|audit_logs?|auth_approve_limits?|auth_requests?|bootstrap|credentials?|magic_link_tokens?|secrets?|sessions?|tokens?)(?:_|$)/;
 const NON_PORTABLE_COLUMN_PATTERN =
   /(?:^|_)(?:api_key|ciphertext|cookie|credential|encrypted|encryption|password|private_key|privkey|secret|token)(?:_|$)/;
 

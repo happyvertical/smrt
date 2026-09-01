@@ -40,6 +40,7 @@ const ASSET_ID = 'asset-reference-1';
 const ASSET_BYTES = Buffer.from('{"fixture":"runtime-profile-reference"}\n');
 const SESSION_CREDENTIAL = 'must-never-enter-the-portability-bundle';
 const ENCRYPTED_PRIVATE_KEY = 'must-never-export-encrypted-private-key-material';
+const DEVICE_CODE_HASH = 'must-never-export-terminal-auth-bootstrap-state';
 
 const tableDefinitions = [
   {
@@ -55,6 +56,16 @@ const tableDefinitions = [
       encrypted_privkey: {},
       encryption_iv: {},
       encryption_tag: {},
+    },
+  },
+  {
+    className: 'UsersCliAuthRequest',
+    tableName: 'users_cli_auth_requests',
+    columns: {
+      id: { primaryKey: true },
+      user_code: {},
+      device_code_hash: {},
+      session_id: { foreignKey: { table: 'sessions' } },
     },
   },
   {
@@ -116,6 +127,7 @@ const createStatements = [
   'CREATE TABLE profiles (id TEXT PRIMARY KEY, name TEXT NOT NULL)',
   'CREATE TABLE sessions (id TEXT PRIMARY KEY, credential_token TEXT NOT NULL)',
   'CREATE TABLE nostr_identities (id TEXT PRIMARY KEY, encrypted_privkey TEXT NOT NULL, encryption_iv TEXT NOT NULL, encryption_tag TEXT NOT NULL)',
+  'CREATE TABLE users_cli_auth_requests (id TEXT PRIMARY KEY, user_code TEXT NOT NULL, device_code_hash TEXT NOT NULL, session_id TEXT REFERENCES sessions(id))',
   'CREATE TABLE tenants (id TEXT PRIMARY KEY, slug TEXT NOT NULL)',
   'CREATE TABLE tenant_memberships (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id), tenant_id TEXT NOT NULL REFERENCES tenants(id), role TEXT NOT NULL)',
   'CREATE TABLE reference_work_items (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES tenants(id), title TEXT NOT NULL, status TEXT NOT NULL)',
@@ -203,6 +215,13 @@ async function seedSource(fixture: FixtureContext, assetPath?: string) {
     ENCRYPTED_PRIVATE_KEY,
     'private-iv',
     'private-tag',
+  );
+  await db.query(
+    'INSERT INTO users_cli_auth_requests (id, user_code, device_code_hash, session_id) VALUES (?, ?, ?, ?)',
+    'cli-auth-request-1',
+    'ABCD-EFGH',
+    DEVICE_CODE_HASH,
+    'session-1',
   );
   await db.query('INSERT INTO tenants (id, slug) VALUES (?, ?)', 'tenant-1', 'default-tenant');
   await db.query(
@@ -355,6 +374,7 @@ describe('asset-aware runtime portability', () => {
     expect(serialized).not.toContain(fixture.sourceAssetRoot);
     expect(serialized).not.toContain(SESSION_CREDENTIAL);
     expect(serialized).not.toContain(ENCRYPTED_PRIVATE_KEY);
+    expect(serialized).not.toContain(DEVICE_CODE_HASH);
     await expect(
       exportApplication({
         ...portabilityContext(
@@ -382,6 +402,15 @@ describe('asset-aware runtime portability', () => {
       Number(
         (await db.query('SELECT COUNT(*) AS count FROM nostr_identities')).rows[0]
           .count,
+      ),
+    ).toBe(0);
+    expect(
+      Number(
+        (
+          await db.query(
+            'SELECT COUNT(*) AS count FROM users_cli_auth_requests',
+          )
+        ).rows[0].count,
       ),
     ).toBe(0);
     expect((await db.query('SELECT slug FROM tenants')).rows).toEqual([
@@ -682,6 +711,48 @@ describe('asset-aware runtime portability', () => {
     await expect(
       importApplication({ ...target.context, path: fixture.bundlePath }),
     ).resolves.toMatchObject({ assetCount: 1 });
+  });
+
+  it('detaches an untrusted published-tree replacement without following it', async () => {
+    const fixture = fixtureContext();
+    await exportFixture(fixture);
+    const target = await emptyTarget(fixture, 'precommit-tree-replacement');
+    const outsideRoot = join(fixture.directory, 'outside-published-tree');
+    makePrivateDirectory(outsideRoot);
+    const sentinel = join(outsideRoot, 'sentinel');
+    writeFileSync(sentinel, 'unchanged', { mode: 0o600 });
+    await expect(
+      importApplication({
+        ...target.context,
+        path: fixture.bundlePath,
+        onImportPhase(current: string) {
+          if (current === 'database-staged') {
+            rmSync(target.assetRoot, { recursive: true });
+            symlinkSync(outsideRoot, target.assetRoot);
+          }
+        },
+      }),
+    ).rejects.toThrow(/unsafe-published-asset/);
+    expect(readFileSync(sentinel, 'utf8')).toBe('unchanged');
+    expect(lstatSync(target.assetRoot).isDirectory()).toBe(true);
+    expect(readdirSync(target.assetRoot)).toEqual([]);
+    const quarantines = readdirSync(dirname(target.assetRoot)).filter((entry) =>
+      entry.includes('.rollback-'),
+    );
+    expect(quarantines).toHaveLength(1);
+    expect(
+      lstatSync(join(dirname(target.assetRoot), quarantines[0])).isSymbolicLink(),
+    ).toBe(true);
+    const db = await getDatabase({ type: 'sqlite', url: target.databasePath });
+    expect(
+      Number((await db.query('SELECT COUNT(*) AS count FROM profiles')).rows[0]
+        .count),
+    ).toBe(0);
+    await db.close?.();
+    await expect(
+      importApplication({ ...target.context, path: fixture.bundlePath }),
+    ).resolves.toMatchObject({ assetCount: 1 });
+    expect(readFileSync(sentinel, 'utf8')).toBe('unchanged');
   });
 
   it('recovers an interrupted partial publication journal before retrying', async () => {

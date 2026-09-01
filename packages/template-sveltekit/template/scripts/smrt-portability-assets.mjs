@@ -494,12 +494,16 @@ function removePublishedTree(journal) {
   const quarantinedJournal = { ...journal, assetRoot: quarantine };
   try {
     verifyPublishedTree(quarantinedJournal, { verifyDigest: false });
-  } catch (error) {
-    if (!existsSync(journal.assetRoot)) renameSync(quarantine, journal.assetRoot);
-    throw error;
+  } catch {
+    // Never follow or recursively delete a tree that no longer matches the
+    // journal. Atomic detachment leaves the actual target retryable while the
+    // untrusted replacement remains quarantined for operator inspection.
+    if (journal.rootExisted) mkdirSync(journal.assetRoot, { mode: 0o700 });
+    return { quarantined: true, path: quarantine };
   }
   rmSync(quarantine, { recursive: true });
   if (journal.rootExisted) mkdirSync(journal.assetRoot, { mode: 0o700 });
+  return { quarantined: false };
 }
 
 export function finishFilesystemAssets(staged) {
