@@ -19,20 +19,23 @@ export default {
 
   // Dependencies to add to generated project
   dependencies: {
+    '@happyvertical/smrt-app-runtime': '^0.43.10',
     '@happyvertical/smrt-config': '^0.43.10',
     '@happyvertical/smrt-core': '^0.43.10',
+    '@happyvertical/smrt-jobs': '^0.43.10',
     '@happyvertical/smrt-profiles': '^0.43.10',
     '@happyvertical/smrt-svelte': '^0.43.10',
     '@happyvertical/smrt-tenancy': '^0.43.10',
     '@happyvertical/smrt-ui': '^0.43.10',
     '@happyvertical/smrt-users': '^0.43.10',
     '@happyvertical/smrt-web': '^0.43.10',
+    '@happyvertical/sql': '^0.89.4',
     '@modelcontextprotocol/server': '^2.0.0',
   },
 
   devDependencies: {
     '@happyvertical/smrt-cli': '^0.43.10',
-    '@sveltejs/adapter-auto': '^7.0.1',
+    '@sveltejs/adapter-node': '^5.5.4',
     '@sveltejs/kit': '^2.69.2',
     '@sveltejs/vite-plugin-svelte': '^7.2.0',
     '@types/node': '^24.13.3',
@@ -65,8 +68,7 @@ export default {
       console.log('\nNext steps:');
       console.log(`  cd ${ctx.name}`);
       console.log('  pnpm install');
-      console.log('  pnpm db:migrate');
-      console.log('  pnpm dev');
+      console.log('  pnpm app:install');
       console.log();
     },
   },

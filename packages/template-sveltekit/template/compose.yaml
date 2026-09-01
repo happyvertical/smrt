@@ -1,0 +1,49 @@
+services:
+  web:
+    build: .
+    env_file: .env.self-hosted
+    command: node build
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  worker:
+    build: .
+    env_file: .env.self-hosted
+    command: node scripts/smrt-worker.mjs task
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  schedule-worker:
+    build: .
+    env_file: .env.self-hosted
+    command: node scripts/smrt-worker.mjs schedule
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  migrate:
+    build:
+      context: .
+      target: build
+    env_file: .env.self-hosted
+    command: pnpm app:setup
+    depends_on:
+      database:
+        condition: service_healthy
+  database:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: smrt_app
+      POSTGRES_USER: smrt_app
+      POSTGRES_PASSWORD: change-me
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smrt_app"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-data:

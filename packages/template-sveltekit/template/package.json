@@ -1,5 +1,5 @@
 {
-  "name": "smrt-sveltekit-app",
+  "name": "@smrt-app/sveltekit-app",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,13 +11,24 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "node build",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "db:migrate": "vite build && smrt db:migrate"
+    "db:migrate": "vite build && smrt db:migrate",
+    "app:install": "node scripts/smrt-app.mjs install",
+    "app:setup": "node scripts/smrt-app.mjs setup",
+    "app:start": "node scripts/smrt-app.mjs start",
+    "app:doctor": "node scripts/smrt-app.mjs doctor",
+    "app:open": "node scripts/smrt-app.mjs open",
+    "app:stop": "node scripts/smrt-app.mjs stop",
+    "app:backup": "node scripts/smrt-app.mjs backup",
+    "app:export": "node scripts/smrt-app.mjs export",
+    "app:import": "node scripts/smrt-app.mjs import",
+    "worker": "node scripts/smrt-worker.mjs task",
+    "worker:schedule": "node scripts/smrt-worker.mjs schedule"
   },
   "devDependencies": {
-    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/adapter-node": "^5.5.4",
     "@sveltejs/kit": "^2.69.2",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@types/node": "^24.13.3",
@@ -28,14 +39,17 @@
     "@happyvertical/smrt-cli": "^0.43.10"
   },
   "dependencies": {
+    "@happyvertical/smrt-app-runtime": "^0.43.10",
     "@happyvertical/smrt-config": "^0.43.10",
     "@happyvertical/smrt-core": "^0.43.10",
+    "@happyvertical/smrt-jobs": "^0.43.10",
     "@happyvertical/smrt-profiles": "^0.43.10",
     "@happyvertical/smrt-svelte": "^0.43.10",
     "@happyvertical/smrt-tenancy": "^0.43.10",
     "@happyvertical/smrt-ui": "^0.43.10",
     "@happyvertical/smrt-users": "^0.43.10",
     "@happyvertical/smrt-web": "^0.43.10",
+    "@happyvertical/sql": "^0.89.4",
     "@modelcontextprotocol/server": "^2.0.0"
   }
 }

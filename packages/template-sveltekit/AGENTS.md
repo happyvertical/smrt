@@ -14,6 +14,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
 ## Current generated-project contract
 
 - Node `>=24.18.0`; pnpm `10.34.4` via `packageManager` and `engines`.
+- `runtime.profile` is the canonical infrastructure selector. Generated apps
+  expose deterministic `app:*` operations and keep runtime state outside source.
+- The production baseline uses adapter-node with separate web, task-worker, and
+  schedule-worker processes.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
   its binary. The template includes `@happyvertical/smrt-web` because the root
@@ -23,9 +27,8 @@ It is the ground-up alternative to `smrt-saas-starter`.
   `@modelcontextprotocol/server` (plus its `/stdio` subpath),
   `@happyvertical/smrt-core`, and `@happyvertical/smrt-config` are always
   emitted and are always dependencies. `@happyvertical/smrt-jobs` (task actions)
-  and `@happyvertical/smrt-tenancy` (tenant-scoped objects) are conditional;
-  tenancy is already a dependency for other reasons, and jobs is documented in
-  the template README as an add-when-needed. Do not assume pnpm exposes the
+  and `@happyvertical/smrt-tenancy` (tenant-scoped objects) are also declared
+  for the default worker and tenant surfaces. Do not assume pnpm exposes the
   CLI's or core's transitive dependencies to the app root — its strict layout
   does not (#2297).
 - `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;

@@ -41,9 +41,37 @@ describe('copyTemplate', () => {
       true,
     );
     expect(existsSync(join(tempDir, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(join(tempDir, 'INSTALL_PROMPT.md'))).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-worker.mjs'))).toBe(true);
+    expect(existsSync(join(tempDir, 'Dockerfile'))).toBe(true);
+    expect(existsSync(join(tempDir, '.dockerignore'))).toBe(true);
+    expect(existsSync(join(tempDir, 'compose.yaml'))).toBe(true);
     expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf-8').trim()).toBe(
       '@AGENTS.md',
     );
+  });
+
+  it('ships one canonical profile and the complete operational surface', () => {
+    copyTemplate(tempDir, { name: 'my-app', overwrite: true });
+
+    const config = readFileSync(join(tempDir, 'smrt.config.ts'), 'utf8');
+    const pkg = JSON.parse(readFileSync(join(tempDir, 'package.json'), 'utf8'));
+    expect(config).toContain('runtime:');
+    expect(config).toContain("process.env.SMRT_RUNTIME_PROFILE || 'local'");
+    for (const operation of [
+      'install',
+      'setup',
+      'start',
+      'doctor',
+      'open',
+      'stop',
+      'backup',
+      'export',
+      'import',
+    ]) {
+      expect(pkg.scripts).toHaveProperty(`app:${operation}`);
+    }
   });
 
   it('does NOT copy the `.svelte-kit/` directory if it exists in the template', () => {
@@ -90,8 +118,17 @@ describe('copyTemplate', () => {
     const pkg = JSON.parse(
       readFileSync(join(tempDir, 'package.json'), 'utf-8'),
     );
-    expect(pkg.name).toBe('my-app');
+    expect(pkg.name).toBe('@smrt-app/my-app');
     expect(pkg.packageManager).toBe('pnpm@10.34.4');
     expect(pkg.engines).toEqual({ node: '>=24.18.0', pnpm: '10.34.4' });
+  });
+
+  it('preserves an explicitly scoped package identity', () => {
+    copyTemplate(tempDir, { name: '@example/my-app', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@example/my-app');
   });
 });

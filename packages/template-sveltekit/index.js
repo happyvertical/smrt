@@ -31,6 +31,14 @@ export function getTemplatePath() {
   return join(__dirname, 'template');
 }
 
+function packageNameForProject(name) {
+  const normalized = name
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return name.startsWith('@') ? name : `@smrt-app/${normalized}`;
+}
+
 /**
  * Copy the template to a destination directory
  *
@@ -68,7 +76,10 @@ export function copyTemplate(destination, options = {}) {
     const packageJsonPath = join(destination, 'package.json');
     if (existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-      packageJson.name = options.name;
+      // s-m-r-t runtime identities use scoped package-qualified class names.
+      // Keep a friendly directory/project name while making the generated
+      // package identity valid for isolated runtime registration.
+      packageJson.name = packageNameForProject(options.name);
       writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
   }
@@ -81,13 +92,16 @@ export function copyTemplate(destination, options = {}) {
  */
 export const templateInfo = {
   name: 'sveltekit',
-  description: 'Minimal SvelteKit project with s-m-r-t framework integration',
+  description: 'Profile-aware installable SvelteKit project with s-m-r-t integration',
   features: [
     'SvelteKit 2.x with Svelte 5',
     'Auto-generated REST API routes',
     's-m-r-t CLI integration',
     'TypeScript support',
     'SQLite database (configurable)',
+    'Local, self-hosted, and cloud runtime profiles',
+    'Deterministic install, diagnostics, and portability commands',
+    'Production Node container and separate worker entry points',
     'Session-authorized tenancy with separate subdomain selection',
   ],
 };

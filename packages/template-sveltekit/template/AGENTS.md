@@ -11,6 +11,9 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Regenerate them with `pnpm build` or `pnpm dev`; run `pnpm db:migrate` after
   object schema changes.
 - Keep `CLAUDE.md` as the one-line `@AGENTS.md` shim.
+- Never improvise setup internals. Run `pnpm app:install`; use individual
+  `app:*` commands only for recovery or explicit operator control.
+- Treat `smrt.config.ts` `runtime.profile` as the only infrastructure selector.
 
 ## Data and authorization
 
@@ -24,6 +27,9 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   membership-gated browser tenant changes.
 - Use `assertOperationPermission()` for hand-written server mutations and pass
   the exact session permission snapshot when available.
+- Keep data, assets, secrets, PID state, backups, and exports outside source.
+  Never copy secrets into diagnostics, logs, exports, or agent prompts.
+- Local onboarding creates real authorization records and stays loopback-only.
 
 ## Extension rules
 
@@ -35,3 +41,5 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   Keep the guard in place for SSR and seed live collections with SSR
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
+- Run task and schedule workers as separate deployed processes. Extend the
+  portability adapter instead of converting database files.

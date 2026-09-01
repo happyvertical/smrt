@@ -10,6 +10,8 @@ dist
 .env
 .env.local
 .env.*.local
+.env.self-hosted
+.env.cloud
 
 # IDE
 .vscode
@@ -27,6 +29,12 @@ src/types/smrt-generated/
 *.db
 *.db-journal
 data/
+
+# Runtime data deliberately lives outside this checkout. These entries defend
+# against an explicit override accidentally targeting the source tree.
+.smrt-app-state/
+backups/
+exports/
 
 # Misc
 .DS_Store

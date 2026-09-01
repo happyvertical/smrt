@@ -1,0 +1,12 @@
+node_modules
+.git
+.svelte-kit
+build
+dist
+.smrt
+.env
+.env.*
+data
+backups
+exports
+*.log
