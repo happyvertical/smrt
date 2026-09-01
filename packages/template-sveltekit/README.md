@@ -155,6 +155,8 @@ The generated project has one canonical `runtime.profile` and deterministic
 uses adapter-node and includes a container plus separate task/schedule workers;
 Compose requires operator-supplied database secrets, and cloud examples
 describe provider composition without pretending to provision it.
+Install/start/stop/recover are local-profile commands; deployed web processes
+run the production Node build or container directly.
 
 Every supported local web entry point (`app:start` or `pnpm dev`) shares one
 writer lease outside the source checkout. Direct production startup requires

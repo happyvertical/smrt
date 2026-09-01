@@ -68,6 +68,17 @@ export const actions: Actions = {
         ),
         { force: true },
       );
+      rmSync(
+        join(
+          resolveApplicationStateRoot({
+            appId,
+            dataDirectory: process.env.SMRT_DATA_DIR,
+            sourceRoot: process.cwd(),
+          }),
+          'onboarding-launch.html',
+        ),
+        { force: true },
+      );
     } catch {
       return fail(400, {
         message: 'The setup invitation is invalid, expired, or already used. Run pnpm app:recover, then pnpm app:open.',

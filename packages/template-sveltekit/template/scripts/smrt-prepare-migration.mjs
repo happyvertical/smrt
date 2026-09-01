@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import {
   prepareLocalDatabaseStorage,
@@ -69,11 +69,24 @@ await withOperationLock(stateRoot, 'db:migrate', async () => {
     env.DATABASE_URL = paths.database;
     env.SMRT_ASSETS_DIR = paths.assets;
   }
-  const result = spawnSync('pnpm', ['exec', 'smrt', 'db:migrate'], {
-    cwd: sourceRoot,
-    env,
-    stdio: 'inherit',
-  });
+  const npmExecPath = process.env.npm_execpath;
+  const packageManager =
+    npmExecPath && basename(npmExecPath).toLowerCase().startsWith('pnpm')
+      ? npmExecPath
+      : null;
+  const windowsFallback = !packageManager && process.platform === 'win32';
+  const result = spawnSync(
+    packageManager ? process.execPath : windowsFallback ? 'pnpm.cmd' : 'pnpm',
+    packageManager
+      ? [packageManager, 'exec', 'smrt', 'db:migrate']
+      : ['exec', 'smrt', 'db:migrate'],
+    {
+      cwd: sourceRoot,
+      env,
+      shell: windowsFallback,
+      stdio: 'inherit',
+    },
+  );
   if (result.error || result.status !== 0) {
     throw result.error || new Error('s-m-r-t database migration failed.');
   }

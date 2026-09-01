@@ -11,12 +11,20 @@ const applicationId = resolveApplicationId({
   explicitId: process.env.SMRT_APP_ID,
 });
 
-export const GET: RequestHandler = async () =>
-  json({
+export const GET: RequestHandler = async () => {
+  const publicHealth = {
     schemaVersion: 1,
     status: 'ready',
-    application: applicationId,
-    instance: process.env.SMRT_PROCESS_INSTANCE || null,
     profile: applicationRuntime.profile,
-    configuration: applicationRuntimeConfiguration,
-  });
+  };
+  return json(
+    applicationRuntime.profile === 'local'
+      ? {
+          ...publicHealth,
+          application: applicationId,
+          instance: process.env.SMRT_PROCESS_INSTANCE || null,
+          configuration: applicationRuntimeConfiguration,
+        }
+      : publicHealth,
+  );
+};

@@ -68,7 +68,8 @@ describe('profile-aware application operations', () => {
     expect(appDriver).toContain('resolveLocalRuntimePaths');
     expect(appDriver).toContain('initializeLocalApplicationRuntime');
     expect(appDriver).toContain('prepareDatabase: options.prepareDatabase');
-    expect(appDriver).toContain("run('pnpm', ['exec', 'smrt', 'db:migrate']");
+    expect(appDriver).toContain("runPackageManager(['exec', 'smrt', 'db:migrate']");
+    expect(appDriver).not.toContain("${args.join(' ')} failed");
     expect(appDriver).toContain("rawCommandArgs[0] === '--'");
     expect(appDriver).toContain('stateRoot: preparedStateRoot()');
     expect(appDriver).toContain("code: 'unsafe-local-bind'");
@@ -81,11 +82,18 @@ describe('profile-aware application operations', () => {
     expect(appDriver).toContain("flag: 'wx'");
     expect(appDriver).toContain('renameSync(temporary, destination)');
     expect(appDriver).toContain("new URL('/api/_runtime/health', url)");
+    expect(appDriver).toContain('pathToFileURL(onboardingLaunchPath())');
+    expect(appDriver).toContain("'onboarding-launch.html'");
     expect(appDriver).toContain('health.instance === instance');
     expect(appDriver).toContain('health.configuration === configuration');
+    expect(appDriver).toContain('assertLocalOperation');
+    for (const operation of ['app:install', 'app:recover', 'app:start', 'app:stop']) {
+      expect(appDriver).toContain(`assertLocalOperation('${operation}')`);
+    }
     expect(appDriver).toContain('SMRT_PROCESS_INSTANCE: instance');
     expect(healthRoute).toContain('SMRT_PROCESS_INSTANCE');
     expect(healthRoute).toContain('applicationRuntimeConfiguration');
+    expect(healthRoute).toContain("applicationRuntime.profile === 'local'");
     expect(migrationPreparation).toContain('resolveApplicationId');
     expect(migrationPreparation).toContain('prepareLocalDatabaseStorage');
     expect(migrationPreparation).toContain('readActiveWriterLease');
@@ -96,6 +104,16 @@ describe('profile-aware application operations', () => {
     );
     expect(portabilitySource).toContain('assetsIncluded: false');
     expect(portabilitySource).toContain('linkSync(temporaryPath, outputPath)');
+    expect(appDriver).toContain('force: false');
+    expect(appDriver).toContain("platform() === 'win32' ? 'pnpm.cmd' : 'pnpm'");
+    expect(appDriver).toContain("shell: platform() === 'win32'");
+    expect(appDriver).toContain('allowFailure: true');
+    expect(appDriver).toContain("startsWith('pnpm')");
+    expect(appDriver).toContain("label: 'pnpm build'");
+    expect(appDriver).toContain('saveOnboardingLaunch(report.onboardingUrl)');
+    expect(migrationPreparation).toContain("process.platform === 'win32'");
+    expect(migrationPreparation).toContain('shell: windowsFallback');
+    expect(migrationPreparation).toContain("startsWith('pnpm')");
     expect(portabilitySource).toContain("custody: 'trusted-parent'");
     expect(hooks).toContain(
       'export const init: ServerInit = ensureApplicationRuntimeReady',

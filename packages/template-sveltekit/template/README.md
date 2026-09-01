@@ -17,15 +17,22 @@ pnpm app:install
 
 `app:install` validates the canonical profile, builds, migrates, initializes
 the secure local owner invitation, starts the production Node build on
-loopback, and opens that single-use invitation. Re-running it is safe. `pnpm app:doctor`
+loopback, and opens that single-use invitation. Stop a running local app before
+re-running install, setup, or recovery; each operation is repeatable from that
+stopped state. `pnpm app:doctor`
 prints secret-free JSON diagnostics and recovery steps. Individual
 setup/start/doctor/open/stop/backup/export/import operations are available as
 `pnpm app:<operation>`.
 
+`app:install`, `app:start`, `app:stop`, and `app:recover` are local-profile
+operations. Self-hosted and cloud web processes run the production Node build
+or container directly; workers use the separate worker commands below.
+
 If installation is interrupted after the invitation is created, rerun
 `pnpm app:start` and `pnpm app:open`; the private state directory retains the
 loopback handoff without printing its token. If that invitation expired or was
-lost, run `pnpm app:recover`, then start/open again. Recovery rotates only an
+lost, run `pnpm app:stop`, then `pnpm app:recover`, start, and open again.
+Recovery rotates only an
 unclaimed invitation and cannot replace an existing owner.
 
 `pnpm db:migrate` first runs the Vite build so the manifest, runtime

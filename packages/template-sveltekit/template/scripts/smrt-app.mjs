@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { platform } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -98,20 +98,40 @@ function onboardingPath() {
   return join(preparedStateRoot(), 'onboarding.json');
 }
 
-function saveOnboardingUrl(url) {
-  ensurePrivateDirectory(preparedStateRoot());
-  const destination = onboardingPath();
+function onboardingLaunchPath() {
+  return join(preparedStateRoot(), 'onboarding-launch.html');
+}
+
+function removeOnboardingHandoff() {
+  rmSync(onboardingPath(), { force: true });
+  rmSync(onboardingLaunchPath(), { force: true });
+}
+
+function writePrivateAtomic(destination, contents) {
   const temporary = `${destination}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
   try {
-    writeFileSync(
-      temporary,
-      `${JSON.stringify({ schemaVersion: 1, url })}\n`,
-      { flag: 'wx', mode: 0o600 },
-    );
+    writeFileSync(temporary, contents, { flag: 'wx', mode: 0o600 });
     renameSync(temporary, destination);
   } finally {
     rmSync(temporary, { force: true });
   }
+}
+
+function saveOnboardingLaunch(url) {
+  const escapedUrl = url.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+  writePrivateAtomic(
+    onboardingLaunchPath(),
+    `<!doctype html><meta http-equiv="refresh" content="0;url=${escapedUrl}">\n`,
+  );
+}
+
+function saveOnboardingUrl(url) {
+  ensurePrivateDirectory(preparedStateRoot());
+  saveOnboardingLaunch(url);
+  writePrivateAtomic(
+    onboardingPath(),
+    `${JSON.stringify({ schemaVersion: 1, url })}\n`,
+  );
 }
 
 function readOnboardingUrl() {
@@ -130,14 +150,17 @@ function readOnboardingUrl() {
     }
     return url.toString();
   } catch (error) {
-    if (error?.code === 'ENOENT') return null;
+    if (error?.code === 'ENOENT') {
+      removeOnboardingHandoff();
+      return null;
+    }
     if (
       error instanceof SyntaxError ||
       (error instanceof Error &&
         (error.message === 'Invalid onboarding handoff.' ||
           error.code === 'ERR_INVALID_URL'))
     ) {
-      rmSync(onboardingPath(), { force: true });
+      removeOnboardingHandoff();
       return null;
     }
     throw error;
@@ -157,19 +180,47 @@ function run(binary, args, options = {}) {
     cwd: sourceRoot,
     env: options.env || process.env,
     encoding: 'utf8',
+    shell: options.shell || false,
     stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
   });
-  if (result.error || result.status !== 0) {
-    const error = new Error(`${binary} ${args.join(' ')} failed`);
+  if (!options.allowFailure && (result.error || result.status !== 0)) {
+    const error = new Error(
+      `${options.label || binary} failed with exit code ${result.status ?? 1}.`,
+      { cause: result.error },
+    );
     error.exitCode = result.status ?? 1;
     throw error;
   }
   return result;
 }
 
+function runPackageManager(args, options = {}) {
+  const npmExecPath = process.env.npm_execpath;
+  const pnpmExecPath =
+    npmExecPath && basename(npmExecPath).toLowerCase().startsWith('pnpm')
+      ? npmExecPath
+      : null;
+  return pnpmExecPath
+    ? run(process.execPath, [pnpmExecPath, ...args], options)
+    : run(platform() === 'win32' ? 'pnpm.cmd' : 'pnpm', args, {
+        ...options,
+        shell: platform() === 'win32',
+      });
+}
+
 async function resolveRuntime() {
   await loadConfig({ cache: false });
   return resolveConfiguredApplicationRuntime();
+}
+
+async function assertLocalOperation(operation) {
+  const runtime = await resolveRuntime();
+  if (runtime.profile !== 'local') {
+    throw new Error(
+      `${operation} is local-profile only; run the production Node build or container for deployed profiles.`,
+    );
+  }
+  return runtime;
 }
 
 function runtimeEnvironment(runtime) {
@@ -221,7 +272,10 @@ async function initializeLocal(runtime, env, options = {}) {
     },
     prepareDatabase: options.prepareDatabase
       ? async () => {
-          run('pnpm', ['exec', 'smrt', 'db:migrate'], { env });
+          runPackageManager(['exec', 'smrt', 'db:migrate'], {
+            env,
+            label: 'pnpm exec smrt db:migrate',
+          });
         }
       : undefined,
     backgroundJobs: process.env.SMRT_BACKGROUND_JOBS === 'true',
@@ -240,18 +294,21 @@ async function setup(operationLock) {
   try {
     const { env } = runtimeEnvironment(runtime);
 
-    run('pnpm', ['build'], { env });
+    runPackageManager(['build'], { env, label: 'pnpm build' });
 
-  // The app-runtime owns and locks the local data root while its explicit,
-  // idempotent schema hook runs. This keeps first install and concurrent
-  // setup attempts on the same secure path.
+    // The app-runtime owns and locks the local data root while its explicit,
+    // idempotent schema hook runs. This keeps first install and concurrent
+    // setup attempts on the same secure path.
     let initialized = null;
     if (runtime.profile === 'local') {
       initialized = await initializeLocal(runtime, env, {
         prepareDatabase: true,
       });
     } else {
-      run('pnpm', ['exec', 'smrt', 'db:migrate'], { env });
+      runPackageManager(['exec', 'smrt', 'db:migrate'], {
+        env,
+        label: 'pnpm exec smrt db:migrate',
+      });
     }
     const port = env.PORT || '5173';
     const onboardingUrl = initialized?.bootstrap
@@ -260,7 +317,7 @@ async function setup(operationLock) {
     const diagnostics = await initialized?.runtime.diagnostics();
     if (onboardingUrl) saveOnboardingUrl(onboardingUrl);
     if (diagnostics?.bootstrap.status === 'claimed') {
-      rmSync(onboardingPath(), { force: true });
+      removeOnboardingHandoff();
     }
     await initialized?.runtime.db.close?.();
 
@@ -345,7 +402,7 @@ async function waitForReady(url, pid, instance, configuration) {
 }
 
 async function start(operationLock) {
-  const runtime = await resolveRuntime();
+  const runtime = await assertLocalOperation('app:start');
   const { env } = runtimeEnvironment(runtime);
   const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
   const configuration = runtimeConfigurationFingerprint(runtime, env);
@@ -439,8 +496,12 @@ async function open() {
       ? '127.0.0.1'
       : process.env.HOST || '127.0.0.1';
   const url = `http://${host}:${process.env.PORT || '5173'}/`;
-  const destination =
-    runtime.profile === 'local' ? readOnboardingUrl() || url : url;
+  const onboardingUrl =
+    runtime.profile === 'local' ? readOnboardingUrl() : null;
+  if (onboardingUrl) saveOnboardingLaunch(onboardingUrl);
+  const destination = onboardingUrl
+    ? pathToFileURL(onboardingLaunchPath()).toString()
+    : url;
   openBrowser(destination);
   console.log(JSON.stringify({ schemaVersion: 1, status: 'opened', url }));
 }
@@ -542,12 +603,15 @@ async function doctor() {
     }
 
     if (canInspectMigrations) try {
-      const status = spawnSync('pnpm', ['exec', 'smrt', 'db:status', '--json'], {
-        cwd: sourceRoot,
-        env: runtimeEnvironment(runtime).env,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      const status = runPackageManager(
+        ['exec', 'smrt', 'db:status', '--json'],
+        {
+          env: runtimeEnvironment(runtime).env,
+          capture: true,
+          allowFailure: true,
+          label: 'pnpm exec smrt db:status --json',
+        },
+      );
       if (status.status !== 0) {
         findings.push({
           code: 'migration-status-failed',
@@ -628,11 +692,25 @@ async function backup(operationLock) {
           `${appId}-${new Date().toISOString().replaceAll(':', '-')}`,
         ),
     );
-    if (existsSync(destination)) {
-      throw new Error(`Backup destination already exists: ${destination}`);
-    }
     ensurePrivateDirectory(dirname(destination));
-    cpSync(paths.root, destination, { recursive: true, errorOnExist: true });
+    try {
+      mkdirSync(destination, { mode: 0o700 });
+    } catch (error) {
+      if (error?.code === 'EEXIST') {
+        throw new Error(`Backup destination already exists: ${destination}`);
+      }
+      throw error;
+    }
+    try {
+      cpSync(paths.root, destination, {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+      });
+    } catch (error) {
+      rmSync(destination, { recursive: true, force: true });
+      throw error;
+    }
     console.log(
       JSON.stringify({ schemaVersion: 1, status: 'backed-up', destination }),
     );
@@ -698,12 +776,18 @@ async function portability(operation, operationLock) {
 try {
   switch (command) {
     case 'install': {
+      await assertLocalOperation('app:install');
       await withOperationLock(preparedStateRoot(), 'install', async (lock) => {
         const report = await setup(lock);
         await start(lock);
+        const baseUrl = `http://127.0.0.1:${process.env.PORT || '5173'}/`;
+        if (report.onboardingUrl) {
+          saveOnboardingLaunch(report.onboardingUrl);
+        }
         openBrowser(
-          report.onboardingUrl ||
-            `http://127.0.0.1:${process.env.PORT || '5173'}/`,
+          report.onboardingUrl
+            ? pathToFileURL(onboardingLaunchPath()).toString()
+            : baseUrl,
         );
       });
       break;
@@ -712,9 +796,11 @@ try {
       await withOperationLock(preparedStateRoot(), command, setup);
       break;
     case 'recover':
+      await assertLocalOperation('app:recover');
       await withOperationLock(preparedStateRoot(), command, recoverOnboarding);
       break;
     case 'start':
+      await assertLocalOperation('app:start');
       await withOperationLock(preparedStateRoot(), command, start);
       break;
     case 'doctor':
@@ -724,6 +810,7 @@ try {
       await open();
       break;
     case 'stop':
+      await assertLocalOperation('app:stop');
       await withOperationLock(preparedStateRoot(), command, stop);
       break;
     case 'backup':

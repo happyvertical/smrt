@@ -13,11 +13,13 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Keep `CLAUDE.md` as the one-line `@AGENTS.md` shim.
 - Never improvise setup internals. Run `pnpm app:install`; use individual
   `app:*` commands only for recovery or explicit operator control.
-- Recover an interrupted unclaimed owner invitation with `pnpm app:recover`,
-  then `pnpm app:start` and `pnpm app:open`; never print or copy its token.
+- Recover an interrupted unclaimed owner invitation with `pnpm app:stop`, then
+  `pnpm app:recover`, `pnpm app:start`, and `pnpm app:open`; never print or copy
+  its token.
 - Treat `smrt.config.ts` `runtime.profile` as the only infrastructure selector.
-- Treat the private health route's configuration digest as an identity only;
-  it must never contain or hash provider credentials.
+- Treat the local health route's configuration digest as a loopback-only
+  identity; it must never contain or hash provider credentials. Deployed
+  health responses expose only generic status and profile.
 
 ## Data and authorization
 

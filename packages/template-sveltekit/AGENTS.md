@@ -26,10 +26,11 @@ It is the ground-up alternative to `smrt-saas-starter`.
   backups fail closed while any writer is alive; logical exports take one
   database transaction snapshot and report that uploaded assets are excluded.
   Direct production startup must set an explicit loopback `HOST`.
-- `app:start` proves readiness against the scaffold's private runtime health
-  route using the canonical application ID, random process instance, and
-  secret-safe runtime configuration identity; a different or stale server is
-  never accepted as this app.
+- Local `app:start` proves readiness against the loopback-only identity fields
+  on the runtime health route using the canonical application ID, random
+  process instance, and secret-safe runtime configuration identity; a
+  different or stale server is never accepted as this app. Deployed health
+  responses expose only generic status and profile.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
   its binary. The template includes `@happyvertical/smrt-web` because the root
