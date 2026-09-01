@@ -90,3 +90,99 @@ Background jobs and application-defined paid capabilities remain disabled until
 explicitly enabled. With embedded job topology, `createEmbeddedJobRunner()`
 returns the normal s-m-r-t `TaskRunner`, so the application keeps one enqueue
 and execution contract without requiring a separate worker service.
+
+## Self-hosted and cloud applications
+
+The deployed initializer validates the selected profile against concrete,
+provider-owned bindings. Database URLs, OIDC credentials, storage keys, and
+secret-manager identifiers stay inside those adapters and are never copied into
+the runtime snapshot.
+
+```ts
+import {
+  initializeDeployedApplicationRuntime,
+} from '@happyvertical/smrt-app-runtime';
+import { getDatabase } from '@happyvertical/sql';
+
+const initialized = await initializeDeployedApplicationRuntime({
+  profile: 'self-hosted',
+  database: {
+    engine: 'postgres',
+    connect: () => getDatabase({
+      type: 'postgres',
+      url: requirePrivateSetting('DATABASE_URL'),
+    }),
+    close: async (db) => {
+      await db.close?.();
+    },
+  },
+  authentication: {
+    provider: 'oidc',
+    readiness: () => oidcProvider.assertReady(),
+  },
+  assets: {
+    provider: 's3-compatible',
+    readiness: () => assetProvider.assertReady(),
+  },
+  secrets: {
+    provider: 'environment',
+    readiness: () => secretProvider.assertReady(),
+  },
+  prepareDatabase: runApplicationMigrations,
+});
+```
+
+Startup validates every binding, including the provider-owned database cleanup
+boundary, before opening a connection. A missing public-auth or secret binding,
+a selector mismatch, an unavailable provider, a failed
+PostgreSQL probe, or a failed migration rejects startup. Provider failures are
+reported with stable component codes and omit the underlying provider message
+so credentials cannot leak into HTTP or orchestration payloads.
+A custom database readiness callback is additive; the runtime always runs its
+own PostgreSQL-specific server-version probe before startup or readiness can
+succeed.
+If cleanup after a startup failure also fails,
+`DeployedRuntimeCleanupError.retryCleanup()` retains the redacted, idempotent
+ownership path until the provider closes successfully.
+
+`health()` reports process liveness. `readiness()` rechecks PostgreSQL,
+authentication, assets, and secrets and returns only `ready` / `not-ready`
+component states. `diagnostics()` reports the resolved profile, explicit
+provider selectors, tenancy posture, and worker topology without secret values.
+
+Job producers keep using `SmrtObject.bg()` / `background().enqueue()` in every
+profile. Deployed worker entry points initialize the ordinary runners against
+the same PostgreSQL database:
+
+```ts
+const taskWorker = await initialized.createTaskWorker({ concurrency: 8 });
+await taskWorker.start();
+
+// Run this in a separate schedule-worker process, not beside the web server.
+const scheduleWorker = await initialized.createScheduleWorker();
+await scheduleWorker.start();
+```
+
+`initialized.close()` drains in-flight readiness/session/worker initialization
+and serialized runner start/stop operations, stops every runner returned by
+this runtime, and only then closes PostgreSQL.
+Callers may stop a runner earlier, but must not restart a returned runner after
+its runtime has begun shutdown; lifecycle-gated `start()` calls then reject.
+An awaited `close()` request made from inside a tracked provider or worker
+operation acknowledges shutdown so that operation can unwind; callers outside
+the operation continue to await complete worker and database cleanup.
+
+Self-hosted deployments may select OIDC or magic-link authentication, explicit
+single- or multi-tenancy, local or S3-compatible assets, and environment,
+local-file, or external secrets. Cloud requires hosted identity, PostgreSQL,
+multi-tenancy with required tenant context, managed/external secrets,
+managed/S3-compatible object storage, public TLS, and scalable workers. Cloud
+may select application isolation instead of PostgreSQL RLS, but it can never
+enable an unscoped/root-tenant fallback.
+
+The application runtime does not provision databases, buckets, identity
+providers, secret managers, worker fleets, TLS, billing, or a hosted control
+plane. Those remain operator/managed-platform responsibilities. Enabling the
+`database-rls` selector also requires the deployment migration to apply the
+documented s-m-r-t PostgreSQL policies; the selector does not grant or mutate
+database privileges at runtime.

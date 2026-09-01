@@ -25,6 +25,15 @@ export interface SessionContext {
   membership?: Membership | null;
   /** Resolved permission slugs */
   permissions: string[];
+  /**
+   * Membership provenance used to authorize the tenant context. An inherited
+   * source is present only when the resolver selected an ACTIVE ancestor
+   * membership whose role explicitly inherits to descendants.
+   */
+  tenantAuthorization?: {
+    membershipId: string | null;
+    inheritedFromTenantId: string | null;
+  } | null;
   /** Tenant ID from session (if any) */
   tenantId: string | null;
   /** Session ID */
@@ -172,6 +181,7 @@ export class SessionService {
 
       let permissions: string[] = [];
       let membership: Membership | null = null;
+      let tenantAuthorization: SessionContext['tenantAuthorization'] = null;
       if (tenantId) {
         const resolvedMembership =
           await this.membershipCollection.findByUserAndTenant(userId, tenantId);
@@ -186,6 +196,10 @@ export class SessionService {
           { membership: resolvedMembership },
         );
         permissions = Array.from(result.permissions);
+        tenantAuthorization = {
+          membershipId: result.membershipId,
+          inheritedFromTenantId: result.inheritedFromTenantId,
+        };
       }
 
       // Bind identity, tenant and permissions to one authoritative session
@@ -199,6 +213,7 @@ export class SessionService {
         user,
         membership,
         permissions,
+        tenantAuthorization,
         tenantId,
         sessionId: session.id as string,
       };

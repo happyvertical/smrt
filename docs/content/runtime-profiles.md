@@ -161,3 +161,101 @@ default. An explicit background opt-in exposes the regular embedded
 `TaskRunner`, preserving the same persisted enqueue and execution contract used
 by deployed workers. Diagnostics report these choices and bootstrap state but
 never read or emit application secrets, token plaintext, or token hashes.
+
+## Running self-hosted and cloud profiles
+
+`initializeDeployedApplicationRuntime()` composes the application-side seams
+for public deployments. Provider-specific URLs, credentials, clients, and
+vendor configuration stay in the provider bindings; the runtime receives only
+their selector, readiness boundary, and a PostgreSQL connection factory.
+
+```ts
+import {
+  initializeDeployedApplicationRuntime,
+} from '@happyvertical/smrt-app-runtime';
+import { getDatabase } from '@happyvertical/sql';
+
+const runtime = await initializeDeployedApplicationRuntime({
+  profile: 'self-hosted',
+  providers: {
+    authentication: { provider: 'magic-link' },
+    tenancy: { mode: 'multi-tenant', context: 'required' },
+    assets: { provider: 'local-files' },
+    secrets: { provider: 'external' },
+  },
+  database: {
+    engine: 'postgres',
+    connect: () => getDatabase(postgresPrivateConfig),
+    close: async (db) => {
+      await db.close?.();
+    },
+  },
+  authentication: {
+    provider: 'magic-link',
+    readiness: () => magicLinkProvider.assertReady(),
+  },
+  assets: {
+    provider: 'local-files',
+    readiness: () => localAssetProvider.assertReady(),
+  },
+  secrets: {
+    provider: 'external',
+    readiness: () => externalSecrets.assertReady(),
+  },
+  prepareDatabase: runApplicationMigrations,
+});
+```
+
+The initializer validates the profile, exact adapter identities, and a
+provider-owned database cleanup boundary before opening PostgreSQL. It then
+checks public authentication, assets, and secrets,
+probes the database, and runs the explicit idempotent migration hook. Any
+failure closes the acquired database and rejects startup. Stable failures,
+diagnostics, health, and readiness never include the provider's private error
+text or returned secret values.
+Provider-specific database readiness is additive: the runtime always performs
+a PostgreSQL-specific server-version probe before startup or readiness can
+succeed.
+If that startup cleanup fails, the redacted
+`DeployedRuntimeCleanupError.retryCleanup()` remains the explicit owner until
+the provider closes successfully.
+
+The web, task-worker, and schedule-worker processes use the same initialization
+contract. Task and schedule processes call `createTaskWorker()` or
+`createScheduleWorker()` and then start the returned ordinary s-m-r-t runner.
+Application code still enqueues through `bg()` or
+`background(...).enqueue()`; profile selection does not alter that API.
+Runtime shutdown drains in-flight readiness/session/worker initialization and
+serialized runner start/stop operations, stops every runner returned by that
+runtime, and then closes PostgreSQL. A caller may stop a runner earlier, but
+must not restart it after runtime shutdown has begun; the lifecycle-gated
+`start()` method rejects at that point.
+An awaited `close()` request from inside a tracked provider or worker operation
+acknowledges shutdown so the operation can unwind; external callers still await
+complete worker and database cleanup.
+
+Health reports whether this runtime instance is live. Readiness rechecks
+PostgreSQL, authentication, assets, and secrets. It deliberately does not claim
+that another process or worker replica is alive; worker-fleet monitoring belongs
+to the operator or managed platform. Diagnostics report explicit provider
+selectors, tenant context/isolation, separate worker roles, and horizontal
+cloud topology without credentials.
+
+### Supported deployed choices
+
+| Profile | Supported application-side choices |
+| --- | --- |
+| `self-hosted` | OIDC or magic link; explicit single tenant with defaulted context or multi-tenant with required context; application isolation or RLS; local or S3-compatible assets; environment, local-file, or external secrets; separate task and schedule workers |
+| `cloud` | Hosted identity; required multi-tenant context; application isolation or RLS; managed or S3-compatible object storage; managed or external secrets; horizontally scalable workers |
+
+The following combinations are refused before application startup: SQLite in a
+deployed profile, owner bootstrap or loopback exposure for a public deployment,
+missing/mismatched provider bindings, non-TLS public configuration, embedded
+deployed workers, cloud single/default tenancy, cloud defaulted tenant context,
+and operator-owned providers in the managed profile.
+
+The composition seam does not provision PostgreSQL, TLS, buckets, identity
+providers, secret managers, workers, billing, or a hosted control plane. The
+operator applies application migrations and, when `database-rls` is selected,
+the documented s-m-r-t PostgreSQL policies. The selector validates intent; it
+does not mutate database roles or privileges during web startup.

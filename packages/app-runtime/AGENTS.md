@@ -18,9 +18,40 @@ Application infrastructure composition for the validated runtime profiles in
 - Background jobs and application-defined paid capabilities are default-off.
 - The embedded runner reuses `TaskRunner`; it is not a second job contract.
 
+## Deployed profiles
+
+- `initializeDeployedApplicationRuntime()` composes only `self-hosted` and
+  `cloud`; it rejects local initialization and provider/binding mismatches.
+- Provider bindings own credentials, vendor clients, and readiness checks.
+  Runtime diagnostics contain selectors and status only.
+- The database binding must expose a provider-owned `close` callback before
+  `connect` can run. The runtime owns that cleanup boundary and runs the
+  application's explicit, idempotent `prepareDatabase` hook.
+- A failed startup cleanup throws `DeployedRuntimeCleanupError`; callers retain
+  and retry its idempotent `retryCleanup()` boundary until it succeeds.
+- Public authentication, asset storage, and secret bindings are mandatory and
+  readiness-checked before startup succeeds.
+- `createTaskWorker()` and `createScheduleWorker()` initialize the normal jobs
+  package runners against the shared PostgreSQL database. They are intended for
+  separate processes; the web process does not start them automatically.
+- `close()` drains in-flight readiness/session/worker initialization and
+  serialized runner start/stop operations, stops every runner returned by the
+  runtime, and then closes PostgreSQL. Returned runners must not be restarted
+  after runtime shutdown begins.
+- A tracked operation may await a re-entrant `close()` request without
+  deadlocking; external `close()` callers still await complete cleanup.
+- `health()` is process liveness. `readiness()` probes database/auth/assets/
+  secrets; it does not claim that an external worker fleet is running.
+- Database-provider readiness is additive; a PostgreSQL-specific server-version
+  probe always gates startup and live readiness.
+- Cloud must keep required tenant context and must never introduce a root or
+  unscoped tenant fallback. RLS remains an explicit deployment/migration choice.
+
 ## Invariants
 
 - Never expose application-secret bytes or bootstrap token hashes in diagnostics.
+- Never include provider error text, URLs, tokens, or credentials in deployed
+  errors, diagnostics, health, or readiness payloads.
 - Keep local data, assets, database, and secrets outside the source tree.
 - Do not reach into collection/database private fields. Add an upstream public
   API if composition cannot be expressed through exported surfaces.

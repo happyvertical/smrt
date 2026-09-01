@@ -70,6 +70,9 @@ Which membership feeds step 2 above:
 3. **No qualifying ancestor** → empty set (byte-identical to the
    pre-inheritance resolver; with no role flagged, nothing changes).
 
+`loadSessionContext()` exposes `tenantAuthorization`; required-tenant consumers
+must validate it because `membership: null` can mean inherited authority.
+
 All later layers run unchanged against the **target** tenant: the tenant
 cascade and tenant-DENY hard block come from the target tenant (a child can
 carve authority out of an inherited role), group roles stay exact-tenant (only

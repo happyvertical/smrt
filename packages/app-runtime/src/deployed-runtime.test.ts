@@ -1,0 +1,1957 @@
+import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
+import {
+  ScheduleRunner,
+  type ScheduleRunnerConfig,
+  TaskRunner,
+  type TaskRunnerConfig,
+} from '@happyvertical/smrt-jobs';
+import { SessionService } from '@happyvertical/smrt-users';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  type DeployedApplicationRuntimeOptions,
+  DeployedRuntimeCleanupError,
+  DeployedRuntimeError,
+  initializeDeployedApplicationRuntime,
+} from './deployed-runtime.js';
+
+function databaseFixture() {
+  const query = vi.fn(async () => ({
+    rows: [{ smrt_postgres_version: '170000' }],
+  }));
+  const close = vi.fn(async () => undefined);
+  const db = { query, close } as unknown as DatabaseInterface;
+  return { db, query, close };
+}
+
+async function closeDatabase(db: DatabaseInterface): Promise<void> {
+  await db.close?.();
+}
+
+function selfHostedOptions(
+  db: DatabaseInterface,
+): DeployedApplicationRuntimeOptions {
+  return {
+    profile: 'self-hosted',
+    database: {
+      engine: 'postgres',
+      connect: async () => db,
+      close: closeDatabase,
+    },
+    authentication: {
+      provider: 'oidc',
+      readiness: async () => undefined,
+    },
+    assets: {
+      provider: 's3-compatible',
+      readiness: async () => undefined,
+    },
+    secrets: {
+      provider: 'environment',
+      readiness: async () => undefined,
+    },
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('deployed application runtime', () => {
+  it('composes the self-hosted profile without changing portable surfaces', async () => {
+    const { db, query } = databaseFixture();
+    const prepareDatabase = vi.fn(async () => undefined);
+    const initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      prepareDatabase,
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      "SELECT current_setting('server_version_num') AS smrt_postgres_version",
+    );
+    expect(prepareDatabase).toHaveBeenCalledWith(db);
+    expect(initialized.db).toBe(db);
+    expect(initialized.resolvedRuntime.profile).toBe('self-hosted');
+    expect(initialized.resolvedRuntime.invariants).toEqual(
+      resolveApplicationRuntime({ profile: 'local' }).invariants,
+    );
+    expect(initialized.resolvedRuntime.invariants).toMatchObject({
+      generatedWebMcp: 'identical',
+      webMcpExposurePolicy: 'identical',
+      actionEffects: 'identical',
+      approvalPolicy: 'identical',
+      jobInvocation: 'identical',
+    });
+  });
+
+  it('supports documented self-hosted overrides with explicit bindings', async () => {
+    const { db } = databaseFixture();
+    const initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      providers: {
+        authentication: { provider: 'magic-link' },
+        tenancy: { mode: 'multi-tenant', context: 'required' },
+        assets: { provider: 'local-files' },
+        secrets: { provider: 'external' },
+      },
+      authentication: {
+        provider: 'magic-link',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'local-files',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'external',
+        readiness: async () => undefined,
+      },
+    });
+
+    expect(initialized.diagnostics()).toMatchObject({
+      providers: {
+        database: { provider: 'postgres', configured: true },
+        authentication: { provider: 'magic-link', configured: true },
+        assets: { provider: 'local-files', configured: true },
+        secrets: { provider: 'external', configured: true },
+      },
+      tenancy: {
+        mode: 'multi-tenant',
+        context: 'required',
+        rootTenantFallback: 'disabled',
+      },
+      workers: {
+        topology: 'external',
+        taskProcess: 'separate',
+        scheduleProcess: 'separate',
+        replicas: 'operator-managed',
+      },
+      secretValuesIncluded: false,
+    });
+  });
+
+  it('composes cloud with required tenant context and scalable workers', async () => {
+    const { db } = databaseFixture();
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    expect(initialized.diagnostics()).toMatchObject({
+      tenancy: {
+        mode: 'multi-tenant',
+        context: 'required',
+        isolation: 'database-rls',
+        rootTenantFallback: 'disabled',
+      },
+      workers: {
+        topology: 'scalable',
+        replicas: 'horizontal',
+      },
+    });
+  });
+
+  it('rejects a cloud session without the required tenant context', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    vi.spyOn(SessionService.prototype, 'loadSessionContext').mockResolvedValue({
+      user: {} as never,
+      permissions: [],
+      tenantId: null,
+      sessionId: 'unscoped-session',
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    await expect(
+      initialized.restoreSession('unscoped-session'),
+    ).rejects.toMatchObject({
+      code: 'tenant_context_required',
+      component: 'authentication',
+    });
+  });
+
+  it('rejects a required tenant context without an active membership', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    vi.spyOn(SessionService.prototype, 'loadSessionContext').mockResolvedValue({
+      user: {} as never,
+      membership: null,
+      permissions: [],
+      tenantId: 'untrusted-tenant',
+      sessionId: 'untrusted-session',
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    await expect(
+      initialized.restoreSession('untrusted-session'),
+    ).rejects.toMatchObject({
+      code: 'tenant_context_unauthorized',
+      component: 'authentication',
+    });
+  });
+
+  it('accepts a required tenant context backed by an active membership', async () => {
+    const { db } = databaseFixture();
+    const initialize = vi
+      .spyOn(SessionService.prototype, 'initialize')
+      .mockResolvedValue();
+    vi.spyOn(SessionService.prototype, 'loadSessionContext').mockResolvedValue({
+      user: {} as never,
+      membership: {
+        id: 'authorized-membership',
+        isActive: () => true,
+      } as never,
+      permissions: [],
+      tenantAuthorization: {
+        membershipId: 'authorized-membership',
+        inheritedFromTenantId: null,
+      },
+      tenantId: 'authorized-tenant',
+      sessionId: 'authorized-session',
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    await expect(
+      initialized.restoreSession('authorized-session'),
+    ).resolves.toMatchObject({ tenantId: 'authorized-tenant' });
+    await initialized.restoreSession('authorized-session');
+    expect(initialize).toHaveBeenCalledOnce();
+  });
+
+  it('accepts inherited required tenant authorization provenance', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    vi.spyOn(SessionService.prototype, 'loadSessionContext').mockResolvedValue({
+      user: {} as never,
+      membership: null,
+      permissions: [],
+      tenantAuthorization: {
+        membershipId: 'ancestor-membership',
+        inheritedFromTenantId: 'ancestor-tenant',
+      },
+      tenantId: 'descendant-tenant',
+      sessionId: 'inherited-session',
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    await expect(
+      initialized.restoreSession('inherited-session'),
+    ).resolves.toMatchObject({ tenantId: 'descendant-tenant' });
+  });
+
+  it('redacts errors from required tenant context accessors', async () => {
+    const { db } = databaseFixture();
+    const credential = 'hosted-identity://operator:secret@example.com/session';
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    const loadSession = vi.spyOn(
+      SessionService.prototype,
+      'loadSessionContext',
+    );
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    const throwingTenant = {
+      user: {} as never,
+      permissions: [],
+      sessionId: 'throwing-tenant',
+      get tenantId(): string {
+        throw new Error(credential);
+      },
+    };
+    const throwingMembership = {
+      user: {} as never,
+      permissions: [],
+      sessionId: 'throwing-membership',
+      tenantId: 'tenant',
+      membership: {
+        isActive(): boolean {
+          throw new Error(credential);
+        },
+      } as never,
+    };
+    const throwingAuthorization = {
+      user: {} as never,
+      permissions: [],
+      sessionId: 'throwing-authorization',
+      tenantId: 'tenant',
+      membership: null,
+      get tenantAuthorization(): never {
+        throw new Error(credential);
+      },
+    };
+
+    for (const context of [
+      throwingTenant,
+      throwingMembership,
+      throwingAuthorization,
+    ]) {
+      loadSession.mockResolvedValueOnce(context as never);
+      let failure: unknown;
+      try {
+        await initialized.restoreSession(context.sessionId);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: 'provider_unavailable',
+        component: 'authentication',
+      });
+      expect((failure as Error).message).not.toContain(credential);
+    }
+  });
+
+  it('rejects malformed required tenant authorization values', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    const loadSession = vi.spyOn(
+      SessionService.prototype,
+      'loadSessionContext',
+    );
+    const initialized = await initializeDeployedApplicationRuntime({
+      profile: 'cloud',
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close: closeDatabase,
+      },
+      authentication: {
+        provider: 'hosted-identity',
+        readiness: async () => undefined,
+      },
+      assets: {
+        provider: 'managed-object-storage',
+        readiness: async () => undefined,
+      },
+      secrets: {
+        provider: 'managed',
+        readiness: async () => undefined,
+      },
+    });
+
+    loadSession.mockResolvedValueOnce({
+      user: {} as never,
+      permissions: [],
+      sessionId: 'object-tenant',
+      tenantId: {} as never,
+      membership: { isActive: () => true } as never,
+    });
+    await expect(
+      initialized.restoreSession('object-tenant'),
+    ).rejects.toMatchObject({
+      code: 'tenant_context_required',
+      component: 'authentication',
+    });
+
+    for (const membershipValue of ['yes', Promise.resolve(true)]) {
+      loadSession.mockResolvedValueOnce({
+        user: {} as never,
+        permissions: [],
+        sessionId: 'malformed-membership',
+        tenantId: 'tenant',
+        membership: { isActive: () => membershipValue } as never,
+      });
+      await expect(
+        initialized.restoreSession('malformed-membership'),
+      ).rejects.toMatchObject({
+        code: 'tenant_context_unauthorized',
+        component: 'authentication',
+      });
+    }
+
+    for (const [sessionId, membershipId, authorization] of [
+      ['missing-direct-provenance', 'membership', undefined],
+      [
+        'mismatched-direct-provenance',
+        'membership',
+        { membershipId: 'other-membership', inheritedFromTenantId: null },
+      ],
+      [
+        'inherited-direct-provenance',
+        'membership',
+        {
+          membershipId: 'membership',
+          inheritedFromTenantId: 'ancestor-tenant',
+        },
+      ],
+    ] as const) {
+      loadSession.mockResolvedValueOnce({
+        user: {} as never,
+        permissions: [],
+        sessionId,
+        tenantId: 'tenant',
+        membership: { id: membershipId, isActive: () => true } as never,
+        tenantAuthorization: authorization,
+      });
+      await expect(initialized.restoreSession(sessionId)).rejects.toMatchObject(
+        {
+          code: 'tenant_context_unauthorized',
+          component: 'authentication',
+        },
+      );
+    }
+
+    loadSession.mockResolvedValueOnce({
+      user: {} as never,
+      permissions: [],
+      sessionId: 'malformed-inheritance',
+      tenantId: 'tenant',
+      membership: null,
+      tenantAuthorization: {
+        membershipId: {} as never,
+        inheritedFromTenantId: 'ancestor-tenant',
+      },
+    });
+    await expect(
+      initialized.restoreSession('malformed-inheritance'),
+    ).rejects.toMatchObject({
+      code: 'tenant_context_unauthorized',
+      component: 'authentication',
+    });
+  });
+
+  it.each([
+    {
+      name: 'root/default tenant fallback',
+      providers: {
+        tenancy: { mode: 'default-tenant' as const },
+      },
+    },
+    {
+      name: 'unscoped tenant context',
+      providers: {
+        tenancy: { context: 'defaulted' as const },
+      },
+    },
+    {
+      name: 'owner bootstrap authentication',
+      providers: {
+        authentication: { provider: 'owner-bootstrap' as const },
+      },
+    },
+  ])('rejects unsafe cloud $name before connecting', async ({ providers }) => {
+    const { db } = databaseFixture();
+    const connect = vi.fn(async () => db);
+    await expect(
+      initializeDeployedApplicationRuntime({
+        profile: 'cloud',
+        providers,
+        database: { engine: 'postgres', connect, close: closeDatabase },
+        authentication: {
+          provider: 'hosted-identity',
+          readiness: async () => undefined,
+        },
+        assets: {
+          provider: 'managed-object-storage',
+          readiness: async () => undefined,
+        },
+        secrets: {
+          provider: 'managed',
+          readiness: async () => undefined,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { network: { exposure: 'loopback' as const } },
+    { network: { tls: false as const } },
+    { jobs: { topology: 'embedded' as const } },
+    { tenancy: { mode: 'default-tenant' as const } },
+    { authentication: { provider: 'owner-bootstrap' as const } },
+  ])('rejects unsafe self-hosted selectors before connecting', async (providers) => {
+    const { db } = databaseFixture();
+    const connect = vi.fn(async () => db);
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        providers,
+        database: { engine: 'postgres', connect, close: closeDatabase },
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_configuration' });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('redacts secret-like runtime-profile validation paths', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const connect = vi.fn(async () => db);
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        providers: { [credential]: {} } as never,
+        database: { engine: 'postgres', connect, close: closeDatabase },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({ code: 'invalid_configuration' });
+    expect((failure as Error).message).not.toContain(credential);
+    expect(JSON.stringify(failure)).not.toContain(credential);
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('requires public authentication and secret bindings before opening PostgreSQL', async () => {
+    const { db } = databaseFixture();
+    const connect = vi.fn(async () => db);
+    const options = {
+      ...selfHostedOptions(db),
+      database: { engine: 'postgres' as const, connect, close: closeDatabase },
+      authentication: undefined,
+    } as unknown as DeployedApplicationRuntimeOptions;
+
+    await expect(
+      initializeDeployedApplicationRuntime(options),
+    ).rejects.toMatchObject({
+      code: 'invalid_configuration',
+      component: 'authentication',
+    });
+    expect(connect).not.toHaveBeenCalled();
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: { engine: 'postgres', connect, close: closeDatabase },
+        secrets: undefined,
+      } as unknown as DeployedApplicationRuntimeOptions),
+    ).rejects.toMatchObject({
+      code: 'invalid_configuration',
+      component: 'secrets',
+    });
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('rejects mismatched provider adapters before any readiness side effects', async () => {
+    const { db } = databaseFixture();
+    const authReadiness = vi.fn(async () => undefined);
+    const connect = vi.fn(async () => db);
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: { engine: 'postgres', connect, close: closeDatabase },
+        authentication: {
+          provider: 'magic-link',
+          readiness: authReadiness,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_mismatch',
+      component: 'authentication',
+    });
+    expect(authReadiness).not.toHaveBeenCalled();
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('redacts throwing top-level and provider binding accessors before connecting', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+
+    for (const field of ['profile', 'secrets'] as const) {
+      const connect = vi.fn(async () => db);
+      const options = {
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres' as const,
+          connect,
+          close: closeDatabase,
+        },
+      };
+      Object.defineProperty(options, field, {
+        get: () => {
+          throw new Error(credential);
+        },
+      });
+
+      let failure: unknown;
+      try {
+        await initializeDeployedApplicationRuntime(
+          options as DeployedApplicationRuntimeOptions,
+        );
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toBeInstanceOf(DeployedRuntimeError);
+      expect(failure).toMatchObject({ code: 'invalid_configuration' });
+      expect((failure as Error).message).not.toContain(credential);
+      expect(connect).not.toHaveBeenCalled();
+    }
+  });
+
+  it('snapshots a validated cleanup callback before connecting', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const close = vi.fn(async () => undefined);
+    let closeReads = 0;
+    const database = {
+      engine: 'postgres' as const,
+      connect: async () => db,
+      get close() {
+        closeReads += 1;
+        if (closeReads > 1) throw new Error(credential);
+        return close;
+      },
+    };
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database,
+        prepareDatabase: async () => {
+          throw new Error('migration failure');
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(closeReads).toBe(1);
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
+  it('binds validated callbacks without reading caller-controlled bind properties', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const connect = vi.fn(async () => db);
+    const close = vi.fn(async () => undefined);
+    const authentication = vi.fn(async () => undefined);
+    const assets = vi.fn(async () => undefined);
+    const secrets = vi.fn(async () => undefined);
+    const prepareDatabase = vi.fn(async () => undefined);
+
+    for (const callback of [
+      connect,
+      close,
+      authentication,
+      assets,
+      secrets,
+      prepareDatabase,
+    ]) {
+      Object.defineProperty(callback, 'bind', {
+        get: () => {
+          throw new Error(credential);
+        },
+      });
+    }
+
+    const runtime = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: { engine: 'postgres', connect, close },
+      authentication: { provider: 'oidc', readiness: authentication },
+      assets: { provider: 's3-compatible', readiness: assets },
+      secrets: { provider: 'environment', readiness: secrets },
+      prepareDatabase,
+    });
+    await runtime.close();
+
+    expect(connect).toHaveBeenCalledOnce();
+    expect(authentication).toHaveBeenCalledOnce();
+    expect(assets).toHaveBeenCalledOnce();
+    expect(secrets).toHaveBeenCalledOnce();
+    expect(prepareDatabase).toHaveBeenCalledWith(db);
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
+  it('supports provider adapter instances and preserves their method receiver', async () => {
+    const { db } = databaseFixture();
+    class AssetAdapter {
+      readonly provider = 's3-compatible' as const;
+      checked = false;
+
+      async readiness(): Promise<void> {
+        this.checked = true;
+      }
+    }
+    const assets = new AssetAdapter();
+
+    await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      assets,
+    });
+
+    expect(assets.checked).toBe(true);
+  });
+
+  it('fails closed and redacts provider errors containing credentials', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        secrets: {
+          provider: 'environment',
+          readiness: async () => {
+            throw new Error(`missing ${credential}`);
+          },
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DeployedRuntimeError);
+    expect(failure).toMatchObject({
+      code: 'provider_unavailable',
+      component: 'secrets',
+    });
+    expect(JSON.stringify(failure)).not.toContain(credential);
+    expect((failure as Error).message).not.toContain(credential);
+  });
+
+  it('closes a connection when readiness or migration fails', async () => {
+    const readinessFixture = databaseFixture();
+    const closeReadiness = vi.fn(async () => undefined);
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(readinessFixture.db),
+        database: {
+          engine: 'postgres',
+          connect: async () => readinessFixture.db,
+          readiness: async () => {
+            throw new Error('not ready');
+          },
+          close: closeReadiness,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'provider_unavailable' });
+    expect(closeReadiness).toHaveBeenCalledWith(readinessFixture.db);
+
+    const migrationFixture = databaseFixture();
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(migrationFixture.db),
+        prepareDatabase: async () => {
+          throw new DeployedRuntimeError(
+            'provider_unavailable',
+            'migration leaked postgresql://operator:secret@example.com/app',
+            'database',
+          );
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      message:
+        'The PostgreSQL migration step failed; inspect the application migration logs.',
+    });
+    expect(migrationFixture.close).toHaveBeenCalledOnce();
+  });
+
+  it('retains a retryable redacted cleanup owner when startup cleanup fails', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    let finishCleanup: (() => void) | undefined;
+    const concurrentCleanup = new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+    });
+    const close = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error(credential))
+      .mockReturnValueOnce(concurrentCleanup);
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres',
+          connect: async () => db,
+          close,
+        },
+        prepareDatabase: async () => {
+          throw new Error('migration failure');
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DeployedRuntimeCleanupError);
+    expect(failure).toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+    expect(close).toHaveBeenCalledOnce();
+
+    const firstRetry = (failure as DeployedRuntimeCleanupError).retryCleanup();
+    const concurrentRetry = (
+      failure as DeployedRuntimeCleanupError
+    ).retryCleanup();
+    await Promise.resolve();
+    expect(close).toHaveBeenCalledTimes(2);
+    finishCleanup?.();
+    await Promise.all([firstRetry, concurrentRetry]);
+    await (failure as DeployedRuntimeCleanupError).retryCleanup();
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it('redacts synchronous provider failures during cleanup retries', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    let closeAttempts = 0;
+    const close = vi.fn(() => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) return Promise.reject(new Error(credential));
+      throw new Error(credential);
+    });
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: { engine: 'postgres', connect: async () => db, close },
+        prepareDatabase: async () => {
+          throw new Error('migration failure');
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(DeployedRuntimeCleanupError);
+    await expect(
+      (failure as DeployedRuntimeCleanupError).retryCleanup(),
+    ).rejects.toBe(failure);
+    expect((failure as Error).message).not.toContain(credential);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the binding close callback for a malformed connection handle', async () => {
+    const malformed = { pool: 'opaque' };
+    const close = vi.fn(async () => undefined);
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(malformed as unknown as DatabaseInterface),
+        database: {
+          engine: 'postgres',
+          connect: async () => malformed as unknown as DatabaseInterface,
+          close,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid_configuration',
+      component: 'database',
+    });
+    expect(close).toHaveBeenCalledOnce();
+    expect(close.mock.calls[0]?.[0]).toBe(malformed);
+  });
+
+  it('redacts and cleans a connection handle with a throwing query accessor', async () => {
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const malformed = Object.defineProperty({}, 'query', {
+      get: () => {
+        throw new Error(credential);
+      },
+    });
+    const close = vi.fn(async () => undefined);
+
+    let failure: unknown;
+    try {
+      await initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(malformed as DatabaseInterface),
+        database: {
+          engine: 'postgres',
+          connect: async () => malformed as DatabaseInterface,
+          close,
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      code: 'invalid_configuration',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+    expect(close).toHaveBeenCalledOnce();
+    expect(close.mock.calls[0]?.[0]).toBe(malformed);
+  });
+
+  it('rejects and cleans a malformed resolved database probe', async () => {
+    const query = vi.fn(async () => undefined);
+    const close = vi.fn(async () => undefined);
+    const db = { query } as unknown as DatabaseInterface;
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres',
+          connect: async () => db,
+          close,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
+  it('requires a usable database close boundary', async () => {
+    const query = vi.fn(async () => ({ rows: [] }));
+    const db = { query } as unknown as DatabaseInterface;
+    const connect = vi.fn(async () => db);
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: { engine: 'postgres', connect } as never,
+      }),
+    ).rejects.toMatchObject({
+      code: 'invalid_configuration',
+      component: 'database',
+    });
+    expect(connect).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('reports live readiness without revealing provider failure details', async () => {
+    const { db } = databaseFixture();
+    let assetsReady = true;
+    const credential = 'object-secret-value';
+    const initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      assets: {
+        provider: 's3-compatible',
+        readiness: async () => {
+          if (!assetsReady) throw new Error(credential);
+        },
+      },
+    });
+
+    expect(await initialized.readiness()).toMatchObject({
+      status: 'ready',
+      components: {
+        database: { status: 'ready' },
+        authentication: { status: 'ready' },
+        assets: { status: 'ready' },
+        secrets: { status: 'ready' },
+      },
+      secretValuesIncluded: false,
+    });
+
+    assetsReady = false;
+    const notReady = await initialized.readiness();
+    expect(notReady).toMatchObject({
+      status: 'not-ready',
+      components: { assets: { status: 'not-ready' } },
+    });
+    expect(JSON.stringify(notReady)).not.toContain(credential);
+  });
+
+  it('reports not-ready when a live database probe resolves malformed data', async () => {
+    const { db, query } = databaseFixture();
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    query.mockResolvedValueOnce(undefined as never);
+
+    await expect(initialized.readiness()).resolves.toMatchObject({
+      status: 'not-ready',
+      components: { database: { status: 'not-ready' } },
+    });
+  });
+
+  it('rejects a non-PostgreSQL handle even with custom readiness', async () => {
+    const query = vi.fn(async () => {
+      throw new Error('no such function: current_setting');
+    });
+    const close = vi.fn(async () => undefined);
+    const db = { query } as unknown as DatabaseInterface;
+    const readiness = vi.fn(async () => undefined);
+
+    await expect(
+      initializeDeployedApplicationRuntime({
+        ...selfHostedOptions(db),
+        database: {
+          engine: 'postgres',
+          connect: async () => db,
+          readiness,
+          close,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(readiness).toHaveBeenCalledOnce();
+    expect(query).toHaveBeenCalledWith(
+      "SELECT current_setting('server_version_num') AS smrt_postgres_version",
+    );
+    expect(close).toHaveBeenCalledWith(db);
+  });
+
+  it('does not report ready after shutdown begins during a probe', async () => {
+    const { db, query, close: closeDatabase } = databaseFixture();
+    let blockDatabase = false;
+    let releaseDatabase!: () => void;
+    const databaseBlocked = new Promise<void>((resolve) => {
+      releaseDatabase = resolve;
+    });
+    const databaseReadiness = vi.fn(async (connection: DatabaseInterface) => {
+      if (blockDatabase) await databaseBlocked;
+      await connection.query('SELECT 1 AS custom_readiness_probe');
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        readiness: databaseReadiness,
+        close: closeDatabase,
+      },
+    });
+
+    blockDatabase = true;
+    const readiness = initialized.readiness();
+    await vi.waitFor(() => expect(databaseReadiness).toHaveBeenCalledTimes(2));
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    releaseDatabase();
+    await close;
+
+    await expect(readiness).resolves.toMatchObject({
+      status: 'not-ready',
+      components: {
+        database: { status: 'not-ready' },
+        authentication: { status: 'not-ready' },
+        assets: { status: 'not-ready' },
+        secrets: { status: 'not-ready' },
+      },
+    });
+    expect(query).toHaveBeenCalledTimes(4);
+    expect(query.mock.invocationCallOrder[3]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('reserves readiness before a provider callback can close the runtime', async () => {
+    const { db, query, close: closeDatabase } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringReadiness: Promise<void> | undefined;
+    let triggerClose = false;
+    const databaseReadiness = vi.fn(async () => {
+      if (triggerClose) {
+        closeDuringReadiness = initialized.close();
+        await closeDuringReadiness;
+      }
+    });
+    initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        readiness: databaseReadiness,
+        close: closeDatabase,
+      },
+    });
+
+    triggerClose = true;
+    const readiness = initialized.readiness();
+    await vi.waitFor(() => expect(closeDuringReadiness).toBeDefined());
+    await initialized.close();
+
+    await expect(readiness).resolves.toMatchObject({ status: 'not-ready' });
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.invocationCallOrder[1]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('creates separate job and schedule workers against the shared database', async () => {
+    const { db } = databaseFixture();
+    const taskInitialize = vi
+      .spyOn(TaskRunner.prototype, 'initialize')
+      .mockResolvedValue(undefined);
+    const scheduleInitialize = vi
+      .spyOn(ScheduleRunner.prototype, 'initialize')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const task = await initialized.createTaskWorker({ concurrency: 7 });
+    const schedule = await initialized.createScheduleWorker({ batchSize: 9 });
+    expect(task).toBeInstanceOf(TaskRunner);
+    expect(schedule).toBeInstanceOf(ScheduleRunner);
+    expect(taskInitialize).toHaveBeenCalledWith(db);
+    expect(scheduleInitialize).toHaveBeenCalledWith(db);
+  });
+
+  it('stops returned workers before closing their shared database', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    vi.spyOn(ScheduleRunner.prototype, 'initialize').mockResolvedValue(
+      undefined,
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    await initialized.createTaskWorker();
+    await initialized.createScheduleWorker();
+    await initialized.close();
+
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(scheduleStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(scheduleStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('retains returned-worker cleanup failures before database close', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error('first cleanup failure'))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    await initialized.createTaskWorker();
+    await expect(initialized.close()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(closeDatabase).not.toHaveBeenCalled();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('redacts a public worker stop failure and retains cleanup for shutdown', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/jobs';
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error(credential))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    let failure: unknown;
+    try {
+      await task.stop();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('drains worker starts and revokes them when shutdown begins', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseStart!: () => void;
+    const startBlocked = new Promise<void>((resolve) => {
+      releaseStart = resolve;
+    });
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStart = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockReturnValue(startBlocked);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    await vi.waitFor(() => expect(taskStart).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    releaseStart();
+
+    await expect(starting).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await close;
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+    await expect(task.start()).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    expect(taskStart).toHaveBeenCalledOnce();
+  });
+
+  it('stops a task worker whose start rejects after becoming live', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    vi.spyOn(TaskRunner.prototype, 'start').mockRejectedValue(
+      new Error('runner:started listener failed'),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    await expect(task.start()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(taskStop).toHaveBeenCalledOnce();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops a schedule worker whose start rejects after becoming live', async () => {
+    const { db } = databaseFixture();
+    vi.spyOn(ScheduleRunner.prototype, 'initialize').mockResolvedValue(
+      undefined,
+    );
+    vi.spyOn(ScheduleRunner.prototype, 'start').mockRejectedValue(
+      new Error('runner:started listener failed'),
+    );
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const schedule = await initialized.createScheduleWorker();
+
+    await expect(schedule.start()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(scheduleStop).toHaveBeenCalledOnce();
+
+    await initialized.close();
+    expect(scheduleStop).toHaveBeenCalledTimes(2);
+  });
+
+  it('drains failed-start cleanup before shutdown stops the worker again', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseFirstStop!: () => void;
+    const firstStopBlocked = new Promise<void>((resolve) => {
+      releaseFirstStop = resolve;
+    });
+    let activeStops = 0;
+    let maximumConcurrentStops = 0;
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    vi.spyOn(TaskRunner.prototype, 'start').mockRejectedValue(
+      new Error('runner:started listener failed'),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockImplementation(async () => {
+        activeStops += 1;
+        maximumConcurrentStops = Math.max(maximumConcurrentStops, activeStops);
+        if (taskStop.mock.calls.length === 1) await firstStopBlocked;
+        activeStops -= 1;
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    await vi.waitFor(() => expect(taskStop).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    expect(maximumConcurrentStops).toBe(1);
+    releaseFirstStop();
+
+    await expect(starting).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await close;
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(maximumConcurrentStops).toBe(1);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('serializes a public stop requested immediately after start', async () => {
+    const { db } = databaseFixture();
+    const lifecycleOrder: string[] = [];
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStart = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockImplementation(async () => {
+        lifecycleOrder.push('start');
+      });
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockImplementation(async () => {
+        lifecycleOrder.push('stop');
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    const stopping = task.stop();
+    await Promise.all([starting, stopping]);
+
+    expect(taskStart).toHaveBeenCalledOnce();
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(lifecycleOrder).toEqual(['start', 'stop']);
+    await initialized.close();
+  });
+
+  it('drains an in-flight public worker stop before closing the database', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseFirstStop!: () => void;
+    const firstStopBlocked = new Promise<void>((resolve) => {
+      releaseFirstStop = resolve;
+    });
+    let activeStops = 0;
+    let maximumConcurrentStops = 0;
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockImplementation(async () => {
+        activeStops += 1;
+        maximumConcurrentStops = Math.max(maximumConcurrentStops, activeStops);
+        if (taskStop.mock.calls.length === 1) await firstStopBlocked;
+        activeStops -= 1;
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const stopping = task.stop();
+    await vi.waitFor(() => expect(taskStop).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    expect(maximumConcurrentStops).toBe(1);
+    releaseFirstStop();
+
+    await stopping;
+    await close;
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(maximumConcurrentStops).toBe(1);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('lets a worker start await its re-entrant shutdown request', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringStart: Promise<void> | undefined;
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockResolvedValue(undefined);
+    const taskStart = vi
+      .spyOn(TaskRunner.prototype, 'start')
+      .mockImplementation(async () => {
+        closeDuringStart = initialized.close();
+        await closeDuringStart;
+      });
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const task = await initialized.createTaskWorker();
+
+    const starting = task.start();
+    const startRejected = expect(starting).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    await vi.waitFor(() => expect(closeDuringStart).toBeDefined());
+    await initialized.close();
+
+    await startRejected;
+    expect(taskStart).toHaveBeenCalledOnce();
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('does not return workers whose initialization finishes after shutdown', async () => {
+    const { db } = databaseFixture();
+    let releaseTask!: () => void;
+    let releaseSchedule!: () => void;
+    const taskBlocked = new Promise<void>((resolve) => {
+      releaseTask = resolve;
+    });
+    const scheduleBlocked = new Promise<void>((resolve) => {
+      releaseSchedule = resolve;
+    });
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockReturnValue(taskBlocked);
+    vi.spyOn(ScheduleRunner.prototype, 'initialize').mockReturnValue(
+      scheduleBlocked,
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const taskWorker = initialized.createTaskWorker();
+    const scheduleWorker = initialized.createScheduleWorker();
+    await Promise.resolve();
+    const close = initialized.close();
+    releaseTask();
+    releaseSchedule();
+    await close;
+
+    await expect(taskWorker).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await expect(scheduleWorker).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(scheduleStop).toHaveBeenCalledOnce();
+  });
+
+  it('reserves worker initialization before config access can close the runtime', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    const taskInitialize = vi
+      .spyOn(TaskRunner.prototype, 'initialize')
+      .mockResolvedValue(undefined);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    let closeDuringConfig: Promise<void> | undefined;
+    const config = {
+      get concurrency(): number {
+        closeDuringConfig = initialized.close();
+        return 1;
+      },
+    };
+
+    const worker = initialized.createTaskWorker(config);
+    const workerRejected = expect(worker).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    await vi.waitFor(() => expect(closeDuringConfig).toBeDefined());
+    await closeDuringConfig;
+
+    await workerRejected;
+    expect(taskInitialize).toHaveBeenCalledOnce();
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(taskStop.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('retains failed unreturned-worker cleanup before closing the database', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseTask!: () => void;
+    const taskBlocked = new Promise<void>((resolve) => {
+      releaseTask = resolve;
+    });
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockReturnValue(taskBlocked);
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error('first cleanup failure'))
+      .mockRejectedValueOnce(new Error('second cleanup failure'))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const taskWorker = initialized.createTaskWorker();
+    await Promise.resolve();
+    const firstClose = initialized.close();
+    releaseTask();
+
+    await expect(taskWorker).rejects.toMatchObject({ code: 'runtime_stopped' });
+    await expect(firstClose).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).not.toHaveBeenCalled();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(3);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('redacts synchronous failures from hostile worker configuration', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys: () => {
+          throw new Error(credential);
+        },
+      },
+    );
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    for (const createWorker of [
+      () => initialized.createTaskWorker(hostile as TaskRunnerConfig),
+      () => initialized.createScheduleWorker(hostile as ScheduleRunnerConfig),
+    ]) {
+      let failure: unknown;
+      try {
+        await createWorker();
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: 'provider_unavailable',
+        component: 'database',
+      });
+      expect((failure as Error).message).not.toContain(credential);
+    }
+  });
+
+  it('redacts database errors from worker initialization', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockRejectedValue(
+      new Error(credential),
+    );
+    vi.spyOn(ScheduleRunner.prototype, 'initialize').mockRejectedValue(
+      new Error(credential),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const scheduleStop = vi
+      .spyOn(ScheduleRunner.prototype, 'stop')
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    for (const createWorker of [
+      () => initialized.createTaskWorker(),
+      () => initialized.createScheduleWorker(),
+    ]) {
+      let failure: unknown;
+      try {
+        await createWorker();
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: 'provider_unavailable',
+        component: 'database',
+      });
+      expect((failure as Error).message).not.toContain(credential);
+    }
+    expect(taskStop).toHaveBeenCalledOnce();
+    expect(scheduleStop).toHaveBeenCalledOnce();
+  });
+
+  it('retains failed cleanup after worker initialization rejects', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    vi.spyOn(TaskRunner.prototype, 'initialize').mockRejectedValue(
+      new Error('partial initialization failure'),
+    );
+    const taskStop = vi
+      .spyOn(TaskRunner.prototype, 'stop')
+      .mockRejectedValueOnce(new Error('cleanup failure'))
+      .mockResolvedValue(undefined);
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    await expect(initialized.createTaskWorker()).rejects.toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect(closeDatabase).not.toHaveBeenCalled();
+
+    await initialized.close();
+    expect(taskStop).toHaveBeenCalledTimes(2);
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('redacts database errors from session restoration', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    vi.spyOn(SessionService.prototype, 'initialize')
+      .mockRejectedValueOnce(new Error(credential))
+      .mockResolvedValue(undefined);
+    vi.spyOn(SessionService.prototype, 'loadSessionContext').mockRejectedValue(
+      new DeployedRuntimeError(
+        'provider_unavailable',
+        credential,
+        'authentication',
+      ),
+    );
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    for (const sessionId of ['initialization-failure', 'load-failure']) {
+      let failure: unknown;
+      try {
+        await initialized.restoreSession(sessionId);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: 'provider_unavailable',
+        component: 'authentication',
+      });
+      expect((failure as Error).message).not.toContain(credential);
+    }
+  });
+
+  it('does not return a session whose load finishes after shutdown', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let releaseSession!: () => void;
+    const sessionBlocked = new Promise<void>((resolve) => {
+      releaseSession = resolve;
+    });
+    vi.spyOn(SessionService.prototype, 'initialize').mockResolvedValue();
+    const loadSession = vi
+      .spyOn(SessionService.prototype, 'loadSessionContext')
+      .mockImplementation(async () => {
+        await sessionBlocked;
+        return {
+          user: {} as never,
+          permissions: [],
+          tenantId: null,
+          sessionId: 'closing-session',
+        };
+      });
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const restored = initialized.restoreSession('closing-session');
+    await vi.waitFor(() => expect(loadSession).toHaveBeenCalledOnce());
+    const close = initialized.close();
+    expect(closeDatabase).not.toHaveBeenCalled();
+    releaseSession();
+
+    await close;
+    await expect(restored).rejects.toMatchObject({ code: 'runtime_stopped' });
+    expect(closeDatabase).toHaveBeenCalledOnce();
+  });
+
+  it('reserves session restoration before service initialization can close the runtime', async () => {
+    const { db, close: closeDatabase } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringInitialization: Promise<void> | undefined;
+    vi.spyOn(SessionService.prototype, 'initialize').mockImplementation(
+      async () => {
+        closeDuringInitialization = initialized.close();
+        await closeDuringInitialization;
+      },
+    );
+    const loadSession = vi
+      .spyOn(SessionService.prototype, 'loadSessionContext')
+      .mockResolvedValue(null);
+    initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    const restored = initialized.restoreSession('reentrant-session');
+    const restoreRejected = expect(restored).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+    await vi.waitFor(() => expect(closeDuringInitialization).toBeDefined());
+    await closeDuringInitialization;
+
+    await restoreRejected;
+    expect(loadSession).toHaveBeenCalledOnce();
+    expect(loadSession.mock.invocationCallOrder[0]).toBeLessThan(
+      closeDatabase.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it('owns an idempotent connection lifecycle and becomes not-ready after close', async () => {
+    const { db, close } = databaseFixture();
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+
+    expect(initialized.health().status).toBe('healthy');
+    await initialized.close();
+    await initialized.close();
+    expect(close).toHaveBeenCalledOnce();
+    expect(initialized.health().status).toBe('stopped');
+    expect(await initialized.readiness()).toMatchObject({
+      status: 'not-ready',
+      components: {
+        database: { status: 'not-ready' },
+        authentication: { status: 'not-ready' },
+        assets: { status: 'not-ready' },
+        secrets: { status: 'not-ready' },
+      },
+    });
+    await expect(initialized.createTaskWorker()).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+  });
+
+  it('lets database cleanup await a re-entrant shutdown request', async () => {
+    const { db } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    const close = vi.fn(async () => {
+      await initialized.close();
+    });
+    initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close,
+      },
+    });
+
+    await initialized.close();
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(initialized.health().status).toBe('stopped');
+  });
+
+  it('observes a failed cleanup from callback-initiated shutdown and permits retry', async () => {
+    const { db } = databaseFixture();
+    let initialized!: Awaited<
+      ReturnType<typeof initializeDeployedApplicationRuntime>
+    >;
+    let closeDuringReadiness: Promise<void> | undefined;
+    let closeAttempts = 0;
+    let triggerClose = false;
+    const close = vi.fn(async () => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) throw new Error('private cleanup failure');
+    });
+    const readiness = vi.fn(async () => {
+      if (!triggerClose) return;
+      closeDuringReadiness = initialized.close();
+      await closeDuringReadiness;
+    });
+    initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close,
+      },
+      authentication: {
+        provider: 'oidc',
+        readiness,
+      },
+    });
+
+    triggerClose = true;
+    await expect(initialized.readiness()).resolves.toMatchObject({
+      status: 'not-ready',
+    });
+    await expect(closeDuringReadiness).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce());
+
+    await initialized.close();
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(initialized.health().status).toBe('stopped');
+  });
+
+  it('redacts close failures, stops use immediately, and permits cleanup retry', async () => {
+    const { db } = databaseFixture();
+    const credential = 'postgresql://operator:secret@example.com/app';
+    let closeAttempts = 0;
+    const close = vi.fn((): Promise<void> => {
+      closeAttempts += 1;
+      if (closeAttempts === 1) throw new Error(credential);
+      return Promise.resolve();
+    });
+    const initialized = await initializeDeployedApplicationRuntime({
+      ...selfHostedOptions(db),
+      database: {
+        engine: 'postgres',
+        connect: async () => db,
+        close,
+      },
+    });
+
+    let failure: unknown;
+    try {
+      await initialized.close();
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({
+      code: 'provider_unavailable',
+      component: 'database',
+    });
+    expect((failure as Error).message).not.toContain(credential);
+    expect(initialized.health().status).toBe('stopped');
+    await expect(initialized.createTaskWorker()).rejects.toMatchObject({
+      code: 'runtime_stopped',
+    });
+
+    await initialized.close();
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns deeply frozen secret-free diagnostics', async () => {
+    const { db } = databaseFixture();
+    const initialized = await initializeDeployedApplicationRuntime(
+      selfHostedOptions(db),
+    );
+    const diagnostics = initialized.diagnostics();
+
+    expect(Object.isFrozen(diagnostics)).toBe(true);
+    expect(Object.isFrozen(diagnostics.providers.secrets)).toBe(true);
+    expect(Object.isFrozen(diagnostics.runtime)).toBe(true);
+    expect(Object.isFrozen(diagnostics.runtime.providers.database)).toBe(true);
+    expect(JSON.stringify(diagnostics)).toContain(
+      '"secretValuesIncluded":false',
+    );
+    expect(JSON.stringify(diagnostics)).not.toContain('readiness');
+    expect(initialized.diagnostics()).toBe(diagnostics);
+  });
+});
