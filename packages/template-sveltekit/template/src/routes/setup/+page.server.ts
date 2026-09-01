@@ -81,7 +81,8 @@ export const actions: Actions = {
       );
     } catch {
       return fail(400, {
-        message: 'The setup invitation is invalid, expired, or already used. Run pnpm app:recover, then pnpm app:open.',
+        message:
+          'The setup invitation is invalid, expired, or already used. Run pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open.',
       });
     }
     throw redirect(303, '/');

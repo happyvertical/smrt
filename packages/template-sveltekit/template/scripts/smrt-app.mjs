@@ -28,6 +28,7 @@ import {
 } from '@happyvertical/smrt-config';
 import {
   readOwnedProcess,
+  sendTerminationSignal,
   writeProcessRecord,
 } from './smrt-process.mjs';
 import {
@@ -459,7 +460,12 @@ async function stop() {
     console.log(JSON.stringify({ schemaVersion: 1, status: 'stopped' }));
     return;
   }
-  process.kill(pid, 'SIGTERM');
+  if (!sendTerminationSignal(pid)) {
+    // The process exited after its identity was verified but before SIGTERM.
+    rmSync(pidPath(), { force: true });
+    console.log(JSON.stringify({ schemaVersion: 1, status: 'stopped', pid }));
+    return;
+  }
   for (let attempt = 0; attempt < 40; attempt += 1) {
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
     try {

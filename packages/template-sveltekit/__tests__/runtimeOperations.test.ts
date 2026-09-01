@@ -18,6 +18,7 @@ import { getDatabase } from '@happyvertical/sql';
 import {
   matchesApplicationProcess,
   readOwnedProcess,
+  sendTerminationSignal,
   writeProcessRecord,
 } from '../template/scripts/smrt-process.mjs';
 import {
@@ -111,6 +112,7 @@ describe('profile-aware application operations', () => {
     expect(appDriver).toContain("startsWith('pnpm')");
     expect(appDriver).toContain("label: 'pnpm build'");
     expect(appDriver).toContain('saveOnboardingLaunch(report.onboardingUrl)');
+    expect(appDriver).toContain('if (!sendTerminationSignal(pid))');
     expect(migrationPreparation).toContain("process.platform === 'win32'");
     expect(migrationPreparation).toContain('shell: windowsFallback');
     expect(migrationPreparation).toContain("startsWith('pnpm')");
@@ -124,6 +126,29 @@ describe('profile-aware application operations', () => {
     expect(providerReadiness).toContain('checkReadiness');
     expect(providerReadiness).toContain('result?.ready !== true');
     expect(appDriver).not.toContain('SMRT_AUTH_READY');
+  });
+
+  it('documents the complete stopped recovery sequence', () => {
+    const setupAction = readFileSync(
+      join(template, 'src', 'routes', 'setup', '+page.server.ts'),
+      'utf8',
+    );
+    expect(setupAction).toContain(
+      'pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open',
+    );
+  });
+
+  it('treats an already-exited process as successfully terminated', () => {
+    expect(
+      sendTerminationSignal(123, () => {
+        throw Object.assign(new Error('gone'), { code: 'ESRCH' });
+      }),
+    ).toBe(false);
+    expect(() =>
+      sendTerminationSignal(123, () => {
+        throw Object.assign(new Error('denied'), { code: 'EPERM' });
+      }),
+    ).toThrow('denied');
   });
 
   it('rejects a process command that does not prove application identity', () => {

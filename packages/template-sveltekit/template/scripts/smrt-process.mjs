@@ -26,6 +26,16 @@ export function writeProcessRecord(path, record) {
   writeFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
 }
 
+export function sendTerminationSignal(pid, killProcess = process.kill) {
+  try {
+    killProcess(pid, 'SIGTERM');
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
+
 export function matchesApplicationProcess(record, command) {
   return (
     typeof command === 'string' &&
