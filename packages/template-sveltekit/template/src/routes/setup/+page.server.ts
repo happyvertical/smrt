@@ -61,7 +61,8 @@ export const actions: Actions = {
         join(
           resolveApplicationStateRoot({
             appId,
-            explicitStateDirectory: process.env.SMRT_STATE_DIR,
+            dataDirectory: process.env.SMRT_DATA_DIR,
+            sourceRoot: process.cwd(),
           }),
           'onboarding.json',
         ),

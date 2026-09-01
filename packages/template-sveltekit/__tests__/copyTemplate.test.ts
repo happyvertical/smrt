@@ -42,6 +42,12 @@ describe('copyTemplate', () => {
     );
     expect(existsSync(join(tempDir, 'AGENTS.md'))).toBe(true);
     expect(existsSync(join(tempDir, 'INSTALL_PROMPT.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.gitignore'))).toBe(true);
+    expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
+    expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toContain('.env');
+    expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toBe(
+      readFileSync(join(getTemplatePath(), '.gitignore'), 'utf8'),
+    );
     expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
     expect(
       existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),

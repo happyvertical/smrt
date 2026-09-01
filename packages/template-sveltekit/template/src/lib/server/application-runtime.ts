@@ -12,8 +12,8 @@ import {
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import {
+  prepareApplicationStateRoot,
   resolveApplicationId,
-  resolveApplicationStateRoot,
 } from '../../../scripts/smrt-runtime-identity.mjs';
 import { acquireWriterLease } from '../../../scripts/smrt-writer-lease.mjs';
 
@@ -107,17 +107,27 @@ export function getLocalApplicationRuntime(): Promise<LocalApplicationRuntime> {
   if (applicationRuntime.profile !== 'local') {
     throw new Error('Owner bootstrap is available only in the local profile.');
   }
+  const bindHost =
+    process.env.HOST ||
+    (process.env.NODE_ENV === 'development' ? '127.0.0.1' : null);
+  if (!bindHost) {
+    throw new Error(
+      'Local production startup requires an explicit loopback HOST; use pnpm app:start.',
+    );
+  }
   localWriterLease ??= acquireWriterLease(
-    resolveApplicationStateRoot({
+    prepareApplicationStateRoot({
       appId,
-      explicitStateDirectory: process.env.SMRT_STATE_DIR,
+      dataDirectory: process.env.SMRT_DATA_DIR,
+      sourceRoot: process.cwd(),
     }),
+    { operationInstance: process.env.SMRT_OPERATION_INSTANCE },
   );
   localRuntimePromise ??= initializeLocalApplicationRuntime({
     appId,
     dataDirectory: process.env.SMRT_DATA_DIR,
     sourceRoot: process.cwd(),
-    bindHost: process.env.HOST || '127.0.0.1',
+    bindHost,
     providers: {
       database: applicationRuntime.providers.database,
       authentication: applicationRuntime.providers.authentication,

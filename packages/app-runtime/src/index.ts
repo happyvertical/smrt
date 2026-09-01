@@ -190,6 +190,39 @@ export async function prepareLocalDatabaseStorage(
   return paths;
 }
 
+/**
+ * Verify an already-initialized local database root without creating or
+ * changing any filesystem/database artifact. Operator read/copy/import paths
+ * use this boundary before opening SQLite outside the runtime bootstrap.
+ */
+export async function validateLocalDatabaseStorage(
+  options: ResolveLocalRuntimePathsOptions,
+): Promise<LocalRuntimePaths> {
+  const paths = resolveLocalRuntimePaths(options);
+  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const appId = validateApplicationId(options.appId);
+  await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
+  const canonicalSourceRoot = await realpath(sourceRoot);
+  await validateRootMarker(
+    resolve(paths.root, `${ROOT_MARKER_PREFIX}${appId}`),
+    canonicalSourceRoot,
+  );
+  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
+  const database = await lstat(paths.database);
+  const currentUid = process.getuid?.();
+  if (
+    database.isSymbolicLink() ||
+    !database.isFile() ||
+    (currentUid !== undefined && database.uid !== currentUid) ||
+    (database.mode & 0o777) !== 0o600
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local application database must be a current-user-owned mode-0600 file: ${paths.database}`,
+    );
+  }
+  return paths;
+}
+
 export interface LocalOwnerBootstrapInvitation {
   /** Plaintext is returned exactly when a new claim is issued; it is never persisted. */
   readonly token: string;

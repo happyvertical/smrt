@@ -1,0 +1,44 @@
+# Dependencies
+node_modules
+
+# Build outputs
+.svelte-kit
+build
+dist
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.self-hosted
+.env.cloud
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# SMRT auto-generated
+.smrt/
+src/routes/api/**/+server.ts
+# The runtime readiness endpoint is authored infrastructure, not generated API
+# output, and must remain in the installable scaffold.
+!src/routes/api/_runtime/health/+server.ts
+src/lib/server/smrt-register.ts
+src/lib/types/smrt-generated/
+src/types/smrt-generated/
+
+# Database
+*.db
+*.db-journal
+data/
+
+# Runtime data deliberately lives outside this checkout. These entries defend
+# against an explicit override accidentally targeting the source tree.
+.smrt-app-state/
+backups/
+exports/
+
+# Misc
+.DS_Store
+*.log

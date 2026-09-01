@@ -19,10 +19,11 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - The production baseline uses adapter-node with separate web, task-worker, and
   schedule-worker processes. Its runtime image retains the generated manifest
   and operator CLI needed by `app:doctor`, `app:export`, and `app:import`.
-- Every local web writer (`app:start`, `pnpm dev`, or direct `node build`)
+- Every supported local web writer (`app:start` or `pnpm dev`)
   acquires the same external writer lease. Logical imports and filesystem
   backups fail closed while any writer is alive; logical exports take one
-  database transaction snapshot.
+  database transaction snapshot and report that uploaded assets are excluded.
+  Direct production startup must set an explicit loopback `HOST`.
 - `app:start` proves readiness against the scaffold's private runtime health
   route using both the canonical application ID and its random process instance;
   a different server on the configured port is never accepted as this app.
@@ -42,9 +43,10 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - `smrtConsumer()` explicitly consumes profiles, tenancy, and users manifests;
   `smrtPlugin()` scans `src/lib/objects`, generates Vite virtual definitions,
   SvelteKit routes, runtime registration, and knowledge artifacts.
-- `pnpm db:migrate` builds first to refresh generated artifacts, then runs the
-  current manifest-driven migration command. Do not restore deprecated
-  `smrt db:setup` documentation.
+- `pnpm db:migrate` builds first to refresh generated artifacts, then the
+  migration wrapper holds the shared operation/writer exclusion for the full
+  manifest-driven migration command. Do not restore deprecated `smrt db:setup`
+  documentation or split the safety check from the migration process.
 
 ## Application patterns
 

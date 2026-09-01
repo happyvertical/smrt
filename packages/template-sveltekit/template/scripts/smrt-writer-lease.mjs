@@ -84,8 +84,11 @@ export function readActiveWriterLease(stateRoot) {
   );
 }
 
-/** @param {string} stateRoot */
-export function acquireWriterLease(stateRoot) {
+/**
+ * @param {string} stateRoot
+ * @param {{ operationInstance?: string }} [options]
+ */
+export function acquireWriterLease(stateRoot, options = {}) {
   mkdirSync(stateRoot, { recursive: true, mode: 0o700 });
   const path = join(stateRoot, 'writer.lease');
   const active = readActiveWriterLease(stateRoot);
@@ -143,6 +146,35 @@ export function acquireWriterLease(stateRoot) {
       // A missing or externally repaired lease is not ours to remove.
     }
   };
+  try {
+    const operation = JSON.parse(
+      readFileSync(join(stateRoot, 'operation.lock'), 'utf8'),
+    );
+    if (
+      operation.instance !== options.operationInstance ||
+      typeof operation.instance !== 'string'
+    ) {
+      release();
+      throw new Error(
+        'An application operation is active; wait for it to finish before starting a writer.',
+      );
+    }
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'ENOENT'
+      )
+    ) {
+      if (error instanceof SyntaxError) {
+        release();
+        throw new Error('The application operation lock cannot be verified.');
+      }
+      throw error;
+    }
+  }
   process.once('exit', release);
   return { release };
 }

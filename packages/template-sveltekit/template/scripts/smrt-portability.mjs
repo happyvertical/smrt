@@ -88,10 +88,18 @@ export function planImportTables(tables) {
 }
 
 async function withDatabase(context, callback) {
-  const db = await getDatabase({
+  const options = {
     type: context.runtime.providers.database.engine,
     url: context.env.DATABASE_URL,
-  });
+  };
+  if (context.runtime.profile === 'local') {
+    options.secureFile = {
+      driver: 'node:sqlite',
+      custody: 'trusted-parent',
+      root: context.paths.root,
+    };
+  }
+  const db = await getDatabase(options);
   try {
     return await callback(db);
   } finally {
@@ -149,6 +157,11 @@ export async function exportApplication(context) {
       throw new Error('Logical export requires transactional database support.');
     }
     bundle = await db.transaction(async (tx) => {
+      if (context.runtime.providers.database.engine === 'postgres') {
+        await tx.query(
+          'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+        );
+      }
       const exported = {
         schemaVersion: 1,
         application: context.appId,
@@ -180,7 +193,11 @@ export async function exportApplication(context) {
   writeFileSync(outputPath, `${JSON.stringify(bundle, null, 2)}\n`, {
     mode: 0o600,
   });
-  return { path: outputPath, tableCount: bundle.tables.length };
+  return {
+    path: outputPath,
+    tableCount: bundle.tables.length,
+    assetsIncluded: false,
+  };
 }
 
 /** Execute a prevalidated parent-first import against one database transaction. */

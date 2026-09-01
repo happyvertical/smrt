@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import {
   closeSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -43,10 +45,16 @@ export async function withOperationLock(stateRoot, operation, callback) {
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       let ownerPid = null;
+      let staleIdentity;
+      let staleDescriptor;
       try {
-        ownerPid = JSON.parse(readFileSync(path, 'utf8')).pid;
+        staleDescriptor = openSync(path, 'r');
+        staleIdentity = fstatSync(staleDescriptor);
+        ownerPid = JSON.parse(readFileSync(staleDescriptor, 'utf8')).pid;
       } catch {
         // A malformed partial lock has no authority.
+      } finally {
+        if (staleDescriptor !== undefined) closeSync(staleDescriptor);
       }
       if (!Number.isSafeInteger(ownerPid)) {
         throw new Error(
@@ -58,14 +66,26 @@ export async function withOperationLock(stateRoot, operation, callback) {
           `Another application operation is active (process ${ownerPid}).`,
         );
       }
-      rmSync(path, { force: true });
+      try {
+        const currentIdentity = lstatSync(path);
+        if (
+          !staleIdentity ||
+          currentIdentity.dev !== staleIdentity.dev ||
+          currentIdentity.ino !== staleIdentity.ino
+        ) {
+          continue;
+        }
+        rmSync(path);
+      } catch (removeError) {
+        if (removeError?.code !== 'ENOENT') throw removeError;
+      }
     }
   }
   if (descriptor === undefined) {
     throw new Error('The application operation lock could not be acquired.');
   }
   try {
-    return await callback();
+    return await callback({ instance, path });
   } finally {
     closeSync(descriptor);
     // Do not unlink a replacement lock if an operator repaired this one while

@@ -9,6 +9,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import {
   initializeLocalApplicationRuntime,
   resolveLocalRuntimePaths,
+  validateLocalDatabaseStorage,
 } from '@happyvertical/smrt-app-runtime';
 import {
   loadConfig,
@@ -29,11 +31,11 @@ import {
   writeProcessRecord,
 } from './smrt-process.mjs';
 import {
+  prepareApplicationStateRoot,
   resolveApplicationId,
-  resolveApplicationStateRoot,
 } from './smrt-runtime-identity.mjs';
 import { withOperationLock } from './smrt-operation-lock.mjs';
-import { readActiveWriterLease } from './smrt-writer-lease.mjs';
+import { acquireWriterLease } from './smrt-writer-lease.mjs';
 
 const sourceRoot = process.cwd();
 const packageJson = JSON.parse(
@@ -49,10 +51,11 @@ const rawCommandArgs = process.argv.slice(3);
 const commandArgs =
   rawCommandArgs[0] === '--' ? rawCommandArgs.slice(1) : rawCommandArgs;
 
-function stateRoot() {
-  return resolveApplicationStateRoot({
+function preparedStateRoot() {
+  return prepareApplicationStateRoot({
     appId,
-    explicitStateDirectory: process.env.SMRT_STATE_DIR,
+    dataDirectory: process.env.SMRT_DATA_DIR,
+    sourceRoot,
   });
 }
 
@@ -71,25 +74,35 @@ function nearestExistingAncestor(path) {
 }
 
 function pidPath() {
-  return join(stateRoot(), 'app.pid');
+  return join(preparedStateRoot(), 'app.pid');
 }
 
 function onboardingPath() {
-  return join(stateRoot(), 'onboarding.json');
+  return join(preparedStateRoot(), 'onboarding.json');
 }
 
 function saveOnboardingUrl(url) {
-  ensurePrivateDirectory(stateRoot());
-  writeFileSync(
-    onboardingPath(),
-    `${JSON.stringify({ schemaVersion: 1, url })}\n`,
-    { mode: 0o600 },
-  );
+  ensurePrivateDirectory(preparedStateRoot());
+  const destination = onboardingPath();
+  const temporary = `${destination}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`;
+  try {
+    writeFileSync(
+      temporary,
+      `${JSON.stringify({ schemaVersion: 1, url })}\n`,
+      { flag: 'wx', mode: 0o600 },
+    );
+    renameSync(temporary, destination);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 function readOnboardingUrl() {
   try {
     const value = JSON.parse(readFileSync(onboardingPath(), 'utf8'));
+    if (value?.schemaVersion !== 1 || typeof value.url !== 'string') {
+      throw new Error('Invalid onboarding handoff.');
+    }
     const url = new URL(value.url);
     if (
       url.protocol !== 'http:' ||
@@ -99,14 +112,27 @@ function readOnboardingUrl() {
       throw new Error('Invalid onboarding handoff.');
     }
     return url.toString();
-  } catch {
-    rmSync(onboardingPath(), { force: true });
-    return null;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    if (
+      error instanceof SyntaxError ||
+      (error instanceof Error &&
+        (error.message === 'Invalid onboarding handoff.' ||
+          error.code === 'ERR_INVALID_URL'))
+    ) {
+      rmSync(onboardingPath(), { force: true });
+      return null;
+    }
+    throw error;
   }
 }
 
+function readProcess() {
+  return readOwnedProcess(pidPath());
+}
+
 function readPid() {
-  return readOwnedProcess(pidPath())?.pid || null;
+  return readProcess()?.pid || null;
 }
 
 function run(binary, args, options = {}) {
@@ -181,78 +207,87 @@ async function initializeLocal(runtime, env, options = {}) {
   return initialized;
 }
 
-async function setup() {
+async function setup(operationLock) {
   const runtime = await resolveRuntime();
-  if (
-    runtime.profile === 'local' &&
-    readActiveWriterLease(stateRoot())
-  ) {
-    throw new Error(
-      'Stop the local application before preparing its schema.',
-    );
-  }
-  const { env } = runtimeEnvironment(runtime);
+  const operatorLease =
+    runtime.profile === 'local'
+      ? acquireWriterLease(preparedStateRoot(), {
+          operationInstance: operationLock?.instance,
+        })
+      : null;
+  try {
+    const { env } = runtimeEnvironment(runtime);
 
-  run('pnpm', ['build'], { env });
+    run('pnpm', ['build'], { env });
 
   // The app-runtime owns and locks the local data root while its explicit,
   // idempotent schema hook runs. This keeps first install and concurrent
   // setup attempts on the same secure path.
-  let initialized = null;
-  if (runtime.profile === 'local') {
-    initialized = await initializeLocal(runtime, env, {
-      prepareDatabase: true,
-    });
-  } else {
-    run('pnpm', ['exec', 'smrt', 'db:migrate'], { env });
-  }
-  const port = env.PORT || '5173';
-  const onboardingUrl = initialized?.bootstrap
-    ? `http://127.0.0.1:${port}/setup?token=${encodeURIComponent(initialized.bootstrap.token)}`
-    : null;
-  const diagnostics = await initialized?.runtime.diagnostics();
-  if (onboardingUrl) saveOnboardingUrl(onboardingUrl);
-  if (diagnostics?.bootstrap.status === 'claimed') {
-    rmSync(onboardingPath(), { force: true });
-  }
-  await initialized?.runtime.db.close?.();
+    let initialized = null;
+    if (runtime.profile === 'local') {
+      initialized = await initializeLocal(runtime, env, {
+        prepareDatabase: true,
+      });
+    } else {
+      run('pnpm', ['exec', 'smrt', 'db:migrate'], { env });
+    }
+    const port = env.PORT || '5173';
+    const onboardingUrl = initialized?.bootstrap
+      ? `http://127.0.0.1:${port}/setup?token=${encodeURIComponent(initialized.bootstrap.token)}`
+      : null;
+    const diagnostics = await initialized?.runtime.diagnostics();
+    if (onboardingUrl) saveOnboardingUrl(onboardingUrl);
+    if (diagnostics?.bootstrap.status === 'claimed') {
+      rmSync(onboardingPath(), { force: true });
+    }
+    await initialized?.runtime.db.close?.();
 
-  const retainedOnboardingUrl = onboardingUrl || readOnboardingUrl();
-  const onboardingAvailable =
-    runtime.profile === 'local' && retainedOnboardingUrl !== null;
-  const report = {
-    schemaVersion: 1,
-    status: 'ready',
-    profile: runtime.profile,
-    onboardingAvailable,
-    onboardingRecovery: onboardingAvailable ? 'pnpm app:open' : null,
-    secretValuesIncluded: false,
-  };
-  console.log(JSON.stringify(report, null, 2));
-  return { ...report, onboardingUrl: retainedOnboardingUrl };
+    const retainedOnboardingUrl = onboardingUrl || readOnboardingUrl();
+    const onboardingAvailable =
+      runtime.profile === 'local' && retainedOnboardingUrl !== null;
+    const report = {
+      schemaVersion: 1,
+      status: 'ready',
+      profile: runtime.profile,
+      onboardingAvailable,
+      onboardingRecovery: onboardingAvailable ? 'pnpm app:open' : null,
+      secretValuesIncluded: false,
+    };
+    console.log(JSON.stringify(report, null, 2));
+    return { ...report, onboardingUrl: retainedOnboardingUrl };
+  } finally {
+    operatorLease?.release();
+  }
 }
 
-async function recoverOnboarding() {
+async function recoverOnboarding(operationLock) {
   const runtime = await resolveRuntime();
   const { env } = runtimeEnvironment(runtime);
   if (runtime.profile !== 'local') {
     throw new Error('Owner onboarding recovery is local-only.');
   }
-  const initialized = await initializeLocal(runtime, env);
-  if (!initialized) throw new Error('Local runtime initialization failed.');
-  const invitation = await initialized.runtime.rotateBootstrapInvitation();
-  const url = `http://127.0.0.1:${env.PORT || '5173'}/setup?token=${encodeURIComponent(invitation.token)}`;
-  saveOnboardingUrl(url);
-  await initialized.runtime.db.close?.();
-  console.log(
-    JSON.stringify({
-      schemaVersion: 1,
-      status: 'ready',
-      onboardingAvailable: true,
-      recovery: 'Run pnpm app:start, then pnpm app:open.',
-      secretValuesIncluded: false,
-    }),
-  );
+  const operatorLease = acquireWriterLease(preparedStateRoot(), {
+    operationInstance: operationLock?.instance,
+  });
+  try {
+    const initialized = await initializeLocal(runtime, env);
+    if (!initialized) throw new Error('Local runtime initialization failed.');
+    const invitation = await initialized.runtime.rotateBootstrapInvitation();
+    const url = `http://127.0.0.1:${env.PORT || '5173'}/setup?token=${encodeURIComponent(invitation.token)}`;
+    saveOnboardingUrl(url);
+    await initialized.runtime.db.close?.();
+    console.log(
+      JSON.stringify({
+        schemaVersion: 1,
+        status: 'ready',
+        onboardingAvailable: true,
+        recovery: 'Run pnpm app:start, then pnpm app:open.',
+        secretValuesIncluded: false,
+      }),
+    );
+  } finally {
+    operatorLease.release();
+  }
 }
 
 async function waitForReady(url, pid, instance) {
@@ -286,17 +321,19 @@ async function waitForReady(url, pid, instance) {
   throw new Error(`The application did not become ready at ${url}.`);
 }
 
-async function start() {
-  const existing = readPid();
-  if (existing) {
-    console.log(
-      JSON.stringify({ schemaVersion: 1, status: 'running', pid: existing }),
-    );
-    return existing;
-  }
+async function start(operationLock) {
   const runtime = await resolveRuntime();
   const { env } = runtimeEnvironment(runtime);
-  ensurePrivateDirectory(stateRoot());
+  const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
+  const existing = readProcess();
+  if (existing) {
+    await waitForReady(url, existing.pid, existing.instance);
+    console.log(
+      JSON.stringify({ schemaVersion: 1, status: 'running', pid: existing.pid }),
+    );
+    return existing.pid;
+  }
+  ensurePrivateDirectory(preparedStateRoot());
   const instance = randomBytes(16).toString('hex');
   const child = spawn(
     process.execPath,
@@ -309,6 +346,7 @@ async function start() {
           runtime.profile === 'local' ? '127.0.0.1' : env.HOST || '0.0.0.0',
         PORT: env.PORT || '5173',
         SMRT_PROCESS_INSTANCE: instance,
+        SMRT_OPERATION_INSTANCE: operationLock?.instance,
       },
       detached: true,
       stdio: 'ignore',
@@ -316,7 +354,6 @@ async function start() {
   );
   child.unref();
   writeProcessRecord(pidPath(), { pid: child.pid, instance });
-  const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
   try {
     await waitForReady(url, child.pid, instance);
   } catch (error) {
@@ -388,6 +425,7 @@ async function doctor() {
   const findings = [];
   let runtime = null;
   let paths = null;
+  let canInspectMigrations = false;
   try {
     runtime = await resolveRuntime();
   } catch {
@@ -428,6 +466,14 @@ async function doctor() {
     }
     try {
       ({ paths } = runtimeEnvironment(runtime));
+      if (runtime.profile === 'local') {
+        paths = await validateLocalDatabaseStorage({
+          appId,
+          dataDirectory: process.env.SMRT_DATA_DIR,
+          sourceRoot,
+        });
+      }
+      canInspectMigrations = true;
       const host =
         process.env.HOST ||
         (runtime.profile === 'local' ? '127.0.0.1' : '0.0.0.0');
@@ -443,9 +489,10 @@ async function doctor() {
           recovery: 'Unset HOST or set HOST=127.0.0.1.',
         });
       }
-      const writableTarget = paths?.root || stateRoot();
-      const writableParent = nearestExistingAncestor(writableTarget);
-      accessSync(writableParent, constants.W_OK);
+      if (paths?.root) {
+        const writableParent = nearestExistingAncestor(paths.root);
+        accessSync(writableParent, constants.W_OK);
+      }
     } catch (error) {
       findings.push({
         code: 'runtime-path-unavailable',
@@ -458,7 +505,7 @@ async function doctor() {
       });
     }
 
-    try {
+    if (canInspectMigrations) try {
       const status = spawnSync('pnpm', ['exec', 'smrt', 'db:status', '--json'], {
         cwd: sourceRoot,
         env: runtimeEnvironment(runtime).env,
@@ -515,51 +562,68 @@ async function doctor() {
   if (report.status === 'error') process.exitCode = 1;
 }
 
-async function backup() {
+async function backup(operationLock) {
   const runtime = await resolveRuntime();
-  const { paths } = runtimeEnvironment(runtime);
-  if (runtime.profile !== 'local' || !paths) {
+  if (runtime.profile !== 'local') {
     throw new Error(
       'This scaffold delegates deployed backups to the selected operator or managed provider.',
     );
   }
-  if (readActiveWriterLease(stateRoot())) {
-    throw new Error(
-      'Stop the application before creating a consistent local backup.',
+  const paths = await validateLocalDatabaseStorage({
+    appId,
+    dataDirectory: process.env.SMRT_DATA_DIR,
+    sourceRoot,
+  });
+  const operatorLease = acquireWriterLease(preparedStateRoot(), {
+    operationInstance: operationLock?.instance,
+  });
+  try {
+    const destination = resolve(
+      commandArgs[0] ||
+        join(
+          dirname(paths.root),
+          'backups',
+          `${appId}-${new Date().toISOString().replaceAll(':', '-')}`,
+        ),
     );
+    if (existsSync(destination)) {
+      throw new Error(`Backup destination already exists: ${destination}`);
+    }
+    ensurePrivateDirectory(dirname(destination));
+    cpSync(paths.root, destination, { recursive: true, errorOnExist: true });
+    console.log(
+      JSON.stringify({ schemaVersion: 1, status: 'backed-up', destination }),
+    );
+  } finally {
+    operatorLease.release();
   }
-  const destination = resolve(
-    commandArgs[0] ||
-      join(
-        dirname(paths.root),
-        'backups',
-        `${appId}-${new Date().toISOString().replaceAll(':', '-')}`,
-      ),
-  );
-  if (existsSync(destination)) {
-    throw new Error(`Backup destination already exists: ${destination}`);
-  }
-  ensurePrivateDirectory(dirname(destination));
-  cpSync(paths.root, destination, { recursive: true, errorOnExist: true });
-  console.log(
-    JSON.stringify({ schemaVersion: 1, status: 'backed-up', destination }),
-  );
 }
 
-async function portability(operation) {
+async function portability(operation, operationLock) {
   const adapterPath = join(sourceRoot, 'scripts', 'smrt-portability.mjs');
   const adapter = await import(pathToFileURL(adapterPath).href);
   const runtime = await resolveRuntime();
+  const environment = runtimeEnvironment(runtime);
+  if (runtime.profile === 'local') {
+    environment.paths = await validateLocalDatabaseStorage({
+      appId,
+      dataDirectory: process.env.SMRT_DATA_DIR,
+      sourceRoot,
+    });
+  }
   const context = {
     appId,
     sourceRoot,
-    stateRoot: stateRoot(),
+    stateRoot: preparedStateRoot(),
     runtime,
-    ...runtimeEnvironment(runtime),
+    ...environment,
   };
+  let operatorLease = null;
   if (operation === 'import') {
-    if (runtime.profile === 'local' && readActiveWriterLease(stateRoot())) {
-      throw new Error('Stop the local application before importing data.');
+    if (runtime.profile === 'local') {
+      operatorLease = acquireWriterLease(preparedStateRoot(), {
+        operationInstance: operationLock?.instance,
+      });
     }
     if (
       runtime.profile !== 'local' &&
@@ -570,27 +634,31 @@ async function portability(operation) {
       );
     }
   }
-  const result = await adapter[
-    operation === 'export' ? 'exportApplication' : 'importApplication'
-  ]({
-    ...context,
-    path: commandArgs[0] ? resolve(commandArgs[0]) : undefined,
-  });
-  console.log(
-    JSON.stringify(
-      { schemaVersion: 1, status: `${operation}ed`, ...result },
-      null,
-      2,
-    ),
-  );
+  try {
+    const result = await adapter[
+      operation === 'export' ? 'exportApplication' : 'importApplication'
+    ]({
+      ...context,
+      path: commandArgs[0] ? resolve(commandArgs[0]) : undefined,
+    });
+    console.log(
+      JSON.stringify(
+        { schemaVersion: 1, status: `${operation}ed`, ...result },
+        null,
+        2,
+      ),
+    );
+  } finally {
+    operatorLease?.release();
+  }
 }
 
 try {
   switch (command) {
     case 'install': {
-      await withOperationLock(stateRoot(), 'install', async () => {
-        const report = await setup();
-        await start();
+      await withOperationLock(preparedStateRoot(), 'install', async (lock) => {
+        const report = await setup(lock);
+        await start(lock);
         openBrowser(
           report.onboardingUrl ||
             `http://127.0.0.1:${process.env.PORT || '5173'}/`,
@@ -599,13 +667,13 @@ try {
       break;
     }
     case 'setup':
-      await withOperationLock(stateRoot(), command, setup);
+      await withOperationLock(preparedStateRoot(), command, setup);
       break;
     case 'recover':
-      await withOperationLock(stateRoot(), command, recoverOnboarding);
+      await withOperationLock(preparedStateRoot(), command, recoverOnboarding);
       break;
     case 'start':
-      await withOperationLock(stateRoot(), command, start);
+      await withOperationLock(preparedStateRoot(), command, start);
       break;
     case 'doctor':
       await doctor();
@@ -614,14 +682,16 @@ try {
       await open();
       break;
     case 'stop':
-      await withOperationLock(stateRoot(), command, stop);
+      await withOperationLock(preparedStateRoot(), command, stop);
       break;
     case 'backup':
-      await withOperationLock(stateRoot(), command, backup);
+      await withOperationLock(preparedStateRoot(), command, backup);
       break;
     case 'export':
     case 'import':
-      await withOperationLock(stateRoot(), command, () => portability(command));
+      await withOperationLock(preparedStateRoot(), command, (lock) =>
+        portability(command, lock),
+      );
       break;
     default:
       throw new Error(`Unknown app operation: ${command}`);

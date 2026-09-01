@@ -1,8 +1,12 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,7 +26,11 @@ import {
   validateImportBundle,
 } from '../template/scripts/smrt-portability.mjs';
 import { withOperationLock } from '../template/scripts/smrt-operation-lock.mjs';
-import { resolveApplicationId } from '../template/scripts/smrt-runtime-identity.mjs';
+import {
+  prepareApplicationStateRoot,
+  resolveApplicationId,
+  resolveApplicationStateRoot,
+} from '../template/scripts/smrt-runtime-identity.mjs';
 import {
   acquireWriterLease,
   readActiveWriterLease,
@@ -34,6 +42,10 @@ const appDriver = readFileSync(join(template, 'scripts', 'smrt-app.mjs'), 'utf8'
 const worker = readFileSync(join(template, 'scripts', 'smrt-worker.mjs'), 'utf8');
 const migrationPreparation = readFileSync(
   join(template, 'scripts', 'smrt-prepare-migration.mjs'),
+  'utf8',
+);
+const portabilitySource = readFileSync(
+  join(template, 'scripts', 'smrt-portability.mjs'),
   'utf8',
 );
 const compose = readFileSync(join(template, 'compose.yaml'), 'utf8');
@@ -51,11 +63,13 @@ describe('profile-aware application operations', () => {
     expect(appDriver).toContain('prepareDatabase: options.prepareDatabase');
     expect(appDriver).toContain("run('pnpm', ['exec', 'smrt', 'db:migrate']");
     expect(appDriver).toContain("rawCommandArgs[0] === '--'");
-    expect(appDriver).toContain('stateRoot: stateRoot()');
+    expect(appDriver).toContain('stateRoot: preparedStateRoot()');
     expect(appDriver).toContain("code: 'unsafe-local-bind'");
     expect(appDriver).toContain("code: 'migration-required'");
     expect(appDriver).toContain('secretValuesIncluded: false');
-    expect(appDriver).toContain('readActiveWriterLease');
+    expect(appDriver).toContain('acquireWriterLease');
+    expect(appDriver).toContain("flag: 'wx'");
+    expect(appDriver).toContain('renameSync(temporary, destination)');
     expect(appDriver).toContain("new URL('/api/_runtime/health', url)");
     expect(appDriver).toContain('health.instance === instance');
     expect(appDriver).toContain('SMRT_PROCESS_INSTANCE: instance');
@@ -63,10 +77,19 @@ describe('profile-aware application operations', () => {
     expect(migrationPreparation).toContain('resolveApplicationId');
     expect(migrationPreparation).toContain('prepareLocalDatabaseStorage');
     expect(migrationPreparation).toContain('readActiveWriterLease');
+    expect(migrationPreparation).toContain('withOperationLock');
+    expect(migrationPreparation).toContain("['exec', 'smrt', 'db:migrate']");
+    expect(portabilitySource).toContain(
+      'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+    );
+    expect(portabilitySource).toContain('assetsIncluded: false');
+    expect(portabilitySource).toContain("custody: 'trusted-parent'");
     expect(hooks).toContain(
       'export const init: ServerInit = ensureApplicationRuntimeReady',
     );
     expect(appDriver).not.toMatch(/console\.(?:log|error)\(process\.env/);
+    expect(dockerfile).toContain('ENV SMRT_RUNTIME_PROFILE=self-hosted');
+    expect(dockerfile).toContain('USER node');
   });
 
   it('rejects a process command that does not prove application identity', () => {
@@ -113,6 +136,23 @@ describe('profile-aware application operations', () => {
     }
   });
 
+  it('prevents a direct writer from racing an active operator command', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'smrt-writer-operation-test-'));
+    try {
+      await withOperationLock(directory, 'backup', async (lock) => {
+        expect(() => acquireWriterLease(directory)).toThrow(
+          'application operation is active',
+        );
+        const managedStartLease = acquireWriterLease(directory, {
+          operationInstance: lock.instance,
+        });
+        managedStartLease.release();
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it('fails closed on live writers and removes only stale leases', () => {
     const directory = mkdtempSync(join(tmpdir(), 'smrt-writer-test-'));
     try {
@@ -155,6 +195,40 @@ describe('profile-aware application operations', () => {
       expect(resolveApplicationId({ sourceRoot: directory })).toMatch(
         /^[a-z0-9][a-z0-9.-]{0,62}$/,
       );
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('derives one private state/lock domain from the app and data identity', () => {
+    const directory = realpathSync(
+      mkdtempSync(join(tmpdir(), 'smrt-state-test-')),
+    );
+    const sourceRoot = join(directory, 'source');
+    mkdirSync(sourceRoot);
+    try {
+      const options = {
+        appId: 'state-proof',
+        dataDirectory: join(directory, 'data'),
+        sourceRoot,
+      };
+      const stateRoot = prepareApplicationStateRoot(options);
+      expect(stateRoot).toBe(join(directory, '.state-proof-state'));
+      expect(resolveApplicationStateRoot(options)).toBe(stateRoot);
+      expect(statSync(stateRoot).mode & 0o777).toBe(0o700);
+      expect(
+        statSync(join(stateRoot, '.smrt-state-state-proof')).mode & 0o777,
+      ).toBe(0o600);
+
+      const redirected = join(directory, '.redirected-state');
+      symlinkSync(sourceRoot, redirected);
+      expect(() =>
+        prepareApplicationStateRoot({
+          appId: 'redirected',
+          dataDirectory: join(directory, 'other-data'),
+          sourceRoot,
+        }),
+      ).toThrow(/unsafe/);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

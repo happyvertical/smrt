@@ -9,6 +9,8 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -79,6 +81,17 @@ export function copyTemplate(destination, options = {}) {
       return !COPY_SKIP.has(topLevel);
     },
   });
+
+  // npm pack omits files literally named `.gitignore`. Ship the canonical
+  // contents under a neutral name and materialize the ignore file only in the
+  // generated project so installed-package scaffolds retain secret hygiene.
+  const packagedGitignore = join(destination, 'gitignore.template');
+  if (!existsSync(packagedGitignore)) {
+    throw new Error('Template package is missing gitignore.template');
+  }
+  rmSync(join(destination, '.gitignore'), { force: true });
+  rmSync(join(destination, '.npmignore'), { force: true });
+  renameSync(packagedGitignore, join(destination, '.gitignore'));
 
   // Update package.json with project name if provided
   if (options.name) {

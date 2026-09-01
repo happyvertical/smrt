@@ -18,6 +18,10 @@ Application infrastructure composition for the validated runtime profiles in
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`
   before opening SQLite so custody is established without creating schema or
   bootstrap records.
+- Read-only/copy/import operator commands must call
+  `validateLocalDatabaseStorage()` before opening SQLite; it verifies the
+  app-bound marker, source separation, real path chain, ownership, and mode
+  without creating or repairing storage.
 - Owner bootstrap creates normal `Person`, `User`, `Tenant`, owner `Role` /
   `Membership`, and `Session` records in one transaction.
 - Bootstrap is loopback-only. Only an HMAC of the short-lived token is stored.

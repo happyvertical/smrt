@@ -11,10 +11,10 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "preview": "node build",
+    "preview": "node scripts/smrt-app.mjs start",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "db:migrate": "vite build && node scripts/smrt-prepare-migration.mjs && smrt db:migrate",
+    "db:migrate": "vite build && node scripts/smrt-prepare-migration.mjs",
     "app:install": "node scripts/smrt-app.mjs install",
     "app:setup": "node scripts/smrt-app.mjs setup",
     "app:recover": "node scripts/smrt-app.mjs recover",

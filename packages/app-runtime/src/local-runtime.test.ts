@@ -27,6 +27,7 @@ import {
   prepareLocalDatabaseStorage,
   resolveLocalRuntimePaths,
   validateApplicationId,
+  validateLocalDatabaseStorage,
 } from './index.js';
 
 const temporaryRoots: string[] = [];
@@ -247,6 +248,31 @@ describe('local application runtime', () => {
     expect((exactInteger.rows[0] as { value: unknown }).value).toBe(
       9007199254740993n,
     );
+  });
+
+  it('validates existing app-bound local storage without creating or repairing it', async () => {
+    const directories = await localDirectories('operator-validation');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'operator-proof',
+      ...directories,
+    });
+    await initialized.runtime.db.close?.();
+
+    await expect(
+      validateLocalDatabaseStorage({ appId: 'operator-proof', ...directories }),
+    ).resolves.toMatchObject({
+      root: directories.dataDirectory,
+      database: join(directories.dataDirectory, 'application.sqlite'),
+    });
+
+    await chmod(join(directories.dataDirectory, 'application.sqlite'), 0o644);
+    await expect(
+      validateLocalDatabaseStorage({ appId: 'operator-proof', ...directories }),
+    ).rejects.toThrow(/mode-0600/);
+    expect(
+      (await stat(join(directories.dataDirectory, 'application.sqlite'))).mode &
+        0o777,
+    ).toBe(0o644);
   });
 
   it('claims one owner and creates normal identity, tenancy, membership, and session records', async () => {

@@ -30,7 +30,8 @@ unclaimed invitation and cannot replace an existing owner.
 
 `pnpm db:migrate` first runs the Vite build so the manifest, runtime
 registration, generated routes, and types match the current objects; it then
-applies the manifest-derived schema to SQLite. Re-run it after object changes.
+holds the shared application-operation lock while it applies the
+manifest-derived schema to SQLite. Re-run it after object changes.
 
 ## 2. Understand the generated files
 
@@ -343,7 +344,10 @@ the web process.
 Logical export/import is manifest-driven JSON and refuses a non-empty target;
 it orders parent tables first and defers nullable cycle edges until every row
 exists. Export reads all model tables from one transaction snapshot. Every
-local web entry point (`app:start`, `pnpm dev`, or direct `node build`) holds a
-shared writer lease; stop it before backup/import. For deployed import, stop
+export report explicitly records that uploaded assets are excluded; copy the
+assets directory separately when moving profiles. Every supported local web
+entry point (`app:start` or `pnpm dev`) holds a shared writer lease. Direct
+production startup must set an explicit loopback `HOST`, and `app:start` is the
+recommended entry point. Stop the app before backup/import. For deployed import, stop
 web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
 `scripts/smrt-portability.mjs` for domain-specific transformations.

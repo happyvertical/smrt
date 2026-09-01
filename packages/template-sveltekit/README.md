@@ -156,8 +156,10 @@ uses adapter-node and includes a container plus separate task/schedule workers;
 Compose requires operator-supplied database secrets, and cloud examples
 describe provider composition without pretending to provision it.
 
-Every local web entry point (`app:start`, `pnpm dev`, and direct `node build`)
-shares one writer lease outside the source checkout. Filesystem backup and
-logical import fail closed while a writer is alive; logical export reads every
-model table from one transaction snapshot. The production image retains the
-generated manifest and operator CLI required by doctor/export/import.
+Every supported local web entry point (`app:start` or `pnpm dev`) shares one
+writer lease outside the source checkout. Direct production startup requires
+an explicit loopback `HOST`; prefer `app:start`. Filesystem backup and logical
+import fail closed while a writer is alive; logical export reads every model
+table from one transaction snapshot and reports that uploaded assets are
+excluded. The production image retains the generated manifest and operator CLI
+required by doctor/export/import.

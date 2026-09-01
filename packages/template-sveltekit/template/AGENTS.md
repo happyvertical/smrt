@@ -45,10 +45,11 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
 - Run task and schedule workers as separate deployed processes. Extend the
   portability adapter instead of converting database files.
-- Every local web entry point (`app:start`, `pnpm dev`, and direct `node build`)
-  holds the same writer lease. Stop it before backup/import; never bypass or
-  delete a live lease. Deployed imports require stopped web/workers plus
+- Every supported local web entry point (`app:start` or `pnpm dev`) holds the
+  same writer lease. Direct production startup requires an explicit loopback
+  `HOST`; prefer `app:start`. Stop the app before backup/import; never bypass
+  or delete a live lease. Deployed imports require stopped web/workers plus
   explicit `SMRT_MAINTENANCE_MODE=true`.
-- Logical export reads every model table in one transaction. Keep imports
-  transactional and preserve their relationship-aware ordering/deferred-cycle
-  contract.
+- Logical export reads every model table in one transaction and explicitly
+  reports that uploaded assets are excluded. Keep imports transactional and
+  preserve their relationship-aware ordering/deferred-cycle contract.
