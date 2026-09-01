@@ -25,7 +25,7 @@ function processExists(pid) {
   }
 }
 
-/** @param {string} path */
+/** @param {{ schemaVersion: number, pid: number, instance: string }} record */
 function validateRecord(record) {
   if (
     record.schemaVersion !== 1 ||
