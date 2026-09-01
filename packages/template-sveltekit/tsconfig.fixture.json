@@ -1,6 +1,16 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@happyvertical/smrt-virt-web": [
+        "./__tests__/setup/smrt-virt-web-stub.ts"
+      ],
+      "@sveltejs/kit": ["./__tests__/setup/sveltejs-kit-stub.ts"]
+    }
+  },
   "include": [
+    "__tests__/runtimeDiagnostics.test.ts",
     "__tests__/runtimeProfileReference*.ts",
     "fixtures/**/*.ts"
   ]

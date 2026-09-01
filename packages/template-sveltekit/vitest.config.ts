@@ -20,6 +20,10 @@ export default defineConfig({
       // of this package. Route modules import runtime helpers (`fail`) from
       // it, so tests resolve it to a minimal behavioral stub.
       '@sveltejs/kit': resolve(__dirname, '__tests__/setup/sveltejs-kit-stub.ts'),
+      '@happyvertical/smrt-virt-web': resolve(
+        __dirname,
+        '__tests__/setup/smrt-virt-web-stub.ts',
+      ),
     },
   },
   test: {

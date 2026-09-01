@@ -10,6 +10,7 @@
   } from '@happyvertical/smrt-svelte/workspace';
   import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
   import '@happyvertical/smrt-ui/themes/styles/fonts.css';
+  import RuntimeDiagnosticsWebMcp from '$lib/RuntimeDiagnosticsWebMcp.svelte';
   import type { LayoutProps } from './$types';
 
   let { data, children }: LayoutProps = $props();
@@ -48,6 +49,7 @@
 </script>
 
 <Provider {webmcp}>
+  <RuntimeDiagnosticsWebMcp enabled={data.session.authenticated} />
   <ThemeProvider preset="smrt" colorScheme="system" persist={true}>
     <AdminShell
       title="s-m-r-t app"
