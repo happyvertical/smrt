@@ -9,6 +9,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -23,7 +24,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   MAX_ASSET_COUNT,
   bundleContentDigest,
+  collectFilesystemAssets,
   publishFilesystemAssets,
+  rollbackFilesystemAssets,
   stageFilesystemAssets,
   verifyFilesystemAssets,
 } from '../template/scripts/smrt-portability-assets.mjs';
@@ -500,6 +503,76 @@ describe('asset-aware runtime portability', () => {
     await expect(
       importApplication({ ...target.context, path: linkedBundle }),
     ).rejects.toThrow(/unsafe-bundle-file/);
+  });
+
+  it('fails closed when a source ancestor is replaced after the file is opened', async () => {
+    const fixture = fixtureContext();
+    const blobPath = join(fixture.sourceAssetRoot, 'reference.json');
+    writeFileSync(blobPath, ASSET_BYTES, { mode: 0o600 });
+    const movedRoot = join(fixture.sourceDataRoot, 'assets-opened');
+    const outsideRoot = join(fixture.directory, 'outside-assets');
+    makePrivateDirectory(outsideRoot);
+    writeFileSync(join(outsideRoot, 'reference.json'), Buffer.from('outside'), {
+      mode: 0o600,
+    });
+    const tables = [
+      {
+        name: 'assets',
+        columns: ['id', 'source_uri'],
+        rows: [{ id: ASSET_ID, source_uri: pathToFileURL(blobPath).href }],
+      },
+    ];
+    expect(() =>
+      collectFilesystemAssets({
+        tables,
+        sourceRoot: fixture.sourceRoot,
+        assetRoot: fixture.sourceAssetRoot,
+        onSourceOpened() {
+          renameSync(fixture.sourceAssetRoot, movedRoot);
+          symlinkSync(outsideRoot, fixture.sourceAssetRoot);
+        },
+      }),
+    ).toThrow(/asset-changed-during-read/);
+  });
+
+  it('never follows a destination symlink inserted at the publication boundary', async () => {
+    const fixture = fixtureContext();
+    await exportFixture(fixture);
+    const target = await emptyTarget(fixture);
+    const outsideRoot = join(fixture.directory, 'outside-destination');
+    makePrivateDirectory(outsideRoot);
+    const sentinel = join(outsideRoot, 'sentinel');
+    writeFileSync(sentinel, 'unchanged', { mode: 0o600 });
+    const serialized = readFileSync(fixture.bundlePath, 'utf8');
+    const bundle = JSON.parse(serialized);
+    const verified = verifyFilesystemAssets({
+      assetBundle: bundle.assets,
+      tables: bundle.tables,
+      sourceRoot: fixture.sourceRoot,
+      assetRoot: target.assetRoot,
+    });
+    const staged = stageFilesystemAssets({
+      verified,
+      stateRoot: target.stateRoot,
+      appId: APP_ID,
+      bundleDigest: bundleContentDigest(serialized),
+    });
+    let publicationError: unknown;
+    try {
+      publishFilesystemAssets(staged, {
+        beforeRename() {
+          symlinkSync(outsideRoot, target.assetRoot);
+        },
+      });
+    } catch (error) {
+      publicationError = error;
+    }
+    expect(readFileSync(sentinel, 'utf8')).toBe('unchanged');
+    expect(existsSync(join(outsideRoot, 'portable'))).toBe(false);
+    if (!publicationError) {
+      expect(lstatSync(target.assetRoot).isSymbolicLink()).toBe(false);
+    }
+    rollbackFilesystemAssets(staged);
   });
 
   it('rejects non-empty and unsafe destinations without publishing an asset', async () => {

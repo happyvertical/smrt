@@ -4,7 +4,6 @@ import {
   constants,
   existsSync,
   fstatSync,
-  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -121,7 +120,7 @@ function destinationPathForKey(key) {
   return `portable/${sha256(key)}`;
 }
 
-function readRegularFile(path, approvedRoot) {
+function readRegularFile(path, approvedRoot, onOpened) {
   const lexicalPath = resolve(path);
   if (!isInside(approvedRoot, lexicalPath)) throw fail('asset-outside-root');
   const before = lstatSync(lexicalPath);
@@ -137,13 +136,26 @@ function readRegularFile(path, approvedRoot) {
     if (!opened.isFile() || opened.size !== before.size) {
       throw fail('asset-changed-during-read');
     }
+    onOpened?.();
+    const openedPath = statSync(lexicalPath);
+    if (
+      !isInside(approvedRoot, realpathSync(lexicalPath)) ||
+      openedPath.dev !== opened.dev ||
+      openedPath.ino !== opened.ino
+    ) {
+      throw fail('asset-changed-during-read');
+    }
     const bytes = readFileSync(descriptor);
     const after = fstatSync(descriptor);
+    const afterPath = statSync(lexicalPath);
     if (
       after.dev !== opened.dev ||
       after.ino !== opened.ino ||
       after.size !== opened.size ||
-      bytes.byteLength !== opened.size
+      bytes.byteLength !== opened.size ||
+      !isInside(approvedRoot, realpathSync(lexicalPath)) ||
+      afterPath.dev !== opened.dev ||
+      afterPath.ino !== opened.ino
     ) {
       throw fail('asset-changed-during-read');
     }
@@ -174,7 +186,12 @@ function assetRows(tables) {
 }
 
 /** Replace provider paths with logical keys while collecting verified payloads. */
-export function collectFilesystemAssets({ tables, sourceRoot, assetRoot }) {
+export function collectFilesystemAssets({
+  tables,
+  sourceRoot,
+  assetRoot,
+  onSourceOpened,
+}) {
   const rows = assetRows(tables);
   if (rows.length === 0) {
     return {
@@ -199,7 +216,11 @@ export function collectFilesystemAssets({ tables, sourceRoot, assetRoot }) {
     const payloadPath = payloadPathForKey(key);
     if (payloadPaths.has(payloadPath)) throw fail('duplicate-payload-path');
     payloadPaths.add(payloadPath);
-    const bytes = readRegularFile(pathFromSourceUri(row.source_uri), root);
+    const bytes = readRegularFile(
+      pathFromSourceUri(row.source_uri),
+      root,
+      onSourceOpened,
+    );
     totalBytes += bytes.byteLength;
     if (totalBytes > MAX_TOTAL_ASSET_BYTES) throw fail('asset-total-too-large');
     const contentDigest = digestBytes(bytes);
@@ -360,7 +381,7 @@ export function stageFilesystemAssets({
     assetRoot: verified.root,
     stageRoot,
     phase: 'staging',
-    rootCreated: false,
+    rootExisted: existsSync(verified.root),
     entries: verified.entries.map(({ relativePath, contentDigest }) => ({
       relativePath,
       contentDigest,
@@ -385,29 +406,28 @@ export function stageFilesystemAssets({
   }
 }
 
-/** Publish each staged inode with no-clobber links; the journal makes partial publication recoverable. */
-export function publishFilesystemAssets(staged) {
+/** Publish the complete verified tree with one rename that never follows the target. */
+export function publishFilesystemAssets(staged, options = {}) {
   if (!staged) return;
   const { journal, path } = staged;
   assertEmptyAssetRoot(journal.assetRoot);
-  if (!existsSync(journal.assetRoot)) {
-    mkdirSync(journal.assetRoot, { mode: 0o700 });
-    journal.rootCreated = true;
-  }
   journal.phase = 'publishing';
   writeJournal(path, journal);
-  const portableDirectory = join(journal.assetRoot, 'portable');
-  mkdirSync(portableDirectory, { mode: 0o700 });
-  assertRealDirectory(portableDirectory, 'unsafe-asset-root');
-  for (const entry of journal.entries) {
-    const relativePath = normalizeDestinationPath(entry.relativePath);
-    const source = join(journal.stageRoot, relativePath);
-    const destination = join(journal.assetRoot, relativePath);
-    assertRealDirectory(dirname(destination), 'unsafe-asset-root');
-    linkSync(source, destination);
+  if (existsSync(journal.assetRoot)) rmdirSync(journal.assetRoot);
+  try {
+    options.beforeRename?.();
+    renameSync(journal.stageRoot, journal.assetRoot);
+  } catch (error) {
+    if (journal.rootExisted && !existsSync(journal.assetRoot)) {
+      mkdirSync(journal.assetRoot, { mode: 0o700 });
+    }
+    throw error;
   }
   journal.phase = 'published';
   writeJournal(path, journal);
+  for (const entry of journal.entries) {
+    verifyPublishedEntry(journal, entry, false);
+  }
 }
 
 function verifyPublishedEntry(journal, entry, allowMissing) {
@@ -427,40 +447,56 @@ function verifyPublishedEntry(journal, entry, allowMissing) {
   return true;
 }
 
-function removePublishedAssets(journal) {
-  for (const entry of journal.entries) {
-    const destination = join(
-      journal.assetRoot,
-      normalizeDestinationPath(entry.relativePath),
-    );
-    if (verifyPublishedEntry(journal, entry, true)) rmSync(destination);
+function verifyPublishedTree(journal) {
+  assertRealDirectory(journal.assetRoot, 'unsafe-published-asset');
+  const rootEntries = readdirSync(journal.assetRoot);
+  if (rootEntries.length !== 1 || rootEntries[0] !== 'portable') {
+    throw fail('unexpected-published-asset');
   }
   const portableDirectory = join(journal.assetRoot, 'portable');
-  if (existsSync(portableDirectory) && readdirSync(portableDirectory).length === 0) {
-    rmdirSync(portableDirectory);
+  assertRealDirectory(portableDirectory, 'unsafe-published-asset');
+  const expected = new Set(
+    journal.entries.map((entry) =>
+      normalizeDestinationPath(entry.relativePath).slice('portable/'.length),
+    ),
+  );
+  const actual = readdirSync(portableDirectory);
+  if (actual.length !== expected.size || actual.some((name) => !expected.has(name))) {
+    throw fail('unexpected-published-asset');
   }
-  if (
-    journal.rootCreated &&
-    existsSync(journal.assetRoot) &&
-    readdirSync(journal.assetRoot).length === 0
-  ) {
-    rmdirSync(journal.assetRoot);
+  for (const entry of journal.entries) verifyPublishedEntry(journal, entry, false);
+}
+
+function removePublishedTree(journal) {
+  const quarantine = `${journal.stageRoot}.rollback-${randomBytes(6).toString('hex')}`;
+  renameSync(journal.assetRoot, quarantine);
+  const quarantinedJournal = { ...journal, assetRoot: quarantine };
+  try {
+    verifyPublishedTree(quarantinedJournal);
+  } catch (error) {
+    if (!existsSync(journal.assetRoot)) renameSync(quarantine, journal.assetRoot);
+    throw error;
   }
+  rmSync(quarantine, { recursive: true });
+  if (journal.rootExisted) mkdirSync(journal.assetRoot, { mode: 0o700 });
 }
 
 export function finishFilesystemAssets(staged) {
   if (!staged) return;
-  for (const entry of staged.journal.entries) {
-    verifyPublishedEntry(staged.journal, entry, false);
-  }
-  rmSync(staged.journal.stageRoot, { recursive: true, force: true });
+  verifyPublishedTree(staged.journal);
   rmSync(staged.path, { force: true });
 }
 
 export function rollbackFilesystemAssets(staged) {
   if (!staged) return;
-  removePublishedAssets(staged.journal);
-  rmSync(staged.journal.stageRoot, { recursive: true, force: true });
+  if (existsSync(staged.journal.stageRoot)) {
+    rmSync(staged.journal.stageRoot, { recursive: true });
+  } else if (existsSync(staged.journal.assetRoot)) {
+    removePublishedTree(staged.journal);
+  }
+  if (staged.journal.rootExisted && !existsSync(staged.journal.assetRoot)) {
+    mkdirSync(staged.journal.assetRoot, { mode: 0o700 });
+  }
   rmSync(staged.path, { force: true });
 }
 
@@ -497,14 +533,20 @@ export function recoverFilesystemAssets({
     throw fail('asset-recovery-mismatch');
   }
   if (targetState === 'complete') {
-    for (const entry of journal.entries) verifyPublishedEntry(journal, entry, false);
-    rmSync(journal.stageRoot, { recursive: true, force: true });
+    if (existsSync(journal.stageRoot)) throw fail('asset-recovery-target-mismatch');
+    verifyPublishedTree(journal);
     rmSync(path, { force: true });
     return 'complete';
   }
   if (targetState !== 'empty') throw fail('asset-recovery-target-mismatch');
-  removePublishedAssets(journal);
-  rmSync(journal.stageRoot, { recursive: true, force: true });
+  if (existsSync(journal.stageRoot)) {
+    rmSync(journal.stageRoot, { recursive: true });
+  } else if (existsSync(journal.assetRoot)) {
+    removePublishedTree(journal);
+  }
+  if (journal.rootExisted && !existsSync(journal.assetRoot)) {
+    mkdirSync(journal.assetRoot, { mode: 0o700 });
+  }
   rmSync(path, { force: true });
   return 'retry';
 }
