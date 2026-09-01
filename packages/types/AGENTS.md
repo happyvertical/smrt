@@ -12,6 +12,7 @@ Shared TypeScript type definitions. Prevents circular dependencies between packa
 | `identity.ts` | `User`, `Tenant`, `Role`, `Membership`, `SmrtEntityFields` — cross-package identity data contracts (runtime classes live in smrt-users, which `implements` these) |
 | `knowledge.ts` | Additive schema-version-1 domain knowledge contracts shared by core generation and development tooling |
 | `data-query.ts` | Serializable bounded query request/result envelope, allowlisted schema, filters, paging, totals, freshness, and facets |
+| `capability.ts` | `CapabilityEffect`, `CapabilityClassification`, `CapabilityDeclaration` — the one classification contract (effect/idempotent/openWorld + fail-closed default) shared by generated model tools, view intents, and playbook steps (#2587) |
 
 ## Rules
 

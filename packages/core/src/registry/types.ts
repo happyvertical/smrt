@@ -7,7 +7,10 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
-import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+import type {
+  CapabilityEffect,
+  DomainKnowledgeConfig,
+} from '@happyvertical/smrt-types';
 import type { SmrtCollection } from '../collection';
 import type { CollectionCacheConfig } from '../collection-cache';
 import type { FieldOptions } from '../decorators/index.js';
@@ -35,8 +38,13 @@ export type SmrtObjectConstructor = new (...args: any[]) => SmrtObject;
 
 export type ApiHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-/** Browser/agent-visible effect classification for a generated API action. */
-export type ToolEffect = 'read' | 'write' | 'destructive';
+/**
+ * Browser/agent-visible effect classification for a generated API action.
+ * Aliases the shared `smrt-types` contract (#2587) — see
+ * `CapabilityEffect` there for the fail-closed defaulting rule this
+ * classification is bound by.
+ */
+export type ToolEffect = CapabilityEffect;
 
 export interface ApiSerializerReference {
   /**

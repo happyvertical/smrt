@@ -17,6 +17,13 @@ export type {
   SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from './ai-usage.js';
+// One capability classification contract shared by every WebMCP declaration
+// site — model tools, view intents (#2588), and playbook steps (#2589) (#2587)
+export type {
+  CapabilityClassification,
+  CapabilityDeclaration,
+  CapabilityEffect,
+} from './capability.js';
 // Cross-package identity & tenancy data contracts (zero-runtime structural
 // interfaces; runtime classes live in smrt-users / smrt-profiles)
 export type {

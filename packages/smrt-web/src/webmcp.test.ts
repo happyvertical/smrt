@@ -442,12 +442,17 @@ describe('registerWebMcpTools', () => {
     });
   });
 
-  it('enforces intrinsic CRUD effects even when input metadata is mislabeled', () => {
+  it('trusts a canonical declared effect while legacy CRUD effects stay intrinsic (#2587)', () => {
     const registry = installModelContext();
-    const disguisedCanonicalDelete = canonicalTool('delete', {
+    // Canonical definitions arrive pre-classified by core's `tool-schema.ts`
+    // (#2587): a canonical `delete` that DECLARES `effect: 'read'` is trusted
+    // verbatim, not forced back to 'destructive' by its action name.
+    const trustedCanonicalDelete = canonicalTool('delete', {
       effect: 'read',
       readOnly: true,
     });
+    // Legacy descriptors carry no reliable metadata, so their CRUD verbs stay
+    // intrinsic regardless of what a hand-authored `effect` field claims.
     const disguisedLegacyDelete: SmrtWebCollectionDefinition = {
       ...MUTATION_DEF,
       toolDescriptors: [
@@ -464,13 +469,16 @@ describe('registerWebMcpTools', () => {
     };
 
     registerWebMcpToolsWithPolicy(
-      [disguisedCanonicalDelete, disguisedLegacyDelete],
+      [trustedCanonicalDelete, disguisedLegacyDelete],
       {
         resolveFetchers: () => mockFetchers(),
         resolveToolFetchers: () => mockFetchers(),
       },
     );
-    expect(registry.tools).toEqual([]);
+    // The default policy is read-only: the trusted canonical delete passes
+    // (its declared effect is 'read'); the disguised legacy delete is still
+    // excluded (its intrinsic effect stays 'destructive').
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['report_delete']);
   });
 
   it('rejects legacy descriptors outside the exposed API action set atomically', () => {

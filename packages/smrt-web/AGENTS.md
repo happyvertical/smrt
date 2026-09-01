@@ -70,6 +70,16 @@ module you are editing. This file keeps what holds in every module.
   Duplicates fail atomically before registration.
   With no exposure policy, only `read` effects are selected; broader effects
   require explicit opt-in, and undeclared custom actions are destructive.
+  **Classification (#2587)**: a canonical definition's `effect` / `idempotent`
+  / `openWorld` are TRUSTED verbatim — core's `tool-schema.ts` is the sole
+  classifier, and the registrar never recomputes them by action name. The CRUD
+  switch in `webmcp.ts` (`actionSemantics()`) survives only as the fallback for
+  legacy `SmrtWebCollectionDefinition` tool descriptors that carry no metadata.
+  Both paths share one fail-closed default for an undeclared capability:
+  `{ effect: 'destructive', idempotent: false, openWorld: true }` — see
+  `CapabilityClassification` in `@happyvertical/smrt-types`, which this package
+  mirrors structurally rather than importing (its dependency-DAG guardrails
+  below keep it free of every `@happyvertical/*` dependency).
   Direct mutations invalidate their
   own and relationship-derived collection names through the public
   `invalidateSmrtWebCollections()` seam when the host supplies its shared
