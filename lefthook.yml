@@ -205,6 +205,17 @@ pre-push:
         <input>/<textarea>/<select>/<form> → @happyvertical/smrt-svelte.
         Run: node scripts/check-raw-primitives.mjs
 
+    jsdoc:
+      # Requires JSDoc on exported Svelte component props, which svelte-package
+      # publishes into the .d.ts that editors and s-m-r-t.dev read. Report-only
+      # until a package sets "smrtJsdoc": "strict" in its own package.json.
+      run: node scripts/check-jsdoc.mjs
+      fail_text: |
+        ❌ Undocumented exported props in a strict package!
+
+        Write one sentence per prop saying what it means, not what its type
+        already says. Run: node scripts/check-jsdoc.mjs
+
     svelte-tokens:
       # Repo-wide: every consumed --smrt-* token must be emitted by a theme path
       # (or defined inline). Catches dangling/malformed refs in any package.
