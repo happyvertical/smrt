@@ -7,8 +7,11 @@ import {
 } from './toast.js';
 
 export interface Props {
+  /** Toaster instance that manages the toast queue. */
   toaster?: Toaster;
+  /** Screen corner where toasts appear. */
   position?: 'top-start' | 'top-end' | 'bottom-start' | 'bottom-end';
+  /** CSS class to apply to the viewport container. */
   class?: string;
 }
 let {

@@ -3,8 +3,11 @@ import type { HTMLInputAttributes } from 'svelte/elements';
 import { getRadioGroupContext } from './radio-group-context.js';
 export interface Props
   extends Omit<HTMLInputAttributes, 'type' | 'name' | 'checked' | 'value'> {
+  /** Value for this radio button option. */
   value: string;
+  /** Text label displayed next to the radio button. */
   label: string;
+  /** Whether the radio button is disabled. */
   disabled?: boolean;
 }
 let { value, label, disabled = false, id, onchange, ...rest }: Props = $props();

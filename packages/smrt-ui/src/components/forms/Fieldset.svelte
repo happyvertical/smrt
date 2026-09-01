@@ -2,10 +2,15 @@
 import type { Snippet } from 'svelte';
 import type { HTMLFieldsetAttributes } from 'svelte/elements';
 export interface Props extends Omit<HTMLFieldsetAttributes, 'class'> {
+  /** Legend text that labels the fieldset. */
   legend: string;
+  /** Optional description text displayed below the legend. */
   description?: string;
+  /** Optional error message displayed in alert color. */
   error?: string;
+  /** CSS class to apply to the fieldset. */
   class?: string;
+  /** Form controls and content inside the fieldset. */
   children: Snippet;
 }
 let {

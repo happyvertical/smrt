@@ -4,9 +4,13 @@ import type { ControlInteractionOptions } from './control-interaction.js';
 import Input from './Input.svelte';
 export interface Props
   extends Omit<HTMLInputAttributes, 'type' | 'value' | 'class'> {
+  /** Selected date value as a string (bindable). */
   value?: string;
+  /** Label for the date picker control. */
   label: string;
+  /** CSS class to apply to the picker container. */
   class?: string;
+  /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
 }
 let {
