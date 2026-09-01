@@ -146,7 +146,16 @@ layout that means declaring them, not relying on the CLI's own dependencies.
 |---------|------------|
 | `smrt config:export` | Export agent config for SSG |
 | `smrt export` | Export data in various formats |
-| `smrt init` | Initialize a new s-m-r-t project |
+| `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
+
+`smrt init` updates an existing SvelteKit application's `package.json` with the
+direct dependencies its generated source and default MCP server require:
+`@happyvertical/smrt-core`, `@happyvertical/smrt-config`, and
+`@modelcontextprotocol/server`. It also adds `@happyvertical/smrt-cli` as a
+development dependency so the generated project can run `smrt generate-mcp`.
+Run the project's package-manager install command after initialization. Existing
+versions are preserved; s-m-r-t workspace projects receive `workspace:*` ranges and
+consumer projects receive the CLI's published release line.
 
 ### Dispatch
 
