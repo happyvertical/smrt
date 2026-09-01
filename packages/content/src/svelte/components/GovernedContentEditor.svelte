@@ -20,25 +20,45 @@ export type GovernedContentEditorSaveData = ContentData & {
 };
 
 export interface Props {
+  /** Base URL for content and governance API requests. */
   apiBaseUrl?: string;
+  /** Existing content to edit; omit to create new content. */
   content?: ContentData;
+  /** ID of the content being edited; defaults to 'new'. */
   contentId?: string;
+  /** Default relationship type for new facts added to the content. */
   defaultRelationship?: string;
+  /** Key for the publication review profile to enforce. */
   reviewProfileKey?: string;
+  /** Label shown for custom review workflow submissions. */
   customReviewLabel?: string;
+  /** Instructions shown for custom review workflow submissions. */
   customReviewInstructions?: string;
+  /** Policy key applied to custom review submissions. */
   customReviewPolicyKey?: string;
+  /** Whether to require publication readiness before saving. */
   enforcePublishReadiness?: boolean;
+  /** Whether to disable the save button. */
   saveDisabled?: boolean;
+  /** Message displayed when save is disabled or unavailable. */
   saveNotice?: string | null;
+  /** Whether the agent chat assistant panel is available. */
   agentChatEnabled?: boolean;
+  /** Message displayed when agent chat is unavailable. */
   agentChatNotice?: string | null;
+  /** Whether to hide the save and cancel action buttons. */
   hideActions?: boolean;
+  /** Whether to hide the agent chat panel. */
   hideChat?: boolean;
+  /** Whether to display the fact catalog panel. */
   showFactCatalog?: boolean;
+  /** Whether to display the governance status panel. */
   showGovernancePanel?: boolean;
+  /** Invoked when the assistant context changes during editing. */
   onAssistantContextChange?: ContentEditorAssistantContextChange;
+  /** Invoked when the user saves the content. */
   onSave: (data: GovernedContentEditorSaveData) => void;
+  /** Invoked when the user cancels editing. */
   onCancel: () => void;
 }
 

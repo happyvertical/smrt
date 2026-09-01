@@ -11,9 +11,13 @@ import { M } from '../i18n.editor.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Content body text from which images are extracted. */
   body: string;
+  /** Format of the body content for correct image extraction. */
   format?: ContentBodyFormat | null;
+  /** Index of the currently selected image within the body. */
   selectedIndex?: number;
+  /** Invoked when the user selects an image by index. */
   onSelect?: (index: number) => void;
 }
 

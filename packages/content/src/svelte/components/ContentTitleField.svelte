@@ -2,9 +2,13 @@
 import { Input } from '@happyvertical/smrt-ui/forms';
 
 export interface Props {
+  /** Current title text value. */
   value?: string;
+  /** Placeholder text shown when the field is empty. */
   placeholder?: string;
+  /** Whether the title field must be filled before submission. */
   required?: boolean;
+  /** Invoked when the user modifies the title text. */
   onChange?: (value: string) => void;
 }
 

@@ -11,15 +11,25 @@ import { M } from '../i18n.editor.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for asset upload and retrieval API requests. */
   apiBaseUrl?: string;
+  /** List of assets to display in the browser grid. */
   assets?: ContentEditorAsset[];
+  /** ID of the asset currently marked as the thumbnail. */
   thumbnailAssetId?: string | null;
+  /** Label text displayed on the button to open the image uploader. */
   addButtonLabel?: string;
+  /** Label text displayed on buttons to select an asset for use. */
   selectActionLabel?: string;
+  /** Whether to display the image uploader panel on initial render. */
   showUploaderInitially?: boolean;
+  /** Invoked when a new image is selected through the uploader. */
   onSelectImage?: (image: ImageLike | File | string) => void;
+  /** Invoked when an existing asset is selected from the grid. */
   onUseAsset?: (asset: ContentEditorAsset) => void;
+  /** Invoked when an asset is deleted from the collection. */
   onRemoveAsset?: (assetId: string) => void;
+  /** Invoked when an asset is designated as the thumbnail. */
   onUseAsThumbnail?: (assetId: string) => void;
 }
 
