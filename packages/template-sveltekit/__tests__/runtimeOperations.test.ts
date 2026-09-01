@@ -23,13 +23,16 @@ import {
 import {
   executeImportPlan,
   planImportTables,
+  serializeExportBundle,
   validateImportBundle,
 } from '../template/scripts/smrt-portability.mjs';
 import { withOperationLock } from '../template/scripts/smrt-operation-lock.mjs';
+import { createProviderReadinessProbe } from '../template/scripts/smrt-provider-readiness.mjs';
 import {
   prepareApplicationStateRoot,
   resolveApplicationId,
   resolveApplicationStateRoot,
+  runtimeConfigurationFingerprint,
 } from '../template/scripts/smrt-runtime-identity.mjs';
 import {
   acquireWriterLease,
@@ -46,6 +49,10 @@ const migrationPreparation = readFileSync(
 );
 const portabilitySource = readFileSync(
   join(template, 'scripts', 'smrt-portability.mjs'),
+  'utf8',
+);
+const providerReadiness = readFileSync(
+  join(template, 'scripts', 'smrt-provider-readiness.mjs'),
   'utf8',
 );
 const compose = readFileSync(join(template, 'compose.yaml'), 'utf8');
@@ -72,8 +79,10 @@ describe('profile-aware application operations', () => {
     expect(appDriver).toContain('renameSync(temporary, destination)');
     expect(appDriver).toContain("new URL('/api/_runtime/health', url)");
     expect(appDriver).toContain('health.instance === instance');
+    expect(appDriver).toContain('health.configuration === configuration');
     expect(appDriver).toContain('SMRT_PROCESS_INSTANCE: instance');
     expect(healthRoute).toContain('SMRT_PROCESS_INSTANCE');
+    expect(healthRoute).toContain('applicationRuntimeConfiguration');
     expect(migrationPreparation).toContain('resolveApplicationId');
     expect(migrationPreparation).toContain('prepareLocalDatabaseStorage');
     expect(migrationPreparation).toContain('readActiveWriterLease');
@@ -83,6 +92,7 @@ describe('profile-aware application operations', () => {
       'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
     );
     expect(portabilitySource).toContain('assetsIncluded: false');
+    expect(portabilitySource).toContain('linkSync(temporaryPath, outputPath)');
     expect(portabilitySource).toContain("custody: 'trusted-parent'");
     expect(hooks).toContain(
       'export const init: ServerInit = ensureApplicationRuntimeReady',
@@ -90,6 +100,9 @@ describe('profile-aware application operations', () => {
     expect(appDriver).not.toMatch(/console\.(?:log|error)\(process\.env/);
     expect(dockerfile).toContain('ENV SMRT_RUNTIME_PROFILE=self-hosted');
     expect(dockerfile).toContain('USER node');
+    expect(providerReadiness).toContain('checkReadiness');
+    expect(providerReadiness).toContain('result?.ready !== true');
+    expect(appDriver).not.toContain('SMRT_AUTH_READY');
   });
 
   it('rejects a process command that does not prove application identity', () => {
@@ -153,6 +166,40 @@ describe('profile-aware application operations', () => {
     }
   });
 
+  it('requires deployed provider modules to return verified readiness', async () => {
+    const previous = process.env.SMRT_AUTH_READINESS_MODULE;
+    try {
+      delete process.env.SMRT_AUTH_READINESS_MODULE;
+      await expect(
+        createProviderReadinessProbe('authentication', {
+          profile: 'self-hosted',
+          provider: 'oidc',
+        })(),
+      ).rejects.toThrow('must name an installed provider readiness module');
+
+      process.env.SMRT_AUTH_READINESS_MODULE =
+        'data:text/javascript,export default async () => ({ ready: false })';
+      await expect(
+        createProviderReadinessProbe('authentication', {
+          profile: 'self-hosted',
+          provider: 'oidc',
+        })(),
+      ).rejects.toThrow('readiness check failed');
+
+      process.env.SMRT_AUTH_READINESS_MODULE =
+        'data:text/javascript,export async function checkReadiness() { return { ready: true } }';
+      await expect(
+        createProviderReadinessProbe('authentication', {
+          profile: 'self-hosted',
+          provider: 'oidc',
+        })(),
+      ).resolves.toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.SMRT_AUTH_READINESS_MODULE;
+      else process.env.SMRT_AUTH_READINESS_MODULE = previous;
+    }
+  });
+
   it('fails closed on live writers and removes only stale leases', () => {
     const directory = mkdtempSync(join(tmpdir(), 'smrt-writer-test-'));
     try {
@@ -173,6 +220,26 @@ describe('profile-aware application operations', () => {
       });
       lease.release();
       expect(readActiveWriterLease(directory)).toBeNull();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('reclaims a dead operation lock before admitting a writer', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'smrt-stale-operation-test-'));
+    try {
+      writeFileSync(
+        join(directory, 'operation.lock'),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          pid: 2_147_483_647,
+          operation: 'setup',
+          instance: '0123456789abcdef0123456789abcdef',
+        })}\n`,
+      );
+      const lease = acquireWriterLease(directory);
+      expect(existsSync(join(directory, 'operation.lock'))).toBe(false);
+      lease.release();
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -200,6 +267,32 @@ describe('profile-aware application operations', () => {
     }
   });
 
+  it('fingerprints runtime configuration without coupling identity to passwords', () => {
+    const runtime = {
+      profile: 'self-hosted',
+      providers: { database: { engine: 'postgres' } },
+    };
+    const initial = runtimeConfigurationFingerprint(runtime, {
+      DATABASE_URL: 'postgresql://user:first@db.example/app',
+      HOST: '0.0.0.0',
+      PORT: '3000',
+    });
+    expect(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL: 'postgresql://other:second@db.example/app',
+        HOST: '0.0.0.0',
+        PORT: '3000',
+      }),
+    ).toBe(initial);
+    expect(
+      runtimeConfigurationFingerprint(runtime, {
+        DATABASE_URL: 'postgresql://user:second@other.example/app',
+        HOST: '0.0.0.0',
+        PORT: '3000',
+      }),
+    ).not.toBe(initial);
+  });
+
   it('derives one private state/lock domain from the app and data identity', () => {
     const directory = realpathSync(
       mkdtempSync(join(tmpdir(), 'smrt-state-test-')),
@@ -211,22 +304,33 @@ describe('profile-aware application operations', () => {
         appId: 'state-proof',
         dataDirectory: join(directory, 'data'),
         sourceRoot,
+        platformName: 'linux',
+        homeDirectory: directory,
+        environment: { XDG_STATE_HOME: join(directory, 'state-home') },
       };
       const stateRoot = prepareApplicationStateRoot(options);
-      expect(stateRoot).toBe(join(directory, '.state-proof-state'));
+      expect(stateRoot).toMatch(
+        new RegExp(
+          `^${join(directory, 'state-home', '.state-proof-').replaceAll('.', '\\.')}` +
+            '[a-f0-9]{12}-state$',
+        ),
+      );
       expect(resolveApplicationStateRoot(options)).toBe(stateRoot);
       expect(statSync(stateRoot).mode & 0o777).toBe(0o700);
       expect(
         statSync(join(stateRoot, '.smrt-state-state-proof')).mode & 0o777,
       ).toBe(0o600);
 
-      const redirected = join(directory, '.redirected-state');
+      const redirected = join(directory, 'redirected-state');
       symlinkSync(sourceRoot, redirected);
       expect(() =>
         prepareApplicationStateRoot({
           appId: 'redirected',
           dataDirectory: join(directory, 'other-data'),
           sourceRoot,
+          platformName: 'linux',
+          homeDirectory: directory,
+          environment: { XDG_STATE_HOME: redirected },
         }),
       ).toThrow(/unsafe/);
     } finally {
@@ -272,6 +376,14 @@ describe('profile-aware application operations', () => {
         expected,
       ),
     ).toThrow('incomplete columns');
+  });
+
+  it('serializes lossless SQLite integers as portable decimal strings', () => {
+    expect(
+      JSON.parse(
+        serializeExportBundle({ rows: [{ count: 9_007_199_254_740_993n }] }),
+      ),
+    ).toEqual({ rows: [{ count: '9007199254740993' }] });
   });
 
   it('orders parents first and defers nullable cyclic references', () => {

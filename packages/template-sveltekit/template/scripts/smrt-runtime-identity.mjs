@@ -7,7 +7,8 @@ import {
   readFileSync,
   realpathSync,
 } from 'node:fs';
-import { dirname, join, parse, resolve } from 'node:path';
+import { join, parse, resolve } from 'node:path';
+import { homedir, platform } from 'node:os';
 import {
   encodeApplicationId,
   resolveLocalRuntimePaths,
@@ -38,7 +39,7 @@ export function resolveApplicationId(options = {}) {
  * State is derived from the canonical application/data identity. It is not an
  * independent override because every process and operator command must share
  * one lock domain for a given database root.
- * @param {{appId: string, dataDirectory?: string, sourceRoot?: string}} options
+ * @param {{appId: string, dataDirectory?: string, sourceRoot?: string, platformName?: string, homeDirectory?: string, environment?: Record<string, string | undefined>}} options
  */
 export function resolveApplicationStateRoot(options) {
   const paths = resolveLocalRuntimePaths({
@@ -46,7 +47,59 @@ export function resolveApplicationStateRoot(options) {
     dataDirectory: options.dataDirectory,
     sourceRoot: options.sourceRoot,
   });
-  return resolve(dirname(paths.root), `.${options.appId}-state`);
+  const platformName = options.platformName || platform();
+  const homeDirectory = options.homeDirectory || homedir();
+  const environment = options.environment || process.env;
+  const stateBase =
+    platformName === 'darwin'
+      ? join(homeDirectory, 'Library', 'Application Support')
+      : platformName === 'win32'
+        ? environment.LOCALAPPDATA || homeDirectory
+        : environment.XDG_STATE_HOME || join(homeDirectory, '.local', 'state');
+  const dataIdentity = createHash('sha256')
+    .update(resolve(paths.root))
+    .digest('hex')
+    .slice(0, 12);
+  return resolve(stateBase, `.${options.appId}-${dataIdentity}-state`);
+}
+
+/** @param {string | undefined} value */
+function databaseTargetIdentity(value) {
+  if (!value) return null;
+  try {
+    const target = new URL(value);
+    target.username = '';
+    target.password = '';
+    target.search = '';
+    target.hash = '';
+    return target.toString();
+  } catch {
+    return resolve(value);
+  }
+}
+
+/**
+ * Secret-safe identity used to reject stale managed processes after profile,
+ * provider, database-target, or listener configuration changes.
+ * @param {{profile: string, providers: object}} runtime
+ * @param {Record<string, string | undefined>} [environment]
+ */
+export function runtimeConfigurationFingerprint(
+  runtime,
+  environment = process.env,
+) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        profile: runtime.profile,
+        providers: runtime.providers,
+        databaseTarget: databaseTargetIdentity(environment.DATABASE_URL),
+        host: environment.HOST || null,
+        port: environment.PORT || null,
+        backgroundJobs: environment.SMRT_BACKGROUND_JOBS === 'true',
+      }),
+    )
+    .digest('hex');
 }
 
 /** @param {string} parent @param {string} child */
@@ -67,7 +120,7 @@ function errorCode(error) {
 
 /**
  * Create or verify the private, app-bound state/lock directory.
- * @param {{appId: string, dataDirectory?: string, sourceRoot?: string}} options
+ * @param {{appId: string, dataDirectory?: string, sourceRoot?: string, platformName?: string, homeDirectory?: string, environment?: Record<string, string | undefined>}} options
  */
 export function prepareApplicationStateRoot(options) {
   const sourceRoot = realpathSync(resolve(options.sourceRoot || process.cwd()));
@@ -144,3 +197,4 @@ export function prepareApplicationStateRoot(options) {
   }
   return stateRoot;
 }
+import { createHash } from 'node:crypto';

@@ -53,6 +53,9 @@ describe('copyTemplate', () => {
       existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),
     ).toBe(true);
     expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-provider-readiness.mjs')),
+    ).toBe(true);
+    expect(
       existsSync(join(tempDir, 'scripts', 'smrt-prepare-migration.mjs')),
     ).toBe(true);
     expect(
@@ -81,6 +84,21 @@ describe('copyTemplate', () => {
     expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf-8').trim()).toBe(
       '@AGENTS.md',
     );
+  });
+
+  it('preserves existing ignore files unless overwrite is requested', () => {
+    writeFileSync(join(tempDir, '.gitignore'), 'user-git-ignore\n');
+    writeFileSync(join(tempDir, '.npmignore'), 'user-npm-ignore\n');
+
+    copyTemplate(tempDir, { name: 'my-app' });
+
+    expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toBe(
+      'user-git-ignore\n',
+    );
+    expect(readFileSync(join(tempDir, '.npmignore'), 'utf8')).toBe(
+      'user-npm-ignore\n',
+    );
+    expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
   });
 
   it('ships one canonical profile and the complete operational surface', () => {

@@ -1,5 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 
 import { getDatabase } from '@happyvertical/sql';
 
@@ -149,6 +157,15 @@ export function validateImportBundle(bundle, expected) {
   }
 }
 
+/** JSON cannot represent SQLite's lossless BigInt results; decimal strings do. */
+export function serializeExportBundle(bundle) {
+  return JSON.stringify(
+    bundle,
+    (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
+    2,
+  );
+}
+
 export async function exportApplication(context) {
   const tables = manifestTables(context.sourceRoot);
   let bundle;
@@ -190,9 +207,37 @@ export async function exportApplication(context) {
       `${context.appId}-${Date.now()}.json`,
     );
   mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
-  writeFileSync(outputPath, `${JSON.stringify(bundle, null, 2)}\n`, {
-    mode: 0o600,
-  });
+  const temporaryPath = join(
+    dirname(outputPath),
+    `.${basename(outputPath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`,
+  );
+  try {
+    writeFileSync(
+      temporaryPath,
+      `${serializeExportBundle(bundle)}\n`,
+      {
+        flag: 'wx',
+        mode: 0o600,
+      },
+    );
+    // A same-filesystem hard link publishes the complete mode-0600 inode
+    // atomically and fails rather than following or replacing a destination.
+    try {
+      linkSync(temporaryPath, outputPath);
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code === 'EEXIST'
+      ) {
+        throw new Error(`Export destination already exists: ${outputPath}`);
+      }
+      throw error;
+    }
+  } finally {
+    rmSync(temporaryPath, { force: true });
+  }
   return {
     path: outputPath,
     tableCount: bundle.tables.length,

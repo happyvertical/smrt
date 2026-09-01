@@ -6,6 +6,7 @@ import {
   resolveConfiguredApplicationRuntime,
 } from '@happyvertical/smrt-config';
 import { getDatabase } from '@happyvertical/sql';
+import { createProviderReadinessProbe } from './smrt-provider-readiness.mjs';
 
 await loadConfig({ cache: false });
 const configured = resolveConfiguredApplicationRuntime();
@@ -13,12 +14,6 @@ if (configured.profile === 'local') {
   throw new Error('Local jobs run inline or embedded; a separate worker requires self-hosted or cloud.');
 }
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required.');
-
-function requireProviderSetting(name) {
-  return async () => {
-    if (!process.env[name]) throw new Error(`${name} is not configured.`);
-  };
-}
 
 const runtime = await initializeDeployedApplicationRuntime({
   profile: configured.profile,
@@ -39,15 +34,24 @@ const runtime = await initializeDeployedApplicationRuntime({
   },
   authentication: {
     provider: configured.providers.authentication.provider,
-    readiness: requireProviderSetting('SMRT_AUTH_READY'),
+    readiness: createProviderReadinessProbe('authentication', {
+      profile: configured.profile,
+      provider: configured.providers.authentication.provider,
+    }),
   },
   assets: {
     provider: configured.providers.assets.provider,
-    readiness: requireProviderSetting('SMRT_ASSETS_READY'),
+    readiness: createProviderReadinessProbe('assets', {
+      profile: configured.profile,
+      provider: configured.providers.assets.provider,
+    }),
   },
   secrets: {
     provider: configured.providers.secrets.provider,
-    readiness: requireProviderSetting('SMRT_SECRETS_READY'),
+    readiness: createProviderReadinessProbe('secrets', {
+      profile: configured.profile,
+      provider: configured.providers.secrets.provider,
+    }),
   },
 });
 

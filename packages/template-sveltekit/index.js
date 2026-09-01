@@ -89,9 +89,13 @@ export function copyTemplate(destination, options = {}) {
   if (!existsSync(packagedGitignore)) {
     throw new Error('Template package is missing gitignore.template');
   }
-  rmSync(join(destination, '.gitignore'), { force: true });
-  rmSync(join(destination, '.npmignore'), { force: true });
-  renameSync(packagedGitignore, join(destination, '.gitignore'));
+  const destinationGitignore = join(destination, '.gitignore');
+  if (existsSync(destinationGitignore) && !options.overwrite) {
+    rmSync(packagedGitignore, { force: true });
+  } else {
+    rmSync(destinationGitignore, { force: true });
+    renameSync(packagedGitignore, destinationGitignore);
+  }
 
   // Update package.json with project name if provided
   if (options.name) {

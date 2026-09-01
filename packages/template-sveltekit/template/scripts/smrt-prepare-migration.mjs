@@ -18,6 +18,20 @@ import { withOperationLock } from './smrt-operation-lock.mjs';
 import { readActiveWriterLease } from './smrt-writer-lease.mjs';
 
 const sourceRoot = process.cwd();
+try {
+  process.loadEnvFile(join(sourceRoot, '.env'));
+} catch (error) {
+  if (
+    !(
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    )
+  ) {
+    throw error;
+  }
+}
 const packageJson = JSON.parse(
   readFileSync(join(sourceRoot, 'package.json'), 'utf8'),
 );

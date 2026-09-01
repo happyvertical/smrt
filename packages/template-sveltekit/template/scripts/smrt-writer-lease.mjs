@@ -146,20 +146,38 @@ export function acquireWriterLease(stateRoot, options = {}) {
       // A missing or externally repaired lease is not ours to remove.
     }
   };
+  let operationDescriptor;
   try {
-    const operation = JSON.parse(
-      readFileSync(join(stateRoot, 'operation.lock'), 'utf8'),
-    );
+    const operationPath = join(stateRoot, 'operation.lock');
+    operationDescriptor = openSync(operationPath, 'r');
+    const operationIdentity = fstatSync(operationDescriptor);
+    const operation = JSON.parse(readFileSync(operationDescriptor, 'utf8'));
+    closeSync(operationDescriptor);
+    operationDescriptor = undefined;
     if (
-      operation.instance !== options.operationInstance ||
+      !Number.isSafeInteger(operation.pid) ||
+      operation.pid < 1 ||
       typeof operation.instance !== 'string'
     ) {
+      throw new Error('The application operation lock cannot be verified.');
+    }
+    if (!processExists(operation.pid)) {
+      const currentIdentity = lstatSync(operationPath);
+      if (
+        currentIdentity.dev !== operationIdentity.dev ||
+        currentIdentity.ino !== operationIdentity.ino
+      ) {
+        throw new Error('The application operation lock changed unexpectedly.');
+      }
+      rmSync(operationPath);
+    } else if (operation.instance !== options.operationInstance) {
       release();
       throw new Error(
         'An application operation is active; wait for it to finish before starting a writer.',
       );
     }
   } catch (error) {
+    if (operationDescriptor !== undefined) closeSync(operationDescriptor);
     if (
       !(
         error &&
@@ -172,6 +190,7 @@ export function acquireWriterLease(stateRoot, options = {}) {
         release();
         throw new Error('The application operation lock cannot be verified.');
       }
+      release();
       throw error;
     }
   }

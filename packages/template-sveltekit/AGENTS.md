@@ -19,14 +19,17 @@ It is the ground-up alternative to `smrt-saas-starter`.
 - The production baseline uses adapter-node with separate web, task-worker, and
   schedule-worker processes. Its runtime image retains the generated manifest
   and operator CLI needed by `app:doctor`, `app:export`, and `app:import`.
+- Deployed authentication, asset, and secret readiness is delegated to
+  installed provider-owned probe modules; never replace it with truthy flags.
 - Every supported local web writer (`app:start` or `pnpm dev`)
   acquires the same external writer lease. Logical imports and filesystem
   backups fail closed while any writer is alive; logical exports take one
   database transaction snapshot and report that uploaded assets are excluded.
   Direct production startup must set an explicit loopback `HOST`.
 - `app:start` proves readiness against the scaffold's private runtime health
-  route using both the canonical application ID and its random process instance;
-  a different server on the configured port is never accepted as this app.
+  route using the canonical application ID, random process instance, and
+  secret-safe runtime configuration identity; a different or stale server is
+  never accepted as this app.
 - Directly used `@happyvertical/smrt-*` packages share one current release range.
 - `@happyvertical/smrt-cli` is a direct dev dependency because scripts/docs use
   its binary. The template includes `@happyvertical/smrt-web` because the root

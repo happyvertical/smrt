@@ -14,8 +14,10 @@ import { getDatabase } from '@happyvertical/sql';
 import {
   prepareApplicationStateRoot,
   resolveApplicationId,
+  runtimeConfigurationFingerprint,
 } from '../../../scripts/smrt-runtime-identity.mjs';
 import { acquireWriterLease } from '../../../scripts/smrt-writer-lease.mjs';
+import { createProviderReadinessProbe } from '../../../scripts/smrt-provider-readiness.mjs';
 
 const loadedConfig = await loadConfig();
 
@@ -26,6 +28,11 @@ const appId = resolveApplicationId({
   sourceRoot: process.cwd(),
   explicitId: process.env.SMRT_APP_ID,
 });
+
+export const applicationRuntimeConfiguration = runtimeConfigurationFingerprint(
+  applicationRuntime,
+  process.env,
+);
 
 export function getApplicationDatabaseConfig(): SmrtClassOptions['db'] {
   if (applicationRuntime.profile === 'local') {
@@ -48,12 +55,6 @@ let localWriterLease: { release(): void } | undefined;
 let deployedRuntimePromise: ReturnType<
   typeof initializeDeployedApplicationRuntime
 > | undefined;
-
-function requireProviderSetting(name: string): () => Promise<void> {
-  return async () => {
-    if (!process.env[name]) throw new Error(`${name} is not configured.`);
-  };
-}
 
 /** Fail-closed startup gate for every deployed web process. */
 export async function ensureApplicationRuntimeReady(): Promise<void> {
@@ -88,15 +89,24 @@ export async function ensureApplicationRuntimeReady(): Promise<void> {
     },
     authentication: {
       provider: authenticationProvider,
-      readiness: requireProviderSetting('SMRT_AUTH_READY'),
+      readiness: createProviderReadinessProbe('authentication', {
+        profile: applicationRuntime.profile,
+        provider: authenticationProvider,
+      }),
     },
     assets: {
       provider: applicationRuntime.providers.assets.provider,
-      readiness: requireProviderSetting('SMRT_ASSETS_READY'),
+      readiness: createProviderReadinessProbe('assets', {
+        profile: applicationRuntime.profile,
+        provider: applicationRuntime.providers.assets.provider,
+      }),
     },
     secrets: {
       provider: applicationRuntime.providers.secrets.provider,
-      readiness: requireProviderSetting('SMRT_SECRETS_READY'),
+      readiness: createProviderReadinessProbe('secrets', {
+        profile: applicationRuntime.profile,
+        provider: applicationRuntime.providers.secrets.provider,
+      }),
     },
   });
   await deployedRuntimePromise;

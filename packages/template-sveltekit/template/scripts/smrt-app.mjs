@@ -33,11 +33,28 @@ import {
 import {
   prepareApplicationStateRoot,
   resolveApplicationId,
+  resolveApplicationStateRoot,
+  runtimeConfigurationFingerprint,
 } from './smrt-runtime-identity.mjs';
 import { withOperationLock } from './smrt-operation-lock.mjs';
+import { createProviderReadinessProbe } from './smrt-provider-readiness.mjs';
 import { acquireWriterLease } from './smrt-writer-lease.mjs';
 
 const sourceRoot = process.cwd();
+try {
+  process.loadEnvFile(join(sourceRoot, '.env'));
+} catch (error) {
+  if (
+    !(
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      error.code === 'ENOENT'
+    )
+  ) {
+    throw error;
+  }
+}
 const packageJson = JSON.parse(
   readFileSync(join(sourceRoot, 'package.json'), 'utf8'),
 );
@@ -160,6 +177,11 @@ function runtimeEnvironment(runtime) {
     ...process.env,
     SMRT_APP_ID: appId,
     SMRT_RUNTIME_PROFILE: runtime.profile,
+    HOST:
+      runtime.profile === 'local'
+        ? '127.0.0.1'
+        : process.env.HOST || '0.0.0.0',
+    PORT: process.env.PORT || '5173',
   };
   if (runtime.profile === 'local') {
     const paths = resolveLocalRuntimePaths({
@@ -290,7 +312,7 @@ async function recoverOnboarding(operationLock) {
   }
 }
 
-async function waitForReady(url, pid, instance) {
+async function waitForReady(url, pid, instance, configuration) {
   const healthUrl = new URL('/api/_runtime/health', url);
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
@@ -300,7 +322,8 @@ async function waitForReady(url, pid, instance) {
         if (
           health?.status === 'ready' &&
           health.application === appId &&
-          health.instance === instance
+          health.instance === instance &&
+          health.configuration === configuration
         ) {
           process.kill(pid, 0);
           return;
@@ -325,9 +348,10 @@ async function start(operationLock) {
   const runtime = await resolveRuntime();
   const { env } = runtimeEnvironment(runtime);
   const url = `http://127.0.0.1:${env.PORT || '5173'}/`;
+  const configuration = runtimeConfigurationFingerprint(runtime, env);
   const existing = readProcess();
   if (existing) {
-    await waitForReady(url, existing.pid, existing.instance);
+    await waitForReady(url, existing.pid, existing.instance, configuration);
     console.log(
       JSON.stringify({ schemaVersion: 1, status: 'running', pid: existing.pid }),
     );
@@ -355,7 +379,7 @@ async function start(operationLock) {
   child.unref();
   writeProcessRecord(pidPath(), { pid: child.pid, instance });
   try {
-    await waitForReady(url, child.pid, instance);
+    await waitForReady(url, child.pid, instance, configuration);
   } catch (error) {
     try {
       process.kill(child.pid, 'SIGTERM');
@@ -425,6 +449,7 @@ async function doctor() {
   const findings = [];
   let runtime = null;
   let paths = null;
+  let statePath = null;
   let canInspectMigrations = false;
   try {
     runtime = await resolveRuntime();
@@ -448,24 +473,38 @@ async function doctor() {
 
   if (runtime) {
     if (runtime.profile !== 'local') {
-      for (const [component, setting] of [
-        ['authentication', 'SMRT_AUTH_READY'],
-        ['assets', 'SMRT_ASSETS_READY'],
-        ['secrets', 'SMRT_SECRETS_READY'],
+      for (const [component, provider] of [
+        ['authentication', runtime.providers.authentication.provider],
+        ['assets', runtime.providers.assets.provider],
+        ['secrets', runtime.providers.secrets.provider],
       ]) {
-        if (!process.env[setting]) {
+        try {
+          await createProviderReadinessProbe(component, {
+            profile: runtime.profile,
+            provider,
+          })();
+        } catch (error) {
           findings.push({
             code: 'provider-not-configured',
             component,
             severity: 'error',
             message: `The ${component} provider is not ready.`,
-            recovery: `Configure the provider-owned adapter, then set ${setting} from its readiness check.`,
+            recovery:
+              error instanceof Error
+                ? error.message
+                : 'Configure an installed provider-owned readiness module.',
           });
         }
       }
     }
     try {
       ({ paths } = runtimeEnvironment(runtime));
+      statePath = resolveApplicationStateRoot({
+        appId,
+        dataDirectory: process.env.SMRT_DATA_DIR,
+        sourceRoot,
+      });
+      accessSync(nearestExistingAncestor(statePath), constants.W_OK);
       if (runtime.profile === 'local') {
         paths = await validateLocalDatabaseStorage({
           appId,
@@ -552,9 +591,15 @@ async function doctor() {
       : 'ready',
     profile: runtime?.profile || null,
     capabilities: runtime?.capabilities || null,
-    paths: paths
-      ? { root: paths.root, database: paths.database, assets: paths.assets }
-      : null,
+    paths:
+      paths || statePath
+        ? {
+            root: paths?.root || null,
+            database: paths?.database || null,
+            assets: paths?.assets || null,
+            state: statePath,
+          }
+        : null,
     findings,
     secretValuesIncluded: false,
   };

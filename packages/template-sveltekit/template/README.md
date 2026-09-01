@@ -332,7 +332,9 @@ mobile surfaces. Those concerns are intentionally absent here.
   separate workers. Copy `.env.self-hosted.example` to `.env.self-hosted` for
   the service configuration. Separately create the ignored plain `.env` file
   with `DATABASE_URL` and `POSTGRES_PASSWORD` for Compose interpolation, then
-  use Compose. Compose refuses to start when either secret is absent.
+  use Compose. Compose refuses to start when either secret is absent. Configure
+  installed authentication, asset, and secret readiness modules; each module
+  must probe its real provider before web or workers can start.
 - `cloud`: hosted identity, managed providers, required tenant context, and
   scalable workers. `.env.cloud.example` records the composition boundary.
 

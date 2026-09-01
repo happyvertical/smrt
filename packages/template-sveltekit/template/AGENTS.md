@@ -16,6 +16,8 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Recover an interrupted unclaimed owner invitation with `pnpm app:recover`,
   then `pnpm app:start` and `pnpm app:open`; never print or copy its token.
 - Treat `smrt.config.ts` `runtime.profile` as the only infrastructure selector.
+- Treat the private health route's configuration digest as an identity only;
+  it must never contain or hash provider credentials.
 
 ## Data and authorization
 
@@ -44,7 +46,9 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
 - Run task and schedule workers as separate deployed processes. Extend the
-  portability adapter instead of converting database files.
+  portability adapter instead of converting database files. Deployed provider
+  readiness must come from installed modules that probe the real backing
+  services; environment booleans are not readiness evidence.
 - Every supported local web entry point (`app:start` or `pnpm dev`) holds the
   same writer lease. Direct production startup requires an explicit loopback
   `HOST`; prefer `app:start`. Stop the app before backup/import; never bypass
