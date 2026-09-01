@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.43.10
+
+### Patch Changes
+
+- ### Features
+
+  - compose self-hosted and cloud runtimes (#2569) (app-runtime)
+  - add cross-page bulk workflows (#2541) (content)
+  - add bounded campaign reporting pages (#2536) (#2568) (marketing)
+  - add safe local SQLite runtime (#2565) (app-runtime)
+
+  ### Bug Fixes
+
+  - add init dependency management (#2573) (cli)
+  - transpile generated MCP servers with OXC (#2572) (core)
+
+  ### Other Changes
+
+  - chore: recover complete v0.43.9 (#2567) (release)
+  - chore: sync sdk packages to v0.89.4 (#2564) (deps)
+  - @happyvertical/smrt-config@0.43.10
+  - @happyvertical/smrt-types@0.43.10
+  - @happyvertical/smrt-scanner@0.43.10
+
 ## 0.43.9
 
 ### Patch Changes
