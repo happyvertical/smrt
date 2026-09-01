@@ -7,13 +7,21 @@
  * language now follows the requested extension: JavaScript targets are
  * transpiled, TypeScript targets are written verbatim.
  *
- * Syntax is verified by `node --check` on a `.mjs` copy, which parses the file
- * as an ES module without executing it — the exact failure mode from the issue.
+ * Syntax is verified by `node --check` on a `.mjs` copy, and generated
+ * JavaScript entries are started with plain Node against minimal runtime stubs.
  */
 
 import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { copyFile, mkdtemp, readFile, rm } from 'node:fs/promises';
+import {
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { stripTypeScriptTypes } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,6 +52,69 @@ async function expectParsesAsEsModule(filePath: string): Promise<void> {
   } finally {
     await rm(moduleCopy, { force: true });
   }
+}
+
+/**
+ * Install the smallest runtime surface a generated server needs so its emitted
+ * JavaScript can start with plain Node without coupling this test to a built
+ * copy of smrt-core. The stubs deliberately exercise the generated entry,
+ * config, tools, and handlers modules rather than merely syntax-checking them.
+ */
+async function installGeneratedServerRuntimeStubs(
+  outputDirectory: string,
+): Promise<void> {
+  const nodeModules = join(outputDirectory, 'node_modules');
+  const serverPackage = join(nodeModules, '@modelcontextprotocol', 'server');
+  const smrtPackage = join(nodeModules, '@happyvertical', 'smrt-core');
+  const configPackage = join(nodeModules, '@happyvertical', 'smrt-config');
+
+  await Promise.all([
+    mkdir(serverPackage, { recursive: true }),
+    mkdir(smrtPackage, { recursive: true }),
+    mkdir(configPackage, { recursive: true }),
+  ]);
+
+  await Promise.all([
+    writeFile(
+      join(serverPackage, 'package.json'),
+      JSON.stringify({
+        type: 'module',
+        exports: { '.': './index.js', './stdio': './stdio.js' },
+      }),
+    ),
+    writeFile(
+      join(serverPackage, 'index.js'),
+      'export class Server { setRequestHandler() {} }\n',
+    ),
+    writeFile(
+      join(serverPackage, 'stdio.js'),
+      "export function serveStdio(factory) { factory(); console.log('smrt-generated-mcp-started'); return { close: async () => {} }; }\n",
+    ),
+    writeFile(
+      join(smrtPackage, 'package.json'),
+      JSON.stringify({ type: 'module', exports: './index.js' }),
+    ),
+    writeFile(
+      join(smrtPackage, 'index.js'),
+      "export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n",
+    ),
+    writeFile(
+      join(configPackage, 'package.json'),
+      JSON.stringify({ type: 'module', exports: './index.js' }),
+    ),
+    writeFile(
+      join(configPackage, 'index.js'),
+      'export async function loadConfig() { return {}; }\n',
+    ),
+  ]);
+}
+
+/** Run the generated entry with plain Node and observe its startup path. */
+async function expectGeneratedServerStarts(filePath: string): Promise<void> {
+  await installGeneratedServerRuntimeStubs(join(filePath, '..'));
+  const executablePath = await realpath(filePath);
+  const { stdout } = await execFileAsync(process.execPath, [executablePath]);
+  expect(stdout).toContain('smrt-generated-mcp-started');
 }
 
 describe('generated TypeScript stays erasable', () => {
@@ -122,13 +193,13 @@ describe('transpileGeneratedSource', () => {
         "import { type CallToolRequest, Server } from '@modelcontextprotocol/server';",
         'const STI_TARGETS: Record<string, Record<string, string>> = {};',
         'export function boot(server: Server): Record<string, unknown> {',
-        '  return { server, STI_TARGETS };',
+        '  return { server, serverConstructor: Server, STI_TARGETS };',
         '}',
       ].join('\n'),
     );
 
     expect(output).toContain('#!/usr/bin/env node');
-    expect(output).toContain("from '@modelcontextprotocol/server'");
+    expect(output).toMatch(/from ["']@modelcontextprotocol\/server["']/);
     expect(output).toContain('Server');
     expect(output).not.toContain('CallToolRequest');
     expect(output).not.toContain('Record<string');
@@ -187,6 +258,7 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     expect(content).not.toContain('const STI_TARGETS: Record<');
 
     await expectParsesAsEsModule(outputPath);
+    await expectGeneratedServerStarts(outputPath);
   });
 
   it('keeps TypeScript for a .ts target so type-aware runners still work', async () => {
@@ -238,9 +310,9 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     });
 
     const indexContent = await readFile(indexPath, 'utf-8');
-    expect(indexContent).toContain("from './config.js'");
-    expect(indexContent).toContain("from './tools/index.js'");
-    expect(indexContent).toContain("from './handlers/index.js'");
+    expect(indexContent).toMatch(/from ["']\.\/config\.js["']/);
+    expect(indexContent).toMatch(/from ["']\.\/tools\/index\.js["']/);
+    expect(indexContent).toMatch(/from ["']\.\/handlers\/index\.js["']/);
     // Unused package imports fail to resolve in consumers that do not depend
     // on them, which is just as fatal as a syntax error.
     expect(indexContent).not.toContain('@happyvertical/sql');
@@ -254,6 +326,7 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     ]) {
       await expectParsesAsEsModule(join(outputDir, relative));
     }
+    await expectGeneratedServerStarts(indexPath);
   });
 
   it('emits modular TypeScript with matching sibling specifiers', async () => {
@@ -296,9 +369,9 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     });
 
     const indexContent = await readFile(join(outputDir, 'index.mjs'), 'utf-8');
-    expect(indexContent).toContain("from './config.mjs'");
-    expect(indexContent).toContain("from './tools/index.mjs'");
-    expect(indexContent).toContain("from './handlers/index.mjs'");
+    expect(indexContent).toMatch(/from ["']\.\/config\.mjs["']/);
+    expect(indexContent).toMatch(/from ["']\.\/tools\/index\.mjs["']/);
+    expect(indexContent).toMatch(/from ["']\.\/handlers\/index\.mjs["']/);
 
     for (const relative of [
       'index.mjs',
@@ -308,6 +381,7 @@ describe('MCPGenerator - generated output is runnable (#2279)', () => {
     ]) {
       await expectParsesAsEsModule(join(outputDir, relative));
     }
+    await expectGeneratedServerStarts(join(outputDir, 'index.mjs'));
   });
 
   it('refuses a CommonJS output path instead of writing an unusable file', async () => {

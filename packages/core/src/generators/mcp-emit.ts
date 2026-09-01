@@ -16,9 +16,9 @@
  *   `node .smrt/mcp-server/index.js` runs instead of dying on
  *   `SyntaxError: Unexpected identifier 'CallToolRequest'`.
  *
- * Transpilation uses the `typescript` package that `@happyvertical/smrt-core`
- * already depends on, imported lazily so that merely importing the generators
- * does not pull the compiler into memory.
+ * Transpilation uses `oxc-transform`, which strips the generated source's
+ * erasable TypeScript syntax without making the TypeScript compiler a runtime
+ * dependency of `@happyvertical/smrt-core` (#2339).
  */
 
 /** Language a generated file is written in, derived from its extension. */
@@ -34,6 +34,18 @@ const TYPESCRIPT_EXTENSIONS = ['.ts', '.mts'];
  * so a CommonJS target can never run whatever language it is written in.
  */
 const COMMONJS_EXTENSIONS = ['.cjs', '.cts'];
+
+type OxcTransform = typeof import('oxc-transform').transform;
+
+/**
+ * Load OXC only for JavaScript emission. Core exports every generator from its
+ * package root, so loading native OXC bindings at module evaluation would make
+ * ordinary ORM and TypeScript-output consumers depend on this optional path.
+ */
+async function loadOxcTransform(): Promise<OxcTransform> {
+  const { transform } = await import('oxc-transform');
+  return transform;
+}
 
 function assertModuleTarget(outputPath: string, lowerCased: string): void {
   const commonJs = COMMONJS_EXTENSIONS.find((extension) =>
@@ -89,28 +101,12 @@ export function generatedSiblingExtension(
   return '.js';
 }
 
-type TypeScriptApi = typeof import('typescript');
-
-/**
- * Load the TypeScript compiler API lazily.
- *
- * `typescript` is CommonJS: Node's ESM interop exposes the whole API on
- * `default`, while bundlers hand back the namespace itself.
- */
-async function loadTypeScript(): Promise<TypeScriptApi> {
-  const imported = (await import('typescript')) as TypeScriptApi & {
-    default?: TypeScriptApi;
-  };
-  return imported.default ?? imported;
-}
-
 /**
  * Transpile generated TypeScript to runnable ESM JavaScript.
  *
- * `verbatimModuleSyntax` keeps every value import the template emits (an
- * unused-looking import must not be elided: the generated server relies on
- * side effects and on imports whose only use is inside emitted switch cases),
- * while type-only import specifiers are dropped.
+ * Generated source is constrained to erasable TypeScript syntax, so OXC can
+ * strip annotations and type-only import specifiers while leaving the ES
+ * module's runtime imports intact.
  *
  * @param source - Generated TypeScript source
  * @param label - Target path or name reported in transpile diagnostics
@@ -121,38 +117,20 @@ export async function transpileGeneratedSource(
   source: string,
   label = 'generated MCP source',
 ): Promise<string> {
-  const ts = await loadTypeScript();
-
-  const { outputText, diagnostics } = ts.transpileModule(source, {
-    // The input is always TypeScript regardless of where it will be written;
-    // a `.js` file name here would make the compiler parse it as JavaScript.
-    fileName: 'smrt-generated-mcp-source.ts',
-    reportDiagnostics: true,
-    compilerOptions: {
-      target: ts.ScriptTarget.ESNext,
-      module: ts.ModuleKind.ESNext,
-      moduleResolution: ts.ModuleResolutionKind.Bundler,
-      verbatimModuleSyntax: true,
-      removeComments: false,
-      newLine: ts.NewLineKind.LineFeed,
-    },
-  });
-
-  const errors = (diagnostics ?? []).filter(
-    (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+  const transform = await loadOxcTransform();
+  const { code, errors } = await transform(
+    'smrt-generated-mcp-source.ts',
+    source,
+    { lang: 'ts', sourceType: 'module' },
   );
   if (errors.length > 0) {
-    const details = errors
-      .map((diagnostic) =>
-        ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
-      )
-      .join('; ');
+    const details = errors.map((diagnostic) => diagnostic.message).join('; ');
     throw new Error(
       `Failed to transpile generated MCP source (${label}): ${details}`,
     );
   }
 
-  return outputText;
+  return code;
 }
 
 /**
