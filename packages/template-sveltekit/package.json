@@ -32,15 +32,24 @@
     "@happyvertical/smrt-core": "workspace:*"
   },
   "scripts": {
+    "build": "pnpm run typecheck && node --check index.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run __tests__/runtimeProfileReference.postgres.optional.test.ts",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
   },
   "devDependencies": {
     "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "^0.89.4",
+    "@types/node": "24.13.2",
+    "typescript": "5.9.3",
     "vitest": "4.1.10"
   },
   "publishConfig": {

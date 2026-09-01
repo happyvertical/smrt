@@ -2831,9 +2831,21 @@ importers:
       '@happyvertical/smrt-app-runtime':
         specifier: workspace:*
         version: link:../app-runtime
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -2843,6 +2855,12 @@ importers:
       '@happyvertical/sql':
         specifier: ^0.89.4
         version: 0.89.4(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
+      '@types/node':
+        specifier: 24.13.2
+        version: 24.13.2
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
       vitest:
         specifier: 4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@24.13.2)(@vitest/coverage-v8@4.1.10)(happy-dom@20.10.6)(jsdom@27.4.0(@noble/hashes@2.2.0))(vite@8.1.4(@types/node@24.13.2)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.0)(yaml@2.9.0))

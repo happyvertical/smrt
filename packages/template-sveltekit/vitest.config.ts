@@ -5,6 +5,12 @@ import { defineConfig } from 'vitest/config';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  oxc: {
+    decorator: {
+      legacy: true,
+      emitDecoratorMetadata: true,
+    },
+  },
   resolve: {
     alias: {
       // Template sources import via SvelteKit's `$lib` alias; resolve it to

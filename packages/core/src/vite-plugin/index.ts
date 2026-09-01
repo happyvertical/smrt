@@ -69,6 +69,7 @@ export {
   resolveApiActionSet,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
+export { buildWebMcpToolDefinitions } from './web-collections.js';
 
 /**
  * Minimal structural shape of a parsed `package.json`. Only the fields the
