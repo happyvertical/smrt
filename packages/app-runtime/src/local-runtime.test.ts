@@ -21,9 +21,13 @@ import * as sql from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as localRuntimeApi from './index.js';
 import {
+  encodeApplicationId,
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
+  prepareLocalDatabaseStorage,
   resolveLocalRuntimePaths,
+  validateApplicationId,
+  validateLocalDatabaseStorage,
 } from './index.js';
 
 const temporaryRoots: string[] = [];
@@ -244,6 +248,31 @@ describe('local application runtime', () => {
     expect((exactInteger.rows[0] as { value: unknown }).value).toBe(
       9007199254740993n,
     );
+  });
+
+  it('validates existing app-bound local storage without creating or repairing it', async () => {
+    const directories = await localDirectories('operator-validation');
+    const initialized = await initializeLocalApplicationRuntime({
+      appId: 'operator-proof',
+      ...directories,
+    });
+    await initialized.runtime.db.close?.();
+
+    await expect(
+      validateLocalDatabaseStorage({ appId: 'operator-proof', ...directories }),
+    ).resolves.toMatchObject({
+      root: directories.dataDirectory,
+      database: join(directories.dataDirectory, 'application.sqlite'),
+    });
+
+    await chmod(join(directories.dataDirectory, 'application.sqlite'), 0o644);
+    await expect(
+      validateLocalDatabaseStorage({ appId: 'operator-proof', ...directories }),
+    ).rejects.toThrow(/mode-0600/);
+    expect(
+      (await stat(join(directories.dataDirectory, 'application.sqlite'))).mode &
+        0o777,
+    ).toBe(0o644);
   });
 
   it('claims one owner and creates normal identity, tenancy, membership, and session records', async () => {
@@ -1657,6 +1686,41 @@ describe('local application runtime', () => {
 });
 
 describe('local runtime paths', () => {
+  it('claims standalone migration storage before SQLite is populated', async () => {
+    const directories = await localDirectories('migration-storage');
+    const paths = await prepareLocalDatabaseStorage({
+      appId: 'migration-app',
+      ...directories,
+    });
+
+    expect((await stat(paths.database)).mode & 0o777).toBe(0o600);
+    expect(
+      (await stat(join(paths.root, '.smrt-local-runtime-migration-app'))).mode &
+        0o777,
+    ).toBe(0o600);
+    await expect(
+      prepareLocalDatabaseStorage({
+        appId: 'migration-app',
+        ...directories,
+      }),
+    ).resolves.toEqual(paths);
+  });
+
+  it('encodes package identities within the runtime identity contract', () => {
+    expect(encodeApplicationId('my-app')).toBe('my-app');
+    expect(encodeApplicationId('my_app')).toMatch(/^my-app-[a-f0-9]{10}$/);
+    expect(encodeApplicationId('@one/my-app')).not.toBe(
+      encodeApplicationId('@two/my-app'),
+    );
+    expect(encodeApplicationId(`@scope/${'a'.repeat(100)}`)).toMatch(
+      /^[a-z0-9][a-z0-9.-]{0,62}$/,
+    );
+    expect(validateApplicationId('A.Valid-ID')).toBe('a.valid-id');
+    expect(() => validateApplicationId('my_app')).toThrow(
+      'lowercase letters, digits, dots, or hyphens',
+    );
+  });
+
   it('does not export a concrete runtime constructor or database injection path', () => {
     expect(localRuntimeApi).not.toHaveProperty('LocalApplicationRuntime');
   });

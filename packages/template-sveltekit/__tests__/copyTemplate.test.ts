@@ -3,7 +3,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -41,9 +43,98 @@ describe('copyTemplate', () => {
       true,
     );
     expect(existsSync(join(tempDir, 'AGENTS.md'))).toBe(true);
+    expect(existsSync(join(tempDir, 'INSTALL_PROMPT.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.gitignore'))).toBe(true);
+    expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
+    expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toContain('.env');
+    expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toBe(
+      readFileSync(join(getTemplatePath(), '.gitignore'), 'utf8'),
+    );
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-app.mjs'))).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-vite.mjs'))).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-operation-lock.mjs')),
+    ).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-provider-readiness.mjs')),
+    ).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-prepare-migration.mjs')),
+    ).toBe(true);
+    expect(
+      existsSync(join(tempDir, 'scripts', 'smrt-runtime-identity.mjs')),
+    ).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-writer-lease.mjs'))).toBe(
+      true,
+    );
+    expect(
+      existsSync(
+        join(
+          tempDir,
+          'src',
+          'routes',
+          'api',
+          '_runtime',
+          'health',
+          '+server.ts',
+        ),
+      ),
+    ).toBe(true);
+    expect(existsSync(join(tempDir, 'scripts', 'smrt-worker.mjs'))).toBe(true);
+    expect(existsSync(join(tempDir, 'Dockerfile'))).toBe(true);
+    expect(existsSync(join(tempDir, '.dockerignore'))).toBe(true);
+    expect(existsSync(join(tempDir, 'compose.yaml'))).toBe(true);
     expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf-8').trim()).toBe(
       '@AGENTS.md',
     );
+  });
+
+  it('preserves existing ignore files unless overwrite is requested', () => {
+    writeFileSync(join(tempDir, '.gitignore'), 'user-git-ignore\n');
+    writeFileSync(join(tempDir, '.npmignore'), 'user-npm-ignore\n');
+
+    copyTemplate(tempDir, { name: 'my-app' });
+
+    expect(readFileSync(join(tempDir, '.gitignore'), 'utf8')).toBe(
+      'user-git-ignore\n',
+    );
+    expect(readFileSync(join(tempDir, '.npmignore'), 'utf8')).toBe(
+      'user-npm-ignore\n',
+    );
+    expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
+  });
+
+  it('preserves an existing broken gitignore symlink without overwrite', () => {
+    const gitignore = join(tempDir, '.gitignore');
+    symlinkSync('missing-user-ignore', gitignore);
+
+    copyTemplate(tempDir, { name: 'my-app' });
+
+    expect(readlinkSync(gitignore)).toBe('missing-user-ignore');
+    expect(existsSync(join(tempDir, 'gitignore.template'))).toBe(false);
+  });
+
+  it('ships one canonical profile and the complete operational surface', () => {
+    copyTemplate(tempDir, { name: 'my-app', overwrite: true });
+
+    const config = readFileSync(join(tempDir, 'smrt.config.ts'), 'utf8');
+    const pkg = JSON.parse(readFileSync(join(tempDir, 'package.json'), 'utf8'));
+    expect(config).toContain('runtime:');
+    expect(config).toContain("process.env.SMRT_RUNTIME_PROFILE || 'local'");
+    for (const operation of [
+      'install',
+      'setup',
+      'recover',
+      'start',
+      'doctor',
+      'open',
+      'stop',
+      'backup',
+      'export',
+      'import',
+    ]) {
+      expect(pkg.scripts).toHaveProperty(`app:${operation}`);
+    }
   });
 
   it('does NOT copy the `.svelte-kit/` directory if it exists in the template', () => {
@@ -90,8 +181,44 @@ describe('copyTemplate', () => {
     const pkg = JSON.parse(
       readFileSync(join(tempDir, 'package.json'), 'utf-8'),
     );
-    expect(pkg.name).toBe('my-app');
+    expect(pkg.name).toBe('@smrt-app/my-app');
     expect(pkg.packageManager).toBe('pnpm@10.34.4');
     expect(pkg.engines).toEqual({ node: '>=24.18.0', pnpm: '10.34.4' });
+  });
+
+  it('preserves an explicitly scoped package identity', () => {
+    copyTemplate(tempDir, { name: '@example/my-app', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@example/my-app');
+  });
+
+  it('normalizes an invalid explicitly scoped package identity', () => {
+    copyTemplate(tempDir, { name: '@Example/My App', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@example/my-app');
+  });
+
+  it('falls back to the app scope when an explicit scope has no package segment', () => {
+    copyTemplate(tempDir, { name: '@Example', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@smrt-app/example');
+  });
+
+  it('falls back to a valid package identity when the name has no slug characters', () => {
+    copyTemplate(tempDir, { name: '???', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@smrt-app/app');
   });
 });

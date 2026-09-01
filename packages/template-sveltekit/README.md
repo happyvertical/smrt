@@ -1,7 +1,7 @@
 # @happyvertical/smrt-template-sveltekit
 
 The minimal “learn and build from the ground up” SvelteKit template for
-s-m-r-t 0.38.25. The package exports `copyTemplate()`, `getTemplatePath()`, and
+s-m-r-t 0.43.10. The package exports `copyTemplate()`, `getTemplatePath()`, and
 `templateInfo` and is the `sveltekit` template used by `smrt gnode create`.
 
 ## 1. Install and run
@@ -13,18 +13,15 @@ node --input-type=module -e "import { copyTemplate } from './packages/template-s
 cd my-app
 pnpm install
 cp .env.example .env
-pnpm db:migrate
-pnpm check
-pnpm build
-pnpm dev
+pnpm app:install
 ```
 
-Run the copy command from the monorepo root. The public 0.38.25 CLI advertises
+Run the copy command from the monorepo root. The public 0.43.10 CLI advertises
 `gnode create`, but its command dispatcher currently rejects `gnode`; this
 package's tested `copyTemplate()` export is the working scaffold path.
 
 Generated projects require Node.js 24.18.0 or newer and pnpm 10.34.4. They pin
-all directly used `@happyvertical/smrt-*` packages to 0.38.25.
+all directly used `@happyvertical/smrt-*` packages to 0.43.10.
 
 For programmatic scaffolding:
 
@@ -37,8 +34,10 @@ copyTemplate('/absolute/path/to/my-app', {
 });
 ```
 
-`copyTemplate()` substitutes the package name and excludes package-internal
-`.svelte-kit` and test fixtures.
+`copyTemplate()` turns an unscoped project name such as `my-app` into the
+runtime-safe package identity `@smrt-app/my-app`; explicitly scoped package
+names are preserved. It also excludes package-internal `.svelte-kit` and test
+fixtures.
 
 ## 2. Understand the generated files
 
@@ -67,7 +66,8 @@ Add objects beside Item and export them from `src/lib/objects/index.ts`.
 
 ## 4. Initialize or migrate the database
 
-Generated projects use SQLite at `./app.db` by default:
+Generated local projects use SQLite in the current user's operating-system
+application-data directory by default:
 
 ```bash
 pnpm db:migrate
@@ -149,3 +149,19 @@ Use this template for learning and focused, ground-up applications. Choose
 onboarding, billing/subscriptions, workers, provider configuration, deployment
 infrastructure, and mobile applications. This package intentionally avoids
 becoming a second SaaS starter.
+
+The generated project has one canonical `runtime.profile` and deterministic
+`app:*` operations. Local state stays outside source. The production baseline
+uses adapter-node and includes a container plus separate task/schedule workers;
+Compose requires operator-supplied database secrets, and cloud examples
+describe provider composition without pretending to provision it.
+Install/start/stop/recover are local-profile commands; deployed web processes
+run the production Node build or container directly.
+
+Every supported local web entry point (`app:start` or `pnpm dev`) shares one
+writer lease outside the source checkout. Direct production startup requires
+an explicit loopback `HOST`; prefer `app:start`. Filesystem backup and logical
+import fail closed while a writer is alive; logical export reads every model
+table from one transaction snapshot and reports that uploaded assets are
+excluded. The production image retains the generated manifest and operator CLI
+required by doctor/export/import.

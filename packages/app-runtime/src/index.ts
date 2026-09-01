@@ -150,6 +150,79 @@ export interface LocalApplicationRuntimeOptions
   now?: () => Date;
 }
 
+/**
+ * Claim the secure local database root before a standalone migration command
+ * opens SQLite. This does not create application schema or bootstrap records.
+ */
+export async function prepareLocalDatabaseStorage(
+  options: ResolveLocalRuntimePathsOptions,
+): Promise<LocalRuntimePaths> {
+  const paths = resolveLocalRuntimePaths(options);
+  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const appId = validateApplicationId(options.appId);
+  await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
+  const initializationLock = await acquireInitializationLock(paths.root);
+  let db: DatabaseInterface | undefined;
+  let failure: unknown;
+  try {
+    await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
+    const acquired = await acquireLocalDatabase(paths, sourceRoot, appId);
+    db = acquired.db;
+    await db.close?.();
+    db = undefined;
+  } catch (error) {
+    failure = db ? await closeDatabaseAfterFailure(db, error) : error;
+    db = undefined;
+  }
+  try {
+    await initializationLock.release();
+  } catch (releaseError) {
+    failure = failure
+      ? preservePrimaryFailure(
+          failure,
+          releaseError,
+          'initializationLockReleaseError',
+          'Local database storage preparation and initialization-lock release both failed.',
+        )
+      : releaseError;
+  }
+  if (failure) throw failure;
+  return paths;
+}
+
+/**
+ * Verify an already-initialized local database root without creating or
+ * changing any filesystem/database artifact. Operator read/copy/import paths
+ * use this boundary before opening SQLite outside the runtime bootstrap.
+ */
+export async function validateLocalDatabaseStorage(
+  options: ResolveLocalRuntimePathsOptions,
+): Promise<LocalRuntimePaths> {
+  const paths = resolveLocalRuntimePaths(options);
+  const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
+  const appId = validateApplicationId(options.appId);
+  await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
+  const canonicalSourceRoot = await realpath(sourceRoot);
+  await validateRootMarker(
+    resolve(paths.root, `${ROOT_MARKER_PREFIX}${appId}`),
+    canonicalSourceRoot,
+  );
+  await validateExistingPathChain(paths.database, canonicalSourceRoot, 'file');
+  const database = await lstat(paths.database);
+  const currentUid = process.getuid?.();
+  if (
+    database.isSymbolicLink() ||
+    !database.isFile() ||
+    (currentUid !== undefined && database.uid !== currentUid) ||
+    (database.mode & 0o777) !== 0o600
+  ) {
+    throw unsafeFilesystemEntry(
+      `Local application database must be a current-user-owned mode-0600 file: ${paths.database}`,
+    );
+  }
+  return paths;
+}
+
 export interface LocalOwnerBootstrapInvitation {
   /** Plaintext is returned exactly when a new claim is issued; it is never persisted. */
   readonly token: string;
@@ -253,7 +326,7 @@ interface ExistingOwner {
 export function resolveLocalRuntimePaths(
   options: ResolveLocalRuntimePathsOptions,
 ): LocalRuntimePaths {
-  const appId = normalizeAppId(options.appId);
+  const appId = validateApplicationId(options.appId);
   const runtimePlatform = options.platform ?? platform();
   const runtimeHome = options.homeDirectory ?? homedir();
   const env = options.env ?? process.env;
@@ -309,7 +382,7 @@ export async function initializeLocalApplicationRuntime(
   });
   const paths = resolveLocalRuntimePaths(options);
   const sourceRoot = resolve(options.sourceRoot ?? process.cwd());
-  const appId = normalizeAppId(options.appId);
+  const appId = validateApplicationId(options.appId);
   await preflightLocalApplicationRoot(paths.root, sourceRoot, appId);
   const initializationLock = await acquireInitializationLock(paths.root);
   let db: DatabaseInterface | undefined;
@@ -985,7 +1058,7 @@ async function acquireLocalDatabase(
     appId,
     createdDirectories,
   );
-  let db: DatabaseInterface;
+  let db: DatabaseInterface | undefined;
   try {
     db = await getDatabase({
       type: 'sqlite',
@@ -996,12 +1069,17 @@ async function acquireLocalDatabase(
         root: paths.root,
       },
     });
+    await enforcePrivateDatabaseMode(paths.database, canonicalSourceRoot);
   } catch (error) {
+    if (db) throw await closeDatabaseAfterFailure(db, error);
     if (prepared.pendingMarkerCreatedByAttempt) {
       await removeMarkerIfPresent(prepared.pendingMarker, canonicalSourceRoot);
       await removeCreatedDirectories(createdDirectories);
     }
     throw error;
+  }
+  if (!db) {
+    throw new Error('Local runtime database acquisition returned no database.');
   }
 
   // Once SQLite acquisition succeeds, the database is an authoritative
@@ -1014,6 +1092,25 @@ async function acquireLocalDatabase(
     throw await closeDatabaseAfterFailure(db, error);
   }
   return { canonicalSourceRoot, db };
+}
+
+async function enforcePrivateDatabaseMode(
+  path: string,
+  canonicalSourceRoot: string,
+): Promise<void> {
+  const database = await openSafeFile(
+    path,
+    constants.O_RDWR,
+    0o600,
+    'Local application database',
+    canonicalSourceRoot,
+  );
+  try {
+    await database.chmod(0o600);
+    await database.sync();
+  } finally {
+    await database.close();
+  }
 }
 
 async function closeDatabaseAfterFailure(
@@ -1743,7 +1840,8 @@ function normalizeLoopbackHost(value: string): string {
   );
 }
 
-function normalizeAppId(value: string): string {
+/** Validate an explicit runtime identity. */
+export function validateApplicationId(value: string): string {
   const appId = value.trim().toLowerCase();
   if (!/^[a-z0-9][a-z0-9.-]{0,62}$/.test(appId)) {
     throw new LocalRuntimeError(
@@ -1752,6 +1850,23 @@ function normalizeAppId(value: string): string {
     );
   }
   return appId;
+}
+
+/** Encode a package/project identity into a collision-resistant runtime ID. */
+export function encodeApplicationId(value: string): string {
+  const source = value.trim().toLowerCase();
+  if (/^[a-z0-9][a-z0-9.-]{0,62}$/.test(source)) return source;
+  const digest = createHash('sha256')
+    .update(value.trim())
+    .digest('hex')
+    .slice(0, 10);
+  const slug =
+    source
+      .replace(/[^a-z0-9.-]+/g, '-')
+      .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, '')
+      .slice(0, 52)
+      .replace(/[^a-z0-9]+$/g, '') || 'app';
+  return validateApplicationId(`${slug}-${digest}`);
 }
 
 function defaultApplicationDataRoot(

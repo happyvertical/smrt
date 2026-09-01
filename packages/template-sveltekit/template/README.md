@@ -1,9 +1,8 @@
 # s-m-r-t SvelteKit starter
 
-This is the small, ground-up starting point for s-m-r-t 0.38.25. It contains
-one object and the current SvelteKit application foundation. It intentionally
-does not include billing, onboarding, workers, deployment infrastructure, or
-provider-specific production configuration.
+This is the small, ground-up starting point for s-m-r-t 0.43.10. It contains
+one object and a profile-aware operational surface for local, self-hosted, and
+managed-cloud environments. It does not provision external providers.
 
 ## 1. Install and run
 
@@ -13,20 +12,33 @@ is declared in `packageManager`.
 ```bash
 pnpm install
 cp .env.example .env
-pnpm db:migrate
-pnpm check
-pnpm build
-pnpm dev
+pnpm app:install
 ```
 
-Open `http://localhost:5173`. The app loads, but tenant data remains closed
-until your application adds a sign-in flow, an active membership, and role
-permissions. That is intentional: the starter demonstrates safe boundaries
-without inventing an authentication provider.
+`app:install` validates the canonical profile, builds, migrates, initializes
+the secure local owner invitation, starts the production Node build on
+loopback, and opens that single-use invitation. Stop a running local app before
+re-running install, setup, or recovery; each operation is repeatable from that
+stopped state. `pnpm app:doctor`
+prints secret-free JSON diagnostics and recovery steps. Individual
+setup/start/doctor/open/stop/backup/export/import operations are available as
+`pnpm app:<operation>`.
+
+`app:install`, `app:start`, `app:stop`, and `app:recover` are local-profile
+operations. Self-hosted and cloud web processes run the production Node build
+or container directly; workers use the separate worker commands below.
+
+If installation is interrupted after the invitation is created, rerun
+`pnpm app:start` and `pnpm app:open`; the private state directory retains the
+loopback handoff without printing its token. If that invitation expired or was
+lost, run `pnpm app:stop`, then `pnpm app:recover`, start, and open again.
+Recovery rotates only an
+unclaimed invitation and cannot replace an existing owner.
 
 `pnpm db:migrate` first runs the Vite build so the manifest, runtime
 registration, generated routes, and types match the current objects; it then
-applies the manifest-derived schema to SQLite. Re-run it after object changes.
+holds the shared application-operation lock while it applies the
+manifest-derived schema to SQLite. Re-run it after object changes.
 
 ## 2. Understand the generated files
 
@@ -95,15 +107,17 @@ construct the collection outside a SvelteKit request.
 
 ## 4. Initialize or migrate the database
 
-SQLite defaults to `./app.db`; override it with `DATABASE_URL` and
-`DATABASE_TYPE`.
+The canonical `runtime.profile` in `smrt.config.ts` defaults to `local`. Local
+SQLite, assets, secrets, backups, exports, and PID state live in the current
+user's operating-system data/state directories, outside this checkout.
+`SMRT_DATA_DIR` is rejected when it overlaps source.
 
 ```bash
 pnpm db:migrate
 ```
 
-The current command is `smrt db:migrate`. `smrt db:setup` is deprecated in
-0.38.25 and is intentionally not used. Migrations are manifest-driven: change
+The current command is `smrt db:migrate`; deprecated `smrt db:setup` is
+intentionally not used. Migrations are manifest-driven: change
 the TypeScript object, regenerate the manifest, and run the migration again.
 There are no hand-written migration files in this workflow.
 
@@ -216,8 +230,8 @@ pnpm smrt objects
 pnpm smrt schema Item
 ```
 
-The 0.38.25 CLI's manifest-only `objects` and `schema` commands work directly
-in this source-first template. Executing local-object CRUD through the generic
+The CLI's manifest-only `objects` and `schema` commands work directly in this
+source-first template. Executing local-object CRUD through the generic
 CLI additionally requires a compiled JavaScript project entry point; REST and
 the page action are the runnable CRUD examples here.
 
@@ -234,20 +248,15 @@ with:
 node .smrt/mcp-server/index.js
 ```
 
-The generated entry resolves its imports from this project, not from the CLI, so
-every module it imports must be a dependency here. `@modelcontextprotocol/server`,
-`@happyvertical/smrt-core`, and `@happyvertical/smrt-config` are always imported
-and are already declared. Two more are emitted only when your objects need them,
-and you must add them yourself:
+The generated entry resolves its imports from this project, not from the CLI,
+so every module it imports must be a dependency here.
+`@modelcontextprotocol/server`, `@happyvertical/smrt-core`,
+`@happyvertical/smrt-config`, `@happyvertical/smrt-jobs`, and
+`@happyvertical/smrt-tenancy` are already declared for the default runtime and
+worker surfaces.
 
-| Emitted when | Dependency | Already declared? |
-| --- | --- | --- |
-| An exposed object declares task actions (`@smrt({ mcp: { tasks: true } })`) | `@happyvertical/smrt-jobs` | No — add it |
-| An exposed object is tenant-scoped | `@happyvertical/smrt-tenancy` | Yes |
-
-Add the jobs package on the same release line as the other
-`@happyvertical/smrt-*` pins in `package.json`, then reinstall. Missing one of
-these fails at startup with `ERR_MODULE_NOT_FOUND` naming the package to add.
+Missing a dependency added by a custom MCP extension fails at startup with
+`ERR_MODULE_NOT_FOUND` naming the package to declare.
 
 WebMCP is wired at the root Provider as a read-only, authenticated browser
 surface. The template includes `@happyvertical/smrt-web` on the synchronized
@@ -321,3 +330,33 @@ from first principles. Move to `smrt-saas-starter` when you want a
 production-shaped SaaS baseline with onboarding, billing/subscriptions,
 background workers, provider configuration, deployment conventions, and
 mobile surfaces. Those concerns are intentionally absent here.
+
+## Runtime profiles and deployment
+
+- `local`: SQLite, loopback single-use owner bootstrap, user-owned files, and
+  embedded/on-demand jobs.
+- `self-hosted`: PostgreSQL, public authentication, operator providers, and
+  separate workers. Copy `.env.self-hosted.example` to `.env.self-hosted` for
+  the service configuration. Separately create the ignored plain `.env` file
+  with `DATABASE_URL` and `POSTGRES_PASSWORD` for Compose interpolation, then
+  use Compose. Compose refuses to start when either secret is absent. Configure
+  installed authentication, asset, and secret readiness modules; each module
+  must probe its real provider before web or workers can start.
+- `cloud`: hosted identity, managed providers, required tenant context, and
+  scalable workers. `.env.cloud.example` records the composition boundary.
+
+The adapter-node `Dockerfile` and `compose.yaml` provide the production path.
+Compose gates the web and both workers on the one-shot, idempotent migration
+service. The runtime image retains the generated manifest and operator CLI for
+doctor/export/import. `pnpm worker` and `pnpm worker:schedule` are separate from
+the web process.
+Logical export/import is manifest-driven JSON and refuses a non-empty target;
+it orders parent tables first and defers nullable cycle edges until every row
+exists. Export reads all model tables from one transaction snapshot. Every
+export report explicitly records that uploaded assets are excluded; copy the
+assets directory separately when moving profiles. Every supported local web
+entry point (`app:start` or `pnpm dev`) holds a shared writer lease. Direct
+production startup must set an explicit loopback `HOST`, and `app:start` is the
+recommended entry point. Stop the app before backup/import. For deployed import, stop
+web/workers and set `SMRT_MAINTENANCE_MODE=true`. Extend
+`scripts/smrt-portability.mjs` for domain-specific transformations.

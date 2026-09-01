@@ -11,6 +11,15 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
 - Regenerate them with `pnpm build` or `pnpm dev`; run `pnpm db:migrate` after
   object schema changes.
 - Keep `CLAUDE.md` as the one-line `@AGENTS.md` shim.
+- Never improvise setup internals. Run `pnpm app:install`; use individual
+  `app:*` commands only for recovery or explicit operator control.
+- Recover an interrupted unclaimed owner invitation with `pnpm app:stop`, then
+  `pnpm app:recover`, `pnpm app:start`, and `pnpm app:open`; never print or copy
+  its token.
+- Treat `smrt.config.ts` `runtime.profile` as the only infrastructure selector.
+- Treat the local health route's configuration digest as a loopback-only
+  identity; it must never contain or hash provider credentials. Deployed
+  health responses expose only generic status and profile.
 
 ## Data and authorization
 
@@ -24,6 +33,9 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   membership-gated browser tenant changes.
 - Use `assertOperationPermission()` for hand-written server mutations and pass
   the exact session permission snapshot when available.
+- Keep data, assets, secrets, PID state, backups, and exports outside source.
+  Never copy secrets into diagnostics, logs, exports, or agent prompts.
+- Local onboarding creates real authorization records and stays loopback-only.
 
 ## Extension rules
 
@@ -35,3 +47,15 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   Keep the guard in place for SSR and seed live collections with SSR
   `initialData`.
 - Do not enable knowledge HTTP routes in production without explicit admin auth.
+- Run task and schedule workers as separate deployed processes. Extend the
+  portability adapter instead of converting database files. Deployed provider
+  readiness must come from installed modules that probe the real backing
+  services; environment booleans are not readiness evidence.
+- Every supported local web entry point (`app:start` or `pnpm dev`) holds the
+  same writer lease. Direct production startup requires an explicit loopback
+  `HOST`; prefer `app:start`. Stop the app before backup/import; never bypass
+  or delete a live lease. Deployed imports require stopped web/workers plus
+  explicit `SMRT_MAINTENANCE_MODE=true`.
+- Logical export reads every model table in one transaction and explicitly
+  reports that uploaded assets are excluded. Keep imports transactional and
+  preserve their relationship-aware ordering/deferred-cycle contract.

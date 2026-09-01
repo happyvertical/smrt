@@ -36,8 +36,11 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@happyvertical/smrt-app-runtime": "workspace:*",
+    "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/sql": "^0.89.4",
     "vitest": "4.1.10"
   },
   "publishConfig": {

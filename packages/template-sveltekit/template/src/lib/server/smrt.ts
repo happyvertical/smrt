@@ -16,6 +16,8 @@ import {
 import { loadManifestFromPathSync } from '@happyvertical/smrt-core/manifest';
 import { getRequestScopedDatabase } from '@happyvertical/smrt-users';
 
+import { getApplicationDatabaseConfig } from './application-runtime.js';
+
 // Import all SMRT objects to register them.
 import '../objects/index.js';
 
@@ -66,10 +68,7 @@ const objectOverrides: Record<string, Partial<SmrtClassOptions>> = {
  */
 function getDefaultConfig(): SmrtClassOptions {
   return {
-    db: {
-      url: process.env.DATABASE_URL || './app.db',
-      type: (process.env.DATABASE_TYPE as 'sqlite' | 'postgres') || 'sqlite',
-    },
+    db: getApplicationDatabaseConfig(),
   };
 }
 

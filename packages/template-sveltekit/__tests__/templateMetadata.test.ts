@@ -52,7 +52,9 @@ describe('generated project metadata', () => {
   });
 
   it('uses the current migration command rather than deprecated db:setup', () => {
-    expect(packageJson.scripts['db:migrate']).toContain('smrt db:migrate');
+    expect(packageJson.scripts['db:migrate']).toContain(
+      'smrt-prepare-migration.mjs',
+    );
     expect(JSON.stringify(packageJson)).not.toContain('db:setup');
   });
 

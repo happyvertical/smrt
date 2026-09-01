@@ -56,7 +56,7 @@ describe('practical documentation', () => {
   });
 
   it('uses s-m-r-t in user-facing prose', () => {
-    expect(packageReadme).toContain('s-m-r-t 0.38.25');
-    expect(projectReadme).toContain('s-m-r-t 0.38.25');
+    expect(packageReadme).toContain('s-m-r-t 0.43.10');
+    expect(projectReadme).toContain('s-m-r-t 0.43.10');
   });
 });

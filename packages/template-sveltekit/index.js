@@ -7,8 +7,11 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,11 +27,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  */
 const COPY_SKIP = new Set(['.svelte-kit', '__tests__', 'test', 'tests']);
 
+function pathEntryExists(path) {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 /**
  * Get the path to the template directory
  */
 export function getTemplatePath() {
   return join(__dirname, 'template');
+}
+
+function normalizePackageSegment(value) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function packageNameForProject(name) {
+  if (name.startsWith('@')) {
+    const slash = name.indexOf('/');
+    const scope = normalizePackageSegment(name.slice(1, slash));
+    const packageName = normalizePackageSegment(name.slice(slash + 1));
+    if (slash > 1 && scope && packageName) return `@${scope}/${packageName}`;
+  }
+  return `@smrt-app/${normalizePackageSegment(name) || 'app'}`;
 }
 
 /**
@@ -63,12 +93,30 @@ export function copyTemplate(destination, options = {}) {
     },
   });
 
+  // npm pack omits files literally named `.gitignore`. Ship the canonical
+  // contents under a neutral name and materialize the ignore file only in the
+  // generated project so installed-package scaffolds retain secret hygiene.
+  const packagedGitignore = join(destination, 'gitignore.template');
+  if (!existsSync(packagedGitignore)) {
+    throw new Error('Template package is missing gitignore.template');
+  }
+  const destinationGitignore = join(destination, '.gitignore');
+  if (pathEntryExists(destinationGitignore) && !options.overwrite) {
+    rmSync(packagedGitignore, { force: true });
+  } else {
+    rmSync(destinationGitignore, { force: true });
+    renameSync(packagedGitignore, destinationGitignore);
+  }
+
   // Update package.json with project name if provided
   if (options.name) {
     const packageJsonPath = join(destination, 'package.json');
     if (existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
-      packageJson.name = options.name;
+      // s-m-r-t runtime identities use scoped package-qualified class names.
+      // Keep a friendly directory/project name while making the generated
+      // package identity valid for isolated runtime registration.
+      packageJson.name = packageNameForProject(options.name);
       writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2));
     }
   }
@@ -81,13 +129,16 @@ export function copyTemplate(destination, options = {}) {
  */
 export const templateInfo = {
   name: 'sveltekit',
-  description: 'Minimal SvelteKit project with s-m-r-t framework integration',
+  description: 'Profile-aware installable SvelteKit project with s-m-r-t integration',
   features: [
     'SvelteKit 2.x with Svelte 5',
     'Auto-generated REST API routes',
     's-m-r-t CLI integration',
     'TypeScript support',
     'SQLite database (configurable)',
+    'Local, self-hosted, and cloud runtime profiles',
+    'Deterministic install, diagnostics, and portability commands',
+    'Production Node container and separate worker entry points',
     'Session-authorized tenancy with separate subdomain selection',
   ],
 };
