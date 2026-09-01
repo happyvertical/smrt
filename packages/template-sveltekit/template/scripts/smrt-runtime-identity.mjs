@@ -1,13 +1,14 @@
 import {
   closeSync,
   constants,
+  existsSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   realpathSync,
 } from 'node:fs';
-import { join, parse, resolve } from 'node:path';
+import { basename, dirname, join, parse, resolve } from 'node:path';
 import { homedir, platform } from 'node:os';
 import {
   encodeApplicationId,
@@ -116,6 +117,36 @@ function isInside(parent, child) {
     child === parent ||
     (child.startsWith(parent) && (relative.startsWith('/') || relative.startsWith('\\')))
   );
+}
+
+/**
+ * Resolve an operator-selected artifact through its nearest existing ancestor
+ * and reject paths that could place application data in or over the checkout.
+ * @param {{sourceRoot: string, path: string, label?: string}} options
+ */
+export function assertExternalArtifactPath(options) {
+  const canonicalSource = realpathSync(resolve(options.sourceRoot));
+  const missingSegments = [];
+  let existingAncestor = resolve(options.path);
+  while (!existsSync(existingAncestor)) {
+    const parent = dirname(existingAncestor);
+    if (parent === existingAncestor) break;
+    missingSegments.unshift(basename(existingAncestor));
+    existingAncestor = parent;
+  }
+  const canonicalPath = resolve(
+    realpathSync(existingAncestor),
+    ...missingSegments,
+  );
+  if (
+    isInside(canonicalSource, canonicalPath) ||
+    isInside(canonicalPath, canonicalSource)
+  ) {
+    throw new Error(
+      `${options.label || 'Artifact'} must remain outside the source tree.`,
+    );
+  }
+  return canonicalPath;
 }
 
 /** @param {unknown} error */

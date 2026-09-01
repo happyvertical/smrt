@@ -37,22 +37,30 @@ export const actions: Actions = {
     if (!token || !name.trim() || !email.includes('@')) {
       return fail(400, { message: 'Name, email, and a valid setup token are required.' });
     }
+    const runtime = await getLocalApplicationRuntime();
+    let result;
     try {
-      const runtime = await getLocalApplicationRuntime();
-      const result = await runtime.claimOwner({
+      result = await runtime.claimOwner({
         token,
         name,
         email,
         userAgent: event.request.headers.get('user-agent') || undefined,
         ipAddress: event.getClientAddress(),
       });
-      event.cookies.set('sid', result.sessionId, {
-        path: '/',
-        httpOnly: true,
-        secure: event.url.protocol === 'https:',
-        sameSite: 'lax',
-        maxAge: 7 * 24 * 60 * 60,
+    } catch {
+      return fail(400, {
+        message:
+          'The setup invitation is invalid, expired, or already used. Run pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open.',
       });
+    }
+    event.cookies.set('sid', result.sessionId, {
+      path: '/',
+      httpOnly: true,
+      secure: event.url.protocol === 'https:',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+    });
+    try {
       const appId = resolveApplicationId({
         sourceRoot: process.cwd(),
         explicitId: process.env.SMRT_APP_ID,
@@ -80,10 +88,8 @@ export const actions: Actions = {
         { force: true },
       );
     } catch {
-      return fail(400, {
-        message:
-          'The setup invitation is invalid, expired, or already used. Run pnpm app:stop, pnpm app:recover, pnpm app:start, then pnpm app:open.',
-      });
+      // The owner and session are authoritative; stale mode-0600 handoff files
+      // only contain a token that now fails closed as already claimed.
     }
     throw redirect(303, '/');
   },

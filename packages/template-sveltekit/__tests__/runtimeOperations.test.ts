@@ -30,6 +30,7 @@ import {
 import { withOperationLock } from '../template/scripts/smrt-operation-lock.mjs';
 import { createProviderReadinessProbe } from '../template/scripts/smrt-provider-readiness.mjs';
 import {
+  assertExternalArtifactPath,
   prepareApplicationStateRoot,
   resolveApplicationId,
   resolveApplicationStateRoot,
@@ -405,6 +406,60 @@ describe('profile-aware application operations', () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it('keeps operator-created data artifacts outside the checkout', () => {
+    const directory = realpathSync(
+      mkdtempSync(join(tmpdir(), 'smrt-artifact-path-test-')),
+    );
+    const sourceRoot = join(directory, 'source');
+    const redirected = join(directory, 'redirected-source');
+    mkdirSync(sourceRoot);
+    symlinkSync(sourceRoot, redirected);
+    try {
+      expect(() =>
+        assertExternalArtifactPath({
+          sourceRoot,
+          path: join(sourceRoot, 'backup'),
+          label: 'Backup destination',
+        }),
+      ).toThrow('Backup destination must remain outside the source tree');
+      expect(() =>
+        assertExternalArtifactPath({
+          sourceRoot,
+          path: join(redirected, 'export.json'),
+          label: 'Export destination',
+        }),
+      ).toThrow('Export destination must remain outside the source tree');
+      expect(() =>
+        assertExternalArtifactPath({
+          sourceRoot,
+          path: directory,
+        }),
+      ).toThrow('Artifact must remain outside the source tree');
+      expect(
+        assertExternalArtifactPath({
+          sourceRoot,
+          path: join(directory, 'external', 'export.json'),
+        }),
+      ).toBe(join(directory, 'external', 'export.json'));
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('does not classify post-claim cleanup failures as invitation failures', () => {
+    const setupAction = readFileSync(
+      join(template, 'src', 'routes', 'setup', '+page.server.ts'),
+      'utf8',
+    );
+    expect(setupAction.indexOf("event.cookies.set('sid'")).toBeGreaterThan(
+      setupAction.indexOf('result = await runtime.claimOwner'),
+    );
+    expect(setupAction.lastIndexOf('try {')).toBeGreaterThan(
+      setupAction.indexOf("event.cookies.set('sid'"),
+    );
+    expect(setupAction).toContain('stale mode-0600 handoff files');
   });
 
   it('rejects truncated and incomplete logical exports before import', () => {

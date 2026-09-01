@@ -10,6 +10,7 @@ import {
 import { basename, dirname, join } from 'node:path';
 
 import { getDatabase } from '@happyvertical/sql';
+import { assertExternalArtifactPath } from './smrt-runtime-identity.mjs';
 
 const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -199,13 +200,17 @@ export async function exportApplication(context) {
       return exported;
     });
   });
-  const outputPath =
-    context.path ||
-    join(
-      context.stateRoot,
-      'exports',
-      `${context.appId}-${Date.now()}.json`,
-    );
+  const outputPath = assertExternalArtifactPath({
+    sourceRoot: context.sourceRoot,
+    path:
+      context.path ||
+      join(
+        context.stateRoot,
+        'exports',
+        `${context.appId}-${Date.now()}.json`,
+      ),
+    label: 'Export destination',
+  });
   mkdirSync(dirname(outputPath), { recursive: true, mode: 0o700 });
   const temporaryPath = join(
     dirname(outputPath),

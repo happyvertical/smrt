@@ -32,6 +32,7 @@ import {
   writeProcessRecord,
 } from './smrt-process.mjs';
 import {
+  assertExternalArtifactPath,
   prepareApplicationStateRoot,
   resolveApplicationId,
   resolveApplicationStateRoot,
@@ -681,6 +682,13 @@ async function backup(operationLock) {
       'This scaffold delegates deployed backups to the selected operator or managed provider.',
     );
   }
+  const explicitDestination = commandArgs[0]
+    ? assertExternalArtifactPath({
+        sourceRoot,
+        path: resolve(commandArgs[0]),
+        label: 'Backup destination',
+      })
+    : null;
   const paths = await validateLocalDatabaseStorage({
     appId,
     dataDirectory: process.env.SMRT_DATA_DIR,
@@ -690,14 +698,17 @@ async function backup(operationLock) {
     operationInstance: operationLock?.instance,
   });
   try {
-    const destination = resolve(
-      commandArgs[0] ||
+    const destination = assertExternalArtifactPath({
+      sourceRoot,
+      path:
+        explicitDestination ||
         join(
           dirname(paths.root),
           'backups',
           `${appId}-${new Date().toISOString().replaceAll(':', '-')}`,
         ),
-    );
+      label: 'Backup destination',
+    });
     ensurePrivateDirectory(dirname(destination));
     try {
       mkdirSync(destination, { mode: 0o700 });
@@ -730,6 +741,15 @@ async function portability(operation, operationLock) {
   const adapter = await import(pathToFileURL(adapterPath).href);
   const runtime = await resolveRuntime();
   const environment = runtimeEnvironment(runtime);
+  const requestedPath = commandArgs[0] ? resolve(commandArgs[0]) : undefined;
+  const artifactPath =
+    operation === 'export' && requestedPath
+      ? assertExternalArtifactPath({
+          sourceRoot,
+          path: requestedPath,
+          label: 'Export destination',
+        })
+      : requestedPath;
   if (runtime.profile === 'local') {
     environment.paths = await validateLocalDatabaseStorage({
       appId,
@@ -765,7 +785,7 @@ async function portability(operation, operationLock) {
       operation === 'export' ? 'exportApplication' : 'importApplication'
     ]({
       ...context,
-      path: commandArgs[0] ? resolve(commandArgs[0]) : undefined,
+      path: artifactPath,
     });
     console.log(
       JSON.stringify(
