@@ -169,5 +169,36 @@ describe('useWebMcpTool', () => {
 
     view.unmount();
     warnSpy.mockRestore();
+
+  it('registers a previously-excluded bespoke tool when a Provider policy loosens to permit it (#2599)', async () => {
+    const registered = installModelContext();
+    const view = render(EffectsReactivity, {
+      props: { effects: ['read'] },
+    });
+    // The bespoke tool's static factory declares `destructiveHint: true` and
+    // has no rune dependencies of its own, so under a read-only Provider
+    // policy it is classified destructive and excluded before it ever
+    // reaches document.modelContext.registerTool.
+    await tick();
+    await tick();
+    await tick();
+    expect(registered).toHaveLength(0);
+
+    // `bespokeContext.effects` is read synchronously at the top of the
+    // `$effect` body (the F2 fix), so this Provider policy change is
+    // tracked as a dependency and re-runs the effect even though the
+    // component's own factory never changed: the tool newly registers now
+    // that the policy permits `destructive`.
+    await view.rerender({ effects: ['destructive'] });
+    await vi.waitFor(() =>
+      expect(registered.map((tool) => tool.name)).toContain(
+        'reactivity_destructive_tool',
+      ),
+    );
+    expect(registered).toHaveLength(1);
+    expect(registered[0].signal?.aborted).toBe(false);
+
+    view.unmount();
+    expect(registered[0].signal?.aborted).toBe(true);
   });
 });
