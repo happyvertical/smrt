@@ -631,10 +631,20 @@ function actionSemantics(
  * custom model action, so both paths share one fail-closed default. Only an
  * explicit `readOnlyHint: true` declares `read`; an explicit
  * `destructiveHint: false` (with `readOnlyHint` not `true`) declares the
- * non-destructive `write` effect. Anything else — no annotations,
- * `destructiveHint: true`, or `destructiveHint` left undeclared — resolves
- * through `actionSemantics`'s own default to destructive, non-idempotent,
- * open-world.
+ * `write` effect BUCKET used for exposure-policy filtering — a write tool
+ * still requires an explicit `effects` opt-in separate from `read`. Anything
+ * else — no annotations, `destructiveHint: true`, or `destructiveHint` left
+ * undeclared — resolves through `actionSemantics`'s own default to
+ * destructive, non-idempotent, open-world.
+ *
+ * The re-emitted `destructiveHint` annotation does not simply echo the
+ * caller's input: `actionSemantics`'s default branch sets
+ * `destructive: effect !== 'read'` for every non-read custom action, bespoke
+ * or generated, so a `write`-bucket bespoke tool is still re-emitted with
+ * `destructiveHint: true` even when the caller declared `false` — identical
+ * to how a generated custom action declared `effect: 'write'` is annotated.
+ * `destructiveHint: false` only ever selects the `write` bucket here; it
+ * never survives into the annotation sent to `document.modelContext`.
  */
 function bespokeDeclaredSemantics(
   annotations: WebMcpBespokeToolSpec['annotations'],

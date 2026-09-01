@@ -1664,7 +1664,7 @@ describe('registerWebMcpBespokeTool', () => {
     dispose();
   });
 
-  it('classifies an explicit non-destructive mutation as write', () => {
+  it('classifies an explicit non-destructive mutation as write, but still re-emits destructiveHint: true', () => {
     const excluded = installModelContext();
     registerWebMcpBespokeTool({
       name: 'write_tool',
@@ -1689,6 +1689,17 @@ describe('registerWebMcpBespokeTool', () => {
       { effects: ['write'] },
     );
     expect(allowed.tools.map((tool) => tool.name)).toEqual(['write_tool']);
+    // `destructiveHint: false` only selects the `write` policy bucket; the
+    // re-emitted annotation still marks destructiveHint true, identical to a
+    // generated custom action declared `effect: 'write'` (actionSemantics's
+    // default branch sets `destructive: effect !== 'read'` unconditionally).
+    expect(allowed.tools[0].annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+      untrustedContentHint: true,
+    });
     dispose();
   });
 
