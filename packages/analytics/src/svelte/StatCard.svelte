@@ -8,7 +8,7 @@ interface Props {
   value: number | string;
   /** Direction indicator: up, down, or flat growth. */
   trend?: 'up' | 'down' | 'flat';
-  /** Percent change; null shows 'new', undefined hides the trend badge. */
+  /** Percent change; null is a zero baseline shown as 'new', undefined hides the badge. */
   trendPercent?: number | null;
   /** Secondary text displayed below the value. */
   subtitle?: string;

@@ -15,11 +15,11 @@ import type {
 } from '../input-registry.js';
 import { resolveObjectFormFields } from '../object-form.js';
 import { tryGetObjectFormSource } from '../object-form-source-context.svelte.js';
-import type {
-  FieldInputProps,
-  ObjectFormField,
-  ObjectFormFieldDefinition,
-  ObjectFormFieldSnippetProps,
+import {
+  type FieldInputProps,
+  type ObjectFormField,
+  type ObjectFormFieldDefinition,
+  type ObjectFormFieldSnippetProps,
 } from '../types.js';
 import {
   collectFieldUsageEntries,

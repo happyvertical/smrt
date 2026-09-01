@@ -2,7 +2,7 @@
 interface Props {
   /** Direction of change: up, down, or flat. */
   trend: 'up' | 'down' | 'flat';
-  /** Percentage change; null shows 'new', otherwise the absolute value. */
+  /** Percent change; null means a zero baseline, shown as 'new' rather than 0%. */
   percent: number | null;
 }
 
