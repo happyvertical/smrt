@@ -2,9 +2,13 @@
 import type { MessageData } from '../types.js';
 
 export interface Props {
+  /** Message to reply to, shown as quoted text. */
   originalMessage: MessageData;
+  /** Reply to all recipients when true; reply to sender only when false. */
   replyAll?: boolean;
+  /** Called when user sends the reply. */
   onsend?: (body: string) => void;
+  /** Called when user cancels the reply. */
   oncancel?: () => void;
 }
 </script>

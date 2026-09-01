@@ -14,15 +14,25 @@ import MessageTypeBadge from './MessageTypeBadge.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Message data to render as a list row. */
   message: MessageData;
+  /** Highlights the row to show it is currently selected. */
   selected?: boolean;
+  /** Uses condensed layout to fit more messages on screen. */
   compact?: boolean;
+  /** Shows the sender's account information on the row. */
   showAccount?: boolean;
+  /** Shows the message type badge (email, Slack, etc.). */
   showType?: boolean;
+  /** Called when user clicks on the message row. */
   onclick?: (message: MessageData) => void;
+  /** Called when user selects the message with checkbox. */
   onselect?: (message: MessageData) => void;
+  /** Called when user flags or unfags the message. */
   onflag?: (message: MessageData) => void;
+  /** Account data for display if showAccount is true. */
   account?: AccountData;
+  /** Custom snippet to render type-specific content. */
   typeContent?: Snippet<[{ message: MessageData }]>;
 }
 

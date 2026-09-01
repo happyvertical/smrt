@@ -6,7 +6,9 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import type { AttachmentData } from '../types.js';
 
 export interface Props {
+  /** File attachment to display with icon, name, and size. */
   attachment: AttachmentData;
+  /** Called when user clicks on the attachment chip. */
   onclick?: (attachment: AttachmentData) => void;
 }
 
