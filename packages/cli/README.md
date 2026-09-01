@@ -146,7 +146,7 @@ layout that means declaring them, not relying on the CLI's own dependencies.
 |---------|------------|
 | `smrt config:export` | Export agent config for SSG |
 | `smrt export` | Export data in various formats |
-| `smrt init` | Initialize a new s-m-r-t project |
+| `smrt init` | Initialize s-m-r-t in an existing SvelteKit project |
 
 `smrt init` updates an existing SvelteKit application's `package.json` with the
 direct dependencies its generated source and default MCP server require:

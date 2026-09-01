@@ -248,6 +248,41 @@ describe('init command', () => {
     expect(printed).toContain('Added SMRT dependencies');
   });
 
+  it('removes runtime dependencies duplicated in devDependencies', async () => {
+    writePackageJson({
+      name: 'demo',
+      dependencies: {
+        '@happyvertical/smrt-core': '^1.0.0',
+        '@happyvertical/smrt-config': '^1.0.0',
+        '@modelcontextprotocol/server': '^3.0.0',
+      },
+      devDependencies: {
+        '@sveltejs/kit': '^2.0.0',
+        '@happyvertical/smrt-core': '^1.0.0',
+        '@happyvertical/smrt-config': '^1.0.0',
+        '@modelcontextprotocol/server': '^3.0.0',
+        '@happyvertical/smrt-cli': '^1.0.0',
+      },
+    });
+
+    await init([], { database: 'sqlite' });
+
+    const packageJson = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(packageJson.dependencies).toMatchObject({
+      '@happyvertical/smrt-core': '^1.0.0',
+      '@happyvertical/smrt-config': '^1.0.0',
+      '@modelcontextprotocol/server': '^3.0.0',
+    });
+    expect(packageJson.devDependencies).toEqual({
+      '@sveltejs/kit': '^2.0.0',
+      '@happyvertical/smrt-cli': '^1.0.0',
+    });
+    const printed = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(printed).not.toContain('Added SMRT dependencies');
+  });
+
   it('does not rewrite package.json when every dependency is already declared', async () => {
     const packageJson = {
       name: 'demo',

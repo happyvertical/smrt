@@ -102,12 +102,17 @@ function ensureInitDependencies(
 ): string[] {
   const smrtVersion = getSmrtDependencyVersion(projectRoot);
   const added: string[] = [];
+  let changed = false;
   packageJson.dependencies ??= {};
   packageJson.devDependencies ??= {};
 
   for (const dependency of RUNTIME_DEPENDENCIES) {
     const existing = packageJson.dependencies[dependency];
     if (existing) {
+      if (dependency in packageJson.devDependencies) {
+        delete packageJson.devDependencies[dependency];
+        changed = true;
+      }
       continue;
     }
 
@@ -119,6 +124,7 @@ function ensureInitDependencies(
     packageJson.dependencies[dependency] = version;
     delete packageJson.devDependencies[dependency];
     added.push(`${dependency}@${version}`);
+    changed = true;
   }
 
   if (
@@ -127,9 +133,10 @@ function ensureInitDependencies(
   ) {
     packageJson.devDependencies[CLI_DEPENDENCY] = smrtVersion;
     added.push(`${CLI_DEPENDENCY}@${smrtVersion}`);
+    changed = true;
   }
 
-  if (added.length > 0) {
+  if (changed) {
     writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
   }
 
