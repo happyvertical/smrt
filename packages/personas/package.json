@@ -1,6 +1,7 @@
 {
   "name": "@happyvertical/smrt-personas",
   "version": "0.43.10",
+  "smrtJsdoc": "strict",
   "description": "Tenant-owned, context-scoped agent personas and resolution for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
