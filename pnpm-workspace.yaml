@@ -79,6 +79,11 @@ overrides:
   'nanoid@<3.3.18': 3.3.18
   'axios@>=1.15.2 <1.18.0': 1.18.0
   'postcss@<=8.5.17': 8.5.18
+  # browserslist <=4.28.6 is vulnerable to unbounded query-cache growth and
+  # unsafe custom statistics normalization (GHSA-c83g-rgw3-j3cx,
+  # GHSA-73wf-gq98-2v4g). The transitive crawlee/header-generator consumers
+  # accept the patched 4.x line, so pin the advisory range to 4.28.7.
+  'browserslist@<=4.28.6': 4.28.7
   # The advisory names 14.1.2 as the first patched version, but that tag was
   # never published, so the selector cannot resolve to it. 14.3.0 is the current
   # 14.x release carrying the fix.
