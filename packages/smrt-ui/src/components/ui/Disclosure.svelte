@@ -2,11 +2,17 @@
 import type { Snippet } from 'svelte';
 
 export interface Props {
+  /** Header text for the disclosure control. */
   title: string;
+  /** Whether the disclosure content is visible. */
   open?: boolean;
+  /** Blocks opening the disclosure. */
   disabled?: boolean;
+  /** The content shown when the disclosure is open. */
   children?: Snippet;
+  /** Fired when the open state changes. */
   onopenchange?: (open: boolean) => void;
+  /** Additional CSS class names. */
   class?: string;
 }
 

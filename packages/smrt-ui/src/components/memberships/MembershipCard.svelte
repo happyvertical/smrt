@@ -6,10 +6,15 @@ import RoleBadge from '../roles/RoleBadge.svelte';
 const { t } = useI18n();
 
 interface Props {
+  /** The membership record to display. */
   membership: Membership;
+  /** The tenant associated with this membership. */
   tenant: Tenant;
+  /** The role assigned in this membership. */
   role: Role;
+  /** Fired when the remove button is clicked. */
   onremove?: () => void;
+  /** Fired when the change role button is clicked. */
   onchangerole?: () => void;
 }
 

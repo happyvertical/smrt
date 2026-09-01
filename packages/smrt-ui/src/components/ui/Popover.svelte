@@ -2,14 +2,23 @@
 import { type Snippet, tick } from 'svelte';
 
 export interface Props {
+  /** Accessibility label and default trigger text for the popover. */
   label: string;
+  /** Custom content for the trigger button; replaces default label button. */
   trigger?: Snippet;
+  /** The popover content. */
   children?: Snippet;
+  /** Whether the popover is visible. */
   open?: boolean;
+  /** Blocks opening the popover. */
   disabled?: boolean;
+  /** Position of the popover relative to the trigger. */
   placement?: 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end';
+  /** Closes the popover when clicking outside of it. */
   closeOnOutsideClick?: boolean;
+  /** Fired when the open state changes. */
   onopenchange?: (open: boolean) => void;
+  /** Additional CSS class names. */
   class?: string;
 }
 

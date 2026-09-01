@@ -14,18 +14,31 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import type { RangeSliderValue } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** The current minimum and maximum values of the range. */
   value?: RangeSliderValue;
+  /** Minimum allowed value. */
   min?: number;
+  /** Maximum allowed value. */
   max?: number;
+  /** Increment step for slider and number inputs. */
   step?: number;
+  /** Header label displayed above the range slider. */
   label?: string;
+  /** Label for the minimum value input field. */
   minLabel?: string;
+  /** Label for the maximum value input field. */
   maxLabel?: string;
+  /** Unit suffix displayed after the range values. */
   unit?: string;
+  /** Blocks interaction and submission of this control. */
   disabled?: boolean;
+  /** Form field name for minimum and maximum inputs. */
   name?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
+  /** Fired when either the minimum or maximum value changes. */
   onvaluechange?: (value: RangeSliderValue) => void;
+  /** Additional CSS class names. */
   class?: string;
 }
 let {

@@ -16,14 +16,23 @@ import {
 import type { SegmentedControlOption } from './types.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** The available segments and their values. */
   options: SegmentedControlOption[];
+  /** The currently selected option value. */
   value?: string | number;
+  /** Accessibility label for the control. */
   label: string;
+  /** Form field identifier. */
   name?: string;
+  /** Blocks interaction and submission of this control. */
   disabled?: boolean;
+  /** Makes the control stretch to full container width. */
   fullWidth?: boolean;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
+  /** Fired when the selected segment changes. */
   onvaluechange?: (value: string | number) => void;
+  /** Additional CSS class names. */
   class?: string;
 }
 let {
