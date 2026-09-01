@@ -3,7 +3,38 @@ import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import EffectsReactivity from './webmcp-effects-reactivity.fixture.svelte';
 import Harness from './webmcp-harness.svelte';
+import HarnessReactiveSameName from './webmcp-harness-reactive-samename.svelte';
 import HarnessUnannotated from './webmcp-harness-unannotated.svelte';
+
+/**
+ * Mimics a host that rejects a duplicate tool name while it still considers
+ * an earlier registration of that name live, and only forgets that name one
+ * microtask after the earlier registration's abort signal fires — modeling
+ * a host that does not process deregistration perfectly synchronously with
+ * `AbortController.abort()`.
+ */
+function installCollisionAwareModelContext() {
+  const registered: Array<{ name: string; signal?: AbortSignal }> = [];
+  const liveNames = new Set<string>();
+  document.modelContext = {
+    async registerTool(
+      tool: { name: string },
+      options?: { signal?: AbortSignal },
+    ) {
+      if (liveNames.has(tool.name)) {
+        throw new Error(`host collision: ${tool.name}`);
+      }
+      liveNames.add(tool.name);
+      registered.push({ name: tool.name, signal: options?.signal });
+      options?.signal?.addEventListener('abort', () => {
+        void Promise.resolve().then(() => {
+          liveNames.delete(tool.name);
+        });
+      });
+    },
+  };
+  return { registered, liveNames };
+}
 
 function installModelContext() {
   const registered: Array<{
@@ -111,5 +142,32 @@ describe('useWebMcpTool', () => {
     expect(registered).toHaveLength(1);
 
     view.unmount();
+  });
+
+  it('serializes same-name re-registration across rapid reactive reruns without a host collision', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { registered, liveNames } = installCollisionAwareModelContext();
+    const view = render(HarnessReactiveSameName, { props: { version: 1 } });
+    await vi.waitFor(() => expect(registered.length).toBeGreaterThan(0));
+
+    // Three reactive reruns in quick succession, all under the SAME tool
+    // name. Without serializing against the previous run's registration
+    // settling, a new run's registration attempt can reach the host before
+    // it has processed the previous run's abort, producing a host
+    // collision — this must never happen.
+    await view.rerender({ version: 2 });
+    await view.rerender({ version: 3 });
+    await view.rerender({ version: 4 });
+
+    await vi.waitFor(() => {
+      const live = registered.filter((tool) => !tool.signal?.aborted);
+      expect(live).toHaveLength(1);
+      expect(live[0]?.name).toBe('harness_reactive_tool');
+    });
+    expect(liveNames.has('harness_reactive_tool')).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    view.unmount();
+    warnSpy.mockRestore();
   });
 });

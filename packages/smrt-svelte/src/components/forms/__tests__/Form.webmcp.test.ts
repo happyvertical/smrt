@@ -1981,7 +1981,7 @@ describe('Form WebMCP staged-edit intent', () => {
         onaddresschange: addressChanged,
       },
     });
-    let _regLenBefore = registered.length;
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
     await vi.waitFor(() =>
@@ -2018,15 +2018,18 @@ describe('Form WebMCP staged-edit intent', () => {
       interactionRegistry: registry,
       onaddresschange: addressChanged,
     });
-    _regLenBefore = registered.length;
     await tick();
     await tick();
-    await vi.waitFor(() =>
-      expect(registered.length).toBeGreaterThan(_regLenBefore),
-    );
-    expect(addressProperties()).toEqual({
-      province: { type: 'string', enum: ['', 'IDF'] },
-      country: { type: 'string', enum: ['FR'] },
+    // A prop change here can drive the reactive tool spec through more than
+    // one intermediate registration before it settles (address option
+    // registries can update in a separate tick from the rerender itself), so
+    // waiting only for `registered.length` to grow can observe a
+    // soon-to-be-superseded entry. Poll the actual settled schema instead.
+    await vi.waitFor(() => {
+      expect(addressProperties()).toEqual({
+        province: { type: 'string', enum: ['', 'IDF'] },
+        country: { type: 'string', enum: ['FR'] },
+      });
     });
 
     expect(

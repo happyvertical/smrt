@@ -1,5 +1,6 @@
 import type {
   WebMcpBespokeToolSpec,
+  WebMcpRegistrationDisposer,
   WebMcpToolEffect,
 } from '@happyvertical/smrt-web';
 import { tryGetWebMcpBespokeContext } from './webmcp-bespoke-context.js';
@@ -70,6 +71,10 @@ export function useWebMcpTool(
   options: UseWebMcpToolOptions = {},
 ): void {
   const bespokeContext = tryGetWebMcpBespokeContext();
+  // Survives across effect reruns (unlike the per-run `dispose`/`cancelled`
+  // locals below) so a new run can serialize its registration against the
+  // previous run's — see the comment at its read site.
+  let previousDisposer: WebMcpRegistrationDisposer | undefined;
 
   $effect(() => {
     if (typeof window === 'undefined') return;
@@ -77,8 +82,12 @@ export function useWebMcpTool(
     // the dynamic import below.
     if (!getModelContext()) return;
 
-    const spec = factory();
-    if (!spec) return;
+    const factorySpec = factory();
+    if (!factorySpec) return;
+    // Rebind to a definitely-non-nullish const: TypeScript does not carry
+    // the `!factorySpec` narrowing above into the `register` closure below,
+    // since it runs later, asynchronously.
+    const spec: WebMcpToolSpec = factorySpec;
 
     // Read the Provider's effects policy synchronously, inside this effect's
     // tracking window — `bespokeContext.effects` is a reactive getter, and a
@@ -90,39 +99,57 @@ export function useWebMcpTool(
     // policy always wins; this call's own `options.effects` is only the
     // no-Provider fallback.
     const effects = bespokeContext?.effects ?? options.effects;
+    // Snapshotted before this run's async work starts: the previous run's
+    // cleanup (below) synchronously aborts its controller, but a host is not
+    // required to finish processing that abort before this run's dynamic
+    // import resolves. Awaiting the prior disposer's `.ready` settling first
+    // serializes same-name re-registration so this run never asks the host
+    // to accept a new registration while it may still consider the old one
+    // live.
+    const priorReady = previousDisposer?.ready;
 
     let cancelled = false;
     let dispose: () => void = () => {};
 
-    // Two-argument `.then(onFulfilled, onRejected)` — NOT `.then().catch()` —
-    // so `onRejected` only observes the dynamic import itself failing to
-    // load (expected in bundle profiles without `@happyvertical/smrt-web`,
-    // so it stays silent). A synchronous throw from
-    // `registerWebMcpBespokeTool` (e.g. an invalid `effects` policy) happens
-    // inside `onFulfilled` and is deliberately left uncaught here so it
-    // propagates instead of being silently swallowed alongside the
-    // load-failure case. Async registration failure is a separate case,
-    // observed below via the returned disposer's `.ready` rejection.
-    void import('@happyvertical/smrt-web').then(
-      ({ registerWebMcpBespokeTool }) => {
+    async function register(): Promise<void> {
+      // The dynamic import failing to load is expected in bundle profiles
+      // without `@happyvertical/smrt-web` — treat it like WebMCP being
+      // unavailable and no-op, silently. Only THIS statement's failure is
+      // caught: a synchronous throw from `registerWebMcpBespokeTool` below
+      // (e.g. an invalid `effects` policy) happens outside this try block
+      // and is deliberately left to propagate as an unhandled rejection of
+      // `register()`'s own promise, rather than being swallowed alongside
+      // the load-failure case.
+      let registerWebMcpBespokeTool: typeof import('@happyvertical/smrt-web')['registerWebMcpBespokeTool'];
+      try {
+        ({ registerWebMcpBespokeTool } = await import(
+          '@happyvertical/smrt-web'
+        ));
+      } catch {
+        return;
+      }
+      if (cancelled) return;
+      if (priorReady) {
+        await priorReady.catch(() => undefined);
+        // A newer run may have superseded this one while the wait above
+        // was pending; re-check before registering under this run's name.
         if (cancelled) return;
-        const registration = registerWebMcpBespokeTool(spec, { effects });
-        dispose = registration;
-        void registration.ready.catch((error: unknown) => {
-          if (!cancelled) {
-            console.warn(
-              '[smrt-svelte] bespoke WebMCP tool registration failed',
-              spec.name,
-              error,
-            );
-          }
-        });
-      },
-      () => {
-        // No registrar available in this bundle profile — treat like WebMCP
-        // being unavailable and no-op.
-      },
-    );
+      }
+      const registration = registerWebMcpBespokeTool(spec, { effects });
+      dispose = registration;
+      previousDisposer = registration;
+      void registration.ready.catch((error: unknown) => {
+        if (!cancelled) {
+          console.warn(
+            '[smrt-svelte] bespoke WebMCP tool registration failed',
+            spec.name,
+            error,
+          );
+        }
+      });
+    }
+
+    void register();
 
     return () => {
       cancelled = true;
