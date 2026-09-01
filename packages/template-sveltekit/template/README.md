@@ -1,6 +1,6 @@
 # s-m-r-t SvelteKit starter
 
-This is the small, ground-up starting point for s-m-r-t 0.43.9. It contains
+This is the small, ground-up starting point for s-m-r-t 0.43.10. It contains
 one object and a profile-aware operational surface for local, self-hosted, and
 managed-cloud environments. It does not provision external providers.
 

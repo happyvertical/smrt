@@ -1,7 +1,7 @@
 # @happyvertical/smrt-template-sveltekit
 
 The minimal “learn and build from the ground up” SvelteKit template for
-s-m-r-t 0.43.9. The package exports `copyTemplate()`, `getTemplatePath()`, and
+s-m-r-t 0.43.10. The package exports `copyTemplate()`, `getTemplatePath()`, and
 `templateInfo` and is the `sveltekit` template used by `smrt gnode create`.
 
 ## 1. Install and run
@@ -16,12 +16,12 @@ cp .env.example .env
 pnpm app:install
 ```
 
-Run the copy command from the monorepo root. The public 0.43.9 CLI advertises
+Run the copy command from the monorepo root. The public 0.43.10 CLI advertises
 `gnode create`, but its command dispatcher currently rejects `gnode`; this
 package's tested `copyTemplate()` export is the working scaffold path.
 
 Generated projects require Node.js 24.18.0 or newer and pnpm 10.34.4. They pin
-all directly used `@happyvertical/smrt-*` packages to 0.43.9.
+all directly used `@happyvertical/smrt-*` packages to 0.43.10.
 
 For programmatic scaffolding:
 
