@@ -36,7 +36,7 @@ function packageNameForProject(name) {
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return name.startsWith('@') ? name : `@smrt-app/${normalized}`;
+  return name.startsWith('@') ? name : `@smrt-app/${normalized || 'app'}`;
 }
 
 /**

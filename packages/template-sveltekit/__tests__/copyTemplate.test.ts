@@ -157,4 +157,13 @@ describe('copyTemplate', () => {
     );
     expect(pkg.name).toBe('@example/my-app');
   });
+
+  it('falls back to a valid package identity when the name has no slug characters', () => {
+    copyTemplate(tempDir, { name: '???', overwrite: true });
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'package.json'), 'utf-8'),
+    );
+    expect(pkg.name).toBe('@smrt-app/app');
+  });
 });
