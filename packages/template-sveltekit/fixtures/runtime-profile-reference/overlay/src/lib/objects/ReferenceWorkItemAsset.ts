@@ -12,11 +12,12 @@ import {
   field,
   foreignKey,
   ObjectRegistry,
-  SmrtCollection,
+  SmrtJunction,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { ReferenceWorkItem } from './ReferenceWorkItem.js';
 
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -30,7 +31,7 @@ export class ReferenceWorkItemAsset extends SmrtObject {
   @tenantId({ required: true })
   tenantId = '';
 
-  @foreignKey('ReferenceWorkItem', { required: true })
+  @foreignKey(ReferenceWorkItem, { required: true })
   referenceWorkItemId = '';
 
   @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
@@ -40,8 +41,12 @@ export class ReferenceWorkItemAsset extends SmrtObject {
   role = 'attachment';
 }
 
-export class ReferenceWorkItemAssetCollection extends SmrtCollection<ReferenceWorkItemAsset> {
+export class ReferenceWorkItemAssetCollection extends SmrtJunction<ReferenceWorkItemAsset> {
   static readonly _itemClass = ReferenceWorkItemAsset;
+  protected leftField = 'referenceWorkItemId';
+  protected rightField = 'assetId';
+  protected sortField: string | null = null;
+  protected positionField: string | null = null;
 }
 
 ObjectRegistry.registerCollection(

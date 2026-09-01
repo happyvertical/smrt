@@ -32,7 +32,10 @@ import {
   renderCollectedManifestTable,
 } from '@happyvertical/smrt-core/schema';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import type { BackgroundCapable } from '@happyvertical/smrt-jobs';
+import {
+  type BackgroundCapable,
+  SmrtJobCollection,
+} from '@happyvertical/smrt-jobs';
 import '@happyvertical/smrt-jobs';
 import { AssetCollection } from '@happyvertical/smrt-assets';
 import '@happyvertical/smrt-profiles';
@@ -364,15 +367,13 @@ export async function seedReferenceFixture(
     sourceUri: 'fixture://runtime-profile-reference/reference-asset',
     mimeType: 'application/json',
     sourceType: 'fixture',
-    metadata: { fixture: 'runtime-profile-reference' },
+    metadata: JSON.stringify({ fixture: 'runtime-profile-reference' }),
   });
   const associations = await ReferenceWorkItemAssetCollection.create({
     db: fixture.runtime.db,
   });
-  const association = await associations.create({
+  const association = await associations.attach(item.id as string, asset.id as string, {
     tenantId: claim.tenantId,
-    referenceWorkItemId: item.id as string,
-    assetId: asset.id as string,
     role: 'reference-attachment',
   });
   const backgroundItem = item as ReferenceWorkItem & BackgroundCapable;
@@ -410,13 +411,7 @@ export async function inspectReferenceFixture(
   const association = await (
     await ReferenceWorkItemAssetCollection.create({ db: fixture.runtime.db })
   ).get(seed.associationId);
-  const jobs = await fixture.runtime.db.query(
-    'SELECT queue, method, status FROM _smrt_jobs WHERE id = ?',
-    seed.jobId,
-  );
-  const job = jobs.rows[0] as
-    | { queue?: unknown; method?: unknown; status?: unknown }
-    | undefined;
+  const job = await (await SmrtJobCollection.create({ db: fixture.runtime.db })).get(seed.jobId);
   if (!item || !asset || !association || !job) {
     throw new Error('Reference fixture seed is incomplete.');
   }
