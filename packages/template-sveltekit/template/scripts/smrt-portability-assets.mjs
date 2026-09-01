@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   readdirSync,
   realpathSync,
   renameSync,
@@ -121,6 +122,27 @@ function destinationPathForKey(key) {
   return `portable/${sha256(key)}`;
 }
 
+function readBoundedDescriptor(descriptor, expectedSize, changedCode) {
+  const bytes = Buffer.alloc(expectedSize);
+  let offset = 0;
+  while (offset < expectedSize) {
+    const count = readSync(
+      descriptor,
+      bytes,
+      offset,
+      expectedSize - offset,
+      null,
+    );
+    if (count === 0) throw fail(changedCode);
+    offset += count;
+  }
+  const overflowProbe = Buffer.allocUnsafe(1);
+  if (readSync(descriptor, overflowProbe, 0, 1, null) !== 0) {
+    throw fail(changedCode);
+  }
+  return bytes;
+}
+
 function readRegularFile(path, approvedRoot, onOpened) {
   const lexicalPath = resolve(path);
   if (!isInside(approvedRoot, lexicalPath)) throw fail('asset-outside-root');
@@ -146,7 +168,11 @@ function readRegularFile(path, approvedRoot, onOpened) {
     ) {
       throw fail('asset-changed-during-read');
     }
-    const bytes = readFileSync(descriptor);
+    const bytes = readBoundedDescriptor(
+      descriptor,
+      opened.size,
+      'asset-changed-during-read',
+    );
     const after = fstatSync(descriptor);
     const afterPath = statSync(lexicalPath);
     if (
@@ -576,7 +602,7 @@ export function recoverFilesystemAssets({
   return 'retry';
 }
 
-export function readSensitiveBundle(path) {
+export function readSensitiveBundle(path, options = {}) {
   const details = lstatSync(path);
   if (
     details.isSymbolicLink() ||
@@ -599,7 +625,25 @@ export function readSensitiveBundle(path) {
     ) {
       throw fail('bundle-changed-during-read');
     }
-    return readFileSync(descriptor, 'utf8');
+    options.onOpened?.();
+    const bytes = readBoundedDescriptor(
+      descriptor,
+      opened.size,
+      'bundle-changed-during-read',
+    );
+    const after = fstatSync(descriptor);
+    const afterPath = statSync(path);
+    if (
+      after.dev !== opened.dev ||
+      after.ino !== opened.ino ||
+      after.size !== opened.size ||
+      afterPath.dev !== opened.dev ||
+      afterPath.ino !== opened.ino ||
+      realpathSync(path) !== resolve(path)
+    ) {
+      throw fail('bundle-changed-during-read');
+    }
+    return bytes.toString('utf8');
   } finally {
     closeSync(descriptor);
   }

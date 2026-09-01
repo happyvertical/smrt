@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
   chmodSync,
   cpSync,
   existsSync,
@@ -26,6 +27,7 @@ import {
   bundleContentDigest,
   collectFilesystemAssets,
   publishFilesystemAssets,
+  readSensitiveBundle,
   rollbackFilesystemAssets,
   stageFilesystemAssets,
   verifyFilesystemAssets,
@@ -588,6 +590,39 @@ describe('asset-aware runtime portability', () => {
         },
       }),
     ).toThrow(/asset-changed-during-read/);
+  });
+
+  it('bounds descriptor reads when an opened asset or bundle grows', async () => {
+    const fixture = fixtureContext();
+    const blobPath = join(fixture.sourceAssetRoot, 'reference.json');
+    writeFileSync(blobPath, ASSET_BYTES, { mode: 0o600 });
+    const tables = [
+      {
+        name: 'assets',
+        columns: ['id', 'source_uri'],
+        rows: [{ id: ASSET_ID, source_uri: pathToFileURL(blobPath).href }],
+      },
+    ];
+    expect(() =>
+      collectFilesystemAssets({
+        tables,
+        sourceRoot: fixture.sourceRoot,
+        assetRoot: fixture.sourceAssetRoot,
+        onSourceOpened() {
+          appendFileSync(blobPath, 'growth');
+        },
+      }),
+    ).toThrow(/asset-changed-during-read/);
+
+    makePrivateDirectory(dirname(fixture.bundlePath));
+    writeFileSync(fixture.bundlePath, '{"schemaVersion":2}\n', { mode: 0o600 });
+    expect(() =>
+      readSensitiveBundle(fixture.bundlePath, {
+        onOpened() {
+          appendFileSync(fixture.bundlePath, 'growth');
+        },
+      }),
+    ).toThrow(/bundle-changed-during-read/);
   });
 
   it('never follows a destination symlink inserted at the publication boundary', async () => {
