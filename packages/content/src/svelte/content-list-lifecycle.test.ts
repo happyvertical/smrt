@@ -201,6 +201,9 @@ describe('ContentList lifecycle controller', () => {
     const apply = vi
       .fn<() => Promise<DataSurfaceActionResult>>()
       .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce(
+        result('apply', { ok: false, reason: 'idempotency_in_progress' }),
+      )
       .mockResolvedValueOnce(result('apply'));
     const controller = createContentListLifecycleController({
       client: { preview: async () => result('preview'), apply },
@@ -217,9 +220,16 @@ describe('ContentList lifecycle controller', () => {
       status: 'failed',
       renewalRequired: false,
     });
+    expect(await controller.apply(2)).toMatchObject({
+      status: 'failed',
+      error: 'idempotency_in_progress',
+      renewalRequired: false,
+      summary: { resolvedCount: 2 },
+    });
     expect(await controller.apply(2)).toMatchObject({ status: 'succeeded' });
-    expect(apply).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenCalledTimes(3);
     expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+    expect(apply.mock.calls[2]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
   });
 
   it('requires a renewed preview when the server reports matching-count drift', async () => {

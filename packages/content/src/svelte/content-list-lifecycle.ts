@@ -578,6 +578,16 @@ export function createContentListLifecycleController(
       const nextSummary = readContentListLifecycleSummary(result);
       if (!result.ok) {
         const reason = result.reason ?? 'apply_failed';
+        if (reason === 'idempotency_in_progress') {
+          publish({
+            ...state,
+            status: 'failed',
+            result,
+            error: reason,
+            renewalRequired: false,
+          });
+          return state;
+        }
         frozen = undefined;
         pendingApply = undefined;
         publish({
