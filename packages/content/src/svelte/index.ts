@@ -208,6 +208,13 @@ export {
   toContentListRows,
 } from './content-list-controller.js';
 export {
+  type ContentListSurfaceContext,
+  type ContentListSurfaceFreshness,
+  type ContentListSurfaceHandle,
+  type ContentListSurfaceRegistrationOptions,
+  registerContentListDataSurface,
+} from './content-list-data-surface.js';
+export {
   CONTENT_LIST_LIFECYCLE_ACTION_IDS,
   type ContentListLifecycleActionId,
   type ContentListLifecycleBinding,
@@ -225,13 +232,6 @@ export {
   readContentListLifecycleSummary,
   reconcileContentListLifecycleSelection,
 } from './content-list-lifecycle.js';
-export {
-  type ContentListSurfaceContext,
-  type ContentListSurfaceFreshness,
-  type ContentListSurfaceHandle,
-  type ContentListSurfaceRegistrationOptions,
-  registerContentListDataSurface,
-} from './content-list-data-surface.js';
 // Server-backed ContentList queries (#2452): view state → DataQueryRequest,
 // the `POST /api/v1/contents/query` transport, and the binding seam.
 export {
