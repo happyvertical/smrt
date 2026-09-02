@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
+  DomainKnowledgeAgentSurface,
   DomainKnowledgeConfig,
   DomainKnowledgeManifest,
 } from '@happyvertical/smrt-types';
@@ -22,7 +23,10 @@ import {
   type SmartObjectManifest,
 } from '../scanner/types.js';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
-import type { ScannerModule } from '../utils/scanner-module.js';
+import type {
+  ScannerAgentSurface,
+  ScannerModule,
+} from '../utils/scanner-module.js';
 import {
   renderApiClientCrudType,
   renderApiClientCustomMethodParameters,
@@ -173,6 +177,59 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-web': 'smrt:web',
 };
 
+/**
+ * Project a scanner agent surface into the knowledge-artifact shape (#2591).
+ *
+ * The two shapes are deliberately separate: the scanner cannot depend on
+ * `@happyvertical/smrt-types` (core depends on the scanner, and importing back
+ * would close the cycle), so it mirrors the vocabulary structurally and this
+ * function is the one place the mirror is reconciled. `filePath` becomes
+ * `sourceFile` here because the artifact records a package-relative path, not a
+ * scan path.
+ */
+export function toKnowledgeAgentSurface(
+  surface: ScannerAgentSurface | undefined,
+): DomainKnowledgeAgentSurface | undefined {
+  if (!surface) return undefined;
+  return {
+    intents: surface.intents.map(({ kind: _kind, filePath, ...rest }) => ({
+      ...rest,
+      sourceFile: filePath,
+    })),
+    playbooks: surface.playbooks.map(({ kind: _kind, filePath, ...rest }) => ({
+      ...rest,
+      sourceFile: filePath,
+    })),
+    diagnostics: surface.diagnostics.map(({ filePath, ...rest }) => ({
+      ...rest,
+      sourceFile: filePath,
+    })),
+  };
+}
+
+/**
+ * Print every declaration the matcher recognized but could not emit.
+ *
+ * A warning rather than a build failure: a computed tool set is a legitimate
+ * choice, and `useWebMcpTool` is its supported path. What is NOT acceptable is
+ * the declaration disappearing without a word, so the surface records it and
+ * the build says so.
+ */
+function reportAgentSurfaceDiagnostics(
+  surface: DomainKnowledgeAgentSurface | undefined,
+): void {
+  if (!surface || surface.diagnostics.length === 0) return;
+  console.warn(
+    `[smrt] ⚠️  ${surface.diagnostics.length} declaration(s) are not statically emittable and were excluded from the agent surface:`,
+  );
+  for (const diagnostic of surface.diagnostics) {
+    const where = diagnostic.line
+      ? `${diagnostic.sourceFile}:${diagnostic.line}`
+      : diagnostic.sourceFile;
+    console.warn(`  ${where} — ${diagnostic.message}`);
+  }
+}
+
 async function importScanner() {
   return importWorkspaceModule<ScannerModule>({
     packageName: '@happyvertical/smrt-scanner',
@@ -283,6 +340,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
   let server: ViteDevServer | undefined;
   let manifest: SmartObjectManifest | null = null;
+  /**
+   * The declared agent surface from the most recent OXC scan (#2591). Held
+   * beside `manifest` rather than on it, because `manifest.json` is the runtime
+   * manifest and stays runtime-focused; this belongs to the knowledge artifact.
+   */
+  let agentSurface: DomainKnowledgeAgentSurface | undefined;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
   let config: ResolvedConfig | null = null; // Store resolved config for closeBundle hook
@@ -371,6 +434,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       rootDir,
       manifestPath,
       config: resolvedKnowledge,
+      agentSurface,
     });
     const emitted = deterministic
       ? { ...artifact, generatedAt: DETERMINISTIC_GENERATED_AT }
@@ -1115,6 +1179,13 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       // Scan and resolve inheritance
       const { results, resolved } = await scanner.scanAndResolve();
+
+      // The same scan already read every module-scope `defineIntent()` /
+      // `definePlaybook()` declaration (#2591). Hold it for the knowledge
+      // artifact rather than scanning a second time; it never reaches the
+      // runtime manifest, which stays runtime-focused.
+      agentSurface = toKnowledgeAgentSurface(results.agentSurface);
+      reportAgentSurfaceDiagnostics(agentSurface);
 
       // Check for errors
       if (results.errors.length > 0) {

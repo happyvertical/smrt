@@ -220,6 +220,106 @@ export interface ResolvedClassDefinition extends RawClassDefinition {
 }
 
 // ============================================================================
+// Agent surface (#2591)
+// ============================================================================
+
+/** The two module-scope helpers the agent-surface matcher recognizes. */
+export type AgentSurfaceHelper = 'defineIntent' | 'definePlaybook';
+
+/**
+ * Effect classification, mirroring `CapabilityEffect` in
+ * `@happyvertical/smrt-types`. Mirrored rather than imported because this
+ * package carries no `@happyvertical/*` dependency — core depends on it, and
+ * importing back would close the cycle.
+ */
+export type AgentSurfaceEffect = 'read' | 'write' | 'destructive';
+
+/** A fully resolved classification (#2587's fail-closed rule already applied). */
+export interface AgentSurfaceCapability {
+  effect: AgentSurfaceEffect;
+  idempotent: boolean;
+  openWorld: boolean;
+}
+
+/** Plane a declaration is valid on. */
+export type AgentSurfacePlane = 'browser' | 'server';
+
+/** One emitted view intent (#2588). */
+export interface AgentSurfaceIntent {
+  kind: 'intent';
+  /** Declared, dot-namespaced identity. This is the entry's stable identity. */
+  id: string;
+  description: string;
+  capability: AgentSurfaceCapability;
+  target: Record<string, unknown>;
+  /** Whether the declaration carried an `inputSchema` object. */
+  hasInputSchema: boolean;
+  /**
+   * Always exactly `['browser']`. An intent moves mounted browser state; a
+   * server-side agent reaches one only through the #2446 command/ack bridge,
+   * which the referencing PLAYBOOK declares. Typed as the literal tuple rather
+   * than the open plane list so the contract cannot be read as wider than it is.
+   */
+  planes: ['browser'];
+  /** Declaring module, relativized by the emitting caller. */
+  filePath: string;
+}
+
+/** One step of an emitted playbook (#2589). Playbooks cannot nest. */
+export type AgentSurfacePlaybookStep =
+  | { kind: 'operation'; model: string; action: string }
+  | { kind: 'intent'; id: string };
+
+/** One emitted playbook (#2589). */
+export interface AgentSurfacePlaybook {
+  kind: 'playbook';
+  /** Declared registry key. This is the entry's stable identity. */
+  key: string;
+  title: string;
+  description: string;
+  steps: AgentSurfacePlaybookStep[];
+  planes: AgentSurfacePlane[];
+  /** False when `planes` was derived from the step kinds rather than declared. */
+  planesDeclared: boolean;
+  onStepFailure: 'abort' | 'continue';
+  enabled: boolean;
+  /** Declaring module, relativized by the emitting caller. */
+  filePath: string;
+}
+
+/** Why a recognized declaration could not be emitted. */
+export type AgentSurfaceDiagnosticCode =
+  | 'non-literal-argument'
+  | 'not-module-scope'
+  | 'argument-count'
+  | 'incomplete-declaration'
+  | 'invalid-identity'
+  | 'svelte-declaration'
+  | 'duplicate-identity';
+
+/**
+ * A recognized declaration that is not emittable.
+ *
+ * Never a silent omission: every message names `useWebMcpTool`, the escape
+ * hatch for a genuinely computed tool set.
+ */
+export interface AgentSurfaceDiagnostic {
+  code: AgentSurfaceDiagnosticCode;
+  helper: AgentSurfaceHelper;
+  message: string;
+  filePath: string;
+  line?: number;
+  column?: number;
+}
+
+/** The declared agent-addressable surface found by one scan. */
+export interface AgentSurface {
+  intents: AgentSurfaceIntent[];
+  playbooks: AgentSurfacePlaybook[];
+  diagnostics: AgentSurfaceDiagnostic[];
+}
+
+// ============================================================================
 // Scan Results
 // ============================================================================
 
@@ -244,6 +344,13 @@ export interface FileScanResult {
 
   /** SMRT package imports found in file (package name → Set of imported class names) */
   smrtImports?: Map<string, Set<string>>;
+
+  /**
+   * Declared view intents and playbooks found in the file, plus a diagnostic
+   * for every recognized declaration that is not statically emittable (#2591).
+   * Omitted when the file declares none.
+   */
+  agentSurface?: AgentSurface;
 }
 
 /**
@@ -290,6 +397,12 @@ export interface ScanResults {
 
   /** Accumulated SMRT package imports across all files (package name → Set of imported class names) */
   smrtImports?: Map<string, Set<string>>;
+
+  /**
+   * The project's declared agent-addressable surface, merged across files with
+   * deterministic identity so emission never depends on file order (#2591).
+   */
+  agentSurface: AgentSurface;
 }
 
 // ============================================================================
@@ -341,6 +454,30 @@ export interface OxcScannerOptions {
    * stays on real directories unless a caller explicitly opts back in.
    */
   followSymbolicLinks?: boolean;
+
+  /**
+   * Match module-scope `defineIntent()` / `definePlaybook()` declarations and
+   * report `.svelte` declarations the scanner can never read (#2591). Defaults
+   * to `true`.
+   */
+  agentSurface?: boolean;
+
+  /**
+   * Glob patterns searched for `.svelte` declarations the scanner cannot read.
+   * Only used when {@link OxcScannerOptions.agentSurface} is enabled.
+   */
+  svelteInclude?: string[];
+
+  /**
+   * Glob patterns searched for `defineIntent` / `definePlaybook` declarations,
+   * independently of {@link OxcScannerOptions.include}.
+   *
+   * A model scan is routinely narrowed to where models live, but an intent
+   * sidecar lives beside the component that uses it; binding declaration
+   * discovery to the class glob would silently drop those. Only used when
+   * {@link OxcScannerOptions.agentSurface} is enabled.
+   */
+  agentSurfaceInclude?: string[];
 }
 
 /**

@@ -23,6 +23,7 @@ import type {
   MigrationDefinition,
   MigrationResult,
 } from '@happyvertical/smrt-core/migrations';
+import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
@@ -521,6 +522,173 @@ function getErrorContext(error: unknown): ErrorWithContext['context'] {
     }
   }
   return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Agent-addressable surface (#2591)
+// ---------------------------------------------------------------------------
+
+/** One agent-addressable entry, whatever declared it. */
+export interface AgentSurfaceEntry {
+  kind: 'model tool' | 'view intent' | 'playbook';
+  /** The name an agent addresses this entry by. */
+  name: string;
+  detail: string;
+}
+
+/** What `smrt doctor` reports about an application's agent surface. */
+export interface AgentSurfaceReport {
+  /** Artifact the surface was read from, relative to the project root. */
+  source?: string;
+  modelTools: AgentSurfaceEntry[];
+  intents: AgentSurfaceEntry[];
+  playbooks: AgentSurfaceEntry[];
+  /** Declarations the scanner recognized but could not emit. */
+  notStatic: Array<{ sourceFile: string; message: string }>;
+}
+
+/**
+ * Artifacts the surface is read from, in preference order.
+ *
+ * A dev/build working copy first, then a library build's output. Both are
+ * BUILD artifacts — the whole point of the report is that "what can an agent do
+ * in this app" is answerable without mounting a route or starting a server
+ * (#2591). Nothing here loads application code.
+ */
+const AGENT_SURFACE_ARTIFACTS = [
+  '.smrt/smrt-knowledge.json',
+  'dist/smrt-knowledge.json',
+] as const;
+
+/**
+ * Whether a parsed artifact has the shape this report reads.
+ *
+ * Deliberately checks the exact fields the report touches — the schema marker,
+ * `surfaces`, and, when present, each `agentSurface` list — rather than trusting
+ * the type assertion. Everything here comes off disk and may predate the
+ * current schema or have been written by something else entirely.
+ */
+function isReadableKnowledgeArtifact(
+  value: unknown,
+): value is DomainKnowledgeManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return false;
+  if (!Array.isArray(record.surfaces)) return false;
+
+  const surface = record.agentSurface;
+  if (surface === undefined) return true;
+  if (!surface || typeof surface !== 'object' || Array.isArray(surface)) {
+    return false;
+  }
+  const agentSurface = surface as Record<string, unknown>;
+  return (
+    Array.isArray(agentSurface.intents) &&
+    Array.isArray(agentSurface.playbooks) &&
+    Array.isArray(agentSurface.diagnostics)
+  );
+}
+
+/**
+ * Read the complete agent-addressable surface from build artifacts alone.
+ *
+ * Model tools come from the artifact's emitted `mcp` surfaces, which is where
+ * core has always recorded them; intents and playbooks come from the emitted
+ * agent surface. They are reported together because an agent does not
+ * experience them as three mechanisms — it experiences one list of things it
+ * can do.
+ *
+ * @param cwd - Project root to read artifacts from.
+ * @returns The report, or `undefined` when no artifact exists yet.
+ */
+export async function readAgentSurfaceReport(
+  cwd: string,
+): Promise<AgentSurfaceReport | undefined> {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const { resolve } = await import('node:path');
+
+  for (const candidate of AGENT_SURFACE_ARTIFACTS) {
+    const artifactPath = resolve(cwd, candidate);
+    if (!existsSync(artifactPath)) continue;
+
+    // Parsing is not validating. `{}` parses fine and would render as a
+    // healthy zero-operation surface while ALSO suppressing the fallback to a
+    // good `dist/` artifact, and `{ "surfaces": {} }` would throw at `.filter`
+    // and abort the whole doctor run. Doctor is a diagnostic: a malformed
+    // artifact must be stepped over, never mistaken for an empty one.
+    // The projection sits INSIDE the try on purpose. Shape-checking the top
+    // level is not enough — a member like `intents: [{}]` passes it and then
+    // throws on `intent.capability.effect`. Doctor is a diagnostic tool; a
+    // malformed artifact must cost it this candidate, never the whole run.
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(artifactPath, 'utf-8'));
+      if (!isReadableKnowledgeArtifact(parsed)) continue;
+      const artifact: DomainKnowledgeManifest = parsed;
+      const surface = artifact.agentSurface;
+
+      return {
+        source: candidate,
+        modelTools: (artifact.surfaces ?? [])
+          .filter((entry) => entry.kind === 'mcp')
+          .map((entry) => ({
+            kind: 'model tool' as const,
+            name: String(entry.name),
+            detail: `${entry.objectName ?? '?'}.${entry.operation}`,
+          }))
+          .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+        intents: (surface?.intents ?? []).map((intent) => ({
+          kind: 'view intent' as const,
+          name: String(intent.id),
+          detail: `${intent.capability.effect} · ${intent.planes.join('+')} · ${intent.sourceFile}`,
+        })),
+        playbooks: (surface?.playbooks ?? []).map((playbook) => ({
+          kind: 'playbook' as const,
+          name: String(playbook.key),
+          detail: `${playbook.steps.length} step(s) · ${playbook.planes.join('+')} · ${playbook.sourceFile}`,
+        })),
+        notStatic: (surface?.diagnostics ?? []).map((diagnostic) => ({
+          sourceFile: diagnostic.line
+            ? `${diagnostic.sourceFile}:${diagnostic.line}`
+            : String(diagnostic.sourceFile),
+          message: String(diagnostic.message),
+        })),
+      };
+    } catch {}
+  }
+
+  return undefined;
+}
+
+/** Render the surface report as the lines `smrt doctor` prints. */
+export function renderAgentSurfaceReport(
+  report: AgentSurfaceReport | undefined,
+): string[] {
+  if (!report) {
+    return [
+      '  ⚠️  No knowledge artifact found — run a build to emit the agent surface',
+    ];
+  }
+
+  const lines = [`  Source: ${report.source}`];
+  const section = (label: string, entries: AgentSurfaceEntry[]): void => {
+    lines.push(`  ${label}: ${entries.length}`);
+    for (const entry of entries) {
+      lines.push(`    - ${entry.name} (${entry.detail})`);
+    }
+  };
+
+  section('Generated model tools', report.modelTools);
+  section('Declared view intents', report.intents);
+  section('Registered playbooks', report.playbooks);
+
+  if (report.notStatic.length > 0) {
+    lines.push(`  ⚠️  Not statically emittable: ${report.notStatic.length}`);
+    for (const entry of report.notStatic) {
+      lines.push(`    - ${entry.sourceFile}: ${entry.message}`);
+    }
+  }
+
+  return lines;
 }
 
 /**
@@ -2925,6 +3093,43 @@ export default testManifest;
             'Could not read .smrt/manifest.json to validate external registrations',
           );
         }
+      }
+
+      console.log();
+
+      // ========== Agent Surface ==========
+      // The complete set of things an agent can address in this application,
+      // read from build artifacts alone — no route mounted, no server started
+      // (#2591). Generated model tools have always been build-time artifacts;
+      // view intents and playbooks join them here, so "what can an agent do in
+      // this app" finally has one answer.
+      console.log('🤖 Agent Surface\n');
+
+      const agentSurfaceReport = await readAgentSurfaceReport(cwd);
+      for (const line of renderAgentSurfaceReport(agentSurfaceReport)) {
+        console.log(line);
+      }
+      if (agentSurfaceReport) {
+        const total =
+          agentSurfaceReport.modelTools.length +
+          agentSurfaceReport.intents.length +
+          agentSurfaceReport.playbooks.length;
+        check(`${total} agent-addressable operation(s) reported`, true);
+        if (agentSurfaceReport.notStatic.length > 0) {
+          check(
+            'Agent-surface declarations are all static',
+            false,
+            undefined,
+            `${agentSurfaceReport.notStatic.length} declaration(s) could not be read statically and were excluded — use useWebMcpTool for a computed tool set`,
+          );
+        }
+      } else {
+        check(
+          'Agent surface reported',
+          false,
+          undefined,
+          'No knowledge artifact — run a build first',
+        );
       }
 
       console.log();

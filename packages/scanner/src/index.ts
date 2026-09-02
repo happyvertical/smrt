@@ -19,6 +19,16 @@
  */
 
 export {
+  type ExtractAgentSurfaceOptions,
+  emptyAgentSurface,
+  extractAgentSurface,
+  isAgentSurfaceSourcePath,
+  isPrunedAgentSurfacePath,
+  mergeAgentSurfaces,
+  scanSvelteAgentSurface,
+  sourceMayDeclareAgentSurface,
+} from './agent-surface.js';
+export {
   discoverSourceFiles,
   normalizeGlobSeparators,
   relativeGlobToCwd,
@@ -34,7 +44,12 @@ export {
   sourceMayContainNumericPrecisionIssue,
   splitIdentifierWords,
 } from './numeric-precision-lint.js';
-export { extractSmrtImports, parseFile, parseSource } from './oxc-parser.js';
+export {
+  extractSmrtImports,
+  parseAgentSurfaceFile,
+  parseFile,
+  parseSource,
+} from './oxc-parser.js';
 export { OxcScanner } from './scanner.js';
 export * from './types.js';
 export {

@@ -19,18 +19,26 @@ import {
   sep,
 } from 'node:path';
 import {
+  AGENT_SURFACE_HASH_PREFIX,
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import {
+  type AgentSurface,
+  isAgentSurfaceSourcePath,
+  isPrunedAgentSurfacePath,
   lintNumericPrecision,
   ManifestAdapter,
+  mergeAgentSurfaces,
   OxcScanner,
   parseSource,
+  scanSvelteAgentSurface,
   sourceMayContainNumericPrecisionIssue,
+  sourceMayDeclareAgentSurface,
 } from '@happyvertical/smrt-scanner';
 import type {
+  DomainKnowledgeAgentSurface,
   DomainKnowledgeField,
   DomainKnowledgeFieldConstraints,
   DomainKnowledgeManifest,
@@ -151,6 +159,12 @@ export interface KnowledgePackage {
   hasDomainKnowledge: boolean;
   domainKnowledgePath?: string;
   domainKnowledge?: DomainKnowledgeManifest;
+  /**
+   * The package's declared view intents and playbooks (#2591), lifted out of
+   * the domain-knowledge artifact so a consumer of the index never has to reach
+   * into the whole artifact for them. Absent when the package declares none.
+   */
+  agentSurface?: DomainKnowledgeAgentSurface;
   manifestPath?: string;
   manifestVersion?: string;
   objects: KnowledgeObject[];
@@ -874,6 +888,7 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   for (const pkg of authoredPackages) {
     issues.push(...checkDomainKnowledgeArtifact(index.rootDir, pkg));
+    issues.push(...checkAgentSurface(pkg));
   }
 
   const devMcpPackage = authoredPackages.find(
@@ -889,6 +904,7 @@ export async function checkKnowledgeFreshnessFromIndex(
     );
   }
 
+  issues.push(...findAgentSurfaceDriftIssues(authoredPackages));
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
@@ -985,6 +1001,22 @@ function checkDomainKnowledgeArtifact(
           label: docPath,
         };
       }),
+    // A module declaring a view intent or a playbook is an authored source for
+    // exactly the same reason (#2591): editing one changes the emitted agent
+    // surface, and an artifact that still claims the old surface is stale.
+    ...Object.keys(hashes)
+      .filter((key) => key.startsWith(AGENT_SURFACE_HASH_PREFIX))
+      .sort()
+      .map((key) => {
+        const sourcePath = key.slice(AGENT_SURFACE_HASH_PREFIX.length);
+        const filePath = join(pkg.directory, sourcePath);
+        return {
+          key,
+          filePath: existsSync(filePath) ? filePath : undefined,
+          kind: 'raw' as const,
+          label: sourcePath,
+        };
+      }),
   ];
 
   for (const check of checks) {
@@ -1010,6 +1042,243 @@ function checkDomainKnowledgeArtifact(
         severity: 'error',
         code: 'stale-domain-knowledge',
         message: `${check.label} changed since smrt-knowledge.json was generated`,
+        file: pkg.domainKnowledgePath,
+        packageName: pkg.name,
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Validate the emitted agent surface (#2591).
+ *
+ * Two rules, and the second is the reason this exists at all:
+ *
+ * - an identity must be present and unique within the package. `id`/`key` is
+ *   what a playbook step, a parity snapshot, and `smrt doctor` all name, so a
+ *   blank or colliding one makes the surface unaddressable;
+ * - every declaration the matcher recognized but could not read is reported.
+ *   It is a warning, not an error, because a computed tool set is a legitimate
+ *   choice with a supported path — but it is never silence, because the whole
+ *   value of emitting the surface is that "what can an agent do here" has one
+ *   answer, and an invisible declaration makes that answer wrong.
+ */
+function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
+  const surface = pkg.domainKnowledge?.agentSurface;
+  if (!surface) return [];
+
+  const issues: KnowledgeIssue[] = [];
+  const file = pkg.domainKnowledgePath;
+
+  const seen = new Set<string>();
+  const checkIdentity = (
+    label: string,
+    identity: string | undefined,
+    sourceFile: string,
+  ): void => {
+    if (!identity) {
+      issues.push({
+        severity: 'error',
+        code: 'agent-surface-missing-identity',
+        message: `${label} declared in ${sourceFile} has no identity`,
+        file,
+        packageName: pkg.name,
+      });
+      return;
+    }
+    const scoped = `${label}:${identity}`;
+    if (seen.has(scoped)) {
+      issues.push({
+        severity: 'error',
+        code: 'agent-surface-duplicate-identity',
+        message: `${label} \`${identity}\` is emitted more than once`,
+        file,
+        packageName: pkg.name,
+      });
+      return;
+    }
+    seen.add(scoped);
+  };
+
+  for (const intent of surface.intents) {
+    checkIdentity('view intent', intent.id, intent.sourceFile);
+  }
+  for (const playbook of surface.playbooks) {
+    checkIdentity('playbook', playbook.key, playbook.sourceFile);
+    if (playbook.steps.length === 0) {
+      issues.push({
+        severity: 'error',
+        code: 'agent-surface-empty-playbook',
+        message: `playbook \`${playbook.key}\` declares no steps`,
+        file,
+        packageName: pkg.name,
+      });
+    }
+  }
+
+  for (const diagnostic of surface.diagnostics) {
+    const where = diagnostic.line
+      ? `${diagnostic.sourceFile}:${diagnostic.line}`
+      : diagnostic.sourceFile;
+    // A cross-file duplicate never reaches the identity loop above: the
+    // scanner's merge already dropped the loser and left only this diagnostic.
+    // Reporting it as a "not static" warning would make the duplicate error
+    // unreachable in practice, so the diagnostic itself carries the severity.
+    const duplicate = diagnostic.code === 'duplicate-identity';
+    issues.push({
+      severity: duplicate ? 'error' : 'warning',
+      code: duplicate
+        ? 'agent-surface-duplicate-identity'
+        : 'agent-surface-not-static',
+      message: `${where} — ${diagnostic.message}`,
+      file,
+      packageName: pkg.name,
+    });
+  }
+
+  return issues;
+}
+
+/** Turn a comparison key back into something a human can act on. */
+function describeAgentSurfaceIdentity(identity: string): string {
+  if (!identity.startsWith('diagnostic:')) return identity;
+  const [, code, ...rest] = identity.split(':');
+  const line = rest.pop();
+  const path = rest.join(':');
+  const where = line && line !== '0' ? `${path}:${line}` : path;
+  return `${code} diagnostic at ${where}`;
+}
+
+/**
+ * Compare the artifact's emitted surface against what the sources declare NOW
+ * (#2591).
+ *
+ * `sourceHashes` alone cannot see an ADDED declaration: a brand-new
+ * `Foo.intents.ts` has no recorded hash to mismatch, the runtime manifest does
+ * not change (intents never enter it), and `AGENTS.md` does not change either —
+ * so every existing freshness signal stays green while the artifact silently
+ * omits a real operation. That defeats the point of emitting the surface, so
+ * the declaration SET is re-derived from source and compared by identity.
+ *
+ * The scan is bounded the same way the numeric-precision lint is: `src` only,
+ * with the scanner's cheap token pre-filter in front of every parse. Which
+ * files count is decided by the scanner's own `isAgentSurfaceSourcePath`, never
+ * by a list copied into this package: the two sides disagreeing produces a
+ * drift error no rebuild can clear, in whichever direction they differ.
+ */
+function findAgentSurfaceDriftIssues(
+  authoredPackages: KnowledgePackage[],
+): KnowledgeIssue[] {
+  const issues: KnowledgeIssue[] = [];
+
+  for (const pkg of authoredPackages) {
+    if (pkg.kind === 'sdk' || pkg.isInstalledDependency) continue;
+    if (!pkg.domainKnowledge || !pkg.domainKnowledgePath) continue;
+    const srcDir = join(pkg.directory, 'src');
+    if (!existsSync(srcDir)) continue;
+
+    const perFile: AgentSurface[] = [];
+    for (const filePath of walkFiles(srcDir)) {
+      // A `.svelte` file contributes diagnostics only — never an entry — but
+      // those diagnostics ARE part of the emitted surface, so omitting them
+      // here would report every one of them as no longer declared.
+      if (filePath.endsWith('.svelte')) {
+        // `walkFiles` prunes fewer directories than the emitter does, and a
+        // `.svelte` path cannot go through `isAgentSurfaceSourcePath` (rejected
+        // on extension), so the prune check is applied directly here. Without
+        // it a fixture component under `__tests__` would be counted as declared
+        // while the emitter skipped it — unclearable drift, in the one file
+        // type the predicate cannot answer for.
+        if (isPrunedAgentSurfacePath(filePath, pkg.directory)) continue;
+        const diagnostics = scanSvelteAgentSurface(filePath);
+        if (diagnostics.length > 0) {
+          perFile.push({ intents: [], playbooks: [], diagnostics });
+        }
+        continue;
+      }
+      // Match what the EMITTER sees, not merely what is on disk. A declaration
+      // in a file the build excludes is never emitted, so counting it here
+      // would raise a drift error no rebuild could ever clear.
+      if (!isAgentSurfaceSourcePath(filePath, pkg.directory)) continue;
+      let sourceText: string;
+      try {
+        sourceText = readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      if (!sourceMayDeclareAgentSurface(sourceText)) continue;
+      const surface = parseSource(sourceText, filePath).agentSurface;
+      if (surface) perFile.push(surface);
+    }
+
+    // Merge before comparing: the merge is where a duplicate identity and a
+    // derived tool-name collision are resolved, and the emitted artifact is the
+    // merged result. Comparing raw per-file declarations against it would
+    // report the dropped loser as missing, which a rebuild cannot fix.
+    // Relativize the same way the emitter does, so paths in the two sets are
+    // directly comparable.
+    const merged = mergeAgentSurfaces(perFile, (filePath) =>
+      relative(pkg.directory, filePath).split(sep).join('/'),
+    );
+    const declared = new Set<string>();
+    for (const intent of merged.intents) {
+      declared.add(`view intent:${intent.id}`);
+    }
+    for (const playbook of merged.playbooks) {
+      declared.add(`playbook:${playbook.key}`);
+    }
+    // Diagnostics are part of the emitted surface, and a sidecar containing
+    // ONLY a non-static declaration changes nothing else: no identity, and no
+    // prior hash to mismatch. Without this, "a diagnostic, never silence"
+    // would quietly become "a diagnostic, until the artifact goes stale".
+    for (const diagnostic of merged.diagnostics) {
+      declared.add(
+        `diagnostic:${diagnostic.code}:${diagnostic.filePath}:${diagnostic.line ?? 0}`,
+      );
+    }
+
+    // This walk covers `<pkg>/src` while the emitter globs the whole project
+    // root, so an entry declared outside `src` is emitted but never re-derived
+    // here. Reporting those as "no longer present" would be an unclearable
+    // error about a file this check simply did not look at.
+    const withinScan = (sourceFile: string): boolean =>
+      sourceFile === 'src' || sourceFile.startsWith('src/');
+
+    const emitted = new Set<string>();
+    for (const intent of pkg.agentSurface?.intents ?? []) {
+      if (withinScan(intent.sourceFile))
+        emitted.add(`view intent:${intent.id}`);
+    }
+    for (const playbook of pkg.agentSurface?.playbooks ?? []) {
+      if (withinScan(playbook.sourceFile)) {
+        emitted.add(`playbook:${playbook.key}`);
+      }
+    }
+    for (const diagnostic of pkg.agentSurface?.diagnostics ?? []) {
+      if (!withinScan(diagnostic.sourceFile)) continue;
+      emitted.add(
+        `diagnostic:${diagnostic.code}:${diagnostic.sourceFile}:${diagnostic.line ?? 0}`,
+      );
+    }
+
+    for (const identity of [...declared].sort()) {
+      if (emitted.has(identity)) continue;
+      issues.push({
+        severity: 'error',
+        code: 'stale-agent-surface',
+        message: `${describeAgentSurfaceIdentity(identity)} is present in source but missing from smrt-knowledge.json — rebuild the package`,
+        file: pkg.domainKnowledgePath,
+        packageName: pkg.name,
+      });
+    }
+    for (const identity of [...emitted].sort()) {
+      if (declared.has(identity)) continue;
+      issues.push({
+        severity: 'error',
+        code: 'stale-agent-surface',
+        message: `${describeAgentSurfaceIdentity(identity)} is in smrt-knowledge.json but no longer present in source — rebuild the package`,
         file: pkg.domainKnowledgePath,
         packageName: pkg.name,
       });
@@ -1294,6 +1563,28 @@ export function renderKnowledgeIndexMarkdown(
     }
     if (pkg.relationshipFeatures.length > 0) {
       lines.push(`- relationships-v2: ${pkg.relationshipFeatures.join(', ')}`);
+    }
+    // Only rendered for a package that declares one, so output for every
+    // existing package stays byte-for-byte unchanged (#2591).
+    if (pkg.agentSurface) {
+      lines.push(
+        `- view intents: ${
+          pkg.agentSurface.intents.map((intent) => intent.id).join(', ') ||
+          '(none)'
+        }`,
+      );
+      lines.push(
+        `- playbooks: ${
+          pkg.agentSurface.playbooks
+            .map((playbook) => playbook.key)
+            .join(', ') || '(none)'
+        }`,
+      );
+      if (pkg.agentSurface.diagnostics.length > 0) {
+        lines.push(
+          `- non-static declarations: ${pkg.agentSurface.diagnostics.length}`,
+        );
+      }
     }
     lines.push('');
   }
@@ -1942,6 +2233,7 @@ function readKnowledgePackage(
       ? relative(rootDir, domainKnowledge.path)
       : undefined,
     domainKnowledge: domainKnowledge?.content,
+    agentSurface: domainKnowledge?.content.agentSurface,
     manifestPath: manifest?.path ? relative(rootDir, manifest.path) : undefined,
     manifestVersion:
       typeof manifest?.content.version === 'string'

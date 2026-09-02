@@ -9,7 +9,13 @@
 
 import { readFileSync } from 'node:fs';
 import { parseSync } from 'oxc-parser';
+import {
+  extractAgentSurface,
+  sourceMayDeclareAgentSurface,
+} from './agent-surface.js';
+import { getLineColumn } from './source-location.js';
 import type {
+  AgentSurface,
   FileScanResult,
   RawClassDefinition,
   RawDecorator,
@@ -30,34 +36,7 @@ function getLangFromFilename(filename: string): 'ts' | 'tsx' | 'js' | 'jsx' {
   return 'js';
 }
 
-/**
- * Extract line/column from offset in source text
- * Note: oxc-parser v0.108+ removed magicString, so we compute manually
- * @internal Exported for testing
- */
-export function getLineColumn(
-  sourceText: string,
-  offset: number,
-): { line: number; column: number } | undefined {
-  if (offset < 0 || offset > sourceText.length) {
-    return undefined;
-  }
-
-  let line = 1;
-  let lastNewlinePos = -1;
-
-  for (let i = 0; i < offset; i++) {
-    if (sourceText[i] === '\n') {
-      line++;
-      lastNewlinePos = i;
-    }
-  }
-
-  return {
-    line,
-    column: offset - lastNewlinePos, // 1-based column
-  };
-}
+export { getLineColumn };
 
 // ============================================================================
 // AST Node Types (TS-ESTree format from oxc-parser)
@@ -528,6 +507,7 @@ export function parseFile(filePath: string): FileScanResult {
   const classes: RawClassDefinition[] = [];
   let typeAliases: Record<string, string> = {};
   let smrtImports: Map<string, Set<string>> | undefined;
+  let agentSurface: AgentSurface | undefined;
 
   try {
     const sourceText = readFileSync(filePath, 'utf-8');
@@ -575,6 +555,7 @@ export function parseFile(filePath: string): FileScanResult {
         }
       }
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
+      agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
     }
   } catch (error) {
     errors.push({
@@ -594,7 +575,76 @@ export function parseFile(filePath: string): FileScanResult {
   if (smrtImports && smrtImports.size > 0) {
     result2.smrtImports = smrtImports;
   }
+  if (agentSurface) {
+    result2.agentSurface = agentSurface;
+  }
   return result2;
+}
+
+/**
+ * Run the agent-surface matcher when — and only when — the source names one of
+ * its helpers, and return the surface only when it found something.
+ *
+ * The token pre-check keeps a full AST walk off the hot path of a large scan;
+ * dropping an empty result keeps `FileScanResult.agentSurface` absent for the
+ * overwhelming majority of files that declare nothing.
+ */
+function maybeExtractAgentSurface(
+  program: Program,
+  sourceText: string,
+  filePath: string,
+): AgentSurface | undefined {
+  if (!sourceMayDeclareAgentSurface(sourceText)) return undefined;
+  const surface = extractAgentSurface({
+    body: program.body,
+    sourceText,
+    filePath,
+  });
+  return surface.intents.length > 0 ||
+    surface.playbooks.length > 0 ||
+    surface.diagnostics.length > 0
+    ? surface
+    : undefined;
+}
+
+/**
+ * Read one file for agent-surface declarations ONLY (#2591).
+ *
+ * Exists because the agent surface must not be confined to the class scan's
+ * `include` glob: an application that scans `src/lib/objects/**` for its models
+ * — the shipped template does exactly that — would otherwise never see a
+ * `src/lib/agent/Foo.intents.ts` sidecar, and the declaration would vanish from
+ * every artifact with no diagnostic. Silent omission is the one failure this
+ * matcher exists to prevent, so declarations are discovered on their own terms.
+ *
+ * The token pre-filter runs before the parse, so a file that declares nothing
+ * costs one read and one `String.includes`.
+ *
+ * @returns The file's surface, or `undefined` when it declares nothing or
+ *   cannot be read.
+ */
+export function parseAgentSurfaceFile(
+  filePath: string,
+): AgentSurface | undefined {
+  let sourceText: string;
+  try {
+    sourceText = readFileSync(filePath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  if (!sourceMayDeclareAgentSurface(sourceText)) return undefined;
+
+  try {
+    const result = parseSync(filePath, sourceText, {
+      lang: getLangFromFilename(filePath),
+      preserveParens: false,
+    });
+    const program = result.program as Program;
+    if (!program?.body) return undefined;
+    return maybeExtractAgentSurface(program, sourceText, filePath);
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -637,6 +687,7 @@ export function parseSource(
   const classes: RawClassDefinition[] = [];
   let typeAliases: Record<string, string> = {};
   let smrtImports: Map<string, Set<string>> | undefined;
+  let agentSurface: AgentSurface | undefined;
 
   try {
     const result = parseSync(filename, sourceText, {
@@ -681,6 +732,7 @@ export function parseSource(
         }
       }
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
+      agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
     }
   } catch (error) {
     errors.push({
@@ -699,6 +751,9 @@ export function parseSource(
   };
   if (smrtImports && smrtImports.size > 0) {
     result2.smrtImports = smrtImports;
+  }
+  if (agentSurface) {
+    result2.agentSurface = agentSurface;
   }
   return result2;
 }
