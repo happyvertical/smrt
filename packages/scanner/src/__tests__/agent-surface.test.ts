@@ -13,6 +13,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractAgentSurface,
+  isAgentSurfaceSourcePath,
+  isPrunedAgentSurfacePath,
   mergeAgentSurfaces,
   scanSvelteAgentSurface,
   sourceMayDeclareAgentSurface,
@@ -750,6 +752,56 @@ export const b = defineIntent({
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
+  });
+
+  it('answers the prune question directly, not only through discovery', () => {
+    // The scanner-level tests below drive `OxcScanner`, where
+    // `discoverSourceFiles` already drops several of these by glob before the
+    // predicate is consulted — so they cannot pin the predicate itself. The
+    // CHECKER enumerates files directly and has only this function to go on,
+    // which is exactly where every emitter/checker disagreement came from.
+    const root = '/repo/app';
+    const accepted = 'src/lib/orders.intents.ts';
+    expect(isAgentSurfaceSourcePath(`${root}/${accepted}`, root)).toBe(true);
+
+    for (const rejected of [
+      'src/.generated/orders.intents.ts',
+      'src/.orders.intents.ts',
+      'dist/orders.intents.js',
+      'build/orders.intents.js',
+      'coverage/orders.intents.js',
+      'src/__tests__/fixture.intents.ts',
+      'src/__typechecks__/fixture.intents.ts',
+      'node_modules/pkg/orders.intents.js',
+      'src/orders.intents.test.ts',
+      'src/orders.intents.spec.ts',
+      'src/orders.intents.d.ts',
+      'src/orders.intents.svelte',
+    ]) {
+      expect(isAgentSurfaceSourcePath(`${root}/${rejected}`, root)).toBe(false);
+    }
+
+    // A `.svelte` path can never go through the source predicate, so the prune
+    // half is what its two callers share.
+    expect(
+      isPrunedAgentSurfacePath(`${root}/src/lib/Inline.svelte`, root),
+    ).toBe(false);
+    for (const pruned of [
+      'src/.generated/Inline.svelte',
+      'src/__tests__/Inline.svelte',
+      'build/Inline.svelte',
+    ]) {
+      expect(isPrunedAgentSurfacePath(`${root}/${pruned}`, root)).toBe(true);
+    }
+
+    // The root itself living under a pruned name must not reject everything —
+    // segments are measured relative to it.
+    expect(
+      isAgentSurfaceSourcePath(
+        '/build/app/src/orders.intents.ts',
+        '/build/app',
+      ),
+    ).toBe(true);
   });
 
   it('ignores hidden paths, the way discovery already does', async () => {
