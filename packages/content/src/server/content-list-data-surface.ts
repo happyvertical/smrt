@@ -58,14 +58,24 @@ function requiredName(
   return resolved;
 }
 
-function querySchema(schema: DataSurfaceSchema): DataQuerySchema {
+function querySchema(
+  schema: DataSurfaceSchema,
+  readablePermissions?: readonly string[],
+): DataQuerySchema {
   return {
     ...schema,
     // A host descriptor is untrusted at this boundary. Discovery redacts
-    // protected fields, but the execution schema must omit them too so a
-    // direct data.query request cannot name one before reaching the collection.
+    // protected fields, and execution uses the same principal-aware field set
+    // so a direct data.query request cannot bypass that policy.
     fields: schema.fields
-      .filter(({ sensitive, readPermission }) => !sensitive && !readPermission)
+      .filter(({ sensitive, readPermission }) => {
+        if (sensitive) return false;
+        return (
+          !readPermission ||
+          readablePermissions === undefined ||
+          readablePermissions.includes(readPermission)
+        );
+      })
       .map(
         ({
           sensitive: _sensitive,
@@ -135,6 +145,7 @@ export async function createContentListDataSurfaceDefinition(
     },
     schema,
     execute: async (_surface, request, context) => {
+      const executableSchema = querySchema(schema, context.run.permissions);
       // Validate before resolving the host collection. This makes a rejected
       // protected projection a zero-I/O failure, even for hostile descriptors.
       normalizeDataQueryRequest(request, executableSchema);

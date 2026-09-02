@@ -39,6 +39,9 @@ const schema: DataSurfaceSchema = {
       id: 'audit_note',
       type: 'string',
       projectable: true,
+      sortable: true,
+      facetable: true,
+      filterOperators: ['eq'],
       readPermission: 'contents.audit.read',
     },
   ],
@@ -48,21 +51,28 @@ const schema: DataSurfaceSchema = {
   supports: { cursorPagination: false, consistency: false, facets: true },
 };
 
-function context(tenantId = 'tenant-a'): DataSurfaceExecutionContext {
+function context(
+  tenantId = 'tenant-a',
+  permissions: readonly string[] = [],
+): DataSurfaceExecutionContext {
   return {
     run: {
       context: { userId: 'user-a', tenantId },
+      permissions: [...permissions],
     } as DataSurfaceExecutionContext['run'],
     principal: { userId: 'user-a', tenantId },
     signal: new AbortController().signal,
   };
 }
 
-function principalRun(tenantId: string): DataSurfaceExecutionContext['run'] {
+function principalRun(
+  tenantId: string,
+  permissions: string[] = ['contents.read'],
+): DataSurfaceExecutionContext['run'] {
   const allowedTools = [DATA_DISCOVER_TOOL_SLUG, DATA_QUERY_TOOL_SLUG];
   return {
     context: { userId: 'user-a', tenantId },
-    permissions: ['contents.read'],
+    permissions,
     allowedTools,
     isToolAllowed: (tool) => allowedTools.includes(tool),
     assertToolAllowed(tool) {
@@ -244,5 +254,87 @@ describe('ContentList agent data surface', () => {
       );
     }
     expect(collection).not.toHaveBeenCalled();
+  });
+
+  it('keeps authorized discovery and query capabilities in parity', async () => {
+    const list = vi.fn(async () => [
+      { id: 'content-a', audit_note: 'reviewed' },
+    ]);
+    const facets = vi.fn(async () => [
+      { field: 'audit_note', values: [{ value: 'reviewed', count: 1 }] },
+    ]);
+    const definition = await createContentListDataSurfaceDefinition({
+      schema,
+      collection: { list, count: vi.fn(async () => 1), facets },
+    });
+    const tools = new Map(
+      createDataSurfaceTools({ surfaces: [definition] }).map((tool) => [
+        tool.slug,
+        tool,
+      ]),
+    );
+    const run = principalRun('tenant-a', [
+      'contents.read',
+      'contents.audit.read',
+    ]);
+
+    const discover = await tools.get(DATA_DISCOVER_TOOL_SLUG)?.execute({
+      run,
+      args: {},
+      db: undefined,
+    });
+    const fields = (
+      discover as Array<{ fields: Array<{ id: string }> }>
+    )[0].fields.map((field) => field.id);
+    expect(fields).toEqual(['audit_note', 'id', 'title']);
+
+    const rows = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: CONTENT_LIST_DATA_SURFACE_ID,
+        request: {
+          version: 1,
+          requestId: 'authorized-audit-rows',
+          mode: 'rows',
+          projection: ['id', 'audit_note'],
+          filter: {
+            kind: 'condition',
+            field: 'audit_note',
+            operator: 'eq',
+            value: 'reviewed',
+          },
+          sort: [{ field: 'audit_note', direction: 'asc' }],
+          page: { kind: 'offset', offset: 0, limit: 1 },
+        },
+      },
+      db: undefined,
+    });
+    expect(rows).toMatchObject({
+      rows: [{ id: 'content-a', audit_note: 'reviewed' }],
+    });
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: ['audit_note', 'id'],
+        orderBy: ['audit_note ASC', 'id ASC'],
+        where: [[{ audit_note: 'reviewed' }]],
+      }),
+    );
+
+    await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+      run,
+      args: {
+        surfaceId: CONTENT_LIST_DATA_SURFACE_ID,
+        request: {
+          version: 1,
+          requestId: 'authorized-audit-facets',
+          mode: 'facets',
+          facets: [{ field: 'audit_note', limit: 1 }],
+        },
+      },
+      db: undefined,
+    });
+    expect(facets).toHaveBeenCalledWith({
+      fields: [{ field: 'audit_note', limit: 1 }],
+    });
   });
 });
