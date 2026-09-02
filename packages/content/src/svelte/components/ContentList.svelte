@@ -728,12 +728,20 @@ const columnLabels = $derived({
 
 const queryColumns = $derived(buildContentListColumns(columnLabels));
 const sourceContents = $derived(
-  queryBinding
+  (queryBinding
     ? contentListQueryRowsToContents(queryBinding.rows)
-    : contents.filter(
-        (content) => !locallyRemovedLifecycleIds.has(String(content.id)),
-      ),
+    : contents
+  ).filter((content) => !locallyRemovedLifecycleIds.has(String(content.id))),
 );
+
+$effect(() => {
+  if (!queryBinding || refreshing || isLoading) return;
+  const removed = locallyRemovedLifecycleIds;
+  if (removed.size === 0) return;
+  const visible = new Set(queryBinding.rows.map((row) => String(row.id)));
+  const retained = new Set([...removed].filter((id) => visible.has(id)));
+  if (retained.size !== removed.size) locallyRemovedLifecycleIds = retained;
+});
 const rows = $derived(toContentListRows(sourceContents));
 const visibleRowIds = $derived(
   new Set(rows.filter((row) => row.identified).map((row) => String(row.id))),
@@ -2182,13 +2190,11 @@ function rowActions(row: ContentListRow) {
 function handleLifecycleComplete(
   result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult,
 ) {
-  if (!queryBinding) {
-    const removed = new Set(locallyRemovedLifecycleIds);
-    for (const outcome of readContentListLifecycleSummary(result).outcomes) {
-      if (outcome.status === 'accepted') removed.add(String(outcome.rowId));
-    }
-    locallyRemovedLifecycleIds = removed;
+  const removed = new Set(locallyRemovedLifecycleIds);
+  for (const outcome of readContentListLifecycleSummary(result).outcomes) {
+    if (outcome.status === 'accepted') removed.add(String(outcome.rowId));
   }
+  locallyRemovedLifecycleIds = removed;
   controller.dispatch({
     type: 'setSelectedRows',
     rowIds: reconcileContentListLifecycleSelection(

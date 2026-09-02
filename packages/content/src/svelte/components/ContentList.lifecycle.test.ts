@@ -287,5 +287,14 @@ describe('ContentList trash lifecycle integration', () => {
     query.resolve(contents.slice(0, 2), 2);
     await tick();
     expect(query.refreshes).toBe(1);
+    expect(target.textContent).not.toContain('Deleted article');
+    expect(target.textContent).toContain('Deleted document');
+
+    query.resolve([], 0);
+    await tick();
+    query.resolve(contents.slice(0, 2), 2);
+    await tick();
+    expect(target.textContent).toContain('Deleted article');
+    expect(target.textContent).toContain('Deleted document');
   });
 });
