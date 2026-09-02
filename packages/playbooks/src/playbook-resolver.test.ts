@@ -484,6 +484,38 @@ describe('@happyvertical/smrt-playbooks', () => {
       expect(runtime.ok === false && runtime.reason).toBe('disabled');
     });
 
+    it('rejects a non-boolean enablement value instead of coercing it', async () => {
+      definePlaybook({
+        key: 'commerce.cart.strict-enabled',
+        title: 'Strict enabled',
+        description: 'Enablement is validated, not coerced',
+        steps: CHECKOUT_STEPS,
+        editable: { enabled: true },
+      });
+
+      // `Boolean('false')` is true — the one coercion here that fails open.
+      await expect(
+        resolvePlaybook('commerce.cart.strict-enabled', {
+          db,
+          override: { enabled: 'false' } as never,
+        }),
+      ).rejects.toThrow('enabled must be a boolean');
+
+      setConfig({
+        packages: {
+          playbooks: {
+            playbooks: {
+              'commerce.cart.strict-enabled': { enabled: 'false' } as never,
+            },
+          },
+        },
+      });
+      clearPlaybookCache();
+      await expect(
+        resolvePlaybook('commerce.cart.strict-enabled', { db }),
+      ).rejects.toThrow('enabled must be a boolean');
+    });
+
     it('refuses an override that claims an undeclared plane', async () => {
       definePlaybook({
         key: 'commerce.cart.browser-only',

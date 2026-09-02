@@ -157,7 +157,13 @@ export class PlaybookOverride extends SmrtObject {
       planes: this.getPlanes(),
       onStepFailure: (this.onStepFailure ??
         null) as PlaybookFailurePolicy | null,
-      enabled: this.enabled,
+      // The database boundary is where coercion is legitimate: SQLite hydrates
+      // a boolean column as 0/1. Everywhere above this, enablement is
+      // validated rather than coerced.
+      enabled:
+        this.enabled === null || this.enabled === undefined
+          ? null
+          : Boolean(this.enabled),
       metadata: this.metadata === null ? null : this.getMetadata(),
     };
   }

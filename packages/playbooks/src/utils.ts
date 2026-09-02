@@ -145,6 +145,21 @@ function normalizeFailurePolicy(
   return value as PlaybookFailurePolicy;
 }
 
+/**
+ * Enablement is a gate, so it is validated rather than coerced. Truthiness
+ * would silently read a config or runtime `"false"` as enabled — the one
+ * coercion failure here that fails open.
+ */
+function normalizeEnabled(value: unknown, context: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(
+      `${context} enabled must be a boolean, received ${typeof value} "${String(value)}"`,
+    );
+  }
+
+  return value;
+}
+
 function normalizeOptionalText(
   value: unknown,
   context: string,
@@ -323,7 +338,10 @@ export function normalizePlaybookDefinitionInput(
       input.onStepFailure === undefined
         ? 'abort'
         : normalizeFailurePolicy(input.onStepFailure, context),
-    enabled: input.enabled === undefined ? true : Boolean(input.enabled),
+    enabled:
+      input.enabled === undefined
+        ? true
+        : normalizeEnabled(input.enabled, context),
     metadata: Object.freeze(
       input.metadata ? sanitizeMetadata(input.metadata) : {},
     ),
@@ -456,7 +474,8 @@ export function normalizePlaybookLayer(
   }
 
   if (input.enabled !== undefined) {
-    layer.enabled = input.enabled === null ? null : Boolean(input.enabled);
+    layer.enabled =
+      input.enabled === null ? null : normalizeEnabled(input.enabled, context);
   }
 
   if (input.metadata !== undefined) {
