@@ -61,13 +61,31 @@ export function isPlainObject(
 export function normalizeEditableConfig(
   editable?: Partial<PlaybookEditableConfig>,
 ): PlaybookEditableConfig {
+  const flag = (name: keyof PlaybookEditableConfig): boolean => {
+    const supplied = editable?.[name];
+    if (supplied === undefined) {
+      return DEFAULT_EDITABLE[name];
+    }
+
+    // Only a real `true` unlocks a field. A truthy non-boolean such as
+    // `'false'` would otherwise read as an explicit opt-in and open a stored
+    // override the definition never meant to allow.
+    if (typeof supplied !== 'boolean') {
+      throw new Error(
+        `Playbook editable.${name} must be a boolean, received ${typeof supplied} "${String(supplied)}"`,
+      );
+    }
+
+    return supplied;
+  };
+
   return {
-    title: editable?.title ?? DEFAULT_EDITABLE.title,
-    description: editable?.description ?? DEFAULT_EDITABLE.description,
-    planes: editable?.planes ?? DEFAULT_EDITABLE.planes,
-    onStepFailure: editable?.onStepFailure ?? DEFAULT_EDITABLE.onStepFailure,
-    enabled: editable?.enabled ?? DEFAULT_EDITABLE.enabled,
-    metadata: editable?.metadata ?? DEFAULT_EDITABLE.metadata,
+    title: flag('title'),
+    description: flag('description'),
+    planes: flag('planes'),
+    onStepFailure: flag('onStepFailure'),
+    enabled: flag('enabled'),
+    metadata: flag('metadata'),
   };
 }
 

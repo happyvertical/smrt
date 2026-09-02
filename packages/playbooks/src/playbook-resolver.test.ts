@@ -567,6 +567,36 @@ describe('@happyvertical/smrt-playbooks', () => {
       ).rejects.toThrow('enabled must be a boolean');
     });
 
+    it('rejects a non-boolean enablement or editable flag from an untyped caller', async () => {
+      // Only a real `true` unlocks a field: a truthy `'false'` would otherwise
+      // read as an explicit opt-in.
+      expect(() =>
+        definePlaybook({
+          key: 'commerce.cart.stringly-editable',
+          title: 'Stringly editable',
+          description: 'Editable flags are validated',
+          steps: CHECKOUT_STEPS,
+          editable: { enabled: 'false' } as never,
+        }),
+      ).toThrow('editable.enabled must be a boolean');
+
+      definePlaybook({
+        key: 'commerce.cart.stringly-stored',
+        title: 'Stringly stored',
+        description: 'Stored enablement is validated before persistence',
+        steps: CHECKOUT_STEPS,
+        editable: { enabled: true },
+      });
+
+      await expect(
+        overrides.create({
+          key: 'commerce.cart.stringly-stored',
+          tenantId: 'tenant-a',
+          enabled: 'false',
+        } as never),
+      ).rejects.toThrow('enabled must be a boolean or null');
+    });
+
     it('refuses an override that claims an undeclared plane', async () => {
       definePlaybook({
         key: 'commerce.cart.browser-only',

@@ -447,8 +447,15 @@ export class PlaybookOverride extends SmrtObject {
       );
     }
 
+    // Enablement is a gate, so it is validated before it is ever persisted.
+    // A stringly-typed `'false'` arriving through the untyped collection API
+    // would otherwise hydrate as a truthy string and resolve as enabled.
     if (this.enabled === undefined) {
       this.enabled = null;
+    } else if (this.enabled !== null && typeof this.enabled !== 'boolean') {
+      throw new Error(
+        `Playbook "${this.key}" enabled must be a boolean or null, received ${typeof this.enabled} "${String(this.enabled)}"`,
+      );
     }
   }
 
