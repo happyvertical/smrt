@@ -578,6 +578,14 @@ let settledLifecycleQuery = $state<ContentListDataQueryRequest | undefined>(
   undefined,
 );
 let settledLifecycleFingerprint = $state<string | undefined>(undefined);
+let settledSurfaceMetadata = $state<
+  | {
+      signature: string;
+      queryFingerprint: string | null;
+      totalRows: number | null;
+    }
+  | undefined
+>(undefined);
 
 function toSearchParams(
   input: URLSearchParams | string | null | undefined,
@@ -1034,9 +1042,20 @@ function settleWorkflowQueryResult(
   signature: string,
 ): void {
   settledSignature = signature;
+  const envelope =
+    result !== null && typeof result === 'object' && !Array.isArray(result)
+      ? (result as Record<string, unknown>)
+      : undefined;
+  settledSurfaceMetadata = {
+    signature,
+    queryFingerprint:
+      typeof envelope?.queryFingerprint === 'string'
+        ? envelope.queryFingerprint
+        : null,
+    totalRows: surfaceMetadataTotalRows(envelope?.total),
+  };
   resultNotices = readContentListQueryNotices(result);
-  if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
-    const envelope = result as Record<string, unknown>;
+  if (envelope) {
     settledWorkflowQuery = request;
     settledWorkflowFingerprint =
       typeof envelope.queryFingerprint === 'string'
@@ -1055,6 +1074,17 @@ function settleWorkflowQueryResult(
   settledWorkflowQuery = null;
   settledWorkflowFingerprint = null;
   settledWorkflowRevision = null;
+}
+
+function surfaceMetadataTotalRows(total: unknown): number | null {
+  if (!total || typeof total !== 'object' || Array.isArray(total)) return null;
+  const record = total as Record<string, unknown>;
+  return (record.kind === 'exact' || record.kind === 'estimated') &&
+    typeof record.value === 'number' &&
+    Number.isSafeInteger(record.value) &&
+    record.value >= 0
+    ? record.value
+    : null;
 }
 
 function settleLifecycleResult(
@@ -1570,10 +1600,22 @@ function surfaceLastUpdated(value: unknown): string | null {
   return null;
 }
 
+const matchingSurfaceMetadata = $derived(
+  serverBacked && settledSurfaceMetadata?.signature === querySignature
+    ? settledSurfaceMetadata
+    : undefined,
+);
+
 const surfaceContext = $derived<ContentListSurfaceContext>({
   viewMode,
-  queryFingerprint: activeQueryKey ?? null,
-  totalRows: Number.isSafeInteger(totalRowCount) ? totalRowCount : null,
+  queryFingerprint: serverBacked
+    ? (matchingSurfaceMetadata?.queryFingerprint ?? null)
+    : null,
+  totalRows: serverBacked
+    ? (matchingSurfaceMetadata?.totalRows ?? null)
+    : Number.isSafeInteger(totalRowCount)
+      ? totalRowCount
+      : null,
   freshness: {
     stale,
     refreshing,

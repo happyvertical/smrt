@@ -13,6 +13,7 @@ import {
   normalizeContentToken,
 } from '../content-list-controller.js';
 import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
+import type { ContentListQueryBinding } from '../content-list-query.js';
 import {
   ContentListQueryError,
   contentListQueryRequestKey,
@@ -2621,6 +2622,115 @@ describe('ContentList data surface', () => {
     expect(registry.inspect(identity)?.descriptor.limits.maxSelectionSize).toBe(
       37,
     );
+  });
+
+  it('publishes settled server metadata that matches the workflow envelope', async () => {
+    const registry = createDataSurfaceRegistry();
+    const remote = createFakeContentListQuery();
+    const envelope = {
+      queryFingerprint: 'dq1-mounted-metadata',
+      total: { kind: 'exact' as const, value: 2 },
+      freshness: { state: 'fresh' as const, asOf: '2026-08-30T12:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    };
+    remote.setEnvelope(envelope);
+    remote.resolve(contents, 2);
+    const workflow = workflowBinding();
+    const target = renderList({
+      dataSurface: { registry },
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: envelope.queryFingerprint,
+        totalRows: envelope.total.value,
+      }),
+    );
+    click(buttonsByText(target, 'Select all 2 matching')[0]);
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledOnce());
+    expect(workflow.preview.mock.calls[0][0]).toMatchObject({
+      selection: {
+        scope: 'all-matching',
+        queryFingerprint: envelope.queryFingerprint,
+      },
+    });
+  });
+
+  it('clears old metadata while a page request is in flight and preserves unavailable totals', async () => {
+    const registry = createDataSurfaceRegistry();
+    const first = {
+      queryFingerprint: 'dq1-first-page',
+      total: { kind: 'estimated' as const, value: 7 },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    };
+    const second = {
+      queryFingerprint: 'dq1-next-page',
+      total: { kind: 'unavailable' as const, reason: 'expensive' },
+      freshness: { state: 'unknown' as const },
+      warnings: [],
+      truncated: false,
+    };
+    let executions = 0;
+    let resolveNext: ((value: typeof second) => void) | undefined;
+    const binding: ContentListQueryBinding = {
+      rows: [serverRow('server-1', 'First page')],
+      total: { kind: 'exact', value: 99 },
+      loading: false,
+      refreshing: false,
+      stale: false,
+      error: null,
+      execute: async () => {
+        executions += 1;
+        if (executions === 1) return first;
+        return new Promise<typeof second>((resolve) => {
+          resolveNext = resolve;
+        });
+      },
+      retry: async () => undefined,
+    };
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      query: { bind: () => binding },
+    });
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: first.queryFingerprint,
+        totalRows: first.total.value,
+      }),
+    );
+    await registry.execute({
+      version: 1,
+      commandId: 'next-page-metadata',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 2 },
+    });
+    flushSync();
+    await vi.waitFor(() => expect(resolveNext).toBeTypeOf('function'));
+    expect(registry.inspect(identity)?.state).toMatchObject({
+      queryFingerprint: null,
+      totalRows: null,
+    });
+
+    resolveNext?.(second);
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: second.queryFingerprint,
+        totalRows: null,
+      }),
+    );
+    expect(target.querySelector('tbody')).not.toBeNull();
   });
 
   it('publishes lifecycle authority and the strictest combined selection cap', async () => {
