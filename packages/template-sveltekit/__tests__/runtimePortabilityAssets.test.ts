@@ -625,6 +625,77 @@ describe('asset-aware runtime portability', () => {
     ).toThrow(/bundle-changed-during-read/);
   });
 
+  it('sanitizes filesystem race and missing-path failures', async () => {
+    const fixture = fixtureContext();
+    let missingBundleError: unknown;
+    try {
+      readSensitiveBundle(join(fixture.directory, 'missing-bundle.json'));
+    } catch (error) {
+      missingBundleError = error;
+    }
+    expect((missingBundleError as NodeJS.ErrnoException).code).toBe(
+      'unsafe-bundle-file',
+    );
+    expect(String(missingBundleError)).not.toMatch(/ENOENT|lstat|realpath/);
+
+    makePrivateDirectory(dirname(fixture.bundlePath));
+    writeFileSync(fixture.bundlePath, '{"schemaVersion":2}\n', { mode: 0o600 });
+    let replacementError: unknown;
+    try {
+      readSensitiveBundle(fixture.bundlePath, {
+        onOpened() {
+          rmSync(fixture.bundlePath);
+        },
+      });
+    } catch (error) {
+      replacementError = error;
+    }
+    expect((replacementError as NodeJS.ErrnoException).code).toBe(
+      'bundle-changed-during-read',
+    );
+    expect(String(replacementError)).not.toMatch(/ENOENT|stat|realpath/);
+
+    const tables = [
+      {
+        name: 'assets',
+        columns: ['id', 'source_uri'],
+        rows: [
+          {
+            id: ASSET_ID,
+            source_uri: `smrt-bundle://asset/${ASSET_ID}`,
+          },
+        ],
+      },
+    ];
+    const bytes = Buffer.from('asset');
+    expect(() =>
+      verifyFilesystemAssets({
+        assetBundle: {
+          schemaVersion: 1,
+          adapter: 'filesystem',
+          entries: [
+            {
+              key: ASSET_ID,
+              byteLength: bytes.byteLength,
+              contentDigest: `sha256:${hash(bytes)}`,
+              payloadPath: 'payloads/asset',
+            },
+          ],
+          payloads: [
+            {
+              path: 'payloads/asset',
+              encoding: 'base64',
+              data: bytes.toString('base64'),
+            },
+          ],
+        },
+        tables,
+        sourceRoot: fixture.sourceRoot,
+        assetRoot: join(fixture.directory, 'missing-parent', 'assets'),
+      }),
+    ).toThrow(/unsafe-asset-root/);
+  });
+
   it('never follows a destination symlink inserted at the publication boundary', async () => {
     const fixture = fixtureContext();
     await exportFixture(fixture);

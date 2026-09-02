@@ -44,6 +44,15 @@ function fail(code) {
   return error;
 }
 
+function isSanitizedFailure(error) {
+  return (
+    error &&
+    typeof error === 'object' &&
+    typeof error.code === 'string' &&
+    /^[a-z][a-z0-9-]*$/.test(error.code)
+  );
+}
+
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -67,9 +76,14 @@ function assertOutsideSource(sourceRoot, candidate, code) {
 }
 
 function assertRealDirectory(path, code) {
-  const details = lstatSync(path);
-  if (details.isSymbolicLink() || !details.isDirectory()) throw fail(code);
-  if (realpathSync(path) !== resolve(path)) throw fail(code);
+  try {
+    const details = lstatSync(path);
+    if (details.isSymbolicLink() || !details.isDirectory()) throw fail(code);
+    if (realpathSync(path) !== resolve(path)) throw fail(code);
+  } catch (error) {
+    if (isSanitizedFailure(error)) throw error;
+    throw fail(code);
+  }
 }
 
 export function assertAssetRoot({ sourceRoot, assetRoot, allowMissing = false }) {
@@ -143,7 +157,7 @@ function readBoundedDescriptor(descriptor, expectedSize, changedCode) {
   return bytes;
 }
 
-function readRegularFile(path, approvedRoot, onOpened) {
+function readRegularFileUnchecked(path, approvedRoot, onOpened) {
   const lexicalPath = resolve(path);
   if (!isInside(approvedRoot, lexicalPath)) throw fail('asset-outside-root');
   const before = lstatSync(lexicalPath);
@@ -189,6 +203,15 @@ function readRegularFile(path, approvedRoot, onOpened) {
     return bytes;
   } finally {
     closeSync(descriptor);
+  }
+}
+
+function readRegularFile(path, approvedRoot, onOpened) {
+  try {
+    return readRegularFileUnchecked(path, approvedRoot, onOpened);
+  } catch (error) {
+    if (isSanitizedFailure(error)) throw error;
+    throw fail('asset-changed-during-read');
   }
 }
 
@@ -603,18 +626,30 @@ export function recoverFilesystemAssets({
 }
 
 export function readSensitiveBundle(path, options = {}) {
-  const details = lstatSync(path);
+  let details;
+  let initialRealPath;
+  try {
+    details = lstatSync(path);
+    initialRealPath = realpathSync(path);
+  } catch {
+    throw fail('unsafe-bundle-file');
+  }
   if (
     details.isSymbolicLink() ||
     !details.isFile() ||
-    realpathSync(path) !== resolve(path) ||
+    initialRealPath !== resolve(path) ||
     details.size > MAX_BUNDLE_BYTES ||
     (process.platform !== 'win32' && (details.mode & 0o777) !== 0o600)
   ) {
     throw fail('unsafe-bundle-file');
   }
   const noFollow = constants.O_NOFOLLOW ?? 0;
-  const descriptor = openSync(path, constants.O_RDONLY | noFollow);
+  let descriptor;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | noFollow);
+  } catch {
+    throw fail('bundle-changed-during-read');
+  }
   try {
     const opened = fstatSync(descriptor);
     if (
@@ -632,14 +667,21 @@ export function readSensitiveBundle(path, options = {}) {
       'bundle-changed-during-read',
     );
     const after = fstatSync(descriptor);
-    const afterPath = statSync(path);
+    let afterPath;
+    let finalRealPath;
+    try {
+      afterPath = statSync(path);
+      finalRealPath = realpathSync(path);
+    } catch {
+      throw fail('bundle-changed-during-read');
+    }
     if (
       after.dev !== opened.dev ||
       after.ino !== opened.ino ||
       after.size !== opened.size ||
       afterPath.dev !== opened.dev ||
       afterPath.ino !== opened.ino ||
-      realpathSync(path) !== resolve(path)
+      finalRealPath !== resolve(path)
     ) {
       throw fail('bundle-changed-during-read');
     }
