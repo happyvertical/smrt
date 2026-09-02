@@ -17,14 +17,11 @@
  *   `afterDelete` hooks and interceptors do **not** run, and no change-feed
  *   tombstone is written for them — exactly as `ON DELETE CASCADE` behaves.
  *   Only the object `delete()` was called on runs the full lifecycle.
- * - When anything needs cascading, everything runs inside a single
- *   transaction when the adapter exposes one, so a partial cascade cannot
- *   survive a failure. A class with no typed references AND no registered
- *   polymorphic association class anywhere in the process skips the
- *   transaction — see {@link runCascadeDelete}. A `metaType` column can point
+ * - Every delete runs inside a single transaction when the adapter exposes
+ *   one, including cleanup of framework-owned context and embedding rows, so
+ *   a partial cascade cannot survive a failure. A `metaType` column can point
  *   at any class at runtime, so a polymorphic association class is always
- *   plausibly relevant; in an app with even one registered, this fast path is
- *   rare, not the common case.
+ *   plausibly relevant.
  *
  * ## Which references are followed
  *
@@ -487,7 +484,8 @@ async function deleteByIds(
  * enough.
  *
  * A missing system table is not an error — an application database may predate
- * the table, and losing derived rows must never fail an otherwise valid delete.
+ * the table. Every other cleanup failure propagates so the surrounding delete
+ * transaction rolls back rather than orphaning tenant-sensitive recall data.
  */
 async function deleteSystemRows(
   db: DatabaseInterface,
@@ -507,18 +505,15 @@ async function deleteSystemRows(
     [EMBEDDINGS_TABLE, 'object_id', 'object_class'],
   ] as const) {
     for (const batch of chunkArray(ownerIds, IN_LIST_CHUNK_SIZE)) {
-      try {
-        await db.delete(table, {
-          ...idPredicate(idColumn, batch),
-          ...idPredicate(classColumn, classNames),
-        });
-      } catch (error) {
-        logger.warn(
-          `Failed to clean ${table} rows during cascade delete: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
+      await tolerateMissingTable(
+        () =>
+          db.delete(table, {
+            ...idPredicate(idColumn, batch),
+            ...idPredicate(classColumn, classNames),
+          }),
+        undefined,
+        { table, action: 'framework-owned row cleanup' },
+      );
     }
   }
 }
@@ -726,15 +721,11 @@ type TransactionCapable = DatabaseInterface & {
 /**
  * Run the cascade and the target row's own deletion atomically.
  *
- * When anything references the class and the adapter exposes `transaction()`,
- * the whole sequence runs inside one — including the caller's `deleteSelf`
- * statement, so a failure part-way through cannot leave the object deleted with
- * its junction rows intact (or vice versa). Adapters without transaction
- * support run the same statements sequentially; this is the documented
- * degradation, not a silent one.
- *
- * When nothing references the class there is nothing to keep consistent, and
- * the transaction is skipped — see the comment on that branch.
+ * When the adapter exposes `transaction()`, the whole sequence runs inside one
+ * — including framework-owned row cleanup and the caller's `deleteSelf`
+ * statement, so a failure part-way through cannot leave either side orphaned.
+ * Adapters without transaction support run the same statements sequentially;
+ * this is the documented degradation, not a silent one.
  *
  * @param db - Database the object is bound to
  * @param registry - Registry view used to build cascade plans
@@ -764,20 +755,27 @@ export async function runCascadeDelete(
   // app with no polymorphic associations at all, but rare — not "the
   // overwhelmingly common case" — once even one polymorphic class exists
   // anywhere in the process, since every delete's plan then carries it.
-  // Opening a transaction to wrap statements that cannot disagree with each
-  // other would cost two extra round trips, and on single-connection adapters
-  // it would serialize concurrent deletes behind the transaction queue. Order
-  // the two statements instead: the row goes first, so a failure leaves
-  // everything as it was, and the derived side rows follow under the
-  // best-effort contract they already carry.
+  // Framework-owned context and embedding rows still need atomic cleanup even
+  // when the registry has no typed or polymorphic references for this class.
   if (buildCascadePlan(registry, target.className).isEmpty) {
-    await deleteSelf(db);
-    await deleteSystemRows(
-      db,
-      ids,
-      ownerClassCandidates(registry, target.className),
-    );
-    return { affectedTables: new Set(), affectedTableClasses: new Map() };
+    const runWithoutReferences = async (
+      bound: DatabaseInterface,
+    ): Promise<CascadeResult> => {
+      await deleteSystemRows(
+        bound,
+        ids,
+        ownerClassCandidates(registry, target.className),
+      );
+      await deleteSelf(bound);
+      return { affectedTables: new Set(), affectedTableClasses: new Map() };
+    };
+    const transaction = (db as TransactionCapable).transaction;
+    if (typeof transaction !== 'function') return runWithoutReferences(db);
+    return transaction.call<
+      DatabaseInterface,
+      [(tx: DatabaseInterface) => Promise<CascadeResult>],
+      Promise<CascadeResult>
+    >(db, runWithoutReferences);
   }
 
   const run = async (bound: DatabaseInterface): Promise<CascadeResult> => {
