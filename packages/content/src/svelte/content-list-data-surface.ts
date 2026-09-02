@@ -35,6 +35,9 @@ export interface ContentListSurfaceRegistrationOptions {
   descriptor: DataSurfaceDescriptor;
   controller: DataTableController;
   context: ContentListSurfaceContext;
+  /** Carries the mounted identity's monotonic revision across re-registration. */
+  initialRevision?: number;
+  onRevision?: (revision: number) => void;
   setViewMode(viewMode: ContentListViewMode): void;
   refresh?: () => boolean | Promise<boolean>;
   retry?: () => boolean | Promise<boolean>;
@@ -129,19 +132,23 @@ function commandAllowed(
 export function registerContentListDataSurface(
   options: ContentListSurfaceRegistrationOptions,
 ): ContentListSurfaceHandle {
-  let revision = 0;
+  let revision = options.initialRevision ?? 0;
+  const advanceRevision = () => {
+    revision += 1;
+    options.onRevision?.(revision);
+  };
   let context = options.context;
   let contextSignature = JSON.stringify(contextState(context));
   const updateContext = (next: ContentListSurfaceContext) => {
     const signature = JSON.stringify(contextState(next));
     if (signature !== contextSignature) {
-      revision += 1;
+      advanceRevision();
       contextSignature = signature;
     }
     context = next;
   };
   const unsubscribe = options.controller.subscribe((transition) => {
-    if (transition.changed) revision += 1;
+    if (transition.changed) advanceRevision();
   });
   const unregister = options.registry.register({
     descriptor: options.descriptor,
@@ -202,6 +209,7 @@ export function registerContentListDataSurface(
       }
     },
   });
+  options.onRevision?.(revision);
   return {
     update: updateContext,
     destroy() {

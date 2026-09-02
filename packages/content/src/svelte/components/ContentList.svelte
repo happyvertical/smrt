@@ -1483,6 +1483,11 @@ function focusSurface(): void {
 
 // ContentList owns the registration so grid, detailed, compact, empty, and
 // loading presentations all expose one stable identity and revision stream.
+// This ref is deliberately non-reactive: registration input changes must
+// advance a stable identity revision, but normal command acknowledgements must
+// not themselves cause a registration teardown/replay window.
+const surfaceRevision = { value: undefined as number | undefined };
+
 $effect(() => {
   const surface = surfaceOptions;
   if (!surface) {
@@ -1493,6 +1498,11 @@ $effect(() => {
     ...surface,
     controller,
     context: untrack(() => surfaceContext),
+    initialRevision:
+      surfaceRevision.value === undefined ? 0 : surfaceRevision.value + 1,
+    onRevision: (revision) => {
+      surfaceRevision.value = revision;
+    },
     setViewMode: (next) => {
       viewMode = next;
     },

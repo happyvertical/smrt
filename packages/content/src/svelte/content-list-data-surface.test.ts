@@ -171,6 +171,51 @@ describe('ContentList mounted data surface', () => {
     expect(registry.inspect(identity)).toBeUndefined();
   });
 
+  it('rejects a revision from before a same-identity re-registration', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    const identity = { surfaceId: 'rebound', kind: 'table' as const };
+    let revision = -1;
+    const first = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({ surfaceId: 'rebound' }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+      onRevision: (next) => {
+        revision = next;
+      },
+    });
+    const before = registry.inspect(identity);
+    first.destroy();
+    const rebound = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({
+        surfaceId: 'rebound',
+        lifecycle: true,
+      }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+      initialRevision: revision + 1,
+      onRevision: (next) => {
+        revision = next;
+      },
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'replayed-before-rebind',
+        identity,
+        expectedRevision: before?.revision ?? 0,
+        controlId: 'set-view',
+        payload: { view: 'compact' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
+    rebound.destroy();
+  });
+
   it('fails a visible ContentList command closed when its browser disconnects', async () => {
     const transport = disconnectedTransport();
     const bridge = createDataSurfaceCommandBridge({
