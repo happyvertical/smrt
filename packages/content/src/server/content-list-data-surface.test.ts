@@ -125,7 +125,10 @@ describe('ContentList agent data surface', () => {
         queryModes: ['rows', 'count', 'facets'],
       },
     });
-    expect(definition.schema).toBe(schema);
+    expect(definition.schema.fields.map((field) => field.id)).toEqual([
+      'id',
+      'title',
+    ]);
 
     const result = await definition.execute?.(
       definition,
@@ -286,13 +289,9 @@ describe('ContentList agent data surface', () => {
     expect(collection).not.toHaveBeenCalled();
   });
 
-  it('keeps authorized discovery and query capabilities in parity', async () => {
-    const list = vi.fn(async () => [
-      { id: 'content-a', audit_note: 'reviewed' },
-    ]);
-    const facets = vi.fn(async () => [
-      { field: 'audit_note', values: [{ value: 'reviewed', count: 1 }] },
-    ]);
+  it('never advertises a read-permission field that collection projections cannot execute', async () => {
+    const list = vi.fn(async () => [{ id: 'content-a', title: 'Alpha' }]);
+    const facets = vi.fn(async () => []);
     const definition = await createContentListDataSurfaceDefinition({
       schema,
       collection: { list, count: vi.fn(async () => 1), facets },
@@ -316,55 +315,25 @@ describe('ContentList agent data surface', () => {
     const fields = (
       discover as Array<{ fields: Array<{ id: string }> }>
     )[0].fields.map((field) => field.id);
-    expect(fields).toEqual(['audit_note', 'id', 'title']);
+    expect(fields).toEqual(['id', 'title']);
 
-    const rows = await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
-      run,
-      args: {
-        surfaceId: CONTENT_LIST_DATA_SURFACE_ID,
-        request: {
-          version: 1,
-          requestId: 'authorized-audit-rows',
-          mode: 'rows',
-          projection: ['id', 'audit_note'],
-          filter: {
-            kind: 'condition',
-            field: 'audit_note',
-            operator: 'eq',
-            value: 'reviewed',
+    await expect(
+      tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
+        run,
+        args: {
+          surfaceId: CONTENT_LIST_DATA_SURFACE_ID,
+          request: {
+            version: 1,
+            requestId: 'authorized-but-unprojectable-audit-field',
+            mode: 'rows',
+            projection: ['id', 'audit_note'],
+            page: { kind: 'offset', offset: 0, limit: 1 },
           },
-          sort: [{ field: 'audit_note', direction: 'asc' }],
-          page: { kind: 'offset', offset: 0, limit: 1 },
         },
-      },
-      db: undefined,
-    });
-    expect(rows).toMatchObject({
-      rows: [{ id: 'content-a', audit_note: 'reviewed' }],
-    });
-    expect(list).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: ['audit_note', 'id'],
-        orderBy: ['audit_note ASC', 'id ASC'],
-        where: [[{ audit_note: 'reviewed' }]],
+        db: undefined,
       }),
-    );
-
-    await tools.get(DATA_QUERY_TOOL_SLUG)?.execute({
-      run,
-      args: {
-        surfaceId: CONTENT_LIST_DATA_SURFACE_ID,
-        request: {
-          version: 1,
-          requestId: 'authorized-audit-facets',
-          mode: 'facets',
-          facets: [{ field: 'audit_note', limit: 1 }],
-        },
-      },
-      db: undefined,
-    });
-    expect(facets).toHaveBeenCalledWith({
-      fields: [{ field: 'audit_note', limit: 1 }],
-    });
+    ).rejects.toThrow('Data surface query request is invalid.');
+    expect(list).not.toHaveBeenCalled();
+    expect(facets).not.toHaveBeenCalled();
   });
 });

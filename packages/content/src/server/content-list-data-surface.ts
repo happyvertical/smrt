@@ -58,10 +58,7 @@ function requiredName(
   return resolved;
 }
 
-function querySchema(
-  schema: DataSurfaceSchema,
-  readablePermissions?: readonly string[],
-): DataQuerySchema {
+function querySchema(schema: DataSurfaceSchema): DataQuerySchema {
   return {
     ...schema,
     // A host descriptor is untrusted at this boundary. Discovery redacts
@@ -70,11 +67,7 @@ function querySchema(
     fields: schema.fields
       .filter(({ sensitive, readPermission }) => {
         if (sensitive) return false;
-        return (
-          !readPermission ||
-          readablePermissions === undefined ||
-          readablePermissions.includes(readPermission)
-        );
+        return !readPermission;
       })
       .map(
         ({
@@ -117,6 +110,11 @@ export async function createContentListDataSurfaceDefinition(
   options: ContentListDataSurfaceOptions,
 ): Promise<DataSurfaceDefinition> {
   const schema = options.schema ?? (await buildContentQuerySchema());
+  // `SmrtCollection.list({ select })` intentionally refuses model fields with
+  // readPermission because that projection primitive has no permission
+  // context. Publishing one here would let discovery promise a query that the
+  // real collection cannot execute. Keep the server data surface fail-closed:
+  // only universally executable, non-sensitive fields are advertised.
   const executableSchema = querySchema(schema);
   assertContentQuerySchema(executableSchema);
 
@@ -143,12 +141,8 @@ export async function createContentListDataSurfaceDefinition(
       queryModes: ['rows', 'count', 'facets'],
       ...options.metadata,
     },
-    schema,
+    schema: executableSchema,
     execute: async (_surface, request, context) => {
-      const executableSchema = querySchema(
-        schema,
-        context.run.permissions ?? [],
-      );
       // Validate before resolving the host collection. This makes a rejected
       // protected projection a zero-I/O failure, even for hostile descriptors.
       normalizeDataQueryRequest(request, executableSchema);

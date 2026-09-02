@@ -39,6 +39,12 @@ export interface ContentListSurfaceRegistrationOptions {
   /** Carries the mounted identity's monotonic revision across re-registration. */
   initialRevision?: number;
   onRevision?: (revision: number) => void;
+  /**
+   * ContentList-owned constraints that must hold before a visible command is
+   * acknowledged. Returning false denies the command rather than publishing a
+   * transient state which a later component effect would correct.
+   */
+  acceptsTableCommand?: (command: DataTableCommand) => boolean;
   setViewMode(viewMode: ContentListViewMode): void;
   refresh?: () => boolean | Promise<boolean>;
   retry?: () => boolean | Promise<boolean>;
@@ -227,7 +233,12 @@ export function registerContentListDataSurface(
       const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
       if (tableCommand) {
         if (
-          !commandAllowed(tableCommand, options.descriptor, options.controller)
+          !commandAllowed(
+            tableCommand,
+            options.descriptor,
+            options.controller,
+          ) ||
+          options.acceptsTableCommand?.(tableCommand) === false
         )
           return { ok: false };
         options.controller.dispatch(tableCommand);

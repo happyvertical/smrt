@@ -680,6 +680,7 @@ let activeQueryKey = $state<string | undefined>(undefined);
 let lifecycleRefreshPending = $state(false);
 let surfaceRoot: HTMLDivElement | undefined;
 let surfaceHighlighted = $state(false);
+let surfaceHighlightTimeout: ReturnType<typeof setTimeout> | undefined;
 let surfaceHandle: ContentListSurfaceHandle | undefined;
 
 // Job state is subscribed once so hosts can use a framework-free controller.
@@ -1639,6 +1640,44 @@ function focusSurface(): void {
 // not themselves cause a registration teardown/replay window.
 const surfaceRevision = { value: undefined as number | undefined };
 
+function acceptsSurfaceTableCommand(
+  command: import('@happyvertical/smrt-ui/data').DataTableCommand,
+): boolean {
+  if (command.type === 'setPageSize' && serverPageSize !== null) {
+    if (command.pageSize === null || command.pageSize > maxPageSize) return false;
+  }
+  if (command.type === 'setPage') {
+    if (command.page > maxReachablePage) return false;
+    if (
+      tableState.pageSize !== null &&
+      clampableRowCount !== undefined &&
+      command.page > Math.max(1, Math.ceil(clampableRowCount / tableState.pageSize))
+    )
+      return false;
+  }
+  if (command.type === 'setFilters') {
+    if (
+      lockedType !== null &&
+      !isContentListFilterExactly(
+        { ...tableState, filters: command.filters },
+        CONTENT_LIST_TYPE_FILTER_ID,
+        lockedType,
+      )
+    )
+      return false;
+    if (
+      lifecycleMode === 'trash' &&
+      !isContentListFilterExactly(
+        { ...tableState, filters: command.filters },
+        CONTENT_LIST_STATUS_FILTER_ID,
+        'deleted',
+      )
+    )
+      return false;
+  }
+  return command.type !== 'reset' || (lockedType === null && lifecycleMode !== 'trash');
+}
+
 $effect(() => {
   const surface = surfaceOptions;
   if (!surface) {
@@ -1654,6 +1693,7 @@ $effect(() => {
     onRevision: (revision) => {
       surfaceRevision.value = revision;
     },
+    acceptsTableCommand: acceptsSurfaceTableCommand,
     setViewMode: (next) => {
       viewMode = next;
     },
@@ -1676,15 +1716,27 @@ $effect(() => {
     focus: focusSurface,
     reveal: () => surfaceRoot?.scrollIntoView({ block: 'nearest' }),
     highlight: () => {
+      if (surfaceHighlightTimeout !== undefined) {
+        clearTimeout(surfaceHighlightTimeout);
+      }
       surfaceHighlighted = true;
-      setTimeout(() => {
-        surfaceHighlighted = false;
+      const timeout = setTimeout(() => {
+        if (surfaceHandle === handle) surfaceHighlighted = false;
+        if (surfaceHighlightTimeout === timeout) {
+          surfaceHighlightTimeout = undefined;
+        }
       }, 1_000);
+      surfaceHighlightTimeout = timeout;
     },
   });
   surfaceHandle = handle;
   return () => {
     if (surfaceHandle === handle) surfaceHandle = undefined;
+    if (surfaceHighlightTimeout !== undefined) {
+      clearTimeout(surfaceHighlightTimeout);
+      surfaceHighlightTimeout = undefined;
+    }
+    surfaceHighlighted = false;
     handle.destroy();
   };
 });

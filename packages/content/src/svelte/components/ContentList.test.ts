@@ -1820,7 +1820,7 @@ describe('ContentList shared query state', () => {
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
 
     // A surface may set its own filters, but it may not unlock the list.
-    await registry.execute({
+    const rejectedFilters = await registry.execute({
       version: 1,
       commandId: 'clear-type-filter',
       identity,
@@ -1834,11 +1834,13 @@ describe('ContentList shared query state', () => {
     });
     flushSync();
 
+    expect(rejectedFilters.ok).toBe(false);
+
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(target.textContent).toContain('Council budget explained');
     expect(target.textContent).not.toContain('Published appendix');
 
-    await registry.execute({
+    const rejectedReset = await registry.execute({
       version: 1,
       commandId: 'reset-view',
       identity,
@@ -1846,6 +1848,8 @@ describe('ContentList shared query state', () => {
       controlId: 'reset',
     });
     flushSync();
+
+    expect(rejectedReset.ok).toBe(false);
 
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(target.textContent).not.toContain('Published appendix');
@@ -2585,6 +2589,62 @@ describe('ContentList data surface', () => {
     expect(viewResult.ok).toBe(true);
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(registry.inspect(identity)?.state.viewMode).toBe('compact');
+  });
+
+  it('does not let a torn-down highlight timer clear a replacement surface', async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = createDataSurfaceRegistry();
+      const identity = { surfaceId: 'content-list', kind: 'table' as const };
+      const first = renderList({ dataSurface: { registry } });
+      const firstComponent = mountedComponents.pop();
+      if (!firstComponent) throw new Error('expected mounted ContentList');
+
+      await registry.execute({
+        version: 1,
+        commandId: 'highlight-first-surface',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'highlight',
+      });
+      flushSync();
+      expect(
+        first
+          .querySelector('.content-list-wrapper')
+          ?.classList.contains('data-surface-highlighted'),
+      ).toBe(true);
+
+      vi.advanceTimersByTime(100);
+      unmount(firstComponent);
+
+      const replacement = renderList({ dataSurface: { registry } });
+      await registry.execute({
+        version: 1,
+        commandId: 'highlight-replacement-surface',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'highlight',
+      });
+      flushSync();
+
+      vi.advanceTimersByTime(900);
+      flushSync();
+      expect(
+        replacement
+          .querySelector('.content-list-wrapper')
+          ?.classList.contains('data-surface-highlighted'),
+      ).toBe(true);
+
+      vi.advanceTimersByTime(100);
+      flushSync();
+      expect(
+        replacement
+          .querySelector('.content-list-wrapper')
+          ?.classList.contains('data-surface-highlighted'),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('advertises bulk actions only when a workflow binding is mounted', async () => {
@@ -3785,7 +3845,7 @@ describePaging('ContentList restore limits (#2452)', (render) => {
 // ---------------------------------------------------------------------------
 
 describe('ContentList page-size ceiling (#2452 batch 2)', () => {
-  it('coerces a data-surface set-page-size above the ceiling', async () => {
+  it('denies an out-of-range data-surface page command before acknowledging it', async () => {
     const registry = createDataSurfaceRegistry();
     const query = createFakeContentListQuery();
     const target = renderList({
@@ -3801,7 +3861,7 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
 
     const identity = { surfaceId: 'content-list', kind: 'table' as const };
     await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
-    await registry.execute({
+    const oversized = await registry.execute({
       version: 1,
       commandId: 'huge-page-size',
       identity,
@@ -3811,12 +3871,24 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
     });
     flushSync();
 
-    // The controller and the request agree, and neither exceeds the ceiling.
+    // The visible command is denied before it can publish a transient state
+    // that the server-mode constraint effect would later correct.
+    expect(oversized.ok).toBe(false);
     const limit = requestLimit(query.requests.at(-1));
-    expect(limit).toBe(25);
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'that value was outside the allowed range',
-    );
+    expect(limit).toBe(10);
+    expect(target.querySelector('.state-notice')).toBeNull();
+
+    const unreachablePage = await registry.execute({
+      version: 1,
+      commandId: 'unreachable-server-page',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 10_000 },
+    });
+    flushSync();
+    expect(unreachablePage.ok).toBe(false);
+    expect(requestLimit(query.requests.at(-1))).toBe(10);
     // 5000 rows at 25 a page is 200 pages, so page controls must render — in
     // COMPACT, without switching away. ContentList renders the pager itself in
     // every view mode, so the assertion holds where the test actually mounted.
