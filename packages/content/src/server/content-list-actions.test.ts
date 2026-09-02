@@ -681,10 +681,15 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
     });
     expect(collection.rows).toEqual([]);
-    const replayed = await setup.adapter.apply(applyRequest, setup.context);
+    const replayed = await setup.adapter.apply(
+      { ...applyRequest, requestId: 'permanent-delete-retry' },
+      setup.context,
+    );
     expect(replayed).toMatchObject({
+      requestId: 'permanent-delete-retry',
       ok: true,
       details: {
+        auditReference: applyRequest.requestId,
         outcomes: [
           {
             rowId: 'article-deleted',

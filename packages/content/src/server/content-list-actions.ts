@@ -1329,8 +1329,26 @@ export function createContentListActionAdapter(
     ),
   );
 
+  const state: DataSurfaceActionStateStore = {
+    putToken: (...args) => options.state.putToken(...args),
+    getToken: (...args) => options.state.getToken(...args),
+    markTokenConsumed: (...args) => options.state.markTokenConsumed(...args),
+    getIdempotency: (...args) => options.state.getIdempotency(...args),
+    reserveIdempotency: (...args) => options.state.reserveIdempotency(...args),
+    completeIdempotency: (key, ownerToken, result) => {
+      if (result.details) {
+        result.details = {
+          ...result.details,
+          auditReference: result.requestId,
+        };
+      }
+      return options.state.completeIdempotency(key, ownerToken, result);
+    },
+    releaseIdempotency: (...args) => options.state.releaseIdempotency(...args),
+  };
+
   const generic = createDataSurfaceActionAdapter({
-    state: options.state,
+    state,
     backgroundQueue: options.backgroundQueue,
     tokenTtlMs: options.tokenTtlMs,
     runAsPrincipal: options.runAsPrincipal,
@@ -1415,7 +1433,10 @@ export function createContentListActionAdapter(
                 details: {
                   ...result.details,
                   ...(outcomes ? { outcomes } : {}),
-                  auditReference: request.requestId,
+                  auditReference:
+                    typeof result.details.auditReference === 'string'
+                      ? result.details.auditReference
+                      : request.requestId,
                 },
               }
             : {}),

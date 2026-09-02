@@ -182,7 +182,7 @@ export class ContentContribution extends SmrtObject {
   editorNotes = '';
 
   @foreignKey('Content', { nullable: true, onDelete: 'SET NULL' })
-  promotedContentId = '';
+  promotedContentId: string | null = null;
   revisionCount = 0;
   approvedAt: Date | null = null;
   promotedAt: Date | null = null;
@@ -222,7 +222,7 @@ export class ContentContribution extends SmrtObject {
     if (options.editorNotes !== undefined)
       this.editorNotes = options.editorNotes || '';
     if (options.promotedContentId !== undefined)
-      this.promotedContentId = options.promotedContentId || '';
+      this.promotedContentId = options.promotedContentId;
     if (options.revisionCount !== undefined)
       this.revisionCount = options.revisionCount;
     if (options.approvedAt !== undefined) this.approvedAt = options.approvedAt;
