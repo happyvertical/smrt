@@ -27,17 +27,13 @@ subsystem you are editing. This file keeps what holds across all of them.
 
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
-- Persisted `save()` calls use the object's loaded `updated_at` revision in the
-  database `UPDATE`; zero affected rows throws `RUNTIME_REVISION_CONFLICT`
-  without overwriting the newer row. `save({ expectedUpdatedAt })` supplies an
-  explicit revision when a caller binds the mutation to an earlier preview or
-  selection snapshot. `delete({ expectedUpdatedAt })` applies the same guard to
-  irreversible deletion: remote adapters bind it into the final `DELETE`
-  predicate, while embedded adapters compare under the shared write queue
-  before the transactional cascade. Embedded adapters serialize every same-process model
-  save, delete, and complete `SmrtObject.withTransaction()` callback through
-  one queue; bound saves re-enter that hold. Custom write paths must use those
-  public APIs rather than bypassing the CAS ordering contract.
+- Persisted `save()` uses loaded `updated_at` in its `UPDATE`; zero rows throws
+  `RUNTIME_REVISION_CONFLICT`. Explicit `expectedUpdatedAt` binds a save or
+  delete to an earlier snapshot. Remote guarded deletes include the revision in
+  the final `DELETE`; embedded adapters compare inside the shared write queue
+  before cascading. That queue serializes same-process saves, deletes, and full
+  `SmrtObject.withTransaction()` callbacks. Custom writes must preserve this
+  public CAS ordering contract.
 - Native DuckDB UUID columns are hydrated as canonical strings before model
   initialization, natural-key lookup, and embedded revision claims. Exact
   natural-key probes retain the interceptor-authorized filter when
