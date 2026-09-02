@@ -77,6 +77,7 @@ describe('buildDomainKnowledgeManifest', () => {
       'SmrtObject',
       'SmrtReport',
       'SmrtObject',
+      'RoutedOrder',
       'MalformedConfigItem',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
@@ -271,6 +272,53 @@ describe('buildDomainKnowledgeManifest', () => {
       'list',
       'update',
     ]);
+  });
+
+  it("reports a custom action's REST route the way the generator emits it (#2619)", () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const apiSurface = (objectName: string, operation: string) =>
+      artifact.surfaces.find(
+        (surface) =>
+          surface.kind === 'api' &&
+          surface.objectName === objectName &&
+          surface.operation === operation,
+      );
+
+    // `generateRoutesForObject` nests an item-scoped action under `[id]`, and
+    // a public INSTANCE method defaults to item scope. Reporting
+    // `/order-trees/archive` would advertise an endpoint that is never
+    // generated.
+    expect(apiSurface('@example/orders:OrderTree', 'archive')).toMatchObject({
+      path: '/order-trees/[id]/archive',
+      method: 'POST',
+    });
+
+    // A STATIC method defaults to collection scope — no `[id]` segment.
+    expect(apiSurface('@example/orders:Order', 'approve')).toMatchObject({
+      path: '/orders/approve',
+      method: 'POST',
+    });
+
+    // A collection class's action is collection-scoped for the same reason.
+    expect(
+      apiSurface('@example/orders:OrderTreeCollection', 'findAbandoned'),
+    ).toMatchObject({ path: '/order-trees/findAbandoned', method: 'POST' });
+
+    // An explicit `routes` override wins for both path and method.
+    expect(
+      apiSurface('@example/orders:RoutedOrder', 'exportCsv'),
+    ).toMatchObject({
+      path: '/routed-orders/[id]/export-csv',
+      method: 'GET',
+    });
+
+    // CRUD paths are unchanged by the custom-action resolution.
+    expect(apiSurface('@example/orders:OrderTree', 'list')?.path).toBe(
+      '/order-trees',
+    );
+    expect(apiSurface('@example/orders:OrderTree', 'get')?.path).toBe(
+      '/order-trees/[id]',
+    );
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -771,6 +819,32 @@ function fixtureManifest(): SmartObjectManifest {
         fields: {},
         methods: {},
         decoratorConfig: {},
+      },
+      // A model whose custom action carries an explicit `routes` override:
+      // the emitted path/method must follow that override, not the derived
+      // defaults (#2619).
+      '@example/orders:RoutedOrder': {
+        className: 'RoutedOrder',
+        qualifiedName: '@example/orders:RoutedOrder',
+        collection: 'routed_orders',
+        fields: {},
+        methods: {
+          exportCsv: {
+            name: 'exportCsv',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<string>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {
+          api: {
+            include: ['exportCsv'],
+            routes: { exportCsv: { method: 'GET', path: 'export-csv' } },
+          },
+        },
+        extends: 'SmrtObject',
       },
       // A malformed `include` (not an array) must be treated as unset,
       // never as a truthy value fed straight into `.includes()` — that
