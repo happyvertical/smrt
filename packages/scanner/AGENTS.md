@@ -73,6 +73,24 @@ token pre-filter keeps a non-declaring file at one read. Binding the two globs
 together made sidecars vanish from every artifact with no diagnostic at all —
 the exact silent omission this matcher exists to prevent.
 
+**`isAgentSurfaceSourcePath` is the single authority on what counts as a
+declaration source**, and it is a path predicate, not a glob. Both passes here
+and `dev:knowledge-check`'s freshness re-scan call it. That matters because the
+two sides disagreeing is not cosmetic: a file the emitter reads but the checker
+skips reports as "no longer present in source" forever, and the reverse reports
+as "missing from smrt-knowledge.json" forever — neither clearable by a rebuild.
+It rejects `.d.ts`, `*.test.*`, `*.spec.*`, and anything under `node_modules`,
+`dist`, `build`, `coverage`, `__tests__`, or `__typechecks__`.
+
+`dist` is not paranoia. A caller's `exclude` REPLACES `DEFAULT_EXCLUDE`, and
+every real caller passes a narrower one (the Vite plugin sends only test globs
+plus `node_modules`), so this whole-project pass would otherwise walk build
+output. A transpiling build — `tsc`, `svelte-package`, vite lib mode with
+`@happyvertical/*` externalized — keeps both the import specifier and the
+module-scope call in its output, so `dist/foo.intents.js` matches this matcher
+exactly; and since `dist` sorts before `src`, it would WIN the duplicate tie and
+become the recorded source of a declaration nobody wrote there.
+
 ### What it refuses, always with a diagnostic
 
 Never a silent omission — every message names `useWebMcpTool`, the escape hatch

@@ -141,6 +141,48 @@ function intentToolName(id: string): string {
   return id.replace(/[.-]/g, '_');
 }
 
+/**
+ * Directories a declaration may never be read from.
+ *
+ * `dist`/`build`/`coverage` matter more than they look. A build that transpiles
+ * rather than bundles keeps both the import specifier and the module-scope call
+ * in its output, so `dist/foo.intents.js` matches this matcher exactly — and
+ * because `dist` sorts before `src`, it would WIN the duplicate-identity tie and
+ * become the recorded source of a declaration nobody authored there.
+ */
+const EXCLUDED_DIRECTORIES = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'coverage',
+  '__tests__',
+  '__typechecks__',
+]);
+
+/**
+ * Whether the agent-surface emitter reads this file. **This is the one
+ * authority on that question.**
+ *
+ * Both the scanner's declaration pass and `dev:knowledge-check`'s freshness
+ * re-scan call it, because the two answering differently is not a cosmetic
+ * inconsistency: a file the emitter reads but the checker skips is reported as
+ * "no longer present in source" on every run, and a file the checker reads but
+ * the emitter skips is reported as "missing from smrt-knowledge.json" — both
+ * unclearable by any rebuild. It is a path predicate rather than a glob so the
+ * two sides cannot drift through differing glob semantics either.
+ *
+ * Callers still pass globs to prune the WALK for speed; this decides what
+ * counts.
+ */
+export function isAgentSurfaceSourcePath(filePath: string): boolean {
+  if (!/\.(?:ts|tsx|js|jsx)$/.test(filePath)) return false;
+  if (filePath.endsWith('.d.ts')) return false;
+  if (/\.(?:test|spec)\.(?:ts|tsx|js|jsx)$/.test(filePath)) return false;
+  return !filePath
+    .split(/[\\/]/)
+    .some((segment) => EXCLUDED_DIRECTORIES.has(segment));
+}
+
 // ---------------------------------------------------------------------------
 // Minimal structural AST view
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@
 import { relative, resolve, sep } from 'node:path';
 import {
   emptyAgentSurface,
+  isAgentSurfaceSourcePath,
   mergeAgentSurfaces,
   scanSvelteAgentSurface,
 } from './agent-surface.js';
@@ -51,6 +52,24 @@ const DEFAULT_AGENT_SURFACE_INCLUDE = [
   '**/*.tsx',
   '**/*.js',
   '**/*.jsx',
+];
+
+/**
+ * Prunes the declaration and `.svelte` passes ADD to whatever `exclude` a caller
+ * passed.
+ *
+ * A caller's `exclude` replaces {@link DEFAULT_EXCLUDE} wholesale, and every
+ * real caller passes one narrower than it — the Vite plugin sends test globs
+ * plus `node_modules`, nothing more. That was harmless while the class
+ * `include` was narrow; these passes glob the whole project, so build output
+ * would otherwise be walked and read.
+ */
+const AGENT_SURFACE_PRUNE = [
+  '**/dist/**',
+  '**/build/**',
+  '**/coverage/**',
+  '**/__tests__/**',
+  '**/__typechecks__/**',
 ];
 const DEFAULT_EXCLUDE = [
   '**/node_modules/**',
@@ -194,7 +213,14 @@ export class OxcScanner {
         results.errors.push(error);
       }
       Object.assign(results.typeAliases, file.typeAliases);
-      if (file.agentSurface) surfaces.push(file.agentSurface);
+      // The class pass has its own `include`/`exclude`, which may well cover a
+      // test fixture or a build artifact. What counts as a DECLARATION source
+      // is one question with one answer, asked here and in
+      // `dev:knowledge-check` alike — the two disagreeing yields drift errors
+      // no rebuild can clear.
+      if (file.agentSurface && isAgentSurfaceSourcePath(file.filePath)) {
+        surfaces.push(file.agentSurface);
+      }
     }
 
     if (this.options.agentSurface) {
@@ -410,7 +436,13 @@ export class OxcScanner {
       files = await discoverSourceFiles({
         cwd: this.options.cwd,
         include: this.options.agentSurfaceInclude,
-        exclude: this.options.exclude,
+        // A caller's `exclude` REPLACES the scanner defaults, and every real
+        // caller passes one narrower than `DEFAULT_EXCLUDE` — the Vite plugin
+        // sends only test globs plus node_modules. That was harmless while the
+        // class `include` was narrow, but this pass globs the whole project, so
+        // the prunes have to be restored explicitly or `dist/` becomes an
+        // emission source. See `isAgentSurfaceSourcePath`.
+        exclude: [...this.options.exclude, ...AGENT_SURFACE_PRUNE],
         followSymbolicLinks: this.options.followSymbolicLinks,
       });
     } catch {
@@ -420,6 +452,9 @@ export class OxcScanner {
     const surfaces: AgentSurface[] = [];
     for (const filePath of files) {
       if (alreadyScanned.has(filePath)) continue;
+      // The globs prune the walk; this predicate decides what counts, and it is
+      // the same one `dev:knowledge-check` uses.
+      if (!isAgentSurfaceSourcePath(filePath)) continue;
       const surface = parseAgentSurfaceFile(filePath);
       if (surface) surfaces.push(surface);
     }
@@ -442,9 +477,10 @@ export class OxcScanner {
     // cannot parse a Svelte component. Honouring that here would silence the
     // one thing this pass exists to say, so a `.svelte`-targeting exclude is
     // dropped; every other prune (node_modules, dist, dot directories) stands.
-    const exclude = this.options.exclude.filter(
-      (pattern) => !pattern.endsWith('.svelte'),
-    );
+    const exclude = [
+      ...this.options.exclude.filter((pattern) => !pattern.endsWith('.svelte')),
+      ...AGENT_SURFACE_PRUNE,
+    ];
 
     let files: string[];
     try {

@@ -26,6 +26,7 @@ import {
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import {
   type AgentSurface,
+  isAgentSurfaceSourcePath,
   lintNumericPrecision,
   ManifestAdapter,
   mergeAgentSurfaces,
@@ -1139,6 +1140,16 @@ function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
   return issues;
 }
 
+/** Turn a comparison key back into something a human can act on. */
+function describeAgentSurfaceIdentity(identity: string): string {
+  if (!identity.startsWith('diagnostic:')) return identity;
+  const [, code, ...rest] = identity.split(':');
+  const line = rest.pop();
+  const path = rest.join(':');
+  const where = line && line !== '0' ? `${path}:${line}` : path;
+  return `${code} diagnostic at ${where}`;
+}
+
 /**
  * Compare the artifact's emitted surface against what the sources declare NOW
  * (#2591).
@@ -1151,39 +1162,11 @@ function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
  * the declaration SET is re-derived from source and compared by identity.
  *
  * The scan is bounded the same way the numeric-precision lint is: `src` only,
- * with the scanner's cheap token pre-filter in front of every parse.
+ * with the scanner's cheap token pre-filter in front of every parse. Which
+ * files count is decided by the scanner's own `isAgentSurfaceSourcePath`, never
+ * by a list copied into this package: the two sides disagreeing produces a
+ * drift error no rebuild can clear, in whichever direction they differ.
  */
-/**
- * Whether the emitter would have read this file at all.
- *
- * Mirrors the scanner's default excludes plus the build's test globs. A
- * `*.test.ts` declaring a fixture intent — which is a real pattern in this
- * repo — is never emitted, so treating it as declared would make
- * `dev:knowledge-check` permanently red for that package.
- */
-function isEmittableAgentSurfaceSource(filePath: string): boolean {
-  // The Vite plugin's default include accepts JavaScript too, so a `.js`
-  // sidecar is emitted; skipping it here would report a stale artifact as
-  // fresh, since a new file also has no prior source hash.
-  if (!/\.(?:ts|tsx|js|jsx)$/.test(filePath)) return false;
-  if (filePath.endsWith('.d.ts')) return false;
-  if (/\.(?:test|spec)\.tsx?$/.test(filePath)) return false;
-  const segments = filePath.split(sep);
-  return (
-    !segments.includes('__tests__') && !segments.includes('__typechecks__')
-  );
-}
-
-/** Turn a comparison key back into something a human can act on. */
-function describeAgentSurfaceIdentity(identity: string): string {
-  if (!identity.startsWith('diagnostic:')) return identity;
-  const [, code, ...rest] = identity.split(':');
-  const line = rest.pop();
-  const path = rest.join(':');
-  const where = line && line !== '0' ? `${path}:${line}` : path;
-  return `${code} diagnostic at ${where}`;
-}
-
 function findAgentSurfaceDriftIssues(
   authoredPackages: KnowledgePackage[],
 ): KnowledgeIssue[] {
@@ -1210,7 +1193,7 @@ function findAgentSurfaceDriftIssues(
       // Match what the EMITTER sees, not merely what is on disk. A declaration
       // in a file the build excludes is never emitted, so counting it here
       // would raise a drift error no rebuild could ever clear.
-      if (!isEmittableAgentSurfaceSource(filePath)) continue;
+      if (!isAgentSurfaceSourcePath(filePath)) continue;
       let sourceText: string;
       try {
         sourceText = readFileSync(filePath, 'utf8');

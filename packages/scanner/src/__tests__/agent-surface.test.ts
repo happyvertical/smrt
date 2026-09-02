@@ -688,6 +688,44 @@ export const b = defineIntent({
     }
   });
 
+  it('never reads build output, even when the caller narrows `exclude`', async () => {
+    // A caller's `exclude` REPLACES the scanner defaults, and every real caller
+    // passes one narrower than them — the Vite plugin sends only test globs
+    // plus node_modules. A transpiling build keeps both the import specifier
+    // and the module-scope call in its output, so `dist/` matches this matcher
+    // exactly; and because `dist` sorts before `src`, it would WIN the
+    // duplicate tie and become the recorded source of the declaration.
+    const root = mkdtempSync(join(tmpdir(), 'smrt-agent-surface-dist-'));
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true });
+      mkdirSync(join(root, 'dist'), { recursive: true });
+      mkdirSync(join(root, 'src', '__tests__'), { recursive: true });
+      writeFileSync(join(root, 'src', 'orders.intents.ts'), LITERAL_INTENT);
+      writeFileSync(join(root, 'dist', 'orders.intents.js'), LITERAL_INTENT);
+      writeFileSync(
+        join(root, 'src', '__tests__', 'fixture.intents.ts'),
+        LITERAL_PLAYBOOK,
+      );
+
+      const { results } = await new OxcScanner({
+        cwd: root,
+        include: ['src/**/*.ts'],
+        // Exactly what the Vite plugin passes.
+        exclude: ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+      }).scanAndResolve();
+
+      expect(results.agentSurface.intents.map((i) => i.filePath)).toEqual([
+        'src/orders.intents.ts',
+      ]);
+      // Neither the transpiled copy nor the test fixture may appear, and
+      // neither may raise a duplicate-identity diagnostic.
+      expect(results.agentSurface.playbooks).toEqual([]);
+      expect(results.agentSurface.diagnostics).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('never counts a declaration twice when both passes cover the file', async () => {
     // The class glob and the declaration glob overlap by default; a file
     // visited by both must not collide with itself.

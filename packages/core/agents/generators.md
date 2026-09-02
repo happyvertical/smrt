@@ -107,12 +107,12 @@ reporting either direction as `stale-agent-surface`. The scan is bounded like
 the numeric-precision lint: `src` only, behind the scanner's token pre-filter.
 
 That re-derivation must model what the EMITTER sees, not merely what is on
-disk, or it reports drift no rebuild can clear. So it skips the files the build
-excludes (`*.test.ts`, `*.spec.ts`, `__tests__/`, `*.d.ts` — a fixture intent in
-a test file is never emitted), covers the same `.js`/`.jsx` the plugin's default
-include accepts, and runs the per-file results through `mergeAgentSurfaces`
-before comparing, because the merge is where a duplicate identity and a derived
-tool-name collision are resolved and the artifact is the merged result.
+disk, or it reports drift no rebuild can clear. Which files count is decided by
+the scanner's exported `isAgentSurfaceSourcePath` — the same predicate the
+emitter itself uses, never a list copied into the checker — and the per-file
+results run through `mergeAgentSurfaces` before comparing, because the merge is
+where a duplicate identity and a derived tool-name collision are resolved and
+the artifact is the merged result.
 Diagnostics are compared alongside identities: a sidecar containing only a
 computed declaration adds no identity and has no prior hash, so without that,
 "a diagnostic, never silence" would quietly become "a diagnostic, until the

@@ -22,6 +22,7 @@ export {
   type ExtractAgentSurfaceOptions,
   emptyAgentSurface,
   extractAgentSurface,
+  isAgentSurfaceSourcePath,
   mergeAgentSurfaces,
   scanSvelteAgentSurface,
   sourceMayDeclareAgentSurface,
