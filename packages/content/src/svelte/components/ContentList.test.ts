@@ -2643,6 +2643,57 @@ describe('ContentList data surface', () => {
     });
   });
 
+  it('accepts independently-created equivalent binding identities', async () => {
+    const registry = createDataSurfaceRegistry();
+    const lifecyclePreview = vi.fn(async () => ({ ok: true }));
+    const lifecycleIdentity = {
+      kind: 'table' as const,
+      surfaceId: 'tenant-content-list',
+      subject: { id: 'tenant-a', type: 'tenant' },
+    };
+    const workflowIdentity = {
+      surfaceId: 'tenant-content-list',
+      kind: 'table' as const,
+      subject: { type: 'tenant', id: 'tenant-a' },
+    };
+    const workflow = workflowBinding({ identity: workflowIdentity });
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      lifecycle: {
+        client: {
+          preview: lifecyclePreview,
+          apply: vi.fn(async () => ({ ok: true })),
+        },
+        identity: lifecycleIdentity,
+      },
+      workflows: workflow,
+    });
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(workflowIdentity)).toMatchObject({
+        descriptor: { identity: workflowIdentity },
+      }),
+    );
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Move selected to trash')[0]);
+    await vi.waitFor(() => expect(lifecyclePreview).toHaveBeenCalledOnce());
+    expect(lifecyclePreview.mock.calls[0][0]?.identity).toEqual(
+      workflowIdentity,
+    );
+
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledOnce());
+    expect(workflow.preview.mock.calls[0][0]?.identity).toEqual(
+      workflowIdentity,
+    );
+  });
+
   it('rejects incompatible lifecycle and workflow identities before registering', () => {
     const registry = createDataSurfaceRegistry();
     expect(() =>
@@ -2652,6 +2703,21 @@ describe('ContentList data surface', () => {
         lifecycle: lifecycleBinding({
           identity: { surfaceId: 'lifecycle-list', kind: 'table' },
         }),
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+        }),
+      }),
+    ).toThrow('must use the same data surface identity');
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('rejects a custom workflow identity when lifecycle uses the default', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        defaultViewMode: 'compact',
+        dataSurface: { registry },
+        lifecycle: lifecycleBinding(),
         workflows: workflowBinding({
           identity: { surfaceId: 'workflow-list', kind: 'table' },
         }),

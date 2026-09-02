@@ -291,6 +291,48 @@ describe('ContentList mounted data surface', () => {
     handle.destroy();
   });
 
+  it('counts type-distinct retained row ids when enforcing the toggle cap', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    controller.dispatch({ type: 'setSelectedRows', rowIds: ['1'] });
+    const identity = { surfaceId: 'typed-selection', kind: 'table' as const };
+    const handle = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({
+        surfaceId: identity.surfaceId,
+        limits: { maxSelectionSize: 2 },
+      }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'add-number-one',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'toggle-row-selection',
+        payload: { rowId: 1 },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(controller.getState().selectedRowIds).toEqual([1, '1']);
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'reject-over-cap-type-distinct',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'toggle-row-selection',
+        payload: { rowId: '2' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(controller.getState().selectedRowIds).toEqual([1, '1']);
+    handle.destroy();
+  });
+
   it('fails a visible ContentList command closed when its browser disconnects', async () => {
     const transport = disconnectedTransport();
     const bridge = createDataSurfaceCommandBridge({

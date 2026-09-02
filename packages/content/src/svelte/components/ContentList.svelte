@@ -138,11 +138,21 @@ import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
 
+const DEFAULT_CONTENT_LIST_SURFACE_IDENTITY: DataSurfaceIdentity = {
+  surfaceId: 'content-list',
+  kind: 'table',
+};
+
 function sameSurfaceIdentity(
   left: DataSurfaceIdentity,
   right: DataSurfaceIdentity,
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return (
+    left.kind === right.kind &&
+    left.surfaceId === right.surfaceId &&
+    left.subject?.type === right.subject?.type &&
+    left.subject?.id === right.subject?.id
+  );
 }
 
 function resolveSurfaceAuthority(
@@ -151,13 +161,19 @@ function resolveSurfaceAuthority(
 ): {
   identity?: DataSurfaceIdentity;
   maxSelectionSize?: number;
+  lifecycle?: ContentListLifecycleBinding;
+  workflows?: ContentListWorkflowBinding;
 } {
-  const identities = [lifecycle?.identity, workflows?.identity].filter(
-    (identity): identity is DataSurfaceIdentity => identity !== undefined,
-  );
+  const lifecycleIdentity = lifecycle
+    ? (lifecycle.identity ?? DEFAULT_CONTENT_LIST_SURFACE_IDENTITY)
+    : undefined;
+  const workflowIdentity = workflows
+    ? (workflows.identity ?? DEFAULT_CONTENT_LIST_SURFACE_IDENTITY)
+    : undefined;
   if (
-    identities.length === 2 &&
-    !sameSurfaceIdentity(identities[0], identities[1])
+    lifecycleIdentity &&
+    workflowIdentity &&
+    !sameSurfaceIdentity(lifecycleIdentity, workflowIdentity)
   ) {
     throw new Error(
       'ContentList lifecycle and workflow bindings must use the same data surface identity',
@@ -168,13 +184,21 @@ function resolveSurfaceAuthority(
       binding !== undefined,
   );
   return {
-    ...(identities[0] ? { identity: identities[0] } : {}),
+    ...(lifecycleIdentity ?? workflowIdentity
+      ? { identity: lifecycleIdentity ?? workflowIdentity }
+      : {}),
     ...(bindings.length > 0
       ? {
           maxSelectionSize: Math.min(
             ...bindings.map((binding) => binding.maxSelectionSize ?? 200),
           ),
         }
+      : {}),
+    ...(lifecycle && lifecycleIdentity
+      ? { lifecycle: { ...lifecycle, identity: lifecycleIdentity } }
+      : {}),
+    ...(workflows && workflowIdentity
+      ? { workflows: { ...workflows, identity: workflowIdentity } }
       : {}),
   };
 }
@@ -1931,7 +1955,7 @@ function createWorkflowRequest(
     version: 1,
     requestId: globalThis.crypto?.randomUUID?.() ?? `content-workflow-${Date.now()}`,
     identity:
-      surfaceAuthority.identity ?? { surfaceId: 'content-list', kind: 'table' },
+      surfaceAuthority.identity ?? DEFAULT_CONTENT_LIST_SURFACE_IDENTITY,
     actionId: selectedWorkflow,
     phase,
     selection,
@@ -2875,7 +2899,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     {#if lifecycle}
       <ContentListLifecyclePanel
-        binding={lifecycle}
+        binding={surfaceAuthority.lifecycle ?? lifecycle}
         mode={lifecycleMode}
         selectedRowIds={tableState.selectedRowIds}
         query={lifecycleQuery}

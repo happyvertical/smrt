@@ -11,6 +11,7 @@ import {
   type DataTableController,
   type DataTableSelection,
   dataTableCommandFromDataSurfaceCommand,
+  dataTableRowIdKey,
 } from '@happyvertical/smrt-ui/data';
 import type { ContentListViewMode } from './content-list-controller.js';
 
@@ -127,7 +128,8 @@ function commandAllowed(
       const selection = controller.snapshot().state.selection;
       if (selection.scope === 'allMatching') return false;
       const selected = selection.rowIds.some(
-        (rowId) => String(rowId) === String(command.rowId),
+        (rowId) =>
+          dataTableRowIdKey(rowId) === dataTableRowIdKey(command.rowId),
       );
       return (
         selected || selection.rowIds.length < descriptor.limits.maxSelectionSize
