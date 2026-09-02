@@ -78,6 +78,7 @@ describe('buildDomainKnowledgeManifest', () => {
       'SmrtReport',
       'SmrtObject',
       'RoutedOrder',
+      'ThrowingRouteOrder',
       'MalformedConfigItem',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
@@ -319,6 +320,73 @@ describe('buildDomainKnowledgeManifest', () => {
     expect(apiSurface('@example/orders:OrderTree', 'get')?.path).toBe(
       '/order-trees/[id]',
     );
+  });
+
+  it('survives a routes config the shared resolver rejects (#2619)', () => {
+    // `resolveCustomActionMetadata` throws on `effect: 'read'` + DELETE. The
+    // projection reads untrusted scanned config, so one malformed action must
+    // not fail `dev:knowledge-check`/`docs:agents` for the whole package.
+    expect(() => buildFixtureArtifact(rootDir)).not.toThrow();
+
+    const artifact = buildFixtureArtifact(rootDir);
+    const purge = artifact.surfaces.find(
+      (surface) =>
+        surface.kind === 'api' &&
+        surface.objectName === '@example/orders:ThrowingRouteOrder' &&
+        surface.operation === 'purge',
+    );
+    // Scope falls back to the receiver the method itself dictates — an
+    // instance method is item-scoped, which a route-only override cannot
+    // change. The declared `method` is read on its own non-throwing path, so
+    // it is still reported as authored rather than silently normalized away.
+    expect(purge).toMatchObject({
+      path: '/throwing-route-orders/[id]/purge',
+      method: 'DELETE',
+    });
+  });
+
+  it('derives the owning package from a qualified manifest key (#2619)', () => {
+    // An entry carrying only a qualified KEY — no `packageName`, no
+    // `qualifiedName` — must still resolve its package, or the same-package
+    // preference is skipped and a duplicate simple name picks the wrong
+    // parent, misclassifying the collection-class carve-out.
+    const manifest = fixtureManifest();
+    manifest.objects['@key-only/pkg:KeyOnlyBase'] = {
+      className: 'KeyOnlyBase',
+      collection: 'key_only_bases',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'KeyOnlyRow',
+    } as SmartObjectManifest['objects'][string];
+    // A same-named DECOY in another package that is NOT a collection class,
+    // inserted first so a bare simple-name match would find it instead.
+    manifest.objects['@decoy/pkg:KeyOnlyBase'] = {
+      className: 'KeyOnlyBase',
+      collection: 'decoys',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'SmrtObject',
+    } as SmartObjectManifest['objects'][string];
+    manifest.objects['@key-only/pkg:KeyOnlyChild'] = {
+      className: 'KeyOnlyChild',
+      collection: 'key_only_children',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'KeyOnlyBase',
+    } as SmartObjectManifest['objects'][string];
+
+    const artifact = buildDomainKnowledgeManifest({ manifest, rootDir });
+    const childSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === 'KeyOnlyChild',
+    );
+
+    // Resolved through its own package's collection base, so the child is a
+    // collection class: no CRUD, and nothing at all on mcp/cli.
+    expect(childSurfaces).toEqual([]);
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -843,6 +911,29 @@ function fixtureManifest(): SmartObjectManifest {
             include: ['exportCsv'],
             routes: { exportCsv: { method: 'GET', path: 'export-csv' } },
           },
+        },
+        extends: 'SmrtObject',
+      },
+      // `effect: 'read'` on a DELETE route makes the shared custom-action
+      // resolver throw by design. The knowledge build must not die for the
+      // whole package because one action's config is wrong (#2619).
+      '@example/orders:ThrowingRouteOrder': {
+        className: 'ThrowingRouteOrder',
+        qualifiedName: '@example/orders:ThrowingRouteOrder',
+        collection: 'throwing_route_orders',
+        fields: {},
+        methods: {
+          purge: {
+            name: 'purge',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {
+          api: { routes: { purge: { effect: 'read', method: 'DELETE' } } },
         },
         extends: 'SmrtObject',
       },

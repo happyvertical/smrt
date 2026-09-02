@@ -591,11 +591,12 @@ function findManifestObjectByName(
   // Prefer a same-package parent before falling back to a bare simple name:
   // an aggregated manifest can carry several classes sharing one simple name,
   // and resolving the wrong one misclassifies the collection-class carve-out.
-  const ownerPackage = manifestObjectPackage(owner);
+  const ownerKey = entries.find(([, candidate]) => candidate === owner)?.[0];
+  const ownerPackage = manifestObjectPackage(owner, ownerKey);
   if (ownerPackage) {
     const packageLocal = entries.find(
-      ([, candidate]) =>
-        manifestObjectPackage(candidate) === ownerPackage &&
+      ([key, candidate]) =>
+        manifestObjectPackage(candidate, key) === ownerPackage &&
         candidate.className === name,
     );
     if (packageLocal) return packageLocal[1];
@@ -606,14 +607,20 @@ function findManifestObjectByName(
 /**
  * An object's owning package. `packageName` is optional on
  * `SmartObjectDefinition` (older manifests and hand-built fixtures omit it),
- * so fall back to the package half of the qualified name. Mirrors
- * `manifestObjectPackage` in `vite-plugin/web-collections.ts`.
+ * so fall back to the package half of the qualified name — and, when that is
+ * absent too, of the manifest key, which is qualified for every entry the
+ * scanner writes. Mirrors `manifestObjectPackage` in
+ * `vite-plugin/web-collections.ts`, key fallback included: without it an
+ * entry carrying only a qualified key resolves no package at all, the
+ * same-package preference is skipped, and a duplicate simple name can pick
+ * the wrong parent.
  */
 function manifestObjectPackage(
   object: SmartObjectDefinition,
+  manifestKey?: string,
 ): string | undefined {
   if (object.packageName) return object.packageName;
-  const qualifiedName = object.qualifiedName;
+  const qualifiedName = object.qualifiedName ?? manifestKey;
   const separator = qualifiedName?.lastIndexOf(':') ?? -1;
   return separator > 0 ? qualifiedName?.slice(0, separator) : undefined;
 }
@@ -747,12 +754,7 @@ function apiCustomRoute(
   const apiConfig = object.decoratorConfig?.api;
   const defaultScope: 'item' | 'collection' =
     collectionClass || method?.isStatic ? 'collection' : 'item';
-  const { scope } = resolveCustomActionMetadata({
-    actionName: operation,
-    method,
-    apiConfig,
-    defaultScope,
-  });
+  const scope = resolveActionScope(operation, method, apiConfig, defaultScope);
 
   // Mirrors the generator's own skips: a collection class emits only
   // collection-scoped routes, and a model class warns and skips a
@@ -776,6 +778,32 @@ function apiCustomRoute(
     segments: overridden.length > 0 ? overridden : [operation],
     method: normalizeApiMethod(route?.method),
   };
+}
+
+/**
+ * The shared resolver validates as it resolves — a `routes` entry declaring
+ * `effect: 'read'` on a PUT/PATCH/DELETE route throws by design. This
+ * projection reads untrusted scanned config and must not fail the whole
+ * knowledge build for one malformed action (same defensive stance as
+ * {@link includeExcludeConfig}), so fall back to the receiver the method
+ * itself dictates — which a route-only override cannot change anyway.
+ */
+function resolveActionScope(
+  operation: string,
+  method: SmartObjectDefinition['methods'][string] | undefined,
+  apiConfig: unknown,
+  defaultScope: 'item' | 'collection',
+): 'item' | 'collection' {
+  try {
+    return resolveCustomActionMetadata({
+      actionName: operation,
+      method,
+      apiConfig,
+      defaultScope,
+    }).scope;
+  } catch {
+    return defaultScope;
+  }
 }
 
 function customRouteConfig(
