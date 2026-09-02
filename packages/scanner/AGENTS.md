@@ -79,8 +79,9 @@ and `dev:knowledge-check`'s freshness re-scan call it. That matters because the
 two sides disagreeing is not cosmetic: a file the emitter reads but the checker
 skips reports as "no longer present in source" forever, and the reverse reports
 as "missing from smrt-knowledge.json" forever — neither clearable by a rebuild.
-It rejects `.d.ts`, `*.test.*`, `*.spec.*`, and anything under `node_modules`,
-`dist`, `build`, `coverage`, `__tests__`, or `__typechecks__` — measured
+It rejects `.d.ts`, `*.test.*`, `*.spec.*`, any hidden (dot) segment, and
+anything under `node_modules`, `dist`, `build`, `coverage`, `__tests__`, or
+`__typechecks__` — measured
 **relative to the scan root**, via the companion `isPrunedAgentSurfacePath`
 (which the `.svelte` passes call directly, since a `.svelte` path is rejected on
 extension by the source predicate). Relative matching is load-bearing: against

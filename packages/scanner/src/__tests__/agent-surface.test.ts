@@ -752,6 +752,31 @@ export const b = defineIntent({
     }
   });
 
+  it('ignores hidden paths, the way discovery already does', async () => {
+    // `discoverSourceFiles` ignores `**/.*` unconditionally, so the emitter
+    // never reads these. The shared predicate has to say so too, or the
+    // freshness walk — which enumerates files directly rather than globbing —
+    // counts a declaration the emitter skipped.
+    const root = mkdtempSync(join(tmpdir(), 'smrt-agent-surface-dot-'));
+    try {
+      mkdirSync(join(root, 'src', '.generated'), { recursive: true });
+      writeFileSync(
+        join(root, 'src', '.generated', 'orders.intents.ts'),
+        LITERAL_INTENT,
+      );
+
+      const { results } = await new OxcScanner({
+        cwd: root,
+        include: ['src/**/*.ts'],
+      }).scanAndResolve();
+
+      expect(results.agentSurface.intents).toEqual([]);
+      expect(results.agentSurface.diagnostics).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('never counts a declaration twice when both passes cover the file', async () => {
     // The class glob and the declaration glob overlap by default; a file
     // visited by both must not collide with itself.

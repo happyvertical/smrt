@@ -212,9 +212,17 @@ export function isPrunedAgentSurfacePath(
     // than reading `..` segments as if they were project directories.
     if (relativePath && !relativePath.startsWith('..')) scoped = relativePath;
   }
-  return scoped
-    .split(/[\\/]/)
-    .some((segment) => EXCLUDED_DIRECTORIES.has(segment));
+  return scoped.split(/[\\/]/).some(
+    (segment) =>
+      EXCLUDED_DIRECTORIES.has(segment) ||
+      // `discoverSourceFiles` ignores `**/.*` and `**/.*/**` unconditionally,
+      // so the emitter never reads a hidden path. Saying so here as well is
+      // what makes this predicate the COMPLETE answer: leaving it to the glob
+      // meant the freshness walk, which enumerates files directly, counted a
+      // `src/.generated/foo.intents.ts` the emitter had skipped — unclearable
+      // drift, in the opposite direction to the pruned-directory case.
+      (segment.startsWith('.') && segment !== '.' && segment !== '..'),
+  );
 }
 
 // ---------------------------------------------------------------------------
