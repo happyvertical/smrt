@@ -24,6 +24,7 @@ import {
   encodeApplicationId,
   initializeLocalApplicationRuntime,
   LocalRuntimeError,
+  MIGRATION_FAILED_MESSAGE,
   prepareLocalDatabaseStorage,
   resolveLocalRuntimePaths,
   validateApplicationId,
@@ -1192,13 +1193,77 @@ describe('local application runtime', () => {
     expect(calls).toBe(1);
     expect(maximumActive).toBe(1);
     releaseFirst?.();
-    await expect(first).rejects.toThrow('injected migration failure');
+    await expect(first).rejects.toMatchObject({
+      name: 'LocalRuntimeError',
+      code: 'migration_failed',
+    });
     expect(databaseCloseCalls).toBe(1);
     await expect(second).resolves.toMatchObject({
       diagnostics: { runtime: { profile: 'local' } },
     });
     expect(calls).toBe(2);
     expect(maximumActive).toBe(1);
+  });
+
+  it('normalizes a failed migration into a stable, redacted, retryable failure', async () => {
+    const directories = await localDirectories('migration-failure-code');
+    const secretLike =
+      'postgres://operator:s3cr3t-marker@db.internal:5432/app?sslmode=require';
+    let failNextMigration = true;
+    const prepareDatabase = async () => {
+      if (!failNextMigration) return;
+      failNextMigration = false;
+      throw new Error(`fixture migration failure connecting to ${secretLike}`);
+    };
+
+    const failure = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+
+    // Stable, machine-readable code.
+    expect(failure).toBeInstanceOf(LocalRuntimeError);
+    const localFailure = failure as LocalRuntimeError;
+    expect(localFailure.name).toBe('LocalRuntimeError');
+    expect(localFailure.code).toBe('migration_failed');
+    expect(localFailure.message).toBe(MIGRATION_FAILED_MESSAGE);
+
+    // Recovery instruction consistent with the app:doctor migration findings.
+    expect(localFailure.message).toContain('pnpm app:setup');
+    expect(localFailure.message).toContain('private migration logs');
+
+    // Redaction: nothing from the underlying driver message survives, in the
+    // message, the stack, or any enumerable/serialized projection.
+    const surfaced = [
+      localFailure.message,
+      localFailure.stack ?? '',
+      String(localFailure),
+      JSON.stringify(localFailure),
+      JSON.stringify({ ...localFailure }),
+    ].join('\n');
+    expect(surfaced).not.toContain('s3cr3t-marker');
+    expect(surfaced).not.toContain(secretLike);
+    expect(surfaced).not.toMatch(/postgres:\/\//);
+    expect(surfaced).not.toContain(directories.dataDirectory);
+    expect(surfaced).not.toContain(directories.sourceRoot);
+
+    // The original error is retained privately for logs, not for the surface.
+    expect((localFailure.cause as Error).message).toContain('s3cr3t-marker');
+    expect(Object.keys(localFailure)).not.toContain('cause');
+
+    // Retryable target: the same root re-initializes once migration succeeds.
+    const retried = await initializeLocalApplicationRuntime({
+      appId: 'lolaus',
+      ...directories,
+      prepareDatabase,
+    });
+    expect(retried).toMatchObject({
+      diagnostics: { runtime: { profile: 'local' } },
+    });
   });
 
   it('closes a completed runtime database when initialization-lock release fails', async () => {
@@ -1261,7 +1326,10 @@ describe('local application runtime', () => {
       failure = error;
     }
 
-    expect(failure).toBe(primaryFailure);
+    expect(failure).toMatchObject({
+      code: 'migration_failed',
+      cause: primaryFailure,
+    });
     expect(
       (failure as Error & { initializationLockReleaseError?: unknown })
         .initializationLockReleaseError,
@@ -1269,7 +1337,7 @@ describe('local application runtime', () => {
     expect(databaseCloseCalls).toBe(1);
   });
 
-  it('does not mask a frozen initialization error when lock release also fails', async () => {
+  it('does not mutate a frozen migration error when lock release also fails', async () => {
     const directories = await localDirectories('release-failure-frozen');
     const primaryFailure = Object.freeze(
       new Error('injected frozen migration failure'),
@@ -1291,7 +1359,20 @@ describe('local application runtime', () => {
       failure = error;
     }
 
-    expect(failure).toBe(primaryFailure);
+    // The caller's frozen error is retained verbatim as the private cause and
+    // is never mutated; the coded envelope carries the release context.
+    expect(failure).toMatchObject({
+      code: 'migration_failed',
+      cause: primaryFailure,
+    });
+    expect(
+      (failure as Error & { initializationLockReleaseError?: unknown })
+        .initializationLockReleaseError,
+    ).toBeDefined();
+    expect(Object.isFrozen(primaryFailure)).toBe(true);
+    expect(Object.getOwnPropertyNames(primaryFailure)).not.toContain(
+      'initializationLockReleaseError',
+    );
   });
 
   it.runIf(platform() === 'darwin')(

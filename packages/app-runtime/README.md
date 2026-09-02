@@ -22,6 +22,17 @@ const { runtime, bootstrap, diagnostics } =
 // returned once and only its HMAC is persisted.
 ```
 
+Application migrations run through the explicit `prepareDatabase` hook while
+the runtime holds the root lease. A rejected migration is normalized into a
+`LocalRuntimeError` with the stable `migration_failed` code and the fixed,
+secret-free message exported as `MIGRATION_FAILED_MESSAGE`: "The application
+migration step failed; run pnpm app:setup and inspect the private migration
+logs." The migration driver's own text — a likely carrier of a connection
+string, credential, path, or environment value — is never surfaced; it is kept
+as a non-enumerable `cause` for private logs. Startup releases the database
+handle and the initialization lease, so the same application root and data
+directory remain retryable once the migration is fixed.
+
 The path resolver selects the current user's OS application-data directory
 (`~/Library/Application Support` on macOS, `%LOCALAPPDATA%` on Windows, or
 `$XDG_DATA_HOME` / `~/.local/share` on Linux). Secure initialization currently
