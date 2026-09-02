@@ -1,0 +1,2538 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`runtime-profile generated-surface and policy parity > emits one identical domain surface under local, self-hosted, and cloud > canonical-domain-surface 1`] = `
+"{
+  "cliCommands": [
+    "item:create",
+    "item:delete",
+    "item:get",
+    "item:list",
+    "item:update",
+    "itemcollection:create",
+    "itemcollection:delete",
+    "itemcollection:get",
+    "itemcollection:list",
+    "itemcollection:update",
+    "referenceworkitem:archive",
+    "referenceworkitem:create",
+    "referenceworkitem:delete",
+    "referenceworkitem:get",
+    "referenceworkitem:list",
+    "referenceworkitem:prepareForReview",
+    "referenceworkitem:update",
+    "referenceworkitemassetcollection:attach",
+    "referenceworkitemassetcollection:byLeft",
+    "referenceworkitemassetcollection:byRight",
+    "referenceworkitemassetcollection:create",
+    "referenceworkitemassetcollection:delete",
+    "referenceworkitemassetcollection:detach",
+    "referenceworkitemassetcollection:get",
+    "referenceworkitemassetcollection:list",
+    "referenceworkitemassetcollection:setLinks",
+    "referenceworkitemassetcollection:update",
+    "referenceworkitemcollection:create",
+    "referenceworkitemcollection:delete",
+    "referenceworkitemcollection:get",
+    "referenceworkitemcollection:list",
+    "referenceworkitemcollection:update"
+  ],
+  "domainTools": [
+    {
+      "action": "create",
+      "className": "Item",
+      "collection": "items",
+      "effect": "write",
+      "endpoint": "/items",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field_1": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": "draft",
+            "description": "text field",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "description": {
+            "$ref": "#/$defs/field_2"
+          },
+          "status": {
+            "$ref": "#/$defs/field_3"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "type": "object"
+      },
+      "name": "item_create",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [],
+        "scope": "collection"
+      },
+      "tenantScope": "optional"
+    },
+    {
+      "action": "delete",
+      "className": "Item",
+      "collection": "items",
+      "effect": "destructive",
+      "endpoint": "/items",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to delete",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "item_delete",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "DELETE",
+        "path": [],
+        "scope": "item"
+      },
+      "tenantScope": "optional"
+    },
+    {
+      "action": "get",
+      "className": "Item",
+      "collection": "items",
+      "effect": "read",
+      "endpoint": "/items",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "slug"
+            ]
+          }
+        ],
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the object",
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-friendly identifier of the object",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "item_get",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "requiresApproval": false,
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "item"
+      },
+      "tenantScope": "optional"
+    },
+    {
+      "action": "list",
+      "className": "Item",
+      "collection": "items",
+      "effect": "read",
+      "endpoint": "/items",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of items to return",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of items to skip",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orderBy": {
+            "description": "Field to order by (e.g., \\"created_at DESC\\")",
+            "type": "string"
+          },
+          "where": {
+            "additionalProperties": true,
+            "description": "Filter conditions as key-value pairs",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "name": "item_list",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "requiresApproval": false,
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "collection"
+      },
+      "tenantScope": "optional"
+    },
+    {
+      "action": "update",
+      "className": "Item",
+      "collection": "items",
+      "effect": "write",
+      "endpoint": "/items",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field_1": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": "draft",
+            "description": "text field",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "description": {
+            "$ref": "#/$defs/field_2"
+          },
+          "id": {
+            "description": "ID of the object to update",
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/$defs/field_3"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "item_update",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "PUT",
+        "path": [],
+        "scope": "item"
+      },
+      "tenantScope": "optional"
+    },
+    {
+      "action": "archive",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to execute action on",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_archive",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "DELETE",
+        "path": [
+          "archive"
+        ],
+        "scope": "item"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "create",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "write",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_1": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": 0,
+            "description": "integer field",
+            "type": "integer"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "priority": {
+            "$ref": "#/$defs/field_3"
+          },
+          "status": {
+            "$ref": "#/$defs/field_2"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "tenantId",
+          "title",
+          "status",
+          "priority"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_create",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "delete",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to delete",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_delete",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "DELETE",
+        "path": [],
+        "scope": "item"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "get",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "read",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "slug"
+            ]
+          }
+        ],
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the object",
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-friendly identifier of the object",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "referenceworkitem_get",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "requiresApproval": false,
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "item"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "list",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "read",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of items to return",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of items to skip",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orderBy": {
+            "description": "Field to order by (e.g., \\"created_at DESC\\")",
+            "type": "string"
+          },
+          "where": {
+            "additionalProperties": true,
+            "description": "Filter conditions as key-value pairs",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "name": "referenceworkitem_list",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "requiresApproval": false,
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "prepareForReview",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "write",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to execute action on",
+            "type": "string"
+          },
+          "options": {
+            "description": "Options for the custom action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "options"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_prepareforreview",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "optionsBag": true,
+        "path": [
+          "prepareForReview"
+        ],
+        "scope": "item"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "update",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "effect": "write",
+      "endpoint": "/referenceworkitems",
+      "exposure": {
+        "api": true,
+        "cli": true,
+        "mcp": true,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_1": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": 0,
+            "description": "integer field",
+            "type": "integer"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to update",
+            "format": "uuid",
+            "type": "string"
+          },
+          "priority": {
+            "$ref": "#/$defs/field_3"
+          },
+          "status": {
+            "$ref": "#/$defs/field_2"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_update",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "requiresApproval": true,
+      "route": {
+        "method": "PUT",
+        "path": [],
+        "scope": "item"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "attach",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "exposure": {
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionAttachOptions",
+            "type": "string"
+          },
+          "rightId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "leftId",
+          "rightId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_attach",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [
+          "attach"
+        ],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "byLeft",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "exposure": {
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionFilterOptions",
+            "type": "string"
+          }
+        },
+        "required": [
+          "leftId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_byleft",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [
+          "byLeft"
+        ],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "byRight",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "exposure": {
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "opts": {
+            "description": "TypeScript type: JunctionFilterOptions",
+            "type": "string"
+          },
+          "rightId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rightId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_byright",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [
+          "byRight"
+        ],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "detach",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "exposure": {
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionFilterOptions",
+            "type": "string"
+          },
+          "rightId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "leftId",
+          "rightId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_detach",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [
+          "detach"
+        ],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    },
+    {
+      "action": "setLinks",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "exposure": {
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "webMcp": true
+      },
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionAttachOptions",
+            "type": "string"
+          },
+          "rightIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "leftId",
+          "rightIds"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_setlinks",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "requiresApproval": true,
+      "route": {
+        "method": "POST",
+        "path": [
+          "setLinks"
+        ],
+        "scope": "collection"
+      },
+      "tenantScope": "required"
+    }
+  ],
+  "mcpToolNames": [
+    "create_items",
+    "create_referenceworkitemassets",
+    "create_referenceworkitems",
+    "delete_items",
+    "delete_referenceworkitemassets",
+    "delete_referenceworkitems",
+    "get_items",
+    "get_referenceworkitemassets",
+    "get_referenceworkitems",
+    "list_items",
+    "list_referenceworkitemassets",
+    "list_referenceworkitems",
+    "update_items",
+    "update_referenceworkitemassets",
+    "update_referenceworkitems"
+  ],
+  "mcpToolSchemas": [
+    {
+      "description": "Execute archive action on ReferenceWorkItem",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to execute action on",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": true,
+            "description": "Additional options for the custom action",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_archive",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "properties": {
+              "data": {}
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Create a new ReferenceWorkItem",
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "ID of related Tenant",
+            "type": "string"
+          },
+          "field_1": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "description": "text field",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "priority": {
+            "$ref": "#/$defs/field_3"
+          },
+          "status": {
+            "$ref": "#/$defs/field_2"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "tenantId",
+          "title",
+          "status",
+          "priority"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_create",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "properties": {
+              "priority": {
+                "description": "text field",
+                "type": "string"
+              },
+              "status": {
+                "description": "text field",
+                "type": "string"
+              },
+              "tenantId": {
+                "description": "ID of related Tenant",
+                "type": "string"
+              },
+              "title": {
+                "description": "text field",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Delete a ReferenceWorkItem by ID",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to delete",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_delete",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "success": {
+                "const": true
+              }
+            },
+            "required": [
+              "success",
+              "message"
+            ],
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Get a specific ReferenceWorkItem by ID or slug",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "slug"
+            ]
+          }
+        ],
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the object",
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-friendly identifier of the object",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "referenceworkitem_get",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "properties": {
+              "priority": {
+                "description": "text field",
+                "type": "string"
+              },
+              "status": {
+                "description": "text field",
+                "type": "string"
+              },
+              "tenantId": {
+                "description": "ID of related Tenant",
+                "type": "string"
+              },
+              "title": {
+                "description": "text field",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "List ReferenceWorkItem objects with optional filtering",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of items to return",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of items to skip",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orderBy": {
+            "description": "Field to order by (e.g., \\"created_at DESC\\")",
+            "type": "string"
+          },
+          "where": {
+            "additionalProperties": true,
+            "description": "Filter conditions as key-value pairs",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "name": "referenceworkitem_list",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          },
+          "publicItem": {
+            "additionalProperties": true,
+            "properties": {
+              "priority": {
+                "description": "text field",
+                "type": "string"
+              },
+              "status": {
+                "description": "text field",
+                "type": "string"
+              },
+              "tenantId": {
+                "description": "ID of related Tenant",
+                "type": "string"
+              },
+              "title": {
+                "description": "text field",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "properties": {
+              "data": {
+                "items": {
+                  "$ref": "#/$defs/publicItem"
+                },
+                "type": "array"
+              },
+              "meta": {
+                "properties": {
+                  "count": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "limit": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "limit",
+                  "offset",
+                  "count"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "data",
+              "meta"
+            ],
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Execute prepareForReview action on ReferenceWorkItem",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to execute action on",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": true,
+            "description": "Additional options for the custom action",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_prepareforreview",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "properties": {
+              "data": {}
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "description": "Update an existing ReferenceWorkItem",
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "ID of related Tenant",
+            "type": "string"
+          },
+          "field_1": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "description": "text field",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to update",
+            "format": "uuid",
+            "type": "string"
+          },
+          "priority": {
+            "$ref": "#/$defs/field_3"
+          },
+          "status": {
+            "$ref": "#/$defs/field_2"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_update",
+      "outputSchema": {
+        "$defs": {
+          "error": {
+            "properties": {
+              "error": {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            },
+            "required": [
+              "error"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "properties": {
+              "priority": {
+                "description": "text field",
+                "type": "string"
+              },
+              "status": {
+                "description": "text field",
+                "type": "string"
+              },
+              "tenantId": {
+                "description": "ID of related Tenant",
+                "type": "string"
+              },
+              "title": {
+                "description": "text field",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/error"
+          }
+        ],
+        "type": "object"
+      }
+    }
+  ],
+  "openApiOperations": [
+    "DELETE /api/v1/referenceworkitems/{id}",
+    "GET /api/v1/referenceworkitems",
+    "GET /api/v1/referenceworkitems/{id}",
+    "POST /api/v1/referenceworkitems",
+    "PUT /api/v1/referenceworkitems/{id}"
+  ],
+  "rest": [
+    {
+      "generated": true,
+      "methods": [
+        "GET"
+      ],
+      "route": "_changes"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "GET"
+      ],
+      "route": "_events"
+    },
+    {
+      "generated": false,
+      "methods": [
+        "GET"
+      ],
+      "route": "_runtime/health"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "route": "items"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "GET",
+        "PUT",
+        "DELETE"
+      ],
+      "route": "items/[id]"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "referenceworkitemassets/attach"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "referenceworkitemassets/byLeft"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "referenceworkitemassets/byRight"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "referenceworkitemassets/detach"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "referenceworkitemassets/setLinks"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "route": "referenceworkitems"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "GET",
+        "PUT",
+        "DELETE"
+      ],
+      "route": "referenceworkitems/[id]"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "DELETE"
+      ],
+      "route": "referenceworkitems/[id]/archive"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "referenceworkitems/[id]/prepareForReview"
+    },
+    {
+      "generated": true,
+      "methods": [
+        "POST"
+      ],
+      "route": "sync/apply"
+    }
+  ],
+  "webMcpTools": [
+    {
+      "action": "create",
+      "className": "Item",
+      "collection": "items",
+      "description": "Create a new Item",
+      "effect": "write",
+      "endpoint": "/items",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field_1": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": "draft",
+            "description": "text field",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "description": {
+            "$ref": "#/$defs/field_2"
+          },
+          "status": {
+            "$ref": "#/$defs/field_3"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "type": "object"
+      },
+      "name": "item_create",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "POST",
+        "path": [],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "delete",
+      "className": "Item",
+      "collection": "items",
+      "description": "Delete a Item by ID",
+      "effect": "destructive",
+      "endpoint": "/items",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to delete",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "item_delete",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "DELETE",
+        "path": [],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "get",
+      "className": "Item",
+      "collection": "items",
+      "description": "Get a specific Item by ID or slug",
+      "effect": "read",
+      "endpoint": "/items",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "slug"
+            ]
+          }
+        ],
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the object",
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-friendly identifier of the object",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "item_get",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "list",
+      "className": "Item",
+      "collection": "items",
+      "description": "List Item objects with optional filtering",
+      "effect": "read",
+      "endpoint": "/items",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of items to return",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of items to skip",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orderBy": {
+            "description": "Field to order by (e.g., \\"created_at DESC\\")",
+            "type": "string"
+          },
+          "where": {
+            "additionalProperties": true,
+            "description": "Filter conditions as key-value pairs",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "name": "item_list",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "update",
+      "className": "Item",
+      "collection": "items",
+      "description": "Update an existing Item",
+      "effect": "write",
+      "endpoint": "/items",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "field_1": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "default": "",
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": "draft",
+            "description": "text field",
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "description": {
+            "$ref": "#/$defs/field_2"
+          },
+          "id": {
+            "description": "ID of the object to update",
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/$defs/field_3"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "item_update",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:Item",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "PUT",
+        "path": [],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "attach",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "description": "Execute attach action on ReferenceWorkItemAsset",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionAttachOptions",
+            "type": "string"
+          },
+          "rightId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "leftId",
+          "rightId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_attach",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "route": {
+        "method": "POST",
+        "path": [
+          "attach"
+        ],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "byLeft",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "description": "Execute byLeft action on ReferenceWorkItemAsset",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionFilterOptions",
+            "type": "string"
+          }
+        },
+        "required": [
+          "leftId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_byleft",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "route": {
+        "method": "POST",
+        "path": [
+          "byLeft"
+        ],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "byRight",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "description": "Execute byRight action on ReferenceWorkItemAsset",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "opts": {
+            "description": "TypeScript type: JunctionFilterOptions",
+            "type": "string"
+          },
+          "rightId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rightId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_byright",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "route": {
+        "method": "POST",
+        "path": [
+          "byRight"
+        ],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "detach",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "description": "Execute detach action on ReferenceWorkItemAsset",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionFilterOptions",
+            "type": "string"
+          },
+          "rightId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "leftId",
+          "rightId"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_detach",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "route": {
+        "method": "POST",
+        "path": [
+          "detach"
+        ],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "setLinks",
+      "className": "ReferenceWorkItemAsset",
+      "collection": "referenceworkitemassets",
+      "description": "Execute setLinks action on ReferenceWorkItemAsset",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitemassets",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "leftId": {
+            "type": "string"
+          },
+          "opts": {
+            "description": "TypeScript type: JunctionAttachOptions",
+            "type": "string"
+          },
+          "rightIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "leftId",
+          "rightIds"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitemasset_setlinks",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItemAsset",
+      "openWorld": true,
+      "readOnly": false,
+      "relationships": [
+        {
+          "field": "referenceWorkItemId",
+          "kind": "foreignKey",
+          "relatedCollection": "referenceworkitems"
+        }
+      ],
+      "route": {
+        "method": "POST",
+        "path": [
+          "setLinks"
+        ],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "archive",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "Execute archive action on ReferenceWorkItem",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to execute action on",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_archive",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "DELETE",
+        "path": [
+          "archive"
+        ],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "create",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "Create a new ReferenceWorkItem",
+      "effect": "write",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": false,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_1": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": 0,
+            "description": "integer field",
+            "type": "integer"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "priority": {
+            "$ref": "#/$defs/field_3"
+          },
+          "status": {
+            "$ref": "#/$defs/field_2"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "tenantId",
+          "title",
+          "status",
+          "priority"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_create",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "POST",
+        "path": [],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "delete",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "Delete a ReferenceWorkItem by ID",
+      "effect": "destructive",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to delete",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_delete",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "DELETE",
+        "path": [],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "get",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "Get a specific ReferenceWorkItem by ID or slug",
+      "effect": "read",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "slug"
+            ]
+          }
+        ],
+        "properties": {
+          "id": {
+            "description": "Unique identifier of the object",
+            "format": "uuid",
+            "type": "string"
+          },
+          "slug": {
+            "description": "URL-friendly identifier of the object",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "referenceworkitem_get",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "list",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "List ReferenceWorkItem objects with optional filtering",
+      "effect": "read",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of items to return",
+            "maximum": 1000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of items to skip",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "orderBy": {
+            "description": "Field to order by (e.g., \\"created_at DESC\\")",
+            "type": "string"
+          },
+          "where": {
+            "additionalProperties": true,
+            "description": "Filter conditions as key-value pairs",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "name": "referenceworkitem_list",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": true,
+      "relationships": [],
+      "route": {
+        "method": "GET",
+        "path": [],
+        "scope": "collection"
+      }
+    },
+    {
+      "action": "prepareForReview",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "Execute prepareForReview action on ReferenceWorkItem",
+      "effect": "write",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to execute action on",
+            "type": "string"
+          },
+          "options": {
+            "description": "Options for the custom action",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "options"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_prepareforreview",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "POST",
+        "optionsBag": true,
+        "path": [
+          "prepareForReview"
+        ],
+        "scope": "item"
+      }
+    },
+    {
+      "action": "update",
+      "className": "ReferenceWorkItem",
+      "collection": "referenceworkitems",
+      "description": "Update an existing ReferenceWorkItem",
+      "effect": "write",
+      "endpoint": "/referenceworkitems",
+      "idField": "id",
+      "idType": "uuid",
+      "idempotent": true,
+      "inputSchema": {
+        "$defs": {
+          "field_0": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_1": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_2": {
+            "description": "text field",
+            "type": "string"
+          },
+          "field_3": {
+            "default": 0,
+            "description": "integer field",
+            "type": "integer"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "description": "ID of the object to update",
+            "format": "uuid",
+            "type": "string"
+          },
+          "priority": {
+            "$ref": "#/$defs/field_3"
+          },
+          "status": {
+            "$ref": "#/$defs/field_2"
+          },
+          "tenantId": {
+            "$ref": "#/$defs/field_0"
+          },
+          "title": {
+            "$ref": "#/$defs/field_1"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "name": "referenceworkitem_update",
+      "objectRef": "@smrt-fixtures/runtime-profile-reference:ReferenceWorkItem",
+      "openWorld": false,
+      "readOnly": false,
+      "relationships": [],
+      "route": {
+        "method": "PUT",
+        "path": [],
+        "scope": "item"
+      }
+    }
+  ]
+}
+"
+`;

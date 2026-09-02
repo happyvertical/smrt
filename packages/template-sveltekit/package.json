@@ -34,7 +34,7 @@
   "scripts": {
     "build": "pnpm run typecheck && node --check index.js",
     "test": "vitest run",
-    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run __tests__/runtimeProfileReference.postgres.optional.test.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism __tests__/*.postgres.optional.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
   },

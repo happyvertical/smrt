@@ -86,3 +86,26 @@ It is the ground-up alternative to `smrt-saas-starter`.
 Tests live in package-level `__tests__/`, never under `template/`. Vitest's
 global setup creates a temporary `.svelte-kit/tsconfig.json` stub and removes it
 afterward; `copyTemplate()` filters the directory as defense in depth.
+
+`__tests__/support/` holds reusable, test-only helpers shared by the M5
+runtime-profile proofs:
+
+- `runtimeSurfaceParity.ts` canonicalizes the generated REST routes, OpenAPI
+  operations, CLI commands, MCP tool schemas, WebMCP descriptors, and per-tool
+  policy (effect, destructive/external annotations, approval, exposure, tenant
+  scope) that one copied application emits under a given runtime profile.
+  `canonicalizeRuntimeProfileSurfaces()` produces the bytes compared across
+  profiles; `OPERATIONAL_DIAGNOSTIC_TOOL_NAME` names the single allowlisted
+  operational exception (the #2577 diagnostic tool), which is authored rather
+  than generated and is therefore excluded from the domain inventories.
+- `runtimeFailureInjection.ts` holds narrowly scoped configuration/migration
+  failure injection. It adds no production seam: it only supplies ordinary
+  caller arguments (a runtime config object, the documented `prepareDatabase`
+  callback).
+
+`runtimeProfileParity.test.ts` asserts that the three profiles emit one
+byte-identical domain surface; its committed snapshot is an API/policy contract
+and must be reviewed as a diff, never regenerated blindly. The PostgreSQL
+external-worker half lives in `runtimeProfileParity.postgres.optional.test.ts`
+and runs through `pnpm test:postgres`, which forces sequential file execution
+because the optional PostgreSQL suites share one disposable database.
