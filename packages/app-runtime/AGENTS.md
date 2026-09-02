@@ -14,7 +14,12 @@ Application infrastructure composition for the validated runtime profiles in
   `{ driver: 'node:sqlite', custody: 'trusted-parent' }` boundary after the
   runtime establishes its user-owned mode-0700 data root.
 - Application migrations are explicit through `prepareDatabase`; runtime never
-  creates application model tables implicitly.
+  creates application model tables implicitly. A rejected `prepareDatabase` is
+  normalized into `LocalRuntimeError` with the stable `migration_failed` code
+  and the fixed recovery message `MIGRATION_FAILED_MESSAGE` ("run pnpm
+  app:setup and inspect the private migration logs"). The caller's error text
+  is never surfaced — it is retained only as a non-enumerable `cause` for
+  private logs — and the same application root stays retryable.
 - Standalone migration commands must call `prepareLocalDatabaseStorage()`
   before opening SQLite so custody is established without creating schema or
   bootstrap records.
@@ -76,6 +81,8 @@ Application infrastructure composition for the validated runtime profiles in
 ## Invariants
 
 - Never expose application-secret bytes or bootstrap token hashes in diagnostics.
+- Never include migration or provider error text in a local or deployed startup
+  error message; migration driver text is a likely credential carrier.
 - Never include provider error text, URLs, tokens, or credentials in deployed
   errors, diagnostics, health, or readiness payloads.
 - Keep local data, assets, database, and secrets outside the source tree.

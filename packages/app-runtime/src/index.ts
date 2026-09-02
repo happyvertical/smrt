@@ -298,7 +298,19 @@ export type LocalRuntimeErrorCode =
   | 'bootstrap_unavailable'
   | 'capability_disabled'
   | 'invalid_configuration'
+  | 'migration_failed'
   | 'unsafe_public_exposure';
+
+/**
+ * Fixed, secret-free surface for a failed application migration.
+ *
+ * A migration driver message is a likely carrier of a connection string,
+ * credential, filesystem path, or environment value, so the caller's text is
+ * never surfaced. The original error is retained as a non-enumerable `cause`
+ * for private logs only.
+ */
+export const MIGRATION_FAILED_MESSAGE =
+  'The application migration step failed; run pnpm app:setup and inspect the private migration logs.';
 
 /** Stable, secret-free local-runtime failure. */
 export class LocalRuntimeError extends Error {
@@ -397,7 +409,11 @@ export async function initializeLocalApplicationRuntime(
     const { canonicalSourceRoot } = acquired;
     await prepareLocalFilesystem(paths, canonicalSourceRoot);
     await tuneLocalSqlite(db);
-    await options.prepareDatabase?.(db);
+    try {
+      await options.prepareDatabase?.(db);
+    } catch (migrationFailure) {
+      throw migrationFailed(migrationFailure);
+    }
     await ensureBootstrapTable(db);
 
     const runtime = new InitializedLocalApplicationRuntime({
@@ -1129,6 +1145,18 @@ async function closeDatabaseAfterFailure(
     );
   }
   return primaryFailure;
+}
+
+function migrationFailed(cause: unknown): LocalRuntimeError {
+  const failure = new LocalRuntimeError(
+    'migration_failed',
+    MIGRATION_FAILED_MESSAGE,
+  );
+  Object.defineProperty(failure, 'cause', {
+    value: cause,
+    configurable: true,
+  });
+  return failure;
 }
 
 function preservePrimaryFailure(
