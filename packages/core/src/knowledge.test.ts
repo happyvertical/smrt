@@ -74,6 +74,7 @@ describe('buildDomainKnowledgeManifest', () => {
       'OrderTree',
       'OrderTreeCollection',
       'SpecialOrderTreeCollection',
+      'SmrtObject',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -178,6 +179,24 @@ describe('buildDomainKnowledgeManifest', () => {
         .filter((surface) => surface.kind === 'api')
         .map((surface) => surface.operation),
     ).toEqual(['findEscalated']);
+  });
+
+  it('reports no surfaces for a framework base class scanned in its own foundation package (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+
+    // `@happyvertical/smrt-core:SmrtObject` has `decoratorConfig: {}` — the
+    // same shape as a genuine bare `@smrt()` — but it carries no decorator
+    // of its own and never registers with ObjectRegistry. Without this
+    // exclusion, the "omitted config is full CRUD" rule would fabricate a
+    // synthetic `smrtobjects.list`/`.create`/... surface for it (317 phantom
+    // surfaces were observed across @happyvertical/smrt-core's own
+    // framework base classes before this fix).
+    expect(
+      artifact.surfaces.filter(
+        (surface) =>
+          surface.objectName === '@happyvertical/smrt-core:SmrtObject',
+      ),
+    ).toEqual([]);
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -611,6 +630,31 @@ function fixtureManifest(): SmartObjectManifest {
         methods: {},
         decoratorConfig: { knowledge: false },
         extends: 'SmrtObject',
+      },
+      // A foundation package (e.g. `@happyvertical/smrt-core` itself)
+      // declares its own framework base classes as real local classes, so
+      // the scanner emits a manifest entry for them too — with
+      // `decoratorConfig: {}`, indistinguishable in shape from a genuine
+      // bare `@smrt()`. They carry no decorator of their own and never
+      // reach ObjectRegistry (#2619).
+      '@happyvertical/smrt-core:SmrtObject': {
+        className: 'SmrtObject',
+        qualifiedName: '@happyvertical/smrt-core:SmrtObject',
+        packageName: '@happyvertical/smrt-core',
+        collection: 'smrtobjects',
+        fields: {},
+        methods: {
+          describe: {
+            name: 'describe',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<string>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtClass',
       },
     },
   };

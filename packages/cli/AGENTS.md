@@ -104,6 +104,20 @@ included using the generator's own exhaustive-include rule.
 `renderAgentSurfaceReport(report)` returns the printed lines; both are exported
 so the shape is testable without running the command.
 
+**Known over-report for an STI class with a bare `true`/omitted `mcp`/`cli`
+config, tracked as #2624:** the *scanner's* STI method merge in
+`manifest-generator.ts` walks the full inheritance chain unconditionally,
+unlike `ObjectRegistry.getAllMethods()` at runtime, which explicitly skips
+`SmrtObject`/`SmrtClass`/`SmrtCollection` ancestors. So an STI class's
+`object.methods` in the manifest can already (incorrectly) contain those
+framework base classes' own internal methods (`save`, `toJSON`,
+`withTransaction`, ...), and `configuredSurfaces()` — correctly applying
+#2619's "no include list means every eligible public method" rule to
+whatever `object.methods` contains — reports them too. This is a manifest
+defect upstream of the surface projection, not a gap in the projection
+itself; #2624 tracks narrowing the scanner's STI method merge to match the
+runtime resolver's exclusion.
+
 Sample output:
 
 ```text
