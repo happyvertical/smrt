@@ -263,7 +263,14 @@ describe('ContentListLifecyclePanel', () => {
     button(target, 'Retry').click();
     await tick();
     await tick();
-    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+    expect(apply.mock.calls[1]?.[0]?.requestId).not.toBe(
+      apply.mock.calls[0]?.[0]?.requestId,
+    );
+    const { requestId: _firstRequestId, ...firstAuthority } =
+      apply.mock.calls[0]?.[0] ?? {};
+    const { requestId: _retryRequestId, ...retryAuthority } =
+      apply.mock.calls[1]?.[0] ?? {};
+    expect(retryAuthority).toEqual(firstAuthority);
     expect(oncomplete).toHaveBeenCalledTimes(1);
     expect(button(target, 'Close').disabled).toBe(false);
   });
