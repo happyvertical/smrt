@@ -602,6 +602,7 @@ export function createContentListLifecycleController(
           summary: nextSummary,
           error: reason,
           renewalRequired: RENEWAL_REASONS.has(reason),
+          replayRequired: false,
         });
         return state;
       }
@@ -613,6 +614,7 @@ export function createContentListLifecycleController(
         result,
         summary: nextSummary,
         renewalRequired: false,
+        replayRequired: false,
       });
       return state;
     } catch (error) {

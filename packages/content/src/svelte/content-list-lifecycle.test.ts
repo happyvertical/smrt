@@ -264,7 +264,10 @@ describe('ContentList lifecycle controller', () => {
       status: 'failed',
       renewalRequired: false,
     });
-    expect(await controller.apply(2)).toMatchObject({ status: 'succeeded' });
+    expect(await controller.apply(2)).toMatchObject({
+      status: 'succeeded',
+      replayRequired: false,
+    });
     expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
   });
 

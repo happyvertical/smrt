@@ -265,5 +265,6 @@ describe('ContentListLifecyclePanel', () => {
     await tick();
     expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
     expect(oncomplete).toHaveBeenCalledTimes(1);
+    expect(button(target, 'Close').disabled).toBe(false);
   });
 });
