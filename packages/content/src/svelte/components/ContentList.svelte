@@ -46,7 +46,10 @@ import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
 import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
-import { reconcileContentListLifecycleSelection } from '../content-list-lifecycle.js';
+import {
+  readContentListLifecycleSummary,
+  reconcileContentListLifecycleSelection,
+} from '../content-list-lifecycle.js';
 import {
   applyContentListFilter,
   buildContentListColumns,
@@ -541,6 +544,7 @@ const queryRequestOptions: ContentListQueryRequestOptions | undefined =
       }
     : undefined;
 const serverBacked = queryBinding !== undefined;
+let locallyRemovedLifecycleIds = $state<Set<string>>(new Set());
 
 let snapshot = $state(controller.snapshot());
 let viewMode: ContentListViewMode = $state(untrack(() => defaultViewMode));
@@ -723,7 +727,11 @@ const columnLabels = $derived({
 
 const queryColumns = $derived(buildContentListColumns(columnLabels));
 const sourceContents = $derived(
-  queryBinding ? contentListQueryRowsToContents(queryBinding.rows) : contents,
+  queryBinding
+    ? contentListQueryRowsToContents(queryBinding.rows)
+    : contents.filter(
+        (content) => !locallyRemovedLifecycleIds.has(String(content.id)),
+      ),
 );
 const rows = $derived(toContentListRows(sourceContents));
 const visibleRowIds = $derived(
@@ -2157,6 +2165,13 @@ function rowActions(row: ContentListRow) {
 function handleLifecycleComplete(
   result: import('@happyvertical/smrt-ui/data').DataSurfaceActionResult,
 ) {
+  if (!queryBinding) {
+    const removed = new Set(locallyRemovedLifecycleIds);
+    for (const outcome of readContentListLifecycleSummary(result).outcomes) {
+      if (outcome.status === 'accepted') removed.add(String(outcome.rowId));
+    }
+    locallyRemovedLifecycleIds = removed;
+  }
   controller.dispatch({
     type: 'setSelectedRows',
     rowIds: reconcileContentListLifecycleSelection(

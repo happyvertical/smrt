@@ -184,6 +184,8 @@ describe('ContentList trash lifecycle integration', () => {
     );
     expect(apply).toHaveBeenCalledTimes(1);
     expect(target.textContent).toContain('1 selected');
+    expect(target.textContent).not.toContain('Deleted article');
+    expect(target.textContent).toContain('Deleted document');
     expect(target.textContent).toContain('audit-restore');
     expect(target.textContent).toContain(
       'document-2: publish_readiness_failed',

@@ -608,7 +608,6 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     );
 
     const preview = await setup.adapter.preview(previewRequest, setup.context);
-
     expect(preview).toMatchObject({
       ok: true,
       details: {
@@ -705,6 +704,96 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
     });
     expect(setup.collection.rows).toHaveLength(3);
+  });
+
+  it('isolates canonical metadata when concurrent calls reuse a request id', async () => {
+    const collection = new MemoryContentCollection([
+      {
+        id: 'article-deleted',
+        title: 'Article',
+        status: 'deleted',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        tenantId: 'tenant-a',
+        metaType: '@happyvertical/smrt-content:Article',
+      },
+      {
+        id: 'mirror-deleted',
+        title: 'Mirror',
+        status: 'deleted',
+        updated_at: '2026-01-02T00:00:00.000Z',
+        tenantId: 'tenant-a',
+        metaType: '@happyvertical/smrt-content:Mirror',
+      },
+      {
+        id: 'document-deleted',
+        title: 'Document',
+        status: 'deleted',
+        updated_at: '2026-01-03T00:00:00.000Z',
+        tenantId: 'tenant-a',
+        metaType: '@happyvertical/smrt-content:ContentDocument',
+      },
+    ]);
+    const originalGet = collection.get.bind(collection);
+    let releaseMirror!: () => void;
+    const mirrorReleased = new Promise<void>((resolve) => {
+      releaseMirror = resolve;
+    });
+    let enterMirror!: () => void;
+    const mirrorEntered = new Promise<void>((resolve) => {
+      enterMirror = resolve;
+    });
+    collection.get = async (filter) => {
+      const id = typeof filter === 'string' ? filter : String(filter.id);
+      if (id === 'mirror-deleted') {
+        enterMirror();
+        await mirrorReleased;
+      }
+      return originalGet(filter);
+    };
+    const setup = harness({ collection });
+    const first = setup.adapter.preview(
+      actionRequest(
+        'preview',
+        'permanent-delete',
+        {
+          scope: 'explicit-ids',
+          rowIds: ['article-deleted', 'mirror-deleted'],
+        },
+        { expectedCount: 2 },
+        { requestId: 'shared-client-id' },
+      ),
+      setup.context,
+    );
+    await mirrorEntered;
+    const second = await setup.adapter.preview(
+      actionRequest(
+        'preview',
+        'permanent-delete',
+        { scope: 'explicit-ids', rowIds: ['document-deleted'] },
+        { expectedCount: 1 },
+        { requestId: 'shared-client-id' },
+      ),
+      setup.context,
+    );
+    releaseMirror();
+    const firstResult = await first;
+
+    expect(firstResult.details?.outcomes).toEqual([
+      expect.objectContaining({
+        resourceId: 'article-deleted',
+        resourceType: '@happyvertical/smrt-content:Article',
+      }),
+      expect.objectContaining({
+        resourceId: 'mirror-deleted',
+        resourceType: '@happyvertical/smrt-content:Mirror',
+      }),
+    ]);
+    expect(second.details?.outcomes).toEqual([
+      expect.objectContaining({
+        resourceId: 'document-deleted',
+        resourceType: '@happyvertical/smrt-content:ContentDocument',
+      }),
+    ]);
   });
 
   it('rejects a forged surface subject and resolves revisions against trusted identity', async () => {

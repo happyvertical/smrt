@@ -8,6 +8,7 @@
  * and domain mutations.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
 // Publication and automated-review permissions include facts operations. The
 // catalog is registration-driven, so ensure those definitions exist even when
@@ -1179,11 +1180,8 @@ export function createContentListActionAdapter(
     object,
     Map<string, Promise<Content | null>>
   >();
-  // The generic adapter may normalize an invocation into a new request object.
-  // Correlate subtype metadata by the protocol's unique request id so preview
-  // and apply outcomes retain their canonical resource identity.
-  const resourcesByRequestId = new Map<
-    string,
+  // Request ids are client input and may collide across concurrent calls.
+  const invocationResources = new AsyncLocalStorage<
     Map<string, { resourceId: string; resourceType: string }>
   >();
   async function loadContent(
@@ -1203,13 +1201,7 @@ export function createContentListActionAdapter(
         const content = await collection.get({ id: key });
         if (!content) return null;
         const serialized = content.toJSON() as Record<string, unknown>;
-        const requestId = invocation.request.requestId;
-        let resources = resourcesByRequestId.get(requestId);
-        if (!resources) {
-          resources = new Map();
-          resourcesByRequestId.set(requestId, resources);
-        }
-        resources.set(key, {
+        invocationResources.getStore()?.set(key, {
           resourceId: String(content.id),
           resourceType:
             typeof serialized._meta_type === 'string'
@@ -1375,12 +1367,17 @@ export function createContentListActionAdapter(
     const invalid = validateTarget(request);
     if (invalid) return actionResult(request, false, invalid);
     try {
-      const result = await generic[phase](request, context);
+      const resources = new Map<
+        string,
+        { resourceId: string; resourceType: string }
+      >();
+      const result = await invocationResources.run(resources, () =>
+        generic[phase](request, context),
+      );
       const resolved = resolvedByRequest.get(request);
       const workflow = CONTENT_LIST_SERVER_ACTIONS.find(
         (entry) => entry.id === request.actionId,
       );
-      const resources = resourcesByRequestId.get(request.requestId);
       const outcomes = Array.isArray(result.details?.outcomes)
         ? result.details.outcomes.map((outcome) => {
             if (!isRecord(outcome)) return outcome;
@@ -1428,7 +1425,6 @@ export function createContentListActionAdapter(
       );
     } finally {
       resolvedByRequest.delete(request);
-      resourcesByRequestId.delete(request.requestId);
     }
   }
 
