@@ -17,6 +17,7 @@
  * infeasible in the report.
  */
 
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -26,6 +27,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { smrtPlugin } from './index.js';
 
@@ -211,5 +213,62 @@ export class Gizmo extends SmrtObject {
 
   it('returns null for an unknown virtual id', async () => {
     expect(await load('\0smrt:does-not-exist')).toBeNull();
+  });
+
+  // #2631: the CLI and MCP virtual modules emitted source that no JavaScript
+  // parser accepts (a qualified manifest key as a bare object key, and a
+  // newline-joined tool-name list in an expression position), so any consumer
+  // that actually imported them failed. Parse and evaluate the emitted text.
+  describe('emitted virtual modules are valid, importable JavaScript', () => {
+    /** node --check the emitted source exactly as the plugin emits it. */
+    function expectParses(code: string, label: string) {
+      const file = join(projectRoot, `${label}.check.mjs`);
+      writeFileSync(file, code);
+      expect(() =>
+        execFileSync(process.execPath, ['--check', file], {
+          stdio: 'pipe',
+        }),
+      ).not.toThrow();
+    }
+
+    /**
+     * Evaluate the emitted module. The bare `@happyvertical/smrt-core/*`
+     * imports are not resolvable from the temp project, so they are dropped —
+     * everything under test is the generated literal, not the import.
+     */
+    async function evaluate(code: string, label: string) {
+      const file = join(projectRoot, `${label}.eval.mjs`);
+      writeFileSync(file, code.replace(/^import .*?;$/gm, ''));
+      return await import(pathToFileURL(file).href);
+    }
+
+    it('emits a parseable CLI module keyed by simple class name', async () => {
+      const code = (await load('\0smrt:cli')) as string;
+      expectParses(code, 'cli');
+
+      const mod = await evaluate(code, 'cli');
+      // The manifest key is qualified (`mini-app:Widget`); the emitted key is
+      // the simple class name that matches the `widget:` command prefix.
+      expect(Object.keys(mod.cliCommands)).toContain('Widget');
+      expect(Object.keys(mod.cliCommands)).not.toContain('mini-app:Widget');
+      expect(mod.cliCommands.Widget.commands).toContain('widget:list');
+    });
+
+    it('emits a parseable MCP module whose tools are objects with names', async () => {
+      const code = (await load('\0smrt:mcp')) as string;
+      expectParses(code, 'mcp');
+
+      const mod = await evaluate(code, 'mcp');
+      expect(Array.isArray(mod.tools)).toBe(true);
+      expect(mod.tools.length).toBeGreaterThan(0);
+      for (const tool of mod.tools) {
+        expect(typeof tool.name).toBe('string');
+        expect(tool.name.length).toBeGreaterThan(0);
+        expect(tool.inputSchema).toBeTypeOf('object');
+      }
+      const names = mod.tools.map((tool: { name: string }) => tool.name);
+      expect(names).toContain('list_widgets');
+      expect(names).toContain('delete_widgets');
+    });
   });
 });

@@ -499,13 +499,24 @@ describe('ManifestGenerator coverage', () => {
         'delete_notes',
       ]);
 
+      // The JSON definitions cover the same operation set under the same
+      // names as generateMCPTools (#2631).
       const code = gen.generateMCPToolsCode(baseManifest());
       expect(code).toContain('"list_notes"');
-      expect(code).toContain('"get_note"');
-      expect(code).toContain('"create_note"');
+      expect(code).toContain('"get_notes"');
+      expect(code).toContain('"create_notes"');
+      expect(code).toContain('"update_notes"');
+      expect(code).toContain('"delete_notes"');
       // JSON schema properties carry numeric/length constraints from fields.
       expect(code).toContain('"minimum": 0');
       expect(code).toContain('"maximum": 99');
+    });
+
+    it('emits an empty array literal when every MCP operation is excluded', () => {
+      const gen = new ManifestGenerator();
+      const m = baseManifest();
+      m.objects.Note.decoratorConfig.mcp = { include: [] };
+      expect(gen.generateMCPToolsCode(m)).toBe('[]');
     });
 
     it('omits MCP tools entirely when mcp is false', () => {

@@ -1447,7 +1447,9 @@ async function generateMCPModule(
       dist: '../scanner.js',
     });
     const generator = new ManifestGenerator();
-    const tools = generator.generateMCPTools(manifest);
+    // Tool *definitions* (a JSON array), not `generateMCPTools()`'s
+    // newline-joined name list, which is not a valid expression (#2631).
+    const tools = generator.generateMCPToolsCode(manifest);
 
     return `
 // Auto-generated MCP tools from SMRT objects
@@ -1502,6 +1504,9 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
 
   // Generate interfaces for each object in the manifest
   for (const [objectName, objectMeta] of Object.entries(manifest.objects)) {
+    // Manifest keys are qualified names; only the simple class name is a valid
+    // TypeScript identifier (#2631).
+    const interfaceName = objectMeta.className || objectName;
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
 
@@ -1544,7 +1549,7 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
       '  updated_at?: string;',
     );
 
-    const interfaceDef = `export interface ${objectName}Data {\n${propertyLines.join('\n')}\n}`;
+    const interfaceDef = `export interface ${interfaceName}Data {\n${propertyLines.join('\n')}\n}`;
     typeDefinitions.push(interfaceDef);
   }
 
@@ -2319,12 +2324,13 @@ async function generateCLIModule(
       // `CLIGenerator` resolves and the dev `smrt` CLI convention — NOT the
       // plural collection name, which the runtime resolver does not accept.
       const collectionName = objectDef.collection;
-      const commandName = (objectDef.className || className).toLowerCase();
+      const simpleClassName = objectDef.className || className;
+      const commandName = simpleClassName.toLowerCase();
 
-      // Generate import statement for the object class
-      objectImports.push(
-        `// Import ${className} and ${className}Collection for CLI operations`,
-      );
+      // Generate import statement for the object class. Comment on the simple
+      // class name: manifest keys are qualified (`<package>:<Class>`) and
+      // collection classes already end in `Collection`.
+      objectImports.push(`// Import ${simpleClassName} for CLI operations`);
 
       // Generate command registration
       const availableCommands: string[] = [];
@@ -2357,10 +2363,13 @@ async function generateCLIModule(
       }
 
       if (availableCommands.length > 0) {
+        // Key by the simple class name, quoted: the manifest key is the
+        // qualified name (`my-app:Item`, `@scope/pkg:Item`), which is not a
+        // valid bare object key (#2631).
         commands.push(`
-  // ${className} commands
-  ${className}: {
-    collection: '${collectionName}',
+  // ${simpleClassName} commands
+  ${JSON.stringify(simpleClassName)}: {
+    collection: ${JSON.stringify(collectionName)},
     commands: [${availableCommands.join(', ')}]
   }`);
       }

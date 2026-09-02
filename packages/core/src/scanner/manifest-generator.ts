@@ -2429,11 +2429,14 @@ ${fields}
     for (const [_name, obj] of Object.entries(manifest.objects)) {
       const mcpConfig = obj.decoratorConfig.mcp;
       if (mcpConfig !== false) {
-        tools.push(this.generateMCPTool(obj));
+        const code = this.generateMCPTool(obj);
+        // An object whose every operation is excluded contributes nothing;
+        // pushing '' would emit a hole in the array literal (#2631).
+        if (code) tools.push(code);
       }
     }
 
-    return `[\n${tools.join(',\n')}\n]`;
+    return tools.length > 0 ? `[\n${tools.join(',\n')}\n]` : '[]';
   }
 
   /**
@@ -2477,7 +2480,7 @@ ${fields}
    * Generate a single MCP tool
    */
   private generateMCPTool(obj: SmartObjectDefinition): string {
-    const { collection, className, name } = obj;
+    const { collection } = obj;
     const config = obj.decoratorConfig.mcp;
     const exclude = (typeof config === 'object' && config?.exclude) || [];
     const include =
@@ -2508,17 +2511,23 @@ ${fields}
 
     if (shouldInclude('get')) {
       tools.push(`  {
-    name: "get_${name}",
-    description: "Get a ${name} by ID",
+    name: "get_${collection}",
+    description: "Get a ${collection} entry by ID",
     inputSchema: {
       type: "object",
       properties: {
-        id: { type: "string", description: "The ${name} ID" }
+        id: { type: "string", description: "The ${collection} entry ID" }
       },
       required: ["id"]
     }
   }`);
     }
+
+    const schemaProperties = JSON.stringify(
+      this.generateSchemaProperties(obj.fields),
+      null,
+      6,
+    );
 
     if (shouldInclude('create')) {
       const requiredFields = Object.entries(obj.fields)
@@ -2526,12 +2535,44 @@ ${fields}
         .map(([fieldName]) => fieldName);
 
       tools.push(`  {
-    name: "create_${name}",
-    description: "Create a new ${name}",
+    name: "create_${collection}",
+    description: "Create a new ${collection} entry",
     inputSchema: {
       type: "object",
-      properties: ${JSON.stringify(this.generateSchemaProperties(obj.fields), null, 6)},
+      properties: ${schemaProperties},
       required: ${JSON.stringify(requiredFields)}
+    }
+  }`);
+    }
+
+    if (shouldInclude('update')) {
+      tools.push(`  {
+    name: "update_${collection}",
+    description: "Update an existing ${collection} entry",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ${collection} entry ID" },
+        data: {
+          type: "object",
+          properties: ${schemaProperties}
+        }
+      },
+      required: ["id"]
+    }
+  }`);
+    }
+
+    if (shouldInclude('delete')) {
+      tools.push(`  {
+    name: "delete_${collection}",
+    description: "Delete a ${collection} entry by ID",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ${collection} entry ID" }
+      },
+      required: ["id"]
     }
   }`);
     }
