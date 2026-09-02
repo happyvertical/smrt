@@ -40,6 +40,7 @@ module you are editing. This file keeps what holds in every module.
 | `sse-client.ts` | the client half of live cache invalidation — the app-wide subscriber, the wire contract it consumes, and SSE-vs-polling behaviour | [agents/live-invalidation.md](agents/live-invalidation.md) |
 | `webmcp.ts` | framework-agnostic WebMCP registrar; validates an optionally bounded/namespaced, effect-filtered prospective set atomically, keeps legacy list-backed tools on collection state, and executes canonical tool-only definitions directly through REST fetchers. `registerWebMcpBespokeTool` is the single-tool sibling a UI layer's hand-written component tool routes through (`useWebMcpTool` in smrt-svelte, #2586): same fail-closed effect classification and `effects` policy, no `namespace`/`maxTools` | — |
 | `persistence/` + `update-state.ts` | the read-cache rehydrate capability and the framework-free `updateAvailable` primitive (bundle + contract signals) | [agents/version-persistence.md](agents/version-persistence.md) |
+| `intents.ts` + `capability-classification.ts` | the framework-agnostic declarative view-intent contract, its declaration registry, and the one capability classification rule both it and `webmcp.ts` apply (#2587, #2588). Ships as the dependency-free `@happyvertical/smrt-web/intents` entry — importing it pulls no client-data engine | — |
 | `data-query.ts` | dependency-free browser mirror and defensive response normalizer for the canonical bounded data-query envelope (#2444) | — |
 | `remote-query.ts` | query-shaped remote pages over a `SmrtWebCollection`, with keyed stale cache, execution modes, cancellation/latest-query-wins, and optional query-scoped live subscriptions (#2445) | — |
 
@@ -112,6 +113,87 @@ different request id — before they reach a UI surface.
   (#1540), so the post-persist refetch reconciles server-assigned ids.
 - To swap the engine, reimplement the SMRT-owned public types over a different
   backend; the boundary guard keeps consumers insulated from the change.
+
+## Declarative view intents — the static form (#2588)
+
+A view intent is a component-owned interaction with no model projection. It is
+declared as DATA and compiles into the mounted `ControlInteractionRegistry` /
+`DataSurfaceRegistry` commands, so `StagedControlReview` stays on the path and
+an agent-staged value stays a proposal. Registration goes through
+`registerWebMcpBespokeTool`, so an intent inherits the same fail-closed
+`effects` exposure policy as a generated model tool.
+
+### The contract #2591's scanner matcher implements against
+
+The scanner walks `**/*.ts` and `**/*.tsx` only and matches decorators on
+classes, not standalone calls, so an emittable intent must satisfy ALL of:
+
+1. **A `.ts`/`.tsx` module**, never inline in a `.svelte` file. Convention: a
+   sidecar named for what it belongs to — `OrderTable.intents.ts` — or one
+   intents module per feature. The binding imports from it.
+2. **Imported from `@happyvertical/smrt-web/intents`.** The package root
+   re-exports the runtime half only; `defineIntent` ships solely from the
+   `/intents` entry, so the matcher has exactly one import specifier to
+   recognize and a sidecar never drags in the client-data engine.
+3. **A module-scope `defineIntent(...)` call** — not inside a function, a
+   class, a conditional, or a loop.
+4. **Exactly one argument, an object literal** whose values are literals,
+   literal objects, or literal arrays. No spreads, no identifiers, no template
+   interpolation, no computed keys. The shape `definePrompt` already uses.
+
+Anything computed or conditional is NOT static and keeps using
+`useWebMcpTool` — that escape hatch exists precisely because a tool set
+derived from fetched data cannot be read without evaluation.
+
+Worked example, complete and matchable:
+
+```ts
+// OrderTable.intents.ts
+import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const nextPageIntent = defineIntent({
+  id: 'orders.next_page',
+  description: 'Advance the orders table by one page',
+  capability: { effect: 'read', idempotent: false, openWorld: false },
+  target: { registry: 'dataSurface', controlId: 'next-page', kind: 'table' },
+});
+```
+
+`id` is lowercase and dot-namespaced with at least two segments. It is the
+identity a playbook step names (`{ kind: 'intent', id }`, #2589) and the
+manifest will carry, so it must not be derived from a namespace, a generated
+tool name, or a route. The WebMCP tool name is `id` with `.`/`-` replaced by
+`_`; an id resolving into the reserved `smrt_ui_` prefix is rejected, because
+the six fixed UI tools are unchanged by this contract and intents sit above
+them rather than duplicating them. That flattening is not injective —
+`orders.foo_bar` and `orders.foo.bar` both derive `orders_foo_bar` — so
+`defineIntent` also rejects a second id that derives a tool name an already
+declared intent derives, at the one place both are visible. Two such intents
+would otherwise fight over a single WebMCP tool name at mount, where the
+failure is a shadowed or rejected registration rather than a clear error.
+
+**Gotcha — that check covers intents only.** A derived name can still collide
+with a GENERATED model tool (`${model}_${action}`) or, under a custom
+`webmcp.ui.prefix`, with one of the six fixed UI tools. Neither is knowable at
+declaration time, because both depend on a runtime `namespace`/`prefix` the
+declaration never sees, and there is no document-global tool-name lock for
+bespoke registrations to participate in. Nothing escalates — an intent stays
+browser-only and fail-closed either way — but one registration silently
+shadows or loses to the other. Keep an intent's first id segment out of your
+model names, or give `registerWebMcpTools` a `namespace`.
+
+### The no-REST invariant
+
+`ViewIntentDeclaration` has no `execute`, `fetch`, `url`, `route`, `endpoint`,
+or `method` field and no field of function type; `target` is a closed
+two-member union naming a browser registry. `defineIntent` additionally
+rejects, at runtime, any key outside its allowlist and any non-JSON value
+anywhere in the object, so an `as any` cast smuggles nothing either. The
+tool's `execute` is then CONSTRUCTED by `compileViewIntentToolSpec` from
+`intent.target` — no author-supplied callable ever runs. Proven by
+`src/intents.test.ts` ("the no-REST invariant"). If you add a field to the
+declaration, it must be data, and it must be reachable by the scanner without
+evaluation.
 
 ## Reference consumer
 
