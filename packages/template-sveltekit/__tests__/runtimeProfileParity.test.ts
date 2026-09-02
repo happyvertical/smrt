@@ -19,6 +19,7 @@ import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { MIGRATION_FAILED_MESSAGE } from '@happyvertical/smrt-app-runtime';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import type { TaskRunner } from '@happyvertical/smrt-jobs';
 import { SmrtJobCollection } from '@happyvertical/smrt-jobs';
@@ -361,23 +362,31 @@ describe('runtime-profile failure recovery', () => {
     );
     expect(report.failed).toBe(true);
 
-    // The startup envelope contributes no material of its own: no data
+    // Closed by happyvertical/smrt#2632. A failed `prepareDatabase` is now
+    // normalized like every other local-runtime startup failure: a
+    // `LocalRuntimeError` carrying the stable `migration_failed` code and a
+    // fixed, secret-free message. The application's own diagnosis no longer
+    // reaches the surface at all — a migration driver message is a likely
+    // carrier of a credential, so it is retained only as a private `cause`.
+    expect(report.name).toBe('LocalRuntimeError');
+    expect(report.codes).toEqual(['migration_failed']);
+    expect(report.message).toBe(MIGRATION_FAILED_MESSAGE);
+
+    // The recovery instruction is carried in the message for a
+    // `LocalRuntimeError`; `recoveries` is populated only from the structured
+    // `issues` of a `RuntimeProfileValidationError`, so it stays empty here.
+    expect(report.message).toContain('pnpm app:setup');
+    expect(report.recoveries).toEqual([]);
+
+    // The startup envelope still contributes no material of its own: no data
     // directory, no database file location, no bootstrap token, no
-    // environment value. The application's own diagnosis survives intact.
-    expect(report.message).toBe(MIGRATION_FAILURE_MESSAGE);
+    // environment value — and now no application migration text either.
+    expect(report.message).not.toContain(MIGRATION_FAILURE_MESSAGE);
+    expect(report.message).not.toContain(SECRET_LIKE_MARKER);
     expect(report.message).not.toContain(dataDirectory);
     expect(report.message).not.toContain(sourceRoot);
     expect(report.message).not.toContain(realpathSync(tmpdir()));
     expect(report.message).not.toMatch(/postgres:\/\/|sqlite:|Bearer /i);
-
-    // KNOWN GAP — happyvertical/smrt#2632. Every other local-runtime startup
-    // failure is normalized into a `LocalRuntimeError` with a stable code and
-    // recovery instruction; a failed `prepareDatabase` is rethrown raw, so
-    // there is nothing machine-readable to branch on and nothing redacting a
-    // driver message that did carry a credential. Tighten this to the stable
-    // `migration_failed` code when #2632 lands — do not delete the assertion.
-    expect(report.codes).toEqual([]);
-    expect(report.recoveries).toEqual([]);
 
     // Retryable: the same application root and data directory initialize and
     // seed normally once the migration succeeds. Nothing is left holding the
