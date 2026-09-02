@@ -136,6 +136,44 @@ describe('@happyvertical/smrt-playbooks', () => {
       ).toThrow('unknown kind');
     });
 
+    it('rejects a non-boolean step optional flag instead of coercing it', () => {
+      expect(() =>
+        definePlaybook({
+          key: 'commerce.cart.stringly-optional',
+          title: 'Stringly optional',
+          description: 'Step optional flags are validated, not coerced',
+          steps: [
+            {
+              kind: 'operation',
+              model: '@happyvertical/smrt-commerce:Order',
+              action: 'submit',
+              // `Boolean('false')` is true — a required step would silently
+              // become skippable.
+              optional: 'false',
+            } as never,
+          ],
+        }),
+      ).toThrow('optional must be a boolean');
+    });
+
+    it('deep-freezes nested metadata so a caller cannot mutate it after registration', () => {
+      const nested = { limits: { retries: 2 } };
+      const definition = definePlaybook({
+        key: 'commerce.cart.nested-metadata',
+        title: 'Nested metadata',
+        description: 'Metadata is copied and deep-frozen',
+        steps: CHECKOUT_STEPS,
+        metadata: nested,
+      });
+
+      // The caller's object is copied, not aliased, and every level is frozen.
+      nested.limits.retries = 99;
+      expect((definition.metadata.limits as { retries: number }).retries).toBe(
+        2,
+      );
+      expect(Object.isFrozen(definition.metadata.limits as object)).toBe(true);
+    });
+
     it('refuses to mark steps editable', () => {
       expect(() =>
         definePlaybook({

@@ -160,6 +160,20 @@ function normalizeEnabled(value: unknown, context: string): boolean {
   return value;
 }
 
+/**
+ * Validated, not coerced, for the same reason as {@link normalizeEnabled}: a
+ * stringly-typed `"false"` would turn a required step into a skippable one.
+ */
+function normalizeStepOptional(value: unknown, context: string): boolean {
+  if (typeof value !== 'boolean') {
+    throw new Error(
+      `${context} optional must be a boolean, received ${typeof value} "${String(value)}"`,
+    );
+  }
+
+  return value;
+}
+
 function normalizeOptionalText(
   value: unknown,
   context: string,
@@ -242,7 +256,9 @@ export function normalizeSteps(
             : {}),
           ...(rawStep.optional === undefined
             ? {}
-            : { optional: Boolean(rawStep.optional) }),
+            : {
+                optional: normalizeStepOptional(rawStep.optional, stepContext),
+              }),
         }) satisfies PlaybookStep;
       }
 
@@ -269,7 +285,9 @@ export function normalizeSteps(
             : {}),
           ...(rawStep.optional === undefined
             ? {}
-            : { optional: Boolean(rawStep.optional) }),
+            : {
+                optional: normalizeStepOptional(rawStep.optional, stepContext),
+              }),
         }) satisfies PlaybookStep;
       }
 
@@ -356,15 +374,37 @@ export function sanitizeMetadata(
     return {};
   }
 
-  const sanitized: PlaybookMetadata = {};
-  for (const [key, value] of Object.entries(metadata)) {
+  // Copy and deep-freeze rather than aliasing the caller's object: metadata
+  // ends up in the registered definition and the shared cache entry, and a
+  // shallow freeze would leave nested values mutable through the caller's
+  // original reference.
+  return deepFreezeJsonObject(metadata);
+}
+
+function deepFreezeJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(deepFreezeJsonValue));
+  }
+
+  if (isPlainObject(value)) {
+    return deepFreezeJsonObject(value);
+  }
+
+  return value;
+}
+
+function deepFreezeJsonObject(
+  source: Record<string, unknown>,
+): PlaybookMetadata {
+  const copied: PlaybookMetadata = {};
+  for (const [key, value] of Object.entries(source)) {
     if (value === undefined) {
       continue;
     }
-    sanitized[key] = value;
+    copied[key] = deepFreezeJsonValue(value);
   }
 
-  return sanitized;
+  return Object.freeze(copied);
 }
 
 export function parseMetadata(
