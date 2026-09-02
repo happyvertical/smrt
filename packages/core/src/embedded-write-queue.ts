@@ -52,7 +52,18 @@ interface QueueableDatabase {
  * handle reintroduces the livelock.
  */
 export function isEmbeddedDatabase(db: QueueableDatabase): boolean {
-  return !/^postgres(?:ql)?:/iu.test(db?.url ?? '');
+  return !isPostgresDatabase(db);
+}
+
+/**
+ * Whether `db` is a PostgreSQL handle.
+ *
+ * The revision compare-and-swap predicate is dialect-specific (#2620): only
+ * PostgreSQL needs the millisecond-truncating, timezone-tolerant guard, and
+ * only PostgreSQL can evaluate `date_trunc`.
+ */
+export function isPostgresDatabase(db: QueueableDatabase): boolean {
+  return /^postgres(?:ql)?:/iu.test(db?.url ?? '');
 }
 
 /**

@@ -21,6 +21,7 @@ import {
 } from './db-errors';
 import {
   isEmbeddedDatabase,
+  isPostgresDatabase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
@@ -44,6 +45,7 @@ import {
 } from './interceptors';
 import { ObjectRegistry } from './registry';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
+import { postgresRevisionCondition } from './revision-guard';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
@@ -2286,10 +2288,7 @@ export class SmrtObject extends SmrtClass {
                       {
                         id: data.id,
                         ...(revisionGuard !== undefined
-                          ? {
-                              updated_at:
-                                this.revisionPredicateValue(revisionGuard),
-                            }
+                          ? this.revisionPredicate(revisionGuard)
                           : {}),
                       },
                       updateData,
@@ -2503,7 +2502,7 @@ export class SmrtObject extends SmrtClass {
               this.tableName,
               {
                 id: this.id,
-                updated_at: this.revisionPredicateValue(expectedUpdatedAt),
+                ...this.revisionPredicate(expectedUpdatedAt),
               },
               { updated_at: updatedAt.toISOString() },
             );
@@ -2546,6 +2545,34 @@ export class SmrtObject extends SmrtClass {
       [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
     };
     await GlobalInterceptors.executeAfterSave(this, context);
+  }
+
+  /**
+   * Build the compare-and-swap condition that pins a guarded UPDATE or DELETE
+   * to the revision this writer loaded.
+   *
+   * PostgreSQL stores `updated_at` as `timestamp(6) WITHOUT time zone` and `pg`
+   * hydrates it in the process zone, so neither the precision nor the wall clock
+   * of a JavaScript `Date` survives the round trip. Exact string equality was
+   * therefore unsatisfiable for any row last written by raw SQL, and for every
+   * row on a non-UTC host, turning a lost-race guard into a permanent
+   * `RUNTIME_REVISION_CONFLICT` (#2620). See `revision-guard.ts` for how the
+   * PostgreSQL condition restores both correctness and lost-race semantics.
+   *
+   * The guarded `delete({ expectedUpdatedAt })` predicate is built here too:
+   * it bound the same exact equality into its final `DELETE`, so a microsecond
+   * or non-UTC row was permanently undeletable under a revision guard for the
+   * same reason.
+   *
+   * Other server dialects (remote LibSQL) store ISO text that round-trips
+   * exactly, and embedded engines never reach here — they take the
+   * compare/upsert fallback in {@link usesEmbeddedRevisionFallback}.
+   */
+  private revisionPredicate(revision: Date | string): Record<string, unknown> {
+    if (isPostgresDatabase(this.db)) {
+      return postgresRevisionCondition(revision);
+    }
+    return { updated_at: this.revisionPredicateValue(revision) };
   }
 
   private revisionPredicateValue(revision: Date | string): Date | string {
@@ -3370,10 +3397,7 @@ export class SmrtObject extends SmrtClass {
               const result = await db.delete(this.tableName, {
                 id: this.id,
                 ...(expectedUpdatedAt !== undefined && !embeddedRevisionGuard
-                  ? {
-                      updated_at:
-                        this.revisionPredicateValue(expectedUpdatedAt),
-                    }
+                  ? this.revisionPredicate(expectedUpdatedAt)
                   : {}),
               });
               if (expectedUpdatedAt !== undefined && result.affected !== 1) {
