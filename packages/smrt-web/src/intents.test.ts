@@ -131,7 +131,7 @@ describe('defineIntent', () => {
     expect(listViewIntents()).toEqual([intent]);
   });
 
-  it('is idempotent for an identical re-declaration (HMR) and rejects a changed one', () => {
+  it('is idempotent for an identical re-declaration and replaces a changed one', () => {
     const declaration: ViewIntentDeclaration = {
       id: 'orders.filter_list',
       description: 'Filter the order list',
@@ -564,6 +564,78 @@ describe('compileViewIntentToolSpec', () => {
     await spec.execute({});
 
     expect(registry.commands[0]).toMatchObject({ identity });
+  });
+
+  it('collapses a throwing data-surface registry to an allowlisted reason', async () => {
+    const intent = defineIntent({
+      id: 'orders.throwing_surface',
+      description: 'x',
+      capability: { effect: 'read', idempotent: false, openWorld: false },
+      target: { registry: 'dataSurface', controlId: 'next-page' },
+    });
+    // The REAL DataSurfaceRegistry throws — not returns — for a payload that
+    // is too deep, too large, or carries a forbidden or prototype-pollution
+    // key (`normalizeDataSurfaceVisibleCommand` in smrt-ui). An uncaught
+    // throw would escape both the `{ ok, reason }` contract and the
+    // `publicReason` allowlist.
+    const spec = compileViewIntentToolSpec(intent, {
+      registry: 'dataSurface',
+      registryPort: {
+        inspect: () => ({ revision: 1 }),
+        execute: async () => {
+          throw new TypeError('forbidden key at $.payload.tenantId');
+        },
+      },
+      identity: { surfaceId: 'orders-table', kind: 'table' },
+    });
+
+    expect(JSON.parse(await spec.execute({ payload: { a: 1 } }))).toEqual({
+      ok: false,
+      reason: 'denied',
+    });
+  });
+
+  it('collapses a throwing inspect and a throwing control registry too', async () => {
+    const surfaceIntent = defineIntent({
+      id: 'orders.throwing_inspect',
+      description: 'x',
+      capability: { effect: 'read', idempotent: false, openWorld: false },
+      target: { registry: 'dataSurface', controlId: 'next-page' },
+    });
+    const surfaceSpec = compileViewIntentToolSpec(surfaceIntent, {
+      registry: 'dataSurface',
+      registryPort: {
+        inspect: () => {
+          throw new Error('internal: surfaces table row 42');
+        },
+        execute: async () => ({ ok: true }),
+      },
+      identity: { surfaceId: 'orders-table', kind: 'table' },
+    });
+    expect(JSON.parse(await surfaceSpec.execute({}))).toEqual({
+      ok: false,
+      reason: 'denied',
+    });
+
+    const controlIntent = defineIntent({
+      id: 'orders.throwing_control',
+      description: 'x',
+      capability: { effect: 'read', idempotent: true, openWorld: false },
+      target: { registry: 'control', action: 'focus' },
+    });
+    const controlSpec = compileViewIntentToolSpec(controlIntent, {
+      registry: 'control',
+      registryPort: {
+        execute: async () => {
+          throw new Error('internal: control host blew up');
+        },
+      },
+      identity: { formId: 'order-form', controlId: 'notes' },
+    });
+    expect(JSON.parse(await controlSpec.execute({}))).toEqual({
+      ok: false,
+      reason: 'denied',
+    });
   });
 
   it('rejects a binding to the wrong registry', () => {

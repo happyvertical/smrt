@@ -729,6 +729,22 @@ function optionalRevision(args: Record<string, unknown>): {
     : {};
 }
 
+/**
+ * Collapse anything thrown on the execution path to an allowlisted reason.
+ *
+ * A registry does not only RETURN a rejection — `DataSurfaceRegistry` throws
+ * for a payload that is too deep, too large, or carries a forbidden or
+ * prototype-pollution key, and any registry can throw from a host handler. An
+ * uncaught throw would escape both the `{ ok, reason }` contract and the
+ * {@link publicReason} allowlist, handing the agent a raw internal message.
+ * The six fixed `smrt_ui_*` tools guard the same way (`executeSafely` in
+ * smrt-svelte's `webmcp-ui.ts`), collapsing anything unrecognized rather than
+ * letting it out.
+ */
+function intentErrorReason(error: unknown): string {
+  return error instanceof IntentArgumentError ? 'invalid_request' : 'denied';
+}
+
 function buildControlCommand(
   target: ViewIntentControlTarget,
   identity: ViewIntentControlIdentity,
@@ -806,19 +822,19 @@ export function compileViewIntentToolSpec(
     return {
       ...spec,
       execute: async (args) => {
-        let command: Parameters<ViewIntentControlRegistryPort['execute']>[0];
         try {
-          command = buildControlCommand(target, identity, toolArguments(args));
+          const command = buildControlCommand(
+            target,
+            identity,
+            toolArguments(args),
+          );
+          const result = await registry.execute(command, { source: 'agent' });
+          return result.ok
+            ? ok({ action: target.action, identity })
+            : denied(publicReason(result.reason));
         } catch (error) {
-          if (error instanceof IntentArgumentError) {
-            return denied('invalid_request');
-          }
-          throw error;
+          return denied(intentErrorReason(error));
         }
-        const result = await registry.execute(command, { source: 'agent' });
-        return result.ok
-          ? ok({ action: target.action, identity })
-          : denied(publicReason(result.reason));
       },
     };
   }
@@ -840,35 +856,32 @@ export function compileViewIntentToolSpec(
     return {
       ...spec,
       execute: async (args) => {
-        let payload: unknown;
         try {
           const input = toolArguments(args);
-          payload = 'payload' in input ? jsonArg(input, 'payload') : undefined;
+          const payload =
+            'payload' in input ? jsonArg(input, 'payload') : undefined;
+          const snapshot = registry.inspect(identity);
+          if (!snapshot) return denied('not_found');
+          const result = await registry.execute({
+            version: 1,
+            commandId: newCommandId(),
+            identity,
+            expectedRevision: snapshot.revision,
+            controlId: target.controlId,
+            ...(payload === undefined ? {} : { payload }),
+          });
+          return result.ok
+            ? ok({
+                controlId: target.controlId,
+                identity,
+                ...(result.revision === undefined
+                  ? {}
+                  : { revision: result.revision }),
+              })
+            : denied(publicReason(result.reason));
         } catch (error) {
-          if (error instanceof IntentArgumentError) {
-            return denied('invalid_request');
-          }
-          throw error;
+          return denied(intentErrorReason(error));
         }
-        const snapshot = registry.inspect(identity);
-        if (!snapshot) return denied('not_found');
-        const result = await registry.execute({
-          version: 1,
-          commandId: newCommandId(),
-          identity,
-          expectedRevision: snapshot.revision,
-          controlId: target.controlId,
-          ...(payload === undefined ? {} : { payload }),
-        });
-        return result.ok
-          ? ok({
-              controlId: target.controlId,
-              identity,
-              ...(result.revision === undefined
-                ? {}
-                : { revision: result.revision }),
-            })
-          : denied(publicReason(result.reason));
       },
     };
   }
