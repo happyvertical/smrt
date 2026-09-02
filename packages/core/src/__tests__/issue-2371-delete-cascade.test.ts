@@ -859,6 +859,21 @@ describe('delete() referential integrity (#2371)', () => {
           { code: 'SQLITE_ERROR' },
         ),
       },
+      {
+        dialect: 'PostgreSQL unrelated 42P01',
+        failingTable: '_smrt_contexts',
+        cleanupFailure: Object.assign(
+          new Error('relation "audit_log" does not exist'),
+          { code: '42P01' },
+        ),
+      },
+      {
+        dialect: 'SQLite unrelated missing table',
+        failingTable: '_smrt_embeddings',
+        cleanupFailure: Object.assign(new Error('no such table: audit_log'), {
+          code: 'SQLITE_ERROR',
+        }),
+      },
     ])('rolls back deletion on $dialect cleanup failure', async ({
       failingTable,
       cleanupFailure,

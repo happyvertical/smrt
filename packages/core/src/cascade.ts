@@ -440,15 +440,33 @@ async function tolerateMissingTable<T>(
  * exist. The shared `undefined_object` classification intentionally combines
  * both cases, so this security boundary must retain the narrower driver signal.
  */
-function isMissingTableError(error: unknown): boolean {
-  const classification = classifyDatabaseError(error);
-  if (
-    classification.sqlstate === '42P01' ||
-    classification.driverCode === '42P01' ||
-    classification.driverCodes.includes('42P01')
-  ) {
-    return true;
+function normalizeMissingTableName(value: string): string {
+  const unquoted = value.replace(/["'`[\]]/g, '');
+  return (unquoted.split('.').at(-1) ?? unquoted)
+    .replace(/[^A-Za-z0-9_$-]/g, '')
+    .toLowerCase();
+}
+
+function missingTableNames(messages: readonly string[]): string[] {
+  const names: string[] = [];
+  const patterns = [
+    /no such table:\s*([^\s,;]+)/giu,
+    /(?:relation|table)\s+((?:"[^"]+"(?:\."[^"]+")*)|(?:[A-Za-z0-9_.$-]+))\s+does not exist/giu,
+    /table with name\s+((?:"[^"]+")|(?:[A-Za-z0-9_.$-]+))\s+does not exist/giu,
+  ];
+  for (const message of messages) {
+    for (const pattern of patterns) {
+      for (const match of message.matchAll(pattern)) {
+        if (match[1]) names.push(normalizeMissingTableName(match[1]));
+      }
+    }
   }
+  return names;
+}
+
+function isMissingTableError(error: unknown, expectedTable: string): boolean {
+  const classification = classifyDatabaseError(error);
+  if (classification.kind !== 'undefined_object') return false;
   if (
     classification.sqlstate === '42703' ||
     classification.driverCode === '42703' ||
@@ -456,10 +474,11 @@ function isMissingTableError(error: unknown): boolean {
   ) {
     return false;
   }
-  return classification.driverMessages.some((message) =>
-    /no such table\b|(?:relation|table) "[^"]*" does not exist|table with name [^\s]+ does not exist/i.test(
-      message,
-    ),
+  const names = missingTableNames(classification.driverMessages);
+  const expected = normalizeMissingTableName(expectedTable);
+  return (
+    names.length > 0 &&
+    names.every((missingTableName) => missingTableName === expected)
   );
 }
 
@@ -471,7 +490,7 @@ async function tolerateMissingSystemTable<T>(
   try {
     return await operation();
   } catch (error) {
-    if (!isMissingTableError(error)) throw error;
+    if (!isMissingTableError(error, context.table)) throw error;
     logger.warn(
       `Cascade delete skipped ${context.action} on '${context.table}': ` +
         'table not found in this database.',
