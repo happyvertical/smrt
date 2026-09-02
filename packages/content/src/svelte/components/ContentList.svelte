@@ -2698,19 +2698,20 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
             })}
           </Button>
         {/if}
-        {#if lifecycle}
-          <ContentListLifecyclePanel
-            binding={lifecycle}
-            mode={lifecycleMode}
-            selectedRowIds={tableState.selectedRowIds}
-            query={lifecycleQuery}
-            queryFingerprint={settledLifecycleFingerprint}
-            exactMatchingCount={lifecycleExactMatchingCount}
-            viewKey={lifecycleViewKey}
-            oncomplete={handleLifecycleComplete}
-          />
-        {/if}
       </div>
+    {/if}
+
+    {#if lifecycle}
+      <ContentListLifecyclePanel
+        binding={lifecycle}
+        mode={lifecycleMode}
+        selectedRowIds={tableState.selectedRowIds}
+        query={lifecycleQuery}
+        queryFingerprint={settledLifecycleFingerprint}
+        exactMatchingCount={lifecycleExactMatchingCount}
+        viewKey={lifecycleViewKey}
+        oncomplete={handleLifecycleComplete}
+      />
     {/if}
 
     {#if workflows && (selectedCount > 0 || workflowError || workflowResult)}

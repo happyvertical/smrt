@@ -205,6 +205,7 @@ function retryPreview() {
   size="md"
   closeOnBackdrop={!busy}
   closeOnEscape={!busy}
+  showClose={!busy}
   onClose={close}
   ariaDescribedBy="content-lifecycle-summary"
 >
@@ -283,6 +284,10 @@ function retryPreview() {
       {#if snapshot.status === 'failed' && snapshot.renewalRequired}
         <Button type="button" onclick={retryPreview}>
           {t(M['content.content_list.lifecycle_renew_preview'])}
+        </Button>
+      {:else if snapshot.status === 'failed'}
+        <Button type="button" onclick={apply}>
+          {t(M['content.content_list.retry'])}
         </Button>
       {:else if snapshot.status === 'ready'}
         <Button

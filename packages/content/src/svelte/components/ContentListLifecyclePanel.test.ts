@@ -203,6 +203,7 @@ describe('ContentListLifecyclePanel', () => {
     expect(target.querySelector('[role="status"]')?.textContent).toContain(
       'Applying…',
     );
+    expect(target.querySelector('button[aria-label="Close modal"]')).toBeNull();
 
     resolveApply(lifecycleResult('apply'));
     await tick();

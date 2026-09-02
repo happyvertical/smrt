@@ -171,6 +171,57 @@ describe('ContentList lifecycle controller', () => {
     });
   });
 
+  it('finishes an in-flight apply when the visible selection changes', async () => {
+    let resolveApply!: (value: DataSurfaceActionResult) => void;
+    const pendingResult = new Promise<DataSurfaceActionResult>((resolve) => {
+      resolveApply = resolve;
+    });
+    const controller = createContentListLifecycleController({
+      client: {
+        preview: async () => result('preview'),
+        apply: () => pendingResult,
+      },
+      createIdempotencyKey: () => 'apply-1',
+    });
+    await controller.preview({
+      actionId: 'permanent-delete',
+      selection: { scope: 'explicit-ids', rowIds: ['a', 'b'] },
+      expectedCount: 2,
+      viewKey: 'selection-a-b',
+    });
+
+    const applying = controller.apply(2);
+    controller.invalidate('selection-c');
+    resolveApply(result('apply'));
+
+    expect(await applying).toMatchObject({ status: 'succeeded' });
+  });
+
+  it('retries a lost apply response with the exact idempotency envelope', async () => {
+    const apply = vi
+      .fn<() => Promise<DataSurfaceActionResult>>()
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce(result('apply'));
+    const controller = createContentListLifecycleController({
+      client: { preview: async () => result('preview'), apply },
+      createIdempotencyKey: () => 'apply-1',
+    });
+    await controller.preview({
+      actionId: 'permanent-delete',
+      selection: { scope: 'explicit-ids', rowIds: ['a', 'b'] },
+      expectedCount: 2,
+      viewKey: 'selection-a-b',
+    });
+
+    expect(await controller.apply(2)).toMatchObject({
+      status: 'failed',
+      renewalRequired: false,
+    });
+    expect(await controller.apply(2)).toMatchObject({ status: 'succeeded' });
+    expect(apply).toHaveBeenCalledTimes(2);
+    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+  });
+
   it('requires a renewed preview when the server reports matching-count drift', async () => {
     const controller = createContentListLifecycleController({
       client: {

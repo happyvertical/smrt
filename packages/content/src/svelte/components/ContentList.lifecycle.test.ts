@@ -191,4 +191,59 @@ describe('ContentList trash lifecycle integration', () => {
       'document-2: publish_readiness_failed',
     );
   });
+
+  it('keeps the completion audit visible after the final local row is removed', async () => {
+    const applied: DataSurfaceActionResult = {
+      ...result('apply'),
+      details: {
+        count: 1,
+        accepted: 1,
+        skipped: 0,
+        failed: 0,
+        auditReference: 'audit-final-row',
+        outcomes: [{ rowId: 'article-1', status: 'accepted' }],
+      },
+    };
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mounted.push(
+      mount(ContentList, {
+        target,
+        props: {
+          contents: [contents[0]],
+          lifecycleMode: 'trash',
+          lifecycle: {
+            client: {
+              preview: async () => ({
+                ...result('preview'),
+                details: {
+                  count: 1,
+                  accepted: 1,
+                  skipped: 0,
+                  failed: 0,
+                  auditReference: 'audit-preview',
+                  outcomes: [],
+                },
+              }),
+              apply: async () => applied,
+            },
+            identity,
+          },
+        },
+      }),
+    );
+    flushSync();
+
+    checkbox(target, 'Select Deleted article').click();
+    flushSync();
+    button(target, 'Restore selected').click();
+    await tick();
+    await tick();
+    button(target, 'Confirm 1').click();
+    await tick();
+    await tick();
+
+    expect(target.textContent).not.toContain('Deleted article');
+    expect(target.textContent).toContain('audit-final-row');
+  });
 });

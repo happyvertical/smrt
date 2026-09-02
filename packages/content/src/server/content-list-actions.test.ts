@@ -85,6 +85,7 @@ class MemoryContentCollection implements ContentListActionCollection {
   readonly saveCalls: string[] = [];
   failOnSave = new Set<string>();
   failAfterSave = new Set<string>();
+  failAfterDelete = new Set<string>();
 
   constructor(readonly rows: Row[]) {
     for (const row of rows) {
@@ -168,6 +169,8 @@ class MemoryContentCollection implements ContentListActionCollection {
           const index = this.rows.findIndex(({ id }) => id === row.id);
           if (index >= 0) this.rows.splice(index, 1);
           this.contents.delete(row.id);
+          if (this.failAfterDelete.has(row.id))
+            throw new Error('forced post-delete hook failure');
         },
       } as unknown as Content;
       this.contents.set(row.id, content);
@@ -594,6 +597,7 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
         metaType: '@happyvertical/smrt-content:Mirror',
       },
     ]);
+    collection.failAfterDelete.add('mirror-deleted');
     const setup = harness({ collection });
     const selection = {
       scope: 'explicit-ids' as const,
@@ -677,6 +681,26 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
       },
     });
     expect(collection.rows).toEqual([]);
+    const replayed = await setup.adapter.apply(applyRequest, setup.context);
+    expect(replayed).toMatchObject({
+      ok: true,
+      details: {
+        outcomes: [
+          {
+            rowId: 'article-deleted',
+            status: 'accepted',
+            resourceId: 'article-deleted',
+            resourceType: '@happyvertical/smrt-content:Article',
+          },
+          {
+            rowId: 'mirror-deleted',
+            status: 'accepted',
+            resourceId: 'mirror-deleted',
+            resourceType: '@happyvertical/smrt-content:Mirror',
+          },
+        ],
+      },
+    });
     expect(setup.run.assertOperation).toHaveBeenCalledWith(
       'contents',
       'delete',

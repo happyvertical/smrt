@@ -423,6 +423,12 @@ export function createContentListLifecycleController(
         result: DataSurfaceActionResult;
       }
     | undefined;
+  let pendingApply:
+    | {
+        request: ContentListLifecycleRequest;
+        confirmedCount: number;
+      }
+    | undefined;
 
   const publish = (next: ContentListLifecycleSnapshot): void => {
     state = next;
@@ -433,6 +439,7 @@ export function createContentListLifecycleController(
     generation += 1;
     previewViewKey = undefined;
     frozen = undefined;
+    pendingApply = undefined;
     publish({ status: 'idle', renewalRequired: false });
   };
 
@@ -517,7 +524,7 @@ export function createContentListLifecycleController(
         actionId: input.actionId,
         selection,
         error: messageOf(error),
-        renewalRequired: false,
+        renewalRequired: true,
       });
       return state;
     }
@@ -530,11 +537,13 @@ export function createContentListLifecycleController(
     const summary = state.summary;
     const expired =
       summary?.expiresAt !== undefined && summary.expiresAt <= Date.now();
+    const retry = state.status === 'failed' ? pendingApply : undefined;
     if (
-      state.status !== 'ready' ||
+      (state.status !== 'ready' && !retry) ||
       !previewed ||
       !summary ||
       confirmedCount !== summary.resolvedCount ||
+      (retry !== undefined && retry.confirmedCount !== confirmedCount) ||
       expired
     ) {
       frozen = undefined;
@@ -549,7 +558,7 @@ export function createContentListLifecycleController(
       return state;
     }
     const currentGeneration = ++generation;
-    const request: ContentListLifecycleRequest = {
+    const request: ContentListLifecycleRequest = retry?.request ?? {
       ...previewed.request,
       phase: 'apply',
       target: {
@@ -561,6 +570,7 @@ export function createContentListLifecycleController(
       confirmationToken: previewed.result.confirmationToken,
       idempotencyKey: createIdempotencyKey(),
     };
+    pendingApply = { request, confirmedCount };
     publish({ ...state, status: 'applying', error: undefined });
     try {
       const result = await options.client.apply(request);
@@ -569,6 +579,7 @@ export function createContentListLifecycleController(
       if (!result.ok) {
         const reason = result.reason ?? 'apply_failed';
         frozen = undefined;
+        pendingApply = undefined;
         publish({
           ...state,
           status: 'failed',
@@ -580,6 +591,7 @@ export function createContentListLifecycleController(
         return state;
       }
       frozen = undefined;
+      pendingApply = undefined;
       publish({
         ...state,
         status: 'succeeded',
@@ -590,12 +602,13 @@ export function createContentListLifecycleController(
       return state;
     } catch (error) {
       if (currentGeneration !== generation) return state;
-      frozen = undefined;
       publish({
         ...state,
         status: 'failed',
         error: messageOf(error),
-        renewalRequired: true,
+        // The server may have committed before the response was lost. Retain
+        // the exact token/idempotency envelope so retry can replay safely.
+        renewalRequired: false,
       });
       return state;
     }
@@ -611,6 +624,9 @@ export function createContentListLifecycleController(
     preview,
     apply,
     invalidate(viewKey) {
+      // Once apply starts, the server-authorized mutation owns completion.
+      // A changing view must not discard its refresh, audit, or reconciliation.
+      if (state.status === 'applying') return;
       if (
         (previewViewKey !== undefined && previewViewKey !== viewKey) ||
         (frozen !== undefined && frozen.viewKey !== viewKey)

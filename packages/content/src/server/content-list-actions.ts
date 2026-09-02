@@ -1300,15 +1300,25 @@ export function createContentListActionAdapter(
             ) {
               throw new ContentListActionError('row_revision_drifted');
             }
-            await applyWorkflow(
-              entry.id,
-              content,
-              expectedUpdatedAt,
-              invocation.request.payload,
-              invocation.run,
-              handlers,
-            );
-            return null;
+            const resource = invocationResources.getStore()?.get(String(rowId));
+            try {
+              await applyWorkflow(
+                entry.id,
+                content,
+                expectedUpdatedAt,
+                invocation.request.payload,
+                invocation.run,
+                handlers,
+              );
+            } catch (error) {
+              if (entry.id !== 'permanent-delete') throw error;
+              // delete() commits before its post-delete hooks. If one of those
+              // hooks fails, confirm the authoritative row state so an
+              // irreversible success is never reported as retryable failure.
+              const collection = await options.collection(invocation.run);
+              if (await collection.get({ id: String(rowId) })) throw error;
+            }
+            return resource ?? null;
           },
         },
       ],
@@ -1381,7 +1391,15 @@ export function createContentListActionAdapter(
       const outcomes = Array.isArray(result.details?.outcomes)
         ? result.details.outcomes.map((outcome) => {
             if (!isRecord(outcome)) return outcome;
-            const resource = resources?.get(String(outcome.rowId));
+            const resource =
+              resources?.get(String(outcome.rowId)) ??
+              (typeof outcome.resourceId === 'string' &&
+              typeof outcome.resourceType === 'string'
+                ? {
+                    resourceId: outcome.resourceId,
+                    resourceType: outcome.resourceType,
+                  }
+                : undefined);
             return resource ? { ...outcome, ...resource } : outcome;
           })
         : undefined;
