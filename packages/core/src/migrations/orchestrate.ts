@@ -18,7 +18,7 @@ import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
 import {
   generateSchemaDiff,
-  getSQLFromDiff,
+  getSQLFromChanges,
   hasActionableChanges,
 } from './differ.js';
 import {
@@ -290,8 +290,16 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
  * Column/index/trigger changes for existing tables continue to come from
  * `getSQLFromDiff`, which is already engine-aware via the differ's per-
  * change `sqlStatements`.
+ *
+ * Exported for statement-ordering tests; it is not part of the package's
+ * public entry point (`migrations/index.ts` re-exports names explicitly).
+ *
+ * @param diff - Schema diff to materialize.
+ * @param db - Database whose URL selects the DDL strategy.
+ * @param engineHint - Explicit engine when `db.url` is empty or ambiguous.
+ * @returns Ordered, executable DDL statements.
  */
-function collectStatementsFromDiff(
+export function collectStatementsFromDiff(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
   db: DatabaseInterface,
   engineHint?: DatabaseEngine,
@@ -301,13 +309,29 @@ function collectStatementsFromDiff(
   );
   const statements: string[] = [];
   const tablePlan = planForeignKeyCreation(diff.added_tables, strategy.engine);
+  // #2608: the pre-R11 uuid convergence has to precede *every* foreign-key
+  // statement. `planForeignKeyCreation` only defers the constraints inside a
+  // mutual cycle, so an acyclic new child table keeps its FK **inline in
+  // CREATE TABLE** — a fresh `uuid` child pointing at a legacy `text` parent
+  // would fail with SQLSTATE 42804 before the parent could be converted.
+  // Conversions only ever rewrite columns that already exist, so they are
+  // safe to run ahead of every CREATE TABLE in this batch.
+  statements.push(
+    ...getSQLFromChanges(
+      diff.changes.filter((change) => change.phase === 'pre_foreign_key'),
+    ),
+  );
   for (const schema of tablePlan.schemas) {
     statements.push(strategy.generateCreateTable(schema));
     statements.push(...strategy.generateIndexes(schema));
     statements.push(...strategy.generateTriggers(schema));
   }
   statements.push(...tablePlan.deferredStatements);
-  statements.push(...getSQLFromDiff(diff));
+  statements.push(
+    ...getSQLFromChanges(
+      diff.changes.filter((change) => change.phase !== 'pre_foreign_key'),
+    ),
+  );
   // Drop empty and comment-only entries. SQLite type-widening upgrades
   // surface as `-- SQLite: Type upgrade for X requires table recreation`
   // — passing those through to the tracker records a successful migration

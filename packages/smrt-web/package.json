@@ -20,6 +20,10 @@
     "./webmcp": {
       "types": "./dist/webmcp.d.ts",
       "import": "./dist/webmcp.js"
+    },
+    "./intents": {
+      "types": "./dist/intents.d.ts",
+      "import": "./dist/intents.js"
     }
   },
   "dependencies": {

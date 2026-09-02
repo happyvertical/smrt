@@ -26,6 +26,13 @@ export * from './hooks/index.js';
 export { default as Provider } from './Provider.svelte';
 // State management
 export * from './state/index.js';
+// Declarative view intents (#2588) — the Svelte binding. Declare the intent
+// itself with `defineIntent` from `@happyvertical/smrt-web/intents`.
+export {
+  type UseViewIntentOptions,
+  useViewIntent,
+  type ViewIntentIdentity,
+} from './web/view-intent.svelte.js';
 // Opt-in browser WebMCP lifecycle primitive.
 export { useWebMcpTool, type WebMcpToolSpec } from './web/webmcp.svelte.js';
 export type {

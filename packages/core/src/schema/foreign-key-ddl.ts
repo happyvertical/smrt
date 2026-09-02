@@ -125,7 +125,13 @@ export function renderForeignKeyOrphanRepair(
 
 const FOREIGN_KEY_CHILD_ALIAS = 'smrt_fk_child';
 const FOREIGN_KEY_PARENT_ALIAS = 'smrt_fk_parent';
-const CANONICAL_UUID_PATTERN =
+/**
+ * Canonical UUID text shape used by every PostgreSQL guard that has to decide
+ * whether a `text` column can be reinterpreted as `uuid`. Exported so the
+ * orphan probe, the FK provisioning guard, and the uuid convergence planner
+ * all test the same shape (#2608).
+ */
+export const CANONICAL_UUID_PATTERN =
   '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 
 function foreignKeyOrphanParts(

@@ -17,12 +17,22 @@ WebMCP exposure only decides which capabilities a model can discover.
 | Generated model tools | Reading and mutating a model through generated REST | `webMcpToolDefinitions` with the Provider, or `registerWebMcpTools()` from `@happyvertical/smrt-web` |
 | Mounted UI tools | Inspecting a mounted Form or DataSurface and requesting a user-reviewed action | `<Provider webmcp={{ ui: ... }}>` |
 | Bespoke component tools | One intent owned by one component | `useWebMcpTool(() => spec)` from `@happyvertical/smrt-svelte` |
+| Declared view intents | A component-owned interaction that is static, namespaced, and emittable into the manifest | `defineIntent({ ... })` in a `*.intents.ts` sidecar from `@happyvertical/smrt-web/intents`, bound with `useViewIntent(intent, { identity })` from `@happyvertical/smrt-svelte` |
 | Principal-bound server tools | Server-side work that must never be browser-exposed | Server-owned tools run with `executeAsPrincipal` on the authenticated server path (see [#2450](https://github.com/happyvertical/smrt/issues/2450)) |
 
 Keep these namespaces and trust boundaries distinct. Generated model tools
 describe data capabilities; mounted UI tools describe transport-neutral
-interaction state; bespoke tools describe a component-owned intent; and
-principal-bound tools stay behind server authorization.
+interaction state; bespoke tools and declared view intents describe a
+component-owned intent; and principal-bound tools stay behind server
+authorization.
+
+Declared view intents and bespoke component tools are the same trust
+boundary reached two ways, and both register through
+`registerWebMcpBespokeTool` under one exposure policy. Prefer a declared
+intent: it is static, so it classifies at declaration, carries a stable
+namespaced identity a playbook step can name, and can be emitted into the
+manifest and knowledge graph. `useWebMcpTool` stays the escape hatch for a
+tool set derived from fetched data, which no static form can express.
 
 ## Generated model tools
 
@@ -69,6 +79,58 @@ transport-neutral registries at execution time and never inspects the DOM.
 Form mutations can be staged by an agent, but apply, clear, and undo require a
 separate human-confirmed path. Agent input cannot assert confirmation. Secret
 values and hidden columns are omitted from serialized results.
+
+## Declared view intents
+
+A view intent is an interaction a component owns that has no model projection
+and never will — filter this list, advance the wizard, open the archived tab.
+Declare it as a literal object at module scope in a `.ts` sidecar, so the
+scanner can find it without evaluating the module:
+
+```ts
+// OrderTable.intents.ts
+import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const nextPageIntent = defineIntent({
+  id: 'orders.next_page',
+  description: 'Advance the orders table by one page',
+  capability: { effect: 'read', idempotent: false, openWorld: false },
+  target: { registry: 'dataSurface', controlId: 'next-page', kind: 'table' },
+});
+```
+
+Bind it to a mounted registry identity for the component's lifetime:
+
+```svelte
+<script lang="ts">
+import { useViewIntent } from '@happyvertical/smrt-svelte';
+import { nextPageIntent } from './OrderTable.intents.js';
+
+useViewIntent(nextPageIntent, {
+  identity: { surfaceId: 'orders-table', kind: 'table' },
+});
+</script>
+```
+
+Three properties follow from the declaration being data:
+
+- **It classifies at declaration**, through the same fail-closed rule as a
+  generated model action. Omit `capability` and the intent resolves to
+  destructive, non-idempotent, open-world, and a read-only Provider excludes
+  it.
+- **It cannot reach REST.** The declaration type has no `execute`, `url`,
+  `route`, or `fetch` field, `defineIntent` rejects any unknown key and any
+  function value anywhere in the object, and the tool's `execute` is
+  constructed by the registry from `target`. An intent dispatches exactly one
+  `ControlInteractionRegistry` or `DataSurfaceRegistry` command, as
+  `source: 'agent'` — so `StagedControlReview` stays on the path and an
+  agent-staged value remains a proposal.
+- **It is emittable.** The stable namespaced `id` is what a playbook step
+  names (`{ kind: 'intent', id }`) and what the manifest will carry.
+
+The contract, the registry, and the compilation live in
+`@happyvertical/smrt-web` with no Svelte dependency; Svelte is the first
+binding, not the only one.
 
 ## Bespoke component tools
 

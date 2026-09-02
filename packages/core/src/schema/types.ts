@@ -374,6 +374,16 @@ export interface SchemaChange {
   /** Which property an `alter_column` change repairs. */
   alteration?: ColumnAlteration;
   /**
+   * Ordering phase for changes that must run before an unrelated family of
+   * statements in the same batch. `pre_foreign_key` marks the pre-R11
+   * `text` -> `uuid` column convergence (#2608): PostgreSQL cannot implement
+   * a foreign key across mismatched physical types, so these conversions —
+   * and the advisories that replace them when convergence is refused —
+   * precede every foreign-key statement in the migration stream, including
+   * the deferred constraints emitted for newly created tables.
+   */
+  phase?: 'pre_foreign_key';
+  /**
    * Present on report-only changes (`orphan_column`, `orphan_index`, and
    * `alter_column` relaxations the caller has not opted into). A change
    * carrying an advisory and no `sql`/`sqlStatements` is never executed.
