@@ -102,22 +102,27 @@ const STANDARD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
  * layer knowledge.ts has no reason to otherwise depend on), matching that
  * set's own documented precedent of "extend the list" over generalizing a
  * flag through the manifest shape.
+ *
+ * Most of these live in `@happyvertical/smrt-core` itself, but
+ * `SmrtReport`/`SmrtReportCollection` are declared in
+ * `@happyvertical/smrt-reports` — the owning package is per-name, not a
+ * single blanket package check.
  */
-const FRAMEWORK_BASE_CLASS_NAMES = new Set([
-  'SmrtObject',
-  'SmrtClass',
-  'SmrtCollection',
-  'SmrtJunction',
-  'SmrtHierarchical',
-  'SmrtPolymorphicAssociation',
-  'SmrtReport',
-  'SmrtReportCollection',
+const FRAMEWORK_BASE_CLASS_PACKAGES = new Map([
+  ['SmrtObject', '@happyvertical/smrt-core'],
+  ['SmrtClass', '@happyvertical/smrt-core'],
+  ['SmrtCollection', '@happyvertical/smrt-core'],
+  ['SmrtJunction', '@happyvertical/smrt-core'],
+  ['SmrtHierarchical', '@happyvertical/smrt-core'],
+  ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
+  ['SmrtReport', '@happyvertical/smrt-reports'],
+  ['SmrtReportCollection', '@happyvertical/smrt-reports'],
 ]);
 
 function isFrameworkBaseClass(object: SmartObjectDefinition): boolean {
   return (
-    object.packageName === '@happyvertical/smrt-core' &&
-    FRAMEWORK_BASE_CLASS_NAMES.has(object.className)
+    object.packageName !== undefined &&
+    FRAMEWORK_BASE_CLASS_PACKAGES.get(object.className) === object.packageName
   );
 }
 
@@ -495,15 +500,32 @@ function configuredSurfaces(
   const operations = configuredOperations(kind, object, config, manifest);
   return operations.map((operation) => ({
     kind,
-    name:
-      kind === 'api'
-        ? `${object.collection}.${operation}`
-        : `${object.className.toLowerCase()}_${operation}`,
+    name: surfaceName(kind, object, operation),
     operation,
     objectName: object.qualifiedName ?? object.className,
     path: kind === 'api' ? apiPath(object, operation) : undefined,
     method: kind === 'api' ? apiMethod(operation) : undefined,
   }));
+}
+
+/**
+ * `MCPGenerator.buildCustomActionTool()` registers a custom-action tool as
+ * `` `${lowerName}_${methodName}`.toLowerCase() `` — lowercasing the WHOLE
+ * joined string, not just the object-name prefix. A CRUD verb is already
+ * lowercase so this is a no-op there, but a camelCase custom method name
+ * (`findByDimensions`) would otherwise report a surface `name` the real tool
+ * is never registered under. `CLIGenerator.listCommands()` does not
+ * lowercase the method half of its `object:methodName` command string, so
+ * `cli` keeps the operation as-authored.
+ */
+function surfaceName(
+  kind: 'api' | 'cli' | 'mcp',
+  object: SmartObjectDefinition,
+  operation: string,
+): string {
+  if (kind === 'api') return `${object.collection}.${operation}`;
+  const name = `${object.className.toLowerCase()}_${operation}`;
+  return kind === 'mcp' ? name.toLowerCase() : name;
 }
 
 /**
@@ -628,7 +650,15 @@ function includeExcludeConfig(config: unknown): {
   if (typeof config !== 'object' || config === null || Array.isArray(config)) {
     return {};
   }
-  return config as { include?: string[]; exclude?: string[] };
+  // A non-array `include`/`exclude` is treated as unset rather than
+  // throwing later on `.includes()` — mirrors the same defensive stance
+  // `shouldIncludeInApi` in `vite-plugin/sveltekit-generator.ts` takes for
+  // a scanned decorator config that failed to resolve to an array.
+  const record = config as { include?: unknown; exclude?: unknown };
+  return {
+    include: Array.isArray(record.include) ? record.include : undefined,
+    exclude: Array.isArray(record.exclude) ? record.exclude : undefined,
+  };
 }
 
 function aiSurfaces(object: SmartObjectDefinition): DomainKnowledgeSurface[] {

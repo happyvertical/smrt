@@ -75,6 +75,9 @@ describe('buildDomainKnowledgeManifest', () => {
       'OrderTreeCollection',
       'SpecialOrderTreeCollection',
       'SmrtObject',
+      'SmrtReport',
+      'SmrtObject',
+      'MalformedConfigItem',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -107,10 +110,10 @@ describe('buildDomainKnowledgeManifest', () => {
       ]);
     }
 
-    // OrderTree additionally declares a public custom method (`archive`) and
-    // a non-public one (`internalRebalance`); only the public method is
-    // eligible, matching MCPGenerator/CLIGenerator/APIGenerator's own
-    // isPublic gate.
+    // OrderTree additionally declares two public custom methods (`archive`,
+    // `findByReference`) and a non-public one (`internalRebalance`); only
+    // the public methods are eligible, matching
+    // MCPGenerator/CLIGenerator/APIGenerator's own isPublic gate.
     for (const kind of ['api', 'cli', 'mcp'] as const) {
       const names = orderTreeSurfaces
         .filter((surface) => surface.kind === kind)
@@ -119,6 +122,7 @@ describe('buildDomainKnowledgeManifest', () => {
         'archive',
         'create',
         'delete',
+        'findByReference',
         'get',
         'list',
         'update',
@@ -132,6 +136,23 @@ describe('buildDomainKnowledgeManifest', () => {
         (surface) => surface.operation === 'internalRebalance',
       ),
     ).toBe(false);
+
+    // MCPGenerator's `buildCustomActionTool()` lowercases the WHOLE joined
+    // `${lowerName}_${methodName}` tool name, not just the object-name
+    // prefix, so a camelCase method name must be reported under its real
+    // (fully lowercased) tool id. CLIGenerator's `object:methodName` command
+    // string does not lowercase the method half, so `cli` keeps it as
+    // authored.
+    const findByReferenceMcp = orderTreeSurfaces.find(
+      (surface) =>
+        surface.kind === 'mcp' && surface.operation === 'findByReference',
+    );
+    const findByReferenceCli = orderTreeSurfaces.find(
+      (surface) =>
+        surface.kind === 'cli' && surface.operation === 'findByReference',
+    );
+    expect(findByReferenceMcp?.name).toBe('ordertree_findbyreference');
+    expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
   });
 
   it('never reports CRUD for an undecorated SmrtCollection subclass, only its custom REST actions (#2619)', () => {
@@ -197,6 +218,59 @@ describe('buildDomainKnowledgeManifest', () => {
           surface.objectName === '@happyvertical/smrt-core:SmrtObject',
       ),
     ).toEqual([]);
+  });
+
+  it('resolves the framework-base exclusion per owning package, not by class name alone (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+
+    // SmrtReport/SmrtReportCollection live in @happyvertical/smrt-reports,
+    // not @happyvertical/smrt-core — the exclusion must still catch them.
+    expect(
+      artifact.surfaces.filter(
+        (surface) =>
+          surface.objectName === '@happyvertical/smrt-reports:SmrtReport',
+      ),
+    ).toEqual([]);
+
+    // A same-named `SmrtObject` in an unrelated third package is a genuine
+    // application class (however unlikely the name collision) and must
+    // still get its normal full-CRUD surface — a naive className-only check
+    // would wrongly suppress it.
+    const unrelatedSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/other-pkg:SmrtObject',
+    );
+    expect(unrelatedSurfaces.length).toBeGreaterThan(0);
+    expect(
+      unrelatedSurfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual(['create', 'delete', 'get', 'list', 'update']);
+  });
+
+  it('treats a malformed non-array include/exclude as unset rather than throwing or substring-matching (#2619)', () => {
+    // `mcp: { include: 'list' }` (a bare string, not an array) must not
+    // reach `.includes()` as-is: for a string that would silently perform
+    // substring matching instead of array membership, and for other
+    // malformed values could throw outright.
+    expect(() => buildFixtureArtifact(rootDir)).not.toThrow();
+
+    const artifact = buildFixtureArtifact(rootDir);
+    const mcpSurfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:MalformedConfigItem' &&
+        surface.kind === 'mcp',
+    );
+    // Falls back to "no include list": full CRUD plus the eligible public
+    // custom method, exactly as if `mcp: {}` had been declared.
+    expect(mcpSurfaces.map((surface) => surface.operation).sort()).toEqual([
+      'create',
+      'delete',
+      'exportData',
+      'get',
+      'list',
+      'update',
+    ]);
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -577,6 +651,14 @@ function fixtureManifest(): SmartObjectManifest {
             isStatic: false,
             isPublic: false,
           },
+          findByReference: {
+            name: 'findByReference',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<OrderTree | null>',
+            isStatic: false,
+            isPublic: true,
+          },
         },
         decoratorConfig: {},
         extends: 'SmrtHierarchical',
@@ -655,6 +737,61 @@ function fixtureManifest(): SmartObjectManifest {
         },
         decoratorConfig: {},
         extends: 'SmrtClass',
+      },
+      // `SmrtReport`/`SmrtReportCollection` are framework base classes too,
+      // but declared in `@happyvertical/smrt-reports`, not
+      // `@happyvertical/smrt-core` — the owning package is per-name (#2619).
+      '@happyvertical/smrt-reports:SmrtReport': {
+        className: 'SmrtReport',
+        qualifiedName: '@happyvertical/smrt-reports:SmrtReport',
+        packageName: '@happyvertical/smrt-reports',
+        collection: 'smrtreports',
+        fields: {},
+        methods: {
+          summarize: {
+            name: 'summarize',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<string>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtObject',
+      },
+      // A same-named, unrelated class in a THIRD package must never be
+      // mistaken for the real framework base — the map lookup is keyed on
+      // (className, packageName) together, not className alone.
+      '@example/other-pkg:SmrtObject': {
+        className: 'SmrtObject',
+        qualifiedName: '@example/other-pkg:SmrtObject',
+        packageName: '@example/other-pkg',
+        collection: 'smrtobjects',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      },
+      // A malformed `include` (not an array) must be treated as unset,
+      // never as a truthy value fed straight into `.includes()` — that
+      // would either throw (no such method) or, for a string, silently do
+      // substring matching instead of array membership (#2619).
+      '@example/orders:MalformedConfigItem': {
+        className: 'MalformedConfigItem',
+        qualifiedName: '@example/orders:MalformedConfigItem',
+        collection: 'malformed_config_items',
+        fields: {},
+        methods: {
+          exportData: {
+            name: 'exportData',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { mcp: { include: 'list' as unknown as string[] } },
       },
     },
   };
