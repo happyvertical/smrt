@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import type {
+  DomainKnowledgeAgentSurface,
   DomainKnowledgeConfig,
   DomainKnowledgeField,
   DomainKnowledgeFieldConstraints,
@@ -36,6 +37,17 @@ export interface BuildDomainKnowledgeOptions {
   packageJson?: PackageJsonLike;
   manifestPath?: string;
   config?: DomainKnowledgeConfig;
+  /**
+   * The package's declared view intents and playbooks (#2591), produced by the
+   * scanner's agent-surface matcher.
+   *
+   * Passed in rather than scanned here for one reason: the scanner carries a
+   * native parser binary, and `smrt-core`'s main entry is browser-reachable.
+   * The Vite plugin already imports the scanner lazily on the Node side and is
+   * the one caller that writes this artifact, so it does the scan and hands the
+   * result over.
+   */
+  agentSurface?: DomainKnowledgeAgentSurface;
 }
 
 const SDK_PACKAGE_NAMES = new Set([
@@ -81,6 +93,12 @@ const MARKDOWN_MD_LINK =
 
 /** `sourceHashes` key prefix for a linked module doc, e.g. `moduleDoc:agents/crm.md`. */
 export const MODULE_DOC_HASH_PREFIX = 'moduleDoc:';
+
+/**
+ * `sourceHashes` key prefix for a module declaring a view intent or playbook,
+ * e.g. `agentSurface:src/lib/orders.intents.ts` (#2591).
+ */
+export const AGENT_SURFACE_HASH_PREFIX = 'agentSurface:';
 
 /**
  * Module doc paths linked from a package's `AGENTS.md`, relative to the package
@@ -153,6 +171,7 @@ export function buildDomainKnowledgeManifest(
   const objects = manifestObjects.map((object) => buildKnowledgeObject(object));
   const surfaces = objects.flatMap((object) => object.surfaces);
   const manifestJson = stableJson(normalizeManifestForHash(options.manifest));
+  const agentSurface = normalizeAgentSurface(options.agentSurface);
 
   return {
     schemaVersion: 1,
@@ -171,6 +190,15 @@ export function buildDomainKnowledgeManifest(
       ...Object.fromEntries(
         moduleDocPaths.map((path) => [
           `${MODULE_DOC_HASH_PREFIX}${path}`,
+          fileHashSource(join(rootDir, path)),
+        ]),
+      ),
+      // A module declaring an intent or a playbook is an authored source of
+      // this artifact exactly like `AGENTS.md` is, so editing one must mark the
+      // artifact stale (#2591).
+      ...Object.fromEntries(
+        agentSurfaceSourcePaths(agentSurface).map((path) => [
+          `${AGENT_SURFACE_HASH_PREFIX}${path}`,
           fileHashSource(join(rootDir, path)),
         ]),
       ),
@@ -196,7 +224,41 @@ export function buildDomainKnowledgeManifest(
       includeDocs && moduleDocPaths.length > 0
         ? readAgentModuleDocs(rootDir, agentDocContent)
         : undefined,
+    agentSurface,
   };
+}
+
+/**
+ * Drop an agent surface that carries nothing.
+ *
+ * Keeping the key absent for a package that declares no intent, no playbook,
+ * and no diagnostic is what makes this field additive in practice: every
+ * checked-in artifact for such a package stays byte-identical to what it
+ * emitted before the field existed, so adding emission does not churn the
+ * repository's knowledge artifacts.
+ */
+function normalizeAgentSurface(
+  surface: DomainKnowledgeAgentSurface | undefined,
+): DomainKnowledgeAgentSurface | undefined {
+  if (!surface) return undefined;
+  const empty =
+    surface.intents.length === 0 &&
+    surface.playbooks.length === 0 &&
+    surface.diagnostics.length === 0;
+  return empty ? undefined : surface;
+}
+
+/** Every package-relative module that contributed to the emitted surface. */
+function agentSurfaceSourcePaths(
+  surface: DomainKnowledgeAgentSurface | undefined,
+): string[] {
+  if (!surface) return [];
+  const paths = new Set<string>();
+  for (const intent of surface.intents) paths.add(intent.sourceFile);
+  for (const playbook of surface.playbooks) paths.add(playbook.sourceFile);
+  for (const diagnostic of surface.diagnostics)
+    paths.add(diagnostic.sourceFile);
+  return [...paths].sort();
 }
 
 function buildKnowledgeObject(

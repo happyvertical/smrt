@@ -63,6 +63,76 @@ requested path rather than a hardcoded `index.js`.
 Generated code also has to be valid in an ES module: `arguments` is not a legal
 binding name there, however convenient it reads.
 
+## Emitted agent surface (#2591)
+
+Generated model tools have always been build-time artifacts — virtual module,
+manifest, knowledge graph. View intents (#2588) and playbooks (#2589) existed
+only once something mounted, so "what can an agent do in this app" had no answer
+short of enumerating every route. This closes that.
+
+The same OXC scan that builds the manifest also runs the scanner's
+agent-surface matcher (`ScanResults.agentSurface`). `smrtPlugin()` captures it
+in `scanWithOxc`, projects it with `toKnowledgeAgentSurface`, and passes it to
+`buildDomainKnowledgeManifest` as `agentSurface`. Note that declaration
+discovery is NOT bound to the plugin's `include` glob — an app that scans
+`src/lib/objects/**` for models still has its `src/lib/agent/*.intents.ts`
+sidecars found (see `packages/scanner/AGENTS.md`). Two more consequences worth
+holding onto:
+
+- **It never touches `manifest.json`.** The runtime manifest stays
+  runtime-focused; the agent-addressable surface is an agent/developer contract,
+  so it lands in `.smrt/smrt-knowledge.json` and `dist/smrt-knowledge.json`
+  only, under `agentSurface: { intents, playbooks, diagnostics }`.
+- **It is passed in, not scanned in `knowledge.ts`.** The scanner carries a
+  native parser binary and `smrt-core`'s main entry is browser-reachable, so
+  core's sync knowledge builder must not import it. The Vite plugin already
+  imports the scanner lazily on the Node side and is the only caller that writes
+  this artifact.
+
+The field is **omitted entirely** when a package declares nothing, which is what
+makes it additive in practice rather than only on paper: every existing
+package's checked-in artifact stays byte-identical.
+
+Each declaring module gets a `sourceHashes` entry under the
+`agentSurface:<package-relative path>` prefix (`AGENT_SURFACE_HASH_PREFIX`), so
+EDITING an intent sidecar marks the artifact stale exactly like editing
+`AGENTS.md` does (`stale-domain-knowledge`).
+
+Hashes alone cannot see an **added** declaration, though: a brand-new sidecar
+has no recorded hash to mismatch, the runtime manifest never carries intents,
+and `AGENTS.md` is untouched — so every other signal stays green while the
+artifact omits a real operation. `dev:knowledge-check` therefore also re-derives
+the declaration SET from source and compares it to the artifact by identity,
+reporting either direction as `stale-agent-surface`. The scan is bounded like
+the numeric-precision lint: `src` only, behind the scanner's token pre-filter.
+
+That re-derivation must model what the EMITTER sees, not merely what is on
+disk, or it reports drift no rebuild can clear. Which files count is decided by
+the scanner's exported `isAgentSurfaceSourcePath` — the same predicate the
+emitter itself uses, never a list copied into the checker — and the per-file
+results run through `mergeAgentSurfaces` before comparing, because the merge is
+where a duplicate identity and a derived tool-name collision are resolved and
+the artifact is the merged result.
+Diagnostics are compared alongside identities: a sidecar containing only a
+computed declaration adds no identity and has no prior hash, so without that,
+"a diagnostic, never silence" would quietly become "a diagnostic, until the
+artifact goes stale". The walk covers `<pkg>/src` while the emitter globs the
+whole project root, so an emitted entry from outside `src` is not reported as
+missing — this check did not look there, and claiming otherwise would be an
+error nothing could clear.
+
+Both `stale-*` codes are warnings by default and errors under `--strict`, which
+is what CI runs. Alongside them: `agent-surface-missing-identity`,
+`agent-surface-duplicate-identity`, and `agent-surface-empty-playbook` are
+errors, and `agent-surface-not-static` is a warning. A cross-file duplicate
+arrives as a *diagnostic* rather than two entries — the scanner's merge already
+dropped the loser — so that diagnostic maps to the duplicate error rather than
+the not-static warning; otherwise the error would be unreachable for the case it
+exists to catch.
+
+`smrt doctor` prints the whole surface — model tools, intents, playbooks — from
+these artifacts alone, with no application running.
+
 ## Custom-action contract
 
 `resolveCustomActionMetadata()` is the common discovery and invocation contract

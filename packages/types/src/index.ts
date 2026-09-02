@@ -58,6 +58,8 @@ export type {
   User,
 } from './identity.js';
 export type {
+  DomainKnowledgeAgentSurface,
+  DomainKnowledgeAgentSurfaceDiagnostic,
   DomainKnowledgeConfig,
   DomainKnowledgeField,
   DomainKnowledgeFieldConstraints,
@@ -66,9 +68,12 @@ export type {
   DomainKnowledgeMethodSignature,
   DomainKnowledgeModuleDoc,
   DomainKnowledgeObject,
+  DomainKnowledgePlaybook,
+  DomainKnowledgePlaybookStep,
   DomainKnowledgeSurface,
   DomainKnowledgeSurfaceKind,
   DomainKnowledgeTenant,
+  DomainKnowledgeViewIntent,
 } from './knowledge.js';
 export type {
   ModuleComponentType,

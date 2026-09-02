@@ -41,6 +41,7 @@ import { AssetCollection } from '@happyvertical/smrt-assets';
 import '@happyvertical/smrt-profiles';
 import '@happyvertical/smrt-users';
 import {
+  type AgentSurface,
   ManifestAdapter,
   OxcScanner,
 } from '@happyvertical/smrt-scanner';
@@ -252,6 +253,31 @@ export async function generateReferenceFixtureManifest(
   mkdirSync(dirname(fixture.manifestPath), { recursive: true });
   writeFileSync(fixture.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   return manifest;
+}
+
+/**
+ * Snapshot the copied app's DECLARED agent surface — view intents and
+ * playbooks — from source alone (#2591).
+ *
+ * The counterpart to {@link referenceWorkItemActionEffects}, which snapshots
+ * the GENERATED model tools. Together they are the whole agent-addressable
+ * surface, and parity has to cover both: a policy that is a byte-for-byte
+ * cross-profile invariant for model tools while the browser half goes
+ * unchecked proves only half of what it claims.
+ *
+ * Nothing is mounted, no route is rendered, and no application module is
+ * imported — the scanner reads the copied `.ts` sources structurally, which is
+ * precisely the property that makes the surface knowable at all.
+ */
+export async function referenceAgentSurface(
+  fixture: CopiedReferenceFixture,
+): Promise<AgentSurface> {
+  const { results } = await new OxcScanner({
+    cwd: fixture.root,
+    include: ['src/**/*.ts'],
+    exclude: ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+  }).scanAndResolve();
+  return results.agentSurface;
 }
 
 function referenceTables(manifest: SmartObjectManifest) {

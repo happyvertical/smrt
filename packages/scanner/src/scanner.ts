@@ -5,11 +5,19 @@
  * Provides a simple API for scanning TypeScript files for SMRT classes.
  */
 
-import { resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
+import {
+  emptyAgentSurface,
+  isAgentSurfaceSourcePath,
+  isPrunedAgentSurfacePath,
+  mergeAgentSurfaces,
+  scanSvelteAgentSurface,
+} from './agent-surface.js';
 import { discoverSourceFiles } from './discovery.js';
 import { InheritanceResolver } from './inheritance-resolver.js';
-import { parseFile } from './oxc-parser.js';
+import { parseAgentSurfaceFile, parseFile } from './oxc-parser.js';
 import type {
+  AgentSurface,
   ExternalManifest,
   FileScanResult,
   OxcScannerOptions,
@@ -21,6 +29,49 @@ import type {
  * Default glob patterns for scanning
  */
 const DEFAULT_INCLUDE = ['**/*.ts', '**/*.tsx'];
+
+/**
+ * Files searched only to REPORT a declaration the scanner can never read
+ * (#2591). Nothing is emitted from a `.svelte` file — the scan exists so an
+ * intent written inline in a component fails loudly instead of vanishing.
+ */
+const DEFAULT_SVELTE_INCLUDE = ['**/*.svelte'];
+
+/**
+ * Files searched for `defineIntent` / `definePlaybook` declarations,
+ * INDEPENDENTLY of the class-scan `include` glob (#2591).
+ *
+ * A model scan is routinely narrowed to where models live — the shipped
+ * SvelteKit template uses `src/lib/objects/**\/*.ts` — but an intent sidecar
+ * lives beside the component that uses it. Binding declaration discovery to the
+ * class glob would make those sidecars vanish from every artifact with no
+ * diagnostic, which is the exact silent omission this matcher exists to
+ * prevent. Extensions match what the Vite plugin's default include accepts.
+ */
+const DEFAULT_AGENT_SURFACE_INCLUDE = [
+  '**/*.ts',
+  '**/*.tsx',
+  '**/*.js',
+  '**/*.jsx',
+];
+
+/**
+ * Prunes the declaration and `.svelte` passes ADD to whatever `exclude` a caller
+ * passed.
+ *
+ * A caller's `exclude` replaces {@link DEFAULT_EXCLUDE} wholesale, and every
+ * real caller passes one narrower than it — the Vite plugin sends test globs
+ * plus `node_modules`, nothing more. That was harmless while the class
+ * `include` was narrow; these passes glob the whole project, so build output
+ * would otherwise be walked and read.
+ */
+const AGENT_SURFACE_PRUNE = [
+  '**/dist/**',
+  '**/build/**',
+  '**/coverage/**',
+  '**/__tests__/**',
+  '**/__typechecks__/**',
+];
 const DEFAULT_EXCLUDE = [
   '**/node_modules/**',
   '**/dist/**',
@@ -100,6 +151,10 @@ export class OxcScanner {
       includeStaticMethods: options.includeStaticMethods ?? true,
       externalManifests: options.externalManifests || new Map(),
       followSymbolicLinks: options.followSymbolicLinks ?? false,
+      agentSurface: options.agentSurface ?? true,
+      svelteInclude: options.svelteInclude || DEFAULT_SVELTE_INCLUDE,
+      agentSurfaceInclude:
+        options.agentSurfaceInclude || DEFAULT_AGENT_SURFACE_INCLUDE,
     };
 
     this.resolver = new InheritanceResolver({
@@ -146,9 +201,11 @@ export class OxcScanner {
       totalParseTimeMs: performance.now() - startTime,
       fileCount: files.length,
       typeAliases: {},
+      agentSurface: emptyAgentSurface(),
     };
 
     // Flatten classes, errors, and type aliases
+    const surfaces: AgentSurface[] = [];
     for (const file of fileResults) {
       for (const classDef of file.classes) {
         results.classes.push(classDef);
@@ -157,6 +214,27 @@ export class OxcScanner {
         results.errors.push(error);
       }
       Object.assign(results.typeAliases, file.typeAliases);
+      // The class pass has its own `include`/`exclude`, which may well cover a
+      // test fixture or a build artifact. What counts as a DECLARATION source
+      // is one question with one answer, asked here and in
+      // `dev:knowledge-check` alike — the two disagreeing yields drift errors
+      // no rebuild can clear.
+      if (
+        file.agentSurface &&
+        isAgentSurfaceSourcePath(file.filePath, this.options.cwd)
+      ) {
+        surfaces.push(file.agentSurface);
+      }
+    }
+
+    if (this.options.agentSurface) {
+      surfaces.push(
+        ...(await this.scanDeclarationsOutsideClassGlob(new Set(files))),
+      );
+      surfaces.push(await this.scanSvelteDeclarations());
+      results.agentSurface = mergeAgentSurfaces(surfaces, (filePath) =>
+        this.relativizeSourcePath(filePath),
+      );
     }
 
     // Add classes to resolver
@@ -338,6 +416,111 @@ export class OxcScanner {
       exclude: this.options.exclude,
       followSymbolicLinks: this.options.followSymbolicLinks,
     });
+  }
+
+  /**
+   * Find declarations in files the CLASS scan did not cover.
+   *
+   * The class `include` is routinely narrowed to where models live, but an
+   * intent sidecar lives beside its component. Without this pass those
+   * declarations would be missing from every artifact with no diagnostic — a
+   * silent omission, and in the shipped SvelteKit template's own layout at
+   * that. Files already parsed by the class scan are skipped so a declaration
+   * is never counted twice and cannot collide with itself.
+   *
+   * @param alreadyScanned - Absolute paths the class scan already parsed.
+   */
+  private async scanDeclarationsOutsideClassGlob(
+    alreadyScanned: ReadonlySet<string>,
+  ): Promise<AgentSurface[]> {
+    if (this.options.agentSurfaceInclude.length === 0) return [];
+
+    let files: string[];
+    try {
+      files = await discoverSourceFiles({
+        cwd: this.options.cwd,
+        include: this.options.agentSurfaceInclude,
+        // A caller's `exclude` REPLACES the scanner defaults, and every real
+        // caller passes one narrower than `DEFAULT_EXCLUDE` — the Vite plugin
+        // sends only test globs plus node_modules. That was harmless while the
+        // class `include` was narrow, but this pass globs the whole project, so
+        // the prunes have to be restored explicitly or `dist/` becomes an
+        // emission source. See `isAgentSurfaceSourcePath`.
+        exclude: [...this.options.exclude, ...AGENT_SURFACE_PRUNE],
+        followSymbolicLinks: this.options.followSymbolicLinks,
+      });
+    } catch {
+      return [];
+    }
+
+    const surfaces: AgentSurface[] = [];
+    for (const filePath of files) {
+      if (alreadyScanned.has(filePath)) continue;
+      // The globs prune the walk; this predicate decides what counts, and it is
+      // the same one `dev:knowledge-check` uses.
+      if (!isAgentSurfaceSourcePath(filePath, this.options.cwd)) continue;
+      const surface = parseAgentSurfaceFile(filePath);
+      if (surface) surfaces.push(surface);
+    }
+    return surfaces;
+  }
+
+  /**
+   * Search `.svelte` files for declarations the scanner can never read.
+   *
+   * A `.svelte` file is not a TypeScript program and is never parsed here, so
+   * this pass produces diagnostics only — never an emitted entry. It exists
+   * because the alternative is silence: an intent declared inline in a
+   * component simply would not appear anywhere, with nothing to explain why.
+   */
+  private async scanSvelteDeclarations(): Promise<AgentSurface> {
+    const surface = emptyAgentSurface();
+    if (this.options.svelteInclude.length === 0) return surface;
+
+    // Callers routinely exclude `**/*.svelte` from the CLASS scan, because OXC
+    // cannot parse a Svelte component. Honouring that here would silence the
+    // one thing this pass exists to say, so a `.svelte`-targeting exclude is
+    // dropped; every other prune (node_modules, dist, dot directories) stands.
+    const exclude = [
+      ...this.options.exclude.filter((pattern) => !pattern.endsWith('.svelte')),
+      ...AGENT_SURFACE_PRUNE,
+    ];
+
+    let files: string[];
+    try {
+      files = await discoverSourceFiles({
+        cwd: this.options.cwd,
+        include: this.options.svelteInclude,
+        exclude,
+        followSymbolicLinks: this.options.followSymbolicLinks,
+      });
+    } catch {
+      return surface;
+    }
+
+    for (const filePath of files) {
+      // The globs prune the walk; this is the semantic gate, and it is the same
+      // one `dev:knowledge-check` applies to `.svelte` files. A `.svelte` path
+      // cannot go through `isAgentSurfaceSourcePath`, which rejects it on
+      // extension, so the prune check is shared directly.
+      if (isPrunedAgentSurfacePath(filePath, this.options.cwd)) continue;
+      surface.diagnostics.push(...scanSvelteAgentSurface(filePath));
+    }
+    return surface;
+  }
+
+  /**
+   * Record a declaring module as a `cwd`-relative POSIX path.
+   *
+   * Emitted entries land in checked-in artifacts, so an absolute path would
+   * make them machine-specific and a Windows separator would make them
+   * platform-specific — either one churns a snapshot that is supposed to prove
+   * two builds agree.
+   */
+  private relativizeSourcePath(filePath: string): string {
+    const relativePath = relative(this.options.cwd, filePath);
+    if (!relativePath || relativePath.startsWith('..')) return filePath;
+    return sep === '/' ? relativePath : relativePath.split(sep).join('/');
   }
 
   /**

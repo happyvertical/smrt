@@ -1,3 +1,5 @@
+import type { CapabilityClassification } from './capability.js';
+
 /** Kind of generated surface a knowledge entry describes (REST/CLI/MCP/AI). */
 export type DomainKnowledgeSurfaceKind = 'api' | 'cli' | 'mcp' | 'ai';
 
@@ -116,6 +118,85 @@ export interface DomainKnowledgeModuleDoc {
   content: string;
 }
 
+/**
+ * A declared view intent (#2588) as emitted into the knowledge artifact (#2591).
+ *
+ * `id` is the entry's identity everywhere: in this artifact, in a playbook step
+ * (`{ kind: 'intent', id }`), and in `smrt doctor`'s surface report. It is
+ * declared, never derived from a namespace, a generated tool name, or a route,
+ * so it survives every rename those could undergo.
+ */
+export interface DomainKnowledgeViewIntent {
+  id: string;
+  description: string;
+  /** Resolved through the #2587 fail-closed rule at declaration time. */
+  capability: CapabilityClassification;
+  /** The browser registry this intent compiles into, and what it addresses. */
+  target: Record<string, unknown>;
+  hasInputSchema: boolean;
+  /**
+   * Always exactly `['browser']`. An intent moves mounted browser state; a
+   * server-side agent reaches one only through the #2446 command/ack bridge,
+   * which the referencing playbook declares. Typed as the literal tuple so a
+   * consumer cannot read the contract as wider than it is.
+   */
+  planes: ['browser'];
+  /** Declaring module, relative to the package root, in POSIX form. */
+  sourceFile: string;
+}
+
+/** One step of an emitted playbook. Steps never nest another playbook. */
+export type DomainKnowledgePlaybookStep =
+  | { kind: 'operation'; model: string; action: string }
+  | { kind: 'intent'; id: string };
+
+/** A registered playbook (#2589) as emitted into the knowledge artifact (#2591). */
+export interface DomainKnowledgePlaybook {
+  key: string;
+  title: string;
+  description: string;
+  steps: DomainKnowledgePlaybookStep[];
+  planes: Array<'browser' | 'server'>;
+  /** False when `planes` was derived from the step kinds rather than declared. */
+  planesDeclared: boolean;
+  onStepFailure: 'abort' | 'continue';
+  enabled: boolean;
+  /** Declaring module, relative to the package root, in POSIX form. */
+  sourceFile: string;
+}
+
+/**
+ * A declaration the scanner recognized but could not emit.
+ *
+ * Recorded rather than dropped: the whole point of emitting the agent surface
+ * is that "what can an agent do here" has one answer, and an invisible
+ * declaration would quietly make that answer wrong. Every message names
+ * `useWebMcpTool`, the escape hatch for a genuinely computed tool set.
+ */
+export interface DomainKnowledgeAgentSurfaceDiagnostic {
+  code: string;
+  helper: 'defineIntent' | 'definePlaybook';
+  message: string;
+  /** Declaring module, relative to the package root, in POSIX form. */
+  sourceFile: string;
+  line?: number;
+  column?: number;
+}
+
+/**
+ * The package's declared agent-addressable surface beyond its generated model
+ * tools (#2591).
+ *
+ * Omitted entirely when a package declares no intents, playbooks, or
+ * diagnostics, so an artifact for a package with none stays byte-identical to
+ * what it emitted before this field existed.
+ */
+export interface DomainKnowledgeAgentSurface {
+  intents: DomainKnowledgeViewIntent[];
+  playbooks: DomainKnowledgePlaybook[];
+  diagnostics: DomainKnowledgeAgentSurfaceDiagnostic[];
+}
+
 /** The package-level domain-knowledge artifact (`smrt-knowledge.json`) — the agent/developer contract. */
 export interface DomainKnowledgeManifest {
   schemaVersion: 1;
@@ -151,6 +232,15 @@ export interface DomainKnowledgeManifest {
   agentDoc?: string;
   /** Sibling module docs linked from `AGENTS.md`; omitted when the package links none. */
   moduleDocs?: DomainKnowledgeModuleDoc[];
+  /**
+   * Declared view intents and playbooks (#2591). Omitted when the package
+   * declares none, so this field is additive to schema version 1.
+   *
+   * This is deliberately a knowledge-artifact field and not a runtime-manifest
+   * field: `manifest.json` stays runtime-focused, and the agent-addressable
+   * surface is an agent/developer contract.
+   */
+  agentSurface?: DomainKnowledgeAgentSurface;
 }
 
 /** Result of a domain-knowledge freshness check (stale references, error/warning counts). */
