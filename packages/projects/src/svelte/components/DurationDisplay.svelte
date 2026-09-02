@@ -14,7 +14,7 @@ export interface Props {
   format?: 'decimal' | 'hhmm';
   /** Sets the font size of the duration display. */
   size?: 'sm' | 'md' | 'lg';
-  /** Shows the hour unit label. */
+  /** Requests the unit label; decimal always shows `h` and hhmm never shows one. */
   showLabel?: boolean;
 }
 
