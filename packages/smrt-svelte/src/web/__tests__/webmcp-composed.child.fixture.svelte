@@ -20,6 +20,17 @@ useWebMcpTool(() => ({
   execute: () => JSON.stringify({ ok: true, source: 'bespoke-component' }),
 }));
 
+// No `annotations`: fail-closed classifies this destructive (#2586), so it
+// must be excluded under the Provider's default read-only exposure policy
+// and must never reach document.modelContext.registerTool.
+useWebMcpTool(() => ({
+  name: 'fixture_component_unannotated',
+  description: 'A bespoke tool with no declared effect.',
+  inputSchema: { type: 'object', properties: {} },
+  execute: () =>
+    JSON.stringify({ ok: true, source: 'bespoke-component-unannotated' }),
+}));
+
 const tableDescriptor: DataSurfaceDescriptor = {
   version: 1,
   identity: { surfaceId: 'fixture-items', kind: 'table' },

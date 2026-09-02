@@ -74,8 +74,12 @@ describe('Form WebMCP staged-edit intent', () => {
     render(AsyncValidationForm, {
       props: { onsubmit, validate, webmcp: true },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
@@ -198,8 +202,12 @@ describe('Form WebMCP staged-edit intent', () => {
     };
     const onsubmit = vi.fn();
     render(FormWithFields, { props: { webmcp: true, onsubmit } });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered).toHaveLength(1);
     expect(registered[0].inputSchema).toMatchObject({
@@ -247,8 +255,12 @@ describe('Form WebMCP staged-edit intent', () => {
         onselectchange: selectChanged,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     const tool = registered.at(-1);
     if (!tool) throw new Error('WebMCP tool was not registered');
 
@@ -310,8 +322,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(await registered.at(-1)?.execute({ age: '' })).toBe(
       'Staged 1 change for review',
@@ -343,8 +359,12 @@ describe('Form WebMCP staged-edit intent', () => {
     render(FormWithFields, {
       props: { webmcp: true, showAge: false, interactionRegistry },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     await registered.at(-1)?.execute({ fullname: 'Ada Lovelace' });
 
     await userEvent.click(
@@ -490,8 +510,12 @@ describe('Form WebMCP staged-edit intent', () => {
     const view = render(FormWithFields, {
       props: { webmcp: true, interactionRegistry: registry },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
       'Staged 1 change for review',
     );
@@ -813,8 +837,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(
       await registered.at(-1)?.execute({
@@ -867,8 +895,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(await registered.at(-1)?.execute({ notes: 'Proposed' })).toBe(
       'Staged 1 change for review',
@@ -909,8 +941,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(await registered.at(-1)?.execute({ notes: 'Proposed' })).toBe(
       'Staged 1 change for review',
@@ -954,8 +990,12 @@ describe('Form WebMCP staged-edit intent', () => {
         onmeasurementchange: measurementChanged,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(
       await registered.at(-1)?.execute({
@@ -1005,8 +1045,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(
       await registered.at(-1)?.execute({
@@ -1076,8 +1120,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const staging = registered.at(-1)?.execute({ notes: 'Proposed' });
     await policyStartedPromise;
@@ -1146,8 +1194,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const staging = registered.at(-1)?.execute({
       address: { street: '123 Main Street' },
@@ -1470,8 +1522,12 @@ describe('Form WebMCP staged-edit intent', () => {
         onsubmit,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered).toHaveLength(1);
     const schema = registered[0].inputSchema as {
@@ -1509,8 +1565,12 @@ describe('Form WebMCP staged-edit intent', () => {
     const view = render(FormWithFields, {
       props: { webmcp: true, textDisabled: false, showAge: false },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered.at(-1)?.inputSchema).toMatchObject({
       properties: { fullname: { type: 'string' } },
@@ -1521,8 +1581,12 @@ describe('Form WebMCP staged-edit intent', () => {
       textDisabled: true,
       showAge: false,
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const tool = registered.at(-1);
     expect(tool?.inputSchema).toMatchObject({ properties: {} });
@@ -1542,8 +1606,12 @@ describe('Form WebMCP staged-edit intent', () => {
     render(FormWithFields, {
       props: { webmcp: true, showAge: false },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     const input = screen.getByRole('textbox', { name: 'Full name' });
     expect(registered.at(-1)?.inputSchema).toMatchObject({
       properties: { fullname: expect.any(Object) },
@@ -1590,8 +1658,12 @@ describe('Form WebMCP staged-edit intent', () => {
         showAge: false,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const tool = registered.at(-1);
     expect(tool?.inputSchema).toMatchObject({ properties: {} });
@@ -1665,8 +1737,12 @@ describe('Form WebMCP staged-edit intent', () => {
         formSubject: { type: 'person', id: 'person-1' },
       },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
       'Staged 1 change for review',
@@ -1681,8 +1757,12 @@ describe('Form WebMCP staged-edit intent', () => {
       showAge: false,
       formSubject: { type: 'person', id: 'person-2' },
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     expect(await registered.at(-1)?.execute({ fullname: 'Grace' })).toBe(
       'Staged 1 change for review',
     );
@@ -1725,8 +1805,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered.at(-1)?.inputSchema).toMatchObject({
       properties: {
@@ -1797,8 +1881,12 @@ describe('Form WebMCP staged-edit intent', () => {
     };
     const onsubmit = vi.fn();
     render(FormWithStructuredFields, { props: { webmcp: true, onsubmit } });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered).toHaveLength(1);
     const schema = registered[0].inputSchema as {
@@ -1893,8 +1981,12 @@ describe('Form WebMCP staged-edit intent', () => {
         onaddresschange: addressChanged,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const addressProperties = () => {
       const tool = registered.at(-1);
@@ -1907,11 +1999,33 @@ describe('Form WebMCP staged-edit intent', () => {
         }
       ).properties.address.properties;
     };
+    // `registered.at(-1)` is a snapshot: a registry-driven side effect from
+    // an earlier step in this test (e.g. an "apply" attempt) can retrigger
+    // the reactive tool spec and replace that snapshot before `.execute()`
+    // runs against it. Retry against whatever is current rather than
+    // asserting the specific instance stays live for the whole test.
+    const executeLive = async (
+      args: Record<string, unknown>,
+    ): Promise<string> => {
+      for (let attempt = 0; ; attempt += 1) {
+        const tool = registered.at(-1);
+        if (!tool) throw new Error('WebMCP tool was not registered');
+        try {
+          return await tool.execute(args);
+        } catch (error) {
+          const stale =
+            error instanceof Error &&
+            error.message.includes('is no longer registered');
+          if (!stale || attempt >= 9) throw error;
+          await tick();
+        }
+      }
+    };
     expect(addressProperties()).toEqual({
       province: { type: 'string', enum: ['', 'AB'] },
       country: { type: 'string', enum: ['CA'] },
     });
-    await registered.at(-1)?.execute({
+    await executeLive({
       address: { province: 'AB', country: 'CA' },
     });
     const identity = { formId: 'structured-fields', controlId: 'address' };
@@ -1928,9 +2042,16 @@ describe('Form WebMCP staged-edit intent', () => {
     });
     await tick();
     await tick();
-    expect(addressProperties()).toEqual({
-      province: { type: 'string', enum: ['', 'IDF'] },
-      country: { type: 'string', enum: ['FR'] },
+    // A prop change here can drive the reactive tool spec through more than
+    // one intermediate registration before it settles (address option
+    // registries can update in a separate tick from the rerender itself), so
+    // waiting only for `registered.length` to grow can observe a
+    // soon-to-be-superseded entry. Poll the actual settled schema instead.
+    await vi.waitFor(() => {
+      expect(addressProperties()).toEqual({
+        province: { type: 'string', enum: ['', 'IDF'] },
+        country: { type: 'string', enum: ['FR'] },
+      });
     });
 
     expect(
@@ -1948,7 +2069,7 @@ describe('Form WebMCP staged-edit intent', () => {
     ).toMatchObject({ ok: false });
     expect(addressChanged).not.toHaveBeenCalled();
 
-    await registered.at(-1)?.execute({
+    await executeLive({
       address: { province: 'IDF', country: 'FR' },
     });
     expect(registry.get(identity)?.state.staged).toMatchObject({ valid: true });
@@ -1970,7 +2091,7 @@ describe('Form WebMCP staged-edit intent', () => {
       country: 'FR',
     });
 
-    await registered.at(-1)?.execute({
+    await executeLive({
       address: { province: 'XX', country: 'FR' },
     });
     expect(registry.get(identity)?.state.staged).toMatchObject({
@@ -1998,8 +2119,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const valueSchema = () => {
       const tool = registered.at(-1);
@@ -2043,8 +2168,12 @@ describe('Form WebMCP staged-edit intent', () => {
       measurementStep: 2,
       interactionRegistry: registry,
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     expect(valueSchema()).toMatchObject({
       type: 'number',
       minimum: 2,
@@ -2072,8 +2201,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: legacyRegistry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(await registered.at(-1)?.execute({ fullname: 'Ada' })).toBe(
       'Staged 1 change for review',
@@ -2110,8 +2243,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered).toHaveLength(1);
     const schema = registered[0].inputSchema as {
@@ -2170,8 +2307,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     await view.rerender({
       webmcp: true,
@@ -2182,8 +2323,12 @@ describe('Form WebMCP staged-edit intent', () => {
       measurementMax: 200,
       interactionRegistry: registry,
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const schema = registered.at(-1)?.inputSchema as {
       properties: Record<
@@ -2236,8 +2381,12 @@ describe('Form WebMCP staged-edit intent', () => {
         textRequired: false,
       },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     await view.rerender({
       webmcp: true,
@@ -2245,8 +2394,12 @@ describe('Form WebMCP staged-edit intent', () => {
       ageMax: 100,
       textRequired: true,
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const schema = registered.at(-1)?.inputSchema as {
       required?: string[];
@@ -2276,8 +2429,12 @@ describe('Form WebMCP staged-edit intent', () => {
     const view = render(FormWithPolicyField, {
       props: { webmcp: true, interactionRegistry: registry },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     expect(await registered.at(-1)?.execute({ policy: 'Grace' })).toBe(
       'Staged 1 change for review',
     );
@@ -2293,8 +2450,12 @@ describe('Form WebMCP staged-edit intent', () => {
       sensitivity: 'secret',
       writable: false,
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
     const snapshot = registry.get({
@@ -2334,8 +2495,12 @@ describe('Form WebMCP staged-edit intent', () => {
       sensitivity: 'public',
       writable: true,
     });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     expect(
       registry.get({ formId: 'policy-form', controlId: 'policy' })?.state,
     ).not.toHaveProperty('staged');
@@ -2363,8 +2528,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered).toHaveLength(1);
     const schema = registered[0].inputSchema as {
@@ -2437,8 +2606,12 @@ describe('Form WebMCP staged-edit intent', () => {
     render(FormWithStructuredFields, {
       props: { webmcp: true, fieldsetDisabled: true },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const tool = registered.at(-1);
     expect(tool?.inputSchema).toMatchObject({ properties: {} });
@@ -2507,8 +2680,12 @@ describe('Form WebMCP staged-edit intent', () => {
         showCollidingSibling: true,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
     expect(
@@ -2534,8 +2711,12 @@ describe('Form WebMCP staged-edit intent', () => {
         interactionRegistry: registry,
       },
     });
+    const _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     const tool = registered.at(-1);
     if (!tool) throw new Error('WebMCP tool was not registered');
@@ -2984,15 +3165,23 @@ describe('Form WebMCP staged-edit intent', () => {
     const view = render(FormWithStructuredFields, {
       props: { webmcp: true },
     });
+    let _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
     expect(registered.at(-1)?.inputSchema).toMatchObject({
       properties: { dates: expect.any(Object) },
     });
 
     await view.rerender({ webmcp: true, fieldsetDisabled: true });
+    _regLenBefore = registered.length;
     await tick();
     await tick();
+    await vi.waitFor(() =>
+      expect(registered.length).toBeGreaterThan(_regLenBefore),
+    );
 
     expect(registered.at(-1)?.inputSchema).toMatchObject({ properties: {} });
     expect(

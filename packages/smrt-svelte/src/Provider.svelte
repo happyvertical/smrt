@@ -18,6 +18,7 @@ import type {
 } from './state/app-state.js';
 import { createAppState } from './state/app-state.svelte.js';
 import { setAppStateContext } from './state/context.js';
+import { setWebMcpBespokeContext } from './web/webmcp-bespoke-context.js';
 import type { WebMcpProviderConfig } from './web/webmcp-provider.js';
 import { registerWebMcpUiTools } from './web/webmcp-ui.js';
 import { setWebMcpUiContext } from './web/webmcp-ui-context.js';
@@ -152,6 +153,16 @@ setWebMcpUiContext({
   },
   get dataSurfaceRegistry() {
     return resolvedDataSurfaceRegistry;
+  },
+});
+
+// A descendant's useWebMcpTool() reads this so a bespoke component tool is
+// subject to the same `effects` policy as this Provider's generated tools
+// (#2586), without requiring `webmcp` to be configured at all — absent this
+// Provider, useWebMcpTool falls back to the registrar's own read-only default.
+setWebMcpBespokeContext({
+  get effects() {
+    return webMcpConfig?.effects;
   },
 });
 

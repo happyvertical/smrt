@@ -1665,8 +1665,11 @@ export function createSmrtCollection<TData extends object>(
 // ---------------------------------------------------------------------------
 
 export {
+  type RegisterWebMcpBespokeToolOptions,
   type RegisterWebMcpToolsOptions,
+  registerWebMcpBespokeTool,
   registerWebMcpTools,
+  type WebMcpBespokeToolSpec,
   type WebMcpExposurePolicy,
   type WebMcpRegistrationDefinition,
   type WebMcpRegistrationDisposer,

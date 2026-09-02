@@ -18,13 +18,16 @@ subpath you are editing. This file keeps what holds in every module.
 | `src/web/remote-query.svelte.ts` | Svelte 5 binding for query-shaped remote pages: rows, page, totals, loading/refreshing/stale/error, retry, last-updated, and query-scoped live subscriptions (#2445) | — |
 | `src/web/webmcp-provider.ts` | Provider config for generated data/model WebMCP tools: definitions, effect policy, namespace, budget, legacy/canonical filters, and fetcher seams (#2520) | — |
 | `src/web/webmcp-ui.ts` | Fixed, low-cardinality WebMCP adapter over the Provider's mounted form-control and data-surface registries (#2521) | — |
+| `src/web/webmcp.svelte.ts` (`useWebMcpTool`) | Component-owned bespoke WebMCP tool. Routes through `@happyvertical/smrt-web`'s `registerWebMcpBespokeTool`, so it shares the fail-closed effect classification and `effects` exposure policy of generated tools — undeclared `annotations` classify destructive and are excluded by default. `namespace` and `maxTools` never apply to a bespoke tool (#2586) | — |
 
 The composed WebMCP fixture in
 `src/web/__tests__/webmcp-composed.integration.svelte.test.ts` mounts a real
 Provider, rich Form, DataTable/DataSurface, and a bespoke `useWebMcpTool`
 component intent. Preserve its lifecycle assertions: SSR and missing
 `document.modelContext` are no-ops, mounted tools are fixed-cardinality, and
-all registrations abort when their owning component unmounts.
+all registrations abort when their owning component unmounts. It also covers
+an undeclared bespoke tool being excluded under the default read-only policy
+(#2586) — never remove that assertion when editing the fixture.
 
 ## The UI split — primitive-adoption contract (#1589)
 
@@ -68,7 +71,10 @@ human applies or discards them in the form's local review surface. Keep this
 state machine in smrt-ui; smrt-svelte contributes Provider-backed field
 registration and consumes the shared component rather than duplicating it.
 The generated WebMCP form tool proposes registry stages; it never writes or
-submits field values directly.
+submits field values directly. It declares itself write-class (never
+destructive) and, being an explicit `<Form webmcp>` opt-in, falls back to a
+`['read', 'write']` exposure policy only when no ancestor Provider declares an
+explicit `webmcp.effects` — an explicit Provider policy always wins (#2586).
 Rich `FieldDefinition` registrations may carry a `subject` for record-qualified
 identity. The Form bridge also folds live DOM disabled/read-only state into the
 registry and omits those fields from WebMCP schemas and staging.
