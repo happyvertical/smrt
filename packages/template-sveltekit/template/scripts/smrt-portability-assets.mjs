@@ -80,6 +80,7 @@ function assertRealDirectory(path, code) {
     const details = lstatSync(path);
     if (details.isSymbolicLink() || !details.isDirectory()) throw fail(code);
     if (realpathSync(path) !== resolve(path)) throw fail(code);
+    return resolve(path);
   } catch (error) {
     if (isSanitizedFailure(error)) throw error;
     throw fail(code);
@@ -483,14 +484,13 @@ export function publishFilesystemAssets(staged, options = {}) {
   }
   journal.phase = 'published';
   writeJournal(path, journal);
-  for (const entry of journal.entries) {
-    verifyPublishedEntry(journal, entry);
-  }
+  verifyPublishedTree(journal);
 }
 
 function verifyPublishedEntry(
   journal,
   entry,
+  approvedRoot,
   { allowMissing = false, verifyDigest = true } = {},
 ) {
   const destination = join(
@@ -501,7 +501,7 @@ function verifyPublishedEntry(
     if (allowMissing) return false;
     throw fail('missing-published-asset');
   }
-  const bytes = readRegularFile(destination, realpathSync(journal.assetRoot));
+  const bytes = readRegularFile(destination, approvedRoot);
   if (
     verifyDigest &&
     digestBytes(bytes) !== entry.contentDigest
@@ -512,24 +512,35 @@ function verifyPublishedEntry(
 }
 
 function verifyPublishedTree(journal, { verifyDigest = true } = {}) {
-  assertRealDirectory(journal.assetRoot, 'unsafe-published-asset');
-  const rootEntries = readdirSync(journal.assetRoot);
-  if (rootEntries.length !== 1 || rootEntries[0] !== 'portable') {
-    throw fail('unexpected-published-asset');
-  }
-  const portableDirectory = join(journal.assetRoot, 'portable');
-  assertRealDirectory(portableDirectory, 'unsafe-published-asset');
-  const expected = new Set(
-    journal.entries.map((entry) =>
-      normalizeDestinationPath(entry.relativePath).slice('portable/'.length),
-    ),
-  );
-  const actual = readdirSync(portableDirectory);
-  if (actual.length !== expected.size || actual.some((name) => !expected.has(name))) {
-    throw fail('unexpected-published-asset');
-  }
-  for (const entry of journal.entries) {
-    verifyPublishedEntry(journal, entry, { verifyDigest });
+  try {
+    const approvedRoot = assertRealDirectory(
+      journal.assetRoot,
+      'unsafe-published-asset',
+    );
+    const rootEntries = readdirSync(approvedRoot);
+    if (rootEntries.length !== 1 || rootEntries[0] !== 'portable') {
+      throw fail('unexpected-published-asset');
+    }
+    const portableDirectory = join(approvedRoot, 'portable');
+    assertRealDirectory(portableDirectory, 'unsafe-published-asset');
+    const expected = new Set(
+      journal.entries.map((entry) =>
+        normalizeDestinationPath(entry.relativePath).slice('portable/'.length),
+      ),
+    );
+    const actual = readdirSync(portableDirectory);
+    if (
+      actual.length !== expected.size ||
+      actual.some((name) => !expected.has(name))
+    ) {
+      throw fail('unexpected-published-asset');
+    }
+    for (const entry of journal.entries) {
+      verifyPublishedEntry(journal, entry, approvedRoot, { verifyDigest });
+    }
+  } catch (error) {
+    if (isSanitizedFailure(error)) throw error;
+    throw fail('unsafe-published-asset');
   }
 }
 
