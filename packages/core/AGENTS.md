@@ -29,8 +29,8 @@ subsystem you are editing. This file keeps what holds across all of them.
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - Persisted `save()` uses loaded `updated_at` in its `UPDATE`; zero rows throws
   `RUNTIME_REVISION_CONFLICT`. Explicit `expectedUpdatedAt` binds a save or
-  delete to an earlier snapshot. Remote guarded deletes include the revision in
-  the final `DELETE`; embedded adapters compare inside the shared write queue
+  delete to an earlier snapshot. Remote guarded deletes bind the same predicate
+  into the final `DELETE`; embedded adapters compare inside the shared write queue
   before cascading. That queue serializes same-process saves, deletes, and full
   `SmrtObject.withTransaction()` callbacks. Custom writes must preserve this
   public CAS ordering contract. PostgreSQL predicate:

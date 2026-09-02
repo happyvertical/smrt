@@ -1,8 +1,10 @@
 # Revision compare-and-swap guard (`src/revision-guard.ts`)
 
-Every persisted `save()` pins its `UPDATE` to the revision the writer loaded,
-and `claimRevision()` does the same without running domain hooks. Zero affected
-rows raises `RUNTIME_REVISION_CONFLICT` rather than overwriting a newer row.
+Every persisted `save()` pins its `UPDATE` to the revision the writer loaded;
+`claimRevision()` does the same without running domain hooks, and
+`delete({ expectedUpdatedAt })` binds the same predicate into its final
+`DELETE`. Zero affected rows raises `RUNTIME_REVISION_CONFLICT` rather than
+overwriting or removing a newer row.
 
 ## Why the predicate is not an equality (#2620)
 
@@ -35,11 +37,15 @@ UTC process the two renderings coincide and the condition is single-valued.
 Lost-race semantics are preserved: a concurrent writer advances `updated_at` to
 roughly "now", so it must land on the loaded revision — or, on a non-UTC
 process only, on that revision shifted by the whole UTC offset — to the
-millisecond before it could slip past.
+millisecond before it could slip past. Collapsing that second rendering so the
+predicate is single-valued on every process is tracked as #2623.
 
 ## Rules
 
 - Never rebuild this predicate by hand; call `postgresRevisionCondition()`.
+  Every guarded write — `save()`, `claimRevision()`, and the guarded `DELETE` —
+  goes through `SmrtObject.revisionPredicate()` so no path is left on the exact
+  equality.
 - The condition is PostgreSQL-only. Embedded engines take the process-local
   compare/upsert fallback (`usesEmbeddedRevisionFallback`), and remote LibSQL
   stores ISO text whose exact equality round-trips losslessly.
@@ -53,7 +59,8 @@ millisecond before it could slip past.
 ## Coverage
 
 `src/__tests__/issue-2620-revision-guard-precision-postgres.optional.test.ts`
-runs the whole battery against both `updated_at` column shapes in the
-registered PostgreSQL suite (`pnpm --filter @happyvertical/smrt-core
+runs the whole battery — guarded save, `save({ expectedUpdatedAt })`,
+`claimRevision()`, guarded delete, and their still-conflicts counterparts —
+against both `updated_at` column shapes in the registered PostgreSQL suite (`pnpm --filter @happyvertical/smrt-core
 test:postgres`). `src/__tests__/revision-guard.test.ts` covers the rendering
 itself in the default suite.

@@ -2548,8 +2548,8 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Build the compare-and-swap condition that pins a guarded UPDATE to the
-   * revision this writer loaded.
+   * Build the compare-and-swap condition that pins a guarded UPDATE or DELETE
+   * to the revision this writer loaded.
    *
    * PostgreSQL stores `updated_at` as `timestamp(6) WITHOUT time zone` and `pg`
    * hydrates it in the process zone, so neither the precision nor the wall clock
@@ -2558,6 +2558,11 @@ export class SmrtObject extends SmrtClass {
    * row on a non-UTC host, turning a lost-race guard into a permanent
    * `RUNTIME_REVISION_CONFLICT` (#2620). See `revision-guard.ts` for how the
    * PostgreSQL condition restores both correctness and lost-race semantics.
+   *
+   * The guarded `delete({ expectedUpdatedAt })` predicate is built here too:
+   * it bound the same exact equality into its final `DELETE`, so a microsecond
+   * or non-UTC row was permanently undeletable under a revision guard for the
+   * same reason.
    *
    * Other server dialects (remote LibSQL) store ISO text that round-trips
    * exactly, and embedded engines never reach here — they take the
@@ -3392,10 +3397,7 @@ export class SmrtObject extends SmrtClass {
               const result = await db.delete(this.tableName, {
                 id: this.id,
                 ...(expectedUpdatedAt !== undefined && !embeddedRevisionGuard
-                  ? {
-                      updated_at:
-                        this.revisionPredicateValue(expectedUpdatedAt),
-                    }
+                  ? this.revisionPredicate(expectedUpdatedAt)
                   : {}),
               });
               if (expectedUpdatedAt !== undefined && result.affected !== 1) {

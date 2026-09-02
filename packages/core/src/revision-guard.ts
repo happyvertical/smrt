@@ -47,7 +47,10 @@
  * before it could slip past. Any ordinary concurrent write differs by at least
  * one millisecond and still conflicts. On a UTC process the two renderings
  * coincide and the predicate is single-valued, so it is strictly no weaker than
- * the exact equality it replaces.
+ * the exact equality it replaces. Making it single-valued on a non-UTC process
+ * too — by resolving the column's actual type, or by deleting the process-zone
+ * rendering once happyvertical/sdk#1223 hydrates `timestamp` as UTC — is
+ * tracked as #2623.
  *
  * The predicate is PostgreSQL-only. Embedded engines take the compare/upsert
  * fallback in `usesEmbeddedRevisionFallback`, and remote LibSQL stores ISO text

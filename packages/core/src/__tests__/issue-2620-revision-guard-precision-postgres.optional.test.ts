@@ -251,6 +251,32 @@ postgresDescribe('PostgreSQL revision guard precision (#2620)', () => {
       expect((await loadRow(id)).title).toBe('concurrent');
     });
 
+    it('deletes a microsecond row through delete({ expectedUpdatedAt })', async () => {
+      const id = await createRowWithMicrosecondRevision();
+      const loaded = await loadRow(id);
+
+      await expect(
+        loaded.delete({ expectedUpdatedAt: loaded.updated_at as Date }),
+      ).resolves.toBeUndefined();
+      expect(await rows.get(id)).toBeNull();
+    });
+
+    it('still rejects a guarded delete whose revision another writer advanced', async () => {
+      const id = await createRowWithMicrosecondRevision();
+      const loaded = await loadRow(id);
+      const staleRevision = loaded.updated_at as Date;
+
+      await db.query(
+        `UPDATE "${TABLE}" SET updated_at = CURRENT_TIMESTAMP + interval '5 seconds' WHERE id = $1`,
+        [id],
+      );
+
+      await expect(
+        loaded.delete({ expectedUpdatedAt: staleRevision }),
+      ).rejects.toMatchObject({ code: 'RUNTIME_REVISION_CONFLICT' });
+      expect(await rows.get(id)).not.toBeNull();
+    });
+
     it('still rejects a claim whose revision another writer advanced', async () => {
       const id = await createRowWithMicrosecondRevision();
       const loaded = await loadRow(id);
