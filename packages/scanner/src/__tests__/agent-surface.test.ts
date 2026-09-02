@@ -286,6 +286,29 @@ export const a = defineIntent({
     expect(diagnostics[0].code).toBe('incomplete-declaration');
   });
 
+  it('rejects an id `defineIntent` itself would refuse', () => {
+    // The declaration types `id` as `string`, so these type-check cleanly and
+    // fail only when the page loads. Emitting them would make the artifact and
+    // `smrt doctor` advertise an operation that can never register.
+    for (const [id, expected] of [
+      ['Orders.Bad', 'lowercase'],
+      ['nodot', 'lowercase'],
+      ['smrt.ui.focus', 'reserved'],
+    ] as const) {
+      const surface = surfaceOf(`${INTENT_IMPORT}
+export const a = defineIntent({
+  id: '${id}',
+  description: 'Invalid identity',
+  target: { registry: 'control', action: 'focus' },
+});
+`);
+      expect(surface.intents).toEqual([]);
+      expect(surface.diagnostics).toHaveLength(1);
+      expect(surface.diagnostics[0].code).toBe('invalid-identity');
+      expect(surface.diagnostics[0].message).toContain(expected);
+    }
+  });
+
   it('reports a declaration written inline in a .svelte file', () => {
     const diagnostics = scanSvelteAgentSurface(
       'src/lib/OrderTable.svelte',
@@ -311,6 +334,43 @@ export const a = defineIntent({
       scanSvelteAgentSurface(
         'src/lib/Docs.svelte',
         '<p>Use defineIntent( in a sidecar module.</p>',
+      ),
+    ).toEqual([]);
+  });
+
+  it('reports an aliased or loosely spaced .svelte declaration', () => {
+    // Requiring the literal token `defineIntent(` would let exactly the case
+    // this pass exists for slip through unremarked.
+    const spaced = scanSvelteAgentSurface(
+      'src/lib/Spaced.svelte',
+      `<script lang="ts">
+  import { defineIntent } from '@happyvertical/smrt-web/intents';
+  const a = defineIntent ({ id: 'orders.spaced' });
+</script>
+`,
+    );
+    expect(spaced.map((d) => d.code)).toEqual(['svelte-declaration']);
+
+    const aliased = scanSvelteAgentSurface(
+      'src/lib/Aliased.svelte',
+      `<script lang="ts">
+  import { defineIntent as declare } from '@happyvertical/smrt-web/intents';
+  const a = declare({ id: 'orders.aliased' });
+</script>
+`,
+    );
+    expect(aliased.map((d) => d.code)).toEqual(['svelte-declaration']);
+  });
+
+  it('does not flag a component whose own identifier merely ends in the helper name', () => {
+    expect(
+      scanSvelteAgentSurface(
+        'src/lib/Lookalike.svelte',
+        `<script lang="ts">
+  import { defineIntent } from '@happyvertical/smrt-web/intents';
+  const a = myDefineIntent({ id: 'orders.other' });
+</script>
+`,
       ),
     ).toEqual([]);
   });
@@ -399,6 +459,46 @@ export const dup = defineIntent({
       code: 'duplicate-identity',
       filePath: 'z/two.intents.ts',
     });
+  });
+
+  it('resolves a derived tool-name collision the same way, in either order', () => {
+    // `intentToolName` is not injective: both of these flatten to
+    // `orders_foo_bar`, and `defineIntent` rejects the second registration. Two
+    // emitted entries where only one can exist would overstate the surface.
+    const first = surfaceOf(
+      `${INTENT_IMPORT}
+export const a = defineIntent({
+  id: 'orders.foo_bar',
+  description: 'Underscored',
+  target: { registry: 'control', action: 'focus' },
+});
+`,
+      'a/one.intents.ts',
+    );
+    const second = surfaceOf(
+      `${INTENT_IMPORT}
+export const b = defineIntent({
+  id: 'orders.foo.bar',
+  description: 'Dotted',
+  target: { registry: 'control', action: 'focus' },
+});
+`,
+      'z/two.intents.ts',
+    );
+
+    const forward = mergeAgentSurfaces([first, second]);
+    const reverse = mergeAgentSurfaces([second, first]);
+
+    expect(forward).toEqual(reverse);
+    expect(forward.intents.map((intent) => intent.id)).toEqual([
+      'orders.foo_bar',
+    ]);
+    expect(forward.diagnostics).toHaveLength(1);
+    expect(forward.diagnostics[0]).toMatchObject({
+      code: 'duplicate-identity',
+      filePath: 'z/two.intents.ts',
+    });
+    expect(forward.diagnostics[0].message).toContain('orders_foo_bar');
   });
 
   it('records source paths relative to the scan root, in POSIX form', async () => {

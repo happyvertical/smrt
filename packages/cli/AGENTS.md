@@ -117,8 +117,14 @@ Sample output:
 A declaration the scanner recognized but could not read is listed under
 `⚠️  Not statically emittable` with the message naming `useWebMcpTool`, and
 raises a doctor **warning**, not an issue — a computed tool set is a legitimate
-choice, but it must never vanish unremarked. With no artifact at all the section
-says to run a build; a corrupt artifact is skipped rather than thrown.
+choice, but it must never vanish unremarked.
+
+Reading an artifact validates its shape, not just its JSON: `{}` parses cleanly
+and would otherwise render as a healthy zero-operation surface while suppressing
+the fallback to a good `dist/` artifact, and `{ "surfaces": {} }` would throw
+mid-report and abort the whole doctor run. A malformed candidate is stepped over
+so the next one is still tried; with no readable artifact at all the section says
+to run a build.
 
 ## Live-schema parity (#2368)
 

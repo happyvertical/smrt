@@ -287,6 +287,7 @@ export type AgentSurfaceDiagnosticCode =
   | 'not-module-scope'
   | 'argument-count'
   | 'incomplete-declaration'
+  | 'invalid-identity'
   | 'svelte-declaration'
   | 'duplicate-identity';
 

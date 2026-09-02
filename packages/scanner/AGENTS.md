@@ -74,8 +74,19 @@ for a tool set genuinely derived from computed or fetched data:
 | `not-module-scope` | declared inside a function, class, conditional, or loop |
 | `argument-count` | not exactly one argument |
 | `incomplete-declaration` | the literal parsed but lacks `id`/`description`/`target` (intent) or `key`/`title`/`description`/`steps` (playbook) |
+| `invalid-identity` | an intent `id` `defineIntent` itself would reject — not lowercase and dot-namespaced, over 128 chars, or resolving into the reserved `smrt_ui_` namespace |
 | `svelte-declaration` | written inline in a `.svelte` file |
-| `duplicate-identity` | two modules declare the same `id`/`key` |
+| `duplicate-identity` | two modules declare the same `id`/`key`, or two intent ids derive the same WebMCP tool name |
+
+The identity rules are mirrored from `defineIntent` (this package cannot depend
+on `smrt-web`), and keeping them in step is load-bearing: the declaration types
+`id` as `string`, so `id: 'Orders.Bad'` type-checks and fails only at page load.
+An entry the runtime would reject is worse than no entry, because the artifact
+and `smrt doctor` would then advertise an operation that can never register. The
+same applies to the tool name, which is `id` with `.`/`-` replaced by `_` and is
+therefore **not injective** — `orders.foo_bar` and `orders.foo.bar` collide, and
+`defineIntent` rejects the second registration. Playbook keys get no pattern
+check because `definePlaybook` imposes none; only uniqueness applies.
 
 This is deliberately narrower than the decorator-config extractor, which
 RESOLVES spreads against module-scope constants. That one must, because a
@@ -84,12 +95,16 @@ requirement runs the other way: an emitted entry has to be exactly what an
 author can see in one object literal, so a partial resolution would be worse
 than a refusal.
 
-The `.svelte` pass is textual, not a Svelte parse: it requires both the import
-specifier and the call token, and it exists only to say "move this to a `.ts`
-sidecar" — which is the answer regardless of what the declaration contains. Any
-`*.svelte` exclude a caller passes for the class scan is dropped for this pass,
-since callers routinely exclude Svelte because OXC cannot parse it, and
-honouring that here would silence the one thing the pass is for.
+The `.svelte` pass is textual, not a Svelte parse: it requires the import
+specifier plus a call, and it exists only to say "move this to a `.ts` sidecar"
+— which is the answer regardless of what the declaration contains. It resolves
+the local names the file's own import binds, so `defineIntent as declare`
+followed by `declare({…})` is caught, and it tolerates whitespace before the
+parenthesis; requiring the literal token `defineIntent(` would let exactly the
+case this pass exists for slip through unremarked. Any `*.svelte` exclude a
+caller passes for the class scan is dropped here, since callers routinely
+exclude Svelte because OXC cannot parse it, and honouring that would silence the
+one thing the pass is for.
 
 ### Deterministic identity
 

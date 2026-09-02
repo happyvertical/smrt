@@ -166,6 +166,48 @@ describe('readAgentSurfaceReport', () => {
 
     expect(await readAgentSurfaceReport(projectRoot)).toBeUndefined();
   });
+
+  it('steps over a well-formed-JSON artifact of the wrong shape', async () => {
+    // Parsing is not validating. Each of these parses cleanly; none is a
+    // knowledge artifact, and none may be reported as an empty surface.
+    for (const body of [
+      '{}',
+      '{ "schemaVersion": 1 }',
+      '{ "schemaVersion": 1, "surfaces": {} }',
+      '{ "schemaVersion": 1, "surfaces": [], "agentSurface": { "intents": {} } }',
+      '[]',
+      'null',
+    ]) {
+      projectRoot = await mkdtemp(join(tmpdir(), 'smrt-doctor-agent-surface-'));
+      await mkdir(resolve(projectRoot, '.smrt'), { recursive: true });
+      await writeFile(resolve(projectRoot, '.smrt/smrt-knowledge.json'), body);
+
+      await expect(
+        readAgentSurfaceReport(projectRoot),
+      ).resolves.toBeUndefined();
+      await rm(projectRoot, { recursive: true, force: true });
+      projectRoot = undefined;
+    }
+  });
+
+  it('falls through a malformed working copy to a valid build output', async () => {
+    // The malformed `.smrt/` artifact must not mask the good `dist/` one.
+    projectRoot = await mkdtemp(join(tmpdir(), 'smrt-doctor-agent-surface-'));
+    await mkdir(resolve(projectRoot, '.smrt'), { recursive: true });
+    await writeFile(resolve(projectRoot, '.smrt/smrt-knowledge.json'), '{}');
+    await mkdir(resolve(projectRoot, 'dist'), { recursive: true });
+    await writeFile(
+      resolve(projectRoot, 'dist/smrt-knowledge.json'),
+      JSON.stringify(ARTIFACT),
+    );
+
+    const report = await readAgentSurfaceReport(projectRoot);
+
+    expect(report?.source).toBe('dist/smrt-knowledge.json');
+    expect(report?.intents.map((intent) => intent.name)).toEqual([
+      'orders.next_page',
+    ]);
+  });
 });
 
 describe('renderAgentSurfaceReport', () => {

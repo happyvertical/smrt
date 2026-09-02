@@ -92,11 +92,25 @@ package's checked-in artifact stays byte-identical.
 
 Each declaring module gets a `sourceHashes` entry under the
 `agentSurface:<package-relative path>` prefix (`AGENT_SURFACE_HASH_PREFIX`), so
-editing an intent sidecar marks the artifact stale exactly like editing
-`AGENTS.md` does. `dev:knowledge-check` reports that as `stale-domain-knowledge`
-(a warning by default, an error under `--strict`, which is what CI runs), plus
-`agent-surface-{missing,duplicate}-identity` and `agent-surface-empty-playbook`
-as errors and `agent-surface-not-static` as a warning.
+EDITING an intent sidecar marks the artifact stale exactly like editing
+`AGENTS.md` does (`stale-domain-knowledge`).
+
+Hashes alone cannot see an **added** declaration, though: a brand-new sidecar
+has no recorded hash to mismatch, the runtime manifest never carries intents,
+and `AGENTS.md` is untouched — so every other signal stays green while the
+artifact omits a real operation. `dev:knowledge-check` therefore also re-derives
+the declaration SET from source and compares it to the artifact by identity,
+reporting either direction as `stale-agent-surface`. The scan is bounded like
+the numeric-precision lint: `src` only, behind the scanner's token pre-filter.
+
+Both `stale-*` codes are warnings by default and errors under `--strict`, which
+is what CI runs. Alongside them: `agent-surface-missing-identity`,
+`agent-surface-duplicate-identity`, and `agent-surface-empty-playbook` are
+errors, and `agent-surface-not-static` is a warning. A cross-file duplicate
+arrives as a *diagnostic* rather than two entries — the scanner's merge already
+dropped the loser — so that diagnostic maps to the duplicate error rather than
+the not-static warning; otherwise the error would be unreachable for the case it
+exists to catch.
 
 `smrt doctor` prints the whole surface — model tools, intents, playbooks — from
 these artifacts alone, with no application running.

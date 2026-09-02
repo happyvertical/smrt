@@ -19,9 +19,36 @@ import {
 const INTENT_SOURCE = 'src/lib/orders.intents.ts';
 const PLAYBOOK_SOURCE = 'src/lib/checkout.playbooks.ts';
 
-/** sha256 of the exact bytes written for each declaring module below. */
-const INTENT_BODY = 'export const intent = 1;\n';
-const PLAYBOOK_BODY = 'export const playbook = 1;\n';
+/**
+ * Real declarations, not placeholders: the freshness check re-derives the
+ * declaration set from source and compares it to the artifact, so these bodies
+ * must actually declare the identities the artifact claims.
+ */
+const INTENT_BODY = `import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const nextPage = defineIntent({
+  id: 'orders.next_page',
+  description: 'Advance the orders table by one page',
+  capability: { effect: 'read', idempotent: true, openWorld: false },
+  target: { registry: 'dataSurface', controlId: 'next-page' },
+});
+`;
+
+const PLAYBOOK_BODY = `import { definePlaybook } from '@happyvertical/smrt-playbooks';
+
+export const checkout = definePlaybook({
+  key: 'commerce.checkout',
+  title: 'Check out this cart',
+  description: 'Submit the cart and confirm the order',
+  steps: [
+    {
+      kind: 'operation',
+      model: '@happyvertical/smrt-demo:Order',
+      action: 'submit',
+    },
+  ],
+});
+`;
 
 let rootDir: string;
 let packageDir: string;
@@ -194,7 +221,12 @@ describe('dev:knowledge-check validates the emitted surface', () => {
 
   it('fails when a declaring module changed after the artifact was written', async () => {
     await writeArtifact(agentSurface(), await currentHashes());
-    await writeFile(join(packageDir, INTENT_SOURCE), 'export const x = 2;\n');
+    // Edit the declaration without removing it, so this exercises the hash
+    // signal rather than the declaration-set comparison.
+    await writeFile(
+      join(packageDir, INTENT_SOURCE),
+      INTENT_BODY.replace('one page', 'two pages'),
+    );
 
     // `stale-*` findings are warnings by default and errors under `--strict`,
     // which is the mode CI and Lefthook run. Asserting both keeps this entry
@@ -215,6 +247,46 @@ describe('dev:knowledge-check validates the emitted surface', () => {
     expect(
       strict.issues.filter((issue) => issue.code === 'stale-domain-knowledge'),
     ).toEqual([expect.objectContaining({ severity: 'error' })]);
+  });
+
+  it('fails when a NEW declaration was added after the artifact was written', async () => {
+    // The hash signal cannot see this on its own: a brand-new sidecar has no
+    // recorded hash to mismatch, the runtime manifest never carries intents,
+    // and AGENTS.md is untouched — so every other freshness signal stays green
+    // while the artifact silently omits a real operation.
+    await writeArtifact(agentSurface(), await currentHashes());
+    await writeFile(
+      join(packageDir, 'src/lib/extra.intents.ts'),
+      INTENT_BODY.replace('orders.next_page', 'orders.brand_new').replace(
+        'nextPage',
+        'brandNew',
+      ),
+    );
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+    const drift = strict.issues.filter(
+      (issue) => issue.code === 'stale-agent-surface',
+    );
+
+    expect(strict.ok).toBe(false);
+    expect(drift).toHaveLength(1);
+    expect(drift[0].message).toContain('orders.brand_new');
+    expect(drift[0].message).toContain('missing from smrt-knowledge.json');
+  });
+
+  it('fails when the artifact still advertises a removed declaration', async () => {
+    await writeArtifact(agentSurface(), await currentHashes());
+    await rm(join(packageDir, PLAYBOOK_SOURCE));
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+    const drift = strict.issues.filter(
+      (issue) => issue.code === 'stale-agent-surface',
+    );
+
+    expect(strict.ok).toBe(false);
+    expect(drift).toHaveLength(1);
+    expect(drift[0].message).toContain('commerce.checkout');
+    expect(drift[0].message).toContain('no longer declared in source');
   });
 
   it('fails when a declaring module is gone', async () => {
@@ -257,6 +329,30 @@ describe('dev:knowledge-check validates the emitted surface', () => {
     expect(result.issues.map((issue) => issue.code)).toContain(
       'agent-surface-empty-playbook',
     );
+  });
+
+  it('fails on a real cross-file duplicate, which arrives as a diagnostic', async () => {
+    // The scanner's merge already dropped the loser, so the identity loop can
+    // never see two entries — the diagnostic is the only signal there is, and
+    // reporting it as a "not static" warning would make the duplicate error
+    // unreachable for the case it exists to catch.
+    const surface = agentSurface();
+    surface.diagnostics.push({
+      code: 'duplicate-identity',
+      helper: 'defineIntent',
+      message:
+        'view intent `orders.next_page` is declared in both `a.ts` and `b.ts`.',
+      sourceFile: INTENT_SOURCE,
+    });
+    await writeArtifact(surface, await currentHashes());
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+    const duplicate = result.issues.find(
+      (issue) => issue.code === 'agent-surface-duplicate-identity',
+    );
+
+    expect(duplicate?.severity).toBe('error');
+    expect(result.ok).toBe(false);
   });
 
   it('warns — never stays silent — about a non-static declaration', async () => {

@@ -30,6 +30,7 @@ import {
   OxcScanner,
   parseSource,
   sourceMayContainNumericPrecisionIssue,
+  sourceMayDeclareAgentSurface,
 } from '@happyvertical/smrt-scanner';
 import type {
   DomainKnowledgeAgentSurface,
@@ -898,6 +899,7 @@ export async function checkKnowledgeFreshnessFromIndex(
     );
   }
 
+  issues.push(...findAgentSurfaceDriftIssues(authoredPackages));
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
   issues.push(
     ...findNumericPrecisionIssues(index, authoredPackages, changedFiles),
@@ -1115,13 +1117,97 @@ function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
     const where = diagnostic.line
       ? `${diagnostic.sourceFile}:${diagnostic.line}`
       : diagnostic.sourceFile;
+    // A cross-file duplicate never reaches the identity loop above: the
+    // scanner's merge already dropped the loser and left only this diagnostic.
+    // Reporting it as a "not static" warning would make the duplicate error
+    // unreachable in practice, so the diagnostic itself carries the severity.
+    const duplicate = diagnostic.code === 'duplicate-identity';
     issues.push({
-      severity: 'warning',
-      code: 'agent-surface-not-static',
+      severity: duplicate ? 'error' : 'warning',
+      code: duplicate
+        ? 'agent-surface-duplicate-identity'
+        : 'agent-surface-not-static',
       message: `${where} — ${diagnostic.message}`,
       file,
       packageName: pkg.name,
     });
+  }
+
+  return issues;
+}
+
+/**
+ * Compare the artifact's emitted surface against what the sources declare NOW
+ * (#2591).
+ *
+ * `sourceHashes` alone cannot see an ADDED declaration: a brand-new
+ * `Foo.intents.ts` has no recorded hash to mismatch, the runtime manifest does
+ * not change (intents never enter it), and `AGENTS.md` does not change either —
+ * so every existing freshness signal stays green while the artifact silently
+ * omits a real operation. That defeats the point of emitting the surface, so
+ * the declaration SET is re-derived from source and compared by identity.
+ *
+ * The scan is bounded the same way the numeric-precision lint is: `src` only,
+ * with the scanner's cheap token pre-filter in front of every parse.
+ */
+function findAgentSurfaceDriftIssues(
+  authoredPackages: KnowledgePackage[],
+): KnowledgeIssue[] {
+  const issues: KnowledgeIssue[] = [];
+
+  for (const pkg of authoredPackages) {
+    if (pkg.kind === 'sdk' || pkg.isInstalledDependency) continue;
+    if (!pkg.domainKnowledge || !pkg.domainKnowledgePath) continue;
+    const srcDir = join(pkg.directory, 'src');
+    if (!existsSync(srcDir)) continue;
+
+    const declared = new Set<string>();
+    for (const filePath of walkFiles(srcDir)) {
+      if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) continue;
+      let sourceText: string;
+      try {
+        sourceText = readFileSync(filePath, 'utf8');
+      } catch {
+        continue;
+      }
+      if (!sourceMayDeclareAgentSurface(sourceText)) continue;
+      const parsed = parseSource(sourceText, filePath);
+      for (const intent of parsed.agentSurface?.intents ?? []) {
+        declared.add(`view intent:${intent.id}`);
+      }
+      for (const playbook of parsed.agentSurface?.playbooks ?? []) {
+        declared.add(`playbook:${playbook.key}`);
+      }
+    }
+
+    const emitted = new Set<string>();
+    for (const intent of pkg.agentSurface?.intents ?? []) {
+      emitted.add(`view intent:${intent.id}`);
+    }
+    for (const playbook of pkg.agentSurface?.playbooks ?? []) {
+      emitted.add(`playbook:${playbook.key}`);
+    }
+
+    for (const identity of [...declared].sort()) {
+      if (emitted.has(identity)) continue;
+      issues.push({
+        severity: 'error',
+        code: 'stale-agent-surface',
+        message: `${identity} is declared in source but missing from smrt-knowledge.json — rebuild the package`,
+        file: pkg.domainKnowledgePath,
+        packageName: pkg.name,
+      });
+    }
+    for (const identity of [...emitted].sort()) {
+      if (declared.has(identity)) continue;
+      issues.push({
+        severity: 'error',
+        code: 'stale-agent-surface',
+        message: `${identity} is emitted in smrt-knowledge.json but no longer declared in source — rebuild the package`,
+        file: pkg.domainKnowledgePath,
+        packageName: pkg.name,
+      });
+    }
   }
 
   return issues;

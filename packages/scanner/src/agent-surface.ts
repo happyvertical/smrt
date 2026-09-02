@@ -69,6 +69,29 @@ const ESCAPE_HATCH =
 
 const MAX_LITERAL_DEPTH = 32;
 
+/**
+ * Intent identity rules, mirrored from `defineIntent` in
+ * `@happyvertical/smrt-web/intents`.
+ *
+ * Mirrored for the same reason the capability rule is: this package cannot
+ * depend on `@happyvertical/smrt-web`. Keeping them in step matters more than
+ * it looks — an emitted entry the runtime would REJECT is worse than no entry
+ * at all, because `smrt doctor` and the knowledge graph would then advertise an
+ * operation that can never register. If `defineIntent` tightens these, tighten
+ * them here too.
+ *
+ * Playbook keys get no equivalent check because `definePlaybook` imposes no key
+ * pattern — only uniqueness, which `mergeAgentSurfaces` already enforces.
+ */
+const INTENT_ID_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z0-9][a-z0-9_]*)+$/;
+const INTENT_ID_MAX_LENGTH = 128;
+const RESERVED_TOOL_NAME_PREFIX = 'smrt_ui_';
+
+/** Derive the WebMCP tool name for an intent id, as `viewIntentToolName` does. */
+function intentToolName(id: string): string {
+  return id.replace(/[.-]/g, '_');
+}
+
 // ---------------------------------------------------------------------------
 // Minimal structural AST view
 // ---------------------------------------------------------------------------
@@ -510,6 +533,26 @@ function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+/**
+ * Why this intent id could never register, or `undefined` when it can.
+ *
+ * The declaration types this against `string`, so an id that violates the
+ * runtime pattern type-checks cleanly and fails only when the page loads.
+ * Catching it here turns that into a build-time diagnostic.
+ */
+function intentIdentityProblem(id: string): string | undefined {
+  if (id.length > INTENT_ID_MAX_LENGTH) {
+    return `intent id '${id}' is longer than ${INTENT_ID_MAX_LENGTH} characters, which \`defineIntent\` rejects.`;
+  }
+  if (!INTENT_ID_PATTERN.test(id)) {
+    return `intent id '${id}' must be lowercase and namespaced with at least one dot, e.g. 'orders.filter_by_status' — \`defineIntent\` rejects it as written, so emitting it would advertise an operation that can never register.`;
+  }
+  if (intentToolName(id).startsWith(RESERVED_TOOL_NAME_PREFIX)) {
+    return `intent id '${id}' resolves into the reserved '${RESERVED_TOOL_NAME_PREFIX}' namespace of the six fixed UI tools, which \`defineIntent\` rejects.`;
+  }
+  return undefined;
+}
+
 function normalizeSteps(
   value: unknown,
 ): AgentSurfacePlaybookStep[] | undefined {
@@ -680,6 +723,13 @@ export function extractAgentSurface(
         );
         continue;
       }
+      const identityProblem = intentIdentityProblem(id);
+      if (identityProblem) {
+        // Emitting this would advertise, in the artifact and in `smrt doctor`,
+        // an operation `defineIntent` refuses to register at runtime.
+        report('invalid-identity', helper, identityProblem, node.start);
+        continue;
+      }
       intents.push({
         kind: 'intent',
         id,
@@ -753,6 +803,60 @@ export function extractAgentSurface(
  * Both the accepted import specifier and the call token must appear, so an
  * unrelated component that merely mentions the word is not flagged.
  */
+/**
+ * Offset of a call to `helper` — or to a local name the file aliased it to — in
+ * a Svelte component, or `undefined` when there is none.
+ *
+ * Textual, but not naively so. Requiring the literal token `defineIntent(`
+ * would miss `defineIntent ({...})` and, worse, miss
+ * `import { defineIntent as declare }` followed by `declare({...})` — which is
+ * the exact silent omission this whole pass exists to prevent. So the local
+ * names bound by the file's own import statement are resolved first, and
+ * whitespace before the parenthesis is allowed.
+ */
+function svelteCallOffset(
+  text: string,
+  helper: AgentSurfaceHelper,
+): number | undefined {
+  const names = new Set<string>([helper]);
+
+  // `import { defineIntent as declare, x } from '<specifier>'` — capture the
+  // brace group for this helper's specifier and read the local name out of it.
+  const importPattern = new RegExp(
+    `import\\s*\\{([^}]*)\\}\\s*from\\s*['"\`]${escapeRegExp(
+      HELPER_SPECIFIERS[helper],
+    )}['"\`]`,
+    'g',
+  );
+  for (const match of text.matchAll(importPattern)) {
+    for (const clause of match[1].split(',')) {
+      const alias = clause.trim().match(/^(\w+)\s+as\s+(\w+)$/);
+      if (alias && alias[1] === helper) {
+        names.add(alias[2]);
+      }
+    }
+  }
+
+  let earliest: number | undefined;
+  for (const name of names) {
+    // A word boundary before the name keeps `myDefineIntent(` from matching.
+    const call = new RegExp(`\\b${escapeRegExp(name)}\\s*\\(`, 'g');
+    for (const match of text.matchAll(call)) {
+      if (
+        match.index !== undefined &&
+        (earliest === undefined || match.index < earliest)
+      ) {
+        earliest = match.index;
+      }
+    }
+  }
+  return earliest;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function scanSvelteAgentSurface(
   filePath: string,
   sourceText?: string,
@@ -766,9 +870,9 @@ export function scanSvelteAgentSurface(
 
   const diagnostics: AgentSurfaceDiagnostic[] = [];
   for (const helper of HELPER_NAMES) {
-    const callIndex = text.indexOf(`${helper}(`);
-    if (callIndex === -1) continue;
     if (!text.includes(HELPER_SPECIFIERS[helper])) continue;
+    const callIndex = svelteCallOffset(text, helper);
+    if (callIndex === undefined) continue;
     const loc = getLineColumn(text, callIndex);
     const sidecar = helper === 'defineIntent' ? 'intents' : 'playbooks';
     diagnostics.push({
@@ -876,8 +980,46 @@ export function mergeAgentSurfaces(
     }
   }
 
+  // `intentToolName` is not injective — `orders.foo_bar` and `orders.foo.bar`
+  // both flatten to `orders_foo_bar` — and `defineIntent` rejects the second
+  // registration of a colliding pair. Emitting both would overstate the usable
+  // surface with two entries only one of which can ever exist, so the collision
+  // is resolved by the same path-ordered rule as a duplicate identity.
+  const sortedIntents = [...intents.values()].sort(
+    (a, b) =>
+      compareStrings(a.id, b.id) || compareStrings(a.filePath, b.filePath),
+  );
+  const byToolName = new Map<string, AgentSurfaceIntent>();
+  const survivingIntents: AgentSurfaceIntent[] = [];
+  for (const intent of sortedIntents) {
+    const toolName = intentToolName(intent.id);
+    const claimed = byToolName.get(toolName);
+    if (!claimed) {
+      byToolName.set(toolName, intent);
+      survivingIntents.push(intent);
+      continue;
+    }
+    const [winner, loser] =
+      intent.filePath < claimed.filePath
+        ? [intent, claimed]
+        : [claimed, intent];
+    byToolName.set(toolName, winner);
+    if (winner !== claimed) {
+      survivingIntents[survivingIntents.indexOf(claimed)] = winner;
+    }
+    diagnostics.push({
+      code: 'duplicate-identity',
+      helper: 'defineIntent',
+      message:
+        `view intents \`${winner.id}\` and \`${loser.id}\` both derive the WebMCP tool name ` +
+        `\`${toolName}\`, which \`defineIntent\` rejects at registration. The declaration in ` +
+        `\`${winner.filePath}\` is emitted and the one in \`${loser.filePath}\` is dropped.`,
+      filePath: loser.filePath,
+    });
+  }
+
   return {
-    intents: [...intents.values()].sort(
+    intents: survivingIntents.sort(
       (a, b) =>
         compareStrings(a.id, b.id) || compareStrings(a.filePath, b.filePath),
     ),

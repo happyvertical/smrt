@@ -561,6 +561,35 @@ const AGENT_SURFACE_ARTIFACTS = [
 ] as const;
 
 /**
+ * Whether a parsed artifact has the shape this report reads.
+ *
+ * Deliberately checks the exact fields the report touches — the schema marker,
+ * `surfaces`, and, when present, each `agentSurface` list — rather than trusting
+ * the type assertion. Everything here comes off disk and may predate the
+ * current schema or have been written by something else entirely.
+ */
+function isReadableKnowledgeArtifact(
+  value: unknown,
+): value is DomainKnowledgeManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1) return false;
+  if (!Array.isArray(record.surfaces)) return false;
+
+  const surface = record.agentSurface;
+  if (surface === undefined) return true;
+  if (!surface || typeof surface !== 'object' || Array.isArray(surface)) {
+    return false;
+  }
+  const agentSurface = surface as Record<string, unknown>;
+  return (
+    Array.isArray(agentSurface.intents) &&
+    Array.isArray(agentSurface.playbooks) &&
+    Array.isArray(agentSurface.diagnostics)
+  );
+}
+
+/**
  * Read the complete agent-addressable surface from build artifacts alone.
  *
  * Model tools come from the artifact's emitted `mcp` surfaces, which is where
@@ -582,11 +611,16 @@ export async function readAgentSurfaceReport(
     const artifactPath = resolve(cwd, candidate);
     if (!existsSync(artifactPath)) continue;
 
+    // Parsing is not validating. `{}` parses fine and would render as a
+    // healthy zero-operation surface while ALSO suppressing the fallback to a
+    // good `dist/` artifact, and `{ "surfaces": {} }` would throw at `.filter`
+    // and abort the whole doctor run. Doctor is a diagnostic: a malformed
+    // artifact must be stepped over, never mistaken for an empty one.
     let artifact: DomainKnowledgeManifest;
     try {
-      artifact = JSON.parse(
-        readFileSync(artifactPath, 'utf-8'),
-      ) as DomainKnowledgeManifest;
+      const parsed: unknown = JSON.parse(readFileSync(artifactPath, 'utf-8'));
+      if (!isReadableKnowledgeArtifact(parsed)) continue;
+      artifact = parsed;
     } catch {
       continue;
     }
