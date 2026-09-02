@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { platform } from 'node:os';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -245,7 +245,7 @@ function runtimeEnvironment(runtime) {
     env.DATABASE_TYPE = 'sqlite';
     env.DATABASE_URL = paths.database;
     env.SMRT_ASSETS_DIR = paths.assets;
-    return { env, paths };
+    return { env, paths, assetRoot: paths.assets };
   }
   if (!process.env.DATABASE_URL) {
     throw new Error(
@@ -253,7 +253,21 @@ function runtimeEnvironment(runtime) {
     );
   }
   env.DATABASE_TYPE = 'postgres';
-  return { env, paths: null };
+  let assetRoot = null;
+  if (runtime.providers.assets.provider === 'local-files') {
+    if (!process.env.SMRT_ASSETS_DIR || !isAbsolute(process.env.SMRT_ASSETS_DIR)) {
+      throw new Error(
+        'Filesystem-backed deployed profiles require an absolute SMRT_ASSETS_DIR outside the source tree.',
+      );
+    }
+    assetRoot = assertExternalArtifactPath({
+      sourceRoot,
+      path: process.env.SMRT_ASSETS_DIR,
+      label: 'Asset storage root',
+    });
+    env.SMRT_ASSETS_DIR = assetRoot;
+  }
+  return { env, paths: null, assetRoot };
 }
 
 async function initializeLocal(runtime, env, options = {}) {
@@ -743,11 +757,12 @@ async function portability(operation, operationLock) {
   const environment = runtimeEnvironment(runtime);
   const requestedPath = commandArgs[0] ? resolve(commandArgs[0]) : undefined;
   const artifactPath =
-    operation === 'export' && requestedPath
+    requestedPath
       ? assertExternalArtifactPath({
           sourceRoot,
           path: requestedPath,
-          label: 'Export destination',
+          label:
+            operation === 'export' ? 'Export destination' : 'Import source',
         })
       : requestedPath;
   if (runtime.profile === 'local') {

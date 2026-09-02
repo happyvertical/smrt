@@ -35,7 +35,8 @@ import type {
   WebMcpToolDefinition,
   WebToolDescriptor,
 } from './index.js';
-import { registerWebMcpTools } from './webmcp.js';
+import { clearViewIntentRegistry, defineIntent } from './intents.js';
+import { registerViewIntent, registerWebMcpTools } from './webmcp.js';
 
 @smrt({
   api: {
@@ -365,5 +366,67 @@ describe('WebMCP capability classification conformance (#2587)', () => {
     });
 
     registration();
+  });
+  /**
+   * Third declaration site (#2588). A view intent is never a CRUD verb, so it
+   * classifies through the SAME `resolveDeclaredCapability` rule core applies
+   * to an undeclared or partially declared custom model action. This asserts
+   * the two paths agree on the real generated definitions above, not on a
+   * hand-typed table — so a drift in either resolver fails here.
+   */
+  it.each([
+    'run',
+    'peek',
+  ] as const)('classifies a view intent identically to the %s model action', async (action) => {
+    const canonical = canonicalDefinitions.find((d) => d.action === action);
+    if (!canonical) throw new Error(`no canonical definition for ${action}`);
+
+    const { tools } = installModelContext();
+    clearViewIntentRegistry();
+    const intent = defineIntent({
+      id: `conformance.${action}`,
+      description: `Intent equivalent to the ${action} model action`,
+      // The SAME declaration the `@smrt({ api: { routes } })` block above
+      // makes: nothing at all for `run`, `effect: 'read'` only for `peek`.
+      ...(action === 'peek' ? { capability: { effect: 'read' as const } } : {}),
+      target: { registry: 'control' as const, action: 'focus' as const },
+    });
+
+    const registration = registerViewIntent(
+      intent,
+      {
+        registry: 'control',
+        registryPort: { execute: async () => ({ ok: true }) },
+        identity: { formId: 'conformance', controlId: 'field' },
+      },
+      { effects: ['read', 'write', 'destructive'] },
+    );
+    await registration.ready;
+
+    const tool = tools.find(
+      (candidate) => candidate.name === `conformance_${action}`,
+    );
+    if (!tool) throw new Error(`intent tool for ${action} was not registered`);
+
+    expect({
+      readOnlyHint: tool.annotations?.readOnlyHint,
+      idempotentHint: tool.annotations?.idempotentHint,
+      openWorldHint: tool.annotations?.openWorldHint,
+    }).toEqual(EXPECTED[action]);
+    // ...and byte-identical to core's REAL emission for the same declaration.
+    expect({
+      readOnlyHint: tool.annotations?.readOnlyHint,
+      destructiveHint: tool.annotations?.destructiveHint,
+      idempotentHint: tool.annotations?.idempotentHint,
+      openWorldHint: tool.annotations?.openWorldHint,
+    }).toEqual({
+      readOnlyHint: canonical.effect === 'read',
+      destructiveHint: canonical.effect !== 'read',
+      idempotentHint: canonical.idempotent,
+      openWorldHint: canonical.openWorld,
+    });
+
+    registration();
+    clearViewIntentRegistry();
   });
 });

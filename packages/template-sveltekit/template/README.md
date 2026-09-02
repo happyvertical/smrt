@@ -353,8 +353,11 @@ the web process.
 Logical export/import is manifest-driven JSON and refuses a non-empty target;
 it orders parent tables first and defers nullable cycle edges until every row
 exists. Export reads all model tables from one transaction snapshot. Every
-export report explicitly records that uploaded assets are excluded; copy the
-assets directory separately when moving profiles. Every supported local web
+schema-v2 export includes filesystem assets referenced by exported asset rows
+through a bounded, provider-neutral manifest with byte lengths and SHA-256
+digests. Import stages and verifies those assets before committing database
+rows; legacy database-only schema-v1 bundles are rejected with a version error.
+Every supported local web
 entry point (`app:start` or `pnpm dev`) holds a shared writer lease. Direct
 production startup must set an explicit loopback `HOST`, and `app:start` is the
 recommended entry point. Stop the app before backup/import. For deployed import, stop
