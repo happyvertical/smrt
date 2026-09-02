@@ -42,7 +42,12 @@ export {
   sourceMayContainNumericPrecisionIssue,
   splitIdentifierWords,
 } from './numeric-precision-lint.js';
-export { extractSmrtImports, parseFile, parseSource } from './oxc-parser.js';
+export {
+  extractSmrtImports,
+  parseAgentSurfaceFile,
+  parseFile,
+  parseSource,
+} from './oxc-parser.js';
 export { OxcScanner } from './scanner.js';
 export * from './types.js';
 export {

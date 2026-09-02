@@ -608,6 +608,46 @@ function maybeExtractAgentSurface(
 }
 
 /**
+ * Read one file for agent-surface declarations ONLY (#2591).
+ *
+ * Exists because the agent surface must not be confined to the class scan's
+ * `include` glob: an application that scans `src/lib/objects/**` for its models
+ * — the shipped template does exactly that — would otherwise never see a
+ * `src/lib/agent/Foo.intents.ts` sidecar, and the declaration would vanish from
+ * every artifact with no diagnostic. Silent omission is the one failure this
+ * matcher exists to prevent, so declarations are discovered on their own terms.
+ *
+ * The token pre-filter runs before the parse, so a file that declares nothing
+ * costs one read and one `String.includes`.
+ *
+ * @returns The file's surface, or `undefined` when it declares nothing or
+ *   cannot be read.
+ */
+export function parseAgentSurfaceFile(
+  filePath: string,
+): AgentSurface | undefined {
+  let sourceText: string;
+  try {
+    sourceText = readFileSync(filePath, 'utf-8');
+  } catch {
+    return undefined;
+  }
+  if (!sourceMayDeclareAgentSurface(sourceText)) return undefined;
+
+  try {
+    const result = parseSync(filePath, sourceText, {
+      lang: getLangFromFilename(filePath),
+      preserveParens: false,
+    });
+    const program = result.program as Program;
+    if (!program?.body) return undefined;
+    return maybeExtractAgentSurface(program, sourceText, filePath);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Parse TypeScript source text directly and extract SMRT class definitions.
  *
  * Identical to {@link parseFile} but accepts a source string instead of a

@@ -641,6 +641,37 @@ function intentDeclarationProblem(
     return `view intent '${id}' has an inputSchema that is not an object literal, which \`defineIntent\` rejects.`;
   }
 
+  // The fail-closed default is for an OMITTED capability, not a malformed one.
+  // Quietly defaulting `{ effect: 'reed' }` would emit an entry the runtime
+  // refuses, and hide the typo behind a plausible-looking classification.
+  const capability = declaration.capability;
+  if (capability !== undefined) {
+    if (!isPlainRecord(capability)) {
+      return `view intent '${id}' has a capability that is not an object literal, which \`defineIntent\` rejects.`;
+    }
+    for (const key of Object.keys(capability)) {
+      if (key !== 'effect' && key !== 'idempotent' && key !== 'openWorld') {
+        return `view intent '${id}' declares unknown capability key '${key}', which \`defineIntent\` rejects.`;
+      }
+    }
+    if (
+      capability.effect !== undefined &&
+      capability.effect !== 'read' &&
+      capability.effect !== 'write' &&
+      capability.effect !== 'destructive'
+    ) {
+      return `view intent '${id}' declares capability.effect '${String(capability.effect)}'; \`defineIntent\` accepts only read, write, or destructive.`;
+    }
+    for (const flag of ['idempotent', 'openWorld'] as const) {
+      if (
+        capability[flag] !== undefined &&
+        typeof capability[flag] !== 'boolean'
+      ) {
+        return `view intent '${id}' declares a non-boolean capability.${flag}, which \`defineIntent\` rejects.`;
+      }
+    }
+  }
+
   const target = declaration.target as Record<string, unknown>;
   const registry = target.registry;
   if (registry !== 'control' && registry !== 'dataSurface') {
@@ -702,7 +733,14 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 function playbookDeclarationProblem(
   declaration: Record<string, unknown>,
   key: string,
+  steps: readonly AgentSurfacePlaybookStep[],
 ): string | undefined {
+  if (steps.length === 0) {
+    // `normalizeSteps` requires at least one step and throws. Emitting the
+    // empty declaration would advertise a playbook that resolves to no plan.
+    return `playbook '${key}' declares no steps; \`definePlaybook\` requires at least one.`;
+  }
+
   const planes = declaration.planes;
   if (planes !== undefined && planes !== null) {
     if (!Array.isArray(planes)) {
@@ -966,7 +1004,7 @@ export function extractAgentSurface(
       );
       continue;
     }
-    const playbookProblem = playbookDeclarationProblem(declaration, key);
+    const playbookProblem = playbookDeclarationProblem(declaration, key, steps);
     if (playbookProblem) {
       report('invalid-identity', helper, playbookProblem, node.start);
       continue;

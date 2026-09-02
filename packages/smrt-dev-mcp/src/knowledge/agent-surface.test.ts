@@ -286,7 +286,7 @@ describe('dev:knowledge-check validates the emitted surface', () => {
     expect(strict.ok).toBe(false);
     expect(drift).toHaveLength(1);
     expect(drift[0].message).toContain('commerce.checkout');
-    expect(drift[0].message).toContain('no longer declared in source');
+    expect(drift[0].message).toContain('no longer present in source');
   });
 
   it('does not report drift for a declaration the emitter never sees', async () => {
@@ -310,11 +310,12 @@ describe('dev:knowledge-check validates the emitted surface', () => {
     ).toEqual([]);
   });
 
-  it('does not report drift for the loser of a tool-name collision', async () => {
-    // The merge drops it deliberately, and the artifact is the merged result;
-    // comparing raw per-file declarations would call the drop "missing".
-    // Named so the ARTIFACT's own entry is the path-ordered winner; the loser
-    // is the one added here, exactly as the emitter would have resolved it.
+  it('never reports the dropped loser of a tool-name collision as a missing identity', async () => {
+    // The merge drops it deliberately and the artifact is the merged result, so
+    // comparing raw per-file declarations would call the drop "missing" — an
+    // error no rebuild could clear. The collision DOES add a diagnostic, which
+    // is real drift, so the artifact is correctly stale for that reason alone.
+    // Named so the ARTIFACT's own entry is the path-ordered winner.
     await writeArtifact(agentSurface(), await currentHashes());
     await writeFile(
       join(packageDir, 'src/lib/zz-collides.intents.ts'),
@@ -322,10 +323,38 @@ describe('dev:knowledge-check validates the emitted surface', () => {
     );
 
     const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+    const drift = strict.issues.filter(
+      (issue) => issue.code === 'stale-agent-surface',
+    );
 
-    expect(
-      strict.issues.filter((issue) => issue.code === 'stale-agent-surface'),
-    ).toEqual([]);
+    expect(drift).toHaveLength(1);
+    expect(drift[0].message).toContain('duplicate-identity diagnostic');
+    // Crucially, NOT reported as a missing view intent.
+    expect(drift[0].message).not.toContain('view intent:');
+  });
+
+  it('fails when a new sidecar adds ONLY a non-static declaration', async () => {
+    // It contributes no identity and has no prior hash, so without comparing
+    // diagnostics too, "a diagnostic, never silence" would quietly become
+    // "a diagnostic, until the artifact goes stale".
+    await writeArtifact(agentSurface(), await currentHashes());
+    await writeFile(
+      join(packageDir, 'src/lib/computed.intents.ts'),
+      `import { defineIntent } from '@happyvertical/smrt-web/intents';
+const config = { id: 'orders.computed' };
+export const a = defineIntent(config);
+`,
+    );
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+    const drift = strict.issues.filter(
+      (issue) => issue.code === 'stale-agent-surface',
+    );
+
+    expect(strict.ok).toBe(false);
+    expect(drift).toHaveLength(1);
+    expect(drift[0].message).toContain('non-literal-argument diagnostic');
+    expect(drift[0].message).toContain('computed.intents.ts');
   });
 
   it('fails when a declaring module is gone', async () => {

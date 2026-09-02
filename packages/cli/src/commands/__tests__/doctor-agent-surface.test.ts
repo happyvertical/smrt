@@ -190,6 +190,30 @@ describe('readAgentSurfaceReport', () => {
     }
   });
 
+  it('steps over an artifact whose MEMBERS are malformed', async () => {
+    // The top-level arrays are the right shape here; the members are not, and
+    // the projection throws on `intent.capability.effect`. Doctor is a
+    // diagnostic tool — that must cost it this candidate, not the whole run.
+    projectRoot = await mkdtemp(join(tmpdir(), 'smrt-doctor-agent-surface-'));
+    await mkdir(resolve(projectRoot, '.smrt'), { recursive: true });
+    await writeFile(
+      resolve(projectRoot, '.smrt/smrt-knowledge.json'),
+      JSON.stringify({
+        ...ARTIFACT,
+        agentSurface: { intents: [{}], playbooks: [], diagnostics: [] },
+      }),
+    );
+    await mkdir(resolve(projectRoot, 'dist'), { recursive: true });
+    await writeFile(
+      resolve(projectRoot, 'dist/smrt-knowledge.json'),
+      JSON.stringify(ARTIFACT),
+    );
+
+    const report = await readAgentSurfaceReport(projectRoot);
+
+    expect(report?.source).toBe('dist/smrt-knowledge.json');
+  });
+
   it('falls through a malformed working copy to a valid build output', async () => {
     // The malformed `.smrt/` artifact must not mask the good `dist/` one.
     projectRoot = await mkdtemp(join(tmpdir(), 'smrt-doctor-agent-surface-'));

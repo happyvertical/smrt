@@ -408,6 +408,41 @@ export const a = definePlaybook({
     }
   });
 
+  it('rejects a malformed capability instead of quietly defaulting it', () => {
+    // The fail-closed default is for an OMITTED capability, not a typo'd one.
+    // Defaulting `{ effect: 'reed' }` would emit an entry the runtime refuses
+    // and hide the typo behind a plausible-looking classification.
+    for (const [capability, expected] of [
+      [`{ effect: 'reed' }`, "capability.effect 'reed'"],
+      [`{ effect: 'read', retries: 2 }`, "unknown capability key 'retries'"],
+      [`{ idempotent: 'yes' }`, 'non-boolean capability.idempotent'],
+    ] as const) {
+      const surface = surfaceOf(`${INTENT_IMPORT}
+export const a = defineIntent({
+  id: 'orders.bad_capability',
+  description: 'Malformed capability',
+  capability: ${capability},
+  target: { registry: 'control', action: 'focus' },
+});
+`);
+      expect(surface.intents).toEqual([]);
+      expect(surface.diagnostics[0].message).toContain(expected);
+    }
+  });
+
+  it('rejects a playbook with an empty step list', () => {
+    const surface = surfaceOf(`${PLAYBOOK_IMPORT}
+export const a = definePlaybook({
+  key: 'commerce.nothing',
+  title: 'Nothing',
+  description: 'No steps at all',
+  steps: [],
+});
+`);
+    expect(surface.playbooks).toEqual([]);
+    expect(surface.diagnostics[0].message).toContain('declares no steps');
+  });
+
   it('rejects a playbook step whose model is not a qualified pair', () => {
     const surface = surfaceOf(`${PLAYBOOK_IMPORT}
 export const a = definePlaybook({
@@ -611,6 +646,66 @@ export const b = defineIntent({
       filePath: 'z/two.intents.ts',
     });
     expect(forward.diagnostics[0].message).toContain('orders_foo_bar');
+  });
+
+  it('finds sidecars OUTSIDE the class-scan include glob', async () => {
+    // The shipped SvelteKit template scans `src/lib/objects/**/*.ts` for its
+    // models, but an intent sidecar lives beside the component that uses it.
+    // Binding declaration discovery to the class glob made those declarations
+    // vanish from every artifact with no diagnostic at all.
+    const root = mkdtempSync(join(tmpdir(), 'smrt-agent-surface-glob-'));
+    try {
+      mkdirSync(join(root, 'src', 'lib', 'objects'), { recursive: true });
+      mkdirSync(join(root, 'src', 'lib', 'agent'), { recursive: true });
+      writeFileSync(
+        join(root, 'src', 'lib', 'objects', 'Order.ts'),
+        'export class Order {}\n',
+      );
+      writeFileSync(
+        join(root, 'src', 'lib', 'agent', 'orders.intents.ts'),
+        LITERAL_INTENT,
+      );
+      writeFileSync(
+        join(root, 'src', 'lib', 'agent', 'checkout.playbooks.ts'),
+        LITERAL_PLAYBOOK,
+      );
+
+      const { results } = await new OxcScanner({
+        cwd: root,
+        // Deliberately narrow, exactly as the template configures it.
+        include: ['src/lib/objects/**/*.ts'],
+      }).scanAndResolve();
+
+      expect(results.agentSurface.intents.map((i) => i.id)).toEqual([
+        'orders.next_page',
+      ]);
+      expect(results.agentSurface.playbooks.map((p) => p.key)).toEqual([
+        'commerce.checkout',
+      ]);
+      expect(results.agentSurface.diagnostics).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('never counts a declaration twice when both passes cover the file', async () => {
+    // The class glob and the declaration glob overlap by default; a file
+    // visited by both must not collide with itself.
+    const root = mkdtempSync(join(tmpdir(), 'smrt-agent-surface-overlap-'));
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true });
+      writeFileSync(join(root, 'src', 'orders.intents.ts'), LITERAL_INTENT);
+
+      const { results } = await new OxcScanner({
+        cwd: root,
+        include: ['src/**/*.ts'],
+      }).scanAndResolve();
+
+      expect(results.agentSurface.intents).toHaveLength(1);
+      expect(results.agentSurface.diagnostics).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('records source paths relative to the scan root, in POSIX form', async () => {

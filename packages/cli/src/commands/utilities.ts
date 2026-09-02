@@ -616,43 +616,44 @@ export async function readAgentSurfaceReport(
     // good `dist/` artifact, and `{ "surfaces": {} }` would throw at `.filter`
     // and abort the whole doctor run. Doctor is a diagnostic: a malformed
     // artifact must be stepped over, never mistaken for an empty one.
-    let artifact: DomainKnowledgeManifest;
+    // The projection sits INSIDE the try on purpose. Shape-checking the top
+    // level is not enough — a member like `intents: [{}]` passes it and then
+    // throws on `intent.capability.effect`. Doctor is a diagnostic tool; a
+    // malformed artifact must cost it this candidate, never the whole run.
     try {
       const parsed: unknown = JSON.parse(readFileSync(artifactPath, 'utf-8'));
       if (!isReadableKnowledgeArtifact(parsed)) continue;
-      artifact = parsed;
-    } catch {
-      continue;
-    }
+      const artifact: DomainKnowledgeManifest = parsed;
+      const surface = artifact.agentSurface;
 
-    const surface = artifact.agentSurface;
-    return {
-      source: candidate,
-      modelTools: (artifact.surfaces ?? [])
-        .filter((entry) => entry.kind === 'mcp')
-        .map((entry) => ({
-          kind: 'model tool' as const,
-          name: entry.name,
-          detail: `${entry.objectName ?? '?'}.${entry.operation}`,
-        }))
-        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
-      intents: (surface?.intents ?? []).map((intent) => ({
-        kind: 'view intent' as const,
-        name: intent.id,
-        detail: `${intent.capability.effect} · ${intent.planes.join('+')} · ${intent.sourceFile}`,
-      })),
-      playbooks: (surface?.playbooks ?? []).map((playbook) => ({
-        kind: 'playbook' as const,
-        name: playbook.key,
-        detail: `${playbook.steps.length} step(s) · ${playbook.planes.join('+')} · ${playbook.sourceFile}`,
-      })),
-      notStatic: (surface?.diagnostics ?? []).map((diagnostic) => ({
-        sourceFile: diagnostic.line
-          ? `${diagnostic.sourceFile}:${diagnostic.line}`
-          : diagnostic.sourceFile,
-        message: diagnostic.message,
-      })),
-    };
+      return {
+        source: candidate,
+        modelTools: (artifact.surfaces ?? [])
+          .filter((entry) => entry.kind === 'mcp')
+          .map((entry) => ({
+            kind: 'model tool' as const,
+            name: String(entry.name),
+            detail: `${entry.objectName ?? '?'}.${entry.operation}`,
+          }))
+          .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+        intents: (surface?.intents ?? []).map((intent) => ({
+          kind: 'view intent' as const,
+          name: String(intent.id),
+          detail: `${intent.capability.effect} · ${intent.planes.join('+')} · ${intent.sourceFile}`,
+        })),
+        playbooks: (surface?.playbooks ?? []).map((playbook) => ({
+          kind: 'playbook' as const,
+          name: String(playbook.key),
+          detail: `${playbook.steps.length} step(s) · ${playbook.planes.join('+')} · ${playbook.sourceFile}`,
+        })),
+        notStatic: (surface?.diagnostics ?? []).map((diagnostic) => ({
+          sourceFile: diagnostic.line
+            ? `${diagnostic.sourceFile}:${diagnostic.line}`
+            : String(diagnostic.sourceFile),
+          message: String(diagnostic.message),
+        })),
+      };
+    } catch {}
   }
 
   return undefined;

@@ -13,7 +13,7 @@ import {
 } from './agent-surface.js';
 import { discoverSourceFiles } from './discovery.js';
 import { InheritanceResolver } from './inheritance-resolver.js';
-import { parseFile } from './oxc-parser.js';
+import { parseAgentSurfaceFile, parseFile } from './oxc-parser.js';
 import type {
   AgentSurface,
   ExternalManifest,
@@ -34,6 +34,24 @@ const DEFAULT_INCLUDE = ['**/*.ts', '**/*.tsx'];
  * intent written inline in a component fails loudly instead of vanishing.
  */
 const DEFAULT_SVELTE_INCLUDE = ['**/*.svelte'];
+
+/**
+ * Files searched for `defineIntent` / `definePlaybook` declarations,
+ * INDEPENDENTLY of the class-scan `include` glob (#2591).
+ *
+ * A model scan is routinely narrowed to where models live — the shipped
+ * SvelteKit template uses `src/lib/objects/**\/*.ts` — but an intent sidecar
+ * lives beside the component that uses it. Binding declaration discovery to the
+ * class glob would make those sidecars vanish from every artifact with no
+ * diagnostic, which is the exact silent omission this matcher exists to
+ * prevent. Extensions match what the Vite plugin's default include accepts.
+ */
+const DEFAULT_AGENT_SURFACE_INCLUDE = [
+  '**/*.ts',
+  '**/*.tsx',
+  '**/*.js',
+  '**/*.jsx',
+];
 const DEFAULT_EXCLUDE = [
   '**/node_modules/**',
   '**/dist/**',
@@ -115,6 +133,8 @@ export class OxcScanner {
       followSymbolicLinks: options.followSymbolicLinks ?? false,
       agentSurface: options.agentSurface ?? true,
       svelteInclude: options.svelteInclude || DEFAULT_SVELTE_INCLUDE,
+      agentSurfaceInclude:
+        options.agentSurfaceInclude || DEFAULT_AGENT_SURFACE_INCLUDE,
     };
 
     this.resolver = new InheritanceResolver({
@@ -178,6 +198,9 @@ export class OxcScanner {
     }
 
     if (this.options.agentSurface) {
+      surfaces.push(
+        ...(await this.scanDeclarationsOutsideClassGlob(new Set(files))),
+      );
       surfaces.push(await this.scanSvelteDeclarations());
       results.agentSurface = mergeAgentSurfaces(surfaces, (filePath) =>
         this.relativizeSourcePath(filePath),
@@ -363,6 +386,44 @@ export class OxcScanner {
       exclude: this.options.exclude,
       followSymbolicLinks: this.options.followSymbolicLinks,
     });
+  }
+
+  /**
+   * Find declarations in files the CLASS scan did not cover.
+   *
+   * The class `include` is routinely narrowed to where models live, but an
+   * intent sidecar lives beside its component. Without this pass those
+   * declarations would be missing from every artifact with no diagnostic — a
+   * silent omission, and in the shipped SvelteKit template's own layout at
+   * that. Files already parsed by the class scan are skipped so a declaration
+   * is never counted twice and cannot collide with itself.
+   *
+   * @param alreadyScanned - Absolute paths the class scan already parsed.
+   */
+  private async scanDeclarationsOutsideClassGlob(
+    alreadyScanned: ReadonlySet<string>,
+  ): Promise<AgentSurface[]> {
+    if (this.options.agentSurfaceInclude.length === 0) return [];
+
+    let files: string[];
+    try {
+      files = await discoverSourceFiles({
+        cwd: this.options.cwd,
+        include: this.options.agentSurfaceInclude,
+        exclude: this.options.exclude,
+        followSymbolicLinks: this.options.followSymbolicLinks,
+      });
+    } catch {
+      return [];
+    }
+
+    const surfaces: AgentSurface[] = [];
+    for (const filePath of files) {
+      if (alreadyScanned.has(filePath)) continue;
+      const surface = parseAgentSurfaceFile(filePath);
+      if (surface) surfaces.push(surface);
+    }
+    return surfaces;
   }
 
   /**

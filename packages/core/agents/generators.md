@@ -73,8 +73,11 @@ short of enumerating every route. This closes that.
 The same OXC scan that builds the manifest also runs the scanner's
 agent-surface matcher (`ScanResults.agentSurface`). `smrtPlugin()` captures it
 in `scanWithOxc`, projects it with `toKnowledgeAgentSurface`, and passes it to
-`buildDomainKnowledgeManifest` as `agentSurface`. Two consequences worth holding
-onto:
+`buildDomainKnowledgeManifest` as `agentSurface`. Note that declaration
+discovery is NOT bound to the plugin's `include` glob — an app that scans
+`src/lib/objects/**` for models still has its `src/lib/agent/*.intents.ts`
+sidecars found (see `packages/scanner/AGENTS.md`). Two more consequences worth
+holding onto:
 
 - **It never touches `manifest.json`.** The runtime manifest stays
   runtime-focused; the agent-addressable surface is an agent/developer contract,
@@ -106,10 +109,14 @@ the numeric-precision lint: `src` only, behind the scanner's token pre-filter.
 That re-derivation must model what the EMITTER sees, not merely what is on
 disk, or it reports drift no rebuild can clear. So it skips the files the build
 excludes (`*.test.ts`, `*.spec.ts`, `__tests__/`, `*.d.ts` — a fixture intent in
-a test file is never emitted) and runs the per-file results through
-`mergeAgentSurfaces` before comparing, because the merge is where a duplicate
-identity and a derived tool-name collision are resolved and the artifact is the
-merged result.
+a test file is never emitted), covers the same `.js`/`.jsx` the plugin's default
+include accepts, and runs the per-file results through `mergeAgentSurfaces`
+before comparing, because the merge is where a duplicate identity and a derived
+tool-name collision are resolved and the artifact is the merged result.
+Diagnostics are compared alongside identities: a sidecar containing only a
+computed declaration adds no identity and has no prior hash, so without that,
+"a diagnostic, never silence" would quietly become "a diagnostic, until the
+artifact goes stale".
 
 Both `stale-*` codes are warnings by default and errors under `--strict`, which
 is what CI runs. Alongside them: `agent-surface-missing-identity`,

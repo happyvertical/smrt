@@ -55,13 +55,23 @@ argument**. `ScanResults.agentSurface` carries the merged result.
 
 | Requirement | Why |
 |---|---|
-| A `.ts` / `.tsx` module | the scanner never reads `.svelte` |
+| A `.ts` / `.tsx` / `.js` / `.jsx` module | the scanner never reads `.svelte` |
 | Callee bound by an import from exactly one specifier — `defineIntent` from `@happyvertical/smrt-web/intents`, `definePlaybook` from `@happyvertical/smrt-playbooks` | a local function of the same name is not a declaration. `defineIntent` ships solely from the `/intents` subpath so a sidecar drags in no client-data engine; matching the package root would invent a specifier |
 | The call directly at module scope — `const x = f({…})`, `export const x = f({…})`, `f({…});`, `export default f({…})`, or an element of a module-scope array initializer | anything deeper is conditional on control flow; an array literal is not |
 | Exactly one argument, an `ObjectExpression` whose values are literals, literal objects, or literal arrays | there is nothing to read otherwise |
 
 Named imports (aliased or not) and namespace imports (`intents.defineIntent`)
 both resolve; a default import does not, since neither package has one.
+
+**Declaration discovery is NOT bound to the class-scan `include` glob.** A model
+scan is routinely narrowed to where models live — the shipped SvelteKit template
+uses `src/lib/objects/**/*.ts` — but an intent sidecar lives beside the component
+that uses it. So `agentSurfaceInclude` (default `**/*.{ts,tsx,js,jsx}`, the
+extensions the Vite plugin's own default accepts) is globbed separately, files
+the class pass already parsed are skipped so nothing is counted twice, and the
+token pre-filter keeps a non-declaring file at one read. Binding the two globs
+together made sidecars vanish from every artifact with no diagnostic at all —
+the exact silent omission this matcher exists to prevent.
 
 ### What it refuses, always with a diagnostic
 
@@ -74,7 +84,7 @@ for a tool set genuinely derived from computed or fetched data:
 | `not-module-scope` | declared inside a function, class, conditional, or loop |
 | `argument-count` | not exactly one argument |
 | `incomplete-declaration` | the literal parsed but lacks `id`/`description`/`target` (intent) or `key`/`title`/`description`/`steps` (playbook) |
-| `invalid-identity` | a declaration the runtime helper itself would reject: an intent `id` that is not lowercase and dot-namespaced, over 128 chars, or resolving into the reserved `smrt_ui_` namespace; an unknown declaration or target key; a `target` outside the closed `control`/`dataSurface` unions or missing a required `controlId`; a playbook with an empty, non-array, or unknown-plane `planes`, an `onStepFailure` outside `abort`/`continue`, a non-boolean `enabled`, or a step whose `model` is not a qualified pair |
+| `invalid-identity` | a declaration the runtime helper itself would reject: an intent `id` that is not lowercase and dot-namespaced, over 128 chars, or resolving into the reserved `smrt_ui_` namespace; an unknown declaration, target, or capability key; a malformed `capability` (bad `effect`, non-boolean flag); a `target` outside the closed `control`/`dataSurface` unions or missing a required `controlId`; a playbook with no steps, an empty/non-array/unknown-plane `planes`, an `onStepFailure` outside `abort`/`continue`, a non-boolean `enabled`, or a step whose `model` is not a qualified pair |
 | `svelte-declaration` | written inline in a `.svelte` file |
 | `duplicate-identity` | two modules declare the same `id`/`key`, or two intent ids derive the same WebMCP tool name |
 
@@ -91,9 +101,12 @@ second registration.
 Invalid values are **rejected, never repaired**. That matters most for a
 playbook's `planes`: `definePlaybook` throws on an empty or unknown-plane list,
 so defaulting it here would emit an entry asserting `server` validity the author
-never declared — the exact fail-open the plane rule exists to prevent. Playbook
-*keys* get no pattern check, because `definePlaybook` imposes none; only
-uniqueness applies. **If either runtime tightens its rules, tighten these too.**
+never declared — the exact fail-open the plane rule exists to prevent. The same
+holds for `capability`: the fail-closed default is for an OMITTED capability,
+not a typo'd one, so `{ effect: 'reed' }` is a diagnostic rather than a silent
+`destructive`. Playbook *keys* get no pattern check, because `definePlaybook`
+imposes none; only uniqueness applies. **If either runtime tightens its rules,
+tighten these too.**
 
 This is deliberately narrower than the decorator-config extractor, which
 RESOLVES spreads against module-scope constants. That one must, because a

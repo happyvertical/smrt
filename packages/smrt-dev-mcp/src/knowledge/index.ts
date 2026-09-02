@@ -31,6 +31,7 @@ import {
   mergeAgentSurfaces,
   OxcScanner,
   parseSource,
+  scanSvelteAgentSurface,
   sourceMayContainNumericPrecisionIssue,
   sourceMayDeclareAgentSurface,
 } from '@happyvertical/smrt-scanner';
@@ -1161,13 +1162,26 @@ function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
  * `dev:knowledge-check` permanently red for that package.
  */
 function isEmittableAgentSurfaceSource(filePath: string): boolean {
-  if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return false;
+  // The Vite plugin's default include accepts JavaScript too, so a `.js`
+  // sidecar is emitted; skipping it here would report a stale artifact as
+  // fresh, since a new file also has no prior source hash.
+  if (!/\.(?:ts|tsx|js|jsx)$/.test(filePath)) return false;
   if (filePath.endsWith('.d.ts')) return false;
   if (/\.(?:test|spec)\.tsx?$/.test(filePath)) return false;
   const segments = filePath.split(sep);
   return (
     !segments.includes('__tests__') && !segments.includes('__typechecks__')
   );
+}
+
+/** Turn a comparison key back into something a human can act on. */
+function describeAgentSurfaceIdentity(identity: string): string {
+  if (!identity.startsWith('diagnostic:')) return identity;
+  const [, code, ...rest] = identity.split(':');
+  const line = rest.pop();
+  const path = rest.join(':');
+  const where = line && line !== '0' ? `${path}:${line}` : path;
+  return `${code} diagnostic at ${where}`;
 }
 
 function findAgentSurfaceDriftIssues(
@@ -1183,6 +1197,16 @@ function findAgentSurfaceDriftIssues(
 
     const perFile: AgentSurface[] = [];
     for (const filePath of walkFiles(srcDir)) {
+      // A `.svelte` file contributes diagnostics only — never an entry — but
+      // those diagnostics ARE part of the emitted surface, so omitting them
+      // here would report every one of them as no longer declared.
+      if (filePath.endsWith('.svelte')) {
+        const diagnostics = scanSvelteAgentSurface(filePath);
+        if (diagnostics.length > 0) {
+          perFile.push({ intents: [], playbooks: [], diagnostics });
+        }
+        continue;
+      }
       // Match what the EMITTER sees, not merely what is on disk. A declaration
       // in a file the build excludes is never emitted, so counting it here
       // would raise a drift error no rebuild could ever clear.
@@ -1202,13 +1226,26 @@ function findAgentSurfaceDriftIssues(
     // derived tool-name collision are resolved, and the emitted artifact is the
     // merged result. Comparing raw per-file declarations against it would
     // report the dropped loser as missing, which a rebuild cannot fix.
-    const merged = mergeAgentSurfaces(perFile);
+    // Relativize the same way the emitter does, so paths in the two sets are
+    // directly comparable.
+    const merged = mergeAgentSurfaces(perFile, (filePath) =>
+      relative(pkg.directory, filePath).split(sep).join('/'),
+    );
     const declared = new Set<string>();
     for (const intent of merged.intents) {
       declared.add(`view intent:${intent.id}`);
     }
     for (const playbook of merged.playbooks) {
       declared.add(`playbook:${playbook.key}`);
+    }
+    // Diagnostics are part of the emitted surface, and a sidecar containing
+    // ONLY a non-static declaration changes nothing else: no identity, and no
+    // prior hash to mismatch. Without this, "a diagnostic, never silence"
+    // would quietly become "a diagnostic, until the artifact goes stale".
+    for (const diagnostic of merged.diagnostics) {
+      declared.add(
+        `diagnostic:${diagnostic.code}:${diagnostic.filePath}:${diagnostic.line ?? 0}`,
+      );
     }
 
     const emitted = new Set<string>();
@@ -1218,13 +1255,18 @@ function findAgentSurfaceDriftIssues(
     for (const playbook of pkg.agentSurface?.playbooks ?? []) {
       emitted.add(`playbook:${playbook.key}`);
     }
+    for (const diagnostic of pkg.agentSurface?.diagnostics ?? []) {
+      emitted.add(
+        `diagnostic:${diagnostic.code}:${diagnostic.sourceFile}:${diagnostic.line ?? 0}`,
+      );
+    }
 
     for (const identity of [...declared].sort()) {
       if (emitted.has(identity)) continue;
       issues.push({
         severity: 'error',
         code: 'stale-agent-surface',
-        message: `${identity} is declared in source but missing from smrt-knowledge.json — rebuild the package`,
+        message: `${describeAgentSurfaceIdentity(identity)} is present in source but missing from smrt-knowledge.json — rebuild the package`,
         file: pkg.domainKnowledgePath,
         packageName: pkg.name,
       });
@@ -1234,7 +1276,7 @@ function findAgentSurfaceDriftIssues(
       issues.push({
         severity: 'error',
         code: 'stale-agent-surface',
-        message: `${identity} is emitted in smrt-knowledge.json but no longer declared in source — rebuild the package`,
+        message: `${describeAgentSurfaceIdentity(identity)} is in smrt-knowledge.json but no longer present in source — rebuild the package`,
         file: pkg.domainKnowledgePath,
         packageName: pkg.name,
       });

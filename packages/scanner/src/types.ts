@@ -461,6 +461,17 @@ export interface OxcScannerOptions {
    * Only used when {@link OxcScannerOptions.agentSurface} is enabled.
    */
   svelteInclude?: string[];
+
+  /**
+   * Glob patterns searched for `defineIntent` / `definePlaybook` declarations,
+   * independently of {@link OxcScannerOptions.include}.
+   *
+   * A model scan is routinely narrowed to where models live, but an intent
+   * sidecar lives beside the component that uses it; binding declaration
+   * discovery to the class glob would silently drop those. Only used when
+   * {@link OxcScannerOptions.agentSurface} is enabled.
+   */
+  agentSurfaceInclude?: string[];
 }
 
 /**
