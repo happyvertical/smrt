@@ -213,6 +213,17 @@ function retryPreview() {
       <p id="content-lifecycle-summary">
         {t(M['content.content_list.lifecycle_resolving'])}
       </p>
+    {:else if snapshot.status === 'applying'}
+      <p role="status">
+        {t(M['content.content_list.workflow_applying'])}
+      </p>
+      {#if snapshot.summary}
+        <p id="content-lifecycle-summary">
+          {t(M['content.content_list.lifecycle_resolved'], {
+            count: snapshot.summary.resolvedCount,
+          })}
+        </p>
+      {/if}
     {:else if snapshot.summary}
       <p id="content-lifecycle-summary">
         {t(M['content.content_list.lifecycle_resolved'], {

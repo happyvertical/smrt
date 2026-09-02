@@ -415,6 +415,7 @@ export function createContentListLifecycleController(
     renewalRequired: false,
   };
   let generation = 0;
+  let previewViewKey: string | undefined;
   let frozen:
     | {
         request: ContentListLifecycleRequest;
@@ -430,6 +431,7 @@ export function createContentListLifecycleController(
 
   const reset = (): void => {
     generation += 1;
+    previewViewKey = undefined;
     frozen = undefined;
     publish({ status: 'idle', renewalRequired: false });
   };
@@ -438,6 +440,7 @@ export function createContentListLifecycleController(
     input: ContentListLifecyclePreviewInput,
   ): Promise<ContentListLifecycleSnapshot> => {
     const currentGeneration = ++generation;
+    previewViewKey = input.viewKey;
     frozen = undefined;
     const selection = cloneSelection(input.selection);
     if (
@@ -481,6 +484,7 @@ export function createContentListLifecycleController(
     try {
       const result = await options.client.preview(request);
       if (currentGeneration !== generation) return state;
+      previewViewKey = undefined;
       const summary = readContentListLifecycleSummary(result);
       if (!result.ok || !result.confirmationToken) {
         const reason = result.reason ?? 'preview_failed';
@@ -507,6 +511,7 @@ export function createContentListLifecycleController(
       return state;
     } catch (error) {
       if (currentGeneration !== generation) return state;
+      previewViewKey = undefined;
       publish({
         status: 'failed',
         actionId: input.actionId,
@@ -606,7 +611,12 @@ export function createContentListLifecycleController(
     preview,
     apply,
     invalidate(viewKey) {
-      if (frozen && frozen.viewKey !== viewKey) reset();
+      if (
+        (previewViewKey !== undefined && previewViewKey !== viewKey) ||
+        (frozen !== undefined && frozen.viewKey !== viewKey)
+      ) {
+        reset();
+      }
     },
     reset,
   };

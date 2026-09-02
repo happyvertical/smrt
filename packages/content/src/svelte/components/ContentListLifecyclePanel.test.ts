@@ -170,6 +170,45 @@ describe('ContentListLifecyclePanel', () => {
     expect(target.textContent).toContain('document-2: locked');
   });
 
+  it('announces visible progress while the lifecycle mutation is applying', async () => {
+    let resolveApply!: (value: DataSurfaceActionResult) => void;
+    const applyResult = new Promise<DataSurfaceActionResult>((resolve) => {
+      resolveApply = resolve;
+    });
+    const apply = vi.fn(() => applyResult);
+    const { target } = renderPanel({
+      binding: {
+        client: {
+          preview: async () => lifecycleResult('preview'),
+          apply,
+        },
+        identity,
+      },
+    });
+    button(target, 'Delete selected permanently').click();
+    await tick();
+    await tick();
+    const confirmation = target.querySelector<HTMLInputElement>(
+      'input[aria-label="Type the resolved item count to confirm permanent deletion"]',
+    );
+    if (!confirmation) throw new Error('Missing count confirmation');
+    confirmation.value = '2';
+    confirmation.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    flushSync();
+
+    button(target, 'Confirm 2').click();
+    await tick();
+
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(
+      'Applying…',
+    );
+
+    resolveApply(lifecycleResult('apply'));
+    await tick();
+    await tick();
+  });
+
   it('closes the preview with Escape without applying', async () => {
     const { target, apply } = renderPanel();
     button(target, 'Delete selected permanently').click();

@@ -142,6 +142,35 @@ describe('ContentList lifecycle controller', () => {
     });
   });
 
+  it('discards an in-flight preview when the query or selection changes', async () => {
+    let resolvePreview!: (value: DataSurfaceActionResult) => void;
+    const previewResult = new Promise<DataSurfaceActionResult>((resolve) => {
+      resolvePreview = resolve;
+    });
+    const controller = createContentListLifecycleController({
+      client: {
+        preview: () => previewResult,
+        apply: async () => result('apply'),
+      },
+      createRequestId: () => 'preview-1',
+    });
+    const pending = controller.preview({
+      actionId: 'permanent-delete',
+      selection: { scope: 'explicit-ids', rowIds: ['a', 'b'] },
+      expectedCount: 2,
+      viewKey: 'selection-a-b',
+    });
+
+    controller.invalidate('selection-c');
+    resolvePreview(result('preview'));
+    await pending;
+
+    expect(controller.snapshot()).toEqual({
+      status: 'idle',
+      renewalRequired: false,
+    });
+  });
+
   it('requires a renewed preview when the server reports matching-count drift', async () => {
     const controller = createContentListLifecycleController({
       client: {

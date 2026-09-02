@@ -181,7 +181,7 @@ export class ContentContribution extends SmrtObject {
 
   editorNotes = '';
 
-  @foreignKey('Content')
+  @foreignKey('Content', { nullable: true, onDelete: 'SET NULL' })
   promotedContentId = '';
   revisionCount = 0;
   approvedAt: Date | null = null;
