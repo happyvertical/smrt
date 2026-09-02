@@ -197,7 +197,7 @@ describe('ContentList lifecycle controller', () => {
     expect(await applying).toMatchObject({ status: 'succeeded' });
   });
 
-  it('retries a lost apply response with the exact idempotency envelope', async () => {
+  it('retries a lost apply response with fresh correlation and the same authority envelope', async () => {
     const apply = vi
       .fn<() => Promise<DataSurfaceActionResult>>()
       .mockRejectedValueOnce(new Error('response lost'))
@@ -228,8 +228,15 @@ describe('ContentList lifecycle controller', () => {
     });
     expect(await controller.apply(2)).toMatchObject({ status: 'succeeded' });
     expect(apply).toHaveBeenCalledTimes(3);
-    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
-    expect(apply.mock.calls[2]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+    const requests = apply.mock.calls.map(([request]) => request);
+    expect(new Set(requests.map(({ requestId }) => requestId)).size).toBe(3);
+    expect(
+      requests.map(({ requestId: _requestId, ...authority }) => authority),
+    ).toEqual(
+      [requests[0], requests[0], requests[0]].map(
+        ({ requestId: _requestId, ...authority }) => authority,
+      ),
+    );
   });
 
   it('retains an ambiguous apply envelope after its original view changes', async () => {
@@ -268,7 +275,14 @@ describe('ContentList lifecycle controller', () => {
       status: 'succeeded',
       replayRequired: false,
     });
-    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+    expect(apply.mock.calls[1]?.[0]?.requestId).not.toBe(
+      apply.mock.calls[0]?.[0]?.requestId,
+    );
+    const { requestId: _firstRequestId, ...firstAuthority } =
+      apply.mock.calls[0]?.[0] ?? {};
+    const { requestId: _retryRequestId, ...retryAuthority } =
+      apply.mock.calls[1]?.[0] ?? {};
+    expect(retryAuthority).toEqual(firstAuthority);
   });
 
   it('blocks reset and a new preview until an ambiguous apply is replayed', async () => {
@@ -307,7 +321,14 @@ describe('ContentList lifecycle controller', () => {
     });
 
     expect(await controller.apply(2)).toMatchObject({ status: 'succeeded' });
-    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+    expect(apply.mock.calls[1]?.[0]?.requestId).not.toBe(
+      apply.mock.calls[0]?.[0]?.requestId,
+    );
+    const { requestId: _firstRequestId, ...firstAuthority } =
+      apply.mock.calls[0]?.[0] ?? {};
+    const { requestId: _retryRequestId, ...retryAuthority } =
+      apply.mock.calls[1]?.[0] ?? {};
+    expect(retryAuthority).toEqual(firstAuthority);
   });
 
   it('requires a renewed preview when the server reports matching-count drift', async () => {

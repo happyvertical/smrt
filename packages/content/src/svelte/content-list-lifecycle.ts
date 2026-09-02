@@ -138,7 +138,7 @@ export interface ContentListLifecycleSnapshot {
   error?: string;
   /** True when the only safe recovery is another server preview. */
   renewalRequired: boolean;
-  /** True while an ambiguous apply must be replayed with its exact envelope. */
+  /** True while an ambiguous apply must replay its exact authority envelope. */
   replayRequired?: boolean;
 }
 
@@ -562,18 +562,21 @@ export function createContentListLifecycleController(
       return state;
     }
     const currentGeneration = ++generation;
-    const request: ContentListLifecycleRequest = retry?.request ?? {
-      ...previewed.request,
-      phase: 'apply',
-      target: {
-        ...previewed.request.target,
-        ...(previewed.request.actionId === 'permanent-delete'
-          ? { confirmedCount }
-          : {}),
-      },
-      confirmationToken: previewed.result.confirmationToken,
-      idempotencyKey: createIdempotencyKey(),
-    };
+    const request: ContentListLifecycleRequest = retry
+      ? { ...retry.request, requestId: createRequestId() }
+      : {
+          ...previewed.request,
+          requestId: createRequestId(),
+          phase: 'apply',
+          target: {
+            ...previewed.request.target,
+            ...(previewed.request.actionId === 'permanent-delete'
+              ? { confirmedCount }
+              : {}),
+          },
+          confirmationToken: previewed.result.confirmationToken,
+          idempotencyKey: createIdempotencyKey(),
+        };
     pendingApply = { request, confirmedCount };
     publish({ ...state, status: 'applying', error: undefined });
     try {
@@ -624,7 +627,8 @@ export function createContentListLifecycleController(
         status: 'failed',
         error: messageOf(error),
         // The server may have committed before the response was lost. Retain
-        // the exact token/idempotency envelope so retry can replay safely.
+        // the exact authority/idempotency envelope so retry can replay safely
+        // with a fresh transport correlation id.
         renewalRequired: false,
         replayRequired: true,
       });
