@@ -24,6 +24,16 @@ query or selection invalidates the preview; expired, stale-revision,
 row-revision, query-fingerprint, token, or matching-count failures require a
 new preview.
 
+Mount `createContentListLifecycleRoute()` from
+`@happyvertical/smrt-content/server` at the transport's default
+`POST /api/v1/contents/lifecycle` path. The host supplies a callback that
+authenticates each native `Request` and returns its current principal/tenant
+action context. The route accepts only the three lifecycle action ids and
+delegates to the same `createContentListActionAdapter()` instance used by agent
+and bulk-workflow callers; it never owns a second authorization or mutation
+path. Invalid JSON, missing authentication, and internal failures return
+bounded error envelopes without exposing private error text.
+
 Lifecycle action ids and restore input are stable:
 
 | action | eligible server state | input / consequence |
@@ -31,6 +41,12 @@ Lifecycle action ids and restore input are stable:
 | `move-to-trash` | not already `deleted` | soft-deletes content into trash |
 | `restore` | `deleted` | `{ status: 'draft' \| 'review' \| 'published' }`; the server re-runs permission and publish-readiness checks |
 | `permanent-delete` | `deleted` | irreversible deletion; the operator must type the exact server-resolved count |
+
+Permanent deletion binds the row's `updated_at` revision into the final delete.
+On PostgreSQL that comparison is part of the `DELETE` predicate and any cascade
+shares its transaction; embedded adapters compare under the framework's shared
+write queue before cascading. A writer racing preview/apply therefore produces
+`row_revision_drifted` instead of deleting newer content.
 
 The result details expose `count`, accepted/skipped/failed counts,
 representative labels, canonical subtype-aware outcomes

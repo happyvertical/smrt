@@ -26,7 +26,7 @@ import {
   CONTENT_LIST_WORKFLOWS,
   type ContentListActionCollection,
   type ContentListActionRequest,
-  type ContentListWorkflowId,
+  type ContentListServerActionId,
   createContentListActionAdapter,
 } from './content-list-actions.js';
 
@@ -36,6 +36,7 @@ type Row = {
   status: Content['status'];
   updated_at: string;
   tenantId: string;
+  metaType?: string;
 };
 
 const identity = {
@@ -107,6 +108,10 @@ class MemoryContentCollection implements ContentListActionCollection {
           });
           return {};
         },
+        toJSON: () => ({
+          id: row.id,
+          _meta_type: row.metaType ?? '@happyvertical/smrt-content:Content',
+        }),
         db: {
           transaction: async <T>(
             operation: (transaction: unknown) => Promise<T>,
@@ -150,6 +155,19 @@ class MemoryContentCollection implements ContentListActionCollection {
           if (this.failAfterSave.has(row.id)) {
             throw new Error('forced publication snapshot failure');
           }
+        },
+        delete: async (options?: { expectedUpdatedAt?: Date | string }) => {
+          if (
+            options?.expectedUpdatedAt !== undefined &&
+            String(options.expectedUpdatedAt) !== String(row.updated_at)
+          ) {
+            throw Object.assign(new Error('revision conflict'), {
+              code: 'RUNTIME_REVISION_CONFLICT',
+            });
+          }
+          const index = this.rows.findIndex(({ id }) => id === row.id);
+          if (index >= 0) this.rows.splice(index, 1);
+          this.contents.delete(row.id);
         },
       } as unknown as Content;
       this.contents.set(row.id, content);
@@ -258,7 +276,7 @@ async function fingerprint(request: DataQueryRequest): Promise<string> {
 
 function actionRequest(
   phase: 'preview' | 'apply',
-  actionId: ContentListWorkflowId,
+  actionId: ContentListServerActionId,
   selection: ContentListActionRequest['selection'],
   target: ContentListActionRequest['target'],
   overrides: Partial<ContentListActionRequest> = {},
@@ -281,7 +299,10 @@ function harness(
   options: {
     collection?: MemoryContentCollection;
     permissions?: string[];
-    authorize?: (workflow: ContentListWorkflowId, run: PrincipalRun) => boolean;
+    authorize?: (
+      workflow: ContentListServerActionId,
+      run: PrincipalRun,
+    ) => boolean;
     scope?: (run: PrincipalRun) => { tenantId: string } | undefined;
     backgroundQueue?: {
       enqueue(job: DataSurfaceBackgroundActionJob): Promise<{ jobId: string }>;
@@ -311,6 +332,7 @@ function harness(
     'content.workflow.format-body',
     'content.workflow.categorize',
     'content.workflow.optimize',
+    'content.lifecycle.permanent-delete',
   ];
   const run: PrincipalRun = {
     context: { tenantId: 'tenant-a' } as PrincipalRun['context'],
@@ -551,6 +573,126 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
         sensitivity,
       })),
     );
+  });
+
+  it('previews and permanently deletes mixed content through the shared authority boundary', async () => {
+    const collection = new MemoryContentCollection([
+      {
+        id: 'article-deleted',
+        title: 'Deleted article',
+        status: 'deleted',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        tenantId: 'tenant-a',
+        metaType: '@happyvertical/smrt-content:Article',
+      },
+      {
+        id: 'mirror-deleted',
+        title: 'Deleted mirror',
+        status: 'deleted',
+        updated_at: '2026-01-02T00:00:00.000Z',
+        tenantId: 'tenant-a',
+        metaType: '@happyvertical/smrt-content:Mirror',
+      },
+    ]);
+    const setup = harness({ collection });
+    const selection = {
+      scope: 'explicit-ids' as const,
+      rowIds: ['article-deleted', 'mirror-deleted'],
+    };
+    const target = { expectedCount: 2 };
+    const previewRequest = actionRequest(
+      'preview',
+      'permanent-delete',
+      selection,
+      target,
+    );
+
+    const preview = await setup.adapter.preview(previewRequest, setup.context);
+
+    expect(preview).toMatchObject({
+      ok: true,
+      details: {
+        count: 2,
+        accepted: 2,
+        auditReference: previewRequest.requestId,
+        representativeLabels: ['Deleted article', 'Deleted mirror'],
+        outcomes: [
+          {
+            rowId: 'article-deleted',
+            status: 'accepted',
+            resourceId: 'article-deleted',
+            resourceType: '@happyvertical/smrt-content:Article',
+          },
+          {
+            rowId: 'mirror-deleted',
+            status: 'accepted',
+            resourceId: 'mirror-deleted',
+            resourceType: '@happyvertical/smrt-content:Mirror',
+          },
+        ],
+      },
+    });
+    expect(collection.rows).toHaveLength(2);
+
+    const applyRequest = actionRequest(
+      'apply',
+      'permanent-delete',
+      selection,
+      target,
+      { confirmationToken: preview.confirmationToken },
+    );
+    const applied = await setup.adapter.apply(applyRequest, setup.context);
+
+    expect(applied).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 2,
+        failed: 0,
+        auditReference: applyRequest.requestId,
+        outcomes: [
+          {
+            rowId: 'article-deleted',
+            status: 'accepted',
+            resourceId: 'article-deleted',
+            resourceType: '@happyvertical/smrt-content:Article',
+          },
+          {
+            rowId: 'mirror-deleted',
+            status: 'accepted',
+            resourceId: 'mirror-deleted',
+            resourceType: '@happyvertical/smrt-content:Mirror',
+          },
+        ],
+      },
+    });
+    expect(collection.rows).toEqual([]);
+    expect(setup.run.assertOperation).toHaveBeenCalledWith(
+      'contents',
+      'delete',
+    );
+  });
+
+  it('skips permanent deletion unless content is already in trash', async () => {
+    const setup = harness();
+    const preview = await setup.adapter.preview(
+      actionRequest(
+        'preview',
+        'permanent-delete',
+        { scope: 'explicit-ids', rowIds: ['a'] },
+        { expectedCount: 1 },
+      ),
+      setup.context,
+    );
+
+    expect(preview).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        skipped: 1,
+        outcomes: [{ rowId: 'a', status: 'skipped', reason: 'not_deleted' }],
+      },
+    });
+    expect(setup.collection.rows).toHaveLength(3);
   });
 
   it('rejects a forged surface subject and resolves revisions against trusted identity', async () => {

@@ -23,6 +23,7 @@ export default {
     environment: 'node',
     include: [
       'packages/content/src/svelte/content-list-lifecycle.test.ts',
+      'packages/content/src/server/content-list-lifecycle.test.ts',
       'packages/content/src/svelte/components/ContentListLifecyclePanel.test.ts',
       'packages/content/src/svelte/components/ContentList.lifecycle.test.ts',
     ],

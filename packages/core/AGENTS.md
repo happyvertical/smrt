@@ -31,7 +31,10 @@ subsystem you are editing. This file keeps what holds across all of them.
   database `UPDATE`; zero affected rows throws `RUNTIME_REVISION_CONFLICT`
   without overwriting the newer row. `save({ expectedUpdatedAt })` supplies an
   explicit revision when a caller binds the mutation to an earlier preview or
-  selection snapshot. Embedded adapters serialize every same-process model
+  selection snapshot. `delete({ expectedUpdatedAt })` applies the same guard to
+  irreversible deletion: remote adapters bind it into the final `DELETE`
+  predicate, while embedded adapters compare under the shared write queue
+  before the transactional cascade. Embedded adapters serialize every same-process model
   save, delete, and complete `SmrtObject.withTransaction()` callback through
   one queue; bound saves re-enter that hold. Custom write paths must use those
   public APIs rather than bypassing the CAS ordering contract.

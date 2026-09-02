@@ -65,11 +65,21 @@ export const CONTENT_LIST_WORKFLOW_IDS = [
 ] as const;
 
 export type ContentListWorkflowId = (typeof CONTENT_LIST_WORKFLOW_IDS)[number];
+export const CONTENT_LIST_LIFECYCLE_ACTION_IDS = [
+  'move-to-trash',
+  'restore',
+  'permanent-delete',
+] as const;
+export type ContentListLifecycleActionId =
+  (typeof CONTENT_LIST_LIFECYCLE_ACTION_IDS)[number];
+export type ContentListServerActionId =
+  | ContentListWorkflowId
+  | ContentListLifecycleActionId;
 export type ContentListWorkflowExecution = 'foreground' | 'background';
 export type ContentListWorkflowConfirmation = 'required' | 'none';
 
 export interface ContentListWorkflowDescriptor {
-  id: ContentListWorkflowId;
+  id: ContentListServerActionId;
   label: string;
   description: string;
   selectionScopes: Array<'current-page' | 'explicit-ids' | 'all-matching'>;
@@ -323,8 +333,51 @@ export const CONTENT_LIST_WORKFLOWS: readonly ContentListWorkflowDescriptor[] =
     }),
   ]);
 
-function workflow(
+const PERMANENT_DELETE_ACTION: ContentListWorkflowDescriptor = workflow(
+  'permanent-delete',
+  'Delete permanently',
+  {
+    description: 'Permanently delete content that is already in trash.',
+    sensitivity: 'sensitive',
+    eligibility: ['content is deleted'],
+    consequences: [
+      'Content and its owned lifecycle data are irreversibly deleted.',
+    ],
+    permissionRequirements: {
+      tool: 'content.lifecycle.permanent-delete',
+      operations: [
+        CONTENT_READ_OPERATION,
+        {
+          id: 'contents:delete',
+          collection: 'contents',
+          action: 'delete',
+        },
+      ],
+    },
+  },
+);
+
+/** The lifecycle-only catalog exposed by the dedicated route/service. */
+export const CONTENT_LIST_LIFECYCLE_ACTIONS: readonly ContentListWorkflowDescriptor[] =
+  Object.freeze([
+    contentListWorkflow('move-to-trash'),
+    contentListWorkflow('restore'),
+    PERMANENT_DELETE_ACTION,
+  ]);
+
+const CONTENT_LIST_SERVER_ACTIONS: readonly ContentListWorkflowDescriptor[] =
+  Object.freeze([...CONTENT_LIST_WORKFLOWS, PERMANENT_DELETE_ACTION]);
+
+function contentListWorkflow(
   id: ContentListWorkflowId,
+): ContentListWorkflowDescriptor {
+  const descriptor = CONTENT_LIST_WORKFLOWS.find((entry) => entry.id === id);
+  if (!descriptor) throw new Error(`Missing ContentList workflow: ${id}`);
+  return descriptor;
+}
+
+function workflow(
+  id: ContentListServerActionId,
   label: string,
   options: Partial<ContentListWorkflowDescriptor> &
     Pick<
@@ -363,7 +416,7 @@ export interface ContentListActionTarget {
 
 export interface ContentListActionRequest
   extends DataSurfaceServerActionRequest {
-  actionId: ContentListWorkflowId;
+  actionId: ContentListServerActionId;
   target: ContentListActionTarget;
 }
 
@@ -493,7 +546,7 @@ export interface ContentListActionAdapterOptions {
     identity: DataSurfaceIdentity,
   ) => number | Promise<number>;
   authorize?: (
-    workflow: ContentListWorkflowId,
+    workflow: ContentListServerActionId,
     run: PrincipalRun,
   ) => boolean | Promise<boolean>;
   handlers?: ContentListWorkflowHandlers;
@@ -540,8 +593,8 @@ function isPermissionDenied(error: unknown): boolean {
   return isRecord(decision) && decision.reason === 'permission_denied';
 }
 
-function isWorkflowId(value: unknown): value is ContentListWorkflowId {
-  return (CONTENT_LIST_WORKFLOW_IDS as readonly unknown[]).includes(value);
+function isServerActionId(value: unknown): value is ContentListServerActionId {
+  return CONTENT_LIST_SERVER_ACTIONS.some(({ id }) => id === value);
 }
 
 function payloadRecord(
@@ -551,7 +604,7 @@ function payloadRecord(
 }
 
 function validPayload(
-  workflowId: ContentListWorkflowId,
+  workflowId: ContentListServerActionId,
   payload: DataSurfaceJsonValue | undefined,
 ): boolean {
   if (payload !== undefined && !isRecord(payload)) return false;
@@ -637,7 +690,7 @@ function actionResult(
 function validateTarget(request: unknown): string | undefined {
   if (
     !isRecord(request) ||
-    !isWorkflowId(request.actionId) ||
+    !isServerActionId(request.actionId) ||
     !isRecord(request.target) ||
     !isRecord(request.selection)
   )
@@ -682,7 +735,7 @@ async function publishReady(content: Content): Promise<boolean> {
 }
 
 async function eligibility(
-  workflowId: ContentListWorkflowId,
+  workflowId: ContentListServerActionId,
   content: Content,
   payload: DataSurfaceJsonValue | undefined,
   handlers: ContentListWorkflowHandlers,
@@ -697,6 +750,11 @@ async function eligibility(
       return { eligible: false, reason: 'publish_readiness_failed' };
     }
     return { eligible: true };
+  }
+  if (workflowId === 'permanent-delete') {
+    return status === 'deleted'
+      ? { eligible: true }
+      : { eligible: false, reason: 'not_deleted' };
   }
   if (status === 'deleted') return { eligible: false, reason: 'deleted' };
   switch (workflowId) {
@@ -757,7 +815,7 @@ async function eligibility(
 }
 
 async function applyWorkflow(
-  workflowId: ContentListWorkflowId,
+  workflowId: ContentListServerActionId,
   content: Content,
   expectedUpdatedAt: Date | string,
   payload: DataSurfaceJsonValue | undefined,
@@ -842,6 +900,9 @@ async function applyWorkflow(
     case 'restore':
       content.status = input.status as Content['status'];
       await save();
+      return;
+    case 'permanent-delete':
+      await content.delete({ expectedUpdatedAt });
       return;
     case 'automated-review':
       await content.runReviewAction({
@@ -1043,7 +1104,7 @@ function defaultDescriptor(maxSelectionSize: number): DataSurfaceDescriptor {
       projectableColumnIds: ['id', 'title', 'status'],
     },
     controls: [],
-    actions: CONTENT_LIST_WORKFLOWS.map((entry) => ({
+    actions: CONTENT_LIST_SERVER_ACTIONS.map((entry) => ({
       id: entry.id,
       label: entry.label,
       description: entry.description,
@@ -1101,6 +1162,13 @@ export function createContentListActionAdapter(
     object,
     Map<string, Promise<Content | null>>
   >();
+  // The generic adapter may normalize an invocation into a new request object.
+  // Correlate subtype metadata by the protocol's unique request id so preview
+  // and apply outcomes retain their canonical resource identity.
+  const resourcesByRequestId = new Map<
+    string,
+    Map<string, { resourceId: string; resourceType: string }>
+  >();
   async function loadContent(
     invocation: { run: PrincipalRun; request: DataSurfaceServerActionRequest },
     rowId: DataSurfaceRowId,
@@ -1117,6 +1185,20 @@ export function createContentListActionAdapter(
         const collection = await options.collection(invocation.run);
         const content = await collection.get({ id: key });
         if (!content) return null;
+        const serialized = content.toJSON() as Record<string, unknown>;
+        const requestId = invocation.request.requestId;
+        let resources = resourcesByRequestId.get(requestId);
+        if (!resources) {
+          resources = new Map();
+          resourcesByRequestId.set(requestId, resources);
+        }
+        resources.set(key, {
+          resourceId: String(content.id),
+          resourceType:
+            typeof serialized._meta_type === 'string'
+              ? serialized._meta_type
+              : content.constructor.name,
+        });
         const resolved = resolvedByRequest.get(invocation.request);
         const expected = resolved?.rows.find((row) => String(row.id) === key);
         const revisionValue = (value: unknown) =>
@@ -1146,7 +1228,7 @@ export function createContentListActionAdapter(
           : undefined;
 
   const definitions = Object.fromEntries(
-    CONTENT_LIST_WORKFLOWS.map(
+    CONTENT_LIST_SERVER_ACTIONS.map(
       (entry): [string, DataSurfaceServerActionDefinition] => [
         entry.id,
         {
@@ -1269,15 +1351,37 @@ export function createContentListActionAdapter(
     if (invalid) return actionResult(request, false, invalid);
     try {
       const result = await generic[phase](request, context);
-      if (phase !== 'preview' || !result.ok) return result;
       const resolved = resolvedByRequest.get(request);
-      const workflow = CONTENT_LIST_WORKFLOWS.find(
+      const workflow = CONTENT_LIST_SERVER_ACTIONS.find(
         (entry) => entry.id === request.actionId,
       );
+      const resources = resourcesByRequestId.get(request.requestId);
+      const outcomes = Array.isArray(result.details?.outcomes)
+        ? result.details.outcomes.map((outcome) => {
+            if (!isRecord(outcome)) return outcome;
+            const resource = resources?.get(String(outcome.rowId));
+            return resource ? { ...outcome, ...resource } : outcome;
+          })
+        : undefined;
+      if (phase !== 'preview' || !result.ok) {
+        return {
+          ...result,
+          ...(result.details
+            ? {
+                details: {
+                  ...result.details,
+                  ...(outcomes ? { outcomes } : {}),
+                  auditReference: request.requestId,
+                },
+              }
+            : {}),
+        };
+      }
       return {
         ...result,
         details: {
           ...(result.details ?? {}),
+          ...(outcomes ? { outcomes } : {}),
           resolvedScope: resolved?.scope ?? request.selection.scope,
           representativeLabels: resolved?.representativeLabels ?? [],
           ineligible: Array.isArray(result.details?.outcomes)
@@ -1288,6 +1392,7 @@ export function createContentListActionAdapter(
           consequences: workflow?.consequences ?? [],
           sensitivity: workflow?.sensitivity ?? 'public',
           execution: workflow?.execution ?? 'foreground',
+          auditReference: request.requestId,
         },
       };
     } catch (error) {
@@ -1298,6 +1403,7 @@ export function createContentListActionAdapter(
       );
     } finally {
       resolvedByRequest.delete(request);
+      resourcesByRequestId.delete(request.requestId);
     }
   }
 

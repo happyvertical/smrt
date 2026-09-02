@@ -48,4 +48,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 }
 
 export * from './server/content-list-actions.js';
+export * from './server/content-list-lifecycle.js';
 export { startServer };
