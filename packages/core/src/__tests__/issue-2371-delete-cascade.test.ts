@@ -742,6 +742,32 @@ describe('delete() referential integrity (#2371)', () => {
   });
 
   describe('framework side tables', () => {
+    function injectSystemDeleteFailure(
+      failingTable: string,
+      failure: Error,
+    ): ReturnType<typeof vi.spyOn> {
+      const originalTransaction = db.transaction?.bind(db);
+      if (!originalTransaction) throw new Error('expected transaction support');
+      return vi.spyOn(db, 'transaction').mockImplementation(async (operation) =>
+        originalTransaction(async (transactionDb) =>
+          operation(
+            new Proxy(transactionDb, {
+              get(target, property) {
+                if (property === 'delete') {
+                  return (table: string, where: Record<string, unknown>) => {
+                    if (table === failingTable) return Promise.reject(failure);
+                    return target.delete(table, where);
+                  };
+                }
+                const value = Reflect.get(target, property);
+                return typeof value === 'function' ? value.bind(target) : value;
+              },
+            }),
+          ),
+        ),
+      );
+    }
+
     it('forgets the object memory it owned', async () => {
       const doc = await makeDoc('remembers');
       await doc.remember({ scope: 'test', key: 'k', value: 'v' });
@@ -817,9 +843,26 @@ describe('delete() referential integrity (#2371)', () => {
     });
 
     it.each([
-      '_smrt_contexts',
-      '_smrt_embeddings',
-    ])('rolls back deletion when %s cleanup fails', async (failingTable) => {
+      {
+        dialect: 'PostgreSQL 42703',
+        failingTable: '_smrt_contexts',
+        cleanupFailure: Object.assign(
+          new Error('column "owner_class" does not exist'),
+          { code: '42703' },
+        ),
+      },
+      {
+        dialect: 'SQLite missing column',
+        failingTable: '_smrt_embeddings',
+        cleanupFailure: Object.assign(
+          new Error('no such column: object_class'),
+          { code: 'SQLITE_ERROR' },
+        ),
+      },
+    ])('rolls back deletion on $dialect cleanup failure', async ({
+      failingTable,
+      cleanupFailure,
+    }) => {
       const doc = await makeDoc('cleanup must be atomic');
       await doc.remember({ scope: 'test', key: 'sensitive', value: 'v' });
       await EmbeddingStorage.upsert(db, {
@@ -831,35 +874,10 @@ describe('delete() referential integrity (#2371)', () => {
         model: 'test-model',
         dimensions: 2,
       });
-      const originalTransaction = db.transaction?.bind(db);
-      if (!originalTransaction) throw new Error('expected transaction support');
-      const cleanupFailure = new Error(
-        `injected ${failingTable} cleanup failure`,
+      const transactionSpy = injectSystemDeleteFailure(
+        failingTable,
+        cleanupFailure,
       );
-      const transactionSpy = vi
-        .spyOn(db, 'transaction')
-        .mockImplementation(async (operation) =>
-          originalTransaction(async (transactionDb) =>
-            operation(
-              new Proxy(transactionDb, {
-                get(target, property) {
-                  if (property === 'delete') {
-                    return (table: string, where: Record<string, unknown>) => {
-                      if (table === failingTable) {
-                        return Promise.reject(cleanupFailure);
-                      }
-                      return target.delete(table, where);
-                    };
-                  }
-                  const value = Reflect.get(target, property);
-                  return typeof value === 'function'
-                    ? value.bind(target)
-                    : value;
-                },
-              }),
-            ),
-          ),
-        );
 
       try {
         await expect(doc.delete()).rejects.toBe(cleanupFailure);
@@ -870,6 +888,42 @@ describe('delete() referential integrity (#2371)', () => {
       expect(await db.count('cascade_2371_docs', { id: doc.id })).toBe(1);
       expect(await db.count('_smrt_contexts', { owner_id: doc.id })).toBe(1);
       expect(await db.count('_smrt_embeddings', { object_id: doc.id })).toBe(1);
+    });
+
+    it.each([
+      {
+        dialect: 'PostgreSQL 42P01',
+        failingTable: '_smrt_contexts',
+        missingTable: Object.assign(
+          new Error('relation "_smrt_contexts" does not exist'),
+          { code: '42P01' },
+        ),
+      },
+      {
+        dialect: 'SQLite missing table',
+        failingTable: '_smrt_embeddings',
+        missingTable: Object.assign(
+          new Error('no such table: _smrt_embeddings'),
+          { code: 'SQLITE_ERROR' },
+        ),
+      },
+    ])('retains backward-compatible $dialect tolerance', async ({
+      failingTable,
+      missingTable,
+    }) => {
+      const doc = await makeDoc('legacy database');
+      const transactionSpy = injectSystemDeleteFailure(
+        failingTable,
+        missingTable,
+      );
+
+      try {
+        await expect(doc.delete()).resolves.toBeUndefined();
+      } finally {
+        transactionSpy.mockRestore();
+      }
+
+      expect(await db.count('cascade_2371_docs', { id: doc.id })).toBe(0);
     });
   });
 

@@ -434,6 +434,53 @@ async function tolerateMissingTable<T>(
   }
 }
 
+/**
+ * System-table cleanup may ignore an absent table for databases created before
+ * that subsystem existed, but never a missing column in a table that does
+ * exist. The shared `undefined_object` classification intentionally combines
+ * both cases, so this security boundary must retain the narrower driver signal.
+ */
+function isMissingTableError(error: unknown): boolean {
+  const classification = classifyDatabaseError(error);
+  if (
+    classification.sqlstate === '42P01' ||
+    classification.driverCode === '42P01' ||
+    classification.driverCodes.includes('42P01')
+  ) {
+    return true;
+  }
+  if (
+    classification.sqlstate === '42703' ||
+    classification.driverCode === '42703' ||
+    classification.driverCodes.includes('42703')
+  ) {
+    return false;
+  }
+  return classification.driverMessages.some((message) =>
+    /no such table\b|(?:relation|table) "[^"]*" does not exist|table with name [^\s]+ does not exist/i.test(
+      message,
+    ),
+  );
+}
+
+async function tolerateMissingSystemTable<T>(
+  operation: () => Promise<T>,
+  fallback: T,
+  context: { table: string; action: string },
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
+    logger.warn(
+      `Cascade delete skipped ${context.action} on '${context.table}': ` +
+        'table not found in this database.',
+      { error: error instanceof Error ? error.message : String(error) },
+    );
+    return fallback;
+  }
+}
+
 async function selectIds(
   db: DatabaseInterface,
   tableName: string,
@@ -505,7 +552,7 @@ async function deleteSystemRows(
     [EMBEDDINGS_TABLE, 'object_id', 'object_class'],
   ] as const) {
     for (const batch of chunkArray(ownerIds, IN_LIST_CHUNK_SIZE)) {
-      await tolerateMissingTable(
+      await tolerateMissingSystemTable(
         () =>
           db.delete(table, {
             ...idPredicate(idColumn, batch),
