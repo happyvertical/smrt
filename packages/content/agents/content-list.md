@@ -197,6 +197,25 @@ Adapter exports (also re-exported from `./svelte`): `createContentListController
 `resolveSelectedContentListRows`, `resolveSelectedContents`, plus the
 `CONTENT_LIST_*` identity constants.
 
+## Agent data-surface conformance (#2456)
+
+`dataSurface` publishes the mounted list's readable columns, supported query
+operators, visible state, selection scope, freshness, and only the actions its
+mounted workflow/lifecycle bindings can execute. Visible commands run through
+the registry's revision check; their acknowledgements describe the accepted
+controller revision, while a disconnected registry refuses them.
+
+For silent agent reads, register
+`createContentListDataSurfaceDefinition({ collection, scope })` from
+`@happyvertical/smrt-content/server` in the server-owned
+`createDataSurfaceTools()` catalog. The factory resolves both the collection
+and optional application scope from the live principal context, then delegates
+rows, counts, facets, and offset continuations to `executeContentQuery()`.
+Tenant, hidden, and sensitive fields remain outside discovery and projection;
+the model request can only narrow the trusted scope. Durable actions continue
+through `createContentListActionAdapter()` and its principal-bound
+preview/apply contract rather than through the browser registry.
+
 Notes:
 
 - Controller modes are all `manual`: the adapter owns search, filters, sorting,
