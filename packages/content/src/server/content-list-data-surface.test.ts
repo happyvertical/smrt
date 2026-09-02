@@ -53,13 +53,14 @@ const schema: DataSurfaceSchema = {
 
 function context(
   tenantId = 'tenant-a',
-  permissions: readonly string[] = [],
+  permissions: readonly string[] | undefined = [],
 ): DataSurfaceExecutionContext {
+  const run: Record<string, unknown> = {
+    context: { userId: 'user-a', tenantId },
+  };
+  if (permissions !== undefined) run.permissions = [...permissions];
   return {
-    run: {
-      context: { userId: 'user-a', tenantId },
-      permissions: [...permissions],
-    } as DataSurfaceExecutionContext['run'],
+    run: run as DataSurfaceExecutionContext['run'],
     principal: { userId: 'user-a', tenantId },
     signal: new AbortController().signal,
   };
@@ -253,6 +254,35 @@ describe('ContentList agent data surface', () => {
         new RegExp(`projection field is not allowed: ${protectedField}`),
       );
     }
+    expect(collection).not.toHaveBeenCalled();
+  });
+
+  it('treats a missing permission list as no permission before resolving the collection', async () => {
+    const collection = vi.fn<
+      (execution: DataSurfaceExecutionContext) => ContentQueryCollection
+    >(() => ({
+      list: vi.fn(async () => []),
+      count: vi.fn(async () => 0),
+      facets: vi.fn(async () => []),
+    }));
+    const definition = await createContentListDataSurfaceDefinition({
+      schema,
+      collection,
+    });
+
+    await expect(
+      definition.execute?.(
+        definition,
+        {
+          version: 1,
+          requestId: 'missing-permission-audit-projection',
+          mode: 'rows',
+          projection: ['id', 'audit_note'],
+          page: { kind: 'offset', offset: 0, limit: 1 },
+        },
+        context('tenant-a', undefined),
+      ),
+    ).rejects.toThrow(/projection field is not allowed: audit_note/);
     expect(collection).not.toHaveBeenCalled();
   });
 

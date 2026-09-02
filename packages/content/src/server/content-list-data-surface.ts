@@ -145,7 +145,10 @@ export async function createContentListDataSurfaceDefinition(
     },
     schema,
     execute: async (_surface, request, context) => {
-      const executableSchema = querySchema(schema, context.run.permissions);
+      const executableSchema = querySchema(
+        schema,
+        context.run.permissions ?? [],
+      );
       // Validate before resolving the host collection. This makes a rejected
       // protected projection a zero-I/O failure, even for hostile descriptors.
       normalizeDataQueryRequest(request, executableSchema);
