@@ -134,8 +134,13 @@ export interface DomainKnowledgeViewIntent {
   /** The browser registry this intent compiles into, and what it addresses. */
   target: Record<string, unknown>;
   hasInputSchema: boolean;
-  /** An intent moves mounted browser state, so it is browser-valid only. */
-  planes: Array<'browser' | 'server'>;
+  /**
+   * Always exactly `['browser']`. An intent moves mounted browser state; a
+   * server-side agent reaches one only through the #2446 command/ack bridge,
+   * which the referencing playbook declares. Typed as the literal tuple so a
+   * consumer cannot read the contract as wider than it is.
+   */
+  planes: ['browser'];
   /** Declaring module, relative to the package root, in POSIX form. */
   sourceFile: string;
 }

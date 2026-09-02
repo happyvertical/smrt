@@ -445,6 +445,53 @@ export const a = definePlaybook({
     expect(surface.diagnostics[0].message).toContain('declares no steps');
   });
 
+  it('rejects a whitespace-only identifier the runtime would refuse', () => {
+    // The runtime normalizers reject these with `trim() === ''`, so treating
+    // whitespace as present would emit a playbook that throws at registration.
+    const surface = surfaceOf(`${PLAYBOOK_IMPORT}
+export const a = definePlaybook({
+  key: '   ',
+  title: 'Blank key',
+  description: 'Whitespace is not an identifier',
+  steps: [{ kind: 'operation', model: '@pkg:Order', action: 'submit' }],
+});
+`);
+    expect(surface.playbooks).toEqual([]);
+    expect(surface.diagnostics[0].code).toBe('incomplete-declaration');
+
+    const blankAction = surfaceOf(`${PLAYBOOK_IMPORT}
+export const b = definePlaybook({
+  key: 'commerce.blank_action',
+  title: 'Blank action',
+  description: 'Step action is whitespace',
+  steps: [{ kind: 'operation', model: '@pkg:Order', action: '  ' }],
+});
+`);
+    expect(blankAction.playbooks).toEqual([]);
+  });
+
+  it('rejects a target identifier outside `assertIdentifier` bounds', () => {
+    const tooLong = surfaceOf(`${INTENT_IMPORT}
+export const a = defineIntent({
+  id: 'orders.long_control',
+  description: 'controlId past the identifier bound',
+  target: { registry: 'control', action: 'focus', controlId: '${'x'.repeat(257)}' },
+});
+`);
+    expect(tooLong.intents).toEqual([]);
+    expect(tooLong.diagnostics[0].message).toContain('256 characters');
+
+    const controlChar = surfaceOf(`${INTENT_IMPORT}
+export const b = defineIntent({
+  id: 'orders.control_char',
+  description: 'formId carries a control character',
+  target: { registry: 'control', action: 'focus', formId: 'a\\u0007b' },
+});
+`);
+    expect(controlChar.intents).toEqual([]);
+    expect(controlChar.diagnostics[0].message).toContain('control character');
+  });
+
   it('rejects a playbook step whose model is not a qualified pair', () => {
     const surface = surfaceOf(`${PLAYBOOK_IMPORT}
 export const a = definePlaybook({

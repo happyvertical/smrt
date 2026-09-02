@@ -254,7 +254,13 @@ export interface AgentSurfaceIntent {
   target: Record<string, unknown>;
   /** Whether the declaration carried an `inputSchema` object. */
   hasInputSchema: boolean;
-  planes: AgentSurfacePlane[];
+  /**
+   * Always exactly `['browser']`. An intent moves mounted browser state; a
+   * server-side agent reaches one only through the #2446 command/ack bridge,
+   * which the referencing PLAYBOOK declares. Typed as the literal tuple rather
+   * than the open plane list so the contract cannot be read as wider than it is.
+   */
+  planes: ['browser'];
   /** Declaring module, relativized by the emitting caller. */
   filePath: string;
 }

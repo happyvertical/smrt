@@ -59,7 +59,10 @@ function agentSurface() {
       {
         id: 'orders.next_page',
         description: 'Advance the orders table by one page',
-        capability: { effect: 'read', idempotent: false, openWorld: false },
+        // Must match INTENT_BODY exactly: the freshness check re-derives the
+        // surface from that source, so a divergent fixture would misrepresent
+        // what "current" means here.
+        capability: { effect: 'read', idempotent: true, openWorld: false },
         target: { registry: 'dataSurface', controlId: 'next-page' },
         hasInputSchema: false,
         planes: ['browser'],

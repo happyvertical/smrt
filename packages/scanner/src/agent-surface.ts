@@ -681,8 +681,38 @@ function resolveCapability(declared: unknown): AgentSurfaceCapability {
   };
 }
 
+/**
+ * A present, non-blank string.
+ *
+ * `trim()` matters: the runtime normalizers reject `'   '` with
+ * `trim() === ''`, so treating whitespace as present would emit a playbook that
+ * throws at registration.
+ */
 function readString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
+}
+
+/**
+ * `assertIdentifier` in `defineIntent`: bounded length, no control characters.
+ * A `formId` past the bound or carrying a control character is rejected at
+ * runtime, so emitting it would advertise an intent that never registers.
+ */
+const IDENTIFIER_MAX_LENGTH = 256;
+
+function identifierProblem(value: unknown, path: string): string | undefined {
+  if (typeof value !== 'string' || value.length === 0) {
+    return `${path} must be a non-empty string`;
+  }
+  if (value.length > IDENTIFIER_MAX_LENGTH) {
+    return `${path} is longer than ${IDENTIFIER_MAX_LENGTH} characters, which \`defineIntent\` rejects`;
+  }
+  for (const character of value) {
+    const code = character.charCodeAt(0);
+    if (code < 32 || code === 127) {
+      return `${path} contains a control character, which \`defineIntent\` rejects`;
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -775,9 +805,9 @@ function intentDeclarationProblem(
       return `view intent '${id}' declares control action '${String(target.action)}', which is not a \`ControlInteractionRegistry\` command.`;
     }
     for (const key of ['formId', 'controlId'] as const) {
-      if (target[key] !== undefined && !isNonEmptyString(target[key])) {
-        return `view intent '${id}' has a non-string target.${key}.`;
-      }
+      if (target[key] === undefined) continue;
+      const problem = identifierProblem(target[key], `target.${key}`);
+      if (problem) return `view intent '${id}': ${problem}.`;
     }
     return undefined;
   }
@@ -785,8 +815,10 @@ function intentDeclarationProblem(
   if (!isNonEmptyString(target.controlId)) {
     return `view intent '${id}' targets the dataSurface registry without a \`controlId\`, which \`defineIntent\` requires.`;
   }
-  if (target.surfaceId !== undefined && !isNonEmptyString(target.surfaceId)) {
-    return `view intent '${id}' has a non-string target.surfaceId.`;
+  for (const key of ['controlId', 'surfaceId'] as const) {
+    if (target[key] === undefined) continue;
+    const problem = identifierProblem(target[key], `target.${key}`);
+    if (problem) return `view intent '${id}': ${problem}.`;
   }
   if (
     target.kind !== undefined &&

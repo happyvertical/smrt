@@ -21,7 +21,8 @@ export interface ScannerAgentSurface {
     capability: CapabilityClassification;
     target: Record<string, unknown>;
     hasInputSchema: boolean;
-    planes: Array<'browser' | 'server'>;
+    /** Always exactly `['browser']`; see `DomainKnowledgeViewIntent.planes`. */
+    planes: ['browser'];
     filePath: string;
   }>;
   playbooks: Array<{

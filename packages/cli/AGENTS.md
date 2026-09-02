@@ -95,6 +95,14 @@ enumerate, which is not an answer a build, a review, or a CI gate can use.
 then `dist/smrt-knowledge.json`. Model tools come from the artifact's `mcp`
 surfaces (REST/CLI entries are not agent-addressable tools and are excluded);
 intents and playbooks come from its `agentSurface`.
+
+**Known under-report, tracked as #2619:** the artifact's `mcp` surfaces come
+from `configuredSurfaces()` in core, which returns nothing when an object omits
+`mcp` config — while `MCPGenerator` treats an omitted config as full CRUD and
+also emits eligible public custom-method tools. Doctor therefore lists fewer
+model tools than the runtime exposes for such an object. The error is
+conservative (it never advertises a tool that does not exist), and the fix
+belongs to the shared surface projection rather than this report.
 `renderAgentSurfaceReport(report)` returns the printed lines; both are exported
 so the shape is testable without running the command.
 
