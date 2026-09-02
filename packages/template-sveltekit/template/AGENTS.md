@@ -62,6 +62,8 @@ tools, WebMCP definitions, and agent/developer knowledge artifacts.
   `HOST`; prefer `app:start`. Stop the app before backup/import; never bypass
   or delete a live lease. Deployed imports require stopped web/workers plus
   explicit `SMRT_MAINTENANCE_MODE=true`.
-- Logical export reads every model table in one transaction and explicitly
-  reports that uploaded assets are excluded. Keep imports transactional and
-  preserve their relationship-aware ordering/deferred-cycle contract.
+- Logical export reads every model table in one transaction and includes
+  filesystem assets referenced by exported asset rows in a bounded,
+  digest-verified manifest. Keep imports transactional, stage and verify assets
+  before commit, and preserve the relationship-aware ordering/deferred-cycle
+  contract.

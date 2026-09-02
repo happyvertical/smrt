@@ -90,6 +90,9 @@ describe('profile-aware application operations', () => {
       'Configure and verify the installed ${component} provider readiness module.',
     );
     expect(appDriver).toContain('acquireWriterLease');
+    expect(appDriver).toContain("SMRT_MAINTENANCE_MODE !== 'true'");
+    expect(appDriver).toContain('Import source');
+    expect(appDriver).toContain('SMRT_ASSETS_DIR');
     expect(appDriver).toContain("flag: 'wx'");
     expect(appDriver).toContain('renameSync(temporary, destination)');
     expect(appDriver).toContain("new URL('/api/_runtime/health', url)");
@@ -113,7 +116,9 @@ describe('profile-aware application operations', () => {
     expect(portabilitySource).toContain(
       'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
     );
-    expect(portabilitySource).toContain('assetsIncluded: false');
+    expect(portabilitySource).toContain('assetsIncluded: true');
+    expect(portabilitySource).toContain('collectFilesystemAssets');
+    expect(portabilitySource).toContain('recoverFilesystemAssets');
     expect(portabilitySource).toContain('linkSync(temporaryPath, outputPath)');
     expect(appDriver).toContain('force: false');
     expect(appDriver).toContain("platform() === 'win32' ? 'pnpm.cmd' : 'pnpm'");
