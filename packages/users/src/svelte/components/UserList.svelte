@@ -15,11 +15,17 @@ interface UserWithProfile {
 }
 
 export interface Props {
+  /** Array of users with profiles to display. */
   users: UserWithProfile[];
+  /** ID of the currently selected user. */
   selectedId?: string | null;
+  /** Callback invoked with the user when a user is selected. */
   onselect?: (user: User) => void;
+  /** Message displayed when the user list is empty. */
   emptyMessage?: string;
+  /** Optional snippet to render a custom empty state. */
   empty?: Snippet;
+  /** Shows a loading spinner while users are being fetched. */
   loading?: boolean;
 }
 

@@ -11,7 +11,9 @@ export interface DevelopmentRequestSubmission {
   discussion: string;
 }
 export interface Props {
+  /** Invoked when the user submits the development request form. */
   onsubmit: (request: DevelopmentRequestSubmission) => void | Promise<void>;
+  /** Blocks all form controls. */
   disabled?: boolean;
 }
 let { onsubmit, disabled = false }: Props = $props();

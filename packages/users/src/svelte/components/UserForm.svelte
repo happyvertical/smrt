@@ -10,10 +10,15 @@ import { M } from '../i18n.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Optional user account for editing; null creates a new user. */
   user?: User | null;
+  /** Optional user profile for editing. */
   profile?: Profile | null;
+  /** Callback invoked with name, email, and status when form is submitted. */
   onsubmit: (data: { name: string; email: string; status: UserStatus }) => void;
+  /** Callback invoked when the form is canceled. */
   oncancel?: () => void;
+  /** Blocks form input while user changes are being processed. */
   loading?: boolean;
 }
 

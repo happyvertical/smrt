@@ -4,9 +4,13 @@ import { Button } from '@happyvertical/smrt-ui/ui';
 import type { AgentSettingsSchema } from '../../ui.js';
 
 export interface Props {
+  /** Current configuration values. */
   config: Record<string, unknown>;
+  /** Schema defining the form fields and their constraints. */
   schema: AgentSettingsSchema;
+  /** Fired when the user submits the form with updated values. */
   onSave?: (config: Record<string, unknown>) => Promise<void>;
+  /** Disables all inputs and hides the save button when true. */
   readonly?: boolean;
 }
 

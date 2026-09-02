@@ -17,8 +17,11 @@ import {
 } from '../types.js';
 
 export interface CaseDetailProps {
+  /** Case details including status, priority, assignment, and metadata. */
   caseView: SupportCaseView;
+  /** Array of timeline events including interactions and status changes. */
   timeline?: CaseTimelineItemView[];
+  /** Array of linked work items associated with the case. */
   workLinks?: SupportWorkLinkView[];
 }
 

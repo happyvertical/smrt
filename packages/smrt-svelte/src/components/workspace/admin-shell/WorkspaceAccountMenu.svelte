@@ -9,16 +9,27 @@ const SIGN_OUT_ID = 'workspace-account:sign-out';
 const TENANT_PREFIX = 'workspace-account:tenant:';
 
 export interface Props {
+  /** Username or identifier displayed in the account menu. */
   userName: string;
+  /** Custom display name for the user, falls back to userName. */
   userLabel?: string;
+  /** URL for the user's avatar image. */
   avatarUrl?: string;
+  /** Custom display name for the current tenant. */
   tenantLabel?: string;
+  /** User's role or permission level. */
   roleLabel?: string;
+  /** List of available tenants to switch between. */
   tenants?: WorkspaceAccountTenant[];
+  /** ID of the currently selected tenant. */
   currentTenantId?: string | null;
+  /** Where the dropdown menu appears relative to the trigger button. */
   placement?: DropdownPlacement;
+  /** Disables the account menu button. */
   disabled?: boolean;
+  /** Called when the user selects a different tenant. */
   onTenantSelect?: (tenantId: string) => void;
+  /** Called when the user clicks sign out. */
   onSignOut?: () => void;
 }
 

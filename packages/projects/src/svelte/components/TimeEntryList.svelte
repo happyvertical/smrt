@@ -19,12 +19,19 @@ const { t } = useI18n();
 
 /** Props for TimeEntryList component */
 export interface Props {
+  /** Time entries to display in the list. */
   entries: TimeEntry[];
+  /** Shows checkboxes for selecting entries. */
   selectable?: boolean;
+  /** Identifiers of currently selected entries. */
   selectedIds?: string[];
+  /** Invoked when the selection changes. */
   onselectionchange?: (ids: string[]) => void;
+  /** Message shown when the entries list is empty. */
   emptyMessage?: string;
+  /** Base URL to construct entry detail links. */
   baseHref?: string;
+  /** Currency code for formatting amounts. */
   currency?: Currency;
   /** Filter function to determine which entries can be selected */
   canSelect?: (entry: TimeEntry) => boolean;

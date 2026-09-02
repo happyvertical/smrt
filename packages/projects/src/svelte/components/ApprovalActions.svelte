@@ -13,14 +13,23 @@ const { t } = useI18n();
 
 /** Props for ApprovalActions component */
 export interface Props {
+  /** Current approval workflow status. */
   status: ApprovalStatus;
+  /** Invoked when submitting a draft for approval. */
   onsubmit?: () => void;
+  /** Invoked when approving a submitted item. */
   onapprove?: () => void;
+  /** Invoked when rejecting a submitted item. */
   onreject?: () => void;
+  /** Invoked when editing a draft or rejected item. */
   onedit?: () => void;
+  /** Invoked when deleting a draft item. */
   ondelete?: () => void;
+  /** Disables buttons and shows loading indicators during processing. */
   loading?: boolean;
+  /** Blocks all button interactions. */
   disabled?: boolean;
+  /** Arranges buttons horizontally or vertically. */
   layout?: 'horizontal' | 'vertical';
 }
 

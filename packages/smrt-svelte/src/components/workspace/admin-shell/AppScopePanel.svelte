@@ -6,12 +6,19 @@ import { M } from '../../../i18n/strings.workspace.js';
 import ShellSettingsPanel from './ShellSettingsPanel.svelte';
 
 interface Props {
+  /** Application name displayed at the top of the panel. */
   appName: string;
+  /** Current tenant name shown below the app name. */
   tenantName?: string;
+  /** Environment badge text (staging, production, etc). */
   environment?: string;
+  /** Custom search content section. */
   search?: Snippet;
+  /** Custom documentation content section. */
   docs?: Snippet;
+  /** Custom switcher content section. */
   switcher?: Snippet;
+  /** Show or hide the settings panel. */
   showSettings?: boolean;
 }
 

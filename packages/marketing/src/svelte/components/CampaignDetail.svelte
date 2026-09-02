@@ -11,10 +11,15 @@ import type { CampaignChannelView, CampaignDetailView } from '../types.js';
 import { campaignStatusBadgeVariant } from '../types.js';
 
 export interface Props {
+  /** Campaign to display. */
   campaign?: CampaignDetailView | null;
+  /** Campaign channel executions. */
   channels?: CampaignChannelView[];
+  /** Locale for formatting currency, dates, and numbers. */
   locale?: string;
+  /** Snippet to render the budget pacing section. */
   pacing?: Snippet;
+  /** Snippet to render the channel mix section. */
   channelMix?: Snippet;
   children?: Snippet;
 }

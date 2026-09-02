@@ -2,6 +2,7 @@
 import type { Snippet } from 'svelte';
 
 interface Props {
+  /** Which side of the shell layout this corner occupies. */
   side: 'left' | 'right';
   children: Snippet;
 }

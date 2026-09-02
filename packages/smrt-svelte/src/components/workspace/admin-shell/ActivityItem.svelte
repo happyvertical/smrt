@@ -5,6 +5,7 @@ import { M } from '../../../i18n/strings.workspace.js';
 import type { ShellActivity } from './types.js';
 
 interface Props {
+  /** Activity object with status, label, message, progress, and cancel handler. */
   activity: ShellActivity;
 }
 

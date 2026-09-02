@@ -21,11 +21,17 @@ export interface Props {
   loading?: boolean;
   /** Callbacks */
   onScheduleClick?: (schedule: AgentScheduleData) => void;
+  /** Fired when a schedule is enabled. */
   onEnable?: (schedule: AgentScheduleData) => void;
+  /** Fired when a schedule is disabled. */
   onDisable?: (schedule: AgentScheduleData) => void;
+  /** Fired when a schedule is deleted. */
   onDelete?: (schedule: AgentScheduleData) => void;
+  /** Fired when a schedule is run immediately. */
   onRunNow?: (schedule: AgentScheduleData) => void;
+  /** Fired when the user clicks to create a new schedule. */
   onCreateSchedule?: () => void;
+  /** Fired when a run history entry is clicked. */
   onHistoryEntryClick?: (entry: AgentRunHistoryEntry) => void;
 }
 

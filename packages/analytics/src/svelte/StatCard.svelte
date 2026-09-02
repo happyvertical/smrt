@@ -2,12 +2,15 @@
 import TrendBadge from './TrendBadge.svelte';
 
 interface Props {
+  /** Descriptive label displayed at the top of the card. */
   label: string;
+  /** Numeric value or text displayed prominently. */
   value: number | string;
+  /** Direction indicator: up, down, or flat growth. */
   trend?: 'up' | 'down' | 'flat';
-  // `null` is a valid value (growth from a zero baseline — TrendBadge shows
-  // "new"); only `undefined` suppresses the trend badge.
+  /** Percent change; null is a zero baseline shown as 'new', undefined hides the badge. */
   trendPercent?: number | null;
+  /** Secondary text displayed below the value. */
   subtitle?: string;
 }
 

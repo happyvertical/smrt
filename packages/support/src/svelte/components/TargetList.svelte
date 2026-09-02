@@ -14,7 +14,9 @@ import {
 } from '../types.js';
 
 export interface TargetListProps {
+  /** Array of service targets showing status and due times. */
   targets: ServiceTargetView[];
+  /** Message displayed when the target list is empty. */
   emptyMessage?: string;
 }
 

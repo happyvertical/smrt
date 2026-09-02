@@ -28,12 +28,19 @@ import type { FieldInputProps, ObjectFormFieldDefinition } from '../types.js';
 import FieldInput from './FieldInput.svelte';
 
 interface Props {
+  /** Current editor state including policy rows, capabilities, and field metadata. */
   state: FieldPolicyEditorState;
+  /** Transport and mutation handler for policy row operations. */
   adapter: FieldPolicyEditorAdapter;
+  /** Field definitions for the object being edited. */
   fields: Readonly<Record<string, ObjectFormFieldDefinition>>;
+  /** Optional registry of custom field input components. */
   inputRegistry?: FieldInputRegistry;
+  /** Scope level for organization defaults (e.g., 'tenant'). */
   organizationScope?: FieldPolicyOrganizationScope;
+  /** Callback invoked when the editor dialog closes. */
   onclose: () => void;
+  /** Async callback invoked after policy mutations are saved. */
   onmutated: () => Promise<void>;
 }
 

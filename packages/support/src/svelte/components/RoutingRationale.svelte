@@ -11,9 +11,11 @@ import { Button, StatusBadge } from '@happyvertical/smrt-ui';
 import type { RankedSpecialistView } from '../types.js';
 
 export interface RoutingRationaleProps {
+  /** Array of ranked specialists with scores and eligibility factors. */
   ranking: RankedSpecialistView[];
   /** When provided, each row shows a reassign action. */
   onreassign?: (specialistId: string) => void;
+  /** Message displayed when there are no specialists to rank. */
   emptyMessage?: string;
 }
 

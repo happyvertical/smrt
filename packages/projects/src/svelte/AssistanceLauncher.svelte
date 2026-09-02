@@ -9,10 +9,15 @@ import type {
 import { M } from './i18n.js';
 
 export interface Props {
+  /** Identifier of the user submitting the assistance request. */
   requesterId: string;
+  /** Additional context data about the application. */
   applicationContext?: Record<string, unknown>;
+  /** Evidence supporting the assistance request. */
   evidence?: DevelopmentRequestEvidence[];
+  /** Blocks interaction with the form controls. */
   disabled?: boolean;
+  /** Invoked when the user submits the form. */
   onsubmit?: (value: ManagedAssistanceRequestInput) => void | Promise<void>;
 }
 

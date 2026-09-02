@@ -6,8 +6,11 @@ import type { BudgetPacingView } from '../types.js';
 import { cappedBudgetProgress, pacingStatusBadgeVariant } from '../types.js';
 
 export interface Props {
+  /** Budget pacing data to display. */
   pacing?: BudgetPacingView | null;
+  /** Locale for formatting currency and percentages. */
   locale?: string;
+  /** Heading text displayed above the progress bar. */
   label?: string;
 }
 

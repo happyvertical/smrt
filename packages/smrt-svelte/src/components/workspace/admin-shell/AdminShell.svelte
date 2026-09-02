@@ -57,20 +57,35 @@ function buildLayoutStyle(shell: ModuleShellState): string {
   } from './types.js';
 
   interface Props extends AdminShellProps {
+    /** Pre-configured shell state. Creates one from config if omitted. */
     state?: ShellState;
+    /** Content for the top app bar. */
     appBar?: Snippet;
+    /** Content for the main app panel. */
     appPanel?: Snippet;
+    /** Content for the left tenant rail. */
     tenantRail?: Snippet;
+    /** Content for the left tenant panel. */
     tenantPanel?: Snippet;
+    /** Content for the tenant panel footer. */
     tenantFooter?: Snippet;
+    /** Content for the right focus rail. */
     focusRail?: Snippet;
+    /** Content for the right focus panel, receives the active tool. */
     focusPanel?: Snippet<[{ tool: ShellFocusTool | null }]>;
+    /** Content for the system bar. */
     systemBar?: Snippet;
+    /** Content for the system panel. */
     systemPanel?: Snippet;
+    /** Content for the top-left corner. */
     topLeftCorner?: Snippet;
+    /** Content for the top-right corner. */
     topRightCorner?: Snippet;
+    /** Content for the bottom-left corner. */
     bottomLeftCorner?: Snippet;
+    /** Content for the bottom-right corner. */
     bottomRightCorner?: Snippet;
+    /** Content for the keyboard shortcuts overlay. */
     shortcutsOverlay?: Snippet;
     children: Snippet;
   }

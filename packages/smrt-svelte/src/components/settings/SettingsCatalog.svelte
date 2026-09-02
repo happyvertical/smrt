@@ -7,14 +7,23 @@ import { M } from '../../i18n/strings.settings.js';
 import type { SettingsCatalogItem, SettingsCatalogPage } from './types.js';
 
 interface Props<T extends SettingsCatalogItem, D extends { id: string }> {
+  /** Paginated catalog data with items, current page, and totals. */
   page: SettingsCatalogPage<T, D>;
+  /** Base URL for navigation and search links. */
   baseUrl: string;
+  /** Render snippet for the detail pane, receives the selected item. */
   detail: Snippet<[{ item: D }]>;
+  /** Placeholder text for the search input field. */
   searchPlaceholder?: string;
+  /** Label for the search input field. */
   searchLabel?: string;
+  /** Label for the results list navigation. */
   resultsLabel?: string;
+  /** Text shown when there are no search results. */
   emptyLabel?: string;
+  /** Text shown when no item is selected. */
   selectionLabel?: string;
+  /** URL search parameters to preserve across pagination. */
   preservedParams?: Record<string, string>;
 }
 

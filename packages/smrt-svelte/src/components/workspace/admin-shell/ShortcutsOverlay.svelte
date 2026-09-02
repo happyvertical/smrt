@@ -8,6 +8,7 @@ import { resolveHotkey } from './settings.js';
 import type { PanelEdge } from './types.js';
 
 interface Props {
+  /** Called when the user closes the shortcuts overlay. */
   onclose?: () => void;
 }
 

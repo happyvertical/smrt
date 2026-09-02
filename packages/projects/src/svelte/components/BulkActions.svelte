@@ -12,12 +12,19 @@ const { t } = useI18n();
 
 /** Props for BulkActions component */
 export interface Props {
+  /** Number of selected items. Component is hidden when count is zero. */
   selectedCount: number;
+  /** Invoked when approving all selected items. */
   onapprove?: () => void;
+  /** Invoked when rejecting all selected items. */
   onreject?: () => void;
+  /** Invoked when deleting all selected items. */
   ondelete?: () => void;
+  /** Invoked when exporting selected items. */
   onexport?: () => void;
+  /** Invoked when clearing all selections. */
   onclear?: () => void;
+  /** Disables all action buttons during processing. */
   loading?: boolean;
 }
 

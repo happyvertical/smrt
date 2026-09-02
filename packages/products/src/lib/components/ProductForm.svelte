@@ -8,9 +8,13 @@ import type { ProductData } from '../types';
 const { t } = useI18n();
 
 interface Props {
+  /** Product to populate the form with. */
   product?: Partial<ProductData>;
+  /** Fired when the user submits the form. */
   onSubmit: (product: Partial<ProductData>) => void;
+  /** Fired when the user clicks the cancel button. */
   onCancel?: () => void;
+  /** Disables all inputs and shows "Saving..." when true. */
   loading?: boolean;
 }
 

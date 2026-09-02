@@ -5,9 +5,13 @@ import type { CampaignSummaryView } from '../types.js';
 import { campaignStatusBadgeVariant } from '../types.js';
 
 export interface Props {
+  /** Campaigns to display in the list. */
   campaigns?: CampaignSummaryView[];
+  /** ID of the currently selected campaign. */
   selectedCampaignId?: string;
+  /** Locale for formatting currency and dates. */
   locale?: string;
+  /** Fired when the user selects a campaign. */
   onSelect?: (campaignId: string) => void;
 }
 

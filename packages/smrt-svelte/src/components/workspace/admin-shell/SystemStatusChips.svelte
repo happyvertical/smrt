@@ -5,6 +5,7 @@ import { M } from '../../../i18n/strings.workspace.js';
 import type { ShellStatusChip } from './types.js';
 
 interface Props {
+  /** Array of status chips with label, value, tone, and optional link. */
   chips: ShellStatusChip[];
 }
 

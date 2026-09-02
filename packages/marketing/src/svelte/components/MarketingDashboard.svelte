@@ -6,9 +6,13 @@ import type { CampaignSummaryView } from '../types.js';
 import { summarizeMarketingDashboard } from '../types.js';
 
 export interface Props {
+  /** Campaigns to summarize in dashboard tiles. */
   campaigns?: CampaignSummaryView[];
+  /** Locale for formatting currency and numbers. */
   locale?: string;
+  /** Snippet to render the campaign list. */
   campaignList?: Snippet;
+  /** Snippet to render the campaign detail. */
   detail?: Snippet;
   children?: Snippet;
 }

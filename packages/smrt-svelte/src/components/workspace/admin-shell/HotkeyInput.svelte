@@ -6,9 +6,13 @@ import { formatHotkeyBinding } from './hotkeys.js';
 import type { ShellHotkeyBinding } from './types.js';
 
 interface Props {
+  /** Current hotkey binding displayed in the button. */
   value?: ShellHotkeyBinding | null;
+  /** Blocks keyboard input capture and disables the button. */
   disabled?: boolean;
+  /** Other hotkey or action this binding conflicts with, shown as an error. */
   conflictsWith?: string | null;
+  /** Called when user captures a new hotkey, or null if cleared. */
   oncapture?: (binding: ShellHotkeyBinding | null) => void;
 }
 
