@@ -14,7 +14,12 @@ export interface Props {
   format?: 'decimal' | 'hhmm';
   /** Sets the font size of the duration display. */
   size?: 'sm' | 'md' | 'lg';
-  /** Requests the unit label; decimal always shows `h` and hhmm never shows one. */
+  /**
+   * Renders the `h` unit after a `decimal` value; set `false` for a bare
+   * number, such as in a column whose header already names the unit. An
+   * `hhmm` value spells its own unit in the `8:30` shape and never appends a
+   * separate one, so this prop does not affect that format.
+   */
   showLabel?: boolean;
 }
 
@@ -22,19 +27,23 @@ let {
   hours,
   format = 'decimal',
   size = 'md',
-  showLabel = false,
+  showLabel = true,
 }: Props = $props();
 
 // $derived creates a reactive value, not a function - no wrapper or parentheses needed
 const formattedValue = $derived(
   format === 'hhmm' ? formatHoursHHMM(hours) : hours.toFixed(1),
 );
+
+// Only the decimal form needs a unit appended: `8:30` already reads as hours
+// and minutes. That makes `h` the one unit `showLabel` has to gate.
+const unit = $derived(format === 'hhmm' ? '' : 'h');
 </script>
 
 <span class="duration" class:sm={size === 'sm'} class:lg={size === 'lg'}>
   <span class="value">{formattedValue}</span>
-  {#if showLabel || format === 'decimal'}
-    <span class="unit">{format === 'hhmm' ? '' : 'h'}</span>
+  {#if showLabel && unit}
+    <span class="unit">{unit}</span>
   {/if}
 </span>
 
