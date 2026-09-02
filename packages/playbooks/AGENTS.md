@@ -77,6 +77,10 @@ a caller on an undeclared plane fails closed with reason
   validity rides the shipped #2446 browser command/ack bridge, which lets a
   server-side agent drive mounted surfaces with acknowledgement — it must be
   **declared explicitly**, never assumed.
+- The same default applies one level down: a `PlaybookIntentRecord` that
+  declares no `planes` is browser-only, so server validity must be declared at
+  **both** the playbook and the intent. Silence from the intent registry never
+  widens a plane (`'intent-plane-not-declared'`).
 
 The `#2588` intent registry does not exist yet, so an intent step with no
 `intents` resolver supplied fails closed with
@@ -85,7 +89,11 @@ The `#2588` intent registry does not exist yet, so an intent step with no
 ## Editability
 
 `editable` defaults **all-false**, matching `normalizeEditableConfig` in
-`smrt-prompts`.
+`smrt-prompts`. Every stored column has a flag — `title`, `description`,
+`planes`, `onStepFailure`, `enabled`, `metadata` — and `save()` rejects a
+non-null value for any field the definition has not opted in. `onStepFailure`
+is gated like the rest: flipping a locked playbook from `'abort'` to
+`'continue'` would change what an agent does after a failed prerequisite.
 
 `steps` is **structurally** non-editable, not merely defaulted false:
 
@@ -138,6 +146,16 @@ tenant inherits from it. Use `clearPlaybookCache()` in tests.
   Unknown key, disabled, wrong plane, and unresolvable intents all come back as
   `{ ok: false, reason, message }`. It *does* throw for programming errors —
   notably a `steps` key on an override layer.
+- **The TTL cache has a known repopulation race**, inherited verbatim from
+  `smrt-prompts`. A resolution whose database read is already in flight when a
+  concurrent `save()` / `delete()` invalidates the key can write the pre-write
+  value back afterwards, so that scope can serve a stale plan for up to the
+  30s TTL. It fails to a stale-but-valid plan, is self-correcting, and touches
+  no authoritative state — a playbook is not an authority boundary and every
+  step re-enforces at execution. Fixing it belongs with the deferred
+  "extract a shared override package" work in epic #2585, so all four
+  implementations gain an invalidation generation at once rather than this one
+  diverging.
 - **Restart vitest after adding a decorated class**; the manifest is generated
   at startup.
 

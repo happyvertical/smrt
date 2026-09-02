@@ -71,6 +71,7 @@ export interface PlaybookEditableConfig {
   title: boolean;
   description: boolean;
   planes: boolean;
+  onStepFailure: boolean;
   enabled: boolean;
   metadata: boolean;
 }

@@ -173,9 +173,50 @@ describe('@happyvertical/smrt-playbooks', () => {
       await expect(
         overrides.create({
           key: 'commerce.cart.locked',
+          onStepFailure: 'continue',
+        }),
+      ).rejects.toThrow('does not allow onStepFailure overrides');
+      await expect(
+        overrides.create({
+          key: 'commerce.cart.locked',
           metadata: { note: 'hi' },
         }),
       ).rejects.toThrow('does not allow metadata overrides');
+    });
+
+    it('allows an onStepFailure override only when the definition opts in', async () => {
+      definePlaybook({
+        key: 'commerce.cart.failure-policy',
+        title: 'Failure policy',
+        description: 'Opts in to failure-policy overrides',
+        steps: CHECKOUT_STEPS,
+        onStepFailure: 'abort',
+        editable: { onStepFailure: true },
+      });
+
+      await overrides.create({
+        key: 'commerce.cart.failure-policy',
+        tenantId: 'tenant-a',
+        onStepFailure: 'continue',
+      });
+
+      const plan = expectPlan(
+        await resolvePlaybook('commerce.cart.failure-policy', {
+          db,
+          tenantId: 'tenant-a',
+        }),
+      );
+      expect(plan.onStepFailure).toBe('continue');
+
+      // A different tenant still inherits the locked code default.
+      expect(
+        expectPlan(
+          await resolvePlaybook('commerce.cart.failure-policy', {
+            db,
+            tenantId: 'tenant-b',
+          }),
+        ).onStepFailure,
+      ).toBe('abort');
     });
   });
 
@@ -527,6 +568,50 @@ describe('@happyvertical/smrt-playbooks', () => {
       );
       expect(plan.steps[1]?.classification.effect).toBe('read');
       expect(plan.steps[1]?.classificationDeclared).toBe(true);
+    });
+
+    it('treats an intent record that declares no planes as browser-only', async () => {
+      definePlaybook({
+        key: 'commerce.cart.bridged',
+        title: 'Bridged intent playbook',
+        description: 'Explicitly declares server validity via the #2446 bridge',
+        steps: [{ kind: 'intent', id: 'commerce.cart.review' }],
+        planes: ['browser', 'server'],
+      });
+
+      // Silence from the intent registry must not widen the plane: the intent
+      // has to declare server validity too.
+      const undeclared = await resolvePlaybook('commerce.cart.bridged', {
+        db,
+        plane: 'server',
+        intents: (id) => ({ id }),
+      });
+      expect(undeclared.ok).toBe(false);
+      expect(undeclared.ok === false && undeclared.reason).toBe(
+        'intent-plane-not-declared',
+      );
+
+      // The same intent still resolves on the browser plane.
+      expect(
+        (
+          await resolvePlaybook('commerce.cart.bridged', {
+            db,
+            plane: 'browser',
+            intents: (id) => ({ id }),
+          })
+        ).ok,
+      ).toBe(true);
+
+      // An intent that explicitly declares server validity resolves there.
+      expect(
+        (
+          await resolvePlaybook('commerce.cart.bridged', {
+            db,
+            plane: 'server',
+            intents: (id) => ({ id, planes: ['browser', 'server'] as const }),
+          })
+        ).ok,
+      ).toBe(true);
     });
   });
 

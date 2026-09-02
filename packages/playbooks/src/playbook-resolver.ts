@@ -8,6 +8,7 @@ import type {
   PlaybookDefinition,
   PlaybookPackageConfig,
   PlaybookPlan,
+  PlaybookPlane,
   PlaybookPlanStep,
   PlaybookRejection,
   PlaybookResolution,
@@ -19,6 +20,9 @@ import {
   mergePlaybookLayers,
   normalizePlaybookLayer,
 } from './utils.js';
+
+/** An intent record that declares no planes is browser-only (fail closed). */
+const DEFAULT_INTENT_PLANES: readonly PlaybookPlane[] = ['browser'];
 
 function getPlaybookConfig(): PlaybookPackageConfig {
   return getPackageConfig<PlaybookPackageConfig>('playbooks', {
@@ -190,7 +194,12 @@ export async function resolvePlaybook(
       );
     }
 
-    if (record.planes && !record.planes.includes(plane)) {
+    // Fail closed: an intent record that does not declare its planes is
+    // browser-only, the same default an intent-bearing playbook gets. Server
+    // validity rides the #2446 command/ack bridge and must be declared at both
+    // the playbook and the intent, never assumed from silence.
+    const intentPlanes = record.planes ?? DEFAULT_INTENT_PLANES;
+    if (!intentPlanes.includes(plane)) {
       return reject(
         key,
         'intent-plane-not-declared',

@@ -304,6 +304,12 @@ export class PlaybookOverride extends SmrtObject {
       throw new Error(`Playbook "${this.key}" does not allow planes overrides`);
     }
 
+    if (this.onStepFailure !== null && !editable.onStepFailure) {
+      throw new Error(
+        `Playbook "${this.key}" does not allow onStepFailure overrides`,
+      );
+    }
+
     if (this.enabled !== null && !editable.enabled) {
       throw new Error(
         `Playbook "${this.key}" does not allow enablement overrides`,

@@ -24,6 +24,7 @@ const DEFAULT_EDITABLE: PlaybookEditableConfig = {
   title: false,
   description: false,
   planes: false,
+  onStepFailure: false,
   enabled: false,
   metadata: false,
 };
@@ -53,6 +54,7 @@ export function normalizeEditableConfig(
     title: editable?.title ?? DEFAULT_EDITABLE.title,
     description: editable?.description ?? DEFAULT_EDITABLE.description,
     planes: editable?.planes ?? DEFAULT_EDITABLE.planes,
+    onStepFailure: editable?.onStepFailure ?? DEFAULT_EDITABLE.onStepFailure,
     enabled: editable?.enabled ?? DEFAULT_EDITABLE.enabled,
     metadata: editable?.metadata ?? DEFAULT_EDITABLE.metadata,
   };
