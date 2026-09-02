@@ -85,7 +85,56 @@ const MAX_LITERAL_DEPTH = 32;
  */
 const INTENT_ID_PATTERN = /^[a-z][a-z0-9]*(?:\.[a-z0-9][a-z0-9_]*)+$/;
 const INTENT_ID_MAX_LENGTH = 128;
+const DESCRIPTION_MAX_LENGTH = 1024;
 const RESERVED_TOOL_NAME_PREFIX = 'smrt_ui_';
+
+/** Keys `defineIntent` accepts; anything else is a hard failure there. */
+const INTENT_DECLARATION_KEYS = new Set([
+  'id',
+  'description',
+  'inputSchema',
+  'capability',
+  'target',
+]);
+const CONTROL_TARGET_KEYS = new Set([
+  'registry',
+  'action',
+  'formId',
+  'controlId',
+]);
+const DATA_SURFACE_TARGET_KEYS = new Set([
+  'registry',
+  'controlId',
+  'surfaceId',
+  'kind',
+]);
+const CONTROL_ACTIONS = new Set([
+  'focus',
+  'reveal',
+  'highlight',
+  'explain',
+  'validate',
+  'stage',
+  'apply',
+  'discard',
+  'clear',
+  'undo',
+]);
+const DATA_SURFACE_KINDS = new Set(['table', 'list', 'report', 'custom']);
+
+/**
+ * Playbook rules, mirrored from `definePlaybook`'s normalizers in
+ * `@happyvertical/smrt-playbooks`, for the same reason and with the same
+ * obligation to stay in step.
+ *
+ * These are validated rather than repaired. Coercing an invalid `planes` to the
+ * default would be worse than dropping the declaration: the artifact would
+ * positively assert server validity the author never declared, which is exactly
+ * the fail-open the plane rule exists to prevent.
+ */
+const PLAYBOOK_PLANES = new Set(['browser', 'server']);
+const FAILURE_POLICIES = new Set(['abort', 'continue']);
+const QUALIFIED_MODEL_PATTERN = /^\S+:\S+$/;
 
 /** Derive the WebMCP tool name for an intent id, as `viewIntentToolName` does. */
 function intentToolName(id: string): string {
@@ -419,12 +468,31 @@ function unwrapTypeWrappers(node: unknown): AstNode | undefined {
 function collectModuleScopeCalls(body: readonly AstNode[]): Set<AstNode> {
   const calls = new Set<AstNode>();
 
+  // `export const intents = [defineIntent({…}), defineIntent({…})]` is a
+  // plausible authoring form and is genuinely at module scope — not inside a
+  // function, class, conditional, or loop, which is what the contract actually
+  // forbids. Reporting it as "not at module scope" would be false and would
+  // leave the author with no usable next step.
+  const addInitializer = (value: unknown): void => {
+    const init = unwrapTypeWrappers(value);
+    if (!init) return;
+    if (init.type === 'CallExpression') {
+      calls.add(init);
+      return;
+    }
+    if (init.type === 'ArrayExpression') {
+      for (const element of (init.elements as unknown[]) ?? []) {
+        const entry = unwrapTypeWrappers(element);
+        if (entry && entry.type === 'CallExpression') calls.add(entry);
+      }
+    }
+  };
+
   const addDeclaration = (declaration: unknown): void => {
     if (!isNode(declaration)) return;
     if (declaration.type !== 'VariableDeclaration') return;
     for (const declarator of (declaration.declarations as AstNode[]) ?? []) {
-      const init = unwrapTypeWrappers(declarator.init);
-      if (init && init.type === 'CallExpression') calls.add(init);
+      addInitializer(declarator.init);
     }
   };
 
@@ -540,6 +608,141 @@ function readString(value: unknown): string | undefined {
  * runtime pattern type-checks cleanly and fails only when the page loads.
  * Catching it here turns that into a build-time diagnostic.
  */
+/**
+ * Why this whole intent declaration could never register, or `undefined`.
+ *
+ * Mirrors `defineIntent`'s key allowlist, description bound, and
+ * `normalizeTarget` — the closed `registry` union, the control-action union,
+ * the required data-surface `controlId`, and the surface-kind union. Validating
+ * only the id would still let `target: { registry: 'rest', url: … }` reach the
+ * artifact verbatim, where an agent reads it as an addressable operation that
+ * cannot exist.
+ */
+function intentDeclarationProblem(
+  declaration: Record<string, unknown>,
+  id: string,
+  description: string,
+): string | undefined {
+  const identity = intentIdentityProblem(id);
+  if (identity) return identity;
+
+  for (const key of Object.keys(declaration)) {
+    if (!INTENT_DECLARATION_KEYS.has(key)) {
+      return `view intent '${id}' declares unknown key '${key}'. A declaration is data only — there is no field for an execute function, a URL, a route, or a fetch, and \`defineIntent\` rejects one.`;
+    }
+  }
+  if (description.length > DESCRIPTION_MAX_LENGTH) {
+    return `view intent '${id}' has a description longer than ${DESCRIPTION_MAX_LENGTH} characters, which \`defineIntent\` rejects.`;
+  }
+  if (
+    declaration.inputSchema !== undefined &&
+    !isPlainRecord(declaration.inputSchema)
+  ) {
+    return `view intent '${id}' has an inputSchema that is not an object literal, which \`defineIntent\` rejects.`;
+  }
+
+  const target = declaration.target as Record<string, unknown>;
+  const registry = target.registry;
+  if (registry !== 'control' && registry !== 'dataSurface') {
+    return `view intent '${id}' targets registry '${String(registry)}'; \`defineIntent\` accepts only 'control' or 'dataSurface'. An intent moves mounted browser state and has no path to REST.`;
+  }
+
+  const allowed =
+    registry === 'control' ? CONTROL_TARGET_KEYS : DATA_SURFACE_TARGET_KEYS;
+  for (const key of Object.keys(target)) {
+    if (!allowed.has(key)) {
+      return `view intent '${id}' declares unknown target key '${key}' for the '${registry}' registry, which \`defineIntent\` rejects.`;
+    }
+  }
+
+  if (registry === 'control') {
+    if (!CONTROL_ACTIONS.has(String(target.action))) {
+      return `view intent '${id}' declares control action '${String(target.action)}', which is not a \`ControlInteractionRegistry\` command.`;
+    }
+    for (const key of ['formId', 'controlId'] as const) {
+      if (target[key] !== undefined && !isNonEmptyString(target[key])) {
+        return `view intent '${id}' has a non-string target.${key}.`;
+      }
+    }
+    return undefined;
+  }
+
+  if (!isNonEmptyString(target.controlId)) {
+    return `view intent '${id}' targets the dataSurface registry without a \`controlId\`, which \`defineIntent\` requires.`;
+  }
+  if (target.surfaceId !== undefined && !isNonEmptyString(target.surfaceId)) {
+    return `view intent '${id}' has a non-string target.surfaceId.`;
+  }
+  if (
+    target.kind !== undefined &&
+    !DATA_SURFACE_KINDS.has(String(target.kind))
+  ) {
+    return `view intent '${id}' declares data-surface kind '${String(target.kind)}', which \`defineIntent\` rejects.`;
+  }
+  return undefined;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Why this playbook declaration could never register, or `undefined`.
+ *
+ * Mirrors `definePlaybook`'s normalizers, which THROW on each of these rather
+ * than defaulting. Repairing them here would be actively harmful for `planes`:
+ * an author who wrote `planes: []` or a typo'd plane would get an emitted entry
+ * claiming both planes, so the artifact would assert server validity nobody
+ * declared.
+ */
+function playbookDeclarationProblem(
+  declaration: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const planes = declaration.planes;
+  if (planes !== undefined && planes !== null) {
+    if (!Array.isArray(planes)) {
+      return `playbook '${key}' declares planes that are not an array, which \`definePlaybook\` rejects.`;
+    }
+    for (const plane of planes) {
+      if (!PLAYBOOK_PLANES.has(String(plane))) {
+        return `playbook '${key}' declares unknown plane '${String(plane)}'; expected 'browser' or 'server'.`;
+      }
+    }
+    if (planes.length === 0) {
+      return `playbook '${key}' declares an empty planes list; \`definePlaybook\` requires at least one, and defaulting it here would assert a validity the author never declared.`;
+    }
+  }
+
+  const onStepFailure = declaration.onStepFailure;
+  if (
+    onStepFailure !== undefined &&
+    !FAILURE_POLICIES.has(String(onStepFailure))
+  ) {
+    return `playbook '${key}' declares onStepFailure '${String(onStepFailure)}'; \`definePlaybook\` accepts only 'abort' or 'continue'.`;
+  }
+
+  const enabled = declaration.enabled;
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    return `playbook '${key}' declares a non-boolean \`enabled\`, which \`definePlaybook\` rejects rather than coercing — a truthy '"false"' would otherwise read as enabled.`;
+  }
+
+  for (const step of (declaration.steps as unknown[]) ?? []) {
+    const record = step as Record<string, unknown>;
+    if (
+      record.kind === 'operation' &&
+      !QUALIFIED_MODEL_PATTERN.test(String(record.model))
+    ) {
+      return `playbook '${key}' has a step whose model '${String(record.model)}' is not a qualified pair such as '@happyvertical/smrt-commerce:Order'.`;
+    }
+  }
+  return undefined;
+}
+
 function intentIdentityProblem(id: string): string | undefined {
   if (id.length > INTENT_ID_MAX_LENGTH) {
     return `intent id '${id}' is longer than ${INTENT_ID_MAX_LENGTH} characters, which \`defineIntent\` rejects.`;
@@ -723,11 +926,11 @@ export function extractAgentSurface(
         );
         continue;
       }
-      const identityProblem = intentIdentityProblem(id);
-      if (identityProblem) {
+      const problem = intentDeclarationProblem(declaration, id, description);
+      if (problem) {
         // Emitting this would advertise, in the artifact and in `smrt doctor`,
         // an operation `defineIntent` refuses to register at runtime.
-        report('invalid-identity', helper, identityProblem, node.start);
+        report('invalid-identity', helper, problem, node.start);
         continue;
       }
       intents.push({
@@ -761,6 +964,11 @@ export function extractAgentSurface(
           `emitted. ${ESCAPE_HATCH}`,
         node.start,
       );
+      continue;
+    }
+    const playbookProblem = playbookDeclarationProblem(declaration, key);
+    if (playbookProblem) {
+      report('invalid-identity', helper, playbookProblem, node.start);
       continue;
     }
     const declaredPlanes = normalizePlanes(declaration.planes);

@@ -134,6 +134,32 @@ definePlaybook({
     expect(surface.playbooks[0].planesDeclared).toBe(false);
   });
 
+  it('accepts declarations collected into a module-scope array', () => {
+    // Genuinely at module scope — not in a function, class, conditional, or
+    // loop, which is what the contract forbids. Reporting it as "not at module
+    // scope" would be false and would leave the author nothing to act on.
+    const surface = surfaceOf(`${INTENT_IMPORT}
+export const intents = [
+  defineIntent({
+    id: 'orders.first',
+    description: 'First',
+    target: { registry: 'control', action: 'focus' },
+  }),
+  defineIntent({
+    id: 'orders.second',
+    description: 'Second',
+    target: { registry: 'control', action: 'reveal' },
+  }),
+];
+`);
+
+    expect(surface.diagnostics).toEqual([]);
+    expect(surface.intents.map((intent) => intent.id)).toEqual([
+      'orders.first',
+      'orders.second',
+    ]);
+  });
+
   it('accepts an aliased named import and a namespace import', () => {
     const aliased = surfaceOf(`
 import { defineIntent as declareIntent } from '@happyvertical/smrt-web/intents';
@@ -307,6 +333,92 @@ export const a = defineIntent({
       expect(surface.diagnostics[0].code).toBe('invalid-identity');
       expect(surface.diagnostics[0].message).toContain(expected);
     }
+  });
+
+  it('rejects an intent target `defineIntent` would refuse', () => {
+    const cases: Array<[string, string]> = [
+      [`target: { registry: 'rest', controlId: 'x' }`, "registry 'rest'"],
+      [`target: { registry: 'dataSurface' }`, 'controlId'],
+      [`target: { registry: 'control', action: 'teleport' }`, 'teleport'],
+      [
+        `target: { registry: 'dataSurface', controlId: 'x', kind: 'grid' }`,
+        "kind 'grid'",
+      ],
+      [
+        `target: { registry: 'control', action: 'focus', url: 'https://x' }`,
+        'unknown target key',
+      ],
+    ];
+    for (const [target, expected] of cases) {
+      const surface = surfaceOf(`${INTENT_IMPORT}
+export const a = defineIntent({
+  id: 'orders.bad_target',
+  description: 'Invalid target',
+  ${target},
+});
+`);
+      expect(surface.intents).toEqual([]);
+      expect(surface.diagnostics.map((d) => d.code)).toEqual([
+        'invalid-identity',
+      ]);
+      expect(surface.diagnostics[0].message).toContain(expected);
+    }
+  });
+
+  it('rejects an unknown key on an intent declaration', () => {
+    // `defineIntent` hard-fails on one; dropping it silently here would let the
+    // artifact disagree with what the runtime accepts.
+    const surface = surfaceOf(`${INTENT_IMPORT}
+export const a = defineIntent({
+  id: 'orders.extra_key',
+  description: 'Has an extra key',
+  execute: 'nope',
+  target: { registry: 'control', action: 'focus' },
+});
+`);
+    expect(surface.intents).toEqual([]);
+    expect(surface.diagnostics[0].message).toContain("unknown key 'execute'");
+  });
+
+  it('rejects playbook fields `definePlaybook` throws on, rather than repairing them', () => {
+    const cases: Array<[string, string]> = [
+      // Repairing this one would be worst of all: the artifact would assert
+      // both planes for an author who declared none validly.
+      [`planes: [],`, 'empty planes list'],
+      [`planes: ['browser', 'fog'],`, "unknown plane 'fog'"],
+      [`planes: 'browser',`, 'not an array'],
+      [`onStepFailure: 'retry',`, "onStepFailure 'retry'"],
+      [`enabled: 'yes',`, 'non-boolean'],
+    ];
+    for (const [field, expected] of cases) {
+      const surface = surfaceOf(`${PLAYBOOK_IMPORT}
+export const a = definePlaybook({
+  key: 'commerce.bad',
+  title: 'Bad',
+  description: 'Invalid field',
+  ${field}
+  steps: [{ kind: 'operation', model: '@pkg:Order', action: 'submit' }],
+});
+`);
+      expect(surface.playbooks).toEqual([]);
+      expect(surface.diagnostics.map((d) => d.code)).toEqual([
+        'invalid-identity',
+      ]);
+      expect(surface.diagnostics[0].message).toContain(expected);
+    }
+  });
+
+  it('rejects a playbook step whose model is not a qualified pair', () => {
+    const surface = surfaceOf(`${PLAYBOOK_IMPORT}
+export const a = definePlaybook({
+  key: 'commerce.unqualified',
+  title: 'Unqualified',
+  description: 'Model is not a qualified pair',
+  steps: [{ kind: 'operation', model: 'Order', action: 'submit' }],
+});
+`);
+    expect(surface.playbooks).toEqual([]);
+    expect(surface.diagnostics[0].message).toContain('qualified pair');
   });
 
   it('reports a declaration written inline in a .svelte file', () => {

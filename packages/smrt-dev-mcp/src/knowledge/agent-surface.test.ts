@@ -289,6 +289,45 @@ describe('dev:knowledge-check validates the emitted surface', () => {
     expect(drift[0].message).toContain('no longer declared in source');
   });
 
+  it('does not report drift for a declaration the emitter never sees', async () => {
+    // A fixture intent in a test file is excluded from the build, so counting
+    // it as declared would raise an error no rebuild could ever clear.
+    await writeArtifact(agentSurface(), await currentHashes());
+    await mkdir(join(packageDir, 'src/lib/__tests__'), { recursive: true });
+    await writeFile(
+      join(packageDir, 'src/lib/fixture.test.ts'),
+      INTENT_BODY.replace('orders.next_page', 'orders.only_in_a_test'),
+    );
+    await writeFile(
+      join(packageDir, 'src/lib/__tests__/fixture.intents.ts'),
+      INTENT_BODY.replace('orders.next_page', 'orders.only_in_tests_dir'),
+    );
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+
+    expect(
+      strict.issues.filter((issue) => issue.code === 'stale-agent-surface'),
+    ).toEqual([]);
+  });
+
+  it('does not report drift for the loser of a tool-name collision', async () => {
+    // The merge drops it deliberately, and the artifact is the merged result;
+    // comparing raw per-file declarations would call the drop "missing".
+    // Named so the ARTIFACT's own entry is the path-ordered winner; the loser
+    // is the one added here, exactly as the emitter would have resolved it.
+    await writeArtifact(agentSurface(), await currentHashes());
+    await writeFile(
+      join(packageDir, 'src/lib/zz-collides.intents.ts'),
+      INTENT_BODY.replace('orders.next_page', 'orders.next.page'),
+    );
+
+    const strict = await checkKnowledgeFreshness({ rootDir, strict: true });
+
+    expect(
+      strict.issues.filter((issue) => issue.code === 'stale-agent-surface'),
+    ).toEqual([]);
+  });
+
   it('fails when a declaring module is gone', async () => {
     await writeArtifact(agentSurface(), await currentHashes());
     await rm(join(packageDir, PLAYBOOK_SOURCE));

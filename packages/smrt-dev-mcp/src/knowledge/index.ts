@@ -25,8 +25,10 @@ import {
 } from '@happyvertical/smrt-core/knowledge';
 import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import {
+  type AgentSurface,
   lintNumericPrecision,
   ManifestAdapter,
+  mergeAgentSurfaces,
   OxcScanner,
   parseSource,
   sourceMayContainNumericPrecisionIssue,
@@ -1150,6 +1152,24 @@ function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
  * The scan is bounded the same way the numeric-precision lint is: `src` only,
  * with the scanner's cheap token pre-filter in front of every parse.
  */
+/**
+ * Whether the emitter would have read this file at all.
+ *
+ * Mirrors the scanner's default excludes plus the build's test globs. A
+ * `*.test.ts` declaring a fixture intent — which is a real pattern in this
+ * repo — is never emitted, so treating it as declared would make
+ * `dev:knowledge-check` permanently red for that package.
+ */
+function isEmittableAgentSurfaceSource(filePath: string): boolean {
+  if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) return false;
+  if (filePath.endsWith('.d.ts')) return false;
+  if (/\.(?:test|spec)\.tsx?$/.test(filePath)) return false;
+  const segments = filePath.split(sep);
+  return (
+    !segments.includes('__tests__') && !segments.includes('__typechecks__')
+  );
+}
+
 function findAgentSurfaceDriftIssues(
   authoredPackages: KnowledgePackage[],
 ): KnowledgeIssue[] {
@@ -1161,9 +1181,12 @@ function findAgentSurfaceDriftIssues(
     const srcDir = join(pkg.directory, 'src');
     if (!existsSync(srcDir)) continue;
 
-    const declared = new Set<string>();
+    const perFile: AgentSurface[] = [];
     for (const filePath of walkFiles(srcDir)) {
-      if (!filePath.endsWith('.ts') && !filePath.endsWith('.tsx')) continue;
+      // Match what the EMITTER sees, not merely what is on disk. A declaration
+      // in a file the build excludes is never emitted, so counting it here
+      // would raise a drift error no rebuild could ever clear.
+      if (!isEmittableAgentSurfaceSource(filePath)) continue;
       let sourceText: string;
       try {
         sourceText = readFileSync(filePath, 'utf8');
@@ -1171,13 +1194,21 @@ function findAgentSurfaceDriftIssues(
         continue;
       }
       if (!sourceMayDeclareAgentSurface(sourceText)) continue;
-      const parsed = parseSource(sourceText, filePath);
-      for (const intent of parsed.agentSurface?.intents ?? []) {
-        declared.add(`view intent:${intent.id}`);
-      }
-      for (const playbook of parsed.agentSurface?.playbooks ?? []) {
-        declared.add(`playbook:${playbook.key}`);
-      }
+      const surface = parseSource(sourceText, filePath).agentSurface;
+      if (surface) perFile.push(surface);
+    }
+
+    // Merge before comparing: the merge is where a duplicate identity and a
+    // derived tool-name collision are resolved, and the emitted artifact is the
+    // merged result. Comparing raw per-file declarations against it would
+    // report the dropped loser as missing, which a rebuild cannot fix.
+    const merged = mergeAgentSurfaces(perFile);
+    const declared = new Set<string>();
+    for (const intent of merged.intents) {
+      declared.add(`view intent:${intent.id}`);
+    }
+    for (const playbook of merged.playbooks) {
+      declared.add(`playbook:${playbook.key}`);
     }
 
     const emitted = new Set<string>();
