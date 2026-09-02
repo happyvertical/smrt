@@ -91,7 +91,8 @@ async function loadPlaybookBase(
   }
 
   const merged = mergePlaybookLayers(definition, ...layers);
-  const value: PlaybookCacheValue = {
+  // Frozen: this object is shared by every resolution that hits the cache.
+  const value: PlaybookCacheValue = Object.freeze({
     key,
     title: merged.title,
     description: merged.description,
@@ -99,7 +100,7 @@ async function loadPlaybookBase(
     onStepFailure: merged.onStepFailure,
     enabled: merged.enabled,
     metadata: merged.metadata,
-  };
+  });
 
   setCachedPlaybookBase(key, tenantId, cacheDb, value);
   return value;
@@ -220,7 +221,10 @@ export async function resolvePlaybook(
     });
   }
 
-  const plan: PlaybookPlan = {
+  // A plan is a read-only description of what the agent is about to do; the
+  // policy fields it carries are shared with the cache, so freeze it rather
+  // than hand a caller a handle that can widen a gate after the fact.
+  const plan: PlaybookPlan = Object.freeze({
     key,
     title: merged.title,
     description: merged.description,
@@ -229,8 +233,8 @@ export async function resolvePlaybook(
     onStepFailure: merged.onStepFailure,
     metadata: merged.metadata,
     // Steps come from the code definition alone. No layer can supply them.
-    steps,
-  };
+    steps: Object.freeze(steps),
+  });
 
   return { ok: true, plan };
 }

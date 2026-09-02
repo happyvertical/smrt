@@ -525,12 +525,16 @@ export function mergePlaybookLayers(
     }
   }
 
-  return {
+  // The merged result is both cached and handed to callers as part of the
+  // plan, so the policy values must be immutable: a caller pushing onto a
+  // narrowed `planes` array would otherwise corrupt the cached entry and widen
+  // the declared-plane gate for every resolution until the TTL expires.
+  return Object.freeze({
     title,
     description,
-    planes,
+    planes: Object.freeze(planes),
     onStepFailure,
     enabled,
-    metadata,
-  };
+    metadata: Object.freeze(metadata),
+  });
 }

@@ -913,6 +913,40 @@ describe('@happyvertical/smrt-playbooks', () => {
       ).toEqual([]);
     });
 
+    it('returns an immutable plan so a caller cannot widen the cached plane gate', async () => {
+      definePlaybook({
+        key: 'commerce.cart.immutable-plan',
+        title: 'Immutable plan',
+        description: 'Plan policy is frozen',
+        steps: CHECKOUT_STEPS,
+        planes: ['browser'],
+      });
+
+      const plan = expectPlan(
+        await resolvePlaybook('commerce.cart.immutable-plan', {
+          db,
+          plane: 'browser',
+        }),
+      );
+
+      expect(Object.isFrozen(plan)).toBe(true);
+      expect(Object.isFrozen(plan.planes)).toBe(true);
+      expect(Object.isFrozen(plan.steps)).toBe(true);
+      expect(Object.isFrozen(plan.metadata)).toBe(true);
+      expect(() => {
+        (plan.planes as PlaybookPlane[]).push('server');
+      }).toThrow();
+
+      // The cached entry the plan shares is untouched, so a later server
+      // resolution still fails closed.
+      const server = await resolvePlaybook('commerce.cart.immutable-plan', {
+        db,
+        plane: 'server',
+      });
+      expect(server.ok).toBe(false);
+      expect(server.ok === false && server.reason).toBe('plane-not-declared');
+    });
+
     it('rejects an unknown playbook key with a specific reason instead of throwing', async () => {
       const rejected = await resolvePlaybook('commerce.cart.missing', { db });
       expect(rejected.ok).toBe(false);
