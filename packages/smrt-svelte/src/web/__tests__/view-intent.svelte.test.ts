@@ -50,6 +50,19 @@ function installModelContext(): RegisteredTool[] {
   return registered;
 }
 
+/**
+ * A Provider that enables the UI adapter also registers the six fixed
+ * `smrt_ui_*` tools into the same array, so every Provider-mounted assertion
+ * selects by NAME rather than by index or length — the pattern
+ * `webmcp-composed.integration.svelte.test.ts` already established.
+ */
+function toolNamed(
+  registered: RegisteredTool[],
+  name: string,
+): RegisteredTool | undefined {
+  return registered.find((tool) => tool.name === name);
+}
+
 function mountedControlRegistry() {
   const registry = createControlInteractionRegistry();
   let value = 'before';
@@ -122,8 +135,9 @@ describe('useViewIntent', () => {
       },
     });
 
-    await vi.waitFor(() => expect(registered).toHaveLength(1));
-    expect(registered[0].name).toBe('fixture_reveal_notes');
+    await vi.waitFor(() =>
+      expect(toolNamed(registered, 'fixture_reveal_notes')).toBeDefined(),
+    );
   });
 
   it("applies the Provider's effects policy to an intent", async () => {
@@ -141,7 +155,9 @@ describe('useViewIntent', () => {
 
     await vi.waitFor(() => expect(registerBespokeSpy).toHaveBeenCalledTimes(1));
     expect(registerBespokeSpy.mock.calls[0][1]).toEqual({ effects: ['read'] });
-    expect(registered).toHaveLength(0);
+    // The six fixed `smrt_ui_*` tools register alongside it; only the intent
+    // must be absent.
+    expect(toolNamed(registered, 'fixture_clear_notes')).toBeUndefined();
   });
 
   it('executes by dispatching one agent-sourced registry command', async () => {
@@ -158,13 +174,20 @@ describe('useViewIntent', () => {
         effects: ['read', 'write'],
       },
     });
-    await vi.waitFor(() => expect(registered).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(toolNamed(registered, 'fixture_stage_notes')).toBeDefined(),
+    );
 
-    await registered[0].execute({ value: 'after' });
+    const tool = toolNamed(registered, 'fixture_stage_notes');
+    if (!tool) throw new Error('intent tool was not registered');
+    await tool.execute({ value: 'after' });
 
     expect(fetchSpy).not.toHaveBeenCalled();
-    expect(executeSpy).toHaveBeenCalledTimes(1);
-    expect(executeSpy.mock.calls[0][0]).toEqual({
+    const staged = executeSpy.mock.calls.find(
+      ([command]) => command.action === 'stage',
+    );
+    if (!staged) throw new Error('intent did not dispatch a stage command');
+    expect(staged[0]).toEqual({
       action: 'stage',
       identity: { formId: 'order-form', controlId: 'notes' },
       value: 'after',
@@ -172,7 +195,7 @@ describe('useViewIntent', () => {
     // Agent-staged values stay proposals: the command is dispatched as
     // `source: 'agent'`, so StagedControlReview and the local-gesture
     // requirement apply unchanged.
-    expect(executeSpy.mock.calls[0][1]).toEqual({ source: 'agent' });
+    expect(staged[1]).toEqual({ source: 'agent' });
   });
 
   it('binds a data-surface intent to a mounted surface identity', async () => {

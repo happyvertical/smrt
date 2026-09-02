@@ -651,6 +651,20 @@ function jsonArg(args: Record<string, unknown>, key: string): unknown {
   }
 }
 
+/**
+ * Read `revision` ONCE and keep the value that was type-checked, so a
+ * two-faced getter cannot pass the `number` check and then land something
+ * else on the command.
+ */
+function optionalRevision(args: Record<string, unknown>): {
+  revision?: number;
+} {
+  const revision = args.revision;
+  return typeof revision === 'number' && Number.isFinite(revision)
+    ? { revision }
+    : {};
+}
+
 function buildControlCommand(
   target: ViewIntentControlTarget,
   identity: { formId: string; controlId: string },
@@ -678,17 +692,10 @@ function buildControlCommand(
       return {
         ...base,
         ...('value' in args ? { value: jsonArg(args, 'value') } : {}),
-        ...(typeof args.revision === 'number'
-          ? { revision: args.revision }
-          : {}),
+        ...optionalRevision(args),
       };
     case 'discard':
-      return {
-        ...base,
-        ...(typeof args.revision === 'number'
-          ? { revision: args.revision }
-          : {}),
-      };
+      return { ...base, ...optionalRevision(args) };
     default:
       return base;
   }
