@@ -11,7 +11,11 @@ import { clearPlaybookCache, getPlaybookCacheTtlMs } from './cache.js';
 import { PlaybookOverrideCollection } from './collections/PlaybookOverrideCollection.js';
 import { definePlaybook, PlaybookRegistry } from './playbook-registry.js';
 import { resolvePlaybook } from './playbook-resolver.js';
-import type { PlaybookOperationStep, PlaybookPlan } from './types.js';
+import type {
+  PlaybookOperationStep,
+  PlaybookPlan,
+  PlaybookPlane,
+} from './types.js';
 
 const CHECKOUT_STEPS = [
   {
@@ -142,6 +146,38 @@ describe('@happyvertical/smrt-playbooks', () => {
           editable: { steps: true } as never,
         }),
       ).toThrow('step lists are never editable');
+    });
+
+    it('deep-freezes the registered definition so declared policy cannot be mutated', () => {
+      const definition = definePlaybook({
+        key: 'commerce.cart.frozen',
+        title: 'Frozen',
+        description: 'Declared policy is immutable after registration',
+        steps: CHECKOUT_STEPS,
+        planes: ['browser'],
+        metadata: { owner: 'code' },
+      });
+
+      // A shallow freeze would leave `planes` and `editable` writable, letting
+      // a caller widen the plane or unlock a field on the object the registry
+      // hands back.
+      expect(Object.isFrozen(definition)).toBe(true);
+      expect(Object.isFrozen(definition.planes)).toBe(true);
+      expect(Object.isFrozen(definition.editable)).toBe(true);
+      expect(Object.isFrozen(definition.metadata)).toBe(true);
+      expect(Object.isFrozen(definition.steps)).toBe(true);
+      expect(Object.isFrozen(definition.steps[0])).toBe(true);
+
+      expect(() => {
+        (definition.planes as PlaybookPlane[]).push('server');
+      }).toThrow();
+      expect(() => {
+        (definition.editable as { enabled: boolean }).enabled = true;
+      }).toThrow();
+
+      expect(PlaybookRegistry.get('commerce.cart.frozen')?.planes).toEqual([
+        'browser',
+      ]);
     });
 
     it('defaults every editable flag to false', async () => {

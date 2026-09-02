@@ -13,7 +13,10 @@ import type {
  */
 export type PlaybookPlane = 'browser' | 'server';
 
-export const PLAYBOOK_PLANES: readonly PlaybookPlane[] = ['browser', 'server'];
+export const PLAYBOOK_PLANES: readonly PlaybookPlane[] = Object.freeze([
+  'browser',
+  'server',
+]);
 
 /**
  * A step naming a model operation by qualified pair — the same qualified

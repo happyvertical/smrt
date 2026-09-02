@@ -22,7 +22,9 @@ import {
 } from './utils.js';
 
 /** An intent record that declares no planes is browser-only (fail closed). */
-const DEFAULT_INTENT_PLANES: readonly PlaybookPlane[] = ['browser'];
+const DEFAULT_INTENT_PLANES: readonly PlaybookPlane[] = Object.freeze([
+  'browser',
+]);
 
 function getPlaybookConfig(): PlaybookPackageConfig {
   return getPackageConfig<PlaybookPackageConfig>('playbooks', {

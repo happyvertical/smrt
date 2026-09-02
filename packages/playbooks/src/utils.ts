@@ -41,6 +41,11 @@ export const FAIL_CLOSED_CLASSIFICATION: CapabilityClassification = {
 
 const FAILURE_POLICIES = new Set<PlaybookFailurePolicy>(['abort', 'continue']);
 
+/** Frozen so a definition's default plane list can never be mutated in place. */
+const BROWSER_ONLY_PLANES: readonly PlaybookPlane[] = Object.freeze([
+  'browser',
+]);
+
 export function isPlainObject(
   value: unknown,
 ): value is Record<string, unknown> {
@@ -272,7 +277,7 @@ export function hasIntentStep(steps: readonly PlaybookStep[]): boolean {
 export function defaultPlanesForSteps(
   steps: readonly PlaybookStep[],
 ): readonly PlaybookPlane[] {
-  return hasIntentStep(steps) ? (['browser'] as const) : PLAYBOOK_PLANES;
+  return hasIntentStep(steps) ? BROWSER_ONLY_PLANES : PLAYBOOK_PLANES;
 }
 
 export function normalizePlaybookDefinitionInput(
@@ -304,19 +309,25 @@ export function normalizePlaybookDefinitionInput(
   const steps = normalizeSteps(input.steps, context);
   const declaredPlanes = normalizePlanes(input.planes, context);
 
+  // Freeze the nested values too, not just the outer object: `planes` and
+  // `editable` are the declared fail-closed policy, and a shallow freeze would
+  // still let a caller push 'server' onto a browser-only definition or flip an
+  // `editable` flag on the object the registry hands back.
   return Object.freeze({
     key: input.key,
     title: input.title,
     description: input.description,
     steps,
-    planes: declaredPlanes ?? defaultPlanesForSteps(steps),
+    planes: Object.freeze(declaredPlanes ?? defaultPlanesForSteps(steps)),
     onStepFailure:
       input.onStepFailure === undefined
         ? 'abort'
         : normalizeFailurePolicy(input.onStepFailure, context),
     enabled: input.enabled === undefined ? true : Boolean(input.enabled),
-    metadata: input.metadata ? sanitizeMetadata(input.metadata) : {},
-    editable: normalizeEditableConfig(input.editable),
+    metadata: Object.freeze(
+      input.metadata ? sanitizeMetadata(input.metadata) : {},
+    ),
+    editable: Object.freeze(normalizeEditableConfig(input.editable)),
   });
 }
 
