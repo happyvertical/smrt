@@ -36,10 +36,79 @@ executes the source.
   Driven by `scripts/verify-manifest-completeness.mjs` from `prepack`.
 - `discoverSourceFiles(options)` — shared bounded source-discovery policy used
   by `OxcScanner` and the core manifest preflight.
+- `extractAgentSurface` / `scanSvelteAgentSurface` / `mergeAgentSurfaces` —
+  the agent-surface matcher (#2591). See below.
 - Types (re-exported from `./types`): `RawClassDefinition`,
   `RawFieldDefinition`, `RawMethodDefinition`, `ResolvedClassDefinition`,
   `ScanResults`, `FileScanResult`, `OxcScannerOptions`, `InferredFieldType`,
-  `FieldTypeInference`.
+  `FieldTypeInference`, `AgentSurface`, `AgentSurfaceIntent`,
+  `AgentSurfacePlaybook`, `AgentSurfaceDiagnostic`.
+
+## The agent-surface matcher (#2591)
+
+`@smrt()` classes are found by matching DECORATORS. A view intent (#2588) and a
+playbook (#2589) are not classes, so `agent-surface.ts` adds the second shape
+the framework emits from: a **module-scope call with one object-literal
+argument**. `ScanResults.agentSurface` carries the merged result.
+
+### What it accepts
+
+| Requirement | Why |
+|---|---|
+| A `.ts` / `.tsx` module | the scanner never reads `.svelte` |
+| Callee bound by an import from exactly one specifier — `defineIntent` from `@happyvertical/smrt-web/intents`, `definePlaybook` from `@happyvertical/smrt-playbooks` | a local function of the same name is not a declaration. `defineIntent` ships solely from the `/intents` subpath so a sidecar drags in no client-data engine; matching the package root would invent a specifier |
+| The call directly at module scope — `const x = f({…})`, `export const x = f({…})`, `f({…});`, `export default f({…})` | anything deeper is conditional on control flow |
+| Exactly one argument, an `ObjectExpression` whose values are literals, literal objects, or literal arrays | there is nothing to read otherwise |
+
+Named imports (aliased or not) and namespace imports (`intents.defineIntent`)
+both resolve; a default import does not, since neither package has one.
+
+### What it refuses, always with a diagnostic
+
+Never a silent omission — every message names `useWebMcpTool`, the escape hatch
+for a tool set genuinely derived from computed or fetched data:
+
+| Code | Shape |
+|---|---|
+| `non-literal-argument` | an identifier reference, a spread (in an object or an array), a call, a conditional, a template literal (interpolated **or not**), a computed or shorthand key, a computed unary, or an argument that is not an object literal |
+| `not-module-scope` | declared inside a function, class, conditional, or loop |
+| `argument-count` | not exactly one argument |
+| `incomplete-declaration` | the literal parsed but lacks `id`/`description`/`target` (intent) or `key`/`title`/`description`/`steps` (playbook) |
+| `svelte-declaration` | written inline in a `.svelte` file |
+| `duplicate-identity` | two modules declare the same `id`/`key` |
+
+This is deliberately narrower than the decorator-config extractor, which
+RESOLVES spreads against module-scope constants. That one must, because a
+dropped `@smrt({ ...CFG })` key silently reopens an exposure surface. Here the
+requirement runs the other way: an emitted entry has to be exactly what an
+author can see in one object literal, so a partial resolution would be worse
+than a refusal.
+
+The `.svelte` pass is textual, not a Svelte parse: it requires both the import
+specifier and the call token, and it exists only to say "move this to a `.ts`
+sidecar" — which is the answer regardless of what the declaration contains. Any
+`*.svelte` exclude a caller passes for the class scan is dropped for this pass,
+since callers routinely exclude Svelte because OXC cannot parse it, and
+honouring that here would silence the one thing the pass is for.
+
+### Deterministic identity
+
+`mergeAgentSurfaces` makes emission independent of file order, so a
+cross-profile parity snapshot does not churn on directory order:
+
+- an intent is identified by `id`, a playbook by `key`;
+- entries sort by identity, then by source path;
+- on a duplicate identity the **lexicographically smaller path wins** and the
+  other becomes a `duplicate-identity` diagnostic. "First one scanned wins"
+  would give different answers for different input orders;
+- diagnostics sort by path, line, column, code, message;
+- paths are recorded `cwd`-relative and POSIX-separated, so a checked-in
+  artifact is neither machine- nor platform-specific.
+
+The scanner mirrors the #2587 capability vocabulary structurally instead of
+importing `@happyvertical/smrt-types`: core depends on this package, so the
+reverse edge would close a cycle. Core reconciles the two shapes in exactly one
+place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 
 ## Discovery boundaries
 
@@ -87,6 +156,11 @@ exhausts the heap when the scanner is pointed at an application root (#2275):
 - `src/manifest-adapter.ts` — `ManifestAdapter`: raw → manifest conversion and
   field-type inference.
 - `src/verify-completeness.ts` — `verifyManifestCompleteness` publish guard.
+- `src/agent-surface.ts` — the `defineIntent` / `definePlaybook` matcher, its
+  diagnostics, and `mergeAgentSurfaces` (#2591).
+- `src/source-location.ts` — `getLineColumn`, split out so `agent-surface.ts`
+  can resolve a diagnostic's position without importing `oxc-parser.ts`, which
+  imports it back.
 - `src/types.ts` — shared raw/resolved/result type definitions.
 - `src/cli.ts` / `bin/smrt-scan.js` — the `smrt-scan` CLI.
 
@@ -128,6 +202,15 @@ exhausts the heap when the scanner is pointed at an application root (#2275):
   but its taint replays into the diagnostics of every decorator that spreads
   it, transitively through constant chains. Without that the silent drop simply
   moves one level up. An unused tainted constant reports nothing.
+- **A non-static `defineIntent`/`definePlaybook` warns, it does not fail the
+  build** — unlike an unresolved `@smrt()` spread, which errors. The asymmetry
+  is deliberate: a dropped decorator spread reopens an exposure surface, while a
+  computed tool set is a legitimate choice with a supported path
+  (`useWebMcpTool`). What is never acceptable is the declaration disappearing
+  unremarked, so it is recorded in `ScanResults.agentSurface.diagnostics`,
+  printed by the Vite plugin, carried into `smrt-knowledge.json`, reported by
+  `smrt doctor`, and surfaced by `dev:knowledge-check` as
+  `agent-surface-not-static`.
 - **Relationship targets are resolved, not copied**: `@foreignKey`,
   `@oneToMany` and `@manyToMany` arguments arrive as raw source text.
   `'Target'`/`Target` pass through and a forward-reference thunk

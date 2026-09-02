@@ -1,4 +1,50 @@
+import type {
+  CapabilityClassification,
+  DomainKnowledgePlaybookStep,
+} from '@happyvertical/smrt-types';
 import type { SmartObjectManifest } from '../scanner/types.js';
+
+/**
+ * The scanner's declared agent surface (#2591), mirrored structurally like the
+ * rest of this module.
+ *
+ * `@happyvertical/smrt-scanner` cannot import `@happyvertical/smrt-types` —
+ * core depends on the scanner, so the reverse edge would close a cycle — which
+ * is why the scanner owns its own copy of this vocabulary and core reconciles
+ * the two at exactly one place (`toKnowledgeAgentSurface`).
+ */
+export interface ScannerAgentSurface {
+  intents: Array<{
+    kind: 'intent';
+    id: string;
+    description: string;
+    capability: CapabilityClassification;
+    target: Record<string, unknown>;
+    hasInputSchema: boolean;
+    planes: Array<'browser' | 'server'>;
+    filePath: string;
+  }>;
+  playbooks: Array<{
+    kind: 'playbook';
+    key: string;
+    title: string;
+    description: string;
+    steps: DomainKnowledgePlaybookStep[];
+    planes: Array<'browser' | 'server'>;
+    planesDeclared: boolean;
+    onStepFailure: 'abort' | 'continue';
+    enabled: boolean;
+    filePath: string;
+  }>;
+  diagnostics: Array<{
+    code: string;
+    helper: 'defineIntent' | 'definePlaybook';
+    message: string;
+    filePath: string;
+    line?: number;
+    column?: number;
+  }>;
+}
 
 export interface OxcScannerLike {
   scanAndResolve(): Promise<{
@@ -10,6 +56,7 @@ export interface OxcScannerLike {
         line?: number;
         severity: 'error' | 'warning';
       }>;
+      agentSurface?: ScannerAgentSurface;
     };
     resolved: unknown[];
   }>;

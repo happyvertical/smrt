@@ -82,6 +82,44 @@ after that commit. This is the mode for large index rollouts.
 - Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
   before the transaction opens — PostgreSQL cannot run it there.
 
+## `doctor`'s agent-surface section (#2591)
+
+`smrt doctor` reports the application's complete agent-addressable surface —
+generated model tools, declared view intents, registered playbooks — **from
+build artifacts alone**. No route is mounted, no server starts, and no
+application module is imported. That is the whole point: before this, the only
+way to answer "what can an agent do in this app" was to mount every route and
+enumerate, which is not an answer a build, a review, or a CI gate can use.
+
+`readAgentSurfaceReport(cwd)` reads the first of `.smrt/smrt-knowledge.json`
+then `dist/smrt-knowledge.json`. Model tools come from the artifact's `mcp`
+surfaces (REST/CLI entries are not agent-addressable tools and are excluded);
+intents and playbooks come from its `agentSurface`.
+`renderAgentSurfaceReport(report)` returns the printed lines; both are exported
+so the shape is testable without running the command.
+
+Sample output:
+
+```text
+🤖 Agent Surface
+
+  Source: .smrt/smrt-knowledge.json
+  Generated model tools: 2
+    - orders_create (Order.create)
+    - orders_list (Order.list)
+  Declared view intents: 1
+    - orders.next_page (read · browser · src/lib/orders.intents.ts)
+  Registered playbooks: 1
+    - commerce.checkout (2 step(s) · browser · src/lib/checkout.playbooks.ts)
+  ✅ 4 agent-addressable operation(s) reported
+```
+
+A declaration the scanner recognized but could not read is listed under
+`⚠️  Not statically emittable` with the message naming `useWebMcpTool`, and
+raises a doctor **warning**, not an issue — a computed tool set is a legitimate
+choice, but it must never vanish unremarked. With no artifact at all the section
+says to run a build; a corrupt artifact is skipped rather than thrown.
+
 ## Live-schema parity (#2368)
 
 `doctor --db` and `db:status --parity` share `src/commands/db-parity.ts`, which

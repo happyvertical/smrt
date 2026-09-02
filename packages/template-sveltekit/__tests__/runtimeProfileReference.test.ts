@@ -19,6 +19,7 @@ import {
   copyRuntimeProfileReference,
   generateReferenceFixtureManifest,
   initializeReferenceFixture,
+  referenceAgentSurface,
   referenceWorkItemActionEffects,
   resolveReferenceRuntimeProfile,
   seedReferenceFixture,
@@ -175,6 +176,51 @@ describe('runtime-profile reference workload fixture', () => {
         requiresApproval: true,
       },
     });
+  });
+
+  it('emits the same declared agent surface under every runtime profile', async () => {
+    // Generated model tools were already a build-time cross-profile invariant;
+    // view intents and playbooks only existed once something mounted, so the
+    // browser half of the agent surface was outside every parity claim (#2591).
+    // Now it is emitted from source and can be held to the same standard.
+    fixtureDirectories();
+
+    const snapshots = new Map<string, string>();
+    for (const profile of REFERENCE_RUNTIME_PROFILES) {
+      const fixture = copyRuntimeProfileReference(
+        join(temporaryDirectory as string, `agent-surface-${profile}`),
+      );
+      expect(resolveReferenceRuntimeProfile(profile).profile).toBe(profile);
+      const surface = await referenceAgentSurface(fixture);
+
+      expect(surface.diagnostics).toEqual([]);
+      expect(surface.intents.map((intent) => intent.id)).toEqual([
+        'reference.reveal_archived',
+        'reference.stage_priority',
+      ]);
+      expect(surface.playbooks.map((playbook) => playbook.key)).toEqual([
+        'reference.archive',
+        'reference.prepare_for_review',
+      ]);
+      // Silence from a playbook that contains a view-intent step never widens
+      // its planes: server validity rides the #2446 command/ack bridge and has
+      // to be declared, which `reference.archive` does and the other does not.
+      expect(
+        Object.fromEntries(
+          surface.playbooks.map((playbook) => [playbook.key, playbook.planes]),
+        ),
+      ).toEqual({
+        'reference.archive': ['browser', 'server'],
+        'reference.prepare_for_review': ['browser'],
+      });
+
+      snapshots.set(profile, JSON.stringify(surface, null, 2));
+    }
+
+    const [canonical, ...others] = [...snapshots.values()];
+    for (const snapshot of others) {
+      expect(snapshot).toBe(canonical);
+    }
   });
 
   it('seeds ordinary owner, tenant, asset, and queued-workflow state on file-backed SQLite', async () => {

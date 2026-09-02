@@ -19,6 +19,14 @@
  */
 
 export {
+  type ExtractAgentSurfaceOptions,
+  emptyAgentSurface,
+  extractAgentSurface,
+  mergeAgentSurfaces,
+  scanSvelteAgentSurface,
+  sourceMayDeclareAgentSurface,
+} from './agent-surface.js';
+export {
   discoverSourceFiles,
   normalizeGlobSeparators,
   relativeGlobToCwd,

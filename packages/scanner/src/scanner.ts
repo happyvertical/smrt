@@ -5,11 +5,17 @@
  * Provides a simple API for scanning TypeScript files for SMRT classes.
  */
 
-import { resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
+import {
+  emptyAgentSurface,
+  mergeAgentSurfaces,
+  scanSvelteAgentSurface,
+} from './agent-surface.js';
 import { discoverSourceFiles } from './discovery.js';
 import { InheritanceResolver } from './inheritance-resolver.js';
 import { parseFile } from './oxc-parser.js';
 import type {
+  AgentSurface,
   ExternalManifest,
   FileScanResult,
   OxcScannerOptions,
@@ -21,6 +27,13 @@ import type {
  * Default glob patterns for scanning
  */
 const DEFAULT_INCLUDE = ['**/*.ts', '**/*.tsx'];
+
+/**
+ * Files searched only to REPORT a declaration the scanner can never read
+ * (#2591). Nothing is emitted from a `.svelte` file — the scan exists so an
+ * intent written inline in a component fails loudly instead of vanishing.
+ */
+const DEFAULT_SVELTE_INCLUDE = ['**/*.svelte'];
 const DEFAULT_EXCLUDE = [
   '**/node_modules/**',
   '**/dist/**',
@@ -100,6 +113,8 @@ export class OxcScanner {
       includeStaticMethods: options.includeStaticMethods ?? true,
       externalManifests: options.externalManifests || new Map(),
       followSymbolicLinks: options.followSymbolicLinks ?? false,
+      agentSurface: options.agentSurface ?? true,
+      svelteInclude: options.svelteInclude || DEFAULT_SVELTE_INCLUDE,
     };
 
     this.resolver = new InheritanceResolver({
@@ -146,9 +161,11 @@ export class OxcScanner {
       totalParseTimeMs: performance.now() - startTime,
       fileCount: files.length,
       typeAliases: {},
+      agentSurface: emptyAgentSurface(),
     };
 
     // Flatten classes, errors, and type aliases
+    const surfaces: AgentSurface[] = [];
     for (const file of fileResults) {
       for (const classDef of file.classes) {
         results.classes.push(classDef);
@@ -157,6 +174,14 @@ export class OxcScanner {
         results.errors.push(error);
       }
       Object.assign(results.typeAliases, file.typeAliases);
+      if (file.agentSurface) surfaces.push(file.agentSurface);
+    }
+
+    if (this.options.agentSurface) {
+      surfaces.push(await this.scanSvelteDeclarations());
+      results.agentSurface = mergeAgentSurfaces(surfaces, (filePath) =>
+        this.relativizeSourcePath(filePath),
+      );
     }
 
     // Add classes to resolver
@@ -338,6 +363,58 @@ export class OxcScanner {
       exclude: this.options.exclude,
       followSymbolicLinks: this.options.followSymbolicLinks,
     });
+  }
+
+  /**
+   * Search `.svelte` files for declarations the scanner can never read.
+   *
+   * A `.svelte` file is not a TypeScript program and is never parsed here, so
+   * this pass produces diagnostics only — never an emitted entry. It exists
+   * because the alternative is silence: an intent declared inline in a
+   * component simply would not appear anywhere, with nothing to explain why.
+   */
+  private async scanSvelteDeclarations(): Promise<AgentSurface> {
+    const surface = emptyAgentSurface();
+    if (this.options.svelteInclude.length === 0) return surface;
+
+    // Callers routinely exclude `**/*.svelte` from the CLASS scan, because OXC
+    // cannot parse a Svelte component. Honouring that here would silence the
+    // one thing this pass exists to say, so a `.svelte`-targeting exclude is
+    // dropped; every other prune (node_modules, dist, dot directories) stands.
+    const exclude = this.options.exclude.filter(
+      (pattern) => !pattern.endsWith('.svelte'),
+    );
+
+    let files: string[];
+    try {
+      files = await discoverSourceFiles({
+        cwd: this.options.cwd,
+        include: this.options.svelteInclude,
+        exclude,
+        followSymbolicLinks: this.options.followSymbolicLinks,
+      });
+    } catch {
+      return surface;
+    }
+
+    for (const filePath of files) {
+      surface.diagnostics.push(...scanSvelteAgentSurface(filePath));
+    }
+    return surface;
+  }
+
+  /**
+   * Record a declaring module as a `cwd`-relative POSIX path.
+   *
+   * Emitted entries land in checked-in artifacts, so an absolute path would
+   * make them machine-specific and a Windows separator would make them
+   * platform-specific — either one churns a snapshot that is supposed to prove
+   * two builds agree.
+   */
+  private relativizeSourcePath(filePath: string): string {
+    const relativePath = relative(this.options.cwd, filePath);
+    if (!relativePath || relativePath.startsWith('..')) return filePath;
+    return sep === '/' ? relativePath : relativePath.split(sep).join('/');
   }
 
   /**

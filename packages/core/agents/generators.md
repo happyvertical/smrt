@@ -63,6 +63,44 @@ requested path rather than a hardcoded `index.js`.
 Generated code also has to be valid in an ES module: `arguments` is not a legal
 binding name there, however convenient it reads.
 
+## Emitted agent surface (#2591)
+
+Generated model tools have always been build-time artifacts — virtual module,
+manifest, knowledge graph. View intents (#2588) and playbooks (#2589) existed
+only once something mounted, so "what can an agent do in this app" had no answer
+short of enumerating every route. This closes that.
+
+The same OXC scan that builds the manifest also runs the scanner's
+agent-surface matcher (`ScanResults.agentSurface`). `smrtPlugin()` captures it
+in `scanWithOxc`, projects it with `toKnowledgeAgentSurface`, and passes it to
+`buildDomainKnowledgeManifest` as `agentSurface`. Two consequences worth holding
+onto:
+
+- **It never touches `manifest.json`.** The runtime manifest stays
+  runtime-focused; the agent-addressable surface is an agent/developer contract,
+  so it lands in `.smrt/smrt-knowledge.json` and `dist/smrt-knowledge.json`
+  only, under `agentSurface: { intents, playbooks, diagnostics }`.
+- **It is passed in, not scanned in `knowledge.ts`.** The scanner carries a
+  native parser binary and `smrt-core`'s main entry is browser-reachable, so
+  core's sync knowledge builder must not import it. The Vite plugin already
+  imports the scanner lazily on the Node side and is the only caller that writes
+  this artifact.
+
+The field is **omitted entirely** when a package declares nothing, which is what
+makes it additive in practice rather than only on paper: every existing
+package's checked-in artifact stays byte-identical.
+
+Each declaring module gets a `sourceHashes` entry under the
+`agentSurface:<package-relative path>` prefix (`AGENT_SURFACE_HASH_PREFIX`), so
+editing an intent sidecar marks the artifact stale exactly like editing
+`AGENTS.md` does. `dev:knowledge-check` reports that as `stale-domain-knowledge`
+(a warning by default, an error under `--strict`, which is what CI runs), plus
+`agent-surface-{missing,duplicate}-identity` and `agent-surface-empty-playbook`
+as errors and `agent-surface-not-static` as a warning.
+
+`smrt doctor` prints the whole surface — model tools, intents, playbooks — from
+these artifacts alone, with no application running.
+
 ## Custom-action contract
 
 `resolveCustomActionMetadata()` is the common discovery and invocation contract

@@ -19,6 +19,7 @@ import {
   sep,
 } from 'node:path';
 import {
+  AGENT_SURFACE_HASH_PREFIX,
   MODULE_DOC_HASH_PREFIX,
   readAgentModuleDocs,
 } from '@happyvertical/smrt-core/knowledge';
@@ -31,6 +32,7 @@ import {
   sourceMayContainNumericPrecisionIssue,
 } from '@happyvertical/smrt-scanner';
 import type {
+  DomainKnowledgeAgentSurface,
   DomainKnowledgeField,
   DomainKnowledgeFieldConstraints,
   DomainKnowledgeManifest,
@@ -151,6 +153,12 @@ export interface KnowledgePackage {
   hasDomainKnowledge: boolean;
   domainKnowledgePath?: string;
   domainKnowledge?: DomainKnowledgeManifest;
+  /**
+   * The package's declared view intents and playbooks (#2591), lifted out of
+   * the domain-knowledge artifact so a consumer of the index never has to reach
+   * into the whole artifact for them. Absent when the package declares none.
+   */
+  agentSurface?: DomainKnowledgeAgentSurface;
   manifestPath?: string;
   manifestVersion?: string;
   objects: KnowledgeObject[];
@@ -874,6 +882,7 @@ export async function checkKnowledgeFreshnessFromIndex(
 
   for (const pkg of authoredPackages) {
     issues.push(...checkDomainKnowledgeArtifact(index.rootDir, pkg));
+    issues.push(...checkAgentSurface(pkg));
   }
 
   const devMcpPackage = authoredPackages.find(
@@ -985,6 +994,22 @@ function checkDomainKnowledgeArtifact(
           label: docPath,
         };
       }),
+    // A module declaring a view intent or a playbook is an authored source for
+    // exactly the same reason (#2591): editing one changes the emitted agent
+    // surface, and an artifact that still claims the old surface is stale.
+    ...Object.keys(hashes)
+      .filter((key) => key.startsWith(AGENT_SURFACE_HASH_PREFIX))
+      .sort()
+      .map((key) => {
+        const sourcePath = key.slice(AGENT_SURFACE_HASH_PREFIX.length);
+        const filePath = join(pkg.directory, sourcePath);
+        return {
+          key,
+          filePath: existsSync(filePath) ? filePath : undefined,
+          kind: 'raw' as const,
+          label: sourcePath,
+        };
+      }),
   ];
 
   for (const check of checks) {
@@ -1014,6 +1039,89 @@ function checkDomainKnowledgeArtifact(
         packageName: pkg.name,
       });
     }
+  }
+
+  return issues;
+}
+
+/**
+ * Validate the emitted agent surface (#2591).
+ *
+ * Two rules, and the second is the reason this exists at all:
+ *
+ * - an identity must be present and unique within the package. `id`/`key` is
+ *   what a playbook step, a parity snapshot, and `smrt doctor` all name, so a
+ *   blank or colliding one makes the surface unaddressable;
+ * - every declaration the matcher recognized but could not read is reported.
+ *   It is a warning, not an error, because a computed tool set is a legitimate
+ *   choice with a supported path — but it is never silence, because the whole
+ *   value of emitting the surface is that "what can an agent do here" has one
+ *   answer, and an invisible declaration makes that answer wrong.
+ */
+function checkAgentSurface(pkg: KnowledgePackage): KnowledgeIssue[] {
+  const surface = pkg.domainKnowledge?.agentSurface;
+  if (!surface) return [];
+
+  const issues: KnowledgeIssue[] = [];
+  const file = pkg.domainKnowledgePath;
+
+  const seen = new Set<string>();
+  const checkIdentity = (
+    label: string,
+    identity: string | undefined,
+    sourceFile: string,
+  ): void => {
+    if (!identity) {
+      issues.push({
+        severity: 'error',
+        code: 'agent-surface-missing-identity',
+        message: `${label} declared in ${sourceFile} has no identity`,
+        file,
+        packageName: pkg.name,
+      });
+      return;
+    }
+    const scoped = `${label}:${identity}`;
+    if (seen.has(scoped)) {
+      issues.push({
+        severity: 'error',
+        code: 'agent-surface-duplicate-identity',
+        message: `${label} \`${identity}\` is emitted more than once`,
+        file,
+        packageName: pkg.name,
+      });
+      return;
+    }
+    seen.add(scoped);
+  };
+
+  for (const intent of surface.intents) {
+    checkIdentity('view intent', intent.id, intent.sourceFile);
+  }
+  for (const playbook of surface.playbooks) {
+    checkIdentity('playbook', playbook.key, playbook.sourceFile);
+    if (playbook.steps.length === 0) {
+      issues.push({
+        severity: 'error',
+        code: 'agent-surface-empty-playbook',
+        message: `playbook \`${playbook.key}\` declares no steps`,
+        file,
+        packageName: pkg.name,
+      });
+    }
+  }
+
+  for (const diagnostic of surface.diagnostics) {
+    const where = diagnostic.line
+      ? `${diagnostic.sourceFile}:${diagnostic.line}`
+      : diagnostic.sourceFile;
+    issues.push({
+      severity: 'warning',
+      code: 'agent-surface-not-static',
+      message: `${where} — ${diagnostic.message}`,
+      file,
+      packageName: pkg.name,
+    });
   }
 
   return issues;
@@ -1294,6 +1402,28 @@ export function renderKnowledgeIndexMarkdown(
     }
     if (pkg.relationshipFeatures.length > 0) {
       lines.push(`- relationships-v2: ${pkg.relationshipFeatures.join(', ')}`);
+    }
+    // Only rendered for a package that declares one, so output for every
+    // existing package stays byte-for-byte unchanged (#2591).
+    if (pkg.agentSurface) {
+      lines.push(
+        `- view intents: ${
+          pkg.agentSurface.intents.map((intent) => intent.id).join(', ') ||
+          '(none)'
+        }`,
+      );
+      lines.push(
+        `- playbooks: ${
+          pkg.agentSurface.playbooks
+            .map((playbook) => playbook.key)
+            .join(', ') || '(none)'
+        }`,
+      );
+      if (pkg.agentSurface.diagnostics.length > 0) {
+        lines.push(
+          `- non-static declarations: ${pkg.agentSurface.diagnostics.length}`,
+        );
+      }
     }
     lines.push('');
   }
@@ -1942,6 +2072,7 @@ function readKnowledgePackage(
       ? relative(rootDir, domainKnowledge.path)
       : undefined,
     domainKnowledge: domainKnowledge?.content,
+    agentSurface: domainKnowledge?.content.agentSurface,
     manifestPath: manifest?.path ? relative(rootDir, manifest.path) : undefined,
     manifestVersion:
       typeof manifest?.content.version === 'string'
