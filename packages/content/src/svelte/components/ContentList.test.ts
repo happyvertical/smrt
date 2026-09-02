@@ -8,9 +8,12 @@ import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentData } from '../../mock-smrt-client.js';
 import {
+  buildContentListSurfaceDescriptor,
   CONTENT_LIST_UNREPRESENTABLE_OPTION,
   normalizeContentToken,
 } from '../content-list-controller.js';
+import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
+import type { ContentListQueryBinding } from '../content-list-query.js';
 import {
   ContentListQueryError,
   contentListQueryRequestKey,
@@ -178,6 +181,24 @@ function workflowBinding(
     ...(options.identity ? { identity: options.identity } : {}),
     preview,
     apply,
+  };
+}
+
+function lifecycleBinding(
+  options: {
+    maxSelectionSize?: number;
+    identity?: ContentListLifecycleBinding['identity'];
+  } = {},
+): ContentListLifecycleBinding {
+  return {
+    client: {
+      preview: vi.fn(async () => ({ ok: true })),
+      apply: vi.fn(async () => ({ ok: true })),
+    },
+    ...(options.maxSelectionSize === undefined
+      ? {}
+      : { maxSelectionSize: options.maxSelectionSize }),
+    ...(options.identity === undefined ? {} : { identity: options.identity }),
   };
 }
 
@@ -1799,7 +1820,7 @@ describe('ContentList shared query state', () => {
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
 
     // A surface may set its own filters, but it may not unlock the list.
-    await registry.execute({
+    const rejectedFilters = await registry.execute({
       version: 1,
       commandId: 'clear-type-filter',
       identity,
@@ -1813,11 +1834,13 @@ describe('ContentList shared query state', () => {
     });
     flushSync();
 
+    expect(rejectedFilters.ok).toBe(false);
+
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(target.textContent).toContain('Council budget explained');
     expect(target.textContent).not.toContain('Published appendix');
 
-    await registry.execute({
+    const rejectedReset = await registry.execute({
       version: 1,
       commandId: 'reset-view',
       identity,
@@ -1825,6 +1848,8 @@ describe('ContentList shared query state', () => {
       controlId: 'reset',
     });
     flushSync();
+
+    expect(rejectedReset.ok).toBe(false);
 
     expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
     expect(target.textContent).not.toContain('Published appendix');
@@ -2522,11 +2547,11 @@ describe('ContentList trustworthy async runtime (#2455)', () => {
 });
 
 describe('ContentList data surface', () => {
-  it('registers the compact table and drives the shared controller from a command', async () => {
+  it('registers every presentation and drives the shared controller from a command', async () => {
     const registry = createDataSurfaceRegistry();
     const identity = { surfaceId: 'content-list', kind: 'table' as const };
     const target = renderList({
-      defaultViewMode: 'compact',
+      defaultViewMode: 'grid',
       dataSurface: { registry },
     });
 
@@ -2549,8 +2574,77 @@ describe('ContentList data surface', () => {
     flushSync();
 
     expect(result.ok).toBe(true);
-    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(rowTitles(target)).toEqual(['Zoning appendix']);
     expect(searchInput(target).value).toBe('zoning');
+
+    const viewResult = await registry.execute({
+      version: 1,
+      commandId: 'show-compact',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-view',
+      payload: { view: 'compact' },
+    });
+    flushSync();
+    expect(viewResult.ok).toBe(true);
+    expect(target.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(registry.inspect(identity)?.state.viewMode).toBe('compact');
+  });
+
+  it('does not let a torn-down highlight timer clear a replacement surface', async () => {
+    vi.useFakeTimers();
+    try {
+      const registry = createDataSurfaceRegistry();
+      const identity = { surfaceId: 'content-list', kind: 'table' as const };
+      const first = renderList({ dataSurface: { registry } });
+      const firstComponent = mountedComponents.pop();
+      if (!firstComponent) throw new Error('expected mounted ContentList');
+
+      await registry.execute({
+        version: 1,
+        commandId: 'highlight-first-surface',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'highlight',
+      });
+      flushSync();
+      expect(
+        first
+          .querySelector('.content-list-wrapper')
+          ?.classList.contains('data-surface-highlighted'),
+      ).toBe(true);
+
+      vi.advanceTimersByTime(100);
+      unmount(firstComponent);
+
+      const replacement = renderList({ dataSurface: { registry } });
+      await registry.execute({
+        version: 1,
+        commandId: 'highlight-replacement-surface',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'highlight',
+      });
+      flushSync();
+
+      vi.advanceTimersByTime(900);
+      flushSync();
+      expect(
+        replacement
+          .querySelector('.content-list-wrapper')
+          ?.classList.contains('data-surface-highlighted'),
+      ).toBe(true);
+
+      vi.advanceTimersByTime(100);
+      flushSync();
+      expect(
+        replacement
+          .querySelector('.content-list-wrapper')
+          ?.classList.contains('data-surface-highlighted'),
+      ).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('advertises bulk actions only when a workflow binding is mounted', async () => {
@@ -2588,6 +2682,408 @@ describe('ContentList data surface', () => {
     expect(registry.inspect(identity)?.descriptor.limits.maxSelectionSize).toBe(
       37,
     );
+  });
+
+  it('publishes settled server metadata that matches the workflow envelope', async () => {
+    const registry = createDataSurfaceRegistry();
+    const remote = createFakeContentListQuery();
+    const envelope = {
+      queryFingerprint: 'dq1-mounted-metadata',
+      total: { kind: 'exact' as const, value: 2 },
+      freshness: { state: 'fresh' as const, asOf: '2026-08-30T12:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    };
+    remote.setEnvelope(envelope);
+    remote.resolve(contents, 2);
+    const workflow = workflowBinding();
+    const target = renderList({
+      dataSurface: { registry },
+      query: { bind: () => remote.binding },
+      workflows: workflow,
+    });
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: envelope.queryFingerprint,
+        totalRows: envelope.total.value,
+      }),
+    );
+    click(buttonsByText(target, 'Select all 2 matching')[0]);
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledOnce());
+    expect(workflow.preview.mock.calls[0][0]).toMatchObject({
+      selection: {
+        scope: 'all-matching',
+        queryFingerprint: envelope.queryFingerprint,
+      },
+    });
+  });
+
+  it('clears old metadata while a page request is in flight and preserves unavailable totals', async () => {
+    const registry = createDataSurfaceRegistry();
+    const first = {
+      queryFingerprint: 'dq1-first-page',
+      total: { kind: 'estimated' as const, value: 7 },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    };
+    const second = {
+      queryFingerprint: 'dq1-next-page',
+      total: { kind: 'unavailable' as const, reason: 'expensive' },
+      freshness: { state: 'unknown' as const },
+      warnings: [],
+      truncated: false,
+    };
+    let executions = 0;
+    let resolveNext: ((value: typeof second) => void) | undefined;
+    const binding: ContentListQueryBinding = {
+      rows: [serverRow('server-1', 'First page')],
+      total: { kind: 'exact', value: 99 },
+      loading: false,
+      refreshing: false,
+      stale: false,
+      error: null,
+      execute: async () => {
+        executions += 1;
+        if (executions === 1) return first;
+        return new Promise<typeof second>((resolve) => {
+          resolveNext = resolve;
+        });
+      },
+      retry: async () => undefined,
+    };
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      query: { bind: () => binding },
+    });
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: first.queryFingerprint,
+        totalRows: first.total.value,
+      }),
+    );
+    await registry.execute({
+      version: 1,
+      commandId: 'next-page-metadata',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 2 },
+    });
+    flushSync();
+    await vi.waitFor(() => expect(resolveNext).toBeTypeOf('function'));
+    expect(registry.inspect(identity)?.state).toMatchObject({
+      queryFingerprint: null,
+      totalRows: null,
+    });
+
+    resolveNext?.(second);
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: second.queryFingerprint,
+        totalRows: null,
+      }),
+    );
+    expect(target.querySelector('tbody')).not.toBeNull();
+  });
+
+  it('does not reject a page command against a smaller previous query total', async () => {
+    const registry = createDataSurfaceRegistry();
+    const first = {
+      queryFingerprint: 'dq1-small-query',
+      total: { kind: 'exact' as const, value: 1 },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    };
+    const larger = {
+      queryFingerprint: 'dq1-larger-query',
+      total: { kind: 'exact' as const, value: 30 },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    };
+    const requests: ContentListDataQueryRequest[] = [];
+    let executions = 0;
+    let resolveSearch: ((value: typeof larger) => void) | undefined;
+    const binding: ContentListQueryBinding = {
+      rows: [serverRow('server-1', 'First page')],
+      total: { kind: 'exact', value: first.total.value },
+      loading: false,
+      refreshing: false,
+      stale: false,
+      error: null,
+      execute: async (request) => {
+        requests.push(request);
+        executions += 1;
+        if (executions === 1) return first;
+        if (executions === 2)
+          return new Promise<typeof larger>((resolve) => {
+            resolveSearch = resolve;
+          });
+        // Keep the page request in flight too: returning the larger envelope
+        // synchronously would correctly settle it, then let the fixture's
+        // deliberately stale public total clamp it back to page one.
+        return new Promise<typeof larger>(() => undefined);
+      },
+      retry: async () => undefined,
+    };
+    renderList({
+      dataSurface: { registry },
+      query: { bind: () => binding, request: { defaultPageSize: 10 } },
+    });
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: first.queryFingerprint,
+        totalRows: first.total.value,
+      }),
+    );
+    await registry.execute({
+      version: 1,
+      commandId: 'start-larger-query',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-search',
+      payload: { search: 'larger' },
+    });
+    await vi.waitFor(() => expect(resolveSearch).toBeTypeOf('function'));
+
+    const page = await registry.execute({
+      version: 1,
+      commandId: 'page-before-larger-total-settles',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 2 },
+    });
+    flushSync();
+
+    // The old exact total is one row, but it belongs to the prior query. The
+    // mounted surface must let the larger query request page two before that
+    // query's own envelope has settled.
+    expect(page.ok).toBe(true);
+    expect(requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 10,
+      limit: 10,
+    });
+  });
+
+  it('publishes lifecycle authority and the strictest combined selection cap', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = {
+      surfaceId: 'tenant-content-list',
+      kind: 'table' as const,
+      subject: { type: 'tenant', id: 'tenant-a' },
+    };
+    renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      lifecycle: lifecycleBinding({ identity, maxSelectionSize: 11 }),
+      workflows: workflowBinding({ identity, maxSelectionSize: 37 }),
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    expect(registry.inspect(identity)?.descriptor).toMatchObject({
+      identity,
+      limits: { maxSelectionSize: 11 },
+    });
+  });
+
+  it.each([
+    { lifecycleCap: 1, workflowCap: 2 },
+    { lifecycleCap: 2, workflowCap: 1 },
+  ])('applies the shared cap to explicit lifecycle and workflow previews ($lifecycleCap/$workflowCap)', async ({
+    lifecycleCap,
+    workflowCap,
+  }) => {
+    const lifecyclePreview = vi.fn(async () => ({ ok: true }));
+    const workflow = workflowBinding({ maxSelectionSize: workflowCap });
+    const target = renderList({
+      lifecycle: {
+        client: {
+          preview: lifecyclePreview,
+          apply: vi.fn(async () => ({ ok: true })),
+        },
+        maxSelectionSize: lifecycleCap,
+      },
+      workflows: workflow,
+    });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(checkboxByLabel(target, 'Select Zoning appendix'));
+
+    expect(buttonsByText(target, 'Move selected to trash')[0]?.disabled).toBe(
+      true,
+    );
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await Promise.resolve();
+    expect(lifecyclePreview).not.toHaveBeenCalled();
+    expect(workflow.preview).not.toHaveBeenCalled();
+  });
+
+  it('applies the shared cap to a server current-page workflow preview', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-capped-page',
+      freshness: { state: 'fresh', asOf: '2026-08-30T12:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 2);
+    const lifecyclePreview = vi.fn(async () => ({ ok: true }));
+    const workflow = workflowBinding({ maxSelectionSize: 2 });
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      lifecycle: {
+        client: {
+          preview: lifecyclePreview,
+          apply: vi.fn(async () => ({ ok: true })),
+        },
+        maxSelectionSize: 1,
+      },
+      workflows: workflow,
+    });
+    await settle();
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+
+    expect(buttonsByText(target, 'Move selected to trash')[0]?.disabled).toBe(
+      true,
+    );
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await Promise.resolve();
+    expect(lifecyclePreview).not.toHaveBeenCalled();
+    expect(workflow.preview).not.toHaveBeenCalled();
+  });
+
+  it('accepts independently-created equivalent binding identities', async () => {
+    const registry = createDataSurfaceRegistry();
+    const lifecyclePreview = vi.fn(async () => ({ ok: true }));
+    const lifecycleIdentity = {
+      kind: 'table' as const,
+      surfaceId: 'tenant-content-list',
+      subject: { id: 'tenant-a', type: 'tenant' },
+    };
+    const workflowIdentity = {
+      surfaceId: 'tenant-content-list',
+      kind: 'table' as const,
+      subject: { type: 'tenant', id: 'tenant-a' },
+    };
+    const workflow = workflowBinding({ identity: workflowIdentity });
+    const target = renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      lifecycle: {
+        client: {
+          preview: lifecyclePreview,
+          apply: vi.fn(async () => ({ ok: true })),
+        },
+        identity: lifecycleIdentity,
+      },
+      workflows: workflow,
+    });
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(workflowIdentity)).toMatchObject({
+        descriptor: { identity: workflowIdentity },
+      }),
+    );
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(buttonsByText(target, 'Move selected to trash')[0]);
+    await vi.waitFor(() => expect(lifecyclePreview).toHaveBeenCalledOnce());
+    expect(lifecyclePreview.mock.calls[0][0]?.identity).toEqual(
+      workflowIdentity,
+    );
+
+    const workflowSelect = target.querySelector<HTMLSelectElement>(
+      'select[aria-label="Bulk workflow"]',
+    );
+    if (!workflowSelect) throw new Error('No workflow select');
+    selectOption(workflowSelect, 'optimize');
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await vi.waitFor(() => expect(workflow.preview).toHaveBeenCalledOnce());
+    expect(workflow.preview.mock.calls[0][0]?.identity).toEqual(
+      workflowIdentity,
+    );
+  });
+
+  it('rejects incompatible lifecycle and workflow identities before registering', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        defaultViewMode: 'compact',
+        dataSurface: { registry },
+        lifecycle: lifecycleBinding({
+          identity: { surfaceId: 'lifecycle-list', kind: 'table' },
+        }),
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+        }),
+      }),
+    ).toThrow('must use the same data surface identity');
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('rejects a custom workflow identity when lifecycle uses the default', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        defaultViewMode: 'compact',
+        dataSurface: { registry },
+        lifecycle: lifecycleBinding(),
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+        }),
+      }),
+    ).toThrow('must use the same data surface identity');
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('rejects a custom descriptor that disagrees with binding authority', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        dataSurface: {
+          registry,
+          descriptor: buildContentListSurfaceDescriptor({
+            surfaceId: 'custom-descriptor',
+            limits: { maxSelectionSize: 20 },
+          }),
+        },
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+          maxSelectionSize: 11,
+        }),
+      }),
+    ).toThrow('custom data surface descriptor must use');
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('rejects a custom descriptor with a non-authoritative selection cap', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        dataSurface: {
+          registry,
+          descriptor: buildContentListSurfaceDescriptor({
+            surfaceId: 'workflow-list',
+            limits: { maxSelectionSize: 20 },
+          }),
+        },
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+          maxSelectionSize: 11,
+        }),
+      }),
+    ).toThrow('custom data surface descriptor must use');
+    expect(registry.list()).toEqual([]);
   });
 });
 
@@ -3433,7 +3929,7 @@ describePaging('ContentList restore limits (#2452)', (render) => {
 // ---------------------------------------------------------------------------
 
 describe('ContentList page-size ceiling (#2452 batch 2)', () => {
-  it('coerces a data-surface set-page-size above the ceiling', async () => {
+  it('denies an out-of-range data-surface page command before acknowledging it', async () => {
     const registry = createDataSurfaceRegistry();
     const query = createFakeContentListQuery();
     const target = renderList({
@@ -3449,7 +3945,7 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
 
     const identity = { surfaceId: 'content-list', kind: 'table' as const };
     await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
-    await registry.execute({
+    const oversized = await registry.execute({
       version: 1,
       commandId: 'huge-page-size',
       identity,
@@ -3459,12 +3955,24 @@ describe('ContentList page-size ceiling (#2452 batch 2)', () => {
     });
     flushSync();
 
-    // The controller and the request agree, and neither exceeds the ceiling.
+    // The visible command is denied before it can publish a transient state
+    // that the server-mode constraint effect would later correct.
+    expect(oversized.ok).toBe(false);
     const limit = requestLimit(query.requests.at(-1));
-    expect(limit).toBe(25);
-    expect(target.querySelector('.state-notice')?.textContent).toContain(
-      'that value was outside the allowed range',
-    );
+    expect(limit).toBe(10);
+    expect(target.querySelector('.state-notice')).toBeNull();
+
+    const unreachablePage = await registry.execute({
+      version: 1,
+      commandId: 'unreachable-server-page',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 10_000 },
+    });
+    flushSync();
+    expect(unreachablePage.ok).toBe(false);
+    expect(requestLimit(query.requests.at(-1))).toBe(10);
     // 5000 rows at 25 a page is 200 pages, so page controls must render — in
     // COMPACT, without switching away. ContentList renders the pager itself in
     // every view mode, so the assertion holds where the test actually mounted.

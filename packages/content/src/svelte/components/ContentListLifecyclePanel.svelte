@@ -42,7 +42,7 @@ let {
   oncomplete,
 }: Props = $props();
 
-const controller = createContentListLifecycleController(untrack(() => binding));
+let controller = createContentListLifecycleController(untrack(() => binding));
 let snapshot = $state<ContentListLifecycleSnapshot>(controller.snapshot());
 let lastResult = $state<ContentListLifecycleSnapshot['summary']>();
 let dialogOpen = $state(false);
@@ -50,10 +50,50 @@ let countConfirmation = $state('');
 let restoreStatus = $state<ContentListRestoreStatus>('draft');
 let intent = $state<'selected' | 'all-matching'>('selected');
 
-const unsubscribe = controller.subscribe((next) => {
+let unsubscribe = controller.subscribe((next) => {
   snapshot = next;
 });
-onDestroy(unsubscribe);
+
+function sameBindingAuthority(
+  left: ContentListLifecycleBinding,
+  right: ContentListLifecycleBinding,
+): boolean {
+  return (
+    left.client === right.client &&
+    left.client.preview === right.client.preview &&
+    left.client.apply === right.client.apply &&
+    left.revision === right.revision &&
+    left.maxSelectionSize === right.maxSelectionSize &&
+    left.identity?.kind === right.identity?.kind &&
+    left.identity?.surfaceId === right.identity?.surfaceId &&
+    left.identity?.subject?.type === right.identity?.subject?.type &&
+    left.identity?.subject?.id === right.identity?.subject?.id
+  );
+}
+
+let installedBinding = untrack(() => binding);
+
+function replaceController(nextBinding: ContentListLifecycleBinding): void {
+  unsubscribe();
+  controller.reset();
+  controller = createContentListLifecycleController(nextBinding);
+  snapshot = controller.snapshot();
+  lastResult = undefined;
+  dialogOpen = false;
+  countConfirmation = '';
+  unsubscribe = controller.subscribe((next) => {
+    snapshot = next;
+  });
+}
+
+$effect(() => {
+  const nextBinding = binding;
+  if (sameBindingAuthority(installedBinding, nextBinding)) return;
+  replaceController(nextBinding);
+  installedBinding = nextBinding;
+});
+
+onDestroy(() => unsubscribe());
 
 $effect(() => {
   controller.invalidate(viewKey);
@@ -70,6 +110,7 @@ const busy = $derived(
 );
 const selectedCount = $derived(selectedRowIds.length);
 const selectionLimit = $derived(binding.maxSelectionSize ?? 200);
+const selectedSelectionTooLarge = $derived(selectedCount > selectionLimit);
 const matchingSelectionTooLarge = $derived(
   exactMatchingCount !== undefined && exactMatchingCount > selectionLimit,
 );
@@ -92,6 +133,11 @@ async function begin(
   actionId: ContentListLifecycleActionId,
   scope: 'selected' | 'all-matching' = 'selected',
 ) {
+  if (
+    (scope === 'selected' && selectedSelectionTooLarge) ||
+    (scope === 'all-matching' && matchingSelectionTooLarge)
+  )
+    return;
   intent = scope;
   countConfirmation = '';
   dialogOpen = true;
@@ -136,7 +182,7 @@ function retryPreview() {
       variant="ghost"
       size="sm"
       type="button"
-      disabled={selectedCount === 0 || busy}
+      disabled={selectedCount === 0 || selectedSelectionTooLarge || busy}
       onclick={() => begin('move-to-trash')}
     >{t(M['content.content_list.move_selected_to_trash'])}</Button>
   {:else}
@@ -153,14 +199,14 @@ function retryPreview() {
       variant="ghost"
       size="sm"
       type="button"
-      disabled={selectedCount === 0 || busy}
+      disabled={selectedCount === 0 || selectedSelectionTooLarge || busy}
       onclick={() => begin('restore')}
     >{t(M['content.content_list.restore_selected'])}</Button>
     <Button
       variant="ghost"
       size="sm"
       type="button"
-      disabled={selectedCount === 0 || busy}
+      disabled={selectedCount === 0 || selectedSelectionTooLarge || busy}
       onclick={() => begin('permanent-delete')}
     >{t(M['content.content_list.delete_selected_permanently'])}</Button>
     <Button

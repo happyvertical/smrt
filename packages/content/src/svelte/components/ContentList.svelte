@@ -51,6 +51,11 @@ import {
   reconcileContentListLifecycleSelection,
 } from '../content-list-lifecycle.js';
 import {
+  registerContentListDataSurface,
+  type ContentListSurfaceContext,
+  type ContentListSurfaceHandle,
+} from '../content-list-data-surface.js';
+import {
   applyContentListFilter,
   buildContentListColumns,
   buildContentListSurfaceDescriptor,
@@ -132,6 +137,104 @@ import ContentListLifecyclePanel from './ContentListLifecyclePanel.svelte';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
+
+const DEFAULT_CONTENT_LIST_SURFACE_IDENTITY: DataSurfaceIdentity = {
+  surfaceId: 'content-list',
+  kind: 'table',
+};
+
+function sameSurfaceIdentity(
+  left: DataSurfaceIdentity,
+  right: DataSurfaceIdentity,
+): boolean {
+  return (
+    left.kind === right.kind &&
+    left.surfaceId === right.surfaceId &&
+    left.subject?.type === right.subject?.type &&
+    left.subject?.id === right.subject?.id
+  );
+}
+
+function resolveSurfaceAuthority(
+  lifecycle: ContentListLifecycleBinding | undefined,
+  workflows: ContentListWorkflowBinding | undefined,
+): {
+  identity?: DataSurfaceIdentity;
+  maxSelectionSize?: number;
+  lifecycle?: ContentListLifecycleBinding;
+  workflows?: ContentListWorkflowBinding;
+} {
+  const lifecycleIdentity = lifecycle
+    ? (lifecycle.identity ?? DEFAULT_CONTENT_LIST_SURFACE_IDENTITY)
+    : undefined;
+  const workflowIdentity = workflows
+    ? (workflows.identity ?? DEFAULT_CONTENT_LIST_SURFACE_IDENTITY)
+    : undefined;
+  if (
+    lifecycleIdentity &&
+    workflowIdentity &&
+    !sameSurfaceIdentity(lifecycleIdentity, workflowIdentity)
+  ) {
+    throw new Error(
+      'ContentList lifecycle and workflow bindings must use the same data surface identity',
+    );
+  }
+  const bindings = [lifecycle, workflows].filter(
+    (binding): binding is ContentListLifecycleBinding | ContentListWorkflowBinding =>
+      binding !== undefined,
+  );
+  const maxSelectionSize =
+    bindings.length > 0
+      ? Math.min(...bindings.map((binding) => binding.maxSelectionSize ?? 200))
+      : undefined;
+  return {
+    ...(lifecycleIdentity ?? workflowIdentity
+      ? { identity: lifecycleIdentity ?? workflowIdentity }
+      : {}),
+    ...(maxSelectionSize === undefined ? {} : { maxSelectionSize }),
+    ...(lifecycle && lifecycleIdentity
+      ? {
+          lifecycle: {
+            ...lifecycle,
+            identity: lifecycleIdentity,
+            ...(maxSelectionSize === undefined ? {} : { maxSelectionSize }),
+          },
+        }
+      : {}),
+    ...(workflows && workflowIdentity
+      ? {
+          workflows: {
+            ...workflows,
+            identity: workflowIdentity,
+            ...(maxSelectionSize === undefined ? {} : { maxSelectionSize }),
+          },
+        }
+      : {}),
+  };
+}
+
+function reconcileSurfaceDescriptor(
+  descriptor: import('@happyvertical/smrt-ui/data').DataSurfaceDescriptor,
+  authority: ReturnType<typeof resolveSurfaceAuthority>,
+): import('@happyvertical/smrt-ui/data').DataSurfaceDescriptor {
+  if (
+    authority.identity &&
+    !sameSurfaceIdentity(descriptor.identity, authority.identity)
+  ) {
+    throw new Error(
+      'ContentList custom data surface descriptor must use the lifecycle and workflow identity',
+    );
+  }
+  if (
+    authority.maxSelectionSize !== undefined &&
+    descriptor.limits.maxSelectionSize !== authority.maxSelectionSize
+  ) {
+    throw new Error(
+      'ContentList custom data surface descriptor must use the lifecycle and workflow selection limit',
+    );
+  }
+  return descriptor;
+}
 
 const WORKFLOW_LABEL_MESSAGES: Record<
   ContentListWorkflowId,
@@ -324,7 +427,7 @@ interface Props {
   error?: string | null;
   /** Retry affordance rendered with an error. */
   onRetry?: () => void;
-  /** Opt-in agent addressability. Non-table presentations land with #2456. */
+  /** Opt-in agent addressability shared by every list presentation. */
   dataSurface?: ContentListDataSurface;
   /**
    * Opt-in server-backed rows (#2452). `bind()` is called exactly once, during
@@ -369,6 +472,10 @@ let {
   lifecycle = undefined,
   lifecycleMode = 'active',
 }: Props = $props();
+
+const surfaceAuthority = $derived(
+  resolveSurfaceAuthority(lifecycle, workflows),
+);
 
 const initialQuery = untrack(() => query);
 
@@ -471,6 +578,14 @@ let settledLifecycleQuery = $state<ContentListDataQueryRequest | undefined>(
   undefined,
 );
 let settledLifecycleFingerprint = $state<string | undefined>(undefined);
+let settledSurfaceMetadata = $state<
+  | {
+      signature: string;
+      queryFingerprint: string | null;
+      totalRows: number | null;
+    }
+  | undefined
+>(undefined);
 
 function toSearchParams(
   input: URLSearchParams | string | null | undefined,
@@ -563,6 +678,10 @@ let completedJobs = $state<ContentListJob[]>([]);
 let completedJobsOverflowed = $state(false);
 let activeQueryKey = $state<string | undefined>(undefined);
 let lifecycleRefreshPending = $state(false);
+let surfaceRoot: HTMLDivElement | undefined;
+let surfaceHighlighted = $state(false);
+let surfaceHighlightTimeout: ReturnType<typeof setTimeout> | undefined;
+let surfaceHandle: ContentListSurfaceHandle | undefined;
 
 // Job state is subscribed once so hosts can use a framework-free controller.
 // Only transitions observed after the initial snapshot are completion events;
@@ -924,9 +1043,20 @@ function settleWorkflowQueryResult(
   signature: string,
 ): void {
   settledSignature = signature;
+  const envelope =
+    result !== null && typeof result === 'object' && !Array.isArray(result)
+      ? (result as Record<string, unknown>)
+      : undefined;
+  settledSurfaceMetadata = {
+    signature,
+    queryFingerprint:
+      typeof envelope?.queryFingerprint === 'string'
+        ? envelope.queryFingerprint
+        : null,
+    totalRows: surfaceMetadataTotalRows(envelope?.total),
+  };
   resultNotices = readContentListQueryNotices(result);
-  if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
-    const envelope = result as Record<string, unknown>;
+  if (envelope) {
     settledWorkflowQuery = request;
     settledWorkflowFingerprint =
       typeof envelope.queryFingerprint === 'string'
@@ -945,6 +1075,17 @@ function settleWorkflowQueryResult(
   settledWorkflowQuery = null;
   settledWorkflowFingerprint = null;
   settledWorkflowRevision = null;
+}
+
+function surfaceMetadataTotalRows(total: unknown): number | null {
+  if (!total || typeof total !== 'object' || Array.isArray(total)) return null;
+  const record = total as Record<string, unknown>;
+  return (record.kind === 'exact' || record.kind === 'estimated') &&
+    typeof record.value === 'number' &&
+    Number.isSafeInteger(record.value) &&
+    record.value >= 0
+    ? record.value
+    : null;
 }
 
 function settleLifecycleResult(
@@ -1205,7 +1346,7 @@ const canSelectAllMatching = $derived(
       settledWorkflowRevision &&
       exactMatchingCount !== undefined &&
       exactMatchingCount > 0 &&
-      exactMatchingCount <= (workflows?.maxSelectionSize ?? 200),
+      exactMatchingCount <= (surfaceAuthority.maxSelectionSize ?? 200),
   ),
 );
 const workflowPayloadValid = $derived(
@@ -1385,20 +1526,30 @@ const surfaceOptions = $derived(
     ? {
         registry: dataSurface.registry,
         descriptor:
-          dataSurface.descriptor ??
+          dataSurface.descriptor
+            ? reconcileSurfaceDescriptor(
+                dataSurface.descriptor,
+                surfaceAuthority,
+              )
+            :
           (() => {
             const descriptor = buildContentListSurfaceDescriptor({
               columnLabels,
+              serverBacked: initialQuery !== undefined,
+              lifecycle: lifecycle !== undefined,
+              lifecycleMode,
               includeWorkflows: workflows !== undefined,
+              refresh: queryBinding?.refresh !== undefined,
+              retry: retryHandler !== undefined,
             });
             return {
               ...descriptor,
-              identity: workflows?.identity ?? descriptor.identity,
+              identity: surfaceAuthority.identity ?? descriptor.identity,
               limits: {
                 ...descriptor.limits,
-                ...(workflows?.maxSelectionSize === undefined
+                ...(surfaceAuthority.maxSelectionSize === undefined
                   ? {}
-                  : { maxSelectionSize: workflows.maxSelectionSize }),
+                  : { maxSelectionSize: surfaceAuthority.maxSelectionSize }),
               },
             };
           })(),
@@ -1440,6 +1591,164 @@ const queryWarnings = $derived<ReadonlyArray<string>>(
     boundResultNotices?.warnings ??
     resultNotices.warnings,
 );
+
+function surfaceLastUpdated(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return null;
+}
+
+const matchingSurfaceMetadata = $derived(
+  serverBacked && settledSurfaceMetadata?.signature === querySignature
+    ? settledSurfaceMetadata
+    : undefined,
+);
+
+const surfaceContext = $derived<ContentListSurfaceContext>({
+  viewMode,
+  queryFingerprint: serverBacked
+    ? (matchingSurfaceMetadata?.queryFingerprint ?? null)
+    : null,
+  totalRows: serverBacked
+    ? (matchingSurfaceMetadata?.totalRows ?? null)
+    : Number.isSafeInteger(totalRowCount)
+      ? totalRowCount
+      : null,
+  freshness: {
+    stale,
+    refreshing,
+    offline,
+    lastUpdated: surfaceLastUpdated(lastUpdated),
+    truncated: queryTruncated,
+    warnings: queryWarnings,
+  },
+});
+
+function focusSurface(): void {
+  if (!surfaceRoot) return;
+  surfaceRoot.tabIndex = -1;
+  surfaceRoot.focus();
+}
+
+// ContentList owns the registration so grid, detailed, compact, empty, and
+// loading presentations all expose one stable identity and revision stream.
+// This ref is deliberately non-reactive: registration input changes must
+// advance a stable identity revision, but normal command acknowledgements must
+// not themselves cause a registration teardown/replay window.
+const surfaceRevision = { value: undefined as number | undefined };
+
+function acceptsSurfaceTableCommand(
+  command: import('@happyvertical/smrt-ui/data').DataTableCommand,
+): boolean {
+  if (command.type === 'setPageSize' && serverPageSize !== null) {
+    if (command.pageSize === null || command.pageSize > maxPageSize) return false;
+  }
+  if (command.type === 'setPage') {
+    if (command.page > maxReachablePage) return false;
+    if (
+      tableState.pageSize !== null &&
+      clampableRowCount !== undefined &&
+      // A server binding retains the previous query's exact total until its
+      // replacement settles. That count cannot bound a command for the new
+      // query: it may be smaller, and would reject a valid page before the
+      // new query gets a chance to report its own total.
+      (!serverBacked || settledSignature === querySignature) &&
+      command.page > Math.max(1, Math.ceil(clampableRowCount / tableState.pageSize))
+    )
+      return false;
+  }
+  if (command.type === 'setFilters') {
+    if (
+      lockedType !== null &&
+      !isContentListFilterExactly(
+        { ...tableState, filters: command.filters },
+        CONTENT_LIST_TYPE_FILTER_ID,
+        lockedType,
+      )
+    )
+      return false;
+    if (
+      lifecycleMode === 'trash' &&
+      !isContentListFilterExactly(
+        { ...tableState, filters: command.filters },
+        CONTENT_LIST_STATUS_FILTER_ID,
+        'deleted',
+      )
+    )
+      return false;
+  }
+  return command.type !== 'reset' || (lockedType === null && lifecycleMode !== 'trash');
+}
+
+$effect(() => {
+  const surface = surfaceOptions;
+  if (!surface) {
+    surfaceHandle = undefined;
+    return;
+  }
+  const handle = registerContentListDataSurface({
+    ...surface,
+    controller,
+    context: untrack(() => surfaceContext),
+    initialRevision:
+      surfaceRevision.value === undefined ? 0 : surfaceRevision.value + 1,
+    onRevision: (revision) => {
+      surfaceRevision.value = revision;
+    },
+    acceptsTableCommand: acceptsSurfaceTableCommand,
+    setViewMode: (next) => {
+      viewMode = next;
+    },
+    ...(queryBinding?.refresh
+      ? {
+          refresh: async () => {
+            await refreshQuery();
+            return true;
+          },
+        }
+      : {}),
+    ...(retryHandler
+      ? {
+          retry: async () => {
+            await retryHandler();
+            return true;
+          },
+        }
+      : {}),
+    focus: focusSurface,
+    reveal: () => surfaceRoot?.scrollIntoView({ block: 'nearest' }),
+    highlight: () => {
+      if (surfaceHighlightTimeout !== undefined) {
+        clearTimeout(surfaceHighlightTimeout);
+      }
+      surfaceHighlighted = true;
+      const timeout = setTimeout(() => {
+        if (surfaceHandle === handle) surfaceHighlighted = false;
+        if (surfaceHighlightTimeout === timeout) {
+          surfaceHighlightTimeout = undefined;
+        }
+      }, 1_000);
+      surfaceHighlightTimeout = timeout;
+    },
+  });
+  surfaceHandle = handle;
+  return () => {
+    if (surfaceHandle === handle) surfaceHandle = undefined;
+    if (surfaceHighlightTimeout !== undefined) {
+      clearTimeout(surfaceHighlightTimeout);
+      surfaceHighlightTimeout = undefined;
+    }
+    surfaceHighlighted = false;
+    handle.destroy();
+  };
+});
+
+$effect(() => {
+  surfaceHandle?.update(surfaceContext);
+});
 /** Identity of the current set of refusals, so a dismissal is not permanent. */
 const dropNoticeKey = $derived(
   dropNotices.length > 0 || queryTruncated || queryWarnings.length > 0
@@ -1734,6 +2043,16 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
   return { scope: 'explicit-ids', rowIds: effectiveRowIds };
 }
 
+function workflowSelectionCount(
+  selection: ContentListWorkflowRequest['selection'],
+): number {
+  if (selection.scope === 'explicit-ids') return selection.rowIds.length;
+  if (selection.scope === 'current-page') return selectablePageRowIds.length;
+  return tableState.selection.scope === 'allMatching'
+    ? tableState.selection.expectedCount
+    : 0;
+}
+
 function workflowJobTarget(
   request: ContentListWorkflowRequest,
 ): ContentListJobTarget {
@@ -1774,6 +2093,8 @@ function createWorkflowRequest(
 ): ContentListWorkflowRequest | null {
   const selection = workflowSelection();
   if (!selection) return null;
+  const selectionCount = workflowSelectionCount(selection);
+  if (selectionCount > (surfaceAuthority.maxSelectionSize ?? 200)) return null;
   const queryRequired = selection.scope !== 'explicit-ids';
   if (
     queryRequired &&
@@ -1786,7 +2107,8 @@ function createWorkflowRequest(
   return {
     version: 1,
     requestId: globalThis.crypto?.randomUUID?.() ?? `content-workflow-${Date.now()}`,
-    identity: workflows?.identity ?? { surfaceId: 'content-list', kind: 'table' },
+    identity:
+      surfaceAuthority.identity ?? DEFAULT_CONTENT_LIST_SURFACE_IDENTITY,
     actionId: selectedWorkflow,
     phase,
     selection,
@@ -1796,10 +2118,7 @@ function createWorkflowRequest(
       ...(queryRequired && settledWorkflowQuery
         ? { query: settledWorkflowQuery }
         : {}),
-      expectedCount:
-        selection.scope === 'explicit-ids'
-          ? selection.rowIds.length
-          : selectedCount,
+      expectedCount: selectionCount,
     },
   };
 }
@@ -2380,7 +2699,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
   </div>
 {/snippet}
 
-<div class="content-list-wrapper">
+<div
+  class="content-list-wrapper"
+  class:data-surface-highlighted={surfaceHighlighted}
+  bind:this={surfaceRoot}
+>
 
   <div class="content-controls">
     <div class="search-filters">
@@ -2726,7 +3049,7 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     {#if lifecycle}
       <ContentListLifecyclePanel
-        binding={lifecycle}
+        binding={surfaceAuthority.lifecycle ?? lifecycle}
         mode={lifecycleMode}
         selectedRowIds={tableState.selectedRowIds}
         query={lifecycleQuery}
@@ -2855,9 +3178,9 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
 
     {#if viewMode === 'compact'}
       <!--
-        The compact table stays mounted for empty and loading results: it owns
-        the mounted data surface, so unmounting it on a zero-row query would
-        unregister the surface and leave an agent unable to undo its own search.
+        The compact table stays mounted for empty and loading results so its
+        table semantics and operator affordances remain stable across queries.
+        ContentList itself owns the agent-addressable surface in every view.
       -->
       <div class="content-table-wrapper">
         <DataTable
@@ -2870,7 +3193,6 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
           loading={isLoading}
           caption={t(M['content.content_list.table_caption'])}
           rowLabel={(row: ContentListRow) => row.title}
-          dataSurface={surfaceOptions}
           empty={tableEmptyState}
         />
       </div>
@@ -3106,6 +3428,11 @@ const tableColumns: DataTableColumn<ContentListRow>[] = $derived([
     display: flex;
     flex-direction: column;
     width: 100%;
+  }
+
+  .content-list-wrapper.data-surface-highlighted {
+    outline: 2px solid var(--smrt-color-primary);
+    outline-offset: 0.25rem;
   }
 
   .content-controls {

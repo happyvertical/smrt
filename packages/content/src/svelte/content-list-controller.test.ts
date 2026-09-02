@@ -406,6 +406,27 @@ describe('content list data surface descriptor', () => {
       'site',
     ]);
     expect(descriptor.query.searchableColumnIds).toEqual(['title', 'author']);
+    expect(
+      descriptor.columns.find((column) => column.id === 'title')?.operators,
+    ).toEqual({
+      search: ['contains'],
+      filter: [
+        'equals',
+        'notEquals',
+        'contains',
+        'startsWith',
+        'endsWith',
+        'in',
+        'notIn',
+        'gt',
+        'gte',
+        'lt',
+        'lte',
+        'isNull',
+        'isNotNull',
+      ],
+      sort: ['asc', 'desc'],
+    });
     expect(() => normalizeDataSurfaceDescriptor(descriptor)).not.toThrow();
 
     const registry = createDataSurfaceRegistry();
@@ -415,6 +436,20 @@ describe('content list data surface descriptor', () => {
     });
     expect(registry.inspect(descriptor.identity)?.descriptor.rowKey).toBe('id');
     unregister();
+  });
+
+  it('does not advertise the derived site column as server-queryable', () => {
+    const descriptor = buildContentListSurfaceDescriptor({
+      serverBacked: true,
+    });
+    const site = descriptor.columns.find((column) => column.id === 'site');
+
+    expect(site?.capabilities).toEqual(['read']);
+    expect(site?.operators).toBeUndefined();
+    expect(descriptor.query.projectableColumnIds).not.toContain('site');
+    expect(descriptor.query.filterableColumnIds).not.toContain('site');
+    expect(descriptor.query.sortableColumnIds).not.toContain('site');
+    expect(() => normalizeDataSurfaceDescriptor(descriptor)).not.toThrow();
   });
 
   it('names the real ContentData field behind every published column', () => {
@@ -498,6 +533,55 @@ describe('content list data surface descriptor', () => {
       'edit',
       'delete',
     ]);
+  });
+
+  it('advertises refresh and retry only when their mounted capability exists', () => {
+    const local = buildContentListSurfaceDescriptor();
+    const readOnly = buildContentListSurfaceDescriptor({ retry: true });
+    const refreshable = buildContentListSurfaceDescriptor({
+      refresh: true,
+      retry: true,
+    });
+
+    expect(local.controls.map((control) => control.id)).not.toContain(
+      'refresh',
+    );
+    expect(local.controls.map((control) => control.id)).not.toContain('retry');
+    expect(readOnly.controls.map((control) => control.id)).not.toContain(
+      'refresh',
+    );
+    expect(readOnly.controls.map((control) => control.id)).toContain('retry');
+    expect(refreshable.controls.map((control) => control.id)).toEqual(
+      expect.arrayContaining(['refresh', 'retry']),
+    );
+  });
+
+  it('publishes only server-authoritative lifecycle actions in trash mode', () => {
+    const active = buildContentListSurfaceDescriptor({ lifecycle: true });
+    const trash = buildContentListSurfaceDescriptor({
+      lifecycle: true,
+      lifecycleMode: 'trash',
+    });
+
+    expect(active.actions.map((action) => action.id)).toEqual([
+      'view',
+      'edit',
+      'move-to-trash',
+    ]);
+    expect(trash.actions.map((action) => action.id)).toEqual([
+      'view',
+      'restore',
+      'permanent-delete',
+    ]);
+    expect(
+      trash.actions.find((action) => action.id === 'permanent-delete'),
+    ).toMatchObject({
+      sensitivity: 'sensitive',
+      requiresConfirmation: true,
+      selectionScopes: ['explicit-ids', 'current-page', 'all-matching'],
+    });
+    expect(trash.actions.some((action) => action.id === 'delete')).toBe(false);
+    expect(trash.actions.some((action) => action.id === 'edit')).toBe(false);
   });
 
   it('accepts a host surface id, subject, and translated labels', () => {

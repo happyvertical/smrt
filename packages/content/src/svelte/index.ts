@@ -208,6 +208,13 @@ export {
   toContentListRows,
 } from './content-list-controller.js';
 export {
+  type ContentListSurfaceContext,
+  type ContentListSurfaceFreshness,
+  type ContentListSurfaceHandle,
+  type ContentListSurfaceRegistrationOptions,
+  registerContentListDataSurface,
+} from './content-list-data-surface.js';
+export {
   CONTENT_LIST_LIFECYCLE_ACTION_IDS,
   type ContentListLifecycleActionId,
   type ContentListLifecycleBinding,

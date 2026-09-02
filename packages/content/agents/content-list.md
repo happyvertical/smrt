@@ -197,6 +197,25 @@ Adapter exports (also re-exported from `./svelte`): `createContentListController
 `resolveSelectedContentListRows`, `resolveSelectedContents`, plus the
 `CONTENT_LIST_*` identity constants.
 
+## Agent data-surface conformance (#2456)
+
+`dataSurface` publishes the mounted list's readable columns, supported query
+operators, visible state, selection scope, freshness, and only the actions its
+mounted workflow/lifecycle bindings can execute. Visible commands run through
+the registry's revision check; their acknowledgements describe the accepted
+controller revision, while a disconnected registry refuses them.
+
+For silent agent reads, register
+`createContentListDataSurfaceDefinition({ collection, scope })` from
+`@happyvertical/smrt-content/server` in the server-owned
+`createDataSurfaceTools()` catalog. The factory resolves both the collection
+and optional application scope from the live principal context, then delegates
+rows, counts, facets, and offset continuations to `executeContentQuery()`.
+Tenant, hidden, and sensitive fields remain outside discovery and projection;
+the model request can only narrow the trusted scope. Durable actions continue
+through `createContentListActionAdapter()` and its principal-bound
+preview/apply contract rather than through the browser registry.
+
 Notes:
 
 - Controller modes are all `manual`: the adapter owns search, filters, sorting,
@@ -249,15 +268,19 @@ Notes:
   — which owns both in compact mode — is not mounted there. A page size arriving
   from a saved view or a surface command would otherwise strand the operator on
   page one, and a refresh over retained rows would be silent.
-- `dataSurface` registers the compact table only. Agent addressability for the
-  grid and detailed presentations lands with #2456.
-- Compact mode stays mounted for empty and loading results — DataTable renders
-  its own `empty` snippet and loading row — because it owns the mounted surface:
-  swapping it for the shared empty panel unregisters the surface, and an agent
-  whose own search returned nothing then gets `not_found` on the command that
-  would undo it. The shared loading/empty panels are the card presentations'
-  only; the `error` branch still replaces the list in every mode, since a load
-  failure is host-driven rather than surface-driven.
+- `dataSurface` registers at the `ContentList` boundary, independently of its
+  renderer. Grid, detailed, compact, loading, empty, and error presentations
+  therefore retain one stable surface identity. A `set-view` command updates
+  the published `viewMode` and revision before the renderer changes, so its
+  acknowledgement always describes the accepted presentation.
+- The mounted snapshot publishes the controller state and normalized selection
+  together with the active query fingerprint, total, presentation, and
+  freshness (`stale`, `refreshing`, `offline`, last update, truncation, and
+  warnings). Context-only changes advance the same revision stream as visible
+  controller commands; stale command revisions are refused by the registry.
+- Discovery publishes per-column search/filter/sort operators. A server-backed
+  list narrows the derived `site` column to read-only because the content query
+  translator cannot soundly project, filter, or sort that display value.
 
 ## ContentList server-backed mode (#2452)
 
