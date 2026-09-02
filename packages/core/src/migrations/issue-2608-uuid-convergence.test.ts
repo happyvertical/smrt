@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SchemaDefinition } from '../schema/types.js';
 import { getSQLFromDiff, SchemaComparer } from './differ.js';
+import { collectStatementsFromDiff } from './orchestrate.js';
 
 type LiveColumn = {
   name: string;
@@ -434,4 +435,187 @@ describe('uuid convergence for pre-R11 databases (#2608)', () => {
       );
     });
   }
+});
+
+describe('uuid convergence consumer contract (#2608 review)', () => {
+  it('populates the manifest column definition on every convergence change', async () => {
+    // `partitionSchemaChanges()` in `@happyvertical/smrt-cli` skips a
+    // `type_upgrade` entry without `change.column`, which would drop these
+    // conversions out of the db:migrate batch while `compareForeignKeys()`
+    // still assumed the converged type.
+    const { schemas, tables } = willgriffinFixture();
+    const mock = postgresMock(tables);
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare(schemas);
+
+    const convergence = diff.changes.filter(
+      (change) => change.phase === 'pre_foreign_key',
+    );
+    expect(convergence.length).toBeGreaterThan(0);
+    for (const change of convergence) {
+      expect(change.type).toBe('type_upgrade');
+      expect(change.name).toBeTruthy();
+      expect(change.column).toBeDefined();
+      expect(change.column?.type).toBe('UUID');
+    }
+  });
+
+  it('populates the column on a blocked convergence advisory too', async () => {
+    const schemas = {
+      tags: manifest('tags', { parent_id: { table: 'tags' } }),
+    };
+    const mock = postgresMock(
+      { tags: live({ id: 'text', parent_id: 'uuid' }) },
+      { invalidUuidValues: { 'tags.id': { count: 1 } } },
+    );
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare(schemas);
+
+    const blocked = diff.changes.find(
+      (change) => change.phase === 'pre_foreign_key',
+    );
+    expect(blocked?.name).toBe('id');
+    expect(blocked?.column?.type).toBe('UUID');
+    expect(blocked?.sql).toBeUndefined();
+    expect(blocked?.sqlStatements).toBeUndefined();
+  });
+
+  it('converges a legacy text parent before a new uuid child table is created', async () => {
+    // The new child is acyclic, so `planForeignKeyCreation` keeps its foreign
+    // key **inline in CREATE TABLE**. Emitting that table before the parent
+    // converges reproduces SQLSTATE 42804.
+    const schemas = {
+      parents: manifest('parents'),
+      children: manifest('children', { parent_id: { table: 'parents' } }),
+    };
+    const mock = postgresMock({ parents: live({ id: 'text' }) });
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare(schemas);
+
+    const statements = collectStatementsFromDiff(
+      diff,
+      { url: 'postgres://fixture/issue2608' } as never,
+      'postgres',
+    );
+    const conversion = statements.findIndex((statement) =>
+      statement.includes('"parents" ALTER COLUMN "id" TYPE uuid USING'),
+    );
+    const createChild = statements.findIndex((statement) =>
+      /CREATE TABLE[^;]*"?children"?/i.test(statement),
+    );
+    expect(conversion).toBeGreaterThanOrEqual(0);
+    expect(createChild).toBeGreaterThan(conversion);
+    // The inline reference is what makes the ordering load-bearing.
+    expect(statements[createChild]).toMatch(/REFERENCES/i);
+  });
+
+  it('blocks when a table outside the manifest still references a column that must change', async () => {
+    // `legacy_tag_links` is not in the manifest, so the planner never
+    // introspected it before this fix — PostgreSQL would then refuse the
+    // ALTER because the unobserved constraint still depends on tags.id.
+    const schemas = {
+      tags: manifest('tags', { parent_id: { table: 'tags' } }),
+    };
+    const mock = postgresMock({
+      tags: live({ id: 'text', parent_id: 'uuid' }),
+      legacy_tag_links: live({ id: 'text', tag_id: 'text' }, [
+        {
+          column: 'tag_id',
+          referencesTable: 'tags',
+          referencesColumn: 'id',
+        },
+      ]),
+    });
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare(schemas);
+
+    expect(conversionTargets(getSQLFromDiff(diff))).toEqual([]);
+    const blocked = diff.changes.find((change) =>
+      change.advisory?.message.includes('live foreign keys still depend'),
+    );
+    expect(blocked?.advisory?.message).toContain(
+      'legacy_tag_links.tag_id -> tags.id',
+    );
+  });
+
+  it('does not introspect orphan tables when there is nothing to converge', async () => {
+    const schemas = {
+      posts: manifest('posts', { author_id: { table: 'authors' } }),
+      authors: manifest('authors'),
+    };
+    const tables = {
+      authors: live({ id: 'uuid' }),
+      posts: live({ id: 'uuid', author_id: 'uuid' }),
+      some_other_app_table: live({ id: 'uuid' }),
+    };
+    const introspected: string[] = [];
+    const mock = postgresMock(tables);
+    const getTableSchema = mock.db.getTableSchema;
+    mock.db.getTableSchema = async (tableName: string) => {
+      introspected.push(tableName);
+      return getTableSchema(tableName);
+    };
+
+    await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare(schemas);
+
+    expect(introspected).not.toContain('some_other_app_table');
+  });
+
+  it('does not recommend a uuid conversion for a non-uuid incompatible pair', async () => {
+    const schemas: Record<string, SchemaDefinition> = {
+      owners: {
+        tableName: 'owners',
+        columns: { id: { type: 'INTEGER', primaryKey: true } },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '2608',
+      },
+      widgets: {
+        tableName: 'widgets',
+        columns: {
+          id: { type: 'INTEGER', primaryKey: true },
+          owner_id: {
+            type: 'INTEGER',
+            foreignKey: { table: 'owners', column: 'id' },
+          },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [
+          {
+            column: 'owner_id',
+            referencesTable: 'owners',
+            referencesColumn: 'id',
+          },
+        ],
+        dependencies: ['owners'],
+        version: '2608',
+      },
+    };
+    const mock = postgresMock({
+      owners: live({ id: 'text' }),
+      widgets: live({ id: 'bigint', owner_id: 'bigint' }),
+    });
+    const diff = await new SchemaComparer(mock.db as never, {
+      engineHint: 'postgres',
+    }).compare(schemas);
+
+    const blocked = diff.changes.find(
+      (change) =>
+        change.type === 'add_foreign_key' &&
+        change.advisory?.message.includes('incompatible column types'),
+    );
+    expect(blocked?.advisory?.message).toContain('SQLSTATE 42804');
+    expect(blocked?.advisory?.message).toContain('Align both columns');
+    expect(blocked?.advisory?.message).not.toContain('Converge the columns');
+    expect(blocked?.advisory?.suggestedSql).toBeUndefined();
+  });
 });

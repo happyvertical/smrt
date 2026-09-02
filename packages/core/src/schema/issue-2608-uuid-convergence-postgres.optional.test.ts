@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getSQLFromDiff, SchemaComparer } from '../migrations/differ.js';
+import { collectStatementsFromDiff } from '../migrations/orchestrate.js';
 import { SchemaManager } from './schema-manager.js';
 import type { SchemaDefinition } from './types.js';
 
@@ -194,6 +195,106 @@ describe.skipIf(!pgUrl)('PostgreSQL uuid convergence (#2608)', () => {
         statement.includes('TYPE uuid USING'),
       ),
     ).toEqual([]);
+  });
+
+  it('creates a new uuid child table against a converged legacy text parent', async () => {
+    // The new child is acyclic, so its foreign key stays **inline in CREATE
+    // TABLE**: if the parent has not converged by then, PostgreSQL rejects
+    // the statement with SQLSTATE 42804 and takes the batch with it.
+    const legacyParents = `i2608_new_parents_${suffix}`;
+    const newChildren = `i2608_new_children_${suffix}`;
+    await db.query(`CREATE TABLE "${legacyParents}" (id TEXT PRIMARY KEY)`);
+    const parentId = randomUUID();
+    await db.query(`INSERT INTO "${legacyParents}" (id) VALUES ($1)`, [
+      parentId,
+    ]);
+    try {
+      const schemas = {
+        [legacyParents]: manifest(legacyParents),
+        [newChildren]: manifest(newChildren, {
+          parent_id: { table: legacyParents },
+        }),
+      };
+      const diff = await new SchemaComparer(db, {
+        engineHint: 'postgres',
+      }).compare(schemas);
+      const statements = collectStatementsFromDiff(diff, db, 'postgres');
+      for (const statement of statements) {
+        await db.query(statement);
+      }
+
+      const types = await db.query(
+        `SELECT data_type FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = $1
+           AND column_name = 'id'`,
+        [legacyParents],
+      );
+      expect((types.rows as { data_type: string }[])[0]?.data_type).toBe(
+        'uuid',
+      );
+      // The inline constraint really is live on the new child.
+      await db.query(
+        `INSERT INTO "${newChildren}" (id, parent_id) VALUES ($1, $2)`,
+        [randomUUID(), parentId],
+      );
+      await expect(
+        db.query(
+          `INSERT INTO "${newChildren}" (id, parent_id) VALUES ($1, $2)`,
+          [randomUUID(), randomUUID()],
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await db.query(`DROP TABLE IF EXISTS "${newChildren}"`);
+      await db.query(`DROP TABLE IF EXISTS "${legacyParents}"`);
+    }
+  });
+
+  it('blocks when a table outside the manifest still references a converging column', async () => {
+    const orphanParents = `i2608_orphan_parents_${suffix}`;
+    const orphanChildren = `i2608_orphan_children_${suffix}`;
+    const legacyLinks = `i2608_orphan_links_${suffix}`;
+    await db.query(`CREATE TABLE "${orphanParents}" (id TEXT PRIMARY KEY)`);
+    await db.query(
+      `CREATE TABLE "${orphanChildren}" (id UUID PRIMARY KEY, parent_id UUID)`,
+    );
+    // Not in the manifest, but PostgreSQL still refuses to rewrite the column
+    // this constraint depends on.
+    await db.query(
+      `CREATE TABLE "${legacyLinks}" (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES "${orphanParents}" ("id"))`,
+    );
+    try {
+      const schemas = {
+        [orphanParents]: manifest(orphanParents),
+        [orphanChildren]: manifest(orphanChildren, {
+          parent_id: { table: orphanParents },
+        }),
+      };
+      const diff = await new SchemaComparer(db, {
+        engineHint: 'postgres',
+      }).compare(schemas);
+
+      expect(
+        getSQLFromDiff(diff).filter((statement) =>
+          statement.includes('TYPE uuid USING'),
+        ),
+      ).toEqual([]);
+      expect(
+        diff.changes.some((change) =>
+          change.advisory?.message.includes('live foreign keys still depend'),
+        ),
+      ).toBe(true);
+
+      // And the ALTER the planner refused really is the one PostgreSQL rejects.
+      await expect(
+        db.query(
+          `ALTER TABLE "${orphanParents}" ALTER COLUMN "id" TYPE uuid USING "id"::uuid`,
+        ),
+      ).rejects.toThrow();
+    } finally {
+      await db.query(`DROP TABLE IF EXISTS "${legacyLinks}"`);
+      await db.query(`DROP TABLE IF EXISTS "${orphanChildren}"`);
+      await db.query(`DROP TABLE IF EXISTS "${orphanParents}"`);
+    }
   });
 
   it('refuses to coerce a value that is not uuid-shaped', async () => {

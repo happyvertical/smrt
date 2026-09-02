@@ -768,14 +768,39 @@ The same check runs per relationship in `compareForeignKeys`, so a foreign key
 whose live types will still disagree after this run's conversions is reported
 blocked rather than emitted as pending DDL that cannot succeed.
 
+The planner also inspects tables the manifest no longer declares. A live
+foreign key from an orphan table onto a column that must convert still blocks
+`ALTER COLUMN … TYPE`, so the differ introspects every existing table — not
+only the manifest ones — whenever there is at least one conversion candidate,
+and reports the dependency instead of emitting DDL PostgreSQL would reject. An
+already-converged database has no candidates and pays nothing.
+
 Ordering is a contract. Conversions carry `SchemaChange.phase =
-'pre_foreign_key'`, and the orchestrator partitions on that marker so they
-precede **every** foreign-key statement in the batch — including the deferred
-constraints it emits for newly created tables, since a brand-new `uuid` child
-pointing at a legacy `text` parent fails exactly like an existing one. A live
-`DEFAULT` on a converting column is dropped first (PostgreSQL refuses
+'pre_foreign_key'`, and the orchestrator emits them **before every CREATE TABLE
+and every foreign-key statement in the batch**. Both halves matter:
+`planForeignKeyCreation()` only defers the constraints inside a mutual cycle,
+so an acyclic new child table keeps its foreign key *inline in `CREATE TABLE`*
+— a brand-new `uuid` child pointing at a legacy `text` parent fails exactly
+like an existing one, before the parent could be converted. Conversions only
+ever rewrite columns that already exist, so leading the batch is always safe. A
+live `DEFAULT` on a converting column is dropped first (PostgreSQL refuses
 `ALTER COLUMN … TYPE` when the default cannot be cast); the ordinary default
 comparison re-establishes the manifest default on the next run.
+
+Convergence entries carry the manifest column definition. Every `type_upgrade`
+consumer reads `SchemaChange.column` — `partitionSchemaChanges()` in
+`@happyvertical/smrt-cli` skips an entry without one — so a conversion missing
+it would drop out of the `db:migrate` batch while `compareForeignKeys()` still
+assumed the converged type. Refused convergences carry the same column plus an
+advisory and no SQL, and the CLI routes them to the report-only advisories
+rather than to manual interventions or the tracker.
+
+The uuid wording is gated on the manifest. Both the runtime guard and the
+status planner reach their incompatible-type branch for *any* mismatched pair,
+not only uuid/text. A `USING …::uuid` repair is suggested only when the
+manifest declares UUID on both sides **and** a live side is actually `text`;
+otherwise the diagnostic names the two live types and asks the operator to
+align them deliberately.
 
 The conversion is one-time and idempotent: once the column is native `uuid`,
 the component is uniformly UUID and the planner emits nothing.

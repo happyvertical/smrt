@@ -419,29 +419,41 @@ export class SchemaManager {
       foreignKey,
     );
     if (liveTypes && liveTypes.childNormalized !== liveTypes.parentNormalized) {
+      const conflict = describeForeignKeyTypeConflict({
+        childTable: tableName,
+        childColumn: foreignKey.column,
+        childType: liveTypes.childType,
+        parentTable: foreignKey.referencesTable,
+        parentColumn: foreignKey.referencesColumn,
+        parentType: liveTypes.parentType,
+      });
+      // The uuid convergence is only the right repair for a relationship the
+      // manifest declares UUID on both sides (`options.uuidComparison`) and
+      // whose live drift is actually a legacy `text` column. Any other
+      // incompatible pair reaches this guard too, and a `USING …::uuid` hint
+      // there would be wrong — name the two live types instead.
+      const textNodes = options.uuidComparison
+        ? [
+            liveTypes.childNormalized === 'TEXT'
+              ? { table: tableName, column: foreignKey.column }
+              : undefined,
+            liveTypes.parentNormalized === 'TEXT'
+              ? {
+                  table: foreignKey.referencesTable,
+                  column: foreignKey.referencesColumn,
+                }
+              : undefined,
+          ].filter((node) => node !== undefined)
+        : [];
+      const repair =
+        textNodes.length > 0
+          ? ` Suggested repair: ${renderUuidConvergenceRepairHint(textNodes).join('; ')}`
+          : ` Align ${tableName}.${foreignKey.column} (${liveTypes.childType}) and ` +
+            `${foreignKey.referencesTable}.${foreignKey.referencesColumn} (${liveTypes.parentType}) ` +
+            'on one physical type deliberately, then retry.';
       throw new Error(
         `[SchemaManager] Cannot add ${constraintName}: incompatible column types. ` +
-          `${describeForeignKeyTypeConflict({
-            childTable: tableName,
-            childColumn: foreignKey.column,
-            childType: liveTypes.childType,
-            parentTable: foreignKey.referencesTable,
-            parentColumn: foreignKey.referencesColumn,
-            parentType: liveTypes.parentType,
-          })}. Converge the columns first, then retry. ` +
-          `Suggested repair: ${renderUuidConvergenceRepairHint(
-            [
-              liveTypes.childNormalized === 'TEXT'
-                ? { table: tableName, column: foreignKey.column }
-                : undefined,
-              liveTypes.parentNormalized === 'TEXT'
-                ? {
-                    table: foreignKey.referencesTable,
-                    column: foreignKey.referencesColumn,
-                  }
-                : undefined,
-            ].filter((node) => node !== undefined),
-          ).join('; ')}`,
+          `${conflict}. Converge the columns first, then retry.${repair}`,
       );
     }
 

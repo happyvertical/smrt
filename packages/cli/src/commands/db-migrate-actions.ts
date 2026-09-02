@@ -75,7 +75,7 @@ export interface MigrationAction {
  * db:status; never turned into a tracker migration.
  */
 export interface SchemaAdvisory {
-  type: 'orphan_column' | 'orphan_index' | 'alter_column';
+  type: 'orphan_column' | 'orphan_index' | 'alter_column' | 'type_upgrade';
   tableName: string;
   className: string;
   name: string;
@@ -508,8 +508,12 @@ export function getUnresolvedGeneratedMigrationNames(
       continue;
     }
 
-    // Report-only relaxations never become tracker migrations.
-    if (change.type === 'alter_column' && isAdvisoryOnlyChangeLike(change)) {
+    // Report-only relaxations and refused convergences (#2608) never become
+    // tracker migrations.
+    if (
+      (change.type === 'alter_column' || change.type === 'type_upgrade') &&
+      isAdvisoryOnlyChangeLike(change)
+    ) {
       continue;
     }
 
@@ -788,6 +792,22 @@ export function partitionSchemaChanges(
       case 'type_upgrade': {
         const mm = change.mismatch;
         const col = change.column;
+        // #2608: a refused uuid convergence is report-only — it carries an
+        // advisory and no SQL. Surfacing it as a manual intervention would
+        // claim `db:migrate` can fix it; it belongs with the other blocked
+        // findings so the operator sees the reason and the manual repair.
+        if (isAdvisoryOnlyChangeLike(change) && change.advisory) {
+          if (!change.name) continue;
+          advisories.push({
+            type: 'type_upgrade',
+            tableName: change.table,
+            className,
+            name: change.name,
+            actual: mm?.actual,
+            advisory: change.advisory,
+          });
+          break;
+        }
         if (!change.name || !mm || !col) continue;
         const action: MigrationAction = {
           type: 'type_upgrade',
@@ -888,6 +908,8 @@ function describeAdvisory(item: SchemaAdvisory): string {
       return `${item.tableName}.${item.name}: orphan column${item.actual ? ` (${item.actual})` : ''}`;
     case 'orphan_index':
       return `${item.tableName}.${item.name}: unique constraint not in manifest${item.actual ? ` (${item.actual})` : ''}`;
+    case 'type_upgrade':
+      return `${item.tableName}.${item.name}: type upgrade blocked${item.actual ? ` (live: ${item.actual})` : ''}`;
     default:
       return `${item.tableName}.${item.name}: ${item.alteration ?? 'alter_column'}${item.actual ? ` (live: ${item.actual})` : ''}`;
   }

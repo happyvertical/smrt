@@ -495,7 +495,7 @@ export class SchemaComparer {
       manifestSchemas,
       existingTables,
     );
-    for (const change of this.uuidConvergenceChanges()) {
+    for (const change of this.uuidConvergenceChanges(manifestSchemas)) {
       diff.changes.push(change);
       if (!isInfoOnlyChange(change)) diff.has_changes = true;
     }
@@ -651,6 +651,58 @@ export class SchemaComparer {
       await this.getLiveSchema(tableName);
     }
 
+    const relationships = Object.entries(manifestSchemas).flatMap(
+      ([tableName, schema]) =>
+        schemaForeignKeysForEngine(schema, 'postgres').map((foreignKey) => ({
+          childTable: tableName,
+          childColumn: foreignKey.column,
+          parentTable: foreignKey.referencesTable,
+          parentColumn: foreignKey.referencesColumn,
+        })),
+    );
+
+    // Columns this plan could rewrite: a live `text` side of a relationship
+    // the manifest declares UUID on both ends.
+    const conversionCandidates = new Set<string>();
+    for (const relationship of relationships) {
+      const childManifest =
+        manifestSchemas[relationship.childTable]?.columns[
+          relationship.childColumn
+        ];
+      const parentManifest =
+        manifestSchemas[relationship.parentTable]?.columns[
+          relationship.parentColumn
+        ];
+      if (childManifest?.type !== 'UUID' || parentManifest?.type !== 'UUID') {
+        continue;
+      }
+      for (const [table, column] of [
+        [relationship.childTable, relationship.childColumn],
+        [relationship.parentTable, relationship.parentColumn],
+      ] as const) {
+        if (!existingTables.has(table)) continue;
+        const live = this.liveSchemas.get(table)?.columns[column];
+        if (!live) continue;
+        if (this.normalizeType(live.type) !== 'TEXT') continue;
+        conversionCandidates.add(`${table} ${column}`);
+      }
+    }
+
+    // #2608: a table the manifest no longer declares can still hold a live
+    // foreign key onto a column this plan would rewrite. PostgreSQL refuses
+    // `ALTER COLUMN … TYPE` while any constraint depends on the column, so an
+    // uninspected orphan table turns the promised "blocked" advisory into an
+    // aborted migration. Introspect those tables too — but only when there is
+    // actually a conversion to protect, so an already-converged database pays
+    // nothing.
+    if (conversionCandidates.size > 0) {
+      for (const tableName of existingTables) {
+        if (manifestSchemas[tableName]) continue;
+        if (tableName.startsWith('sqlite_')) continue;
+        await this.getLiveSchema(tableName);
+      }
+    }
+
     const liveForeignKeys: UuidConvergenceLiveForeignKey[] = [];
     for (const [tableName, schema] of this.liveSchemas) {
       for (const live of schema?.foreignKeys ?? []) {
@@ -662,16 +714,6 @@ export class SchemaComparer {
         });
       }
     }
-
-    const relationships = Object.entries(manifestSchemas).flatMap(
-      ([tableName, schema]) =>
-        schemaForeignKeysForEngine(schema, 'postgres').map((foreignKey) => ({
-          childTable: tableName,
-          childColumn: foreignKey.column,
-          parentTable: foreignKey.referencesTable,
-          parentColumn: foreignKey.referencesColumn,
-        })),
-    );
 
     return planUuidConvergence({
       manifestSchemas,
@@ -741,15 +783,25 @@ export class SchemaComparer {
    * conversions marked `phase: 'pre_foreign_key'`, plus report-only warnings
    * for components the planner refused.
    */
-  private uuidConvergenceChanges(): SchemaChange[] {
+  private uuidConvergenceChanges(
+    manifestSchemas: Record<string, SchemaDefinition>,
+  ): SchemaChange[] {
     const plan = this.uuidConvergence;
     if (!plan) return [];
+    // Every consumer of a `type_upgrade` entry reads `change.column` for the
+    // target shape — `partitionSchemaChanges()` in `@happyvertical/smrt-cli`
+    // skips an entry without one, which would drop these conversions out of
+    // the `db:migrate` batch while `compareForeignKeys()` still assumed their
+    // converged type and emitted the dependent constraint (SQLSTATE 42804).
+    const manifestColumn = (table: string, column: string): ColumnDefinition =>
+      manifestSchemas[table]?.columns[column] ?? { type: 'UUID' };
     const changes: SchemaChange[] = [];
     for (const conversion of plan.conversions) {
       changes.push({
         type: 'type_upgrade',
         table: conversion.table,
         name: conversion.column,
+        column: manifestColumn(conversion.table, conversion.column),
         phase: 'pre_foreign_key',
         mismatch: { expected: 'UUID', actual: conversion.liveType },
         sql: conversion.statements[0],
@@ -762,6 +814,7 @@ export class SchemaComparer {
         type: 'type_upgrade',
         table: first?.table ?? '',
         name: first?.column,
+        column: manifestColumn(first?.table ?? '', first?.column ?? ''),
         phase: 'pre_foreign_key',
         mismatch: { expected: 'UUID', actual: 'mixed uuid/text' },
         advisory: {
@@ -978,6 +1031,37 @@ export class SchemaComparer {
         foreignKey,
       );
       if (typeBlock) {
+        // The uuid convergence is only the right remediation when the
+        // manifest actually declares UUID on both sides. Any other
+        // incompatible pair (text/integer, timestamp/text, …) reaches this
+        // branch too, and telling the operator to cast both columns to uuid
+        // there would be wrong.
+        const uuidRelationship =
+          manifest.columns[foreignKey.column]?.type === 'UUID' &&
+          manifestSchemas[foreignKey.referencesTable]?.columns[
+            foreignKey.referencesColumn
+          ]?.type === 'UUID';
+        const textNodes = uuidRelationship
+          ? [
+              this.normalizeType(
+                dbSchema.columns[foreignKey.column]?.type ?? '',
+              ) === 'TEXT'
+                ? { table: tableName, column: foreignKey.column }
+                : undefined,
+              this.normalizeType(
+                (foreignKey.referencesTable === tableName
+                  ? dbSchema
+                  : this.liveSchemas.get(foreignKey.referencesTable)
+                )?.columns[foreignKey.referencesColumn]?.type ?? '',
+              ) === 'TEXT'
+                ? {
+                    table: foreignKey.referencesTable,
+                    column: foreignKey.referencesColumn,
+                  }
+                : undefined,
+            ].filter((node) => node !== undefined)
+          : [];
+        const suggestedSql = renderUuidConvergenceRepairHint(textNodes);
         changes.push({
           type: 'add_foreign_key',
           table: tableName,
@@ -985,27 +1069,12 @@ export class SchemaComparer {
           foreignKey,
           advisory: {
             severity: 'warning',
-            message: `blocked: incompatible column types. ${typeBlock}. Converge the columns to UUID, then rerun the migration.`,
-            suggestedSql: renderUuidConvergenceRepairHint(
-              [
-                this.normalizeType(
-                  dbSchema.columns[foreignKey.column]?.type ?? '',
-                ) === 'TEXT'
-                  ? { table: tableName, column: foreignKey.column }
-                  : undefined,
-                this.normalizeType(
-                  (foreignKey.referencesTable === tableName
-                    ? dbSchema
-                    : this.liveSchemas.get(foreignKey.referencesTable)
-                  )?.columns[foreignKey.referencesColumn]?.type ?? '',
-                ) === 'TEXT'
-                  ? {
-                      table: foreignKey.referencesTable,
-                      column: foreignKey.referencesColumn,
-                    }
-                  : undefined,
-              ].filter((node) => node !== undefined),
-            ),
+            message:
+              `blocked: incompatible column types. ${typeBlock}. ` +
+              (textNodes.length > 0
+                ? 'Converge the columns to UUID, then rerun the migration.'
+                : 'Align both columns on one physical type deliberately, then rerun the migration.'),
+            ...(suggestedSql.length > 0 ? { suggestedSql } : {}),
           },
         });
         continue;

@@ -1108,6 +1108,44 @@ describe('PostgreSQL foreign-key provisioning across uuid/text drift (#2608)', (
     ).toBe(true);
   });
 
+  it('does not suggest a uuid conversion for a non-uuid relationship', async () => {
+    // `uuidComparison: false` — the manifest does not declare UUID for this
+    // pair, so a `USING …::uuid` hint would be wrong guidance.
+    const mock = driftMock('bigint', 'text');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    const error = await manager
+      .ensurePostgresForeignKey('children', foreignKey, {
+        nullable: true,
+        uuidComparison: false,
+      })
+      .catch((thrown: unknown) => thrown as Error);
+
+    expect(error.message).toContain('incompatible column types');
+    expect(error.message).toContain('SQLSTATE 42804');
+    expect(error.message).toContain(
+      'Align children.parent_id (bigint) and parents.id (text) on one physical type deliberately',
+    );
+    expect(error.message).not.toContain('USING');
+    expect(error.message).not.toContain('Suggested repair');
+  });
+
+  it('does not suggest a uuid conversion when neither live side is text', async () => {
+    const mock = driftMock('uuid', 'bigint');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    const error = await manager
+      .ensurePostgresForeignKey('children', foreignKey, {
+        nullable: true,
+        uuidComparison: true,
+      })
+      .catch((thrown: unknown) => thrown as Error);
+
+    expect(error.message).toContain('SQLSTATE 42804');
+    expect(error.message).toContain('Align children.parent_id (uuid)');
+    expect(error.message).not.toContain('USING');
+  });
+
   it('keeps the pre-#2608 behaviour when live types cannot be introspected', async () => {
     const mock = driftMock('uuid', 'uuid');
     (mock.db as { getTableSchema?: unknown }).getTableSchema = undefined;
