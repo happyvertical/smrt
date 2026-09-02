@@ -1,5 +1,42 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - make DurationDisplay showLabel gate the unit (#2607) (projects)
+  - route useWebMcpTool through the WebMCP registrar (#2595) (smrt-svelte)
+
+  ### Features
+
+  - emit view intents and playbooks into the manifest and knowledge graph (#2618) (core)
+  - framework-agnostic declarative view intents (#2610) (smrt-web)
+  - layered playbook registry with app and tenant overrides (#2606) (smrt-playbooks)
+  - migrate verified assets across runtime profiles (#2602) (template)
+  - add shared capability classification contract (#2594) (smrt-types)
+  - add authenticated runtime diagnostics (#2593) (app-runtime)
+  - gate JSDoc on exported Svelte component props (#2592) (scripts)
+  - add runtime-profile reference workload fixture (#2580) (template)
+  - add installable runtime scaffold (#2574) (template-sveltekit)
+
+  ### Bug Fixes
+
+  - converge pre-R11 uuid/text drift and refuse foreign keys across it (#2611) (core)
+  - patch browserslist audit findings (#2582) (deps)
+
+  ### Other Changes
+
+  - docs: describe every remaining exported component prop (#2603)
+  - docs: describe every exported prop in smrt-ui, smrt-content, and smrt-messages (#2598)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.43.10
 
 ### Patch Changes
