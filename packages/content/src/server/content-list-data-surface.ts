@@ -3,7 +3,6 @@
 import type {
   DataSurfaceDefinition,
   DataSurfaceExecutionContext,
-  DataSurfaceMetadata,
   DataSurfaceSchema,
 } from '@happyvertical/smrt-agents';
 import type { DataQuerySchema } from '@happyvertical/smrt-types';
@@ -26,7 +25,7 @@ export interface ContentListDataSurfaceOptions {
   collectionName?: string;
   label?: string;
   description?: string;
-  metadata?: DataSurfaceMetadata;
+  metadata?: NonNullable<DataSurfaceDefinition['metadata']>;
   /** Resolve a collection from the live principal context, never model input. */
   collection:
     | ContentQueryCollection
