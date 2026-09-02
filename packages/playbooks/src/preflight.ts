@@ -237,7 +237,15 @@ export async function preflightPlaybook(
   request: PlaybookPreflightRequest,
 ): Promise<PlaybookPreflightReport> {
   const { key, plane, principal, resolve, evaluate } = request;
-  const tenantId = resolve?.tenantId ?? null;
+  // The SAME fallback `loadPlaybookBase()` uses. `undefined` means "take the
+  // ambient tenant", and hardcoding `null` here would let two ambient
+  // `withTenant()` callers with the same principal share one cache entry
+  // despite resolving different tenant overrides — a cross-tenant read of a
+  // report that carries the resolved title and description.
+  const tenantId =
+    resolve?.tenantId !== undefined
+      ? resolve.tenantId
+      : (getTenantId() ?? null);
   const db = await normalizeCacheDb(resolve?.db);
   const scope = { principal, key, plane, tenantId, db };
 
@@ -254,11 +262,13 @@ export async function preflightPlaybook(
     if (!resolution.ok) {
       if (resolution.reason === 'unknown-playbook') {
         await equalizeUnknownKeyCost(key, resolve);
-        // An unknown key is answered from an in-memory registry miss, so
-        // caching it buys nothing and would let an unauthenticated probe of
-        // random keys grow the cache without bound.
-        return PLAYBOOK_PREFLIGHT_UNAVAILABLE;
       }
+      // Unknown and registered-but-unavailable keys are cached alike. Caching
+      // only one of them would put a repeat probe of the other in a different
+      // timing class — the equalizer closes the first-request gap, and this
+      // closes the every-subsequent-request gap. Unbounded growth from probing
+      // random keys is handled where it belongs: the cache is capped with
+      // expiry-first eviction.
       setCachedPlaybookPreflight(
         scope,
         PLAYBOOK_PREFLIGHT_UNAVAILABLE,

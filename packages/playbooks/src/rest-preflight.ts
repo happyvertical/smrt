@@ -13,6 +13,7 @@
 
 import {
   isApiActionEnabledForObject,
+  isRestActionRoutable,
   isRestRoutePublic,
   resolveRegisteredObjectName,
   restFieldReadPermissions,
@@ -40,7 +41,15 @@ export function createRestPreflightLayerSource(options: {
     isActionExposed(model, action) {
       const objectName = resolveRegisteredObjectName(model);
       if (!objectName) return false;
-      return isApiActionEnabledForObject(objectName, action);
+      // Two questions, both required: does a route for this action exist at
+      // all, and does the decorator expose it? `include`/`exclude` alone would
+      // report a typo'd or removed custom action as exposed, and the runtime
+      // dispatcher — which iterates only declared `api.routes` — could never
+      // run it.
+      return (
+        isRestActionRoutable(objectName, action) &&
+        isApiActionEnabledForObject(objectName, action)
+      );
     },
     isRoutePublic(model, action) {
       const objectName = resolveRegisteredObjectName(model);
@@ -78,9 +87,24 @@ export interface BrowserPreflightProviderOptions {
   }) => string;
 }
 
-function defaultPrincipal(request: { permissions?: Iterable<string> }): string {
-  const slugs = request.permissions ? [...request.permissions].sort() : [];
-  return `perm:${slugs.join(',')}`;
+function defaultPrincipal(request: {
+  permissions?: Iterable<string>;
+  appAuthConfigured: boolean;
+}): string {
+  // Every input the browser evaluation actually reads has to be in here, or the
+  // process-global cache can serve one context's report to another:
+  //
+  // - an ABSENT permission set is not an empty one. Absent makes the field
+  //   layer `unknown`; an explicitly published empty set is known, and answers
+  //   `allow` with redactions. Both would render as a bare `perm:` without the
+  //   sentinel.
+  // - `appAuthConfigured` decides whether `public-access` and `app-auth` report
+  //   `deny`/`allow` or `unknown`. Two generators in one process — one with an
+  //   auth middleware, one without — otherwise share entries.
+  const permissions = request.permissions
+    ? `perm:${[...request.permissions].sort().join(',')}`
+    : 'perm:unpublished';
+  return `${permissions}|auth:${request.appAuthConfigured ? 'wired' : 'none'}`;
 }
 
 /**

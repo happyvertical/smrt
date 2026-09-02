@@ -8,7 +8,11 @@
 
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { getTestDatabase } from '@happyvertical/smrt-core';
-import { resetTenancy, setupTestTenancy } from '@happyvertical/smrt-tenancy';
+import {
+  resetTenancy,
+  setupTestTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearPlaybookCache } from './cache.js';
@@ -666,35 +670,34 @@ describe('playbook preflight (#2590)', () => {
       expect(tenant.verdict).toBe('deny');
     });
 
-    it('does not cache an unknown key', async () => {
-      let evaluations = 0;
-      const request = {
-        key: 'commerce.cart.never-registered',
+    it('takes the ambient tenant into the cache key, not a hardcoded null', async () => {
+      // `resolvePlaybook()` reads the ambient tenant when `tenantId` is
+      // omitted, which is the browser provider's normal path. If preflight
+      // scoped those to `null`, two ambient tenants with the same principal
+      // would share one entry — and the report carries the resolved title and
+      // description, so that is a cross-tenant content read.
+      const evaluate = (allowed: boolean) =>
+        createServerStepEvaluator({
+          isToolAllowed: () => allowed,
+          checkOperationPermission: () => 'allow' as const,
+        });
+      const request = (allowed: boolean) => ({
+        key: 'commerce.cart.checkout',
         plane: 'server' as const,
-        principal: 'user-1|tenant-1',
-        resolve: { db, tenantId: null },
-        evaluate: () => {
-          evaluations += 1;
-          return { layers: [] };
-        },
-      };
-
-      expect(await preflightPlaybook(request)).toBe(
-        PLAYBOOK_PREFLIGHT_UNAVAILABLE,
-      );
-
-      // Registering it makes the very next call resolve: nothing was pinned.
-      // (The same property is what stops an anonymous probe of random keys
-      // from growing the cache without bound.)
-      definePlaybook({
-        key: 'commerce.cart.never-registered',
-        title: 'Registered late',
-        description: 'Registered after the first preflight.',
-        steps: CHECKOUT_STEPS,
+        principal: 'ambient-principal',
+        resolve: { db },
+        evaluate: evaluate(allowed),
       });
 
-      expect((await preflightPlaybook(request)).available).toBe(true);
-      expect(evaluations).toBe(2);
+      const first = await withTenant({ tenantId: 'tenant-one' }, () =>
+        preflightPlaybook(request(true)),
+      );
+      const second = await withTenant({ tenantId: 'tenant-two' }, () =>
+        preflightPlaybook(request(false)),
+      );
+
+      expect(first.verdict).toBe('allow');
+      expect(second.verdict).toBe('deny');
     });
 
     it('is advisory: a cached allow does not survive as authority', async () => {

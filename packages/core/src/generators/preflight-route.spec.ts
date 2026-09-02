@@ -14,6 +14,7 @@ import { ObjectRegistry, smrt } from '../registry';
 import {
   handlePlaybookPreflightRoute,
   isApiActionEnabledForObject,
+  isRestActionRoutable,
   isRestRoutePublic,
   PLAYBOOK_PREFLIGHT_CAPABILITY,
   resolveRegisteredObjectName,
@@ -256,6 +257,23 @@ describe('playbook preflight route (#2590)', () => {
           restMethodForApiAction('publish', 'PreflightRoutedWidget'),
         ),
       ).toBe(false);
+    });
+
+    it('treats only CRUD and declared custom routes as dispatchable', () => {
+      // `include`/`exclude` gate exposure; they do not conjure a route. The
+      // runtime dispatcher iterates `api.routes` alone, so an undeclared custom
+      // action can never execute — and preflight must not report it as `allow`
+      // and let an agent start the earlier steps of a non-atomic playbook.
+      expect(isRestActionRoutable('PreflightRoutedWidget', 'list')).toBe(true);
+      expect(isRestActionRoutable('PreflightRoutedWidget', 'summarize')).toBe(
+        true,
+      );
+      expect(isRestActionRoutable('PreflightRoutedWidget', 'summarise')).toBe(
+        false,
+      );
+      // A model declaring no custom routes at all has none.
+      expect(isRestActionRoutable('PreflightWidget', 'summarize')).toBe(false);
+      expect(isRestActionRoutable(undefined, 'list')).toBe(false);
     });
 
     it('collects the model field read-permission slugs', () => {

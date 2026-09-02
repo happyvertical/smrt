@@ -234,6 +234,41 @@ export function isApiActionEnabledForObject(
 }
 
 /**
+ * Whether `action` names a route the generated REST surface can actually
+ * dispatch on `objectName`.
+ *
+ * CRUD actions always have a route. A custom action exists only when the
+ * decorator declares it in `api.routes` — `dispatchCustomCollectionAction`
+ * iterates exactly that map, so an action absent from it can never execute no
+ * matter what `include`/`exclude` say. Exposure alone would report a typo'd or
+ * removed custom action as `allow`, and an agent would then start the earlier
+ * steps of a non-atomic playbook before dying on it — the failure preflight
+ * exists to prevent.
+ */
+export function isRestActionRoutable(
+  objectName: string | undefined,
+  action: string,
+): boolean {
+  if (!objectName) return false;
+  if (
+    action === 'list' ||
+    action === 'get' ||
+    action === 'create' ||
+    action === 'update' ||
+    action === 'delete'
+  ) {
+    return true;
+  }
+
+  const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+  if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+    return false;
+  }
+
+  return Object.hasOwn(apiConfig.routes as Record<string, unknown>, action);
+}
+
+/**
  * Fail-closed authorization posture (#1540): true only when the object opts out
  * of auth via `@smrt({ api: { public } })` — `true` for every method, `'read'`
  * for safe (GET) methods only.

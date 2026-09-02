@@ -158,14 +158,19 @@ verdict vocabulary — so the dependency stays one-way.
 ### Not an oracle
 
 Every playbook the caller's chain cannot resolve — unknown key, disabled,
-wrong-plane, unresolvable intent — returns the single frozen
-`PLAYBOOK_PREFLIGHT_UNAVAILABLE` value: no key echo, no reason, no message, and
-served by the route with an unconditional 200. An unknown key and an unauthorized
-key are byte-identical. The unknown-key path also pays the same override-layer
-read a resolvable key pays (`equalizeUnknownKeyCost`), because
-`resolvePlaybook()` short-circuits a registry miss before touching the database
-and that difference would otherwise be a timing oracle over exactly the question
-the uniform response refuses.
+wrong-plane, unresolvable intent, or an error thrown anywhere in resolution or
+evaluation — returns the single frozen `PLAYBOOK_PREFLIGHT_UNAVAILABLE` value: no
+key echo, no reason, no message, and served by the route with an unconditional
+200. An unknown key and an unauthorized key are byte-identical.
+
+Timing is held in the same class from both ends. The unknown-key path pays the
+same override-layer read a resolvable key pays (`equalizeUnknownKeyCost`),
+because `resolvePlaybook()` short-circuits a registry miss before touching the
+database; and unavailable results are cached for unknown and
+registered-but-unavailable keys **alike**, because caching only one of them would
+put every *repeat* probe of the other in a different timing class. Growth from
+probing random keys is bounded where it belongs — the preflight cache is capped
+with expiry-first eviction — not by declining to cache.
 
 ### Verdict rules worth knowing
 
@@ -194,11 +199,26 @@ tenant inherits from it. Use `clearPlaybookCache()` in tests.
 A monotonic per-`(db, key)` invalidation generation closes the read-racing-a-
 write window; see the Gotchas entry below before touching `cache.ts`.
 
-Preflight results cache separately, per `(principal, key, plane)`, with a shorter
-TTL and **no invalidation ceremony of their own** — an entry captured under an
-older generation of the playbook cache is dropped on read. `principal` is an
-opaque, caller-scoped partition key: it is never echoed in a report and never
-consulted for authority. Use `clearPlaybookPreflightCache()` in tests.
+Preflight results cache separately, per `(principal, key, plane, tenant)`, with a
+shorter TTL and **no invalidation ceremony of their own** — an entry captured
+under an older generation of the playbook cache is dropped on read. `principal`
+is an opaque, caller-scoped partition key: it is never echoed in a report and
+never consulted for authority. Use `clearPlaybookPreflightCache()` in tests.
+
+Two partitioning traps, both of which produce a cross-context read rather than a
+stale one:
+
+- **The tenant is resolved, not defaulted.** `preflightPlaybook()` applies the
+  same `tenantId !== undefined ? tenantId : (getTenantId() ?? null)` fallback
+  `loadPlaybookBase()` does. Scoping an omitted tenant to `null` would let two
+  ambient `withTenant()` callers with one principal share an entry — and the
+  report carries the resolved title and description.
+- **The principal must cover every input the evaluation reads.** The REST
+  provider's default folds in `appAuthConfigured` (it decides whether
+  `public-access` / `app-auth` are verdicts or `unknown`) and distinguishes an
+  *absent* permission set (`perm:unpublished`, field layer `unknown`) from an
+  explicitly empty one (known, `allow` with redactions). A custom `principal`
+  must do the same.
 
 ## Gotchas
 

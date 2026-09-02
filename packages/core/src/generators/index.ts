@@ -73,6 +73,7 @@ export {
 export {
   handlePlaybookPreflightRoute,
   isApiActionEnabledForObject,
+  isRestActionRoutable,
   isRestRoutePublic,
   PLAYBOOK_PREFLIGHT_CAPABILITY,
   PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,

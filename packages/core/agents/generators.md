@@ -83,12 +83,17 @@ honest answer, and a future `authPredicate` seam can fill it in without changing
 the contract.
 
 The static layers preflight predicts against are exported from the same module —
-`isApiActionEnabledForObject`, `isRestRoutePublic`, `restFieldReadPermissions`,
-`restMethodForApiAction`, `resolveRegisteredObjectName` — and `APIGenerator`'s own
+`isApiActionEnabledForObject`, `isRestActionRoutable`, `isRestRoutePublic`,
+`restFieldReadPermissions`, `restMethodForApiAction`,
+`resolveRegisteredObjectName` — and `APIGenerator`'s own
 `isApiActionEnabled` / `isRoutePublic` now delegate to them, so the route and the
-prediction of the route cannot drift. An action the CRUD surface does not name
-maps to `POST`, so a `public: 'read'` opt-out never silently covers a custom
-action. Every unresolvable key returns the provider's single uniform
+prediction of the route cannot drift. Exposure and existence are separate
+questions: `include`/`exclude` gate a route, they do not conjure one, so
+`isRestActionRoutable` additionally requires a custom action to be declared in
+`api.routes` — the only map `dispatchCustomCollectionAction` iterates. A custom
+action is predicted against the verb its own route config declares, so a
+`public: 'read'` opt-out neither silently covers a `POST` action nor falsely
+denies a declared `GET` one. Every unresolvable key returns the provider's single uniform
 "unavailable" body with an unconditional 200: unknown and unauthorized keys are
 indistinguishable at the HTTP layer too.
 
