@@ -134,6 +134,19 @@ describe('@happyvertical/smrt-playbooks', () => {
           steps: [{ kind: 'tool', name: 'smrt_order_submit' } as never],
         }),
       ).toThrow('unknown kind');
+
+      // A separator alone is not a qualified pair: each of these identifies no
+      // model and could never match a classifier or executor lookup.
+      for (const model of [':', '@happyvertical/smrt-commerce:', ':Order']) {
+        expect(() =>
+          definePlaybook({
+            key: `commerce.cart.malformed-${model}`,
+            title: 'Malformed',
+            description: 'Malformed qualified model reference',
+            steps: [{ kind: 'operation', model, action: 'submit' } as never],
+          }),
+        ).toThrow('must be a qualified pair');
+      }
     });
 
     it('rejects a non-boolean step optional flag instead of coercing it', () => {
@@ -806,6 +819,62 @@ describe('@happyvertical/smrt-playbooks', () => {
           }),
         ).title,
       ).toBe('Code title');
+    });
+
+    it('never repopulates a key with a value read before a concurrent write', async () => {
+      definePlaybook({
+        key: 'commerce.cart.race',
+        title: 'Code title',
+        description: 'Read racing a write',
+        steps: CHECKOUT_STEPS,
+        editable: { title: true },
+      });
+
+      const loadLayers =
+        PlaybookOverrideCollection.prototype.getResolutionLayers;
+
+      // Interleave a write between the resolution's layer read and its cache
+      // write: the resolution has already read the pre-write state, then the
+      // write lands and invalidates the key.
+      const spy = vi
+        .spyOn(PlaybookOverrideCollection.prototype, 'getResolutionLayers')
+        .mockImplementationOnce(async function (
+          this: PlaybookOverrideCollection,
+          ...args: Parameters<typeof loadLayers>
+        ) {
+          const staleLayers = await loadLayers.apply(this, args);
+          await overrides.create({
+            key: 'commerce.cart.race',
+            tenantId: null,
+            title: 'App title',
+          });
+          return staleLayers;
+        });
+
+      try {
+        // This in-flight resolution legitimately returns what it read.
+        const racing = expectPlan(
+          await resolvePlaybook('commerce.cart.race', {
+            db,
+            tenantId: 'tenant-a',
+          }),
+        );
+        expect(racing.title).toBe('Code title');
+      } finally {
+        spy.mockRestore();
+      }
+
+      // The point of the fix: that stale value must not have been written back
+      // over the invalidated key, so the next resolution sees the write rather
+      // than serving the pre-write value for the rest of the TTL.
+      expect(
+        expectPlan(
+          await resolvePlaybook('commerce.cart.race', {
+            db,
+            tenantId: 'tenant-a',
+          }),
+        ).title,
+      ).toBe('App title');
     });
 
     it('expires stale entries after the ttl when storage changes without invalidation', async () => {

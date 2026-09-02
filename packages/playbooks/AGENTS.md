@@ -124,6 +124,9 @@ invalidated on `PlaybookOverride.save()` and `.delete()`; an app-level write
 (`tenantId = null`) clears every tenant's entry for that key, because each
 tenant inherits from it. Use `clearPlaybookCache()` in tests.
 
+A monotonic per-`(db, key)` invalidation generation closes the read-racing-a-
+write window; see the Gotchas entry below before touching `cache.ts`.
+
 ## Gotchas
 
 - **`context` carries the tenant scope.** `save()` sets
@@ -146,16 +149,19 @@ tenant inherits from it. Use `clearPlaybookCache()` in tests.
   Unknown key, disabled, wrong plane, and unresolvable intents all come back as
   `{ ok: false, reason, message }`. It *does* throw for programming errors —
   notably a `steps` key on an override layer.
-- **The TTL cache has a known repopulation race**, inherited verbatim from
-  `smrt-prompts`. A resolution whose database read is already in flight when a
-  concurrent `save()` / `delete()` invalidates the key can write the pre-write
-  value back afterwards, so that scope can serve a stale plan for up to the
-  30s TTL. It fails to a stale-but-valid plan, is self-correcting, and touches
-  no authoritative state — a playbook is not an authority boundary and every
-  step re-enforces at execution. Fixing it belongs with the deferred
-  "extract a shared override package" work in epic #2585, so all four
-  implementations gain an invalidation generation at once rather than this one
-  diverging.
+- **The cache carries an invalidation generation, and this is where it
+  diverges from `smrt-prompts`.** A resolution captures
+  `getPlaybookCacheGeneration(key, db)` before its asynchronous layer loads and
+  hands it back to `setCachedPlaybookBase()`; a concurrent `save()` / `delete()`
+  bumps the generation, and the in-flight resolution is then refused the cache
+  write instead of repopulating the key it just invalidated with the pre-write
+  value. Without it, "a stale entry is never served after a write" held only
+  until a read raced a write, and then failed for the full 30s TTL. Generations
+  are tracked per `(db, key)`, not per tenant, because an app-level row is
+  inherited by every tenant. `clearPlaybookCache()` bumps rather than resets
+  them, so a resolution that started before the clear cannot write back either.
+  `smrt-prompts` and `smrt-languages` still carry the unguarded version of this
+  race; fixing them is separate work.
 - **Restart vitest after adding a decorated class**; the manifest is generated
   at startup.
 

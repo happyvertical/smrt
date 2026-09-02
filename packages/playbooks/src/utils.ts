@@ -41,6 +41,12 @@ export const FAIL_CLOSED_CLASSIFICATION: CapabilityClassification = {
 
 const FAILURE_POLICIES = new Set<PlaybookFailurePolicy>(['abort', 'continue']);
 
+/**
+ * `<package>:<Class>` — the same qualified form STI discriminators and
+ * `@crossPackageRef` use. Both halves are required and neither may be padded.
+ */
+const QUALIFIED_MODEL_PATTERN = /^\S+:\S+$/;
+
 /** Frozen so a definition's default plane list can never be mutated in place. */
 const BROWSER_ONLY_PLANES: readonly PlaybookPlane[] = Object.freeze([
   'browser',
@@ -229,7 +235,10 @@ export function normalizeSteps(
           throw new Error(`${stepContext} requires a qualified model name`);
         }
 
-        if (!model.includes(':')) {
+        // Both halves must be present and unpadded: ':', '@pkg:', and ':Order'
+        // all contain a separator but identify no model, and would resolve
+        // into a plan that no classifier or executor lookup can ever match.
+        if (!QUALIFIED_MODEL_PATTERN.test(model)) {
           throw new Error(
             `${stepContext} model "${model}" must be a qualified pair such as "@happyvertical/smrt-commerce:Order"`,
           );

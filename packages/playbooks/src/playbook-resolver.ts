@@ -1,6 +1,10 @@
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
-import { getCachedPlaybookBase, setCachedPlaybookBase } from './cache.js';
+import {
+  getCachedPlaybookBase,
+  getPlaybookCacheGeneration,
+  setCachedPlaybookBase,
+} from './cache.js';
 import { PlaybookOverrideCollection } from './collections/PlaybookOverrideCollection.js';
 import { PlaybookRegistry } from './playbook-registry.js';
 import type {
@@ -70,6 +74,12 @@ async function loadPlaybookBase(
     return cached;
   }
 
+  // Capture the invalidation generation before the asynchronous layer loads. A
+  // write that lands while they are in flight bumps it, and the cache write
+  // below is then refused rather than repopulating the key the write just
+  // invalidated with the pre-write value.
+  const loadedAtGeneration = getPlaybookCacheGeneration(key, cacheDb);
+
   const config = getPlaybookConfig();
   const layers = [
     normalizePlaybookLayer(
@@ -102,7 +112,7 @@ async function loadPlaybookBase(
     metadata: merged.metadata,
   });
 
-  setCachedPlaybookBase(key, tenantId, cacheDb, value);
+  setCachedPlaybookBase(key, tenantId, cacheDb, value, loadedAtGeneration);
   return value;
 }
 
