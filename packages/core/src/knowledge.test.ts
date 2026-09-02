@@ -72,11 +72,87 @@ describe('buildDomainKnowledgeManifest', () => {
       'Order',
       'OrderLinks',
       'OrderTree',
+      'OrderTreeCollection',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
       expect.arrayContaining(['orders.get', 'order_get', 'order_approve']),
     );
+  });
+
+  it('reports full CRUD and eligible custom-method surfaces when api/cli/mcp config is omitted (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const orderLinksSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:OrderLinks',
+    );
+    const orderTreeSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:OrderTree',
+    );
+
+    // OrderLinks has no `api`/`cli`/`mcp` config at all — an omitted config
+    // key is full CRUD, not a closed surface, mirroring the generators'
+    // actual defaults.
+    for (const kind of ['api', 'cli', 'mcp'] as const) {
+      const names = orderLinksSurfaces
+        .filter((surface) => surface.kind === kind)
+        .map((surface) => surface.operation);
+      expect(names.sort()).toEqual([
+        'create',
+        'delete',
+        'get',
+        'list',
+        'update',
+      ]);
+    }
+
+    // OrderTree additionally declares a public custom method (`archive`) and
+    // a non-public one (`internalRebalance`); only the public method is
+    // eligible, matching MCPGenerator/CLIGenerator/APIGenerator's own
+    // isPublic gate.
+    for (const kind of ['api', 'cli', 'mcp'] as const) {
+      const names = orderTreeSurfaces
+        .filter((surface) => surface.kind === kind)
+        .map((surface) => surface.operation);
+      expect(names.sort()).toEqual([
+        'archive',
+        'create',
+        'delete',
+        'get',
+        'list',
+        'update',
+      ]);
+    }
+    expect(
+      orderTreeSurfaces.some((surface) => surface.operation === 'archive'),
+    ).toBe(true);
+    expect(
+      orderTreeSurfaces.some(
+        (surface) => surface.operation === 'internalRebalance',
+      ),
+    ).toBe(false);
+  });
+
+  it('never reports CRUD for an undecorated SmrtCollection subclass, only its custom REST actions (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const collectionSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:OrderTreeCollection',
+    );
+
+    // A hand-written `class OrderTreeCollection extends
+    // SmrtCollection<OrderTree>` never registers with ObjectRegistry, so
+    // MCPGenerator/CLIGenerator generate nothing under its own name — only
+    // its collection-scoped custom action reaches a REST route.
+    expect(
+      collectionSurfaces.filter((surface) => surface.kind === 'mcp'),
+    ).toEqual([]);
+    expect(
+      collectionSurfaces.filter((surface) => surface.kind === 'cli'),
+    ).toEqual([]);
+    expect(
+      collectionSurfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation),
+    ).toEqual(['findAbandoned']);
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -440,9 +516,45 @@ function fixtureManifest(): SmartObjectManifest {
         qualifiedName: '@example/orders:OrderTree',
         collection: 'order_trees',
         fields: {},
-        methods: {},
+        methods: {
+          archive: {
+            name: 'archive',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          internalRebalance: {
+            name: 'internalRebalance',
+            async: false,
+            parameters: [],
+            returnType: 'void',
+            isStatic: false,
+            isPublic: false,
+          },
+        },
         decoratorConfig: {},
         extends: 'SmrtHierarchical',
+      },
+      '@example/orders:OrderTreeCollection': {
+        className: 'OrderTreeCollection',
+        qualifiedName: '@example/orders:OrderTreeCollection',
+        collection: 'order_trees',
+        fields: {},
+        methods: {
+          findAbandoned: {
+            name: 'findAbandoned',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<OrderTree[]>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'OrderTree',
       },
       '@example/orders:HiddenOrder': {
         className: 'HiddenOrder',

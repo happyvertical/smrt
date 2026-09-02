@@ -448,8 +448,7 @@ function configuredSurfaces(
   object: SmartObjectDefinition,
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
-  if (!config) return [];
-  const operations = configuredOperations(config);
+  const operations = configuredOperations(kind, object, config);
   return operations.map((operation) => ({
     kind,
     name:
@@ -463,17 +462,86 @@ function configuredSurfaces(
   }));
 }
 
-function configuredOperations(config: unknown): string[] {
-  if (config === true) return [...STANDARD_OPERATIONS];
-  if (!config || typeof config !== 'object' || Array.isArray(config)) {
-    return [];
+/**
+ * A hand-written `SmrtCollection` subclass (`class WidgetCollection extends
+ * SmrtCollection<Widget>`) is discovered structurally by the scanner and
+ * lands in the manifest even without its own `@smrt()` decorator, so it never
+ * registers with `ObjectRegistry`. `MCPGenerator`/`CLIGenerator` iterate
+ * `ObjectRegistry`, not the manifest, so such a class never gets its own
+ * MCP tools or CLI commands — only its collection-scoped custom actions get
+ * REST routes (`resolveApiActionSet` in `vite-plugin/sveltekit-generator.ts`
+ * mirrors this same extends-chain check). Reporting full CRUD for it here
+ * would over-report a surface that does not exist, trading the #2619
+ * under-report for a new false positive.
+ */
+function isSurfaceCollectionClass(object: SmartObjectDefinition): boolean {
+  return object.extends === 'SmrtCollection' || Boolean(object.extendsTypeArg);
+}
+
+/**
+ * Operations exposed for one object's `api`/`cli`/`mcp` surface, derived from
+ * the same defaults `APIGenerator`/`CLIGenerator`/`MCPGenerator` apply rather
+ * than from the presence of a config key (#2619): an omitted config is full
+ * CRUD, not a closed surface, and every generator gates custom (non-CRUD,
+ * public) methods with the same rule — an `include` list, when present, is
+ * the COMPLETE allowlist for custom methods too; without one, every public
+ * method not explicitly excluded is exposed by default. Only `config ===
+ * false` closes the surface entirely.
+ */
+function configuredOperations(
+  kind: 'api' | 'cli' | 'mcp',
+  object: SmartObjectDefinition,
+  config: unknown,
+): string[] {
+  if (config === false) return [];
+  const collectionClass = isSurfaceCollectionClass(object);
+  // Undecorated collection classes never register with ObjectRegistry, so
+  // MCP/CLI expose nothing under their own name; only REST custom actions
+  // reach them.
+  if (collectionClass && kind !== 'api') return [];
+  const crud = collectionClass ? [] : resolveCrudOperations(config);
+  const custom = resolveCustomMethodNames(
+    Object.entries(object.methods),
+    config,
+  );
+  return [...crud, ...custom];
+}
+
+function resolveCrudOperations(config: unknown): string[] {
+  const { include, exclude } = includeExcludeConfig(config);
+  const base = include
+    ? STANDARD_OPERATIONS.filter((operation) => include.includes(operation))
+    : [...STANDARD_OPERATIONS];
+  if (!exclude || exclude.length === 0) return base;
+  const excluded = new Set(exclude);
+  return base.filter((operation) => !excluded.has(operation));
+}
+
+function resolveCustomMethodNames(
+  methods: Iterable<[string, { isPublic?: boolean }]>,
+  config: unknown,
+): string[] {
+  const { include, exclude } = includeExcludeConfig(config);
+  const excluded = new Set(exclude ?? []);
+  const names: string[] = [];
+  for (const [name, method] of methods) {
+    if (STANDARD_OPERATIONS.includes(name)) continue;
+    if (!method.isPublic) continue;
+    if (excluded.has(name)) continue;
+    if (include !== undefined && !include.includes(name)) continue;
+    names.push(name);
   }
-  const recordConfig = config as { include?: string[]; exclude?: string[] };
-  const base = Array.isArray(recordConfig.include)
-    ? recordConfig.include
-    : STANDARD_OPERATIONS;
-  const excluded = new Set(recordConfig.exclude ?? []);
-  return [...new Set(base.filter((operation) => !excluded.has(operation)))];
+  return names;
+}
+
+function includeExcludeConfig(config: unknown): {
+  include?: string[];
+  exclude?: string[];
+} {
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    return {};
+  }
+  return config as { include?: string[]; exclude?: string[] };
 }
 
 function aiSurfaces(object: SmartObjectDefinition): DomainKnowledgeSurface[] {
