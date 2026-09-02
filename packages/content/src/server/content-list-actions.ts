@@ -920,6 +920,10 @@ async function applyWorkflow(
       await save();
       return;
     case 'permanent-delete':
+      // Content owns cascading references, so a revision-guarded destructive
+      // delete must never use the core's documented non-transaction fallback.
+      // Probe through the public object API before any cascade can begin.
+      await content.withTransaction(async () => undefined);
       await content.delete({ expectedUpdatedAt });
       return;
     case 'automated-review':

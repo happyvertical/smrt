@@ -730,6 +730,56 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     expect(setup.collection.rows).toHaveLength(3);
   });
 
+  it('fails permanent deletion before mutation without transaction support', async () => {
+    const collection = new MemoryContentCollection([
+      {
+        id: 'deleted',
+        title: 'Deleted',
+        status: 'deleted',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        tenantId: 'tenant-a',
+      },
+    ]);
+    const content = await collection.get('deleted');
+    if (!content) throw new Error('expected deleted content');
+    const remove = vi.spyOn(content, 'delete');
+    content.withTransaction = async () => {
+      throw new Error('Object transaction requires transaction support');
+    };
+    const setup = harness({ collection });
+    const selection = {
+      scope: 'explicit-ids' as const,
+      rowIds: ['deleted'],
+    };
+    const target = { expectedCount: 1 };
+    const preview = await setup.adapter.preview(
+      actionRequest('preview', 'permanent-delete', selection, target),
+      setup.context,
+    );
+
+    const applied = await setup.adapter.apply(
+      actionRequest(
+        'apply',
+        'permanent-delete',
+        selection,
+        { ...target, confirmedCount: 1 },
+        { confirmationToken: preview.confirmationToken },
+      ),
+      setup.context,
+    );
+
+    expect(applied).toMatchObject({
+      ok: true,
+      details: {
+        accepted: 0,
+        failed: 1,
+        outcomes: [{ rowId: 'deleted', status: 'failed' }],
+      },
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(collection.rows).toHaveLength(1);
+  });
+
   it('isolates canonical metadata when concurrent calls reuse a request id', async () => {
     const collection = new MemoryContentCollection([
       {
