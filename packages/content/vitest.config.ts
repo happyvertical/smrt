@@ -7,6 +7,11 @@ import {
 } from '../../vitest.workspace.js';
 import { viteWorkspaceAliases } from './workspace-aliases.js';
 
+// Vitest resolves setupFiles as filesystem paths before Vite's workspace alias
+// hook runs. Keep the Svelte harness explicit so the full Content suite starts
+// from a clean workspace checkout as well as a prebuilt one.
+const svelteSetupPath = resolve(__dirname, '../vitest/src/svelte-setup.ts');
+
 export default defineConfig({
   plugins: [svelte(), smrtVitestPlugin({ setupFile: smrtVitestSetupPath })],
   resolve: {
@@ -25,7 +30,7 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.ts'],
     setupFiles: [
       smrtVitestSetupPath,
-      '@happyvertical/smrt-vitest/svelte-setup',
+      svelteSetupPath,
     ],
     testTimeout: 30000,
     // The smrt-vitest setup's async afterAll dynamically loads smrt-core; under
