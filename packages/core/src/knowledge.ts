@@ -13,6 +13,7 @@ import type {
   DomainKnowledgeSurface,
   DomainKnowledgeTenant,
 } from '@happyvertical/smrt-types';
+import { resolveCustomActionMetadata } from './generators/custom-action.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -81,6 +82,50 @@ const RELATIONSHIP_FIELD_TYPES = new Set([
 ]);
 
 const STANDARD_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'];
+
+/**
+ * Framework abstract base classes (`SmrtObject`, `SmrtCollection`, ...) carry
+ * no `@smrt()` decorator of their own, so they never register with
+ * `ObjectRegistry` and never get MCP tools, CLI commands, or REST routes
+ * under their own name — only their `@smrt()`-decorated subclasses do. The
+ * scanner still emits a manifest entry for them (so cross-package `extends`
+ * chains can resolve), and — because a foundation package like
+ * `@happyvertical/smrt-core` declares them as real local classes rather than
+ * an external reference — that entry has `decoratorConfig: {}`,
+ * indistinguishable in shape from a genuine bare `@smrt()`. Without this
+ * exclusion, #2619's "omitted config is full CRUD" rule reports a synthetic
+ * `smrtobjects.list`/`smrtcollections.create`/... surface for every one of
+ * them (317 phantom surfaces in `@happyvertical/smrt-core`'s own artifact).
+ *
+ * Mirrors `FRAMEWORK_BASE_CLASSES` in
+ * `packages/scanner/src/inheritance-resolver.ts` — kept as a separate
+ * hardcoded list rather than imported (that package is a lower-level AST
+ * layer knowledge.ts has no reason to otherwise depend on), matching that
+ * set's own documented precedent of "extend the list" over generalizing a
+ * flag through the manifest shape.
+ *
+ * Most of these live in `@happyvertical/smrt-core` itself, but
+ * `SmrtReport`/`SmrtReportCollection` are declared in
+ * `@happyvertical/smrt-reports` — the owning package is per-name, not a
+ * single blanket package check.
+ */
+const FRAMEWORK_BASE_CLASS_PACKAGES = new Map([
+  ['SmrtObject', '@happyvertical/smrt-core'],
+  ['SmrtClass', '@happyvertical/smrt-core'],
+  ['SmrtCollection', '@happyvertical/smrt-core'],
+  ['SmrtJunction', '@happyvertical/smrt-core'],
+  ['SmrtHierarchical', '@happyvertical/smrt-core'],
+  ['SmrtPolymorphicAssociation', '@happyvertical/smrt-core'],
+  ['SmrtReport', '@happyvertical/smrt-reports'],
+  ['SmrtReportCollection', '@happyvertical/smrt-reports'],
+]);
+
+function isFrameworkBaseClass(object: SmartObjectDefinition): boolean {
+  return (
+    object.packageName !== undefined &&
+    FRAMEWORK_BASE_CLASS_PACKAGES.get(object.className) === object.packageName
+  );
+}
 
 /**
  * Markdown inline links whose target is a `.md` file — `[label](agents/x.md)`,
@@ -168,7 +213,9 @@ export function buildDomainKnowledgeManifest(
   const manifestObjects = Object.values(options.manifest.objects).filter(
     (object) => object.decoratorConfig?.knowledge !== false,
   );
-  const objects = manifestObjects.map((object) => buildKnowledgeObject(object));
+  const objects = manifestObjects.map((object) =>
+    buildKnowledgeObject(object, options.manifest),
+  );
   const surfaces = objects.flatMap((object) => object.surfaces);
   const manifestJson = stableJson(normalizeManifestForHash(options.manifest));
   const agentSurface = normalizeAgentSurface(options.agentSurface);
@@ -263,6 +310,7 @@ function agentSurfaceSourcePaths(
 
 function buildKnowledgeObject(
   object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
 ): DomainKnowledgeObject {
   const knowledge =
     typeof object.decoratorConfig?.knowledge === 'object'
@@ -326,7 +374,7 @@ function buildKnowledgeObject(
       conflictColumns && conflictColumns.length > 0
         ? conflictColumns
         : undefined,
-    surfaces: objectSurfaces(object),
+    surfaces: objectSurfaces(object, manifest),
     relationshipFeatures: relationshipFeatures(object, fields),
     tags: knowledge.tags ?? [],
     summary: knowledge.summary,
@@ -434,11 +482,12 @@ function methodSignatures(
 
 function objectSurfaces(
   object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   return [
-    ...configuredSurfaces('api', object),
-    ...configuredSurfaces('cli', object),
-    ...configuredSurfaces('mcp', object),
+    ...configuredSurfaces('api', object, manifest),
+    ...configuredSurfaces('cli', object, manifest),
+    ...configuredSurfaces('mcp', object, manifest),
     ...aiSurfaces(object),
   ];
 }
@@ -446,34 +495,221 @@ function objectSurfaces(
 function configuredSurfaces(
   kind: 'api' | 'cli' | 'mcp',
   object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
-  if (!config) return [];
-  const operations = configuredOperations(config);
-  return operations.map((operation) => ({
-    kind,
-    name:
-      kind === 'api'
-        ? `${object.collection}.${operation}`
-        : `${object.className.toLowerCase()}_${operation}`,
-    operation,
-    objectName: object.qualifiedName ?? object.className,
-    path: kind === 'api' ? apiPath(object, operation) : undefined,
-    method: kind === 'api' ? apiMethod(operation) : undefined,
-  }));
+  const collectionClass = isSurfaceCollectionClass(manifest, object);
+  const operations = configuredOperations(kind, object, config, manifest);
+  return operations.map((operation) => {
+    const route =
+      kind === 'api' && !STANDARD_OPERATIONS.includes(operation)
+        ? apiCustomRoute(object, operation, collectionClass)
+        : undefined;
+    return {
+      kind,
+      name: surfaceName(kind, object, operation),
+      operation,
+      objectName: object.qualifiedName ?? object.className,
+      path: kind === 'api' ? apiPath(object, operation, route) : undefined,
+      method: kind === 'api' ? apiMethod(operation, route) : undefined,
+    };
+  });
 }
 
-function configuredOperations(config: unknown): string[] {
-  if (config === true) return [...STANDARD_OPERATIONS];
-  if (!config || typeof config !== 'object' || Array.isArray(config)) {
-    return [];
+/**
+ * `MCPGenerator.buildCustomActionTool()` registers a custom-action tool as
+ * `` `${lowerName}_${methodName}`.toLowerCase() `` — lowercasing the WHOLE
+ * joined string, not just the object-name prefix. A CRUD verb is already
+ * lowercase so this is a no-op there, but a camelCase custom method name
+ * (`findByDimensions`) would otherwise report a surface `name` the real tool
+ * is never registered under. `CLIGenerator.listCommands()` does not
+ * lowercase the method half of its command string, so `cli` keeps the
+ * operation as-authored.
+ *
+ * Note the shapes differ from the transports' own: a `cli` surface `name`
+ * here is `object_operation`, while the command a user types is
+ * `object:operation`. `operation` is the field to correlate on.
+ */
+function surfaceName(
+  kind: 'api' | 'cli' | 'mcp',
+  object: SmartObjectDefinition,
+  operation: string,
+): string {
+  if (kind === 'api') return `${object.collection}.${operation}`;
+  const name = `${object.className.toLowerCase()}_${operation}`;
+  return kind === 'mcp' ? name.toLowerCase() : name;
+}
+
+/**
+ * A hand-written `SmrtCollection` subclass (`class WidgetCollection extends
+ * SmrtCollection<Widget>`) is discovered structurally by the scanner and
+ * lands in the manifest even without its own `@smrt()` decorator, so it never
+ * registers with `ObjectRegistry`. `MCPGenerator`/`CLIGenerator` iterate
+ * `ObjectRegistry`, not the manifest, so such a class never gets its own
+ * MCP tools or CLI commands — only its collection-scoped custom actions get
+ * REST routes. Reporting full CRUD for it here would over-report a surface
+ * that does not exist, trading the #2619 under-report for a new false
+ * positive.
+ *
+ * A deeper subclass (`SpecialCollection extends WidgetCollection`) carries no
+ * `extendsTypeArg` of its own, so this walks the extends chain through the
+ * manifest — mirroring `isCollectionManifestClass` in
+ * `vite-plugin/web-collections.ts` (kept as a separate, lean implementation
+ * here rather than imported: that module pulls in the full SvelteKit route
+ * generator transitively, which would balloon the standalone `./knowledge`
+ * build entry for a ~15-line check).
+ */
+function isSurfaceCollectionClass(
+  manifest: SmartObjectManifest,
+  object: SmartObjectDefinition,
+  seen: Set<string> = new Set(),
+): boolean {
+  // Truthy check (not `!== undefined`) mirrors the scanner: a non-generic
+  // base emitting `extendsTypeArg: null` must not be misread as a collection.
+  if (object.extends === 'SmrtCollection' || object.extendsTypeArg) {
+    return true;
   }
-  const recordConfig = config as { include?: string[]; exclude?: string[] };
-  const base = Array.isArray(recordConfig.include)
-    ? recordConfig.include
-    : STANDARD_OPERATIONS;
-  const excluded = new Set(recordConfig.exclude ?? []);
-  return [...new Set(base.filter((operation) => !excluded.has(operation)))];
+  const parentName = object.extendsQualified || object.extends;
+  if (!parentName || seen.has(parentName)) return false;
+  seen.add(parentName);
+  const parent = findManifestObjectByName(manifest, parentName, object);
+  return parent ? isSurfaceCollectionClass(manifest, parent, seen) : false;
+}
+
+function findManifestObjectByName(
+  manifest: SmartObjectManifest,
+  name: string,
+  owner: SmartObjectDefinition,
+): SmartObjectDefinition | undefined {
+  const entries = Object.entries(manifest.objects);
+  if (name.includes(':')) {
+    const exact = entries.find(
+      ([key, candidate]) => (candidate.qualifiedName ?? key) === name,
+    );
+    if (exact) return exact[1];
+  }
+  // Prefer a same-package parent before falling back to a bare simple name:
+  // an aggregated manifest can carry several classes sharing one simple name,
+  // and resolving the wrong one misclassifies the collection-class carve-out.
+  const ownerKey = entries.find(([, candidate]) => candidate === owner)?.[0];
+  const ownerPackage = manifestObjectPackage(owner, ownerKey);
+  if (ownerPackage) {
+    const packageLocal = entries.find(
+      ([key, candidate]) =>
+        manifestObjectPackage(candidate, key) === ownerPackage &&
+        candidate.className === name,
+    );
+    if (packageLocal) return packageLocal[1];
+  }
+  return entries.find(([, candidate]) => candidate.className === name)?.[1];
+}
+
+/**
+ * An object's owning package. `packageName` is optional on
+ * `SmartObjectDefinition` (older manifests and hand-built fixtures omit it),
+ * so fall back to the package half of the qualified name — and, when that is
+ * absent too, of the manifest key, which is qualified for every entry the
+ * scanner writes. Mirrors `manifestObjectPackage` in
+ * `vite-plugin/web-collections.ts`, key fallback included: without it an
+ * entry carrying only a qualified key resolves no package at all, the
+ * same-package preference is skipped, and a duplicate simple name can pick
+ * the wrong parent.
+ */
+function manifestObjectPackage(
+  object: SmartObjectDefinition,
+  manifestKey?: string,
+): string | undefined {
+  if (object.packageName) return object.packageName;
+  const qualifiedName = object.qualifiedName ?? manifestKey;
+  const separator = qualifiedName?.lastIndexOf(':') ?? -1;
+  return separator > 0 ? qualifiedName?.slice(0, separator) : undefined;
+}
+
+/**
+ * Operations exposed for one object's `api`/`cli`/`mcp` surface, derived from
+ * the same defaults `APIGenerator`/`CLIGenerator`/`MCPGenerator` apply rather
+ * than from the presence of a config key (#2619): an omitted config is full
+ * CRUD, not a closed surface, and every generator gates custom (non-CRUD,
+ * public) methods with the same rule — an `include` list, when present, is
+ * the COMPLETE allowlist for custom methods too; without one, every public
+ * method not explicitly excluded is exposed by default. Only `config ===
+ * false` closes the surface entirely.
+ */
+function configuredOperations(
+  kind: 'api' | 'cli' | 'mcp',
+  object: SmartObjectDefinition,
+  config: unknown,
+  manifest: SmartObjectManifest,
+): string[] {
+  if (config === false) return [];
+  if (isFrameworkBaseClass(object)) return [];
+  const collectionClass = isSurfaceCollectionClass(manifest, object);
+  // Undecorated collection classes never register with ObjectRegistry, so
+  // MCP/CLI expose nothing under their own name; only REST custom actions
+  // reach them.
+  if (collectionClass && kind !== 'api') return [];
+  const crud = collectionClass ? [] : resolveCrudOperations(config);
+  const custom = resolveCustomMethodNames(
+    Object.entries(object.methods),
+    config,
+  );
+  // REST additionally refuses a custom action whose receiver cannot exist —
+  // a collection class emits only collection-scoped routes, and a model class
+  // warns and skips a collection-scoped non-static method. Reporting one
+  // would advertise a route `generateRoutesForObject` never writes.
+  const eligible =
+    kind === 'api'
+      ? custom.filter(
+          (operation) =>
+            apiCustomRoute(object, operation, collectionClass) !== undefined,
+        )
+      : custom;
+  return [...crud, ...eligible];
+}
+
+function resolveCrudOperations(config: unknown): string[] {
+  const { include, exclude } = includeExcludeConfig(config);
+  const base = include
+    ? STANDARD_OPERATIONS.filter((operation) => include.includes(operation))
+    : [...STANDARD_OPERATIONS];
+  if (!exclude || exclude.length === 0) return base;
+  const excluded = new Set(exclude);
+  return base.filter((operation) => !excluded.has(operation));
+}
+
+function resolveCustomMethodNames(
+  methods: Iterable<[string, { isPublic?: boolean }]>,
+  config: unknown,
+): string[] {
+  const { include, exclude } = includeExcludeConfig(config);
+  const excluded = new Set(exclude ?? []);
+  const names: string[] = [];
+  for (const [name, method] of methods) {
+    if (STANDARD_OPERATIONS.includes(name)) continue;
+    if (!method.isPublic) continue;
+    if (excluded.has(name)) continue;
+    if (include !== undefined && !include.includes(name)) continue;
+    names.push(name);
+  }
+  return names;
+}
+
+function includeExcludeConfig(config: unknown): {
+  include?: string[];
+  exclude?: string[];
+} {
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    return {};
+  }
+  // A non-array `include`/`exclude` is treated as unset rather than
+  // throwing later on `.includes()` — mirrors the same defensive stance
+  // `shouldIncludeInApi` in `vite-plugin/sveltekit-generator.ts` takes for
+  // a scanned decorator config that failed to resolve to an array.
+  const record = config as { include?: unknown; exclude?: unknown };
+  return {
+    include: Array.isArray(record.include) ? record.include : undefined,
+    exclude: Array.isArray(record.exclude) ? record.exclude : undefined,
+  };
 }
 
 function aiSurfaces(object: SmartObjectDefinition): DomainKnowledgeSurface[] {
@@ -486,12 +722,150 @@ function aiSurfaces(object: SmartObjectDefinition): DomainKnowledgeSurface[] {
   }));
 }
 
-function apiPath(object: SmartObjectDefinition, operation: string): string {
-  const collection = object.decoratorConfig?.api;
-  const configuredPath =
-    typeof collection === 'object' && typeof collection.path === 'string'
-      ? collection.path
-      : object.collection.replaceAll('_', '-');
+/** Route facts for one custom action, as `generateRoutesForObject` emits it. */
+interface ApiCustomRoute {
+  scope: 'item' | 'collection';
+  segments: string[];
+  method: string;
+}
+
+/**
+ * Resolve a custom (non-CRUD) action's REST route the way the generator does,
+ * or `undefined` when no route is emitted for it at all.
+ *
+ * A custom action's path is NOT `/collection/action`: `generateRoutesForObject`
+ * nests an item-scoped action under `[id]`, and an instance method defaults to
+ * item scope. Reporting the collection-shaped path for every public instance
+ * method would advertise endpoints that do not exist — the exact failure this
+ * projection exists to avoid. Scope comes from the shared
+ * `resolveCustomActionMetadata`, the same resolver the REST, CLI, MCP, and
+ * WebMCP paths use, so a `routes` override cannot drift between them.
+ *
+ * `kebabRoutes` is a Vite-plugin option rather than manifest data, so an
+ * explicit `routes[action].path` is honored but the generator's optional
+ * kebab-casing of a derived segment is not visible here.
+ */
+function apiCustomRoute(
+  object: SmartObjectDefinition,
+  operation: string,
+  collectionClass: boolean,
+): ApiCustomRoute | undefined {
+  const method = object.methods[operation];
+  const apiConfig = object.decoratorConfig?.api;
+  const defaultScope: 'item' | 'collection' =
+    collectionClass || method?.isStatic ? 'collection' : 'item';
+  const scope = resolveActionScope(operation, method, apiConfig, defaultScope);
+
+  // Mirrors the generator's own skips: a collection class emits only
+  // collection-scoped routes, and a model class warns and skips a
+  // collection-scoped non-static method (no receiver to bind).
+  if (collectionClass) {
+    if (scope !== 'collection') return undefined;
+  } else if (scope === 'collection' && !method?.isStatic) {
+    return undefined;
+  }
+
+  const route = customRouteConfig(apiConfig, operation);
+  const overridden =
+    typeof route?.path === 'string'
+      ? route.path
+          .split('/')
+          .map((segment) => segment.trim())
+          .filter(Boolean)
+      : [];
+  return {
+    scope,
+    segments: overridden.length > 0 ? overridden : [operation],
+    method: normalizeApiMethod(route?.method),
+  };
+}
+
+/**
+ * The shared resolver validates as it resolves — a `routes` entry declaring
+ * `effect: 'read'` on a PUT/PATCH/DELETE route throws by design. This
+ * projection reads untrusted scanned config and must not fail the whole
+ * knowledge build for one malformed action (same defensive stance as
+ * {@link includeExcludeConfig}), so fall back to the receiver the method
+ * itself dictates — which a route-only override cannot change anyway.
+ */
+function resolveActionScope(
+  operation: string,
+  method: SmartObjectDefinition['methods'][string] | undefined,
+  apiConfig: unknown,
+  defaultScope: 'item' | 'collection',
+): 'item' | 'collection' {
+  try {
+    return resolveCustomActionMetadata({
+      actionName: operation,
+      method,
+      apiConfig,
+      defaultScope,
+    }).scope;
+  } catch {
+    return defaultScope;
+  }
+}
+
+function customRouteConfig(
+  apiConfig: unknown,
+  operation: string,
+): { path?: unknown; method?: unknown } | undefined {
+  if (typeof apiConfig !== 'object' || apiConfig === null) return undefined;
+  const routes = (apiConfig as { routes?: unknown }).routes;
+  if (typeof routes !== 'object' || routes === null) return undefined;
+  const route = (routes as Record<string, unknown>)[operation];
+  return typeof route === 'object' && route !== null
+    ? (route as { path?: unknown; method?: unknown })
+    : undefined;
+}
+
+/** Mirrors `normalizeApiHttpMethod` in `vite-plugin/sveltekit-generator.ts`. */
+function normalizeApiMethod(method: unknown): string {
+  const normalized =
+    typeof method === 'string' ? method.toUpperCase() : undefined;
+  switch (normalized) {
+    case 'GET':
+    case 'POST':
+    case 'PUT':
+    case 'PATCH':
+    case 'DELETE':
+      return normalized;
+    default:
+      return 'POST';
+  }
+}
+
+/**
+ * The collection segment of a generated REST route.
+ *
+ * `generateRoutesForObject` builds its route directory from
+ * `objectDef.collection` verbatim, and the runtime dispatcher in
+ * `generators/rest.ts` matches the URL segment against `info.collection`
+ * verbatim, so this reports that and nothing else (#2630).
+ *
+ * In particular it does NOT read `api.path`, which configures a different
+ * surface: `@happyvertical/smrt-agents`' own agent-facing route map derives
+ * `api.path ?? tableName.replace(/_/g, '-')`. Honoring it here produced a
+ * hybrid — `api.path` over `collection` — that matched neither transport and
+ * named endpoints that 404 on both.
+ */
+function apiCollectionSegment(object: SmartObjectDefinition): string {
+  return object.collection;
+}
+
+function apiPath(
+  object: SmartObjectDefinition,
+  operation: string,
+  route?: ApiCustomRoute,
+): string {
+  const configuredPath = apiCollectionSegment(object);
+  if (route) {
+    const base =
+      route.scope === 'collection'
+        ? `/${configuredPath}`
+        : `/${configuredPath}/[id]`;
+    return `${base}/${route.segments.join('/')}`;
+  }
   if (operation === 'list' || operation === 'create') {
     return `/${configuredPath}`;
   }
@@ -501,7 +875,8 @@ function apiPath(object: SmartObjectDefinition, operation: string): string {
   return `/${configuredPath}/${operation}`;
 }
 
-function apiMethod(operation: string): string {
+function apiMethod(operation: string, route?: ApiCustomRoute): string {
+  if (route) return route.method;
   switch (operation) {
     case 'list':
     case 'get':

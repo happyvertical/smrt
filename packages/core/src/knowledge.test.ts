@@ -72,11 +72,348 @@ describe('buildDomainKnowledgeManifest', () => {
       'Order',
       'OrderLinks',
       'OrderTree',
+      'OrderTreeCollection',
+      'SpecialOrderTreeCollection',
+      'SmrtObject',
+      'SmrtReport',
+      'SmrtObject',
+      'RoutedOrder',
+      'LegacyPathOrder',
+      'ThrowingRouteOrder',
+      'MalformedConfigItem',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
       expect.arrayContaining(['orders.get', 'order_get', 'order_approve']),
     );
+  });
+
+  it('reports full CRUD and eligible custom-method surfaces when api/cli/mcp config is omitted (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const orderLinksSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:OrderLinks',
+    );
+    const orderTreeSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:OrderTree',
+    );
+
+    // OrderLinks has no `api`/`cli`/`mcp` config at all — an omitted config
+    // key is full CRUD, not a closed surface, mirroring the generators'
+    // actual defaults.
+    for (const kind of ['api', 'cli', 'mcp'] as const) {
+      const names = orderLinksSurfaces
+        .filter((surface) => surface.kind === kind)
+        .map((surface) => surface.operation);
+      expect(names.sort()).toEqual([
+        'create',
+        'delete',
+        'get',
+        'list',
+        'update',
+      ]);
+    }
+
+    // OrderTree additionally declares two public custom methods (`archive`,
+    // `findByReference`) and a non-public one (`internalRebalance`); only
+    // the public methods are eligible, matching
+    // MCPGenerator/CLIGenerator/APIGenerator's own isPublic gate.
+    for (const kind of ['api', 'cli', 'mcp'] as const) {
+      const names = orderTreeSurfaces
+        .filter((surface) => surface.kind === kind)
+        .map((surface) => surface.operation);
+      expect(names.sort()).toEqual([
+        'archive',
+        'create',
+        'delete',
+        'findByReference',
+        'get',
+        'list',
+        'update',
+      ]);
+    }
+    expect(
+      orderTreeSurfaces.some((surface) => surface.operation === 'archive'),
+    ).toBe(true);
+    expect(
+      orderTreeSurfaces.some(
+        (surface) => surface.operation === 'internalRebalance',
+      ),
+    ).toBe(false);
+
+    // MCPGenerator's `buildCustomActionTool()` lowercases the WHOLE joined
+    // `${lowerName}_${methodName}` tool name, not just the object-name
+    // prefix, so a camelCase method name must be reported under its real
+    // (fully lowercased) tool id. CLIGenerator's `object:methodName` command
+    // string does not lowercase the method half, so `cli` keeps it as
+    // authored.
+    const findByReferenceMcp = orderTreeSurfaces.find(
+      (surface) =>
+        surface.kind === 'mcp' && surface.operation === 'findByReference',
+    );
+    const findByReferenceCli = orderTreeSurfaces.find(
+      (surface) =>
+        surface.kind === 'cli' && surface.operation === 'findByReference',
+    );
+    expect(findByReferenceMcp?.name).toBe('ordertree_findbyreference');
+    expect(findByReferenceCli?.name).toBe('ordertree_findByReference');
+  });
+
+  it('never reports CRUD for an undecorated SmrtCollection subclass, only its custom REST actions (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const collectionSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/orders:OrderTreeCollection',
+    );
+
+    // A hand-written `class OrderTreeCollection extends
+    // SmrtCollection<OrderTree>` never registers with ObjectRegistry, so
+    // MCPGenerator/CLIGenerator generate nothing under its own name — only
+    // its collection-scoped custom action reaches a REST route.
+    expect(
+      collectionSurfaces.filter((surface) => surface.kind === 'mcp'),
+    ).toEqual([]);
+    expect(
+      collectionSurfaces.filter((surface) => surface.kind === 'cli'),
+    ).toEqual([]);
+    expect(
+      collectionSurfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation),
+    ).toEqual(['findAbandoned']);
+  });
+
+  it('walks the extends chain so a deeper collection subclass is still recognized (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const deepSurfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:SpecialOrderTreeCollection',
+    );
+
+    // `SpecialOrderTreeCollection extends OrderTreeCollection` carries no
+    // `extendsTypeArg` of its own — only its base does. Without walking the
+    // extends chain through the manifest, this class would be mistaken for a
+    // row model and gain a synthetic full-CRUD surface it does not have.
+    expect(deepSurfaces.filter((surface) => surface.kind === 'mcp')).toEqual(
+      [],
+    );
+    expect(deepSurfaces.filter((surface) => surface.kind === 'cli')).toEqual(
+      [],
+    );
+    expect(
+      deepSurfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation),
+    ).toEqual(['findEscalated']);
+  });
+
+  it('reports no surfaces for a framework base class scanned in its own foundation package (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+
+    // `@happyvertical/smrt-core:SmrtObject` has `decoratorConfig: {}` — the
+    // same shape as a genuine bare `@smrt()` — but it carries no decorator
+    // of its own and never registers with ObjectRegistry. Without this
+    // exclusion, the "omitted config is full CRUD" rule would fabricate a
+    // synthetic `smrtobjects.list`/`.create`/... surface for it (317 phantom
+    // surfaces were observed across @happyvertical/smrt-core's own
+    // framework base classes before this fix).
+    expect(
+      artifact.surfaces.filter(
+        (surface) =>
+          surface.objectName === '@happyvertical/smrt-core:SmrtObject',
+      ),
+    ).toEqual([]);
+  });
+
+  it('resolves the framework-base exclusion per owning package, not by class name alone (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+
+    // SmrtReport/SmrtReportCollection live in @happyvertical/smrt-reports,
+    // not @happyvertical/smrt-core — the exclusion must still catch them.
+    expect(
+      artifact.surfaces.filter(
+        (surface) =>
+          surface.objectName === '@happyvertical/smrt-reports:SmrtReport',
+      ),
+    ).toEqual([]);
+
+    // A same-named `SmrtObject` in an unrelated third package is a genuine
+    // application class (however unlikely the name collision) and must
+    // still get its normal full-CRUD surface — a naive className-only check
+    // would wrongly suppress it.
+    const unrelatedSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === '@example/other-pkg:SmrtObject',
+    );
+    expect(unrelatedSurfaces.length).toBeGreaterThan(0);
+    expect(
+      unrelatedSurfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation)
+        .sort(),
+    ).toEqual(['create', 'delete', 'get', 'list', 'update']);
+  });
+
+  it('treats a malformed non-array include/exclude as unset rather than throwing or substring-matching (#2619)', () => {
+    // `mcp: { include: 'list' }` (a bare string, not an array) must not
+    // reach `.includes()` as-is: for a string that would silently perform
+    // substring matching instead of array membership, and for other
+    // malformed values could throw outright.
+    expect(() => buildFixtureArtifact(rootDir)).not.toThrow();
+
+    const artifact = buildFixtureArtifact(rootDir);
+    const mcpSurfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:MalformedConfigItem' &&
+        surface.kind === 'mcp',
+    );
+    // Falls back to "no include list": full CRUD plus the eligible public
+    // custom method, exactly as if `mcp: {}` had been declared.
+    expect(mcpSurfaces.map((surface) => surface.operation).sort()).toEqual([
+      'create',
+      'delete',
+      'exportData',
+      'get',
+      'list',
+      'update',
+    ]);
+  });
+
+  it("reports a custom action's REST route the way the generator emits it (#2619)", () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const apiSurface = (objectName: string, operation: string) =>
+      artifact.surfaces.find(
+        (surface) =>
+          surface.kind === 'api' &&
+          surface.objectName === objectName &&
+          surface.operation === operation,
+      );
+
+    // `generateRoutesForObject` nests an item-scoped action under `[id]`, and
+    // a public INSTANCE method defaults to item scope. Reporting
+    // `/order_trees/archive` would advertise an endpoint that is never
+    // generated.
+    expect(apiSurface('@example/orders:OrderTree', 'archive')).toMatchObject({
+      path: '/order_trees/[id]/archive',
+      method: 'POST',
+    });
+
+    // A STATIC method defaults to collection scope — no `[id]` segment.
+    expect(apiSurface('@example/orders:Order', 'approve')).toMatchObject({
+      path: '/orders/approve',
+      method: 'POST',
+    });
+
+    // A collection class's action is collection-scoped for the same reason.
+    expect(
+      apiSurface('@example/orders:OrderTreeCollection', 'findAbandoned'),
+    ).toMatchObject({ path: '/order_trees/findAbandoned', method: 'POST' });
+
+    // An explicit `routes` override wins for both path and method.
+    expect(
+      apiSurface('@example/orders:RoutedOrder', 'exportCsv'),
+    ).toMatchObject({
+      path: '/routed_orders/[id]/export-csv',
+      method: 'GET',
+    });
+
+    // CRUD paths are unchanged by the custom-action resolution.
+    expect(apiSurface('@example/orders:OrderTree', 'list')?.path).toBe(
+      '/order_trees',
+    );
+    expect(apiSurface('@example/orders:OrderTree', 'get')?.path).toBe(
+      '/order_trees/[id]',
+    );
+
+    // The collection segment is the manifest `collection` VERBATIM. A
+    // collection-level `api.path` must NOT be consulted: it configures
+    // smrt-agents' route map, while the SvelteKit generator and the runtime
+    // dispatcher both serve `collection` unmodified, so honoring it here
+    // would name endpoints that 404 on both (#2630).
+    expect(apiSurface('@example/orders:LegacyPathOrder', 'list')?.path).toBe(
+      '/legacy_orders',
+    );
+    expect(apiSurface('@example/orders:LegacyPathOrder', 'get')?.path).toBe(
+      '/legacy_orders/[id]',
+    );
+    expect(
+      apiSurface('@example/orders:LegacyPathOrder', 'reconcile')?.path,
+    ).toBe('/legacy_orders/[id]/reconcile');
+    // ...and no emitted surface anywhere uses the override value.
+    expect(
+      artifact.surfaces.filter((surface) =>
+        (surface.path ?? '').includes('orders-v1'),
+      ),
+    ).toEqual([]);
+  });
+
+  it('survives a routes config the shared resolver rejects (#2619)', () => {
+    // `resolveCustomActionMetadata` throws on `effect: 'read'` + DELETE. The
+    // projection reads untrusted scanned config, so one malformed action must
+    // not fail `dev:knowledge-check`/`docs:agents` for the whole package.
+    expect(() => buildFixtureArtifact(rootDir)).not.toThrow();
+
+    const artifact = buildFixtureArtifact(rootDir);
+    const purge = artifact.surfaces.find(
+      (surface) =>
+        surface.kind === 'api' &&
+        surface.objectName === '@example/orders:ThrowingRouteOrder' &&
+        surface.operation === 'purge',
+    );
+    // Scope falls back to the receiver the method itself dictates — an
+    // instance method is item-scoped, which a route-only override cannot
+    // change. The declared `method` is read on its own non-throwing path, so
+    // it is still reported as authored rather than silently normalized away.
+    expect(purge).toMatchObject({
+      path: '/throwing_route_orders/[id]/purge',
+      method: 'DELETE',
+    });
+  });
+
+  it('derives the owning package from a qualified manifest key (#2619)', () => {
+    // An entry carrying only a qualified KEY — no `packageName`, no
+    // `qualifiedName` — must still resolve its package, or the same-package
+    // preference is skipped and a duplicate simple name picks the wrong
+    // parent, misclassifying the collection-class carve-out.
+    const manifest = fixtureManifest();
+    // The DECOY is inserted FIRST, and this ordering is the whole test: string
+    // keys keep insertion order, so the bare simple-name fallback finds this
+    // one. Only the same-package preference — which needs the package derived
+    // from the qualified KEY, since neither entry has `packageName` or
+    // `qualifiedName` — reaches the real base below. Reverting
+    // `manifestObjectPackage` to read only `qualifiedName` makes this test
+    // fail, which is what makes it a regression test rather than a tautology.
+    manifest.objects['@decoy/pkg:KeyOnlyBase'] = {
+      className: 'KeyOnlyBase',
+      collection: 'decoys',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'SmrtObject',
+    } as SmartObjectManifest['objects'][string];
+    manifest.objects['@key-only/pkg:KeyOnlyBase'] = {
+      className: 'KeyOnlyBase',
+      collection: 'key_only_bases',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'KeyOnlyRow',
+    } as SmartObjectManifest['objects'][string];
+    manifest.objects['@key-only/pkg:KeyOnlyChild'] = {
+      className: 'KeyOnlyChild',
+      collection: 'key_only_children',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'KeyOnlyBase',
+    } as SmartObjectManifest['objects'][string];
+
+    const artifact = buildDomainKnowledgeManifest({ manifest, rootDir });
+    const childSurfaces = artifact.surfaces.filter(
+      (surface) => surface.objectName === 'KeyOnlyChild',
+    );
+
+    // Resolved through its own package's collection base, so the child is a
+    // collection class: no CRUD, and nothing at all on mcp/cli.
+    expect(childSurfaces).toEqual([]);
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -440,9 +777,75 @@ function fixtureManifest(): SmartObjectManifest {
         qualifiedName: '@example/orders:OrderTree',
         collection: 'order_trees',
         fields: {},
-        methods: {},
+        methods: {
+          archive: {
+            name: 'archive',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+          internalRebalance: {
+            name: 'internalRebalance',
+            async: false,
+            parameters: [],
+            returnType: 'void',
+            isStatic: false,
+            isPublic: false,
+          },
+          findByReference: {
+            name: 'findByReference',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<OrderTree | null>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
         decoratorConfig: {},
         extends: 'SmrtHierarchical',
+      },
+      '@example/orders:OrderTreeCollection': {
+        className: 'OrderTreeCollection',
+        qualifiedName: '@example/orders:OrderTreeCollection',
+        collection: 'order_trees',
+        fields: {},
+        methods: {
+          findAbandoned: {
+            name: 'findAbandoned',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<OrderTree[]>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'OrderTree',
+      },
+      '@example/orders:SpecialOrderTreeCollection': {
+        className: 'SpecialOrderTreeCollection',
+        qualifiedName: '@example/orders:SpecialOrderTreeCollection',
+        collection: 'order_trees',
+        fields: {},
+        methods: {
+          findEscalated: {
+            name: 'findEscalated',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<OrderTree[]>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        // A deeper collection subclass carries no `extendsTypeArg` of its
+        // own — only its `OrderTreeCollection` base does. Recognizing it as
+        // a collection class requires walking the extends chain (#2619).
+        extends: 'OrderTreeCollection',
+        extendsQualified: '@example/orders:OrderTreeCollection',
       },
       '@example/orders:HiddenOrder': {
         className: 'HiddenOrder',
@@ -452,6 +855,157 @@ function fixtureManifest(): SmartObjectManifest {
         methods: {},
         decoratorConfig: { knowledge: false },
         extends: 'SmrtObject',
+      },
+      // A foundation package (e.g. `@happyvertical/smrt-core` itself)
+      // declares its own framework base classes as real local classes, so
+      // the scanner emits a manifest entry for them too — with
+      // `decoratorConfig: {}`, indistinguishable in shape from a genuine
+      // bare `@smrt()`. They carry no decorator of their own and never
+      // reach ObjectRegistry (#2619).
+      '@happyvertical/smrt-core:SmrtObject': {
+        className: 'SmrtObject',
+        qualifiedName: '@happyvertical/smrt-core:SmrtObject',
+        packageName: '@happyvertical/smrt-core',
+        collection: 'smrtobjects',
+        fields: {},
+        methods: {
+          describe: {
+            name: 'describe',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<string>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtClass',
+      },
+      // `SmrtReport`/`SmrtReportCollection` are framework base classes too,
+      // but declared in `@happyvertical/smrt-reports`, not
+      // `@happyvertical/smrt-core` — the owning package is per-name (#2619).
+      '@happyvertical/smrt-reports:SmrtReport': {
+        className: 'SmrtReport',
+        qualifiedName: '@happyvertical/smrt-reports:SmrtReport',
+        packageName: '@happyvertical/smrt-reports',
+        collection: 'smrtreports',
+        fields: {},
+        methods: {
+          summarize: {
+            name: 'summarize',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<string>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        extends: 'SmrtObject',
+      },
+      // A same-named, unrelated class in a THIRD package must never be
+      // mistaken for the real framework base — the map lookup is keyed on
+      // (className, packageName) together, not className alone.
+      '@example/other-pkg:SmrtObject': {
+        className: 'SmrtObject',
+        qualifiedName: '@example/other-pkg:SmrtObject',
+        packageName: '@example/other-pkg',
+        collection: 'smrtobjects',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+      },
+      // A model whose custom action carries an explicit `routes` override:
+      // the emitted path/method must follow that override, not the derived
+      // defaults (#2619).
+      '@example/orders:RoutedOrder': {
+        className: 'RoutedOrder',
+        qualifiedName: '@example/orders:RoutedOrder',
+        collection: 'routed_orders',
+        fields: {},
+        methods: {
+          exportCsv: {
+            name: 'exportCsv',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<string>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {
+          api: {
+            include: ['exportCsv'],
+            routes: { exportCsv: { method: 'GET', path: 'export-csv' } },
+          },
+        },
+        extends: 'SmrtObject',
+      },
+      // A collection-level `api.path` that differs from `collection`. The
+      // SvelteKit generator and the runtime dispatcher both ignore this field
+      // (it configures smrt-agents' route map instead), so the emitted path
+      // must use `collection` verbatim (#2630).
+      '@example/orders:LegacyPathOrder': {
+        className: 'LegacyPathOrder',
+        qualifiedName: '@example/orders:LegacyPathOrder',
+        collection: 'legacy_orders',
+        fields: {},
+        methods: {
+          reconcile: {
+            name: 'reconcile',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { api: { path: 'orders-v1' } },
+        extends: 'SmrtObject',
+      },
+      // `effect: 'read'` on a DELETE route makes the shared custom-action
+      // resolver throw by design. The knowledge build must not die for the
+      // whole package because one action's config is wrong (#2619).
+      '@example/orders:ThrowingRouteOrder': {
+        className: 'ThrowingRouteOrder',
+        qualifiedName: '@example/orders:ThrowingRouteOrder',
+        collection: 'throwing_route_orders',
+        fields: {},
+        methods: {
+          purge: {
+            name: 'purge',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {
+          api: { routes: { purge: { effect: 'read', method: 'DELETE' } } },
+        },
+        extends: 'SmrtObject',
+      },
+      // A malformed `include` (not an array) must be treated as unset,
+      // never as a truthy value fed straight into `.includes()` — that
+      // would either throw (no such method) or, for a string, silently do
+      // substring matching instead of array membership (#2619).
+      '@example/orders:MalformedConfigItem': {
+        className: 'MalformedConfigItem',
+        qualifiedName: '@example/orders:MalformedConfigItem',
+        collection: 'malformed_config_items',
+        fields: {},
+        methods: {
+          exportData: {
+            name: 'exportData',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { mcp: { include: 'list' as unknown as string[] } },
       },
     },
   };
