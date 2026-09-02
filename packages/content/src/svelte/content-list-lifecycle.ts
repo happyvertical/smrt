@@ -636,7 +636,7 @@ export function createContentListLifecycleController(
     invalidate(viewKey) {
       // Once apply starts, the server-authorized mutation owns completion.
       // A changing view must not discard its refresh, audit, or reconciliation.
-      if (state.status === 'applying') return;
+      if (state.status === 'applying' || pendingApply) return;
       if (
         (previewViewKey !== undefined && previewViewKey !== viewKey) ||
         (frozen !== undefined && frozen.viewKey !== viewKey)
