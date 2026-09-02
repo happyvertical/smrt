@@ -185,6 +185,10 @@ export interface ContentListSurfaceDescriptorOptions {
   lifecycle?: boolean;
   /** Trash lists expose restore/delete rather than active editing actions. */
   lifecycleMode?: 'active' | 'trash';
+  /** A mounted query can refresh the currently visible result. */
+  refresh?: boolean;
+  /** A mounted query or host callback can retry a failed result. */
+  retry?: boolean;
 }
 
 /**
@@ -1304,7 +1308,11 @@ export function buildContentListSurfaceDescriptor(
         .filter((column) => column.capabilities.includes('sort'))
         .map((column) => column.id),
     },
-    controls: CONTENT_LIST_CONTROLS.map((control) => ({ ...control })),
+    controls: CONTENT_LIST_CONTROLS.filter(
+      (control) =>
+        (control.id !== 'refresh' || options.refresh === true) &&
+        (control.id !== 'retry' || options.retry === true),
+    ).map((control) => ({ ...control })),
     actions,
     limits: { ...DEFAULT_SURFACE_LIMITS, ...options.limits },
   };

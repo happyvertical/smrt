@@ -183,22 +183,32 @@ function resolveSurfaceAuthority(
     (binding): binding is ContentListLifecycleBinding | ContentListWorkflowBinding =>
       binding !== undefined,
   );
+  const maxSelectionSize =
+    bindings.length > 0
+      ? Math.min(...bindings.map((binding) => binding.maxSelectionSize ?? 200))
+      : undefined;
   return {
     ...(lifecycleIdentity ?? workflowIdentity
       ? { identity: lifecycleIdentity ?? workflowIdentity }
       : {}),
-    ...(bindings.length > 0
+    ...(maxSelectionSize === undefined ? {} : { maxSelectionSize }),
+    ...(lifecycle && lifecycleIdentity
       ? {
-          maxSelectionSize: Math.min(
-            ...bindings.map((binding) => binding.maxSelectionSize ?? 200),
-          ),
+          lifecycle: {
+            ...lifecycle,
+            identity: lifecycleIdentity,
+            ...(maxSelectionSize === undefined ? {} : { maxSelectionSize }),
+          },
         }
       : {}),
-    ...(lifecycle && lifecycleIdentity
-      ? { lifecycle: { ...lifecycle, identity: lifecycleIdentity } }
-      : {}),
     ...(workflows && workflowIdentity
-      ? { workflows: { ...workflows, identity: workflowIdentity } }
+      ? {
+          workflows: {
+            ...workflows,
+            identity: workflowIdentity,
+            ...(maxSelectionSize === undefined ? {} : { maxSelectionSize }),
+          },
+        }
       : {}),
   };
 }
@@ -1498,6 +1508,8 @@ const surfaceOptions = $derived(
               lifecycle: lifecycle !== undefined,
               lifecycleMode,
               includeWorkflows: workflows !== undefined,
+              refresh: queryBinding?.refresh !== undefined,
+              retry: retryHandler !== undefined,
             });
             return {
               ...descriptor,
@@ -1611,12 +1623,14 @@ $effect(() => {
           },
         }
       : {}),
-    retry: async () => {
-      const handler = retryHandler;
-      if (!handler) return false;
-      await handler();
-      return true;
-    },
+    ...(retryHandler
+      ? {
+          retry: async () => {
+            await retryHandler();
+            return true;
+          },
+        }
+      : {}),
     focus: focusSurface,
     reveal: () => surfaceRoot?.scrollIntoView({ block: 'nearest' }),
     highlight: () => {
@@ -1930,6 +1944,16 @@ function workflowSelection(): ContentListWorkflowRequest['selection'] | null {
   return { scope: 'explicit-ids', rowIds: effectiveRowIds };
 }
 
+function workflowSelectionCount(
+  selection: ContentListWorkflowRequest['selection'],
+): number {
+  if (selection.scope === 'explicit-ids') return selection.rowIds.length;
+  if (selection.scope === 'current-page') return selectablePageRowIds.length;
+  return tableState.selection.scope === 'allMatching'
+    ? tableState.selection.expectedCount
+    : 0;
+}
+
 function workflowJobTarget(
   request: ContentListWorkflowRequest,
 ): ContentListJobTarget {
@@ -1970,6 +1994,8 @@ function createWorkflowRequest(
 ): ContentListWorkflowRequest | null {
   const selection = workflowSelection();
   if (!selection) return null;
+  const selectionCount = workflowSelectionCount(selection);
+  if (selectionCount > (surfaceAuthority.maxSelectionSize ?? 200)) return null;
   const queryRequired = selection.scope !== 'explicit-ids';
   if (
     queryRequired &&
@@ -1993,10 +2019,7 @@ function createWorkflowRequest(
       ...(queryRequired && settledWorkflowQuery
         ? { query: settledWorkflowQuery }
         : {}),
-      expectedCount:
-        selection.scope === 'explicit-ids'
-          ? selection.rowIds.length
-          : selectedCount,
+      expectedCount: selectionCount,
     },
   };
 }

@@ -2644,6 +2644,71 @@ describe('ContentList data surface', () => {
     });
   });
 
+  it.each([
+    { lifecycleCap: 1, workflowCap: 2 },
+    { lifecycleCap: 2, workflowCap: 1 },
+  ])('applies the shared cap to explicit lifecycle and workflow previews ($lifecycleCap/$workflowCap)', async ({
+    lifecycleCap,
+    workflowCap,
+  }) => {
+    const lifecyclePreview = vi.fn(async () => ({ ok: true }));
+    const workflow = workflowBinding({ maxSelectionSize: workflowCap });
+    const target = renderList({
+      lifecycle: {
+        client: {
+          preview: lifecyclePreview,
+          apply: vi.fn(async () => ({ ok: true })),
+        },
+        maxSelectionSize: lifecycleCap,
+      },
+      workflows: workflow,
+    });
+    click(checkboxByLabel(target, 'Select Council budget explained'));
+    click(checkboxByLabel(target, 'Select Zoning appendix'));
+
+    expect(buttonsByText(target, 'Move selected to trash')[0]?.disabled).toBe(
+      true,
+    );
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await Promise.resolve();
+    expect(lifecyclePreview).not.toHaveBeenCalled();
+    expect(workflow.preview).not.toHaveBeenCalled();
+  });
+
+  it('applies the shared cap to a server current-page workflow preview', async () => {
+    const remote = createFakeContentListQuery();
+    remote.setEnvelope({
+      queryFingerprint: 'dq1-capped-page',
+      freshness: { state: 'fresh', asOf: '2026-08-30T12:00:00.000Z' },
+      warnings: [],
+      truncated: false,
+    });
+    remote.resolve(contents, 2);
+    const lifecyclePreview = vi.fn(async () => ({ ok: true }));
+    const workflow = workflowBinding({ maxSelectionSize: 2 });
+    const target = renderList({
+      query: { bind: () => remote.binding },
+      lifecycle: {
+        client: {
+          preview: lifecyclePreview,
+          apply: vi.fn(async () => ({ ok: true })),
+        },
+        maxSelectionSize: 1,
+      },
+      workflows: workflow,
+    });
+    await settle();
+    click(checkboxByLabel(target, 'Select all contents on this page'));
+
+    expect(buttonsByText(target, 'Move selected to trash')[0]?.disabled).toBe(
+      true,
+    );
+    click(buttonsByText(target, 'Preview workflow')[0]);
+    await Promise.resolve();
+    expect(lifecyclePreview).not.toHaveBeenCalled();
+    expect(workflow.preview).not.toHaveBeenCalled();
+  });
+
   it('accepts independently-created equivalent binding identities', async () => {
     const registry = createDataSurfaceRegistry();
     const lifecyclePreview = vi.fn(async () => ({ ok: true }));

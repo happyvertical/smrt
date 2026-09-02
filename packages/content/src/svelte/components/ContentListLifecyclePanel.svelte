@@ -110,6 +110,7 @@ const busy = $derived(
 );
 const selectedCount = $derived(selectedRowIds.length);
 const selectionLimit = $derived(binding.maxSelectionSize ?? 200);
+const selectedSelectionTooLarge = $derived(selectedCount > selectionLimit);
 const matchingSelectionTooLarge = $derived(
   exactMatchingCount !== undefined && exactMatchingCount > selectionLimit,
 );
@@ -132,6 +133,11 @@ async function begin(
   actionId: ContentListLifecycleActionId,
   scope: 'selected' | 'all-matching' = 'selected',
 ) {
+  if (
+    (scope === 'selected' && selectedSelectionTooLarge) ||
+    (scope === 'all-matching' && matchingSelectionTooLarge)
+  )
+    return;
   intent = scope;
   countConfirmation = '';
   dialogOpen = true;
@@ -176,7 +182,7 @@ function retryPreview() {
       variant="ghost"
       size="sm"
       type="button"
-      disabled={selectedCount === 0 || busy}
+      disabled={selectedCount === 0 || selectedSelectionTooLarge || busy}
       onclick={() => begin('move-to-trash')}
     >{t(M['content.content_list.move_selected_to_trash'])}</Button>
   {:else}
@@ -193,14 +199,14 @@ function retryPreview() {
       variant="ghost"
       size="sm"
       type="button"
-      disabled={selectedCount === 0 || busy}
+      disabled={selectedCount === 0 || selectedSelectionTooLarge || busy}
       onclick={() => begin('restore')}
     >{t(M['content.content_list.restore_selected'])}</Button>
     <Button
       variant="ghost"
       size="sm"
       type="button"
-      disabled={selectedCount === 0 || busy}
+      disabled={selectedCount === 0 || selectedSelectionTooLarge || busy}
       onclick={() => begin('permanent-delete')}
     >{t(M['content.content_list.delete_selected_permanently'])}</Button>
     <Button

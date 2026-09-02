@@ -535,6 +535,27 @@ describe('content list data surface descriptor', () => {
     ]);
   });
 
+  it('advertises refresh and retry only when their mounted capability exists', () => {
+    const local = buildContentListSurfaceDescriptor();
+    const readOnly = buildContentListSurfaceDescriptor({ retry: true });
+    const refreshable = buildContentListSurfaceDescriptor({
+      refresh: true,
+      retry: true,
+    });
+
+    expect(local.controls.map((control) => control.id)).not.toContain(
+      'refresh',
+    );
+    expect(local.controls.map((control) => control.id)).not.toContain('retry');
+    expect(readOnly.controls.map((control) => control.id)).not.toContain(
+      'refresh',
+    );
+    expect(readOnly.controls.map((control) => control.id)).toContain('retry');
+    expect(refreshable.controls.map((control) => control.id)).toEqual(
+      expect.arrayContaining(['refresh', 'retry']),
+    );
+  });
+
   it('publishes only server-authoritative lifecycle actions in trash mode', () => {
     const active = buildContentListSurfaceDescriptor({ lifecycle: true });
     const trash = buildContentListSurfaceDescriptor({
