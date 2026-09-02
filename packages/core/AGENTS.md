@@ -33,7 +33,8 @@ subsystem you are editing. This file keeps what holds across all of them.
   the final `DELETE`; embedded adapters compare inside the shared write queue
   before cascading. That queue serializes same-process saves, deletes, and full
   `SmrtObject.withTransaction()` callbacks. Custom writes must preserve this
-  public CAS ordering contract.
+  public CAS ordering contract. PostgreSQL predicate:
+  [agents/revision-guard.md](agents/revision-guard.md).
 - Native DuckDB UUID columns are hydrated as canonical strings before model
   initialization, natural-key lookup, and embedded revision claims. Exact
   natural-key probes retain the interceptor-authorized filter when

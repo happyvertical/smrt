@@ -165,6 +165,7 @@ export {
 export * from './dispatch/index';
 export {
   isEmbeddedDatabase,
+  isPostgresDatabase,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
   withEmbeddedWriteTransaction,
@@ -266,6 +267,12 @@ export {
 } from './query-bounds';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
+// Revision compare-and-swap predicate helpers (#2620)
+export {
+  POSTGRES_REVISION_GUARD_EXPRESSION,
+  postgresRevisionCandidates,
+  postgresRevisionCondition,
+} from './revision-guard';
 // Runtime utilities
 export * from './runtime/index';
 export { detectEngine, generateDDLForEngine } from './schema/ddl';
