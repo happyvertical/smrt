@@ -27,6 +27,7 @@ import { toSnakeCase } from '@happyvertical/smrt-core/utils';
 import {
   type AgentSurface,
   isAgentSurfaceSourcePath,
+  isPrunedAgentSurfacePath,
   lintNumericPrecision,
   ManifestAdapter,
   mergeAgentSurfaces,
@@ -1184,6 +1185,13 @@ function findAgentSurfaceDriftIssues(
       // those diagnostics ARE part of the emitted surface, so omitting them
       // here would report every one of them as no longer declared.
       if (filePath.endsWith('.svelte')) {
+        // `walkFiles` prunes fewer directories than the emitter does, and a
+        // `.svelte` path cannot go through `isAgentSurfaceSourcePath` (rejected
+        // on extension), so the prune check is applied directly here. Without
+        // it a fixture component under `__tests__` would be counted as declared
+        // while the emitter skipped it — unclearable drift, in the one file
+        // type the predicate cannot answer for.
+        if (isPrunedAgentSurfacePath(filePath, pkg.directory)) continue;
         const diagnostics = scanSvelteAgentSurface(filePath);
         if (diagnostics.length > 0) {
           perFile.push({ intents: [], playbooks: [], diagnostics });
@@ -1193,7 +1201,7 @@ function findAgentSurfaceDriftIssues(
       // Match what the EMITTER sees, not merely what is on disk. A declaration
       // in a file the build excludes is never emitted, so counting it here
       // would raise a drift error no rebuild could ever clear.
-      if (!isAgentSurfaceSourcePath(filePath)) continue;
+      if (!isAgentSurfaceSourcePath(filePath, pkg.directory)) continue;
       let sourceText: string;
       try {
         sourceText = readFileSync(filePath, 'utf8');
@@ -1231,14 +1239,25 @@ function findAgentSurfaceDriftIssues(
       );
     }
 
+    // This walk covers `<pkg>/src` while the emitter globs the whole project
+    // root, so an entry declared outside `src` is emitted but never re-derived
+    // here. Reporting those as "no longer present" would be an unclearable
+    // error about a file this check simply did not look at.
+    const withinScan = (sourceFile: string): boolean =>
+      sourceFile === 'src' || sourceFile.startsWith('src/');
+
     const emitted = new Set<string>();
     for (const intent of pkg.agentSurface?.intents ?? []) {
-      emitted.add(`view intent:${intent.id}`);
+      if (withinScan(intent.sourceFile))
+        emitted.add(`view intent:${intent.id}`);
     }
     for (const playbook of pkg.agentSurface?.playbooks ?? []) {
-      emitted.add(`playbook:${playbook.key}`);
+      if (withinScan(playbook.sourceFile)) {
+        emitted.add(`playbook:${playbook.key}`);
+      }
     }
     for (const diagnostic of pkg.agentSurface?.diagnostics ?? []) {
+      if (!withinScan(diagnostic.sourceFile)) continue;
       emitted.add(
         `diagnostic:${diagnostic.code}:${diagnostic.sourceFile}:${diagnostic.line ?? 0}`,
       );

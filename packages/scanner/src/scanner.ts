@@ -9,6 +9,7 @@ import { relative, resolve, sep } from 'node:path';
 import {
   emptyAgentSurface,
   isAgentSurfaceSourcePath,
+  isPrunedAgentSurfacePath,
   mergeAgentSurfaces,
   scanSvelteAgentSurface,
 } from './agent-surface.js';
@@ -218,7 +219,10 @@ export class OxcScanner {
       // is one question with one answer, asked here and in
       // `dev:knowledge-check` alike — the two disagreeing yields drift errors
       // no rebuild can clear.
-      if (file.agentSurface && isAgentSurfaceSourcePath(file.filePath)) {
+      if (
+        file.agentSurface &&
+        isAgentSurfaceSourcePath(file.filePath, this.options.cwd)
+      ) {
         surfaces.push(file.agentSurface);
       }
     }
@@ -454,7 +458,7 @@ export class OxcScanner {
       if (alreadyScanned.has(filePath)) continue;
       // The globs prune the walk; this predicate decides what counts, and it is
       // the same one `dev:knowledge-check` uses.
-      if (!isAgentSurfaceSourcePath(filePath)) continue;
+      if (!isAgentSurfaceSourcePath(filePath, this.options.cwd)) continue;
       const surface = parseAgentSurfaceFile(filePath);
       if (surface) surfaces.push(surface);
     }
@@ -495,6 +499,11 @@ export class OxcScanner {
     }
 
     for (const filePath of files) {
+      // The globs prune the walk; this is the semantic gate, and it is the same
+      // one `dev:knowledge-check` applies to `.svelte` files. A `.svelte` path
+      // cannot go through `isAgentSurfaceSourcePath`, which rejects it on
+      // extension, so the prune check is shared directly.
+      if (isPrunedAgentSurfacePath(filePath, this.options.cwd)) continue;
       surface.diagnostics.push(...scanSvelteAgentSurface(filePath));
     }
     return surface;

@@ -726,6 +726,32 @@ export const b = defineIntent({
     }
   });
 
+  it('measures pruned directories relative to the root, not absolutely', async () => {
+    // A checkout that merely LIVES under `build/` — a container with
+    // `WORKDIR /build`, a clone in `~/build/…` — must not disable the feature.
+    // Matching these segments against the absolute path would drop every
+    // declaration with no diagnostic, and the freshness check would agree,
+    // so the artifact would ship an empty surface and doctor would call it
+    // healthy. This is the trap `discovery.ts` rewrites globs to avoid.
+    const parent = mkdtempSync(join(tmpdir(), 'smrt-agent-surface-abs-'));
+    const root = join(parent, 'build', 'app');
+    try {
+      mkdirSync(join(root, 'src'), { recursive: true });
+      writeFileSync(join(root, 'src', 'orders.intents.ts'), LITERAL_INTENT);
+
+      const { results } = await new OxcScanner({
+        cwd: root,
+        include: ['src/**/*.ts'],
+      }).scanAndResolve();
+
+      expect(results.agentSurface.intents.map((i) => i.id)).toEqual([
+        'orders.next_page',
+      ]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   it('never counts a declaration twice when both passes cover the file', async () => {
     // The class glob and the declaration glob overlap by default; a file
     // visited by both must not collide with itself.

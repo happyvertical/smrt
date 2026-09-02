@@ -39,6 +39,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { relative } from 'node:path';
 import { getLineColumn } from './source-location.js';
 import type {
   AgentSurface,
@@ -174,11 +175,44 @@ const EXCLUDED_DIRECTORIES = new Set([
  * Callers still pass globs to prune the WALK for speed; this decides what
  * counts.
  */
-export function isAgentSurfaceSourcePath(filePath: string): boolean {
+export function isAgentSurfaceSourcePath(
+  filePath: string,
+  rootDir?: string,
+): boolean {
   if (!/\.(?:ts|tsx|js|jsx)$/.test(filePath)) return false;
   if (filePath.endsWith('.d.ts')) return false;
   if (/\.(?:test|spec)\.(?:ts|tsx|js|jsx)$/.test(filePath)) return false;
-  return !filePath
+  return !isPrunedAgentSurfacePath(filePath, rootDir);
+}
+
+/**
+ * Whether a path lies in a directory declarations are never read from,
+ * measured **relative to the project root**.
+ *
+ * `rootDir` is not optional in spirit. Matching these segments against an
+ * absolute path would disable the entire feature for a checkout that merely
+ * LIVES under one — a container with `WORKDIR /build`, or a clone in
+ * `~/build/…` — and it would do so with no diagnostic at all, because the
+ * freshness check applies the same predicate and would agree that nothing is
+ * declared. That is the silent drop this module exists to prevent, so the same
+ * care `discovery.ts` takes to rewrite globs relative to `cwd` applies here.
+ *
+ * Exported so the `.svelte` pass and `dev:knowledge-check`'s walk prune
+ * identically; a `.svelte` file cannot go through
+ * {@link isAgentSurfaceSourcePath}, which rejects it on extension.
+ */
+export function isPrunedAgentSurfacePath(
+  filePath: string,
+  rootDir?: string,
+): boolean {
+  let scoped = filePath;
+  if (rootDir) {
+    const relativePath = relative(rootDir, filePath);
+    // A path outside the root cannot be measured against it; fall back rather
+    // than reading `..` segments as if they were project directories.
+    if (relativePath && !relativePath.startsWith('..')) scoped = relativePath;
+  }
+  return scoped
     .split(/[\\/]/)
     .some((segment) => EXCLUDED_DIRECTORIES.has(segment));
 }

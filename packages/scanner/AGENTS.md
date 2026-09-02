@@ -80,7 +80,15 @@ two sides disagreeing is not cosmetic: a file the emitter reads but the checker
 skips reports as "no longer present in source" forever, and the reverse reports
 as "missing from smrt-knowledge.json" forever — neither clearable by a rebuild.
 It rejects `.d.ts`, `*.test.*`, `*.spec.*`, and anything under `node_modules`,
-`dist`, `build`, `coverage`, `__tests__`, or `__typechecks__`.
+`dist`, `build`, `coverage`, `__tests__`, or `__typechecks__` — measured
+**relative to the scan root**, via the companion `isPrunedAgentSurfacePath`
+(which the `.svelte` passes call directly, since a `.svelte` path is rejected on
+extension by the source predicate). Relative matching is load-bearing: against
+an absolute path, a checkout that merely LIVES under `build/` — a container with
+`WORKDIR /build`, a clone in `~/build/…` — would drop every declaration with no
+diagnostic, and the freshness check would apply the same rule and agree, so the
+artifact would ship an empty surface and `smrt doctor` would call it healthy.
+This is the trap `discovery.ts` rewrites globs relative to `cwd` to avoid.
 
 `dist` is not paranoia. A caller's `exclude` REPLACES `DEFAULT_EXCLUDE`, and
 every real caller passes a narrower one (the Vite plugin sends only test globs

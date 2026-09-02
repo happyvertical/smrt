@@ -116,7 +116,10 @@ the artifact is the merged result.
 Diagnostics are compared alongside identities: a sidecar containing only a
 computed declaration adds no identity and has no prior hash, so without that,
 "a diagnostic, never silence" would quietly become "a diagnostic, until the
-artifact goes stale".
+artifact goes stale". The walk covers `<pkg>/src` while the emitter globs the
+whole project root, so an emitted entry from outside `src` is not reported as
+missing — this check did not look there, and claiming otherwise would be an
+error nothing could clear.
 
 Both `stale-*` codes are warnings by default and errors under `--strict`, which
 is what CI runs. Alongside them: `agent-surface-missing-identity`,
