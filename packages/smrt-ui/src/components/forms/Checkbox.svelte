@@ -17,10 +17,15 @@ import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props
   extends Omit<HTMLInputAttributes, 'type' | 'class' | 'checked'> {
+  /** Whether the checkbox is checked (bindable). */
   checked?: boolean;
+  /** Whether the checkbox shows indeterminate state. */
   indeterminate?: boolean;
+  /** Text label displayed next to the checkbox. */
   label?: string;
+  /** CSS class to apply to the checkbox container. */
   class?: string;
+  /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
 }
 

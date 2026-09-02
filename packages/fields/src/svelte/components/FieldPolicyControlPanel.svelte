@@ -34,10 +34,15 @@ import FieldPolicyEditor from './FieldPolicyEditor.svelte';
 import FieldPolicySuggestionQueue from './FieldPolicySuggestionQueue.svelte';
 
 export interface FieldPolicyCatalogComponentProps {
+  /** Settings catalog page including items and selection state. */
   page: FieldPolicySettingsCatalogPage;
+  /** Base URL for navigation and links within the catalog. */
   baseUrl: string;
+  /** Render snippet for the detail panel content. */
   detail: Snippet<[{ item: FieldPolicyDetailItem }]>;
+  /** Query parameters to preserve in catalog navigation links. */
   preservedParams?: Record<string, string>;
+  /** Placeholder text for the catalog search input. */
   searchPlaceholder?: string;
 }
 

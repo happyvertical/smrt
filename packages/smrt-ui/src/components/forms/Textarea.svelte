@@ -15,9 +15,13 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLTextareaAttributes, 'class' | 'value'> {
+  /** The text content of the textarea. */
   value?: string;
+  /** Number of visible text rows. */
   rows?: number;
+  /** Additional CSS class names. */
   class?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
 }
 

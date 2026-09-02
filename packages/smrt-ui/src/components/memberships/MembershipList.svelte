@@ -13,11 +13,17 @@ interface MembershipWithContext {
 }
 
 interface Props {
+  /** Array of memberships with associated tenant and role data. */
   memberships: MembershipWithContext[];
+  /** Fired when a membership is removed, passed the membership object. */
   onremove?: (membership: Membership) => void;
+  /** Fired when a membership role changes, passed the membership object. */
   onchangerole?: (membership: Membership) => void;
+  /** Message displayed when the memberships array is empty. */
   emptyMessage?: string;
+  /** Custom empty state content; replaces emptyMessage when provided. */
   empty?: Snippet;
+  /** Shows the loading spinner and hides membership cards. */
   loading?: boolean;
 }
 

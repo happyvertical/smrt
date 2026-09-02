@@ -47,21 +47,37 @@ import ContentImageChooser from './ContentImageChooser.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for API requests to load and save content. */
   apiBaseUrl?: string;
+  /** The content object being edited, or null for new content. */
   content?: ContentData | null;
+  /** Identifier of the content, or 'new' if creating. */
   contentId?: string;
+  /** Current fact audit state including claims and their support status. */
   factAudit?: FactAuditStateData | null;
+  /** Disable the save button and submission. */
   saveDisabled?: boolean;
+  /** Message displayed below the save button. */
   saveNotice?: string | null;
+  /** Enable the AI chat sidebar and assistant features. */
   agentChatEnabled?: boolean;
+  /** Message displayed to explain why AI chat is unavailable. */
   agentChatNotice?: string | null;
+  /** Hide the save and cancel action buttons. */
   hideActions?: boolean;
+  /** Hide the AI chat sidebar completely. */
   hideChat?: boolean;
+  /** Policy object defining which fields the assistant can modify. */
   assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
+  /** Fired when the assistant context changes (for session tracking). */
   onAssistantContextChange?: ContentEditorAssistantContextChange;
+  /** Fired when the user edits content, with the current editor snapshot. */
   onChange?: (data: ContentEditorSnapshot) => void;
+  /** Fired when the fact audit state changes or is loaded. */
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
+  /** Fired when the user submits the editor with the saved payload. */
   onSave: (data: ContentEditorSavePayload) => void;
+  /** Fired when the user cancels editing without saving. */
   onCancel: () => void;
 }
 

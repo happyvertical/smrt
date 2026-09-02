@@ -11,18 +11,31 @@ import MessageCard from './MessageCard.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Array of messages to render in the list. */
   messages: MessageData[];
+  /** Set of currently selected message IDs. */
   selected?: Set<string>;
+  /** ID of the currently active or open message. */
   activeMessageId?: string;
+  /** Accounts for matching senders to display information. */
   accounts?: AccountData[];
+  /** Shows a loading indicator while fetching messages. */
   loading?: boolean;
+  /** Text to display when the list is empty. */
   emptyMessage?: string;
+  /** Called when user clicks on a message to open it. */
   onmessageclick?: (message: MessageData) => void;
+  /** Called when user selects a message with checkbox. */
   onselect?: (message: MessageData) => void;
+  /** Called when the user flags or unflags a message. */
   onflag?: (message: MessageData) => void;
+  /** Shows the message type badge on each row. */
   showType?: boolean;
+  /** Shows the sender's account on each row. */
   showAccount?: boolean;
+  /** Uses condensed layout for compact display. */
   compact?: boolean;
+  /** Custom snippet to render message cards. */
   card?: Snippet<[{ message: MessageData }]>;
 }
 

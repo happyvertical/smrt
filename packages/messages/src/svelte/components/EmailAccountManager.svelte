@@ -14,10 +14,15 @@ import type { EmailAccountData } from '../types.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Array of email accounts to display and manage. */
   accounts: EmailAccountData[];
+  /** Disables editing and deletion when true; view-only mode. */
   readonly?: boolean;
+  /** Called when user saves an account's settings. */
   onsave?: (data: Partial<EmailAccountData>, id?: string) => Promise<void>;
+  /** Called when user deletes an account. */
   ondelete?: (account: EmailAccountData) => Promise<void>;
+  /** Called when user tests account credentials. */
   ontest?: (
     account: EmailAccountData,
   ) => Promise<{ success: boolean; error?: string }>;

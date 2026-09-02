@@ -7,11 +7,17 @@ import Container from './Container.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Formatted date string displayed in the masthead. */
   date?: string;
+  /** URL for the date link; omit to make it non-interactive. */
   dateHref?: string;
+  /** Location text displayed in the masthead. */
   location?: string;
+  /** URL for the location link. */
   locationHref?: string;
+  /** Navigation links displayed on desktop. */
   nav?: Snippet;
+  /** Navigation links displayed on mobile; falls back to nav if omitted. */
   mobileNav?: Snippet;
 }
 

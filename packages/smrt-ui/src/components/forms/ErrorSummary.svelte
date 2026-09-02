@@ -2,9 +2,13 @@
 import { focusControl } from './control-dom.js';
 import type { FormError } from './types.js';
 export interface Props {
+  /** Array of form validation errors to display. */
   errors: FormError[];
+  /** Heading text displayed above the error list. */
   title?: string;
+  /** Callback when an error is selected or clicked. */
   onselect?: (controlId: string) => void;
+  /** CSS class to apply to the error summary. */
   class?: string;
 }
 let {

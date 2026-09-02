@@ -7,6 +7,7 @@ import StatCard from './StatCard.svelte';
 const { t } = useI18n();
 
 interface Props {
+  /** Analytics data including pageview and user counts with trend comparison. */
   stats: PropertyStatsWithTrend | null;
 }
 

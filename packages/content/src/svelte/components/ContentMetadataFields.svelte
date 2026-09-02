@@ -15,7 +15,9 @@ export interface ContentMetadataFieldData {
 }
 
 export interface Props {
+  /** Current metadata field values. */
   data: ContentMetadataFieldData;
+  /** Invoked when the user modifies any metadata field. */
   onChange?: (change: Record<string, unknown>) => void;
 }
 

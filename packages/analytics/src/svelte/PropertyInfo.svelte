@@ -6,11 +6,17 @@ import PropertyStatusBadge from './PropertyStatusBadge.svelte';
 const { t } = useI18n();
 
 interface Props {
+  /** Identifier for the analytics property; empty state is shown if null. */
   propertyId: string | null;
+  /** Tracking ID or measurement identifier for the analytics platform. */
   measurementId: string | null;
+  /** Analytics provider type (e.g., 'ga4', 'plausible', 'matomo'). */
   provider: string | null;
+  /** Current status of the property connection. */
   status: 'active' | 'inactive' | 'pending';
+  /** ISO timestamp of the most recent data synchronization. */
   lastSyncAt: string | null;
+  /** Website domain associated with the analytics property. */
   siteDomain?: string;
 }
 

@@ -11,11 +11,17 @@ import type { BulkAction } from '../types.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Number of messages currently selected. */
   selectedCount: number;
+  /** Total number of messages in the list. */
   totalCount: number;
+  /** Called when user performs a bulk action. */
   onaction?: (action: BulkAction) => void;
+  /** Called when user clicks select all. */
   onselectall?: () => void;
+  /** Called when user clears the selection. */
   onclearselection?: () => void;
+  /** Snippet for rendering additional action buttons. */
   extraActions?: Snippet;
 }
 

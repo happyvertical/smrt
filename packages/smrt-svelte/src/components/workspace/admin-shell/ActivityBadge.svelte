@@ -4,7 +4,9 @@ import { useAdminShell } from './context.js';
 import type { PanelEdge } from './types.js';
 
 interface Props {
+  /** Which panel edge to fetch activity status from. */
   edge: PanelEdge;
+  /** Accessibility label for the activity badge. */
   label?: string;
 }
 

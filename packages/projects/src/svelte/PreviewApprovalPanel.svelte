@@ -5,8 +5,11 @@ import type { PreviewApprovalView } from './delivery-types.js';
 import { M } from './i18n.js';
 
 export interface Props {
+  /** Preview item awaiting approval decision. */
   preview: PreviewApprovalView;
+  /** Disables approval buttons during processing. */
   busy?: boolean;
+  /** Invoked when the user approves or rejects the preview. */
   ondecide?: (approved: boolean) => void | Promise<void>;
 }
 

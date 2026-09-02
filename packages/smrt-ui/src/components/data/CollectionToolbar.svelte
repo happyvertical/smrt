@@ -14,22 +14,35 @@ import {
 import type { CollectionToolbarDataSurfaceOptions } from './types.js';
 
 export interface Props {
+  /** Current search query string (bindable). */
   search?: string;
+  /** Label for the search input field. */
   searchLabel?: string;
+  /** Placeholder text shown in the search input when empty. */
   searchPlaceholder?: string;
+  /** Currently active view mode: list, grid, or table. */
   view?: 'list' | 'grid' | 'table';
+  /** Available view modes to choose from. */
   views?: Array<'list' | 'grid' | 'table'>;
+  /** Total number of results in the current collection. */
   resultCount?: number;
+  /** Number of items currently selected. */
   selectedCount?: number;
+  /** Snippet to render filter controls in the toolbar. */
   filters?: Snippet;
+  /** Snippet to render action buttons in the toolbar. */
   actions?: Snippet;
+  /** Snippet to render bulk action buttons (shown when items are selected). */
   bulkActions?: Snippet;
+  /** Callback when the user types in the search field. */
   onsearchchange?: (value: string) => void;
+  /** Callback when the view mode is changed. */
   onviewchange?: (view: 'list' | 'grid' | 'table') => void;
   /** Shares search state with a DataTable controller when supplied. */
   controller?: DataTableController;
   /** Registers this toolbar only when explicitly supplied. */
   dataSurface?: CollectionToolbarDataSurfaceOptions;
+  /** CSS class to apply to the toolbar container. */
   class?: string;
 }
 

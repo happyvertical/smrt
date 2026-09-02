@@ -10,9 +10,13 @@ import type { FolderData } from '../types.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Array of folders and labels to display in the sidebar. */
   folders: FolderData[];
+  /** ID of the currently selected folder to highlight. */
   activeFolderId?: string;
+  /** Shows unread message count badges on folders. */
   showCounts?: boolean;
+  /** Called when user clicks on a folder. */
   onfolderclick?: (folder: FolderData) => void;
 }
 

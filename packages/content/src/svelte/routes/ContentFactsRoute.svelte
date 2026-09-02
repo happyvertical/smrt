@@ -12,10 +12,15 @@ import {
 } from './shared.js';
 
 interface ContentFactsRouteProps {
+  /** Pre-initialized API client; creates a new one if omitted. */
   client?: ReturnType<typeof createClient>;
+  /** Navigation items shown in the sidebar. */
   navigation?: ContentRouteNavigationItem[];
+  /** Base URL for fact API requests. */
   apiBaseUrl?: string;
+  /** URL to navigate to when creating a new fact. */
   createHref?: string | null;
+  /** Whether the route is embedded in a parent application. */
   embedded?: boolean;
 }
 

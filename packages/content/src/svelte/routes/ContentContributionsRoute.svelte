@@ -25,9 +25,13 @@ import {
 } from './shared.js';
 
 interface ContentContributionsRouteProps {
+  /** Pre-initialized API client; creates a new one if omitted. */
   client?: ReturnType<typeof createClient>;
+  /** Navigation items shown in the sidebar. */
   navigation?: ContentRouteNavigationItem[];
+  /** Base URL for content API requests. */
   apiBaseUrl?: string;
+  /** Whether the route is embedded in a parent application. */
   embedded?: boolean;
 }
 

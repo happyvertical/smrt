@@ -25,21 +25,37 @@ import { M } from '../i18n.governance.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for API requests to load facts, reviews, and governance state. */
   apiBaseUrl?: string;
+  /** Identifier of the content, or 'new' if creating. */
   contentId?: string;
+  /** Type of the draft content (e.g., article, post). */
   draftType?: string | null;
+  /** Variant of the draft content within its type. */
   draftVariant?: string | null;
+  /** IDs of facts currently linked to the content. */
   selectedFactIds?: string[];
+  /** Fact objects corresponding to selectedFactIds. */
   selectedFacts?: FactData[];
+  /** Default relationship type when adding facts (e.g., supports, contradicts). */
   defaultRelationship?: string;
+  /** Key of the profile used to render reviews and requirements. */
   reviewProfileKey?: string;
+  /** Label for the custom review workflow button. */
   customReviewLabel?: string;
+  /** Instructions or guidance shown for custom review. */
   customReviewInstructions?: string;
+  /** Policy key used for custom review submissions. */
   customReviewPolicyKey?: string;
+  /** Show the searchable fact catalog browser in the panel. */
   showFactCatalog?: boolean;
+  /** Fired when facts are linked or unlinked from the content. */
   onFactsChange?: (factIds: string[], facts: FactData[]) => void;
+  /** Fired when governance state is loaded or changes. */
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
+  /** Fired when fact audit state is loaded or changes. */
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
+  /** Panel sections to hide from the user interface. */
   hiddenSections?: ContentGovernancePanelSection[];
 }
 

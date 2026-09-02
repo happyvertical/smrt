@@ -9,11 +9,17 @@ import type { User } from '@happyvertical/smrt-users';
 import UserAvatar from './UserAvatar.svelte';
 
 export interface Props {
+  /** User account containing email and identification. */
   user: User;
+  /** User profile containing name and avatar data. */
   profile: Profile;
+  /** User's role or position title. */
   role?: string;
+  /** User status (active, pending, suspended, or inactive). */
   status?: string;
+  /** Callback invoked when the card is clicked. */
   onclick?: () => void;
+  /** Indicates whether the card is in a selected state. */
   selected?: boolean;
 }
 

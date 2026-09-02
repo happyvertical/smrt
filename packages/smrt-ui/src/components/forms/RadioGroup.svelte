@@ -14,16 +14,27 @@ import {
 import { setRadioGroupContext } from './radio-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** Identifier for this radio group and its form field. */
   name: string;
+  /** The currently selected option value. */
   value?: string;
+  /** Legend text displayed above the radio options. */
   label?: string;
+  /** Explanatory text shown below the label. */
   description?: string;
+  /** Validation error message to display. */
   error?: string;
+  /** Blocks interaction and submission of this control. */
   disabled?: boolean;
+  /** Makes selecting an option mandatory for validation. */
   required?: boolean;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
+  /** Fired when the selected option value changes. */
   onvaluechange?: (value: string) => void;
+  /** The RadioOption components to display. */
   children: Snippet;
+  /** Additional CSS class names. */
   class?: string;
 }
 let {

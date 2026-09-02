@@ -12,15 +12,25 @@ const { t } = useI18n();
 
 /** Props for RejectDialog component */
 export interface Props {
+  /** Controls whether the dialog is displayed. */
   open: boolean;
+  /** Dialog heading text. */
   title?: string;
+  /** Instructions displayed above the reason input. */
   message?: string;
+  /** Label for the confirm button. */
   confirmLabel?: string;
+  /** Label for the cancel button. */
   cancelLabel?: string;
+  /** Placeholder text for the reason textarea. */
   placeholder?: string;
+  /** Requires the user to enter a reason before confirming. */
   required?: boolean;
+  /** Disables the dialog controls during processing. */
   loading?: boolean;
+  /** Invoked when the user confirms the rejection with a reason. */
   onconfirm: (reason: string) => void;
+  /** Invoked when the user cancels or closes the dialog. */
   oncancel: () => void;
 }
 

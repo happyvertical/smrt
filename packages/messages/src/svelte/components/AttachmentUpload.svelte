@@ -2,9 +2,13 @@
 import type { AttachmentData } from '../types.js';
 
 export interface Props {
+  /** Array of already attached files to display. */
   attachments: AttachmentData[];
+  /** Called when user drops or selects files to attach. */
   onattach?: (files: File[]) => void;
+  /** Called when user removes an attachment by its index. */
   onremove?: (index: number) => void;
+  /** Maximum file size in bytes; files exceeding this are rejected. */
   maxSize?: number;
 }
 </script>

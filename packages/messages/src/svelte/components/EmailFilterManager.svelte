@@ -14,12 +14,19 @@ import type { BlacklistEntry, WhitelistEntry } from '../types.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Array of allowed email addresses, domains, or patterns. */
   whitelist: WhitelistEntry[];
+  /** Array of blocked email addresses, domains, or patterns. */
   blacklist: BlacklistEntry[];
+  /** Disables editing and deletion when true; view-only mode. */
   readonly?: boolean;
+  /** Called when user adds an address to the whitelist. */
   onaddwhitelist?: (data: Omit<WhitelistEntry, 'id'>) => Promise<void>;
+  /** Called when user removes an address from the whitelist. */
   onremovewhitelist?: (entry: WhitelistEntry) => Promise<void>;
+  /** Called when user adds an address to the blacklist. */
   onaddblacklist?: (data: Omit<BlacklistEntry, 'id'>) => Promise<void>;
+  /** Called when user removes an address from the blacklist. */
   onremoveblacklist?: (entry: BlacklistEntry) => Promise<void>;
 }
 

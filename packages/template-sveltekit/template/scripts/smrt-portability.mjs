@@ -10,9 +10,26 @@ import {
 import { basename, dirname, join } from 'node:path';
 
 import { getDatabase } from '@happyvertical/sql';
+import {
+  MAX_BUNDLE_BYTES,
+  bundleContentDigest,
+  collectFilesystemAssets,
+  finishFilesystemAssets,
+  publishFilesystemAssets,
+  readSensitiveBundle,
+  recoverFilesystemAssets,
+  rollbackFilesystemAssets,
+  stageFilesystemAssets,
+  verifyFilesystemAssets,
+  verifyPublishedFilesystemAssets,
+} from './smrt-portability-assets.mjs';
 import { assertExternalArtifactPath } from './smrt-runtime-identity.mjs';
 
 const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const NON_PORTABLE_TABLE_PATTERN =
+  /(?:^|_)(?:api_keys?|audit_logs?|auth_approve_limits?|auth_requests?|bootstrap|credentials?|magic_link_tokens?|secrets?|sessions?|tokens?)(?:_|$)/;
+const NON_PORTABLE_COLUMN_PATTERN =
+  /(?:^|_)(?:api_key|ciphertext|cookie|credential|encrypted|encryption|password|private_key|privkey|secret|token)(?:_|$)/;
 
 function quoteIdentifier(value) {
   if (!SAFE_IDENTIFIER.test(value)) {
@@ -21,6 +38,13 @@ function quoteIdentifier(value) {
     );
   }
   return `"${value}"`;
+}
+
+function containsNonPortableRows(table) {
+  return (
+    NON_PORTABLE_TABLE_PATTERN.test(table.name) ||
+    table.columns.some((column) => NON_PORTABLE_COLUMN_PATTERN.test(column))
+  );
 }
 
 function manifestTables(sourceRoot) {
@@ -181,22 +205,30 @@ export async function exportApplication(context) {
         );
       }
       const exported = {
-        schemaVersion: 1,
+        schemaVersion: 2,
         application: context.appId,
         profile: context.runtime.profile,
         exportedAt: new Date().toISOString(),
         tables: [],
       };
       for (const table of tables) {
-        const result = await tx.query(
-          `SELECT ${table.columns.map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table.name)}`,
-        );
         exported.tables.push({
           name: table.name,
           columns: table.columns,
-          rows: result.rows,
+          rows: containsNonPortableRows(table)
+            ? []
+            : (
+                await tx.query(
+                  `SELECT ${table.columns.map(quoteIdentifier).join(', ')} FROM ${quoteIdentifier(table.name)}`,
+                )
+              ).rows,
         });
       }
+      exported.assets = collectFilesystemAssets({
+        tables: exported.tables,
+        sourceRoot: context.sourceRoot,
+        assetRoot: context.assetRoot || context.paths?.assets,
+      });
       return exported;
     });
   });
@@ -216,15 +248,15 @@ export async function exportApplication(context) {
     dirname(outputPath),
     `.${basename(outputPath)}.${process.pid}.${randomBytes(8).toString('hex')}.tmp`,
   );
+  const serialized = `${serializeExportBundle(bundle)}\n`;
+  if (Buffer.byteLength(serialized) > MAX_BUNDLE_BYTES) {
+    throw new Error('The portability bundle exceeds the supported size limit.');
+  }
   try {
-    writeFileSync(
-      temporaryPath,
-      `${serializeExportBundle(bundle)}\n`,
-      {
-        flag: 'wx',
-        mode: 0o600,
-      },
-    );
+    writeFileSync(temporaryPath, serialized, {
+      flag: 'wx',
+      mode: 0o600,
+    });
     // A same-filesystem hard link publishes the complete mode-0600 inode
     // atomically and fails rather than following or replacing a destination.
     try {
@@ -246,7 +278,8 @@ export async function exportApplication(context) {
   return {
     path: outputPath,
     tableCount: bundle.tables.length,
-    assetsIncluded: false,
+    assetsIncluded: true,
+    assetCount: bundle.assets.entries.length,
   };
 }
 
@@ -294,14 +327,37 @@ export async function executeImportPlan(tx, plan, exportedByName) {
   return rowCount;
 }
 
+async function inspectImportTarget(db, plan, exportedByName) {
+  let empty = true;
+  let complete = true;
+  for (const table of plan) {
+    const count = await db.query(
+      `SELECT COUNT(*) AS count FROM ${quoteIdentifier(table.name)}`,
+    );
+    const actual = Number(count.rows[0]?.count || 0);
+    const expected = exportedByName.get(table.name).rows.length;
+    if (actual !== 0) empty = false;
+    if (actual !== expected) complete = false;
+  }
+  if (empty) return 'empty';
+  if (complete) return 'complete';
+  return 'dirty';
+}
+
 export async function importApplication(context) {
   if (!context.path) {
     throw new Error(
       'Usage: pnpm app:import -- /absolute/path/export.json',
     );
   }
-  const bundle = JSON.parse(readFileSync(context.path, 'utf8'));
-  if (bundle.schemaVersion !== 1 || !Array.isArray(bundle.tables)) {
+  const serialized = readSensitiveBundle(context.path);
+  const bundle = JSON.parse(serialized);
+  if (bundle.schemaVersion === 1) {
+    throw new Error(
+      'Database-only logical export bundles are not importable; create a new asset-aware export.',
+    );
+  }
+  if (bundle.schemaVersion !== 2 || !Array.isArray(bundle.tables)) {
     throw new Error('Unsupported logical export bundle.');
   }
   if (bundle.application !== context.appId) {
@@ -333,14 +389,82 @@ export async function importApplication(context) {
       );
     }
   }
+  const assetRoot = context.assetRoot || context.paths?.assets;
+  const verifiedAssets = verifyFilesystemAssets({
+    assetBundle: bundle.assets,
+    tables: bundle.tables,
+    sourceRoot: context.sourceRoot,
+    assetRoot,
+  });
+  const bundleDigest = bundleContentDigest(serialized);
   let rowCount = 0;
   await withDatabase(context, async (db) => {
     if (typeof db.transaction !== 'function') {
       throw new Error('Logical import requires transactional database support.');
     }
-    await db.transaction(async (tx) => {
-      rowCount = await executeImportPlan(tx, plan, exportedByName);
+    let targetState = await inspectImportTarget(db, plan, exportedByName);
+    if (verifiedAssets.root) {
+      const recovery = recoverFilesystemAssets({
+        stateRoot: context.stateRoot,
+        appId: context.appId,
+        bundleDigest,
+        assetRoot: verifiedAssets.root,
+        targetState,
+      });
+      if (recovery === 'complete') {
+        rowCount = bundle.tables.reduce(
+          (count, table) => count + table.rows.length,
+          0,
+        );
+        return;
+      }
+      if (recovery === 'retry') {
+        targetState = await inspectImportTarget(db, plan, exportedByName);
+      }
+    }
+    if (targetState !== 'empty') {
+      throw new Error('Import target is not empty.');
+    }
+    const staged = stageFilesystemAssets({
+      verified: verifiedAssets,
+      stateRoot: context.stateRoot,
+      appId: context.appId,
+      bundleDigest,
     });
+    try {
+      await context.onImportPhase?.('assets-staged');
+      await db.transaction(async (tx) => {
+        publishFilesystemAssets(staged);
+        await context.onImportPhase?.('assets-published');
+        rowCount = await executeImportPlan(tx, plan, exportedByName);
+        await context.onImportPhase?.('database-staged');
+        verifyPublishedFilesystemAssets(staged);
+      });
+      finishFilesystemAssets(staged);
+    } catch (error) {
+      const stateAfterFailure = await inspectImportTarget(
+        db,
+        plan,
+        exportedByName,
+      );
+      if (stateAfterFailure === 'complete') {
+        finishFilesystemAssets(staged);
+        rowCount = bundle.tables.reduce(
+          (count, table) => count + table.rows.length,
+          0,
+        );
+        return;
+      }
+      if (stateAfterFailure === 'empty') {
+        rollbackFilesystemAssets(staged);
+      }
+      throw error;
+    }
   });
-  return { path: context.path, rowCount };
+  return {
+    path: context.path,
+    rowCount,
+    assetsIncluded: true,
+    assetCount: bundle.assets.entries.length,
+  };
 }

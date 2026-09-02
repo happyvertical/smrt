@@ -17,10 +17,15 @@ export interface ContentReviewStatusTrayItem {
 }
 
 export interface Props {
+  /** Review status items to display in the tray. */
   items?: ContentReviewStatusTrayItem[];
+  /** ID of the currently selected status item. */
   activeId?: string | null;
+  /** Whether the tray dropdown menu is displayed. */
   open?: boolean;
+  /** Label text shown when the tray is collapsed. */
   label?: string;
+  /** Invoked when the user selects a status item. */
   onSelect?: (item: ContentReviewStatusTrayItem) => void;
 }
 

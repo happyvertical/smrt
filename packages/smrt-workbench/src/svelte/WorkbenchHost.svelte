@@ -32,9 +32,13 @@ import { workbenchScriptCommand } from './command.js';
 import MarkdownDocument from './MarkdownDocument.svelte';
 
 export interface Props {
+  /** Project to display in the workbench. */
   project: SmrtWorkbenchProject;
+  /** Workbench modules to display. */
   modules?: SmrtWorkbenchModule[];
+  /** Playground modules to display in the playground tab. */
   playgroundModules?: SmrtPlaygroundModule[];
+  /** Page title. */
   title?: string;
 }
 

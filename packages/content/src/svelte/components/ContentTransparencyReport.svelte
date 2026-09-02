@@ -6,8 +6,11 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Transparency report data including facts and references. */
   transparency?: ContentTransparencyData | null;
+  /** Title displayed at the top of the report. */
   title?: string;
+  /** Message displayed when no transparency data is available. */
   emptyCopy?: string;
 }
 

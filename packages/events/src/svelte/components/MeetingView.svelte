@@ -11,7 +11,9 @@ import type { Meeting } from '../types.js';
 const { t } = useI18n();
 
 interface Props {
+  /** The meeting to display. */
   meeting: Meeting;
+  /** URL to navigate to when clicking the back link. */
   calendarUrl?: string;
 }
 

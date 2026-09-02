@@ -7,8 +7,11 @@ import {
 import Markdown from './Markdown.svelte';
 
 export interface Props {
+  /** The body content to render as HTML or Markdown. */
   content: string;
+  /** Format of the content: HTML, Markdown, or auto-detected if null. */
   format?: ContentBodyFormat | null;
+  /** CSS class to apply to the rendered container. */
   class?: string;
 }
 

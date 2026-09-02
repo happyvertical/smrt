@@ -11,13 +11,21 @@ import MessageStatusIndicator from './MessageStatusIndicator.svelte';
 import MessageTypeBadge from './MessageTypeBadge.svelte';
 
 export interface Props {
+  /** Message to display in full detail view. */
   message: MessageData;
+  /** Attachments associated with the message. */
   attachments?: AttachmentData[];
+  /** Account that received the message. */
   account?: AccountData;
+  /** Reads the body from the HTML source, stripped of tags and shown as text. */
   showHtml?: boolean;
+  /** Called when user clicks the reply button. */
   onreply?: (message: MessageData) => void;
+  /** Called when user clicks the forward button. */
   onforward?: (message: MessageData) => void;
+  /** Called when user clicks the delete button. */
   ondelete?: (message: MessageData) => void;
+  /** Custom snippet to render type-specific details. */
   typeDetail?: Snippet<[{ message: MessageData }]>;
 }
 

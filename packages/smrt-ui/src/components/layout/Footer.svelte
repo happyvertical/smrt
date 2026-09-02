@@ -7,6 +7,7 @@ import Container from './Container.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Links or content displayed in the footer. */
   children?: Snippet;
 }
 

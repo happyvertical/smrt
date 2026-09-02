@@ -19,8 +19,11 @@ import ContentGovernanceProfileEditor from './ContentGovernanceProfileEditor.sve
 type EditMode = 'policy' | 'profile' | 'assignment' | null;
 
 export interface Props {
+  /** Base URL for API requests to load and save governance definitions. */
   apiBaseUrl?: string;
+  /** Custom client instance for governance operations, or auto-created if omitted. */
   client?: ContentGovernanceManagerClient;
+  /** Fired when governance policies or profiles are loaded or changed. */
   onChange?: (definitions: ContentGovernanceDefinitionsData | null) => void;
 }
 

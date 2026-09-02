@@ -6,12 +6,19 @@ import { tryGetControlInteractionContext } from './control-interaction-context.j
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props
   extends Omit<HTMLInputAttributes, 'type' | 'class' | 'value' | 'files'> {
+  /** Selected files array (bindable). */
   files?: File[];
+  /** Label text for the file input button. */
   label?: string;
+  /** Description text shown in the drop area. */
   description?: string;
+  /** Whether to enable drag-and-drop file handling. */
   dropzone?: boolean;
+  /** CSS class to apply to the file picker. */
   class?: string;
+  /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
+  /** Callback when files are selected or changed. */
   onchangefiles?: (files: File[]) => void;
 }
 let {

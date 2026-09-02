@@ -3,10 +3,15 @@ import type { Snippet } from 'svelte';
 import { setAccordionContext } from './accordion-context.js';
 
 export interface Props {
+  /** The currently open item identifier(s); array if multiple is true. */
   value?: string | string[];
+  /** Allows multiple items to be open simultaneously. */
   multiple?: boolean;
+  /** The AccordionItem components. */
   children?: Snippet;
+  /** Fired when the open/closed state of an item changes. */
   onvaluechange?: (value: string | string[]) => void;
+  /** Additional CSS class names. */
   class?: string;
 }
 

@@ -8,7 +8,9 @@ import type { JobStatus } from './types.js';
 import { getStatusVariant } from './types.js';
 
 export interface Props {
+  /** The job status to display. */
   status: JobStatus;
+  /** Badge size. */
   size?: 'sm' | 'md';
 }
 

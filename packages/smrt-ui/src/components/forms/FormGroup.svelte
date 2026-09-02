@@ -8,13 +8,19 @@ import {
 } from './form-group-context.js';
 
 export interface Props {
+  /** Text label displayed for the form field. */
   label: string;
+  /** Optional ID for the input inside the group. */
   id?: string;
+  /** Optional error message shown in alert color. */
   error?: string;
+  /** Optional help text displayed below the control. */
   hint?: string;
+  /** Whether the form control is required. */
   required?: boolean;
   /** Agent/tutorial interaction metadata inherited by the wrapped control. */
   interaction?: ControlInteractionOptions | false;
+  /** Form control (input, checkbox, etc.) inside the group. */
   children: Snippet;
 }
 

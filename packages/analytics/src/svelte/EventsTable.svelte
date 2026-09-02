@@ -14,7 +14,9 @@ interface EventRow {
 }
 
 interface Props {
+  /** Array of event records to display in the table. */
   events: EventRow[];
+  /** Maximum number of events to show; excess events are truncated. */
   maxRows?: number;
 }
 
