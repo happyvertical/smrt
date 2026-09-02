@@ -634,11 +634,23 @@ describe('ContentList bulk workflow server adapter (#2453)', () => {
     });
     expect(collection.rows).toHaveLength(2);
 
+    const missingAffirmation = await setup.adapter.apply(
+      actionRequest('apply', 'permanent-delete', selection, target, {
+        confirmationToken: preview.confirmationToken,
+      }),
+      setup.context,
+    );
+    expect(missingAffirmation).toMatchObject({
+      ok: false,
+      reason: 'confirmation_count_mismatch',
+    });
+    expect(collection.rows).toHaveLength(2);
+
     const applyRequest = actionRequest(
       'apply',
       'permanent-delete',
       selection,
-      target,
+      { ...target, confirmedCount: 2 },
       { confirmationToken: preview.confirmationToken },
     );
     const applied = await setup.adapter.apply(applyRequest, setup.context);

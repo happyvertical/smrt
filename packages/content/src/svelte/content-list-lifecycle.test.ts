@@ -84,6 +84,10 @@ describe('ContentList lifecycle controller', () => {
         expectedRevision: 7,
         confirmationToken: 'token-1',
         idempotencyKey: 'apply-1',
+        target: {
+          expectedCount: 2,
+          confirmedCount: 2,
+        },
         selection: {
           scope: 'explicit-ids',
           rowIds: ['article-1', 'document-2'],

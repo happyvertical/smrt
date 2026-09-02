@@ -34,6 +34,8 @@ export interface ContentListLifecycleTarget {
   query?: ContentListDataQueryRequest;
   /** Count visible when the operator requested the preview. */
   expectedCount: number;
+  /** Operator-entered server preview count, sent only on permanent-delete apply. */
+  confirmedCount?: number;
 }
 
 export interface ContentListLifecycleRequest {
@@ -545,6 +547,12 @@ export function createContentListLifecycleController(
     const request: ContentListLifecycleRequest = {
       ...previewed.request,
       phase: 'apply',
+      target: {
+        ...previewed.request.target,
+        ...(previewed.request.actionId === 'permanent-delete'
+          ? { confirmedCount }
+          : {}),
+      },
       confirmationToken: previewed.result.confirmationToken,
       idempotencyKey: createIdempotencyKey(),
     };

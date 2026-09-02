@@ -412,6 +412,8 @@ export interface ContentListActionTarget {
   query?: DataQueryRequest;
   /** Count visible at selection time; drift fails the preview/apply. */
   expectedCount: number;
+  /** Operator-entered preview count, required only for permanent-delete apply. */
+  confirmedCount?: number;
 }
 
 export interface ContentListActionRequest
@@ -696,7 +698,12 @@ function validateTarget(request: unknown): string | undefined {
   )
     return 'invalid_request';
   const keys = Object.keys(request.target);
-  if (keys.some((key) => key !== 'query' && key !== 'expectedCount'))
+  if (
+    keys.some(
+      (key) =>
+        key !== 'query' && key !== 'expectedCount' && key !== 'confirmedCount',
+    )
+  )
     return 'invalid_request';
   const expectedCount = request.target.expectedCount;
   if (
@@ -705,6 +712,16 @@ function validateTarget(request: unknown): string | undefined {
     expectedCount < 0
   ) {
     return 'invalid_request';
+  }
+  const requiresCountAffirmation =
+    request.actionId === 'permanent-delete' && request.phase === 'apply';
+  if (
+    (requiresCountAffirmation &&
+      (request.target.confirmedCount !== expectedCount ||
+        !Number.isSafeInteger(request.target.confirmedCount))) ||
+    (!requiresCountAffirmation && request.target.confirmedCount !== undefined)
+  ) {
+    return 'confirmation_count_mismatch';
   }
   if (
     request.selection.scope !== 'explicit-ids' &&
@@ -1313,8 +1330,16 @@ export function createContentListActionAdapter(
     runAsPrincipal: options.runAsPrincipal,
     resolveDeferredPrincipal: options.resolveDeferredPrincipal,
     requestFingerprintExtension: (request) =>
-      (request as ContentListActionRequest)
-        .target as unknown as DataSurfaceJsonValue,
+      (() => {
+        const target = (request as ContentListActionRequest).target;
+        // The operator-entered count exists only on apply. Bind the preview's
+        // server-checked expected count/query into the token while validating
+        // the separate affirmation above before the generic adapter runs.
+        return {
+          expectedCount: target.expectedCount,
+          ...(target.query ? { query: target.query } : {}),
+        } as unknown as DataSurfaceJsonValue;
+      })(),
     mapError: mapActionError,
     resolveSurface: async (run) => ({
       descriptor,
