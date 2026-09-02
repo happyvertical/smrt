@@ -25,6 +25,10 @@ import {
 } from './foreign-key-ddl.js';
 import { planForeignKeyCreation } from './foreign-key-planner.js';
 import type { ForeignKeyDefinition, SchemaDefinition } from './types.js';
+import {
+  describeForeignKeyTypeConflict,
+  renderUuidConvergenceRepairHint,
+} from './uuid-convergence.js';
 
 /**
  * Normalize a `db.query` result into an array of rows.
@@ -403,10 +407,47 @@ export class SchemaManager {
     const existingRows = extractRows<{ convalidated?: boolean }>(existing);
     if (existingRows[0]?.convalidated === true) return;
 
-    const probeOptions = await this.resolvePostgresForeignKeyProbeOptions(
+    // #2608: PostgreSQL cannot implement a FOREIGN KEY whose child and parent
+    // columns have different physical types — FK DDL admits no cast — so the
+    // ADD CONSTRAINT below would fail with SQLSTATE 42804 and abort every
+    // later statement in the batch. Fail closed *before* the orphan probe:
+    // across mismatched types a probe answers a question about casted values,
+    // not about the constraint we are refusing to add, and it must be re-run
+    // after the columns converge anyway.
+    const liveTypes = await this.resolveLiveForeignKeyTypes(
       tableName,
       foreignKey,
+    );
+    if (liveTypes && liveTypes.childNormalized !== liveTypes.parentNormalized) {
+      throw new Error(
+        `[SchemaManager] Cannot add ${constraintName}: incompatible column types. ` +
+          `${describeForeignKeyTypeConflict({
+            childTable: tableName,
+            childColumn: foreignKey.column,
+            childType: liveTypes.childType,
+            parentTable: foreignKey.referencesTable,
+            parentColumn: foreignKey.referencesColumn,
+            parentType: liveTypes.parentType,
+          })}. Converge the columns first, then retry. ` +
+          `Suggested repair: ${renderUuidConvergenceRepairHint(
+            [
+              liveTypes.childNormalized === 'TEXT'
+                ? { table: tableName, column: foreignKey.column }
+                : undefined,
+              liveTypes.parentNormalized === 'TEXT'
+                ? {
+                    table: foreignKey.referencesTable,
+                    column: foreignKey.referencesColumn,
+                  }
+                : undefined,
+            ].filter((node) => node !== undefined),
+          ).join('; ')}`,
+      );
+    }
+
+    const probeOptions = this.resolvePostgresForeignKeyProbeOptions(
       options,
+      liveTypes,
     );
 
     const detector = renderForeignKeyOrphanDetector(tableName, foreignKey, {
@@ -440,17 +481,25 @@ export class SchemaManager {
     );
   }
 
-  private async resolvePostgresForeignKeyProbeOptions(
+  /**
+   * Read the live physical types of one child/parent column pair.
+   *
+   * Returns `undefined` when either side cannot be introspected (adapter
+   * without `getTableSchema`, table not created yet) — callers then keep the
+   * pre-#2608 behaviour rather than guessing at a mismatch.
+   */
+  private async resolveLiveForeignKeyTypes(
     tableName: string,
     foreignKey: ForeignKeyDefinition,
-    options: {
-      nullable?: boolean;
-      uuidComparison?: boolean;
-      uuidCastSide?: ForeignKeyUuidCastSide;
-    },
-  ): Promise<typeof options> {
-    if (!options.uuidComparison || options.uuidCastSide) return options;
-
+  ): Promise<
+    | {
+        childType: string;
+        parentType: string;
+        childNormalized: string;
+        parentNormalized: string;
+      }
+    | undefined
+  > {
     const childSchema = await this.db.getTableSchema?.(tableName);
     const parentSchema =
       foreignKey.referencesTable === tableName
@@ -458,17 +507,43 @@ export class SchemaManager {
         : await this.db.getTableSchema?.(foreignKey.referencesTable);
     const childType = childSchema?.columns[foreignKey.column]?.type;
     const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
-    if (!childType || !parentType) return options;
+    if (!childType || !parentType) return undefined;
+    return {
+      childType,
+      parentType,
+      childNormalized: this.normalizeForeignKeyProbeType(childType),
+      parentNormalized: this.normalizeForeignKeyProbeType(parentType),
+    };
+  }
 
-    const childTypeNormalized = this.normalizeForeignKeyProbeType(childType);
-    const parentTypeNormalized = this.normalizeForeignKeyProbeType(parentType);
-    if (childTypeNormalized === parentTypeNormalized) {
+  /**
+   * Classify which side of an orphan probe needs a guarded uuid cast.
+   *
+   * Only reachable with matching live types while the #2608 guard rejects
+   * every mismatch, but the classification stays correct for callers that
+   * reuse the helper with an unguarded pair.
+   */
+  private resolvePostgresForeignKeyProbeOptions(
+    options: {
+      nullable?: boolean;
+      uuidComparison?: boolean;
+      uuidCastSide?: ForeignKeyUuidCastSide;
+    },
+    liveTypes?: Awaited<
+      ReturnType<SchemaManager['resolveLiveForeignKeyTypes']>
+    >,
+  ): typeof options {
+    if (!options.uuidComparison || options.uuidCastSide) return options;
+    if (!liveTypes) return options;
+
+    const { childNormalized, parentNormalized } = liveTypes;
+    if (childNormalized === parentNormalized) {
       return { ...options, uuidCastSide: 'none' };
     }
-    if (childTypeNormalized === 'UUID') {
+    if (childNormalized === 'UUID') {
       return { ...options, uuidCastSide: 'parent' };
     }
-    if (parentTypeNormalized === 'UUID') {
+    if (parentNormalized === 'UUID') {
       return { ...options, uuidCastSide: 'child' };
     }
     return { ...options, uuidCastSide: 'both' };
