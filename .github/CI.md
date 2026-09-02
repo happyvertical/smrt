@@ -35,10 +35,17 @@ never prevent the tests from running.
   from 26 GiB to 14 on a memory-bound fleet, and none of the jobs on it speak
   to Docker.
 - `arc-happyvertical` remains the selector for jobs that need the dind
-  sidecar. Today that is only the dormant `postgres-tests.yml` (gated on
-  `vars.CI_POSTGRES_ENABLED`, unset), whose `services:` container needs a
-  Docker daemon until the node-level CI Postgres
-  (willgriffin/nixos-config#224) is adopted in its own change.
+  sidecar. Two jobs do: the dormant `postgres-tests.yml` (gated on
+  `vars.CI_POSTGRES_ENABLED`, unset) and `test-suite.yml`'s
+  `m5-reference-gate` (#2579), which is not dormant. Both declare a
+  `services:` PostgreSQL container and so need a Docker daemon until the
+  node-level CI Postgres (willgriffin/nixos-config#224) is adopted in its own
+  change. `m5-reference-gate` is the milestone-M5 acceptance gate: the
+  PostgreSQL portability, parity, and external-worker cases are part of what
+  it proves, so it cannot sit behind an opt-in variable without recreating the
+  silent-skip failure it exists to prevent. It preflights `createdb`/`dropdb`
+  and service reachability before doing any work, so a lane that cannot serve
+  it fails with a named cause rather than deep inside a test wrapper.
 - `arc-happyvertical-node` is retired and must not be selected. Nothing
   registers it, and because iac quiesced the scale set to `minRunners`/
   `maxRunners` 0 — GitHub's queue-drain mode — a job naming it is still assigned
@@ -212,6 +219,11 @@ reason recorded next to the setting or here:
   track observed runtime. The last two came down from the 90-minute heavy-suite
   ceiling when they were pinned to hosted (#2236); at 6 s and 18 s measured, ten
   minutes is a hang guard rather than a capacity budget.
+- `test-suite.yml`'s `m5-reference-gate` at 60. Its work is bounded — one
+  application build plus one browser pass — and the gate sets its own
+  30-minute Playwright `globalTimeout`, so a run still going at 60 is stuck
+  rather than slow. The value keeps a wedged docker-lane job from holding a
+  merge-group entry for the full 90.
 - `required-ci` and `test-packages-result`, which only read `needs.*.result`.
   Both finish in seconds, so failing fast is correct for a job that just
   reports other jobs' results.
@@ -314,8 +326,11 @@ PRs again. Publish Dry Run tests the lever explicitly — without it, a rollback
 would leave packaging unvalidated all the way into `publish.yml`, since
 `on-merge-main.yml` runs test and build but never a pack validation.
 
-No lane in `on-pull-request.yml` or `test-suite.yml` runs PostgreSQL in either
-mode; PostgreSQL lives only in `postgres-tests.yml`, described below.
+`test-suite.yml`'s `m5-reference-gate` runs PostgreSQL in both modes: in
+`affected` mode when the M5 paths filter matches, and unconditionally in
+`full`, which is every merge group. Every other lane in `on-pull-request.yml`
+and `test-suite.yml` is PostgreSQL-free, and the scheduled PostgreSQL suites
+still live only in `postgres-tests.yml`, described below.
 
 `Required CI` is the sole required repository-validation status. Seven jobs must
 succeed for both PR and merge-group events; Publish Dry Run is required only for
@@ -327,9 +342,12 @@ Rollout status:
 
 1. Done. The `arc-happyvertical` broker landed in #2124, and every self-hosted
    job selects it.
-2. Pending. `CI_POSTGRES_ENABLED` is still unset, so the scheduled PostgreSQL
-   lane stays skipped. Set it to `true` after a manual `postgres-tests.yml`
-   dispatch passes on `arc-happyvertical`.
+2. Pending. `CI_POSTGRES_ENABLED` is still unset, so the *scheduled*
+   PostgreSQL lane stays skipped. Set it to `true` after a manual
+   `postgres-tests.yml` dispatch passes on `arc-happyvertical`. Since #2579,
+   `m5-reference-gate` exercises a `services:` PostgreSQL container on that
+   same lane on every merge group, so the lane's dind capability is proven
+   continuously rather than only by that one-off dispatch.
 3. Done. `CI_MERGE_QUEUE_ENABLED` is `true`.
 4. Done. The required status list is exactly `Required CI`.
 5. Done. The repository merge queue uses squash merges, up to five entries
@@ -357,7 +375,10 @@ runner image already provides the libpq client binaries the wrapper needs for
 still gets its own database under `--concurrency=2`; no job depends on a
 cluster-local credential, and there is no production database secret access.
 
-There is no PR-triggered PostgreSQL lane. `postgres-tests.yml` triggers on
+The only PR- and merge-triggered PostgreSQL lane is `test-suite.yml`'s
+`m5-reference-gate`, which brings its own service container and, like the
+suites below, never touches a cluster-local credential or a production
+database. `postgres-tests.yml` triggers on
 `workflow_call`, `workflow_dispatch`, and a nightly `schedule`, and its only
 caller, `on-demand-validation.yml`, is dispatch-only. The scheduled run stays
 skipped until the repository variable `CI_POSTGRES_ENABLED` is `true`, which it

@@ -109,3 +109,31 @@ and must be reviewed as a diff, never regenerated blindly. The PostgreSQL
 external-worker half lives in `runtimeProfileParity.postgres.optional.test.ts`
 and runs through `pnpm test:postgres`, which forces sequential file execution
 because the optional PostgreSQL suites share one disposable database.
+
+## M5 browser gate
+
+`e2e/` holds the milestone-M5 acceptance gate (#2579): a Playwright pass that
+provisions a fresh copy of the generated app into a temporary root, runs its
+own `app:setup` build/migrate/bootstrap, serves it on an ephemeral loopback
+port, and drives WebMCP discovery, execution, authorization, consent, disposal,
+and redaction in a real browser. The only fabricated thing is
+`document.modelContext`, which no headless browser exposes; database,
+collections, handlers, session, and every registration are the application's
+own. Never add a mocked REST handler, an in-memory database, or DOM automation
+presented as WebMCP execution.
+
+- `pnpm test:e2e` runs the browser half.
+- `pnpm test:m5` runs the whole aggregate gate through
+  `e2e/support/gate.mjs`, which requires a PostgreSQL service and fails when a
+  required profile case is missing rather than merely absent from the log.
+- Tracing, video, and screenshots stay off: onboarding carries a single-use
+  bootstrap token in a URL.
+- `e2e/` is outside `biome.json`'s include globs, as every package's `e2e/` is,
+  so a green `Lint` job says nothing about this tree. `pnpm typecheck` covers
+  the `.ts` files (`tsconfig.fixture.json` includes `e2e/**/*.ts`) but NOT
+  `e2e/support/gate.mjs`, which no static analysis reaches. Its `emit()`
+  vocabulary guard is the runtime backstop; edit it carefully and run
+  `pnpm test:m5` after any change to it.
+
+See [the M5 reference fixture gate](../../docs/content/m5-reference-fixture.md)
+for what the milestone proves, what it does not, and the recovery commands.

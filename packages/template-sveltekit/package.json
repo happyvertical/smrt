@@ -34,6 +34,8 @@
   "scripts": {
     "build": "pnpm run typecheck && node --check index.js",
     "test": "vitest run",
+    "test:e2e": "pnpm exec playwright test --config playwright.config.ts",
+    "test:m5": "node ../../scripts/run-with-ci-postgres.mjs -- node e2e/support/gate.mjs",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run --no-file-parallelism __tests__/*.postgres.optional.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.fixture.json"
@@ -46,12 +48,21 @@
     "@happyvertical/smrt-playbooks": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-scanner": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-web": "workspace:*",
     "@happyvertical/sql": "^0.89.4",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "@playwright/test": "^1.61.1",
+    "@sveltejs/adapter-node": "^5.5.4",
+    "@sveltejs/kit": "^2.69.2",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@types/node": "24.13.2",
+    "svelte": "^5.56.4",
     "typescript": "5.9.3",
+    "vite": "8.1.4",
     "vitest": "4.1.10"
   },
   "publishConfig": {
