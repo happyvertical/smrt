@@ -203,6 +203,29 @@ function resolveSurfaceAuthority(
   };
 }
 
+function reconcileSurfaceDescriptor(
+  descriptor: import('@happyvertical/smrt-ui/data').DataSurfaceDescriptor,
+  authority: ReturnType<typeof resolveSurfaceAuthority>,
+): import('@happyvertical/smrt-ui/data').DataSurfaceDescriptor {
+  if (
+    authority.identity &&
+    !sameSurfaceIdentity(descriptor.identity, authority.identity)
+  ) {
+    throw new Error(
+      'ContentList custom data surface descriptor must use the lifecycle and workflow identity',
+    );
+  }
+  if (
+    authority.maxSelectionSize !== undefined &&
+    descriptor.limits.maxSelectionSize !== authority.maxSelectionSize
+  ) {
+    throw new Error(
+      'ContentList custom data surface descriptor must use the lifecycle and workflow selection limit',
+    );
+  }
+  return descriptor;
+}
+
 const WORKFLOW_LABEL_MESSAGES: Record<
   ContentListWorkflowId,
   keyof typeof M
@@ -1462,7 +1485,12 @@ const surfaceOptions = $derived(
     ? {
         registry: dataSurface.registry,
         descriptor:
-          dataSurface.descriptor ??
+          dataSurface.descriptor
+            ? reconcileSurfaceDescriptor(
+                dataSurface.descriptor,
+                surfaceAuthority,
+              )
+            :
           (() => {
             const descriptor = buildContentListSurfaceDescriptor({
               columnLabels,

@@ -3,6 +3,8 @@
 import type { DataSurfaceActionResult } from '@happyvertical/smrt-ui/data';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
+import BindingHarness from './__tests__/content-list-lifecycle-binding-harness.svelte';
 import ContentListLifecyclePanel from './ContentListLifecyclePanel.svelte';
 
 const mounted: Array<ReturnType<typeof mount>> = [];
@@ -76,12 +78,93 @@ function renderPanel(overrides: Record<string, unknown> = {}) {
   return { target, preview, apply, oncomplete };
 }
 
+function renderBindingHarness(binding: ContentListLifecycleBinding) {
+  const target = document.createElement('div');
+  let setBinding: (next: ContentListLifecycleBinding) => void = () => {
+    throw new Error('Lifecycle binding setter was not initialized');
+  };
+  document.body.appendChild(target);
+  mounted.push(
+    mount(BindingHarness, {
+      target,
+      props: {
+        binding,
+        onReady: (next) => {
+          setBinding = next;
+        },
+      },
+    }),
+  );
+  flushSync();
+  return { target, setBinding };
+}
+
 afterEach(async () => {
   for (const component of mounted.splice(0)) await unmount(component);
   document.body.innerHTML = '';
 });
 
 describe('ContentListLifecyclePanel', () => {
+  it('replaces lifecycle authority and invalidates an outstanding preview', async () => {
+    const firstIdentity = {
+      surfaceId: 'tenant-a-content',
+      kind: 'table' as const,
+    };
+    const secondIdentity = {
+      surfaceId: 'tenant-b-content',
+      kind: 'table' as const,
+    };
+    let resolveFirst: (result: DataSurfaceActionResult) => void = () =>
+      undefined;
+    const firstPreview = vi.fn(
+      () =>
+        new Promise<DataSurfaceActionResult>((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    const secondPreview = vi.fn(async () => ({
+      ...lifecycleResult('preview'),
+      actionId: 'move-to-trash' as const,
+      identity: secondIdentity,
+    }));
+    const { target, setBinding } = renderBindingHarness({
+      client: {
+        preview: firstPreview,
+        apply: vi.fn(async () => ({ ok: true })),
+      },
+      identity: firstIdentity,
+      revision: 1,
+    });
+
+    button(target, 'Move selected to trash').click();
+    await vi.waitFor(() => expect(firstPreview).toHaveBeenCalledOnce());
+    setBinding({
+      client: {
+        preview: secondPreview,
+        apply: vi.fn(async () => ({ ok: true })),
+      },
+      identity: secondIdentity,
+      revision: 2,
+    });
+    await tick();
+    flushSync();
+    resolveFirst({
+      ...lifecycleResult('preview'),
+      actionId: 'move-to-trash' as const,
+      identity: firstIdentity,
+    });
+    await tick();
+    await tick();
+
+    expect(target.textContent).not.toContain('Confirm');
+    button(target, 'Move selected to trash').click();
+    await vi.waitFor(() => expect(secondPreview).toHaveBeenCalledOnce());
+    expect(secondPreview.mock.calls[0][0]).toMatchObject({
+      identity: secondIdentity,
+      expectedRevision: 2,
+    });
+  });
+
   it('exposes screen-reader-labelled restore and destructive trash actions', () => {
     const { target } = renderPanel();
 

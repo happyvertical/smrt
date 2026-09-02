@@ -216,6 +216,45 @@ describe('ContentList mounted data surface', () => {
     rebound.destroy();
   });
 
+  it('rejects a stale command after an unmount/remount on the same registry identity', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    const identity = { surfaceId: 'remounted', kind: 'table' as const };
+    const first = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({
+        surfaceId: identity.surfaceId,
+      }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+    const beforeUnmount = registry.inspect(identity);
+    first.destroy();
+
+    const remounted = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({
+        surfaceId: identity.surfaceId,
+      }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'replay-after-remount',
+        identity,
+        expectedRevision: beforeUnmount?.revision ?? 0,
+        controlId: 'set-view',
+        payload: { view: 'compact' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'stale_revision' });
+    remounted.destroy();
+  });
+
   it('rejects filters whose operators are not published by a server-backed descriptor', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createContentListController();

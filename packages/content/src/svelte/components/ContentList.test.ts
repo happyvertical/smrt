@@ -8,6 +8,7 @@ import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ContentData } from '../../mock-smrt-client.js';
 import {
+  buildContentListSurfaceDescriptor,
   CONTENT_LIST_UNREPRESENTABLE_OPTION,
   normalizeContentToken,
 } from '../content-list-controller.js';
@@ -2723,6 +2724,46 @@ describe('ContentList data surface', () => {
         }),
       }),
     ).toThrow('must use the same data surface identity');
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('rejects a custom descriptor that disagrees with binding authority', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        dataSurface: {
+          registry,
+          descriptor: buildContentListSurfaceDescriptor({
+            surfaceId: 'custom-descriptor',
+            limits: { maxSelectionSize: 20 },
+          }),
+        },
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+          maxSelectionSize: 11,
+        }),
+      }),
+    ).toThrow('custom data surface descriptor must use');
+    expect(registry.list()).toEqual([]);
+  });
+
+  it('rejects a custom descriptor with a non-authoritative selection cap', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        dataSurface: {
+          registry,
+          descriptor: buildContentListSurfaceDescriptor({
+            surfaceId: 'workflow-list',
+            limits: { maxSelectionSize: 20 },
+          }),
+        },
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+          maxSelectionSize: 11,
+        }),
+      }),
+    ).toThrow('custom data surface descriptor must use');
     expect(registry.list()).toEqual([]);
   });
 });

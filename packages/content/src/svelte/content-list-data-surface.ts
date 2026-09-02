@@ -54,6 +54,21 @@ export interface ContentListSurfaceHandle {
 
 const VIEWS = new Set<ContentListViewMode>(['grid', 'detailed', 'compact']);
 
+const revisionsByRegistry = new WeakMap<
+  DataSurfaceRegistry,
+  Map<string, number>
+>();
+
+function identityKey(descriptor: DataSurfaceDescriptor): string {
+  const { identity } = descriptor;
+  return JSON.stringify([
+    identity.kind,
+    identity.surfaceId,
+    identity.subject?.type,
+    identity.subject?.id,
+  ]);
+}
+
 function selectionReference(
   selection: DataTableSelection,
 ): DataSurfaceSelectionReference | null {
@@ -153,9 +168,21 @@ function commandAllowed(
 export function registerContentListDataSurface(
   options: ContentListSurfaceRegistrationOptions,
 ): ContentListSurfaceHandle {
-  let revision = options.initialRevision ?? 0;
+  let revisions = revisionsByRegistry.get(options.registry);
+  if (!revisions) {
+    revisions = new Map();
+    revisionsByRegistry.set(options.registry, revisions);
+  }
+  const key = identityKey(options.descriptor);
+  const previousRevision = revisions.get(key);
+  let revision = Math.max(
+    options.initialRevision ?? 0,
+    previousRevision === undefined ? 0 : previousRevision + 1,
+  );
+  revisions.set(key, revision);
   const advanceRevision = () => {
     revision += 1;
+    revisions.set(key, revision);
     options.onRevision?.(revision);
   };
   let context = options.context;
