@@ -8,8 +8,11 @@ import { M } from '../i18n.contribution.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Available contribution types to edit and configure. */
   types?: ContentContributionTypeData[];
+  /** Fired when the user saves changes to a contribution type. */
   onSave: (type: Partial<ContentContributionTypeData>) => void;
+  /** Fired when the user deletes a contribution type. */
   onDelete?: (type: ContentContributionTypeData) => void;
 }
 

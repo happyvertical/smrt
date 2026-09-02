@@ -6,7 +6,9 @@
 import type { Role } from '@happyvertical/smrt-types';
 
 export interface Props {
+  /** The role object whose name is displayed. */
   role: Role;
+  /** Visual size of the badge. */
   size?: 'sm' | 'md' | 'lg';
 }
 

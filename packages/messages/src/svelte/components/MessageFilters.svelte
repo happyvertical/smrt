@@ -16,11 +16,17 @@ import type {
 const { t } = useI18n();
 
 export interface Props {
+  /** Current filter state to display and edit. */
   filters?: MessageFilterState;
+  /** Current sort field and direction. */
   sort?: MessageSort;
+  /** Accounts available for filtering. */
   accounts?: AccountData[];
+  /** Message types available for filtering. */
   availableTypes?: MessageType[];
+  /** Called when user changes any filter. */
   onfilterchange?: (filters: MessageFilterState) => void;
+  /** Called when user enters a search query. */
   onsearch?: (query: string) => void;
 }
 

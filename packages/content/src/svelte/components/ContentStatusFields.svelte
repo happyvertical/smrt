@@ -14,7 +14,9 @@ export interface ContentStatusFieldData {
 }
 
 export interface Props {
+  /** Current status field values. */
   data: ContentStatusFieldData;
+  /** Invoked when the user modifies any status field. */
   onChange?: (change: Record<string, unknown>) => void;
 }
 

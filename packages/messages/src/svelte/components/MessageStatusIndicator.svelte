@@ -8,10 +8,15 @@ import { M } from '../i18n.messages.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Shows unread indicator dot when false. */
   isRead: boolean;
+  /** Shows flag icon when true. */
   isFlagged: boolean;
+  /** Shows attachment icon when true. */
   hasAttachments: boolean;
+  /** Shows reply icon when the message has been answered. */
   isAnswered?: boolean;
+  /** Shows draft indicator when message has not been sent. */
   isDraft?: boolean;
 }
 

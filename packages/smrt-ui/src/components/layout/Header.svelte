@@ -3,7 +3,9 @@ import type { Snippet } from 'svelte';
 import Container from './Container.svelte';
 
 export interface Props {
+  /** Site logo or title content. */
   logo?: Snippet;
+  /** Navigation links content. */
   nav?: Snippet;
 }
 

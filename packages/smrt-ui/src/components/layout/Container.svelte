@@ -5,7 +5,9 @@ import type { HTMLAttributes } from 'svelte/elements';
 type MaxWidth = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
 interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'class'> {
+  /** Maximum width constraint for the container. */
   maxWidth?: MaxWidth;
+  /** The container content. */
   children?: Snippet;
 }
 

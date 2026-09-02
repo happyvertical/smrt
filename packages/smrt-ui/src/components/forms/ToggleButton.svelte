@@ -15,9 +15,13 @@ import { prepareBooleanControlValue } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLButtonAttributes, 'class'> {
+  /** Whether the button is in pressed state. */
   pressed?: boolean;
+  /** Additional CSS class names. */
   class?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
+  /** The button content. */
   children?: Snippet;
 }
 let {

@@ -1,6 +1,8 @@
 <script lang="ts" module>
 export interface Props {
+  /** Send status to display: draft, pending, sending, sent, failed, or scheduled. */
   status: 'draft' | 'pending' | 'sending' | 'sent' | 'failed' | 'scheduled';
+  /** Visual size of the badge: small or medium. */
   size?: 'sm' | 'md';
 }
 </script>

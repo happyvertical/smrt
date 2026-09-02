@@ -26,14 +26,23 @@ export interface ContentBodyEditorChange {
 }
 
 export interface Props {
+  /** The body content string being edited, in HTML or the configured format. */
   value: string;
+  /** Format of the body content: HTML, Markdown, or auto-detected. */
   format?: ContentBodyFormat | null;
+  /** Placeholder text shown when the editor is empty. */
   placeholder?: string;
+  /** Index of the currently selected image in the body, or -1 for none. */
   selectedImageIndex?: number;
+  /** Fired when the body content or embedded images change. */
   onChange?: (change: ContentBodyEditorChange) => void;
+  /** Fired when the user clicks to open the image chooser. */
   onOpenImageChooser?: () => void;
+  /** Fired when the user selects an image within the body. */
   onSelectImage?: (index: number) => void;
+  /** Fired when the user sets an image as the content thumbnail. */
   onUseImageAsThumbnail?: (assetId: string) => void;
+  /** Resolves an image file, asset, or ID to a persisted image URL or object. */
   onResolveImage?: (
     selected: ImageLike | File | string,
   ) => Promise<unknown> | unknown;

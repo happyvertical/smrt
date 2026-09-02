@@ -11,9 +11,13 @@ import type { DayEventDetail, DayForecast } from '../../types-generic';
 const { t } = useI18n();
 
 export interface Props {
+  /** Date to display events for in this view. */
   date: Date;
+  /** Events occurring on the specified date, or null if none exist. */
   events?: DayEventDetail[] | null;
+  /** Weather forecast data for the date, or null if unavailable. */
   forecast?: DayForecast | null;
+  /** URL for the back link to return to calendar view. */
   calendarUrl?: string;
   /** Callback when an event card is clicked */
   onEventClick?: (eventType: string, eventName: string) => void;

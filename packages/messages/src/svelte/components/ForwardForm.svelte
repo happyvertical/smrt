@@ -2,8 +2,11 @@
 import type { MessageData, RecipientEntry } from '../types.js';
 
 export interface Props {
+  /** Message to forward to recipients. */
   originalMessage: MessageData;
+  /** Called when user sends the forward. */
   onsend?: (to: RecipientEntry[], body: string) => void;
+  /** Called when user cancels the forward. */
   oncancel?: () => void;
 }
 </script>

@@ -2,12 +2,19 @@
 import type { Snippet } from 'svelte';
 
 export interface Props {
+  /** Alert type that controls styling and ARIA role. */
   variant?: 'info' | 'success' | 'warning' | 'error';
+  /** Optional heading text displayed above the message. */
   title?: string;
+  /** Main message content shown in the alert body. */
   children?: Snippet;
+  /** Optional snippet to render an action button or link. */
   action?: Snippet;
+  /** Whether a close button appears to dismiss the alert. */
   dismissible?: boolean;
+  /** Callback when the user clicks the dismiss button. */
   ondismiss?: () => void;
+  /** CSS class to apply to the alert container. */
   class?: string;
 }
 

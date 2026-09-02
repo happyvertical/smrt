@@ -10,8 +10,11 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for content API requests. */
   apiBaseUrl?: string;
+  /** ID of the content item to retrieve versions for. */
   contentId: string;
+  /** Invoked when the versions list changes. */
   onVersionsChange?: (versions: ContentVersionData[]) => void;
 }
 

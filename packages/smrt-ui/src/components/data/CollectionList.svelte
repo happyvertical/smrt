@@ -2,19 +2,33 @@
 import type { Snippet } from 'svelte';
 
 export interface Props<T> {
+  /** Array of items to display in the list or grid. */
   items: T[];
+  /** Field name or function to uniquely identify each item. */
   itemKey?: keyof T | ((item: T) => string | number);
+  /** Field name or function to extract the title text for each item. */
   title?: keyof T | ((item: T) => string);
+  /** Field name or function to extract the description text for each item. */
   description?: keyof T | ((item: T) => string | undefined);
+  /** Display layout: list (single column) or grid (multiple columns). */
   layout?: 'list' | 'grid';
+  /** Whether to show checkboxes for selecting multiple items. */
   selectable?: boolean;
+  /** Set of currently selected item keys (bindable). */
   selected?: Set<string | number>;
+  /** Whether to show a loading spinner instead of the collection. */
   loading?: boolean;
+  /** Custom snippet to render each item's content. */
   item?: Snippet<[{ item: T; index: number; selected: boolean }]>;
+  /** Custom snippet to render action buttons for each item. */
   actions?: Snippet<[{ item: T; index: number }]>;
+  /** Custom snippet to render when there are no items. */
   empty?: Snippet;
+  /** Callback when the selection set changes. */
   onselectionchange?: (selected: Set<string | number>) => void;
+  /** Callback when an item is clicked. */
   onitemclick?: (item: T, index: number) => void;
+  /** CSS class to apply to the collection container. */
   class?: string;
 }
 

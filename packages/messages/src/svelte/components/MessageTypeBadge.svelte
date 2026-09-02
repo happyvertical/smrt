@@ -6,7 +6,9 @@ import { Badge } from '@happyvertical/smrt-ui/ui';
 import type { MessageType } from '../types.js';
 
 export interface Props {
+  /** Message type to display as a labeled badge. */
   type: MessageType;
+  /** Visual size of the badge: small or medium. */
   size?: 'sm' | 'md';
 }
 

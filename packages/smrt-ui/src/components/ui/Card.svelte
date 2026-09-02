@@ -4,11 +4,17 @@ import type { HTMLAttributes } from 'svelte/elements';
 import type { CardPadding, CardVariant } from '../../types-generic';
 
 interface Props extends Omit<HTMLAttributes<HTMLDivElement>, 'class'> {
+  /** Visual variant affecting borders and shadows. */
   variant?: CardVariant;
+  /** Interior padding size for the card content. */
   padding?: CardPadding;
+  /** Adds hover effects including elevation and lift. */
   hoverable?: boolean;
+  /** The main card content. */
   children?: Snippet;
+  /** Optional header content displayed at the top. */
   header?: Snippet;
+  /** Optional footer content displayed at the bottom. */
   footer?: Snippet;
 }
 

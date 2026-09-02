@@ -20,11 +20,17 @@ export interface Props
     HTMLInputAttributes,
     'type' | 'class' | 'checked' | 'role' | 'size'
   > {
+  /** Whether the switch is checked. */
   checked?: boolean;
+  /** Text displayed next to the switch. */
   label?: string;
+  /** Position of the label relative to the switch. */
   labelPosition?: 'left' | 'right';
+  /** Visual size of the switch control. */
   size?: 'sm' | 'md' | 'lg';
+  /** Additional CSS class names. */
   class?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
 }
 

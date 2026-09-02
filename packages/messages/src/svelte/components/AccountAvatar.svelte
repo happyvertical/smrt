@@ -4,8 +4,11 @@
  */
 
 export interface Props {
+  /** Email provider type such as Gmail, IMAP, or Slack. */
   providerType: string;
+  /** Account or user name, displayed as title and used to generate initials. */
   name: string;
+  /** Visual size of the avatar: small, medium, or large. */
   size?: 'sm' | 'md' | 'lg';
 }
 

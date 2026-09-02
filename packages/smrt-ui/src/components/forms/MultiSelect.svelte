@@ -21,14 +21,23 @@ import {
 } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** Array of options to select from. */
   options: ControlOption[];
+  /** Currently selected option values (bindable). */
   values?: Array<string | number>;
+  /** Label for the multi-select control. */
   label: string;
+  /** HTML form field name. */
   name?: string;
+  /** Placeholder text shown when no items selected. */
   placeholder?: string;
+  /** Whether the multi-select is disabled. */
   disabled?: boolean;
+  /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
+  /** Callback when the selected values change. */
   onvalueschange?: (values: Array<string | number>) => void;
+  /** CSS class to apply to the control container. */
   class?: string;
 }
 let {

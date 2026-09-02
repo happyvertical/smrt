@@ -18,16 +18,27 @@ import {
 } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** Array of options to select from. */
   options: ControlOption[];
+  /** Currently selected option value (bindable). */
   value?: string;
+  /** Label for the combobox control. */
   label: string;
+  /** HTML form field name. */
   name?: string;
+  /** Placeholder text shown when value is empty. */
   placeholder?: string;
+  /** Whether the control is disabled. */
   disabled?: boolean;
+  /** Whether the control is required. */
   required?: boolean;
+  /** Whether users can enter values not in the options list. */
   allowCustom?: boolean;
+  /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
+  /** Callback when the selected value changes. */
   onvaluechange?: (value: string) => void;
+  /** CSS class to apply to the combobox container. */
   class?: string;
 }
 let {

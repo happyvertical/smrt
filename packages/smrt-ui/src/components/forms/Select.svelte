@@ -13,9 +13,13 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
+  /** The currently selected option value. */
   value?: string;
+  /** Additional CSS class names. */
   class?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
+  /** The option and optgroup elements. */
   children: Snippet;
 }
 

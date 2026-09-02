@@ -4,8 +4,11 @@ import type { HTMLAttributes } from 'svelte/elements';
 import type { BadgeSize, BadgeVariant } from '../../types-generic';
 
 interface Props extends Omit<HTMLAttributes<HTMLSpanElement>, 'class'> {
+  /** Visual variant for color and styling. */
   variant?: BadgeVariant;
+  /** Size of the badge. */
   size?: BadgeSize;
+  /** The badge content. */
   children?: Snippet;
 }
 

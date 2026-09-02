@@ -3,9 +3,13 @@ import type { Snippet } from 'svelte';
 import { getAccordionContext } from './accordion-context.js';
 
 export interface Props {
+  /** Unique identifier for this accordion item. */
   value: string;
+  /** Header text displayed in the item button. */
   title: string;
+  /** Blocks opening and closing this item. */
   disabled?: boolean;
+  /** The content shown when the item is open. */
   children?: Snippet;
 }
 let { value, title, disabled = false, children }: Props = $props();

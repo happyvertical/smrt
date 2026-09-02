@@ -39,7 +39,9 @@ export interface Props extends Omit<HTMLButtonAttributes, 'class' | 'href'> {
    * Button (issue #1589) keep them type-checked. Ignored in button mode.
    */
   target?: HTMLAnchorAttributes['target'];
+  /** Specifies the relationship between the button link and the target URL. */
   rel?: HTMLAnchorAttributes['rel'];
+  /** Prompts download of the linked resource instead of navigating to it. */
   download?: HTMLAnchorAttributes['download'];
 }
 

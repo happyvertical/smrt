@@ -11,9 +11,13 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** The governance assignment to edit, or an empty object for new. */
   assignment?: Partial<ContentGovernanceAssignmentData>;
+  /** Available governance profiles to assign for publication and corrections. */
   profiles?: ContentGovernanceProfileData[];
+  /** Fired when the user saves the assignment configuration. */
   onSave: (assignment: Partial<ContentGovernanceAssignmentData>) => void;
+  /** Fired when the user cancels editing. */
   onCancel?: () => void;
 }
 

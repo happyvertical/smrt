@@ -9,8 +9,11 @@ import { M } from '../i18n.editor.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** IDs of referenced content items. */
   referenceIds?: string[];
+  /** Resolved reference objects with metadata for display. */
   references?: ContentEditorReference[];
+  /** Invoked when the user adds or removes a reference. */
   onReferenceIdsChange?: (referenceIds: string[]) => void;
   /**
    * Optional snippet rendered inside the panel beneath the references list

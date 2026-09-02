@@ -2,9 +2,13 @@
 import type { RecipientEntry } from '../types.js';
 
 export interface Props {
+  /** Field label such as To, Cc, or Bcc. */
   label?: string;
+  /** Array of email recipients or addresses. */
   recipients: RecipientEntry[];
+  /** Called when user adds or removes a recipient. */
   onchange?: (recipients: RecipientEntry[]) => void;
+  /** Placeholder text for the recipient input field. */
   placeholder?: string;
 }
 </script>
