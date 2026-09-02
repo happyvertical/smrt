@@ -104,19 +104,25 @@ included using the generator's own exhaustive-include rule.
 `renderAgentSurfaceReport(report)` returns the printed lines; both are exported
 so the shape is testable without running the command.
 
-**Known over-report for an STI class with a bare `true`/omitted `mcp`/`cli`
-config, tracked as #2624:** the *scanner's* STI method merge in
-`manifest-generator.ts` walks the full inheritance chain unconditionally,
-unlike `ObjectRegistry.getAllMethods()` at runtime, which explicitly skips
-`SmrtObject`/`SmrtClass`/`SmrtCollection` ancestors. So an STI class's
-`object.methods` in the manifest can already (incorrectly) contain those
-framework base classes' own internal methods (`save`, `toJSON`,
-`withTransaction`, ...), and `configuredSurfaces()` — correctly applying
-#2619's "no include list means every eligible public method" rule to
-whatever `object.methods` contains — reports them too. This is a manifest
-defect upstream of the surface projection, not a gap in the projection
-itself; #2624 tracks narrowing the scanner's STI method merge to match the
-runtime resolver's exclusion.
+**Known live over-exposure for an STI class with a bare `true`/omitted
+`mcp`/`cli` config, tracked as #2624:** the *scanner's* STI method merge in
+`manifest-generator.ts` walks the full inheritance chain unconditionally, so
+an STI class's `object.methods` already (incorrectly) contains its framework
+base classes' own internal methods (`save`, `toJSON`, `withTransaction`,
+`generateEmbeddings`, `destroy`, ...). This is not only a manifest
+artifact concern: `ObjectRegistry.getAllMethods()`'s runtime chain walk
+(`registry/inheritance-resolver.ts`) never actually filters it back out —
+its `SmrtObject`/`SmrtClass`/`SmrtCollection` ancestor-skip only fires for a
+chain entry literally named one of those three, and `getInheritanceChain()`
+already stops *before* adding such an ancestor to the chain, so that name
+never appears there to be skipped. The STI class itself is always the last
+chain entry, contributing its own (already-polluted) `methods` map
+unfiltered. So `CLIGenerator`/`MCPGenerator` genuinely register
+`<object>:save`, `<object>:withTransaction`, etc. as real, callable
+commands/tools **today, in a running application** — `configuredSurfaces()`
+here is reporting a real exposed surface, not fabricating one. #2624 tracks
+narrowing the scanner's STI method merge (or making the runtime skip
+actually reachable).
 
 Sample output:
 
