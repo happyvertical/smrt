@@ -11,9 +11,13 @@ import {
 } from './shared.js';
 
 interface ContentGovernanceRouteProps {
+  /** Pre-initialized governance client; creates a new one if omitted. */
   client?: ContentGovernanceManagerClient;
+  /** Navigation items shown in the sidebar. */
   navigation?: ContentRouteNavigationItem[];
+  /** Base URL for governance API requests. */
   apiBaseUrl?: string;
+  /** Whether the route is embedded in a parent application. */
   embedded?: boolean;
 }
 

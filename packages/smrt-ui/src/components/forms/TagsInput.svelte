@@ -12,15 +12,25 @@ import {
 import { validatesStringArray } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** The array of tag strings currently in the input. */
   values?: string[];
+  /** Label displayed above the tags input. */
   label: string;
+  /** Form field name for the hidden tag inputs. */
   name?: string;
+  /** Placeholder text for the input field. */
   placeholder?: string;
+  /** Blocks adding or removing tags. */
   disabled?: boolean;
+  /** Maximum number of tags allowed in the input. */
   maxTags?: number;
+  /** Allows the same tag value to be added multiple times. */
   allowDuplicates?: boolean;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
+  /** Fired when the tag array is modified. */
   onvalueschange?: (values: string[]) => void;
+  /** Additional CSS class names. */
   class?: string;
 }
 let {

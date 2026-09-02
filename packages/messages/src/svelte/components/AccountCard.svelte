@@ -7,10 +7,15 @@ import type { AccountData } from '../types.js';
 import AccountAvatar from './AccountAvatar.svelte';
 
 export interface Props {
+  /** Account data to display with its status and sync history. */
   account: AccountData;
+  /** Called when user clicks the sync button to refresh the account. */
   onsync?: (account: AccountData) => void;
+  /** Called when user clicks the activate button to enable the account. */
   onactivate?: (account: AccountData) => void;
+  /** Called when user clicks the deactivate button to disable the account. */
   ondeactivate?: (account: AccountData) => void;
+  /** Called when user clicks the remove button to delete the account. */
   onremove?: (account: AccountData) => void;
 }
 

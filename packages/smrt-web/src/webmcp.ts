@@ -103,6 +103,37 @@ export interface WebMcpExposurePolicy {
   maxTools?: number;
 }
 
+/**
+ * A hand-written browser tool from application code — not generated from a
+ * `@smrt()` model. Structurally identical to the WebMCP `registerTool` input;
+ * kept as a separate type so this framework-agnostic module never depends on
+ * a UI layer's tool-spec type.
+ */
+export interface WebMcpBespokeToolSpec {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+    untrustedContentHint?: boolean;
+  };
+  execute: (args: Record<string, unknown>) => string | Promise<string>;
+}
+
+export interface RegisterWebMcpBespokeToolOptions {
+  /**
+   * Allowed effects. Omitted means read-only exposure — the same default as
+   * {@link registerWebMcpTools}. `namespace` and `maxTools` deliberately do
+   * not apply to a bespoke tool (#2586): a component author already chose a
+   * stable name, and counting one intent against a shared budget could make
+   * an unrelated generated tool set fail to register.
+   */
+  effects?: readonly WebMcpToolEffect[];
+}
+
 export interface RegisterWebMcpToolsOptions extends WebMcpExposurePolicy {
   /** REST base path for the fetchers (default `/api/v1`). */
   basePath?: string;
@@ -345,6 +376,76 @@ function registrationDisposer(
   return Object.assign(dispose, { ready });
 }
 
+/**
+ * Register one hand-written browser tool through the same fail-closed effect
+ * classification and `effects` exposure policy as {@link registerWebMcpTools}
+ * (#2586). A tool with no `annotations`, or with annotations that leave its
+ * effect undeclared, classifies destructive/non-idempotent/open-world — the
+ * same default `actionSemantics` gives an undeclared custom model action —
+ * and is excluded unless the policy allows `destructive`. `namespace` and
+ * `maxTools` are out of scope for a bespoke tool; see
+ * {@link RegisterWebMcpBespokeToolOptions}.
+ *
+ * @returns a disposer that deregisters the tool this call registered (a
+ * no-op double-call). On a browser without WebMCP, or when policy excludes
+ * the tool's effect, the call is a no-op and the disposer is inert.
+ */
+export function registerWebMcpBespokeTool(
+  spec: WebMcpBespokeToolSpec,
+  options: RegisterWebMcpBespokeToolOptions = {},
+): WebMcpRegistrationDisposer {
+  const { allowedEffects } = validateExposurePolicy(options);
+  const ctx = getModelContext();
+  if (!ctx) return registrationDisposer(() => {}, Promise.resolve());
+
+  const semantics = actionSemantics(
+    'bespoke',
+    bespokeDeclaredSemantics(spec.annotations),
+  );
+  if (!allowedEffects.has(semantics.effect)) {
+    return registrationDisposer(() => {}, Promise.resolve());
+  }
+
+  const controller = new AbortController();
+  let disposed = false;
+  const dispose = (): void => {
+    disposed = true;
+    controller.abort();
+  };
+
+  let registration: void | Promise<void>;
+  try {
+    registration = ctx.registerTool(
+      {
+        name: spec.name,
+        description: spec.description,
+        inputSchema: spec.inputSchema,
+        annotations: annotationsFor(semantics),
+        execute: guardedExecute(
+          { name: spec.name, effect: semantics.effect },
+          allowedEffects,
+          () => disposed,
+          spec.execute,
+        ),
+      },
+      { signal: controller.signal },
+    );
+  } catch (error) {
+    dispose();
+    throw error;
+  }
+
+  const ready = Promise.resolve(registration).catch((error: unknown) => {
+    dispose();
+    throw error;
+  });
+  // Callers may only need the synchronous disposer; keep `ready`'s rejection
+  // observable for callers that report registration failures without
+  // producing an unhandled rejection when nobody awaits it.
+  void ready.catch(() => undefined);
+  return registrationDisposer(dispose, ready);
+}
+
 const VALID_EFFECTS: readonly WebMcpToolEffect[] = [
   'read',
   'write',
@@ -561,6 +662,56 @@ function actionSemantics(
   }
 }
 
+/**
+ * Translate a bespoke tool's optional MCP-shaped `annotations` into the
+ * `declared` input `actionSemantics` already accepts for an undeclared
+ * custom model action, so both paths share one fail-closed default. Checks
+ * run in this fixed order, and `destructiveHint: true` always wins even when
+ * `readOnlyHint: true` is also present — a contradictory pair (an author
+ * error, or an attempted downgrade) must fail closed to `destructive`
+ * rather than being read through as `read`:
+ *
+ *   1. `destructiveHint === true` -> `destructive`, regardless of `readOnlyHint`.
+ *   2. otherwise `readOnlyHint === true` -> `read`.
+ *   3. otherwise `destructiveHint === false` -> the `write` effect BUCKET
+ *      used for exposure-policy filtering — a write tool still requires an
+ *      explicit `effects` opt-in separate from `read`.
+ *   4. Anything else — no annotations, or both hints left undeclared —
+ *      resolves through `actionSemantics`'s own default to destructive,
+ *      non-idempotent, open-world.
+ *
+ * The re-emitted `destructiveHint` annotation does not simply echo the
+ * caller's input: `actionSemantics`'s default branch sets
+ * `destructive: effect !== 'read'` for every non-read custom action, bespoke
+ * or generated, so a `write`-bucket bespoke tool is still re-emitted with
+ * `destructiveHint: true` even when the caller declared `false` — identical
+ * to how a generated custom action declared `effect: 'write'` is annotated.
+ * `destructiveHint: false` only ever selects the `write` bucket here; it
+ * never survives into the annotation sent to `document.modelContext`.
+ */
+function bespokeDeclaredSemantics(
+  annotations: WebMcpBespokeToolSpec['annotations'],
+): Partial<Pick<WebMcpToolDefinition, 'effect' | 'idempotent' | 'openWorld'>> {
+  if (!annotations) return {};
+  const effect: WebMcpToolEffect | undefined =
+    annotations.destructiveHint === true
+      ? 'destructive'
+      : annotations.readOnlyHint === true
+        ? 'read'
+        : annotations.destructiveHint === false
+          ? 'write'
+          : undefined;
+  return {
+    ...(effect ? { effect } : {}),
+    ...(annotations.idempotentHint !== undefined
+      ? { idempotent: annotations.idempotentHint }
+      : {}),
+    ...(annotations.openWorldHint !== undefined
+      ? { openWorld: annotations.openWorldHint }
+      : {}),
+  };
+}
+
 function snapshotRoute(
   route: WebToolDescriptor['route'],
 ): WebToolDescriptor['route'] {
@@ -668,7 +819,7 @@ function validateProspectiveTools(
 }
 
 function annotationsFor(
-  tool: ProspectiveTool,
+  tool: ToolSemantics,
 ): NonNullable<WebMcpToolRegistration['annotations']> {
   return {
     readOnlyHint: tool.effect === 'read',
@@ -680,7 +831,7 @@ function annotationsFor(
 }
 
 function guardedExecute(
-  tool: ProspectiveTool,
+  tool: Pick<ProspectiveTool, 'name' | 'effect'>,
   allowedEffects: ReadonlySet<WebMcpToolEffect>,
   isDisposed: () => boolean,
   execute: (args: Record<string, unknown>) => Promise<string> | string,

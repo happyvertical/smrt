@@ -15,10 +15,15 @@ import type { StagedControlReviewLabels } from './staged-control-review.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** The control interaction registry tracking staged changes. */
   registry: ControlInteractionRegistry;
+  /** Identifier for the form being reviewed. */
   formId: string;
+  /** Form element containing the controls; enables auto-refresh on field changes. */
   formElement?: HTMLFormElement | null;
+  /** Shows the review summary and list of staged changes. */
   summary?: boolean;
+  /** Customized text labels for the review interface. */
   labels?: Partial<StagedControlReviewLabels>;
 }
 

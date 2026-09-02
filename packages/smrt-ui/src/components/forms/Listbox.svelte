@@ -18,13 +18,21 @@ import {
 } from './control-value-validation.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 export interface Props {
+  /** Array of options to select from. */
   options: ControlOption[];
+  /** Currently selected option value (bindable). */
   value?: string | number;
+  /** Accessibility label for the listbox. */
   label: string;
+  /** HTML form field name. */
   name?: string;
+  /** Whether the listbox is disabled. */
   disabled?: boolean;
+  /** Interaction options or false to disable all. */
   interaction?: ControlInteractionOptions | false;
+  /** Callback when the selected value changes. */
   onvaluechange?: (value: string | number) => void;
+  /** CSS class to apply to the listbox container. */
   class?: string;
 }
 let {

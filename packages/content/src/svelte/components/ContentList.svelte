@@ -290,6 +290,7 @@ function workflowJobStatusLabel(status: string): string {
 type ContentListDropNotice = ContentListStateDrop | ContentListQueryDrop;
 
 interface Props {
+  /** Base URL for content API requests. */
   apiBaseUrl?: string;
   /**
    * Client-side rows. Ignored when `query` is supplied — the server then owns
@@ -297,12 +298,19 @@ interface Props {
    * source of truth.
    */
   contents?: ContentData[];
+  /** Filter content by this type; no filtering applied when omitted. */
   type?: string;
+  /** Initial view layout mode for the content list. */
   defaultViewMode?: ContentListViewMode;
+  /** Invoked when the user requests to edit a content item. */
   onEdit: (content: ContentData) => void;
+  /** Invoked when the user requests to delete a content item. */
   onDelete: (content: ContentData) => void;
+  /** Invoked when the user requests to create new content. */
   onAdd: () => void;
+  /** Optional UI controls rendered above the content list. */
   controls?: Snippet;
+  /** Returns a URL to view the published content; null hides the view link. */
   getViewHref?: (content: ContentData) => string | null;
   /** Announced uniformly by every presentation; #2455 extends it. */
   loading?: boolean;

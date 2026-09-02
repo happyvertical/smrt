@@ -4,9 +4,13 @@ import type { ControlInteractionOptions } from './control-interaction.js';
 import Input from './Input.svelte';
 export interface Props
   extends Omit<HTMLInputAttributes, 'type' | 'value' | 'class'> {
+  /** The selected time value in HH:mm format. */
   value?: string;
+  /** Label displayed above the time input. */
   label: string;
+  /** Additional CSS class names. */
   class?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
 }
 let {

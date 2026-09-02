@@ -11,10 +11,15 @@ import MessageDetail from './MessageDetail.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Messages in the thread to display. */
   messages: MessageData[];
+  /** ID of the currently active or expanded message. */
   activeMessageId?: string;
+  /** Set of message IDs to start in collapsed state. */
   initialCollapsed?: Set<string>;
+  /** Called when user clicks on a message to expand it. */
   onmessageclick?: (message: MessageData) => void;
+  /** Called when user clicks reply on a message. */
   onreply?: (message: MessageData) => void;
 }
 

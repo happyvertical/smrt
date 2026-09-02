@@ -19,16 +19,25 @@ const { t } = useI18n();
 type PublicProvider = Omit<MessagingProviderDefinition, 'createSender'>;
 
 export interface Props {
+  /** Persona ID to configure messaging settings for. */
   personaId: string;
   /** Current user's profile, attached to destinations created by this panel. */
   profileId?: string;
+  /** Available messaging providers to choose from. */
   providers: PublicProvider[];
+  /** Configured messaging accounts to display and manage. */
   accounts: MessagingAccountView[];
+  /** Configured message endpoints for sending. */
   endpoints: MessagingEndpointView[];
+  /** Configured routing rules mapping message types to endpoints. */
   routes: PersonaMessageRoute[];
+  /** Called when user saves account settings. */
   onSaveAccount?: (input: MessagingAccountInput) => Promise<void>;
+  /** Called when user saves endpoint settings. */
   onSaveEndpoint?: (input: MessagingEndpointInput) => Promise<void>;
+  /** Called when user saves message route settings. */
   onSaveRoute?: (input: PersonaMessageRouteInput) => Promise<void>;
+  /** Disables editing when true; view-only mode. */
   readonly?: boolean;
 }
 

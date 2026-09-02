@@ -94,6 +94,18 @@ browsers without WebMCP, and aborts the component's registration on unmount or
 when its reactive specification changes. Use a stable, component-specific
 name and return bounded, untrusted-content-safe results.
 
+`useWebMcpTool` routes through the same registrar as generated tools, so a
+bespoke tool is subject to the same fail-closed `effects` exposure policy: no
+`annotations`, or annotations that leave the effect undeclared, classify
+destructive, non-idempotent, open-world — the tool above must declare
+`readOnlyHint: true` to register under a read-only policy. The policy is the
+nearest `<Provider webmcp={{ effects: [...] }}>`'s configured `effects`;
+without a Provider ancestor, or without `effects` configured, only reads are
+exposed. Unlike generated tools, a bespoke tool never receives the
+`namespace` prefix and is never counted against `maxTools` — a component
+author already chose a stable name, and budgeting one intent against a shared
+generated-tool set could make an unrelated tool fail to register.
+
 ## Lifecycle and verification
 
 WebMCP registration is client-only. A missing `modelContext` must not prevent

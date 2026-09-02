@@ -11,10 +11,15 @@ import AccountCard from './AccountCard.svelte';
 const { t } = useI18n();
 
 export interface Props {
+  /** Array of accounts to display in the list. */
   accounts: AccountData[];
+  /** Shows a loading indicator while accounts are being fetched. */
   loading?: boolean;
+  /** Called when user clicks on an account card to view details. */
   onaccountclick?: (account: AccountData) => void;
+  /** Called when user requests to sync an account. */
   onsync?: (account: AccountData) => void;
+  /** Called when user requests to remove an account. */
   onremove?: (account: AccountData) => void;
 }
 

@@ -14,6 +14,7 @@ import {
 } from './index.js';
 import {
   type RegisterWebMcpToolsOptions,
+  registerWebMcpBespokeTool,
   registerWebMcpTools as registerWebMcpToolsWithPolicy,
   type WebMcpRegistrationDefinition,
 } from './webmcp.js';
@@ -1584,6 +1585,198 @@ describe('registerWebMcpTools', () => {
     } finally {
       process.off('unhandledRejection', unhandled);
     }
+  });
+});
+
+// #2586: useWebMcpTool (smrt-svelte) routes a hand-written browser tool
+// through this function so it is subject to the same fail-closed effect
+// classification and `effects` exposure policy as generated tools, without
+// `namespace` or `maxTools` — RegisterWebMcpBespokeToolOptions has neither.
+describe('registerWebMcpBespokeTool', () => {
+  afterEach(() => {
+    clearModelContext();
+  });
+
+  it('is a no-op when the browser has no WebMCP support', async () => {
+    clearModelContext();
+    const dispose = registerWebMcpBespokeTool({
+      name: 'preview',
+      description: 'Preview',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true },
+      execute: () => 'ok',
+    });
+    expect(dispose).toBeInstanceOf(Function);
+    expect(() => dispose()).not.toThrow();
+    await expect(dispose.ready).resolves.toBeUndefined();
+  });
+
+  it('classifies an undeclared tool destructive and excludes it under the default read-only policy', () => {
+    const registry = installModelContext();
+    const dispose = registerWebMcpBespokeTool({
+      name: 'undeclared_tool',
+      description: 'No annotations at all',
+      inputSchema: { type: 'object', properties: {} },
+      execute: () => 'ok',
+    });
+
+    expect(registry.tools).toEqual([]);
+    dispose();
+  });
+
+  it('classifies a contradictory readOnlyHint+destructiveHint tool destructive and excludes it under the default read-only policy', () => {
+    // `destructiveHint: true` must win even when `readOnlyHint: true` is
+    // also present — a fail-open here would let a destructive bespoke tool
+    // pass through the default read-only policy re-emitting
+    // `destructiveHint: false`, contradicting its own declared intent.
+    const registry = installModelContext();
+    const dispose = registerWebMcpBespokeTool({
+      name: 'contradictory_tool',
+      description: 'Declares both readOnlyHint and destructiveHint true',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true, destructiveHint: true },
+      execute: () => 'ok',
+    });
+
+    expect(registry.tools).toEqual([]);
+    dispose();
+  });
+
+  it('registers a tool with explicit read annotations under the default read-only policy', () => {
+    const registry = installModelContext();
+    const dispose = registerWebMcpBespokeTool({
+      name: 'read_tool',
+      description: 'Declared read-only',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      execute: () => 'ok',
+    });
+
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['read_tool']);
+    expect(registry.tools[0].annotations).toEqual({
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+      untrustedContentHint: true,
+    });
+    dispose();
+  });
+
+  it('excludes a declared-destructive tool unless the policy allows destructive', () => {
+    const excluded = installModelContext();
+    registerWebMcpBespokeTool({
+      name: 'destroy_tool',
+      description: 'Declared destructive',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: false, destructiveHint: true },
+      execute: () => 'ok',
+    });
+    expect(excluded.tools).toEqual([]);
+
+    clearModelContext();
+    const allowed = installModelContext();
+    const dispose = registerWebMcpBespokeTool(
+      {
+        name: 'destroy_tool',
+        description: 'Declared destructive',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: false, destructiveHint: true },
+        execute: () => 'ok',
+      },
+      { effects: ['destructive'] },
+    );
+    expect(allowed.tools.map((tool) => tool.name)).toEqual(['destroy_tool']);
+    dispose();
+  });
+
+  it('classifies an explicit non-destructive mutation as write, but still re-emits destructiveHint: true', () => {
+    const excluded = installModelContext();
+    registerWebMcpBespokeTool({
+      name: 'write_tool',
+      description: 'Declared additive-only',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: false, destructiveHint: false },
+      execute: () => 'ok',
+    });
+    // Excluded under the default read-only policy.
+    expect(excluded.tools).toEqual([]);
+
+    clearModelContext();
+    const allowed = installModelContext();
+    const dispose = registerWebMcpBespokeTool(
+      {
+        name: 'write_tool',
+        description: 'Declared additive-only',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: false, destructiveHint: false },
+        execute: () => 'ok',
+      },
+      { effects: ['write'] },
+    );
+    expect(allowed.tools.map((tool) => tool.name)).toEqual(['write_tool']);
+    // `destructiveHint: false` only selects the `write` policy bucket; the
+    // re-emitted annotation still marks destructiveHint true, identical to a
+    // generated custom action declared `effect: 'write'` (actionSemantics's
+    // default branch sets `destructive: effect !== 'read'` unconditionally).
+    expect(allowed.tools[0].annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true,
+      untrustedContentHint: true,
+    });
+    dispose();
+  });
+
+  it('never prefixes or budgets a bespoke tool name', () => {
+    const registry = installModelContext();
+    const dispose = registerWebMcpBespokeTool(
+      {
+        name: 'exact_name',
+        description: 'Name and count must be untouched',
+        inputSchema: { type: 'object', properties: {} },
+        annotations: { readOnlyHint: true },
+        execute: () => 'ok',
+      },
+      // `RegisterWebMcpBespokeToolOptions` has no `namespace`/`maxTools`
+      // field to even pass here — this asserts the registered name only.
+      {},
+    );
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['exact_name']);
+    dispose();
+  });
+
+  it('aborts the registration signal on dispose, idempotently', () => {
+    const registry = installModelContext();
+    const dispose = registerWebMcpBespokeTool({
+      name: 'lifecycle_tool',
+      description: 'Lifecycle',
+      inputSchema: { type: 'object', properties: {} },
+      annotations: { readOnlyHint: true },
+      execute: () => 'ok',
+    });
+    expect(registry.tools.map((tool) => tool.name)).toEqual(['lifecycle_tool']);
+    expect(registry.unregistered).toEqual([]);
+    dispose();
+    expect(registry.unregistered).toEqual(['lifecycle_tool']);
+    dispose(); // idempotent — a second call must not throw or double-fire
+    expect(registry.unregistered).toEqual(['lifecycle_tool']);
+  });
+
+  it('rejects invalid effects the same way registerWebMcpTools does', () => {
+    clearModelContext();
+    expect(() =>
+      registerWebMcpBespokeTool(
+        {
+          name: 'invalid',
+          description: 'invalid',
+          inputSchema: { type: 'object', properties: {} },
+          execute: () => 'ok',
+        },
+        { effects: ['invalid' as 'read'] },
+      ),
+    ).toThrow('Invalid WebMCP effect');
   });
 });
 

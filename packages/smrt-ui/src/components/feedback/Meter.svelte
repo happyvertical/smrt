@@ -1,14 +1,24 @@
 <script lang="ts">
 export interface Props {
+  /** Current meter value to display. */
   value: number;
+  /** Minimum value on the meter scale. */
   min?: number;
+  /** Maximum value on the meter scale. */
   max?: number;
+  /** Threshold where value transitions from low to normal. */
   low?: number;
+  /** Threshold where value transitions to high. */
   high?: number;
+  /** Ideal target value that optimizes the meter display. */
   optimum?: number;
+  /** Text label displayed above the meter gauge. */
   label: string;
+  /** Whether to display the numeric value in the header. */
   showValue?: boolean;
+  /** Function to format the displayed numeric value. */
   formatValue?: (value: number) => string;
+  /** CSS class to apply to the meter container. */
   class?: string;
 }
 let {

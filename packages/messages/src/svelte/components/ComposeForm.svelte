@@ -7,11 +7,17 @@ import type {
 } from '../types.js';
 
 export interface Props {
+  /** Message type to compose: email, Slack message, or tweet. */
   type?: 'email' | 'slack' | 'tweet';
+  /** Available accounts to select as sender. */
   accounts?: AccountData[];
+  /** Pre-fill the form with these values. */
   initialState?: Partial<ComposeState>;
+  /** Called when user sends the message. */
   onsend?: (state: ComposeState) => void;
+  /** Called when user saves the draft. */
   onsavedraft?: (state: ComposeState) => void;
+  /** Called when user discards the compose. */
   ondiscard?: () => void;
 }
 </script>

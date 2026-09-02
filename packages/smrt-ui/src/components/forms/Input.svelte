@@ -18,7 +18,9 @@ import { tryGetFormGroupContext } from './form-group-context.js';
 import { useControlRegistration } from './use-control-registration.svelte.js';
 
 export interface Props extends Omit<HTMLInputAttributes, 'class' | 'value'> {
+  /** Input value as string or number (bindable). */
   value?: string | number;
+  /** CSS class to apply to the input element. */
   class?: string;
   /** Stable identity and sensitivity metadata for interaction adapters. */
   interaction?: ControlInteractionOptions | false;

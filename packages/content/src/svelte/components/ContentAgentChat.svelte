@@ -38,15 +38,25 @@ const DEFAULT_MODEL_ID = AI_MODELS[0].id;
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for API requests to fetch and update chat sessions. */
   apiBaseUrl?: string;
+  /** Context object from the parent editor containing content and editor state. */
   assistantContext?: ContentEditorAssistantContext | null;
+  /** Identifier of the content being discussed in the chat. */
   contentId?: string;
+  /** Current markdown or structured state of the content editor. */
   currentEditorState?: string;
+  /** List of reference or link identifiers mentioned in the content. */
   currentReferenceIds?: string[];
+  /** Current form field values to include in AI context. */
   formFields?: Record<string, string>;
+  /** Identifier of the profile owner or collaborator in the chat. */
   currentProfileId?: string;
+  /** Policy object defining which fields the assistant can modify. */
   assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
+  /** Fired when the assistant recommends field updates in its response. */
   onapplyfields?: (fields: Record<string, string>) => void;
+  /** Fired when the user closes the chat interface. */
   onclose?: () => void;
 }
 

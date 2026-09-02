@@ -28,7 +28,9 @@ import { setControlInteractionContext } from './control-interaction-context.js';
 import StagedControlReview from './StagedControlReview.svelte';
 
 export interface Props extends Omit<HTMLFormAttributes, 'class'> {
+  /** CSS class to apply to the form element. */
   class?: string;
+  /** Whether to prevent default form submission behavior. */
   preventDefault?: boolean;
   /** Stable form scope used by voice/chat/tutorial adapters. */
   formId?: string;
@@ -38,6 +40,7 @@ export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   oninteraction?: (event: ControlInteractionEvent) => void;
   /** Render the built-in human review surface for staged changes. */
   stagedReview?: boolean;
+  /** Form controls and content inside the form. */
   children: Snippet;
 }
 

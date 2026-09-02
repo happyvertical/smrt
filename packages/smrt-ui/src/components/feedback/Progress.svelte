@@ -1,12 +1,20 @@
 <script lang="ts">
 export interface Props {
+  /** Current progress value, or undefined to show indeterminate state. */
   value?: number;
+  /** Minimum progress value (start point). */
   min?: number;
+  /** Maximum progress value (completion point). */
   max?: number;
+  /** Accessibility label describing the progress. */
   label?: string;
+  /** Display variant: linear progress bar or circular ring. */
   variant?: 'linear' | 'circular';
+  /** Size of the progress indicator: sm, md, or lg. */
   size?: 'sm' | 'md' | 'lg';
+  /** Whether to display the percentage value. */
   showValue?: boolean;
+  /** CSS class to apply to the progress container. */
   class?: string;
 }
 let {

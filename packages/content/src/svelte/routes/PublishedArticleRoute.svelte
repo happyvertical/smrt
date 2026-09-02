@@ -10,8 +10,11 @@ import {
 } from './shared.js';
 
 interface PublishedArticleRouteProps {
+  /** Published article data including content and metadata. */
   data: PublishedContentArticleRouteData;
+  /** URL to navigate to when the user clicks the back link. */
   backHref?: string;
+  /** Text shown on the back navigation link. */
   backLabel?: string;
 }
 

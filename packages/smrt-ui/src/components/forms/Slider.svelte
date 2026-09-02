@@ -19,15 +19,25 @@ export interface Props
     HTMLInputAttributes,
     'type' | 'class' | 'value' | 'min' | 'max' | 'step'
   > {
+  /** The current slider value. */
   value?: number;
+  /** Minimum allowed value. */
   min?: number;
+  /** Maximum allowed value. */
   max?: number;
+  /** Increment step for the slider. */
   step?: number;
+  /** Header label displayed above the slider. */
   label?: string;
+  /** Unit suffix appended to the displayed value. */
   unit?: string;
+  /** Shows an editable number input alongside the slider. */
   showInput?: boolean;
+  /** Formats the value for display in the output element. */
   formatValue?: (value: number) => string;
+  /** Additional CSS class names. */
   class?: string;
+  /** Registers this control for agent interaction; omit or pass false to exclude. */
   interaction?: ControlInteractionOptions | false;
 }
 let {

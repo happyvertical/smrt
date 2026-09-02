@@ -11,8 +11,11 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** Base URL for content API requests. */
   apiBaseUrl?: string;
+  /** ID of the content item to analyze for transparency. */
   contentId: string;
+  /** Invoked when the governance state of the content changes. */
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
 }
 

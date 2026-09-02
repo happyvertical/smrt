@@ -14,11 +14,17 @@ import type { Role } from '@happyvertical/smrt-types';
 import { tick } from 'svelte';
 
 export interface Props {
+  /** The available roles to choose from. */
   roles: Role[];
+  /** The currently selected role ID. */
   value?: string | null;
+  /** Fired when a role is selected, passed the role ID. */
   onchange: (roleId: string) => void;
+  /** Blocks opening the role list. */
   disabled?: boolean;
+  /** Placeholder text shown when no role is selected. */
   placeholder?: string;
+  /** Shows role descriptions in the dropdown options. */
   showDescription?: boolean;
 }
 

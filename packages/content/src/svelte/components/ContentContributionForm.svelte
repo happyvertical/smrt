@@ -21,12 +21,19 @@ export interface ContentContributionFormSubmitData {
 }
 
 export interface Props {
+  /** Available contribution types the user can select from. */
   types?: ContentContributionTypeData[];
+  /** Initial form values to populate the fields. */
   initial?: Partial<ContentContributionData>;
+  /** Show email and name fields for the contributor. */
   showContributorFields?: boolean;
+  /** Text label for the submit button. */
   submitLabel?: string;
+  /** URL for form submission if not using onSubmit callback. */
   action?: string;
+  /** Fired when the user submits the form with valid data. */
   onSubmit?: (payload: ContentContributionFormSubmitData) => void;
+  /** Fired when the user cancels the form. */
   onCancel?: () => void;
 }
 

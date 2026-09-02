@@ -11,9 +11,13 @@ import type { DayEventDetail, DayEventsData } from '../../types-generic';
 const { t } = useI18n();
 
 export interface Props {
+  /** Events data to display on calendar dates, or null to show no events. */
   events?: DayEventsData[] | null;
+  /** Initial year to display when the calendar first loads. */
   year?: number;
+  /** Initial month to display (zero-indexed, where 0 is January). */
   month?: number; // 0-indexed (0 = January)
+  /** Base URL path for constructing day-specific links. */
   baseUrl?: string;
   /** Callback when navigating to prev/next month */
   onMonthNavigate?: (

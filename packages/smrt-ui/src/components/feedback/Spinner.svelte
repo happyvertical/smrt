@@ -1,7 +1,10 @@
 <script lang="ts">
 export interface Props {
+  /** Accessibility label for screen readers. */
   label?: string;
+  /** Spinner size: sm (small), md (medium), or lg (large). */
   size?: 'sm' | 'md' | 'lg';
+  /** CSS class to apply to the spinner container. */
   class?: string;
 }
 let { label = 'Loading', size = 'md', class: className = '' }: Props = $props();

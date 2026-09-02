@@ -1,9 +1,13 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 export interface Props {
+  /** Optional snippet to render as a left adornment. */
   prefix?: Snippet;
+  /** Optional snippet to render as a right adornment. */
   suffix?: Snippet;
+  /** Input control or custom content inside the group. */
   children: Snippet;
+  /** CSS class to apply to the input group. */
   class?: string;
 }
 let { prefix, suffix, children, class: className = '' }: Props = $props();

@@ -11,9 +11,13 @@ import { M } from '../i18n.tools.js';
 const { t } = useI18n();
 
 export interface Props {
+  /** The governance profile to edit, or an empty object for new. */
   profile?: Partial<ContentGovernanceProfileData>;
+  /** Available review policies to include in profile requirements. */
   policies?: ContentReviewPolicyData[];
+  /** Fired when the user saves the profile configuration. */
   onSave: (profile: Partial<ContentGovernanceProfileData>) => void;
+  /** Fired when the user cancels editing. */
   onCancel?: () => void;
 }
 
