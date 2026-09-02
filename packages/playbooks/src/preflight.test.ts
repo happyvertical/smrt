@@ -121,6 +121,24 @@ describe('playbook preflight (#2590)', () => {
       expect(worstVerdict('deny', 'allow')).toBe('deny');
       expect(worstVerdict('allow', 'allow')).toBe('allow');
     });
+
+    it('treats a step whose evaluator reported no layers as unknown, never allow', async () => {
+      const report = expectAvailable(
+        await preflightPlaybook({
+          key: 'commerce.cart.checkout',
+          plane: 'server',
+          principal: 'empty-layers',
+          resolve: { db, tenantId: null },
+          evaluate: () => ({ layers: [] }),
+        }),
+      );
+
+      expect(report.steps[0]).toMatchObject({
+        verdict: 'unknown',
+        reason: 'not-evaluated',
+      });
+      expect(report.verdict).toBe('unknown');
+    });
   });
 
   describe('server plane', () => {
@@ -481,6 +499,41 @@ describe('playbook preflight (#2590)', () => {
       );
     });
 
+    it('answers uniformly when the override read fails, rather than surfacing an error', async () => {
+      // An unknown key is answered from an in-memory registry miss and can
+      // never fail here, so a propagated error would mark exactly the keys that
+      // DO exist — an existence oracle by exception.
+      const querySpy = vi
+        .spyOn(db as unknown as { query: () => unknown }, 'query')
+        .mockImplementation(() => {
+          throw new Error('connection lost');
+        });
+
+      const failed = await report('commerce.cart.checkout');
+      querySpy.mockRestore();
+
+      expect(failed).toBe(PLAYBOOK_PREFLIGHT_UNAVAILABLE);
+
+      // ...and the transient fault is not cached: the next call answers for
+      // real rather than serving a pinned deny for the whole TTL.
+      const recovered = await report('commerce.cart.checkout');
+      expect(recovered.available).toBe(true);
+    });
+
+    it('answers uniformly when a step evaluator throws', async () => {
+      const thrown = await preflightPlaybook({
+        key: 'commerce.cart.checkout',
+        plane: 'server',
+        principal: 'user-1|tenant-1',
+        resolve: { db, tenantId: null },
+        evaluate: () => {
+          throw new Error('evaluator exploded');
+        },
+      });
+
+      expect(thrown).toBe(PLAYBOOK_PREFLIGHT_UNAVAILABLE);
+    });
+
     it('pays the same override-layer read on the unknown-key path (timing class)', async () => {
       const querySpy = vi.spyOn(
         db as unknown as { query: (...args: unknown[]) => unknown },
@@ -585,6 +638,63 @@ describe('playbook preflight (#2590)', () => {
       expect(await preflightPlaybook(request)).toBe(
         PLAYBOOK_PREFLIGHT_UNAVAILABLE,
       );
+    });
+
+    it('partitions the cache by tenant, so a tenant override cannot leak across tenants', async () => {
+      const evaluate = (allowed: boolean) =>
+        createServerStepEvaluator({
+          isToolAllowed: () => allowed,
+          checkOperationPermission: () => 'allow' as const,
+        });
+
+      const app = await preflightPlaybook({
+        key: 'commerce.cart.checkout',
+        plane: 'server',
+        principal: 'shared-principal',
+        resolve: { db, tenantId: null },
+        evaluate: evaluate(true),
+      });
+      const tenant = await preflightPlaybook({
+        key: 'commerce.cart.checkout',
+        plane: 'server',
+        principal: 'shared-principal',
+        resolve: { db, tenantId: 'tenant-b' },
+        evaluate: evaluate(false),
+      });
+
+      expect(app.verdict).toBe('allow');
+      expect(tenant.verdict).toBe('deny');
+    });
+
+    it('does not cache an unknown key', async () => {
+      let evaluations = 0;
+      const request = {
+        key: 'commerce.cart.never-registered',
+        plane: 'server' as const,
+        principal: 'user-1|tenant-1',
+        resolve: { db, tenantId: null },
+        evaluate: () => {
+          evaluations += 1;
+          return { layers: [] };
+        },
+      };
+
+      expect(await preflightPlaybook(request)).toBe(
+        PLAYBOOK_PREFLIGHT_UNAVAILABLE,
+      );
+
+      // Registering it makes the very next call resolve: nothing was pinned.
+      // (The same property is what stops an anonymous probe of random keys
+      // from growing the cache without bound.)
+      definePlaybook({
+        key: 'commerce.cart.never-registered',
+        title: 'Registered late',
+        description: 'Registered after the first preflight.',
+        steps: CHECKOUT_STEPS,
+      });
+
+      expect((await preflightPlaybook(request)).available).toBe(true);
+      expect(evaluations).toBe(2);
     });
 
     it('is advisory: a cached allow does not survive as authority', async () => {

@@ -37,9 +37,24 @@ class PreflightPrivateWidget extends SmrtObject {
   name: string = '';
 }
 
+@smrt({
+  api: {
+    public: 'read',
+    routes: {
+      summarize: { method: 'GET' },
+      publish: { method: 'POST' },
+    },
+  },
+})
+class PreflightRoutedWidget extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+}
+
 // The classes are referenced so the decorators run under tree-shaking.
 void PreflightWidget;
 void PreflightPrivateWidget;
+void PreflightRoutedWidget;
 
 const UNIFORM_UNAVAILABLE = {
   available: false,
@@ -206,12 +221,41 @@ describe('playbook preflight route (#2590)', () => {
       expect(isRestRoutePublic(undefined, 'GET')).toBe(false);
     });
 
-    it('maps an unrecognized action to POST, so a read-only opt-out never covers it', () => {
+    it('maps CRUD actions to their fixed verbs', () => {
       expect(restMethodForApiAction('list')).toBe('GET');
       expect(restMethodForApiAction('get')).toBe('GET');
+      expect(restMethodForApiAction('create')).toBe('POST');
       expect(restMethodForApiAction('update')).toBe('PUT');
       expect(restMethodForApiAction('delete')).toBe('DELETE');
-      expect(restMethodForApiAction('publish')).toBe('POST');
+    });
+
+    it('reads a custom action’s declared verb, and falls back to POST', () => {
+      // A declared GET custom action on a `public: 'read'` model IS publicly
+      // served; guessing POST here would report a false deny and hide a
+      // playbook the caller can actually run.
+      expect(restMethodForApiAction('summarize', 'PreflightRoutedWidget')).toBe(
+        'GET',
+      );
+      expect(restMethodForApiAction('publish', 'PreflightRoutedWidget')).toBe(
+        'POST',
+      );
+      // Without an object name to read the declaration from, fail closed.
+      expect(restMethodForApiAction('summarize')).toBe('POST');
+    });
+
+    it('predicts public access for a declared GET custom action', () => {
+      expect(
+        isRestRoutePublic(
+          'PreflightRoutedWidget',
+          restMethodForApiAction('summarize', 'PreflightRoutedWidget'),
+        ),
+      ).toBe(true);
+      expect(
+        isRestRoutePublic(
+          'PreflightRoutedWidget',
+          restMethodForApiAction('publish', 'PreflightRoutedWidget'),
+        ),
+      ).toBe(false);
     });
 
     it('collects the model field read-permission slugs', () => {

@@ -79,7 +79,6 @@ export {
   type PlaybookPreflightProvider,
   type PlaybookPreflightRouteOptions,
   type PlaybookPreflightRouteRequest,
-  type RestApiAction,
   resolveRegisteredObjectName,
   restFieldReadPermissions,
   restMethodForApiAction,

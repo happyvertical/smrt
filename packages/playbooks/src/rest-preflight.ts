@@ -45,7 +45,12 @@ export function createRestPreflightLayerSource(options: {
     isRoutePublic(model, action) {
       const objectName = resolveRegisteredObjectName(model);
       if (!objectName) return false;
-      return isRestRoutePublic(objectName, restMethodForApiAction(action));
+      // The object name is threaded through so a custom action declaring its
+      // own HTTP verb is predicted against that verb, not a guessed POST.
+      return isRestRoutePublic(
+        objectName,
+        restMethodForApiAction(action, objectName),
+      );
     },
     requiredFieldPermissions(model) {
       const objectName = resolveRegisteredObjectName(model);

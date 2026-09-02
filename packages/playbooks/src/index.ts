@@ -29,7 +29,6 @@ export { resolvePlaybook } from './playbook-resolver.js';
 export {
   createBrowserStepEvaluator,
   createServerStepEvaluator,
-  PLAYBOOK_PREFLIGHT_CAPABILITY,
   PLAYBOOK_PREFLIGHT_UNAVAILABLE,
   preflightPlan,
   preflightPlaybook,

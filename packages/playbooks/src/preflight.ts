@@ -29,6 +29,7 @@
  *   otherwise.
  */
 
+import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { getPlaybookCacheGeneration } from './cache.js';
 import { PlaybookOverrideCollection } from './collections/PlaybookOverrideCollection.js';
 import { resolvePlaybook } from './playbook-resolver.js';
@@ -74,17 +75,6 @@ export const PLAYBOOK_PREFLIGHT_UNAVAILABLE: PlaybookPreflightUnavailableReport 
     summary: Object.freeze({ allow: 0, deny: 0, unknown: 0 }),
   }) as PlaybookPreflightUnavailableReport;
 
-/**
- * The capability classification of the preflight surface itself: a read, safely
- * repeatable, with no effect outside the system it reports on. Both planes
- * expose it under a default read-only exposure policy.
- */
-export const PLAYBOOK_PREFLIGHT_CAPABILITY = Object.freeze({
-  effect: 'read',
-  idempotent: true,
-  openWorld: false,
-} as const);
-
 const VERDICT_RANK: Record<PreflightVerdict, number> = {
   allow: 0,
   unknown: 1,
@@ -105,6 +95,12 @@ function combineLayers(
   let verdict: PreflightVerdict = 'allow';
   for (const layer of layers) {
     verdict = worstVerdict(verdict, layer.verdict);
+  }
+  if (!layers.length) {
+    // An evaluator that reports nothing has told us nothing. This is the one
+    // function whose whole job is fail-closed combination, so it must not
+    // answer `allow` by default for a custom evaluator that returns no layers.
+    return { verdict: 'unknown', reason: 'not-evaluated' };
   }
   // The step's reason is the first layer that produced the aggregate verdict,
   // so the reason and the verdict can never describe different layers.
@@ -188,9 +184,40 @@ async function equalizeUnknownKeyCost(
     const collection = await PlaybookOverrideCollection.create({
       db: options.db,
     });
-    await collection.getResolutionLayers(key, options.tenantId ?? null);
+    // Same tenant resolution the real path uses, since matching its cost is the
+    // entire purpose of this call.
+    const tenantId =
+      options.tenantId !== undefined
+        ? options.tenantId
+        : (getTenantId() ?? null);
+    await collection.getResolutionLayers(key, tenantId);
   } catch {
     // Advisory only — never let the equalizer change the answer or throw.
+  }
+}
+
+/**
+ * Resolves the database identity the playbook cache partitions on.
+ *
+ * `loadPlaybookBase()` normalizes a db *config object* into the initialized
+ * collection's live handle before it touches the cache, and `invalidatePlaybookCache`
+ * is likewise called with the live handle. Capturing the generation from the raw
+ * option would put reads and invalidations in two different buckets, and the
+ * generation guard would silently never fire — degrading "an override write is
+ * reflected without waiting out the TTL" back to plain TTL.
+ */
+async function normalizeCacheDb(
+  db: ResolvePlaybookOptions['db'],
+): Promise<unknown> {
+  if (!db) {
+    return db;
+  }
+
+  try {
+    const collection = await PlaybookOverrideCollection.create({ db });
+    return collection.db;
+  } catch {
+    return db;
   }
 }
 
@@ -210,41 +237,47 @@ export async function preflightPlaybook(
   request: PlaybookPreflightRequest,
 ): Promise<PlaybookPreflightReport> {
   const { key, plane, principal, resolve, evaluate } = request;
-  const db = resolve?.db;
+  const tenantId = resolve?.tenantId ?? null;
+  const db = await normalizeCacheDb(resolve?.db);
+  const scope = { principal, key, plane, tenantId, db };
 
-  const cached = getCachedPlaybookPreflight(principal, key, plane, db);
+  const cached = getCachedPlaybookPreflight(scope);
   if (cached) {
     return cached;
   }
 
   const loadedAtGeneration = getPlaybookCacheGeneration(key, db);
-  const resolution = await resolvePlaybook(key, { ...resolve, plane });
 
-  if (!resolution.ok) {
-    if (resolution.reason === 'unknown-playbook') {
-      await equalizeUnknownKeyCost(key, resolve);
+  try {
+    const resolution = await resolvePlaybook(key, { ...resolve, plane });
+
+    if (!resolution.ok) {
+      if (resolution.reason === 'unknown-playbook') {
+        await equalizeUnknownKeyCost(key, resolve);
+        // An unknown key is answered from an in-memory registry miss, so
+        // caching it buys nothing and would let an unauthenticated probe of
+        // random keys grow the cache without bound.
+        return PLAYBOOK_PREFLIGHT_UNAVAILABLE;
+      }
+      setCachedPlaybookPreflight(
+        scope,
+        PLAYBOOK_PREFLIGHT_UNAVAILABLE,
+        loadedAtGeneration,
+      );
+      return PLAYBOOK_PREFLIGHT_UNAVAILABLE;
     }
-    setCachedPlaybookPreflight(
-      principal,
-      key,
-      plane,
-      db,
-      PLAYBOOK_PREFLIGHT_UNAVAILABLE,
-      loadedAtGeneration,
-    );
+
+    const report = await preflightPlan(resolution.plan, evaluate);
+    setCachedPlaybookPreflight(scope, report, loadedAtGeneration);
+    return report;
+  } catch {
+    // A failure anywhere in resolution or evaluation — a dropped connection, a
+    // missing override table — must not become an existence oracle: an unknown
+    // key answers from memory and could never fail here, so a thrown error
+    // would mark every key that *does* exist. Answer uniformly, and do NOT
+    // cache it: a transient fault must not pin a deny for the whole TTL.
     return PLAYBOOK_PREFLIGHT_UNAVAILABLE;
   }
-
-  const report = await preflightPlan(resolution.plan, evaluate);
-  setCachedPlaybookPreflight(
-    principal,
-    key,
-    plane,
-    db,
-    report,
-    loadedAtGeneration,
-  );
-  return report;
 }
 
 function layer(

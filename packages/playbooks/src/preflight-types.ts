@@ -56,7 +56,8 @@ export type PreflightReason =
   | 'fields-redacted'
   | 'field-permissions-unknown'
   | 'intent-not-mounted'
-  | 'intent-bridge-not-evaluated';
+  | 'intent-bridge-not-evaluated'
+  | 'not-evaluated';
 
 /** One authority layer's verdict for one step. */
 export interface PreflightLayerReport {
@@ -184,7 +185,9 @@ export interface PlaybookPreflightRequest {
   plane: PlaybookPlane;
   /**
    * Opaque, caller-scoped principal identity used to partition the cache. It is
-   * never echoed in the report and never consulted for authority.
+   * never echoed in the report and never consulted for authority. The cache key
+   * also folds in `resolve.tenantId`, so a principal string need not encode the
+   * tenant to stay correct.
    */
   principal: string;
   /** Options handed to `resolvePlaybook()` — the caller's own layer chain. */

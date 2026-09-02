@@ -50,9 +50,6 @@ export const PLAYBOOK_PREFLIGHT_CAPABILITY = Object.freeze({
   openWorld: false,
 } as const);
 
-/** CRUD actions the generated REST surface exposes. */
-export type RestApiAction = 'list' | 'get' | 'create' | 'update' | 'delete';
-
 /**
  * The request handed to a preflight provider. Deliberately carries no request,
  * no headers, and no auth handle — only the caller-scoped facts the static
@@ -155,22 +152,45 @@ export function resolveRegisteredObjectName(model: string): string | undefined {
 /**
  * The HTTP method a REST action is served by.
  *
- * An action the CRUD surface does not name is treated as a custom action and
- * mapped to `POST` — the fail-closed choice, so a `public: 'read'` opt-out
- * (GET-only) never silently covers it.
+ * CRUD actions map to their fixed verbs. A custom action is served under the
+ * method its own route config declares (`api.routes[action].method`, defaulting
+ * to `POST` exactly as `dispatchCustomCollectionAction` does), because guessing
+ * `POST` for a declared `GET` action would make preflight report a false `deny`
+ * on a `public: 'read'` model — hiding a playbook the caller can actually run,
+ * which is the tool-listing case this exists to serve. Without an `objectName`
+ * to read the declaration from, the fail-closed `POST` remains.
  */
-export function restMethodForApiAction(action: string): string {
+export function restMethodForApiAction(
+  action: string,
+  objectName?: string,
+): string {
   switch (action) {
     case 'list':
     case 'get':
       return 'GET';
+    case 'create':
+      return 'POST';
     case 'update':
       return 'PUT';
     case 'delete':
       return 'DELETE';
     default:
-      return 'POST';
+      break;
   }
+
+  if (!objectName) {
+    return 'POST';
+  }
+
+  const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+  if (!apiConfig || typeof apiConfig !== 'object' || !apiConfig.routes) {
+    return 'POST';
+  }
+
+  const route = (apiConfig.routes as Record<string, { method?: string }>)[
+    action
+  ];
+  return (route?.method ?? 'POST').toUpperCase();
 }
 
 /**
@@ -179,6 +199,12 @@ export function restMethodForApiAction(action: string): string {
  * The generator's own action gate, lifted to a module function so preflight and
  * the live route read the same rule from one place. Accepts any action name so
  * a custom action is gated by the same `include`/`exclude` lists.
+ *
+ * @remarks An absent `objectName` returns `true` — fail-**open**, because the
+ * live route reaches this only after it has already resolved a model, and an
+ * unnamed object there means "not gated by this rule". A caller *predicting*
+ * rather than serving has no such guarantee and must reject an unresolvable
+ * model before asking (see `createRestPreflightLayerSource`).
  */
 export function isApiActionEnabledForObject(
   objectName: string | undefined,
