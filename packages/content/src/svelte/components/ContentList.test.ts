@@ -2793,6 +2793,90 @@ describe('ContentList data surface', () => {
     expect(target.querySelector('tbody')).not.toBeNull();
   });
 
+  it('does not reject a page command against a smaller previous query total', async () => {
+    const registry = createDataSurfaceRegistry();
+    const first = {
+      queryFingerprint: 'dq1-small-query',
+      total: { kind: 'exact' as const, value: 1 },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    };
+    const larger = {
+      queryFingerprint: 'dq1-larger-query',
+      total: { kind: 'exact' as const, value: 30 },
+      freshness: { state: 'fresh' as const },
+      warnings: [],
+      truncated: false,
+    };
+    const requests: ContentListDataQueryRequest[] = [];
+    let executions = 0;
+    let resolveSearch: ((value: typeof larger) => void) | undefined;
+    const binding: ContentListQueryBinding = {
+      rows: [serverRow('server-1', 'First page')],
+      total: { kind: 'exact', value: first.total.value },
+      loading: false,
+      refreshing: false,
+      stale: false,
+      error: null,
+      execute: async (request) => {
+        requests.push(request);
+        executions += 1;
+        if (executions === 1) return first;
+        if (executions === 2)
+          return new Promise<typeof larger>((resolve) => {
+            resolveSearch = resolve;
+          });
+        // Keep the page request in flight too: returning the larger envelope
+        // synchronously would correctly settle it, then let the fixture's
+        // deliberately stale public total clamp it back to page one.
+        return new Promise<typeof larger>(() => undefined);
+      },
+      retry: async () => undefined,
+    };
+    renderList({
+      dataSurface: { registry },
+      query: { bind: () => binding, request: { defaultPageSize: 10 } },
+    });
+    const identity = { surfaceId: 'content-list', kind: 'table' as const };
+
+    await vi.waitFor(() =>
+      expect(registry.inspect(identity)?.state).toMatchObject({
+        queryFingerprint: first.queryFingerprint,
+        totalRows: first.total.value,
+      }),
+    );
+    await registry.execute({
+      version: 1,
+      commandId: 'start-larger-query',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-search',
+      payload: { search: 'larger' },
+    });
+    await vi.waitFor(() => expect(resolveSearch).toBeTypeOf('function'));
+
+    const page = await registry.execute({
+      version: 1,
+      commandId: 'page-before-larger-total-settles',
+      identity,
+      expectedRevision: registry.inspect(identity)?.revision ?? 0,
+      controlId: 'set-page',
+      payload: { page: 2 },
+    });
+    flushSync();
+
+    // The old exact total is one row, but it belongs to the prior query. The
+    // mounted surface must let the larger query request page two before that
+    // query's own envelope has settled.
+    expect(page.ok).toBe(true);
+    expect(requests.at(-1)?.page).toEqual({
+      kind: 'offset',
+      offset: 10,
+      limit: 10,
+    });
+  });
+
   it('publishes lifecycle authority and the strictest combined selection cap', async () => {
     const registry = createDataSurfaceRegistry();
     const identity = {

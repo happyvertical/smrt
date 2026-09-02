@@ -1651,6 +1651,11 @@ function acceptsSurfaceTableCommand(
     if (
       tableState.pageSize !== null &&
       clampableRowCount !== undefined &&
+      // A server binding retains the previous query's exact total until its
+      // replacement settles. That count cannot bound a command for the new
+      // query: it may be smaller, and would reject a valid page before the
+      // new query gets a chance to report its own total.
+      (!serverBacked || settledSignature === querySignature) &&
       command.page > Math.max(1, Math.ceil(clampableRowCount / tableState.pageSize))
     )
       return false;
