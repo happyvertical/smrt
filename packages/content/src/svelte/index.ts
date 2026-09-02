@@ -207,6 +207,24 @@ export {
   selectContentListRows,
   toContentListRows,
 } from './content-list-controller.js';
+export {
+  CONTENT_LIST_LIFECYCLE_ACTION_IDS,
+  type ContentListLifecycleActionId,
+  type ContentListLifecycleBinding,
+  type ContentListLifecycleClient,
+  type ContentListLifecycleController,
+  type ContentListLifecyclePreviewInput,
+  type ContentListLifecycleRequest,
+  type ContentListLifecycleSnapshot,
+  type ContentListLifecycleSummary,
+  type ContentListLifecycleTarget,
+  ContentListLifecycleTransportError,
+  type ContentListRestoreStatus,
+  createContentListLifecycleController,
+  createContentListLifecycleTransport,
+  readContentListLifecycleSummary,
+  reconcileContentListLifecycleSelection,
+} from './content-list-lifecycle.js';
 // Server-backed ContentList queries (#2452): view state → DataQueryRequest,
 // the `POST /api/v1/contents/query` transport, and the binding seam.
 export {

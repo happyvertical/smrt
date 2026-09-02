@@ -73,6 +73,39 @@ describe('issue #2453 revision-guarded saves', () => {
     expect(stored?.title).toBe('concurrent');
   });
 
+  it('atomically rejects an irreversible delete after another writer changes the row', async () => {
+    const created = await rows.create({ title: 'original' });
+    const stale = await rows.get(String(created.id));
+    if (!stale?.updated_at) throw new Error('expected persisted row');
+    const expectedUpdatedAt = stale.updated_at;
+
+    await db.update(
+      'issue_2453_revision_rows',
+      { id: created.id },
+      {
+        title: 'concurrent',
+        updated_at: '2026-08-28T22:30:00.000Z',
+      },
+    );
+
+    await expect(stale.delete({ expectedUpdatedAt })).rejects.toMatchObject({
+      code: 'RUNTIME_REVISION_CONFLICT',
+    });
+    expect(await rows.get(String(created.id))).toMatchObject({
+      title: 'concurrent',
+    });
+  });
+
+  it('deletes a row when its expected revision is still current', async () => {
+    const created = await rows.create({ title: 'delete me' });
+    const current = await rows.get(String(created.id));
+    if (!current?.updated_at) throw new Error('expected persisted row');
+
+    await current.delete({ expectedUpdatedAt: current.updated_at });
+
+    expect(await rows.get(String(created.id))).toBeNull();
+  });
+
   it('does not resurrect a row deleted while an embedded revision claim is pending', async () => {
     const created = await rows.create({ title: 'original' });
     const guarded = await rows.get(String(created.id));

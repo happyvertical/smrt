@@ -37,10 +37,10 @@ export interface ContentCorrectionOptions extends SmrtObjectOptions {
   cli: true,
 })
 export class ContentCorrection extends SmrtObject {
-  @foreignKey('Content', { required: true })
+  @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
   contentId = '';
 
-  @foreignKey('ContentVersion')
+  @foreignKey('ContentVersion', { onDelete: 'CASCADE' })
   contentVersionId = '';
 
   @crossPackageRef('@happyvertical/smrt-facts:Fact')

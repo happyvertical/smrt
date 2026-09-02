@@ -23,7 +23,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
-    setupFiles: [smrtVitestSetupPath],
+    setupFiles: [
+      smrtVitestSetupPath,
+      '@happyvertical/smrt-vitest/svelte-setup',
+    ],
     testTimeout: 30000,
     // The smrt-vitest setup's async afterAll dynamically loads smrt-core; under
     // loaded CI runners that exceeds the default 10s hookTimeout and times out

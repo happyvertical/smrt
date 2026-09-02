@@ -40,6 +40,8 @@ export interface DataSurfaceActionRowOutcome {
   rowId: DataSurfaceRowId;
   status: 'accepted' | 'skipped' | 'failed';
   reason?: string;
+  /** Serializable per-row result returned by the action implementation. */
+  metadata?: DataSurfaceJsonObject;
 }
 
 export interface ResolvedDataSurfaceSelection {
@@ -571,10 +573,9 @@ function outcomesDetails(
     accepted,
     skipped,
     failed,
-    outcomes: outcomes.map(({ rowId, status, reason }) => ({
-      rowId,
-      status,
-      ...(reason ? { reason } : {}),
+    outcomes: outcomes.map(({ metadata, ...outcome }) => ({
+      ...(metadata ?? {}),
+      ...outcome,
     })),
     ...extra,
   };
@@ -796,8 +797,16 @@ export function createDataSurfaceActionAdapter(
           });
           continue;
         }
-        await invocation.action.apply(invocation, rowId);
-        outcomes.push({ rowId, status: 'accepted' });
+        const applied = await invocation.action.apply(invocation, rowId);
+        outcomes.push({
+          rowId,
+          status: 'accepted',
+          ...(applied !== null &&
+          typeof applied === 'object' &&
+          !Array.isArray(applied)
+            ? { metadata: applied }
+            : {}),
+        });
       } catch (error) {
         outcomes.push({
           rowId,

@@ -1,5 +1,6 @@
-import { SmrtObject } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtObject } from '@happyvertical/smrt-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ContentContribution } from './content-contribution';
 import * as governance from './content-governance';
 import { ContentGovernanceAssignment } from './content-governance-assignment';
 import { ContentGovernanceAssignmentCollection } from './content-governance-assignments';
@@ -7,7 +8,10 @@ import { ContentGovernancePolicyCollection } from './content-governance-policies
 import { ContentGovernancePolicy } from './content-governance-policy';
 import { ContentGovernanceProfile } from './content-governance-profile';
 import { ContentGovernanceProfileCollection } from './content-governance-profiles';
+import './content-correction';
+import './content-review';
 import { ContentReviewCollection } from './content-reviews';
+import './content-version';
 import { ContentVersionCollection } from './content-versions';
 
 afterEach(() => {
@@ -15,6 +19,36 @@ afterEach(() => {
 });
 
 describe('content governance models', () => {
+  it('declares permanent-delete ownership and attribution retention policies', () => {
+    const relationship = (className: string, fieldName: string) =>
+      ObjectRegistry.getRelationships(className).find(
+        (candidate) => candidate.fieldName === fieldName,
+      );
+
+    expect(relationship('ContentVersion', 'contentId')?.options).toMatchObject({
+      onDelete: 'CASCADE',
+    });
+    expect(relationship('ContentReview', 'contentId')?.options).toMatchObject({
+      onDelete: 'CASCADE',
+    });
+    expect(
+      relationship('ContentReview', 'contentVersionId')?.options,
+    ).toMatchObject({ onDelete: 'CASCADE' });
+    expect(
+      relationship('ContentCorrection', 'contentId')?.options,
+    ).toMatchObject({ onDelete: 'CASCADE' });
+    expect(
+      relationship('ContentCorrection', 'contentVersionId')?.options,
+    ).toMatchObject({ onDelete: 'CASCADE' });
+    expect(
+      relationship('ContentContribution', 'promotedContentId')?.options,
+    ).toMatchObject({ onDelete: 'SET NULL', nullable: true });
+    expect(new ContentContribution().promotedContentId).toBeNull();
+    expect(
+      new ContentContribution({ promotedContentId: null }).promotedContentId,
+    ).toBeNull();
+  });
+
   it('normalizes assignments and validates referenced profiles', async () => {
     const assignment = new ContentGovernanceAssignment({
       contentType: 'article',

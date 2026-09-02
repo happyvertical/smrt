@@ -48,7 +48,7 @@ export interface ContentVersionOptions extends SmrtObjectOptions {
   cli: true,
 })
 export class ContentVersion extends SmrtObject {
-  @foreignKey('Content', { required: true })
+  @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
   contentId = '';
 
   version = 1;

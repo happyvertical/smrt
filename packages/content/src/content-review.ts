@@ -30,10 +30,10 @@ export interface ContentReviewOptions extends SmrtObjectOptions {
   cli: true,
 })
 export class ContentReview extends SmrtObject {
-  @foreignKey('Content', { required: true })
+  @foreignKey('Content', { required: true, onDelete: 'CASCADE' })
   contentId = '';
 
-  @foreignKey('ContentVersion')
+  @foreignKey('ContentVersion', { onDelete: 'CASCADE' })
   contentVersionId = '';
   kind: ContentReviewKind = 'custom';
   policyKey = '';

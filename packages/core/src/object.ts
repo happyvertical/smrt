@@ -95,6 +95,15 @@ export interface SmrtSaveOptions {
   expectedUpdatedAt?: Date | string;
 }
 
+/** Optional optimistic-concurrency guard for irreversible deletes. */
+export interface SmrtDeleteOptions {
+  /**
+   * Delete only when the stored row still has this revision. A mismatch throws
+   * `RUNTIME_REVISION_CONFLICT` before any durable cascade is committed.
+   */
+  expectedUpdatedAt?: Date | string;
+}
+
 /**
  * Validate that _meta_type matches the expected class (Issue #713)
  *
@@ -3296,7 +3305,15 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link foreignKey} for declaring `onDelete` on the referencing side
    */
-  public async delete(): Promise<void> {
+  public async delete(options: SmrtDeleteOptions = {}): Promise<void> {
+    const className = this.getResolvedClassName();
+    const expectedUpdatedAt = options.expectedUpdatedAt;
+    if (expectedUpdatedAt !== undefined && (!this._persisted || !this.id)) {
+      throw RuntimeError.invalidState(
+        'A revision-guarded delete requires a persisted object',
+        { className },
+      );
+    }
     // Execute beforeDelete interceptors (e.g., tenant validation)
     const interceptorContext = createInterceptorContext(
       this.constructor.name,
@@ -3308,26 +3325,67 @@ export class SmrtObject extends SmrtClass {
 
     await this.verifyStorageReady();
 
+    const embeddedRevisionGuard =
+      expectedUpdatedAt !== undefined && usesEmbeddedRevisionFallback(this.db);
     const { affectedTables, affectedTableClasses } =
-      await withEmbeddedWriteQueue(this.db, isEmbeddedDatabase(this.db), () =>
-        runCascadeDelete(
-          this.db,
-          ObjectRegistry,
-          {
-            // R5-canon: the qualified name, not the bare constructor name —
-            // two packages can register a same-named class, and a simple-name
-            // lookup in ObjectRegistry.getClass()/findClass() can silently
-            // resolve the cascade plan against the wrong package's class,
-            // leaving its @crossPackageRef references and polymorphic
-            // meta_type rows uncleaned (the orphaned-reference bug #2371
-            // exists to close, moved to the cross-package case).
-            className: this.getResolvedQualifiedName(),
-            tableName: this.tableName,
-            id: this.id,
-          },
-          (db) =>
-            db.delete(this.tableName, { id: this.id }).then(() => undefined),
-        ),
+      await withEmbeddedWriteQueue(
+        this.db,
+        isEmbeddedDatabase(this.db),
+        async () => {
+          // Embedded adapters serialize framework writes through this queue, so
+          // a preflight comparison is atomic with the cascade/delete that follows.
+          // PostgreSQL instead binds the revision into the final DELETE predicate;
+          // runCascadeDelete wraps any preceding cascade in the same transaction.
+          if (embeddedRevisionGuard) {
+            const current = await this.getCanonicalPersistedRow({
+              id: this.id,
+            });
+            if (
+              !current ||
+              !this.revisionsEqual(current.updated_at, expectedUpdatedAt)
+            ) {
+              throw new RuntimeError(
+                `Revision conflict while deleting ${className}`,
+                'RUNTIME_REVISION_CONFLICT',
+                { className, id: this.id },
+              );
+            }
+          }
+          return runCascadeDelete(
+            this.db,
+            ObjectRegistry,
+            {
+              // R5-canon: the qualified name, not the bare constructor name —
+              // two packages can register a same-named class, and a simple-name
+              // lookup in ObjectRegistry.getClass()/findClass() can silently
+              // resolve the cascade plan against the wrong package's class,
+              // leaving its @crossPackageRef references and polymorphic
+              // meta_type rows uncleaned (the orphaned-reference bug #2371
+              // exists to close, moved to the cross-package case).
+              className: this.getResolvedQualifiedName(),
+              tableName: this.tableName,
+              id: this.id,
+            },
+            async (db) => {
+              const result = await db.delete(this.tableName, {
+                id: this.id,
+                ...(expectedUpdatedAt !== undefined && !embeddedRevisionGuard
+                  ? {
+                      updated_at:
+                        this.revisionPredicateValue(expectedUpdatedAt),
+                    }
+                  : {}),
+              });
+              if (expectedUpdatedAt !== undefined && result.affected !== 1) {
+                throw new RuntimeError(
+                  `Revision conflict while deleting ${className}`,
+                  'RUNTIME_REVISION_CONFLICT',
+                  { className, id: this.id },
+                );
+              }
+            },
+          );
+        },
       );
 
     // The backing row is gone — a later save() should go through the
