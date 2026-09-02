@@ -97,6 +97,7 @@ function payloadObject(
 function commandAllowed(
   command: DataTableCommand,
   descriptor: DataSurfaceDescriptor,
+  controller: DataTableController,
 ): boolean {
   const readable = new Set(
     descriptor.columns
@@ -107,13 +108,31 @@ function commandAllowed(
   const sortable = new Set(descriptor.query.sortableColumnIds ?? []);
   switch (command.type) {
     case 'setFilters':
-      return command.filters.every((filter) => filterable.has(filter.columnId));
+      return command.filters.every((filter) => {
+        const column = descriptor.columns.find(
+          (candidate) => candidate.id === filter.columnId,
+        );
+        return (
+          filterable.has(filter.columnId) &&
+          column?.filterOperators?.includes(filter.operator) === true
+        );
+      });
     case 'setSorting':
       return command.sorting.every((sort) => sortable.has(sort.columnId));
     case 'toggleSorting':
       return sortable.has(command.columnId);
     case 'setSelectedRows':
       return command.rowIds.length <= descriptor.limits.maxSelectionSize;
+    case 'toggleRowSelection': {
+      const selection = controller.snapshot().state.selection;
+      if (selection.scope === 'allMatching') return false;
+      const selected = selection.rowIds.some(
+        (rowId) => String(rowId) === String(command.rowId),
+      );
+      return (
+        selected || selection.rowIds.length < descriptor.limits.maxSelectionSize
+      );
+    }
     case 'setPageSize':
       return (
         command.pageSize === null ||
@@ -166,7 +185,9 @@ export function registerContentListDataSurface(
     execute: async (command: DataSurfaceVisibleCommand) => {
       const tableCommand = dataTableCommandFromDataSurfaceCommand(command);
       if (tableCommand) {
-        if (!commandAllowed(tableCommand, options.descriptor))
+        if (
+          !commandAllowed(tableCommand, options.descriptor, options.controller)
+        )
           return { ok: false };
         options.controller.dispatch(tableCommand);
         return;

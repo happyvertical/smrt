@@ -138,6 +138,47 @@ import ImageThumbnail from './ImageThumbnail.svelte';
 
 const { t } = useI18n();
 
+function sameSurfaceIdentity(
+  left: DataSurfaceIdentity,
+  right: DataSurfaceIdentity,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function resolveSurfaceAuthority(
+  lifecycle: ContentListLifecycleBinding | undefined,
+  workflows: ContentListWorkflowBinding | undefined,
+): {
+  identity?: DataSurfaceIdentity;
+  maxSelectionSize?: number;
+} {
+  const identities = [lifecycle?.identity, workflows?.identity].filter(
+    (identity): identity is DataSurfaceIdentity => identity !== undefined,
+  );
+  if (
+    identities.length === 2 &&
+    !sameSurfaceIdentity(identities[0], identities[1])
+  ) {
+    throw new Error(
+      'ContentList lifecycle and workflow bindings must use the same data surface identity',
+    );
+  }
+  const bindings = [lifecycle, workflows].filter(
+    (binding): binding is ContentListLifecycleBinding | ContentListWorkflowBinding =>
+      binding !== undefined,
+  );
+  return {
+    ...(identities[0] ? { identity: identities[0] } : {}),
+    ...(bindings.length > 0
+      ? {
+          maxSelectionSize: Math.min(
+            ...bindings.map((binding) => binding.maxSelectionSize ?? 200),
+          ),
+        }
+      : {}),
+  };
+}
+
 const WORKFLOW_LABEL_MESSAGES: Record<
   ContentListWorkflowId,
   keyof typeof M
@@ -374,6 +415,10 @@ let {
   lifecycle = undefined,
   lifecycleMode = 'active',
 }: Props = $props();
+
+const surfaceAuthority = $derived(
+  resolveSurfaceAuthority(lifecycle, workflows),
+);
 
 const initialQuery = untrack(() => query);
 
@@ -1213,7 +1258,7 @@ const canSelectAllMatching = $derived(
       settledWorkflowRevision &&
       exactMatchingCount !== undefined &&
       exactMatchingCount > 0 &&
-      exactMatchingCount <= (workflows?.maxSelectionSize ?? 200),
+      exactMatchingCount <= (surfaceAuthority.maxSelectionSize ?? 200),
   ),
 );
 const workflowPayloadValid = $derived(
@@ -1404,12 +1449,12 @@ const surfaceOptions = $derived(
             });
             return {
               ...descriptor,
-              identity: workflows?.identity ?? descriptor.identity,
+              identity: surfaceAuthority.identity ?? descriptor.identity,
               limits: {
                 ...descriptor.limits,
-                ...(workflows?.maxSelectionSize === undefined
+                ...(surfaceAuthority.maxSelectionSize === undefined
                   ? {}
-                  : { maxSelectionSize: workflows.maxSelectionSize }),
+                  : { maxSelectionSize: surfaceAuthority.maxSelectionSize }),
               },
             };
           })(),
@@ -1885,7 +1930,8 @@ function createWorkflowRequest(
   return {
     version: 1,
     requestId: globalThis.crypto?.randomUUID?.() ?? `content-workflow-${Date.now()}`,
-    identity: workflows?.identity ?? { surfaceId: 'content-list', kind: 'table' },
+    identity:
+      surfaceAuthority.identity ?? { surfaceId: 'content-list', kind: 'table' },
     actionId: selectedWorkflow,
     phase,
     selection,

@@ -216,6 +216,81 @@ describe('ContentList mounted data surface', () => {
     rebound.destroy();
   });
 
+  it('rejects filters whose operators are not published by a server-backed descriptor', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    const identity = {
+      surfaceId: 'server-filter-allowlist',
+      kind: 'table' as const,
+    };
+    const handle = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({
+        surfaceId: identity.surfaceId,
+        serverBacked: true,
+      }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'unpublished-not-contains',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'set-filters',
+        payload: {
+          filters: [
+            { columnId: 'title', operator: 'notContains', value: 'draft' },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(controller.getState().filters).toEqual([]);
+    handle.destroy();
+  });
+
+  it('refuses a toggle that would exceed the retained selection cap', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    controller.dispatch({
+      type: 'setSelectedRows',
+      rowIds: ['retained-a', 'retained-b'],
+    });
+    const identity = {
+      surfaceId: 'retained-selection',
+      kind: 'table' as const,
+    };
+    const handle = registerContentListDataSurface({
+      registry,
+      descriptor: buildContentListSurfaceDescriptor({
+        surfaceId: identity.surfaceId,
+        limits: { maxSelectionSize: 2 },
+      }),
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'over-cap-cross-page-toggle',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'toggle-row-selection',
+        payload: { rowId: 'current-row' },
+      }),
+    ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    expect(controller.getState().selectedRowIds).toEqual([
+      'retained-a',
+      'retained-b',
+    ]);
+    handle.destroy();
+  });
+
   it('fails a visible ContentList command closed when its browser disconnects', async () => {
     const transport = disconnectedTransport();
     const bridge = createDataSurfaceCommandBridge({

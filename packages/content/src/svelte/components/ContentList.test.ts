@@ -11,6 +11,7 @@ import {
   CONTENT_LIST_UNREPRESENTABLE_OPTION,
   normalizeContentToken,
 } from '../content-list-controller.js';
+import type { ContentListLifecycleBinding } from '../content-list-lifecycle.js';
 import {
   ContentListQueryError,
   contentListQueryRequestKey,
@@ -178,6 +179,24 @@ function workflowBinding(
     ...(options.identity ? { identity: options.identity } : {}),
     preview,
     apply,
+  };
+}
+
+function lifecycleBinding(
+  options: {
+    maxSelectionSize?: number;
+    identity?: ContentListLifecycleBinding['identity'];
+  } = {},
+): ContentListLifecycleBinding {
+  return {
+    client: {
+      preview: vi.fn(async () => ({ ok: true })),
+      apply: vi.fn(async () => ({ ok: true })),
+    },
+    ...(options.maxSelectionSize === undefined
+      ? {}
+      : { maxSelectionSize: options.maxSelectionSize }),
+    ...(options.identity === undefined ? {} : { identity: options.identity }),
   };
 }
 
@@ -2601,6 +2620,44 @@ describe('ContentList data surface', () => {
     expect(registry.inspect(identity)?.descriptor.limits.maxSelectionSize).toBe(
       37,
     );
+  });
+
+  it('publishes lifecycle authority and the strictest combined selection cap', async () => {
+    const registry = createDataSurfaceRegistry();
+    const identity = {
+      surfaceId: 'tenant-content-list',
+      kind: 'table' as const,
+      subject: { type: 'tenant', id: 'tenant-a' },
+    };
+    renderList({
+      defaultViewMode: 'compact',
+      dataSurface: { registry },
+      lifecycle: lifecycleBinding({ identity, maxSelectionSize: 11 }),
+      workflows: workflowBinding({ identity, maxSelectionSize: 37 }),
+    });
+
+    await vi.waitFor(() => expect(registry.inspect(identity)).toBeDefined());
+    expect(registry.inspect(identity)?.descriptor).toMatchObject({
+      identity,
+      limits: { maxSelectionSize: 11 },
+    });
+  });
+
+  it('rejects incompatible lifecycle and workflow identities before registering', () => {
+    const registry = createDataSurfaceRegistry();
+    expect(() =>
+      renderList({
+        defaultViewMode: 'compact',
+        dataSurface: { registry },
+        lifecycle: lifecycleBinding({
+          identity: { surfaceId: 'lifecycle-list', kind: 'table' },
+        }),
+        workflows: workflowBinding({
+          identity: { surfaceId: 'workflow-list', kind: 'table' },
+        }),
+      }),
+    ).toThrow('must use the same data surface identity');
+    expect(registry.list()).toEqual([]);
   });
 });
 
