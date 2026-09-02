@@ -18,9 +18,11 @@ ContentList keeps its existing `onDelete` behavior.
 
 The browser never treats rendered rows as mutation authority. It sends a
 selection reference, canonical query for `all-matching`, expected count, and
-server revision through `createContentListLifecycleTransport()`. Preview and
-apply use the same request id and opaque confirmation token. Changing the
-query or selection invalidates the preview; expired, stale-revision,
+server revision through `createContentListLifecycleTransport()`. Preview,
+initial apply, and every replay use distinct per-attempt request ids. Apply and
+replay retain the opaque confirmation and idempotency authority envelope, while
+the result's `auditReference` continues to identify the original execution.
+Changing the query or selection invalidates the preview; expired, stale-revision,
 row-revision, query-fingerprint, token, or matching-count failures require a
 new preview.
 

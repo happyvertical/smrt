@@ -562,6 +562,7 @@ const MAX_DEFERRED_JOB_COMPLETIONS = 50;
 let completedJobs = $state<ContentListJob[]>([]);
 let completedJobsOverflowed = $state(false);
 let activeQueryKey = $state<string | undefined>(undefined);
+let lifecycleRefreshPending = $state(false);
 
 // Job state is subscribed once so hosts can use a framework-free controller.
 // Only transitions observed after the initial snapshot are completion events;
@@ -892,6 +893,22 @@ function refreshQuery(): void {
     })
     .catch(() => undefined);
 }
+
+function requestLifecycleRefresh(): void {
+  if (!queryBinding?.refresh) return;
+  if (refreshing || isLoading) {
+    lifecycleRefreshPending = true;
+    return;
+  }
+  lifecycleRefreshPending = false;
+  refreshQuery();
+}
+
+$effect(() => {
+  if (!lifecycleRefreshPending || refreshing || isLoading) return;
+  lifecycleRefreshPending = false;
+  refreshQuery();
+});
 
 function settleWorkflowQueryResult(
   result: unknown,
@@ -2179,7 +2196,7 @@ function handleLifecycleComplete(
       result,
     ),
   });
-  refreshQuery();
+  requestLifecycleRefresh();
 }
 
 function viewHref(row: ContentListRow): string | null {

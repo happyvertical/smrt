@@ -246,4 +246,46 @@ describe('ContentList trash lifecycle integration', () => {
     expect(target.textContent).not.toContain('Deleted article');
     expect(target.textContent).toContain('audit-final-row');
   });
+
+  it('queues a lifecycle refresh behind an older in-flight server query', async () => {
+    const query = createFakeContentListQuery();
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    mounted.push(
+      mount(ContentList, {
+        target,
+        props: {
+          lifecycleMode: 'trash',
+          lifecycle: {
+            client: {
+              preview: async () => result('preview'),
+              apply: async () => result('apply'),
+            },
+            identity,
+          },
+          query: { bind: () => query.binding },
+        },
+      }),
+    );
+    query.resolve(contents.slice(0, 2), 2);
+    await tick();
+
+    checkbox(target, 'Select Deleted article').click();
+    checkbox(target, 'Select Deleted document').click();
+    flushSync();
+    button(target, 'Restore selected').click();
+    await tick();
+    await tick();
+
+    query.setBusy({ refreshing: true });
+    flushSync();
+    button(target, 'Confirm 2').click();
+    await tick();
+    await tick();
+    expect(query.refreshes).toBe(0);
+
+    query.resolve(contents.slice(0, 2), 2);
+    await tick();
+    expect(query.refreshes).toBe(1);
+  });
 });

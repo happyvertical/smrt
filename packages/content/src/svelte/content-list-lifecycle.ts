@@ -4,10 +4,11 @@
  *
  * Lifecycle authority stays on the server. The browser supplies a selection
  * hint and expected count, then renders the server's resolved preview. Apply
- * must reuse that preview's opaque confirmation token and exact request
- * identity; a changed query, count, permission, row revision, or eligibility
- * is therefore rejected by the principal-bound server adapter rather than
- * being guessed from stale list rows.
+ * must reuse that preview's opaque confirmation token and authority-bound
+ * selection while using a fresh request id for each transport attempt; a
+ * changed query, count, permission, row revision, or eligibility is therefore
+ * rejected by the principal-bound server adapter rather than being guessed
+ * from stale list rows.
  */
 
 import type {
