@@ -190,6 +190,16 @@ export {
   type WorkerInvocation,
   type WorkerRunner,
 } from './invoke-agent.js';
+// Server-plane playbook preflight (#2590) — advisory prediction, never a grant.
+export {
+  type CreatePlaybookPreflightToolOptions,
+  createPlaybookPreflightTool,
+  filterPlaybooksByPreflight,
+  PLAYBOOK_PREFLIGHT_FUNCTION_NAME,
+  PLAYBOOK_PREFLIGHT_TOOL_SLUG,
+  playbookStepCollection,
+  playbookStepToolSlug,
+} from './playbook-preflight.js';
 // Opt-in Learning trait config (#1886). The underlying LearningMemory + its
 // records/outcomes live in @happyvertical/smrt-core.
 export {

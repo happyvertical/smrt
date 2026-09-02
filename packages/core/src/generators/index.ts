@@ -67,6 +67,23 @@ export {
   resolveMCPToolListCacheHint,
   sortMCPTools,
 } from './mcp';
+// Browser-plane playbook preflight route + the static REST layers it predicts
+// against (#2590). `authMiddleware` is never exposed to, or invoked by, any of
+// these — see `preflight-route.ts`.
+export {
+  handlePlaybookPreflightRoute,
+  isApiActionEnabledForObject,
+  isRestRoutePublic,
+  PLAYBOOK_PREFLIGHT_CAPABILITY,
+  PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,
+  type PlaybookPreflightProvider,
+  type PlaybookPreflightRouteOptions,
+  type PlaybookPreflightRouteRequest,
+  type RestApiAction,
+  resolveRegisteredObjectName,
+  restFieldReadPermissions,
+  restMethodForApiAction,
+} from './preflight-route';
 export type { APIConfig, APIContext, RestServerConfig } from './rest';
 // REST API Generator and server utilities
 export {

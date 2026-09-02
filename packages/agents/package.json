@@ -73,6 +73,7 @@
     "@happyvertical/files": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-playbooks": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",

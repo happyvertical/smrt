@@ -25,6 +25,42 @@ export {
 } from './models/PlaybookOverride.js';
 export { definePlaybook, PlaybookRegistry } from './playbook-registry.js';
 export { resolvePlaybook } from './playbook-resolver.js';
+// Preflight (#2590) — advisory prediction, never a grant.
+export {
+  createBrowserStepEvaluator,
+  createServerStepEvaluator,
+  PLAYBOOK_PREFLIGHT_CAPABILITY,
+  PLAYBOOK_PREFLIGHT_UNAVAILABLE,
+  preflightPlan,
+  preflightPlaybook,
+  worstVerdict,
+} from './preflight.js';
+export {
+  clearPlaybookPreflightCache,
+  getPlaybookPreflightCacheTtlMs,
+} from './preflight-cache.js';
+export type {
+  BrowserPreflightLayerSource,
+  BrowserPreflightOptions,
+  PlaybookPreflightAvailableReport,
+  PlaybookPreflightReport,
+  PlaybookPreflightRequest,
+  PlaybookPreflightUnavailableReport,
+  PreflightLayer,
+  PreflightLayerReport,
+  PreflightReason,
+  PreflightStepEvaluation,
+  PreflightStepEvaluator,
+  PreflightStepReport,
+  PreflightSummary,
+  PreflightVerdict,
+  ServerPreflightOptions,
+} from './preflight-types.js';
+export {
+  type BrowserPreflightProviderOptions,
+  createBrowserPlaybookPreflight,
+  createRestPreflightLayerSource,
+} from './rest-preflight.js';
 export type {
   PlaybookAcceptance,
   PlaybookCacheValue,

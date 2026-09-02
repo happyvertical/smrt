@@ -224,6 +224,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-playbooks':
+        specifier: workspace:*
+        version: link:../playbooks
       '@happyvertical/smrt-reports':
         specifier: workspace:*
         version: link:../reports

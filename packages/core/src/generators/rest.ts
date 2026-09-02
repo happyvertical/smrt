@@ -56,6 +56,13 @@ import {
   resolveCustomActionMetadata,
 } from './custom-action';
 import { handleEventsRoute } from './events-route';
+import {
+  handlePlaybookPreflightRoute,
+  isApiActionEnabledForObject,
+  isRestRoutePublic,
+  PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT,
+  type PlaybookPreflightProvider,
+} from './preflight-route';
 import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
@@ -105,6 +112,17 @@ export interface APIConfig {
    * through this runtime server.
    */
   manifestHash?: string;
+  /**
+   * Browser-plane playbook preflight provider (#2590), wired from
+   * `@happyvertical/smrt-playbooks`. When omitted the `_preflight` route is not
+   * served at all.
+   *
+   * The provider receives only the requested key, the caller's published
+   * permission slugs, the database handle, and the boolean
+   * `appAuthConfigured`. It never receives {@link APIConfig.authMiddleware},
+   * which preflight must never invoke.
+   */
+  playbookPreflight?: PlaybookPreflightProvider;
 }
 
 export interface APIContext {
@@ -445,6 +463,25 @@ export class APIGenerator {
       return this.addCorsHeaders(response, req);
     }
 
+    // Browser-plane playbook preflight (#2590): advisory, read-effect,
+    // idempotent. `authMiddleware` is deliberately NOT passed here and is never
+    // invoked by preflight — the route options carry only the boolean
+    // `appAuthConfigured`, so the app-auth layer reports `unknown`.
+    if (
+      url.pathname ===
+      `${this.config.basePath}/${PLAYBOOK_PREFLIGHT_ROUTE_SEGMENT}`
+    ) {
+      const response = await handlePlaybookPreflightRoute(req, {
+        provider: this.config.playbookPreflight,
+        ...(this.context.permissions
+          ? { permissions: this.context.permissions }
+          : {}),
+        appAuthConfigured: Boolean(this.config.authMiddleware),
+        db: this.resolveContextDb(),
+      });
+      return this.addCorsHeaders(response, req);
+    }
+
     // Handle object routes
     if (url.pathname.startsWith(this.config.basePath || '')) {
       const response = await this.handleObjectRoute(req, url);
@@ -671,41 +708,16 @@ export class APIGenerator {
     objectName: string | undefined,
     method: string,
   ): boolean {
-    if (!objectName) return false;
-    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-    if (!apiConfig || typeof apiConfig !== 'object') return false;
-    const publicAccess = (apiConfig as { public?: boolean | 'read' }).public;
-    if (publicAccess === true) return true;
-    if (publicAccess === 'read') return method.toUpperCase() === 'GET';
-    return false;
+    // Single source of truth, shared with browser-plane preflight (#2590): the
+    // route and the prediction of the route must never drift.
+    return isRestRoutePublic(objectName, method);
   }
 
   private isApiActionEnabled(
     objectName: string | undefined,
     action: 'list' | 'get' | 'create' | 'update' | 'delete',
   ): boolean {
-    if (!objectName) {
-      return true;
-    }
-
-    const config = ObjectRegistry.getConfig(objectName);
-    const apiConfig = config.api;
-
-    if (apiConfig === false) {
-      return false;
-    }
-
-    if (apiConfig && typeof apiConfig === 'object') {
-      if (apiConfig.include && !apiConfig.include.includes(action)) {
-        return false;
-      }
-
-      if (apiConfig.exclude?.includes(action)) {
-        return false;
-      }
-    }
-
-    return true;
+    return isApiActionEnabledForObject(objectName, action);
   }
 
   private getCollectionObjectName(
