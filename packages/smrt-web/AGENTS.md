@@ -172,6 +172,16 @@ declared intent derives, at the one place both are visible. Two such intents
 would otherwise fight over a single WebMCP tool name at mount, where the
 failure is a shadowed or rejected registration rather than a clear error.
 
+**Gotcha — that check covers intents only.** A derived name can still collide
+with a GENERATED model tool (`${model}_${action}`) or, under a custom
+`webmcp.ui.prefix`, with one of the six fixed UI tools. Neither is knowable at
+declaration time, because both depend on a runtime `namespace`/`prefix` the
+declaration never sees, and there is no document-global tool-name lock for
+bespoke registrations to participate in. Nothing escalates — an intent stays
+browser-only and fail-closed either way — but one registration silently
+shadows or loses to the other. Keep an intent's first id segment out of your
+model names, or give `registerWebMcpTools` a `namespace`.
+
 ### The no-REST invariant
 
 `ViewIntentDeclaration` has no `execute`, `fetch`, `url`, `route`, `endpoint`,

@@ -80,6 +80,7 @@ function mountedControlRegistry() {
 afterEach(() => {
   document.modelContext = undefined;
   registerBespokeSpy.mockClear();
+  vi.restoreAllMocks();
 });
 
 describe('useViewIntent', () => {

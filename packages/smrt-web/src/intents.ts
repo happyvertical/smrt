@@ -299,7 +299,18 @@ function cloneJsonValue(value: unknown, path: string, depth = 0): unknown {
     // properties are deliberately dropped: they are not JSON, they cannot be
     // named by a scanner, and nothing downstream reads them.
     for (const [key, entry] of Object.entries(value)) {
-      copy[key] = cloneJsonValue(entry, `${path}.${key}`, depth + 1);
+      const cloned = cloneJsonValue(entry, `${path}.${key}`, depth + 1);
+      // `defineProperty`, not assignment: an own `__proto__` key (which
+      // `JSON.parse` produces, so an agent argument can carry one) would
+      // otherwise hit `Object.prototype`'s setter — silently dropping the key
+      // AND swapping the copy's prototype for cloned input. This keeps the
+      // copy exactly what was validated.
+      Object.defineProperty(copy, key, {
+        value: cloned,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return copy;
   }
@@ -430,11 +441,17 @@ function registryState(): ViewIntentRegistryState {
  * the contract #2591's scanner matcher reads without evaluating the module.
  *
  * The returned intent is deeply frozen and registered under its `id`. A
- * second declaration of the same id is an error unless it is byte-identical
- * (which is what an HMR re-evaluation produces).
+ * byte-identical re-declaration returns the SAME frozen object. A
+ * re-declaration that differs REPLACES the previous one and warns: editing a
+ * sidecar is what an HMR update is for, and throwing there would break the
+ * single most common dev action on these files. Two genuinely different
+ * intents sharing an id is an authoring mistake the warning surfaces, and one
+ * #2591's scanner catches statically, where both declarations are visible at
+ * once.
  *
  * @throws if the declaration is not static JSON data, carries an unknown
- * key, carries a function anywhere, or names a reserved tool namespace.
+ * key, carries a function anywhere, names a reserved tool namespace, or
+ * derives a WebMCP tool name another intent already derives.
  */
 export function defineIntent(declaration: ViewIntentDeclaration): ViewIntent {
   if (!isPlainObject(declaration)) {
@@ -504,12 +521,11 @@ export function defineIntent(declaration: ViewIntentDeclaration): ViewIntent {
   }
   const existing = state.intents.get(id);
   if (existing) {
-    if (JSON.stringify(existing) !== JSON.stringify(intent)) {
-      fail(
-        `id '${id}' is already declared with a different definition. Intent ids are global and stable.`,
-      );
-    }
-    return existing;
+    if (JSON.stringify(existing) === JSON.stringify(intent)) return existing;
+    // biome-ignore lint/suspicious/noConsole: smrt-web has no logger dep (TanStack-only); a replaced intent declaration surfaces via console.warn by design (#2588)
+    console.warn(
+      `[smrt-web] view intent '${id}' was re-declared with a different definition; replacing it. In development this is an HMR update. In a built application it means two declarations share one id.`,
+    );
   }
   state.intents.set(id, intent);
   return intent;

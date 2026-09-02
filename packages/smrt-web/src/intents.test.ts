@@ -143,9 +143,18 @@ describe('defineIntent', () => {
     const second = defineIntent({ ...declaration });
     expect(second).toBe(first);
 
-    expect(() =>
-      defineIntent({ ...declaration, description: 'Something else' }),
-    ).toThrow(/already declared with a different definition/);
+    // A DIFFERING re-declaration replaces and warns rather than throwing:
+    // editing a sidecar is exactly what an HMR update does, and throwing
+    // there would break the dev loop.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const replaced = defineIntent({
+      ...declaration,
+      description: 'Something else',
+    });
+    expect(replaced.description).toBe('Something else');
+    expect(resolveViewIntent('orders.filter_list')).toBe(replaced);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
   });
 
   it('requires a namespaced, lowercase id', () => {
@@ -323,6 +332,23 @@ describe('the no-REST invariant', () => {
 
     const command = registry.calls[0]?.command as Record<string, unknown>;
     expect(command.value).toEqual({ note: 'clean' });
+  });
+
+  it('keeps an own __proto__ key as data instead of swapping the prototype', () => {
+    const intent = defineIntent({
+      id: 'orders.proto_schema',
+      description: 'x',
+      // `JSON.parse('{"__proto__":{}}')` produces exactly this own key, so an
+      // agent-supplied or file-loaded schema can carry one.
+      inputSchema: JSON.parse('{"type":"object","__proto__":{"polluted":1}}'),
+      target: { registry: 'control', action: 'focus' },
+    });
+
+    expect(Object.getPrototypeOf(intent.inputSchema)).toBe(Object.prototype);
+    expect(
+      (Object.prototype as unknown as Record<string, unknown>).polluted,
+    ).toBeUndefined();
+    expect(Object.hasOwn(intent.inputSchema, '__proto__')).toBe(true);
   });
 
   it('never calls fetch when a compiled intent executes', async () => {
