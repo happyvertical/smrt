@@ -715,6 +715,105 @@ SQLite requires a deliberate table rebuild; DuckDB reports the unsupported ALTER
 path. Neither engine treats an unsupported constraint addition as a successful
 no-op.
 
+### Pre-R11 `text` ids converge to `uuid` before any FK statement (#2608)
+
+R11 made SMRT identifiers and references native `uuid` on PostgreSQL. A
+database created before that change still stores its `id` columns as `text`
+while every reference column added afterwards materializes as `uuid`.
+PostgreSQL cannot implement a foreign key across two different physical types —
+FK DDL admits no cast — so `ADD CONSTRAINT … NOT VALID` fails with SQLSTATE
+42804 and aborts every later statement in the same migration batch.
+
+Two rails handle it, and both are PostgreSQL-only. SQLite stores UUIDs as text
+by design and DuckDB cannot rewrite a column type in place, so neither engine
+emits anything for this drift.
+
+**The runtime guard fails closed.** `SchemaManager.ensurePostgresForeignKey()`
+reads both live column types and refuses to emit `ADD CONSTRAINT` when they
+disagree, naming both columns, both live types, and the repair. It deliberately
+skips the orphan probe in that case: across mismatched types the probe answers
+a question about casted values, not about the constraint being refused, and it
+has to run again after the columns converge anyway.
+
+**The differ converges the columns.** `planUuidConvergence()`
+(`src/schema/uuid-convergence.ts`) groups every manifest relationship that
+declares UUID on both sides into connected components and converges a component
+only when the live database already proves the target shape — at least one
+member is native `uuid`. A component that is `text` on *every* side is the
+tolerated pre-R11 deployment and is left alone; its foreign keys are
+type-compatible today, and the R11 uuid/text equivalence in
+`migrations/differ.ts` keeps it out of the column diff.
+
+Components, not individual pairs, are the unit of decision: one legacy `text`
+primary key can be referenced by several children, and converting it for one
+of them would break every sibling that is still `text`. A self-referential
+table falls out of the same grouping because both endpoints land in one
+component. Convergence is relationship-driven, so a legacy `text` id that
+nothing references keeps its R11 tolerance.
+
+The planner never coerces data. Before emitting anything it probes each column
+it would rewrite for values that are not uuid-shaped (the same `~*` canonical
+pattern the orphan probe uses) and refuses the whole component — with the count
+and a sample value — if any exist, if the probe cannot run, if a member carries
+some third physical type, or if a live foreign key still constrains a column
+that must change. `@happyvertical/sql` introspection does not expose live
+PostgreSQL constraint names, so SMRT cannot drop and re-add those constraints
+for you: drop them deliberately, rerun the migration to converge, and let SMRT
+re-add the manifest constraints.
+
+Refusals are reported, not silent. Each one becomes a warning advisory with no
+executable SQL, so it reaches `unactionableChanges` / `hasManualDrift` and
+`db:status` shows **blocked: incompatible column types** instead of *pending*.
+The same check runs per relationship in `compareForeignKeys`, so a foreign key
+whose live types will still disagree after this run's conversions is reported
+blocked rather than emitted as pending DDL that cannot succeed.
+
+The planner also inspects tables the manifest no longer declares. A live
+foreign key from an orphan table onto a column that must convert still blocks
+`ALTER COLUMN … TYPE`, so the differ introspects every existing table — not
+only the manifest ones — whenever there is at least one conversion candidate,
+and reports the dependency instead of emitting DDL PostgreSQL would reject. An
+already-converged database has no candidates and pays nothing.
+
+Ordering is a contract. Conversions carry `SchemaChange.phase =
+'pre_foreign_key'`, and the orchestrator emits them **before every CREATE TABLE
+and every foreign-key statement in the batch**. Both halves matter:
+`planForeignKeyCreation()` only defers the constraints inside a mutual cycle,
+so an acyclic new child table keeps its foreign key *inline in `CREATE TABLE`*
+— a brand-new `uuid` child pointing at a legacy `text` parent fails exactly
+like an existing one, before the parent could be converted. Conversions only
+ever rewrite columns that already exist, so leading the batch is always safe. A
+live `DEFAULT` on a converting column is dropped first (PostgreSQL refuses
+`ALTER COLUMN … TYPE` when the default cannot be cast); the ordinary default
+comparison re-establishes the manifest default on the next run.
+
+There are **two** batch builders and both order on that marker:
+`collectStatementsFromDiff()` in `migrations/orchestrate.ts` (used by
+`getPendingSchemaStatements` / `migrateSmrtSchemas`) and the tracker batch
+`db:migrate` assembles by hand in `@happyvertical/smrt-cli`
+(`commands/utilities.ts`). `partitionSchemaChanges()` carries
+`SchemaChange.phase` onto `MigrationAction.phase` so the CLI can partition the
+same way, in both the applied batch and the `--dry-run` preview. If you add a
+third consumer, order it the same way.
+
+Convergence entries carry the manifest column definition. Every `type_upgrade`
+consumer reads `SchemaChange.column` — `partitionSchemaChanges()` in
+`@happyvertical/smrt-cli` skips an entry without one — so a conversion missing
+it would drop out of the `db:migrate` batch while `compareForeignKeys()` still
+assumed the converged type. Refused convergences carry the same column plus an
+advisory and no SQL, and the CLI routes them to the report-only advisories
+rather than to manual interventions or the tracker.
+
+The uuid wording is gated on the manifest. Both the runtime guard and the
+status planner reach their incompatible-type branch for *any* mismatched pair,
+not only uuid/text. A `USING …::uuid` repair is suggested only when the
+manifest declares UUID on both sides **and** a live side is actually `text`;
+otherwise the diagnostic names the two live types and asks the operator to
+align them deliberately.
+
+The conversion is one-time and idempotent: once the column is native `uuid`,
+the component is uniformly UUID and the planner emits nothing.
+
 Properties to keep if you touch that module:
 
 - **The plan is registry-derived and rebuilt per delete.** Registration is

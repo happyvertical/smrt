@@ -1748,6 +1748,22 @@ export default testManifest;
         manualInterventions.push(...partitionedChanges.manualInterventions);
         const advisories = partitionedChanges.advisories;
 
+        // #2608: the pre-R11 `text` -> `uuid` convergence has to run before
+        // every `CREATE TABLE` in this batch — `planForeignKeyCreation()` only
+        // defers the constraints inside a mutual cycle, so an acyclic new child
+        // table keeps its foreign key inline and PostgreSQL would reject it
+        // (SQLSTATE 42804) against a parent that has not converged yet — and
+        // before the deferred constraints for the cyclic ones. These
+        // conversions only rewrite columns that already exist, so leading the
+        // batch is always safe. `migrateSmrtSchemas()` partitions on the same
+        // marker; this command builds its own tracker batch and must match.
+        const preForeignKeyMigrations = migrations.filter(
+          (migration) => migration.phase === 'pre_foreign_key',
+        );
+        const remainingMigrations = migrations.filter(
+          (migration) => migration.phase !== 'pre_foreign_key',
+        );
+
         assertForceMigrationTargetsExist(forceSelection.forceMigrations, [
           ...diff.added_tables.map(
             (schema) => `create_table_${schema.tableName}`,
@@ -1946,6 +1962,16 @@ export default testManifest;
             }
 
             console.log('  SQL Statements:\n');
+            // #2608: the pre-R11 uuid convergence has to precede every
+            // CREATE TABLE (an acyclic new child keeps its foreign key inline)
+            // and every foreign-key statement, so the preview has to show the
+            // same order db:migrate applies.
+            for (const m of preForeignKeyMigrations) {
+              const sqlStatements = m.sqlStatements ?? (m.sql ? [m.sql] : []);
+              for (const sql of sqlStatements) {
+                console.log(`    ${sql};`);
+              }
+            }
             for (const schema of tablePlan.schemas) {
               const ddl = plannedTableDDL.get(schema.tableName);
               if (!ddl) continue;
@@ -1963,7 +1989,7 @@ export default testManifest;
                 : ';';
               console.log(`    ${migration.sql}${terminator}`);
             }
-            for (const m of migrations) {
+            for (const m of remainingMigrations) {
               const sqlStatements = m.sqlStatements ?? (m.sql ? [m.sql] : []);
               for (const sql of sqlStatements) {
                 console.log(`    ${sql};`);
@@ -1998,6 +2024,88 @@ export default testManifest;
         if (applySchemaMigrations && schemaChangeCount > 0) {
           const migrationDefs: MigrationDefinition[] = [];
           const migrationLogs = new Map<string, SchemaMigrationLogInfo>();
+
+          const pushMigrationDef = (migration: MigrationAction): void => {
+            const migrationName = getSyntheticMigrationNameForAction(migration);
+            if (!migrationName) {
+              return;
+            }
+
+            let migrationSql: string;
+            let actionDesc: string;
+
+            if (migration.type === 'add_column' && migration.column) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+            } else if (
+              migration.type === 'alter_column' &&
+              (migration.columnName || migration.column)
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Altered column ${migration.tableName}.${migration.columnName ?? migration.column?.name} (${migration.alteration ?? 'alter'})`;
+            } else if (
+              migration.type === 'drop_column' &&
+              migration.columnName
+            ) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
+            } else if (migration.type === 'type_upgrade' && migration.column) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
+            } else if (migration.type === 'add_index' && migration.index) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+            } else if (migration.type === 'drop_index' && migration.indexName) {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
+            } else if (migration.type === 'add_foreign_key') {
+              migrationSql = migration.sql || '';
+              actionDesc = `Added foreign-key constraint on ${migration.tableName}`;
+            } else if (migration.type === 'drop_foreign_key') {
+              migrationSql = migration.sql || '';
+              actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;
+            } else {
+              return;
+            }
+
+            const migrationSqlStatements =
+              migration.sqlStatements ?? (migrationSql ? [migrationSql] : []);
+
+            migrationDefs.push({
+              id: migrationName,
+              description:
+                migration.type === 'add_column'
+                  ? `Add column ${migration.column?.name} to ${migration.tableName}`
+                  : migration.type === 'alter_column'
+                    ? `Alter column ${migration.columnName ?? migration.column?.name} on ${migration.tableName} (${migration.alteration ?? 'alter'}: ${migration.mismatch?.actual ?? '?'} → ${migration.mismatch?.expected ?? '?'})`
+                    : migration.type === 'drop_column'
+                      ? `Drop column ${migration.columnName} from ${migration.tableName}`
+                      : migration.type === 'type_upgrade'
+                        ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                        : migration.type === 'drop_index'
+                          ? `Drop index ${migration.indexName} on ${migration.tableName}`
+                          : migration.type === 'add_foreign_key'
+                            ? `Add foreign-key constraint on ${migration.tableName}`
+                            : migration.type === 'drop_foreign_key'
+                              ? `Drop foreign-key constraint on ${migration.tableName}`
+                              : `Add index ${migration.index?.name} on ${migration.tableName}`,
+              version: '1.0.0',
+              // Auto-migrations don't carry a DOWN script. Atomic execution
+              // rolls back the surrounding transaction instead of relying on
+              // per-migration DOWN SQL.
+              up: migrationSqlStatements,
+              down: [],
+            });
+            migrationLogs.set(migrationName, {
+              successMessage: actionDesc,
+              skippedMessage: `${migrationName} already applied`,
+            });
+          };
+
+          // #2608: conversions lead the batch — see `preForeignKeyMigrations`.
+          for (const migration of preForeignKeyMigrations) {
+            pushMigrationDef(migration);
+          }
 
           for (const schema of tablePlan.schemas) {
             const ddl = plannedTableDDL.get(schema.tableName);
@@ -2042,81 +2150,8 @@ export default testManifest;
             });
           }
 
-          for (const migration of migrations) {
-            const migrationName = getSyntheticMigrationNameForAction(migration);
-            if (!migrationName) {
-              continue;
-            }
-
-            let migrationSql: string;
-            let actionDesc: string;
-
-            if (migration.type === 'add_column' && migration.column) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
-            } else if (
-              migration.type === 'alter_column' &&
-              (migration.columnName || migration.column)
-            ) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Altered column ${migration.tableName}.${migration.columnName ?? migration.column?.name} (${migration.alteration ?? 'alter'})`;
-            } else if (
-              migration.type === 'drop_column' &&
-              migration.columnName
-            ) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Dropped column ${migration.tableName}.${migration.columnName}`;
-            } else if (migration.type === 'type_upgrade' && migration.column) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
-            } else if (migration.type === 'add_index' && migration.index) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
-            } else if (migration.type === 'drop_index' && migration.indexName) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
-            } else if (migration.type === 'add_foreign_key') {
-              migrationSql = migration.sql || '';
-              actionDesc = `Added foreign-key constraint on ${migration.tableName}`;
-            } else if (migration.type === 'drop_foreign_key') {
-              migrationSql = migration.sql || '';
-              actionDesc = `Dropped foreign-key constraint on ${migration.tableName}`;
-            } else {
-              continue;
-            }
-
-            const migrationSqlStatements =
-              migration.sqlStatements ?? (migrationSql ? [migrationSql] : []);
-
-            migrationDefs.push({
-              id: migrationName,
-              description:
-                migration.type === 'add_column'
-                  ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : migration.type === 'alter_column'
-                    ? `Alter column ${migration.columnName ?? migration.column?.name} on ${migration.tableName} (${migration.alteration ?? 'alter'}: ${migration.mismatch?.actual ?? '?'} → ${migration.mismatch?.expected ?? '?'})`
-                    : migration.type === 'drop_column'
-                      ? `Drop column ${migration.columnName} from ${migration.tableName}`
-                      : migration.type === 'type_upgrade'
-                        ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                        : migration.type === 'drop_index'
-                          ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                          : migration.type === 'add_foreign_key'
-                            ? `Add foreign-key constraint on ${migration.tableName}`
-                            : migration.type === 'drop_foreign_key'
-                              ? `Drop foreign-key constraint on ${migration.tableName}`
-                              : `Add index ${migration.index?.name} on ${migration.tableName}`,
-              version: '1.0.0',
-              // Auto-migrations don't carry a DOWN script. Atomic execution
-              // rolls back the surrounding transaction instead of relying on
-              // per-migration DOWN SQL.
-              up: migrationSqlStatements,
-              down: [],
-            });
-            migrationLogs.set(migrationName, {
-              successMessage: actionDesc,
-              skippedMessage: `${migrationName} already applied`,
-            });
+          for (const migration of remainingMigrations) {
+            pushMigrationDef(migration);
           }
 
           // Ask core for the exact split it will perform, rather than

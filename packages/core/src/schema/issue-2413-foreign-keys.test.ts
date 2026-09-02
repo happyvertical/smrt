@@ -17,6 +17,7 @@ import {
 import { planForeignKeyCreation } from './foreign-key-planner.js';
 import { resolveForeignKeyDeleteAction } from './foreign-key-policy.js';
 import { identifierByteLength, MAX_IDENTIFIER_BYTES } from './index-utils.js';
+import { SchemaManager } from './schema-manager.js';
 import type { ForeignKeyAction, SchemaDefinition } from './types.js';
 
 function schema(
@@ -999,6 +1000,164 @@ describe('existing-table orphan safety (#2413)', () => {
       }).compare({ children: child }),
     ).rejects.toThrow(
       /Cannot probe children\.parent_id for orphan rows.*operator does not exist/,
+    );
+  });
+});
+
+describe('PostgreSQL foreign-key provisioning across uuid/text drift (#2608)', () => {
+  const foreignKey = {
+    column: 'parent_id',
+    referencesTable: 'parents',
+    referencesColumn: 'id',
+    onDelete: 'NO ACTION' as ForeignKeyAction,
+    onUpdate: 'CASCADE' as ForeignKeyAction,
+  };
+
+  function driftMock(childType: string, parentType: string) {
+    const queries: string[] = [];
+    return {
+      queries,
+      db: {
+        url: 'postgres://fixture/issue2608',
+        query: async (sql: string) => {
+          queries.push(sql);
+          return { rows: [] };
+        },
+        getTableSchema: async (tableName: string) =>
+          tableName === 'parents'
+            ? {
+                columns: {
+                  id: { name: 'id', type: parentType, primaryKey: true },
+                },
+                indexes: [],
+                foreignKeys: [],
+              }
+            : {
+                columns: {
+                  id: { name: 'id', type: childType, primaryKey: true },
+                  parent_id: { name: 'parent_id', type: childType },
+                },
+                indexes: [],
+                foreignKeys: [],
+              },
+      },
+    };
+  }
+
+  it('refuses to add a constraint whose live child is uuid and parent is text', async () => {
+    const mock = driftMock('uuid', 'text');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    await expect(
+      manager.ensurePostgresForeignKey('children', foreignKey, {
+        nullable: true,
+        uuidComparison: true,
+      }),
+    ).rejects.toThrow(
+      /Cannot add children_parent_id_parents_id_fkey: incompatible column types\. children\.parent_id is uuid but parents\.id is text; PostgreSQL cannot cast inside FOREIGN KEY DDL \(SQLSTATE 42804\)/,
+    );
+
+    expect(mock.queries.some((sql) => sql.includes('ADD CONSTRAINT'))).toBe(
+      false,
+    );
+    expect(
+      mock.queries.some((sql) => sql.includes('VALIDATE CONSTRAINT')),
+    ).toBe(false);
+    // Deliberate: the orphan probe is skipped. Across mismatched types it can
+    // only answer a question about casted values, and it must be re-run after
+    // the columns converge anyway.
+    expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(false);
+  });
+
+  it('refuses the reverse drift and names the text side in the repair', async () => {
+    const mock = driftMock('text', 'uuid');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    await expect(
+      manager.ensurePostgresForeignKey('children', foreignKey, {
+        nullable: true,
+        uuidComparison: true,
+      }),
+    ).rejects.toThrow(
+      /children\.parent_id is text but parents\.id is uuid.*ALTER TABLE "children" ALTER COLUMN "parent_id" TYPE uuid USING "parent_id"::uuid/s,
+    );
+    expect(mock.queries.some((sql) => sql.includes('ADD CONSTRAINT'))).toBe(
+      false,
+    );
+  });
+
+  it('still adds and validates a constraint when both live types agree', async () => {
+    const mock = driftMock('uuid', 'uuid');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    await manager.ensurePostgresForeignKey('children', foreignKey, {
+      nullable: true,
+      uuidComparison: true,
+    });
+
+    expect(mock.queries.some((sql) => sql.includes('orphan_key'))).toBe(true);
+    expect(
+      mock.queries.some((sql) =>
+        sql.includes(
+          'ADD CONSTRAINT "children_parent_id_parents_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "parents" ("id")',
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      mock.queries.some((sql) => sql.includes('VALIDATE CONSTRAINT')),
+    ).toBe(true);
+  });
+
+  it('does not suggest a uuid conversion for a non-uuid relationship', async () => {
+    // `uuidComparison: false` — the manifest does not declare UUID for this
+    // pair, so a `USING …::uuid` hint would be wrong guidance.
+    const mock = driftMock('bigint', 'text');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    const error = await manager
+      .ensurePostgresForeignKey('children', foreignKey, {
+        nullable: true,
+        uuidComparison: false,
+      })
+      .catch((thrown: unknown) => thrown as Error);
+
+    expect(error.message).toContain('incompatible column types');
+    expect(error.message).toContain('SQLSTATE 42804');
+    expect(error.message).toContain(
+      'Align children.parent_id (bigint) and parents.id (text) on one physical type deliberately',
+    );
+    expect(error.message).not.toContain('USING');
+    expect(error.message).not.toContain('Suggested repair');
+  });
+
+  it('does not suggest a uuid conversion when neither live side is text', async () => {
+    const mock = driftMock('uuid', 'bigint');
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    const error = await manager
+      .ensurePostgresForeignKey('children', foreignKey, {
+        nullable: true,
+        uuidComparison: true,
+      })
+      .catch((thrown: unknown) => thrown as Error);
+
+    expect(error.message).toContain('SQLSTATE 42804');
+    expect(error.message).toContain('Align children.parent_id (uuid)');
+    expect(error.message).not.toContain('USING');
+  });
+
+  it('keeps the pre-#2608 behaviour when live types cannot be introspected', async () => {
+    const mock = driftMock('uuid', 'uuid');
+    (mock.db as { getTableSchema?: unknown }).getTableSchema = undefined;
+    const manager = new SchemaManager(mock.db as never, { engine: 'postgres' });
+
+    await manager.ensurePostgresForeignKey('children', foreignKey, {
+      nullable: true,
+      uuidComparison: true,
+    });
+
+    expect(mock.queries.some((sql) => sql.includes('ADD CONSTRAINT'))).toBe(
+      true,
     );
   });
 });
