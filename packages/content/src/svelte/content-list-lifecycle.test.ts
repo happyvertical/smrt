@@ -268,6 +268,45 @@ describe('ContentList lifecycle controller', () => {
     expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
   });
 
+  it('blocks reset and a new preview until an ambiguous apply is replayed', async () => {
+    const apply = vi
+      .fn<() => Promise<DataSurfaceActionResult>>()
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce(result('apply'));
+    const preview = vi.fn(async () => result('preview'));
+    const controller = createContentListLifecycleController({
+      client: { preview, apply },
+      createIdempotencyKey: () => 'apply-1',
+    });
+    await controller.preview({
+      actionId: 'permanent-delete',
+      selection: { scope: 'explicit-ids', rowIds: ['a', 'b'] },
+      expectedCount: 2,
+      viewKey: 'selection-a-b',
+    });
+    await controller.apply(2);
+
+    expect(controller.snapshot()).toMatchObject({
+      status: 'failed',
+      replayRequired: true,
+    });
+    controller.reset();
+    await controller.preview({
+      actionId: 'permanent-delete',
+      selection: { scope: 'explicit-ids', rowIds: ['c'] },
+      expectedCount: 1,
+      viewKey: 'selection-c',
+    });
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(controller.snapshot()).toMatchObject({
+      status: 'failed',
+      replayRequired: true,
+    });
+
+    expect(await controller.apply(2)).toMatchObject({ status: 'succeeded' });
+    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+  });
+
   it('requires a renewed preview when the server reports matching-count drift', async () => {
     const controller = createContentListLifecycleController({
       client: {

@@ -64,7 +64,9 @@ $effect(() => {
 });
 
 const busy = $derived(
-  snapshot.status === 'previewing' || snapshot.status === 'applying',
+  snapshot.status === 'previewing' ||
+    snapshot.status === 'applying' ||
+    snapshot.replayRequired === true,
 );
 const selectedCount = $derived(selectedRowIds.length);
 const selectionLimit = $derived(binding.maxSelectionSize ?? 200);

@@ -138,6 +138,8 @@ export interface ContentListLifecycleSnapshot {
   error?: string;
   /** True when the only safe recovery is another server preview. */
   renewalRequired: boolean;
+  /** True while an ambiguous apply must be replayed with its exact envelope. */
+  replayRequired?: boolean;
 }
 
 export interface ContentListLifecyclePreviewInput {
@@ -436,6 +438,7 @@ export function createContentListLifecycleController(
   };
 
   const reset = (): void => {
+    if (pendingApply) return;
     generation += 1;
     previewViewKey = undefined;
     frozen = undefined;
@@ -446,6 +449,7 @@ export function createContentListLifecycleController(
   const preview = async (
     input: ContentListLifecyclePreviewInput,
   ): Promise<ContentListLifecycleSnapshot> => {
+    if (pendingApply) return state;
     const currentGeneration = ++generation;
     previewViewKey = input.viewKey;
     frozen = undefined;
@@ -585,6 +589,7 @@ export function createContentListLifecycleController(
             result,
             error: reason,
             renewalRequired: false,
+            replayRequired: true,
           });
           return state;
         }
@@ -619,6 +624,7 @@ export function createContentListLifecycleController(
         // The server may have committed before the response was lost. Retain
         // the exact token/idempotency envelope so retry can replay safely.
         renewalRequired: false,
+        replayRequired: true,
       });
       return state;
     }

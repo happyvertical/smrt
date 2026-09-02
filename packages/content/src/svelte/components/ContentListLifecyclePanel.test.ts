@@ -225,4 +225,45 @@ describe('ContentListLifecyclePanel', () => {
     expect(dialog?.open).toBe(false);
     expect(apply).not.toHaveBeenCalled();
   });
+
+  it('keeps ambiguous applies open until their exact replay completes', async () => {
+    const apply = vi
+      .fn<() => Promise<DataSurfaceActionResult>>()
+      .mockRejectedValueOnce(new Error('response lost'))
+      .mockResolvedValueOnce(lifecycleResult('apply'));
+    const { target, oncomplete } = renderPanel({
+      binding: {
+        client: { preview: async () => lifecycleResult('preview'), apply },
+        identity,
+      },
+    });
+    button(target, 'Delete selected permanently').click();
+    await tick();
+    await tick();
+    const confirmation = target.querySelector<HTMLInputElement>(
+      'input[aria-label="Type the resolved item count to confirm permanent deletion"]',
+    );
+    if (!confirmation) throw new Error('Missing count confirmation');
+    confirmation.value = '2';
+    confirmation.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    flushSync();
+    button(target, 'Confirm 2').click();
+    await tick();
+    await tick();
+
+    const dialog = target.querySelector('dialog');
+    expect(button(target, 'Cancel').disabled).toBe(true);
+    expect(target.querySelector('button[aria-label="Close modal"]')).toBeNull();
+    dialog?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await tick();
+    expect(dialog?.open).toBe(true);
+
+    button(target, 'Retry').click();
+    await tick();
+    await tick();
+    expect(apply.mock.calls[1]?.[0]).toEqual(apply.mock.calls[0]?.[0]);
+    expect(oncomplete).toHaveBeenCalledTimes(1);
+  });
 });
