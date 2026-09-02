@@ -291,6 +291,100 @@ describe('ContentList mounted data surface', () => {
     handle.destroy();
   });
 
+  it('accepts canonical-only filter operators from a host descriptor', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    const identity = { surfaceId: 'canonical-filter', kind: 'table' as const };
+    const base = buildContentListSurfaceDescriptor({
+      surfaceId: identity.surfaceId,
+    });
+    const descriptor = {
+      ...base,
+      columns: base.columns.map((column) => {
+        if (column.id !== 'title') return column;
+        const { filterOperators: _alias, ...canonicalOnly } = column;
+        return {
+          ...canonicalOnly,
+          operators: { ...column.operators, filter: ['contains'] },
+        };
+      }),
+    };
+    const handle = registerContentListDataSurface({
+      registry,
+      descriptor,
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+
+    await expect(
+      registry.execute({
+        version: 1,
+        commandId: 'canonical-contains',
+        identity,
+        expectedRevision: registry.inspect(identity)?.revision ?? 0,
+        controlId: 'set-filters',
+        payload: {
+          filters: [
+            { columnId: 'title', operator: 'contains', value: 'draft' },
+          ],
+        },
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(controller.getState().filters).toEqual([
+      { columnId: 'title', operator: 'contains', value: 'draft' },
+    ]);
+    handle.destroy();
+  });
+
+  it('fails closed when canonical and alias filter allowlists contradict', async () => {
+    const registry = createDataSurfaceRegistry();
+    const controller = createContentListController();
+    const identity = {
+      surfaceId: 'contradictory-filter',
+      kind: 'table' as const,
+    };
+    const base = buildContentListSurfaceDescriptor({
+      surfaceId: identity.surfaceId,
+    });
+    const descriptor = {
+      ...base,
+      columns: base.columns.map((column) =>
+        column.id === 'title'
+          ? {
+              ...column,
+              operators: { ...column.operators, filter: ['contains'] },
+              filterOperators: ['equals'],
+            }
+          : column,
+      ),
+    };
+    const handle = registerContentListDataSurface({
+      registry,
+      descriptor,
+      controller,
+      context: context(),
+      setViewMode: vi.fn(),
+    });
+
+    for (const operator of ['contains', 'equals']) {
+      await expect(
+        registry.execute({
+          version: 1,
+          commandId: `contradictory-${operator}`,
+          identity,
+          expectedRevision: registry.inspect(identity)?.revision ?? 0,
+          controlId: 'set-filters',
+          payload: {
+            filters: [{ columnId: 'title', operator, value: 'draft' }],
+          },
+        }),
+      ).resolves.toMatchObject({ ok: false, reason: 'denied' });
+    }
+    expect(controller.getState().filters).toEqual([]);
+    handle.destroy();
+  });
+
   it('refuses a toggle that would exceed the retained selection cap', async () => {
     const registry = createDataSurfaceRegistry();
     const controller = createContentListController();

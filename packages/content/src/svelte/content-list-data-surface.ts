@@ -110,6 +110,18 @@ function payloadObject(
     : undefined;
 }
 
+function allowsFilterOperator(
+  column: DataSurfaceDescriptor['columns'][number] | undefined,
+  operator: string,
+): boolean {
+  if (!column) return false;
+  const canonical = column.operators?.filter;
+  const alias = column.filterOperators;
+  if (canonical && alias)
+    return canonical.includes(operator) && alias.includes(operator);
+  return canonical?.includes(operator) ?? alias?.includes(operator) ?? false;
+}
+
 function commandAllowed(
   command: DataTableCommand,
   descriptor: DataSurfaceDescriptor,
@@ -130,7 +142,7 @@ function commandAllowed(
         );
         return (
           filterable.has(filter.columnId) &&
-          column?.filterOperators?.includes(filter.operator) === true
+          allowsFilterOperator(column, filter.operator)
         );
       });
     case 'setSorting':
