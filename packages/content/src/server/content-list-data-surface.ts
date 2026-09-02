@@ -5,6 +5,7 @@ import type {
   DataSurfaceExecutionContext,
   DataSurfaceSchema,
 } from '@happyvertical/smrt-agents';
+import { normalizeDataQueryRequest } from '@happyvertical/smrt-core';
 import type { DataQuerySchema } from '@happyvertical/smrt-types';
 import {
   assertContentQuerySchema,
@@ -60,14 +61,19 @@ function requiredName(
 function querySchema(schema: DataSurfaceSchema): DataQuerySchema {
   return {
     ...schema,
-    fields: schema.fields.map(
-      ({
-        sensitive: _sensitive,
-        readPermission: _readPermission,
-        metadata: _metadata,
-        ...field
-      }) => field,
-    ),
+    // A host descriptor is untrusted at this boundary. Discovery redacts
+    // protected fields, but the execution schema must omit them too so a
+    // direct data.query request cannot name one before reaching the collection.
+    fields: schema.fields
+      .filter(({ sensitive, readPermission }) => !sensitive && !readPermission)
+      .map(
+        ({
+          sensitive: _sensitive,
+          readPermission: _readPermission,
+          metadata: _metadata,
+          ...field
+        }) => field,
+      ),
   };
 }
 
@@ -128,10 +134,18 @@ export async function createContentListDataSurfaceDefinition(
       ...options.metadata,
     },
     schema,
-    execute: async (_surface, request, context) =>
-      executeContentQuery(await resolveCollection(options, context), request, {
-        schema: executableSchema,
-        scope: await resolveScope(options, context),
-      }),
+    execute: async (_surface, request, context) => {
+      // Validate before resolving the host collection. This makes a rejected
+      // protected projection a zero-I/O failure, even for hostile descriptors.
+      normalizeDataQueryRequest(request, executableSchema);
+      return executeContentQuery(
+        await resolveCollection(options, context),
+        request,
+        {
+          schema: executableSchema,
+          scope: await resolveScope(options, context),
+        },
+      );
+    },
   };
 }

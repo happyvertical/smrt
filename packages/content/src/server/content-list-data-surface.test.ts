@@ -35,6 +35,12 @@ const schema: DataSurfaceSchema = {
       filterOperators: ['eq'],
       sensitive: true,
     },
+    {
+      id: 'audit_note',
+      type: 'string',
+      projectable: true,
+      readPermission: 'contents.audit.read',
+    },
   ],
   defaultPageLimit: 1,
   maxPageLimit: 2,
@@ -205,5 +211,38 @@ describe('ContentList agent data surface', () => {
     expect(list).toHaveBeenLastCalledWith(
       expect.objectContaining({ where: [[{ tenant_id: 'tenant-b' }]] }),
     );
+  });
+
+  it('rejects a protected host-schema projection before resolving the collection', async () => {
+    const collection = vi.fn<
+      (execution: DataSurfaceExecutionContext) => ContentQueryCollection
+    >(() => ({
+      list: vi.fn(async () => []),
+      count: vi.fn(async () => 0),
+      facets: vi.fn(async () => []),
+    }));
+    const definition = await createContentListDataSurfaceDefinition({
+      schema,
+      collection,
+    });
+
+    for (const protectedField of ['tenant_id', 'audit_note']) {
+      await expect(
+        definition.execute?.(
+          definition,
+          {
+            version: 1,
+            requestId: `hostile-${protectedField}-projection`,
+            mode: 'rows',
+            projection: ['id', protectedField],
+            page: { kind: 'offset', offset: 0, limit: 1 },
+          },
+          context(),
+        ),
+      ).rejects.toThrow(
+        new RegExp(`projection field is not allowed: ${protectedField}`),
+      );
+    }
+    expect(collection).not.toHaveBeenCalled();
   });
 });
