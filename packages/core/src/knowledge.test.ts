@@ -287,10 +287,10 @@ describe('buildDomainKnowledgeManifest', () => {
 
     // `generateRoutesForObject` nests an item-scoped action under `[id]`, and
     // a public INSTANCE method defaults to item scope. Reporting
-    // `/order-trees/archive` would advertise an endpoint that is never
+    // `/order_trees/archive` would advertise an endpoint that is never
     // generated.
     expect(apiSurface('@example/orders:OrderTree', 'archive')).toMatchObject({
-      path: '/order-trees/[id]/archive',
+      path: '/order_trees/[id]/archive',
       method: 'POST',
     });
 
@@ -303,22 +303,30 @@ describe('buildDomainKnowledgeManifest', () => {
     // A collection class's action is collection-scoped for the same reason.
     expect(
       apiSurface('@example/orders:OrderTreeCollection', 'findAbandoned'),
-    ).toMatchObject({ path: '/order-trees/findAbandoned', method: 'POST' });
+    ).toMatchObject({ path: '/order_trees/findAbandoned', method: 'POST' });
 
     // An explicit `routes` override wins for both path and method.
     expect(
       apiSurface('@example/orders:RoutedOrder', 'exportCsv'),
     ).toMatchObject({
-      path: '/routed-orders/[id]/export-csv',
+      path: '/routed_orders/[id]/export-csv',
       method: 'GET',
     });
 
     // CRUD paths are unchanged by the custom-action resolution.
     expect(apiSurface('@example/orders:OrderTree', 'list')?.path).toBe(
-      '/order-trees',
+      '/order_trees',
     );
     expect(apiSurface('@example/orders:OrderTree', 'get')?.path).toBe(
-      '/order-trees/[id]',
+      '/order_trees/[id]',
+    );
+
+    // The collection segment is the manifest `collection` VERBATIM: both the
+    // route generator and the runtime dispatcher use it unmodified, so there
+    // is no `_` -> `-` transform, and `api.path` is not consulted (that
+    // configures the separate smrt-agents route map). See #2630.
+    expect(apiSurface('@example/orders:RoutedOrder', 'exportCsv')?.path).toBe(
+      '/routed_orders/[id]/export-csv',
     );
   });
 
@@ -340,7 +348,7 @@ describe('buildDomainKnowledgeManifest', () => {
     // change. The declared `method` is read on its own non-throwing path, so
     // it is still reported as authored rather than silently normalized away.
     expect(purge).toMatchObject({
-      path: '/throwing-route-orders/[id]/purge',
+      path: '/throwing_route_orders/[id]/purge',
       method: 'DELETE',
     });
   });
@@ -351,6 +359,21 @@ describe('buildDomainKnowledgeManifest', () => {
     // preference is skipped and a duplicate simple name picks the wrong
     // parent, misclassifying the collection-class carve-out.
     const manifest = fixtureManifest();
+    // The DECOY is inserted FIRST, and this ordering is the whole test: string
+    // keys keep insertion order, so the bare simple-name fallback finds this
+    // one. Only the same-package preference — which needs the package derived
+    // from the qualified KEY, since neither entry has `packageName` or
+    // `qualifiedName` — reaches the real base below. Reverting
+    // `manifestObjectPackage` to read only `qualifiedName` makes this test
+    // fail, which is what makes it a regression test rather than a tautology.
+    manifest.objects['@decoy/pkg:KeyOnlyBase'] = {
+      className: 'KeyOnlyBase',
+      collection: 'decoys',
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      extends: 'SmrtObject',
+    } as SmartObjectManifest['objects'][string];
     manifest.objects['@key-only/pkg:KeyOnlyBase'] = {
       className: 'KeyOnlyBase',
       collection: 'key_only_bases',
@@ -359,16 +382,6 @@ describe('buildDomainKnowledgeManifest', () => {
       decoratorConfig: {},
       extends: 'SmrtCollection',
       extendsTypeArg: 'KeyOnlyRow',
-    } as SmartObjectManifest['objects'][string];
-    // A same-named DECOY in another package that is NOT a collection class,
-    // inserted first so a bare simple-name match would find it instead.
-    manifest.objects['@decoy/pkg:KeyOnlyBase'] = {
-      className: 'KeyOnlyBase',
-      collection: 'decoys',
-      fields: {},
-      methods: {},
-      decoratorConfig: {},
-      extends: 'SmrtObject',
     } as SmartObjectManifest['objects'][string];
     manifest.objects['@key-only/pkg:KeyOnlyChild'] = {
       className: 'KeyOnlyChild',

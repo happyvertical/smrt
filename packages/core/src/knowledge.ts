@@ -835,16 +835,30 @@ function normalizeApiMethod(method: unknown): string {
   }
 }
 
+/**
+ * The collection segment of a generated REST route.
+ *
+ * `generateRoutesForObject` builds its route directory from
+ * `objectDef.collection` verbatim, and the runtime dispatcher in
+ * `generators/rest.ts` matches the URL segment against `info.collection`
+ * verbatim, so this reports that and nothing else (#2630).
+ *
+ * In particular it does NOT read `api.path`, which configures a different
+ * surface: `@happyvertical/smrt-agents`' own agent-facing route map derives
+ * `api.path ?? tableName.replace(/_/g, '-')`. Honoring it here produced a
+ * hybrid — `api.path` over `collection` — that matched neither transport and
+ * named endpoints that 404 on both.
+ */
+function apiCollectionSegment(object: SmartObjectDefinition): string {
+  return object.collection;
+}
+
 function apiPath(
   object: SmartObjectDefinition,
   operation: string,
   route?: ApiCustomRoute,
 ): string {
-  const collection = object.decoratorConfig?.api;
-  const configuredPath =
-    typeof collection === 'object' && typeof collection.path === 'string'
-      ? collection.path
-      : object.collection.replaceAll('_', '-');
+  const configuredPath = apiCollectionSegment(object);
   if (route) {
     const base =
       route.scope === 'collection'
