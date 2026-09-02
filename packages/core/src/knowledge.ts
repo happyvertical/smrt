@@ -168,7 +168,9 @@ export function buildDomainKnowledgeManifest(
   const manifestObjects = Object.values(options.manifest.objects).filter(
     (object) => object.decoratorConfig?.knowledge !== false,
   );
-  const objects = manifestObjects.map((object) => buildKnowledgeObject(object));
+  const objects = manifestObjects.map((object) =>
+    buildKnowledgeObject(object, options.manifest),
+  );
   const surfaces = objects.flatMap((object) => object.surfaces);
   const manifestJson = stableJson(normalizeManifestForHash(options.manifest));
   const agentSurface = normalizeAgentSurface(options.agentSurface);
@@ -263,6 +265,7 @@ function agentSurfaceSourcePaths(
 
 function buildKnowledgeObject(
   object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
 ): DomainKnowledgeObject {
   const knowledge =
     typeof object.decoratorConfig?.knowledge === 'object'
@@ -326,7 +329,7 @@ function buildKnowledgeObject(
       conflictColumns && conflictColumns.length > 0
         ? conflictColumns
         : undefined,
-    surfaces: objectSurfaces(object),
+    surfaces: objectSurfaces(object, manifest),
     relationshipFeatures: relationshipFeatures(object, fields),
     tags: knowledge.tags ?? [],
     summary: knowledge.summary,
@@ -434,11 +437,12 @@ function methodSignatures(
 
 function objectSurfaces(
   object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   return [
-    ...configuredSurfaces('api', object),
-    ...configuredSurfaces('cli', object),
-    ...configuredSurfaces('mcp', object),
+    ...configuredSurfaces('api', object, manifest),
+    ...configuredSurfaces('cli', object, manifest),
+    ...configuredSurfaces('mcp', object, manifest),
     ...aiSurfaces(object),
   ];
 }
@@ -446,9 +450,10 @@ function objectSurfaces(
 function configuredSurfaces(
   kind: 'api' | 'cli' | 'mcp',
   object: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
 ): DomainKnowledgeSurface[] {
   const config = object.decoratorConfig?.[kind];
-  const operations = configuredOperations(kind, object, config);
+  const operations = configuredOperations(kind, object, config, manifest);
   return operations.map((operation) => ({
     kind,
     name:
@@ -469,13 +474,54 @@ function configuredSurfaces(
  * registers with `ObjectRegistry`. `MCPGenerator`/`CLIGenerator` iterate
  * `ObjectRegistry`, not the manifest, so such a class never gets its own
  * MCP tools or CLI commands — only its collection-scoped custom actions get
- * REST routes (`resolveApiActionSet` in `vite-plugin/sveltekit-generator.ts`
- * mirrors this same extends-chain check). Reporting full CRUD for it here
- * would over-report a surface that does not exist, trading the #2619
- * under-report for a new false positive.
+ * REST routes. Reporting full CRUD for it here would over-report a surface
+ * that does not exist, trading the #2619 under-report for a new false
+ * positive.
+ *
+ * A deeper subclass (`SpecialCollection extends WidgetCollection`) carries no
+ * `extendsTypeArg` of its own, so this walks the extends chain through the
+ * manifest — mirroring `isCollectionManifestClass` in
+ * `vite-plugin/web-collections.ts` (kept as a separate, lean implementation
+ * here rather than imported: that module pulls in the full SvelteKit route
+ * generator transitively, which would balloon the standalone `./knowledge`
+ * build entry for a ~15-line check).
  */
-function isSurfaceCollectionClass(object: SmartObjectDefinition): boolean {
-  return object.extends === 'SmrtCollection' || Boolean(object.extendsTypeArg);
+function isSurfaceCollectionClass(
+  manifest: SmartObjectManifest,
+  object: SmartObjectDefinition,
+  seen: Set<string> = new Set(),
+): boolean {
+  // Truthy check (not `!== undefined`) mirrors the scanner: a non-generic
+  // base emitting `extendsTypeArg: null` must not be misread as a collection.
+  if (object.extends === 'SmrtCollection' || object.extendsTypeArg) {
+    return true;
+  }
+  const parentName = object.extendsQualified || object.extends;
+  if (!parentName || seen.has(parentName)) return false;
+  seen.add(parentName);
+  const parent = findManifestObjectByName(manifest, parentName, object);
+  return parent ? isSurfaceCollectionClass(manifest, parent, seen) : false;
+}
+
+function findManifestObjectByName(
+  manifest: SmartObjectManifest,
+  name: string,
+  owner: SmartObjectDefinition,
+): SmartObjectDefinition | undefined {
+  const objects = Object.values(manifest.objects);
+  if (name.includes(':')) {
+    const exact = objects.find((candidate) => candidate.qualifiedName === name);
+    if (exact) return exact;
+  }
+  if (owner.packageName) {
+    const packageLocal = objects.find(
+      (candidate) =>
+        candidate.packageName === owner.packageName &&
+        candidate.className === name,
+    );
+    if (packageLocal) return packageLocal;
+  }
+  return objects.find((candidate) => candidate.className === name);
 }
 
 /**
@@ -492,9 +538,10 @@ function configuredOperations(
   kind: 'api' | 'cli' | 'mcp',
   object: SmartObjectDefinition,
   config: unknown,
+  manifest: SmartObjectManifest,
 ): string[] {
   if (config === false) return [];
-  const collectionClass = isSurfaceCollectionClass(object);
+  const collectionClass = isSurfaceCollectionClass(manifest, object);
   // Undecorated collection classes never register with ObjectRegistry, so
   // MCP/CLI expose nothing under their own name; only REST custom actions
   // reach them.

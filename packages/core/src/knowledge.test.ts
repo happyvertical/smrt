@@ -73,6 +73,7 @@ describe('buildDomainKnowledgeManifest', () => {
       'OrderLinks',
       'OrderTree',
       'OrderTreeCollection',
+      'SpecialOrderTreeCollection',
     ]);
     expect(artifact.objects[0].tags).toEqual(['payments']);
     expect(artifact.surfaces.map((surface) => surface.name)).toEqual(
@@ -153,6 +154,30 @@ describe('buildDomainKnowledgeManifest', () => {
         .filter((surface) => surface.kind === 'api')
         .map((surface) => surface.operation),
     ).toEqual(['findAbandoned']);
+  });
+
+  it('walks the extends chain so a deeper collection subclass is still recognized (#2619)', () => {
+    const artifact = buildFixtureArtifact(rootDir);
+    const deepSurfaces = artifact.surfaces.filter(
+      (surface) =>
+        surface.objectName === '@example/orders:SpecialOrderTreeCollection',
+    );
+
+    // `SpecialOrderTreeCollection extends OrderTreeCollection` carries no
+    // `extendsTypeArg` of its own — only its base does. Without walking the
+    // extends chain through the manifest, this class would be mistaken for a
+    // row model and gain a synthetic full-CRUD surface it does not have.
+    expect(deepSurfaces.filter((surface) => surface.kind === 'mcp')).toEqual(
+      [],
+    );
+    expect(deepSurfaces.filter((surface) => surface.kind === 'cli')).toEqual(
+      [],
+    );
+    expect(
+      deepSurfaces
+        .filter((surface) => surface.kind === 'api')
+        .map((surface) => surface.operation),
+    ).toEqual(['findEscalated']);
   });
 
   it('projects structural facts without exposing sensitive fields', () => {
@@ -555,6 +580,28 @@ function fixtureManifest(): SmartObjectManifest {
         decoratorConfig: {},
         extends: 'SmrtCollection',
         extendsTypeArg: 'OrderTree',
+      },
+      '@example/orders:SpecialOrderTreeCollection': {
+        className: 'SpecialOrderTreeCollection',
+        qualifiedName: '@example/orders:SpecialOrderTreeCollection',
+        collection: 'order_trees',
+        fields: {},
+        methods: {
+          findEscalated: {
+            name: 'findEscalated',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<OrderTree[]>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: {},
+        // A deeper collection subclass carries no `extendsTypeArg` of its
+        // own — only its `OrderTreeCollection` base does. Recognizing it as
+        // a collection class requires walking the extends chain (#2619).
+        extends: 'OrderTreeCollection',
+        extendsQualified: '@example/orders:OrderTreeCollection',
       },
       '@example/orders:HiddenOrder': {
         className: 'HiddenOrder',
