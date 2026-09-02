@@ -61,6 +61,21 @@ describe('uuid convergence partitioning (#2608)', () => {
     expect(result.advisories).toHaveLength(0);
   });
 
+  it('carries the pre_foreign_key phase onto the action', () => {
+    // `db:migrate` builds its own tracker batch in `utilities.ts` and orders
+    // it on this marker: conversions must precede every `create_table_*`
+    // definition, because an acyclic new child table keeps its foreign key
+    // inline in CREATE TABLE.
+    const result = partitionSchemaChanges([conversion], className);
+    expect(result.migrations[0]?.phase).toBe('pre_foreign_key');
+
+    const ordinary = partitionSchemaChanges(
+      [{ ...conversion, phase: undefined }],
+      className,
+    );
+    expect(ordinary.migrations[0]?.phase).toBeUndefined();
+  });
+
   it('reports a refused convergence as an advisory, not a manual migration', () => {
     const result = partitionSchemaChanges([blocked], className);
     expect(result.migrations).toHaveLength(0);

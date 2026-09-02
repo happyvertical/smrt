@@ -787,6 +787,15 @@ live `DEFAULT` on a converting column is dropped first (PostgreSQL refuses
 `ALTER COLUMN … TYPE` when the default cannot be cast); the ordinary default
 comparison re-establishes the manifest default on the next run.
 
+There are **two** batch builders and both order on that marker:
+`collectStatementsFromDiff()` in `migrations/orchestrate.ts` (used by
+`getPendingSchemaStatements` / `migrateSmrtSchemas`) and the tracker batch
+`db:migrate` assembles by hand in `@happyvertical/smrt-cli`
+(`commands/utilities.ts`). `partitionSchemaChanges()` carries
+`SchemaChange.phase` onto `MigrationAction.phase` so the CLI can partition the
+same way, in both the applied batch and the `--dry-run` preview. If you add a
+third consumer, order it the same way.
+
 Convergence entries carry the manifest column definition. Every `type_upgrade`
 consumer reads `SchemaChange.column` — `partitionSchemaChanges()` in
 `@happyvertical/smrt-cli` skips an entry without one — so a conversion missing

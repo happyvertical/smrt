@@ -59,6 +59,13 @@ export interface MigrationAction {
   columnName?: string;
   /** Set on `alter_column` actions (#2369). */
   alteration?: ColumnAlterationLike;
+  /**
+   * Ordering phase carried through from `SchemaChange.phase` (#2608).
+   * `pre_foreign_key` marks the pre-R11 `text` -> `uuid` convergence, which
+   * must run before every `CREATE TABLE` (an acyclic new child keeps its
+   * foreign key inline) and before every foreign-key statement in the batch.
+   */
+  phase?: 'pre_foreign_key';
   mismatch?: {
     column: string;
     expected: string;
@@ -117,6 +124,8 @@ export interface SchemaChangeLike {
     actual: string;
   };
   alteration?: ColumnAlterationLike;
+  /** See `MigrationAction.phase` (#2608). */
+  phase?: 'pre_foreign_key';
   advisory?: SchemaChangeAdvisoryLike;
   sql?: string;
   sqlStatements?: string[];
@@ -820,6 +829,7 @@ export function partitionSchemaChanges(
             defaultValue: col.defaultValue,
             unique: col.unique,
           },
+          ...(change.phase ? { phase: change.phase } : {}),
           mismatch: {
             column: change.name,
             expected: mm.expected,
