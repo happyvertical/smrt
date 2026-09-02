@@ -104,6 +104,18 @@ const VIEW_INTENT_DATA_SURFACE_KINDS: readonly ViewIntentDataSurfaceKind[] = [
 ];
 
 /**
+ * The optional record a registry identity is qualified by. Rich forms use it
+ * to tell apart controls that share a `formId`/`controlId` across records.
+ * Structurally mirrors `ControlIdentity['subject']` /
+ * `DataSurfaceIdentity['subject']` in `@happyvertical/smrt-ui`.
+ */
+export interface ViewIntentSubject {
+  type: string;
+  id: string;
+  label?: string;
+}
+
+/**
  * A control-registry target: the intent dispatches exactly one
  * `ControlInteractionRegistry` command against a mounted control.
  *
@@ -477,6 +489,19 @@ export function defineIntent(declaration: ViewIntentDeclaration): ViewIntent {
   });
 
   const state = registryState();
+  // `viewIntentToolName` is not injective — `orders.foo_bar` and
+  // `orders.foo.bar` both flatten to `orders_foo_bar` — and two intents that
+  // collide there would fight over one WebMCP tool name at mount, where the
+  // failure is a shadowed or rejected registration rather than a clear error.
+  // Reject the second declaration instead, at the only place both are visible.
+  const toolName = viewIntentToolName(id);
+  for (const other of state.intents.values()) {
+    if (other.id !== id && viewIntentToolName(other.id) === toolName) {
+      fail(
+        `id '${id}' derives the WebMCP tool name '${toolName}', which intent '${other.id}' already derives`,
+      );
+    }
+  }
   const existing = state.intents.get(id);
   if (existing) {
     if (JSON.stringify(existing) !== JSON.stringify(intent)) {
@@ -536,7 +561,7 @@ export interface ViewIntentControlRegistryPort {
   execute(
     command: {
       action: ViewIntentControlAction;
-      identity: { formId: string; controlId: string };
+      identity: ViewIntentControlIdentity;
       value?: unknown;
       durationMs?: number;
       revision?: number;
@@ -545,16 +570,29 @@ export interface ViewIntentControlRegistryPort {
   ): Promise<{ ok: boolean; reason?: string }>;
 }
 
+/** A mounted control's full registry key, subject included. */
+export interface ViewIntentControlIdentity {
+  formId: string;
+  controlId: string;
+  subject?: ViewIntentSubject;
+}
+
+/** A mounted data surface's full registry key, subject included. */
+export interface ViewIntentDataSurfaceIdentity {
+  surfaceId: string;
+  kind: ViewIntentDataSurfaceKind;
+  subject?: ViewIntentSubject;
+}
+
 /** The `DataSurfaceRegistry` surface an intent uses. */
 export interface ViewIntentDataSurfaceRegistryPort {
-  inspect(identity: {
-    surfaceId: string;
-    kind: ViewIntentDataSurfaceKind;
-  }): { revision: number } | undefined;
+  inspect(
+    identity: ViewIntentDataSurfaceIdentity,
+  ): { revision: number } | undefined;
   execute(command: {
     version: 1;
     commandId: string;
-    identity: { surfaceId: string; kind: ViewIntentDataSurfaceKind };
+    identity: ViewIntentDataSurfaceIdentity;
     expectedRevision: number;
     controlId: string;
     payload?: unknown;
@@ -566,12 +604,12 @@ export type ViewIntentBinding =
   | {
       registry: 'control';
       registryPort: ViewIntentControlRegistryPort;
-      identity: { formId: string; controlId: string };
+      identity: ViewIntentControlIdentity;
     }
   | {
       registry: 'dataSurface';
       registryPort: ViewIntentDataSurfaceRegistryPort;
-      identity: { surfaceId: string; kind: ViewIntentDataSurfaceKind };
+      identity: ViewIntentDataSurfaceIdentity;
     };
 
 /**
@@ -623,6 +661,16 @@ function denied(reason: string): string {
   return JSON.stringify({ ok: false, reason });
 }
 
+/**
+ * WebMCP hands `execute` whatever the agent sent. Anything that is not a plain
+ * object becomes an empty argument set, so a string or array argument fails
+ * closed through the normal `invalid_request` path instead of throwing a
+ * TypeError out of an `in` check.
+ */
+function toolArguments(args: unknown): Record<string, unknown> {
+  return isPlainObject(args) ? args : {};
+}
+
 let commandCounter = 0;
 
 function newCommandId(): string {
@@ -667,7 +715,7 @@ function optionalRevision(args: Record<string, unknown>): {
 
 function buildControlCommand(
   target: ViewIntentControlTarget,
-  identity: { formId: string; controlId: string },
+  identity: ViewIntentControlIdentity,
   args: Record<string, unknown>,
 ): Parameters<ViewIntentControlRegistryPort['execute']>[0] {
   const base = { action: target.action, identity };
@@ -744,7 +792,7 @@ export function compileViewIntentToolSpec(
       execute: async (args) => {
         let command: Parameters<ViewIntentControlRegistryPort['execute']>[0];
         try {
-          command = buildControlCommand(target, identity, args ?? {});
+          command = buildControlCommand(target, identity, toolArguments(args));
         } catch (error) {
           if (error instanceof IntentArgumentError) {
             return denied('invalid_request');
@@ -778,8 +826,8 @@ export function compileViewIntentToolSpec(
       execute: async (args) => {
         let payload: unknown;
         try {
-          payload =
-            'payload' in (args ?? {}) ? jsonArg(args, 'payload') : undefined;
+          const input = toolArguments(args);
+          payload = 'payload' in input ? jsonArg(input, 'payload') : undefined;
         } catch (error) {
           if (error instanceof IntentArgumentError) {
             return denied('invalid_request');

@@ -165,7 +165,12 @@ manifest will carry, so it must not be derived from a namespace, a generated
 tool name, or a route. The WebMCP tool name is `id` with `.`/`-` replaced by
 `_`; an id resolving into the reserved `smrt_ui_` prefix is rejected, because
 the six fixed UI tools are unchanged by this contract and intents sit above
-them rather than duplicating them.
+them rather than duplicating them. That flattening is not injective —
+`orders.foo_bar` and `orders.foo.bar` both derive `orders_foo_bar` — so
+`defineIntent` also rejects a second id that derives a tool name an already
+declared intent derives, at the one place both are visible. Two such intents
+would otherwise fight over a single WebMCP tool name at mount, where the
+failure is a shadowed or rejected registration rather than a clear error.
 
 ### The no-REST invariant
 

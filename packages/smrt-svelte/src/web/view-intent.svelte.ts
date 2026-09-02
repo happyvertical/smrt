@@ -3,7 +3,8 @@ import type { ControlInteractionRegistry } from '@happyvertical/smrt-ui/forms';
 import type {
   ViewIntent,
   ViewIntentBinding,
-  ViewIntentDataSurfaceKind,
+  ViewIntentControlIdentity,
+  ViewIntentDataSurfaceIdentity,
   WebMcpToolEffect,
 } from '@happyvertical/smrt-web';
 // The dependency-free intent entry, NOT the package root: it pulls no
@@ -14,17 +15,21 @@ import { compileViewIntentToolSpec } from '@happyvertical/smrt-web/intents';
 import { useWebMcpTool } from './webmcp.svelte.js';
 import { tryGetWebMcpUiContext } from './webmcp-ui-context.js';
 
-/** The mounted registry identity an intent addresses. */
+/**
+ * The mounted registry identity an intent addresses. Both members carry the
+ * optional `subject`, so a rich form can bind an intent to the right record
+ * when several controls share a `formId`/`controlId`.
+ */
 export type ViewIntentIdentity =
-  | { formId: string; controlId: string }
-  | { surfaceId: string; kind: ViewIntentDataSurfaceKind };
+  | ViewIntentControlIdentity
+  | ViewIntentDataSurfaceIdentity;
 
 export interface UseViewIntentOptions {
   /**
    * The mounted identity this intent is bound to for the component's
    * lifetime. Shape must match the intent's declared target registry:
-   * `{ formId, controlId }` for a control intent, `{ surfaceId, kind }` for a
-   * data-surface intent.
+   * `{ formId, controlId, subject? }` for a control intent,
+   * `{ surfaceId, kind, subject? }` for a data-surface intent.
    */
   identity: ViewIntentIdentity;
   /**
@@ -63,7 +68,11 @@ export interface UseViewIntentOptions {
  *
  * With no Provider ancestor and no explicit registry override, this is a
  * silent no-op — an intent with nothing mounted to dispatch to registers
- * nothing, the same way every WebMCP entry point no-ops off-WebMCP.
+ * nothing, the same way every WebMCP entry point no-ops off-WebMCP. Because
+ * the registries are resolved INSIDE the tool factory, a Provider that
+ * enables `webmcp.ui` after this component initializes, or that swaps a
+ * registry, re-runs the effect and registers the intent against the current
+ * one rather than staying stuck on what was there at init.
  *
  * @throws if `identity` does not match the intent's declared target registry,
  * or contradicts an identity the declaration pinned — both are author errors,
@@ -73,26 +82,51 @@ export function useViewIntent(
   intent: ViewIntent,
   options: UseViewIntentOptions,
 ): void {
-  // `getContext` is only valid during component initialization, so this must
-  // run here rather than inside the effect `useWebMcpTool` opens.
+  // `getContext` is only valid during component initialization, so the
+  // CONTEXT OBJECT must be captured here. Its `enabled` and registry members
+  // are reactive getters, though, and reading them here would freeze one
+  // value for the component's whole life — so they are read inside the
+  // factory below, which `useWebMcpTool` runs within its `$effect`.
   const uiContext = tryGetWebMcpUiContext();
-  const controlRegistry =
-    options.controlRegistry ??
-    (uiContext?.enabled ? uiContext.controlRegistry : undefined);
-  const dataSurfaceRegistry =
-    options.dataSurfaceRegistry ??
-    (uiContext?.enabled ? uiContext.dataSurfaceRegistry : undefined);
-  const binding = resolveBinding(
-    intent,
-    options.identity,
-    controlRegistry,
-    dataSurfaceRegistry,
-  );
+  // The identity SHAPE is a static author decision, so it is checked eagerly:
+  // a mismatch surfaces at the call site rather than inside an effect, where
+  // a throw is harder to attribute. Only the registries are deferred.
+  assertIdentityShape(intent, options.identity);
 
   useWebMcpTool(
-    () => (binding ? compileViewIntentToolSpec(intent, binding) : null),
+    () => {
+      const controlRegistry =
+        options.controlRegistry ??
+        (uiContext?.enabled ? uiContext.controlRegistry : undefined);
+      const dataSurfaceRegistry =
+        options.dataSurfaceRegistry ??
+        (uiContext?.enabled ? uiContext.dataSurfaceRegistry : undefined);
+      const binding = resolveBinding(
+        intent,
+        options.identity,
+        controlRegistry,
+        dataSurfaceRegistry,
+      );
+      return binding ? compileViewIntentToolSpec(intent, binding) : null;
+    },
     options.effects ? { effects: options.effects } : {},
   );
+}
+
+function assertIdentityShape(
+  intent: ViewIntent,
+  identity: ViewIntentIdentity,
+): void {
+  if (intent.target.registry === 'control' && !('formId' in identity)) {
+    throw new Error(
+      `[smrt-svelte] intent '${intent.id}' targets the control registry and needs a { formId, controlId } identity`,
+    );
+  }
+  if (intent.target.registry === 'dataSurface' && !('surfaceId' in identity)) {
+    throw new Error(
+      `[smrt-svelte] intent '${intent.id}' targets the dataSurface registry and needs a { surfaceId, kind } identity`,
+    );
+  }
 }
 
 function resolveBinding(
@@ -102,25 +136,10 @@ function resolveBinding(
   dataSurfaceRegistry: DataSurfaceRegistry | undefined,
 ): ViewIntentBinding | null {
   if (intent.target.registry === 'control') {
-    if (!('formId' in identity)) {
-      throw new Error(
-        `[smrt-svelte] intent '${intent.id}' targets the control registry and needs a { formId, controlId } identity`,
-      );
-    }
-    if (!controlRegistry) return null;
-    return {
-      registry: 'control',
-      registryPort: controlRegistry,
-      identity,
-    };
+    if (!controlRegistry || !('formId' in identity)) return null;
+    return { registry: 'control', registryPort: controlRegistry, identity };
   }
-
-  if (!('surfaceId' in identity)) {
-    throw new Error(
-      `[smrt-svelte] intent '${intent.id}' targets the dataSurface registry and needs a { surfaceId, kind } identity`,
-    );
-  }
-  if (!dataSurfaceRegistry) return null;
+  if (!dataSurfaceRegistry || !('surfaceId' in identity)) return null;
   return {
     registry: 'dataSurface',
     registryPort: dataSurfaceRegistry,

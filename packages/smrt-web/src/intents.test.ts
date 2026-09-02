@@ -160,6 +160,24 @@ describe('defineIntent', () => {
     }
   });
 
+  it('refuses two ids that flatten to the same WebMCP tool name', () => {
+    defineIntent({
+      id: 'orders.foo_bar',
+      description: 'x',
+      target: { registry: 'control', action: 'focus' },
+    });
+
+    // Distinct in the id-keyed registry, identical after flattening — they
+    // would otherwise fight over one WebMCP tool name at mount.
+    expect(() =>
+      defineIntent({
+        id: 'orders.foo.bar',
+        description: 'x',
+        target: { registry: 'control', action: 'focus' },
+      }),
+    ).toThrow(/derives the WebMCP tool name 'orders_foo_bar'/);
+  });
+
   it('refuses the reserved smrt_ui_ namespace of the six fixed tools', () => {
     expect(() =>
       defineIntent({
@@ -447,6 +465,79 @@ describe('compileViewIntentToolSpec', () => {
       ok: false,
       reason: 'not_found',
     });
+  });
+
+  it('fails closed on a non-object argument instead of throwing', async () => {
+    const intent = defineIntent({
+      id: 'orders.nonobject_args',
+      description: 'x',
+      capability: { effect: 'write' },
+      target: { registry: 'control', action: 'stage' },
+    });
+    const registry = controlRegistry();
+    const spec = compileViewIntentToolSpec(intent, {
+      registry: 'control',
+      registryPort: registry,
+      identity: { formId: 'order-form', controlId: 'notes' },
+    });
+
+    // WebMCP hands `execute` whatever the agent sent; `'value' in args` would
+    // throw a TypeError on a primitive.
+    for (const args of ['nope', 42, [1, 2], null] as unknown[]) {
+      expect(
+        JSON.parse(await spec.execute(args as Record<string, unknown>)),
+      ).toEqual({ ok: false, reason: 'invalid_request' });
+    }
+    expect(registry.calls).toHaveLength(0);
+  });
+
+  it('forwards a subject-qualified control identity unchanged', async () => {
+    const intent = defineIntent({
+      id: 'orders.subject_focus',
+      description: 'x',
+      capability: { effect: 'read', idempotent: true, openWorld: false },
+      target: { registry: 'control', action: 'focus' },
+    });
+    const registry = controlRegistry();
+    const identity = {
+      formId: 'order-form',
+      controlId: 'notes',
+      subject: { type: 'order', id: 'order-7', label: 'Order 7' },
+    };
+    const spec = compileViewIntentToolSpec(intent, {
+      registry: 'control',
+      registryPort: registry,
+      identity,
+    });
+
+    await spec.execute({});
+
+    const command = registry.calls[0]?.command as Record<string, unknown>;
+    expect(command.identity).toEqual(identity);
+  });
+
+  it('forwards a subject-qualified data-surface identity unchanged', async () => {
+    const intent = defineIntent({
+      id: 'orders.subject_page',
+      description: 'x',
+      capability: { effect: 'read', idempotent: false, openWorld: false },
+      target: { registry: 'dataSurface', controlId: 'next-page' },
+    });
+    const registry = dataSurfaceRegistry();
+    const identity = {
+      surfaceId: 'orders-table',
+      kind: 'table' as const,
+      subject: { type: 'account', id: 'acct-3' },
+    };
+    const spec = compileViewIntentToolSpec(intent, {
+      registry: 'dataSurface',
+      registryPort: registry,
+      identity,
+    });
+
+    await spec.execute({});
+
+    expect(registry.commands[0]).toMatchObject({ identity });
   });
 
   it('rejects a binding to the wrong registry', () => {
