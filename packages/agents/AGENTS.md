@@ -163,6 +163,33 @@ authenticated/delegated principal and detailed server-side error. Hidden field
 request failures also use a stable public error. Tool arguments never contain
 principal or tenant authority.
 
+## Playbook Preflight (issue #2590)
+
+`createPlaybookPreflightTool()` produces the `playbooks.preflight`
+`PrincipalTool`. It resolves a playbook through the caller's own layer chain on
+the `server` plane and reports a per-step verdict from the two predicates
+`PrincipalRun` already exposes — `isToolAllowed(tool)` and `assertOperation`
+(which evaluates the catalog permission without performing the operation). It
+executes nothing.
+
+**Advisory only: preflight predicts, it never grants.** Name gates entry;
+decomposition gates every step. Preflight computes that intersection ahead of
+time and replaces neither gate, so a permission revoked between the prediction
+and the execution still denies at execution — proven in
+`playbook-preflight.test.ts`, which lets a cached `allow` stand and shows
+`assertOperation` refusing anyway.
+
+- Step → gating tool slug and permission collection are seams (`toolSlug`,
+  `collection`), defaulting to the registered collection slug for the step's
+  qualified model (`playbookStepToolSlug` / `playbookStepCollection`).
+- The cache partition key comes from the **live run context**, never the tool
+  arguments, so one principal's prediction can never be served to another.
+- An unknown key and an unauthorized key return the same uniform unavailable
+  report — the tool is not an enumeration oracle.
+- `filterPlaybooksByPreflight()` hides playbooks a caller could not run from a
+  listing. It is a listing convenience and **never** load-bearing for
+  authorization; a key it lets through is still authorized step by step.
+
 ## Report Data-Surface Tools (issue #2462)
 
 `createReportDataSurfaceTools()` maps server-owned report definitions into the
@@ -225,6 +252,7 @@ const tool = createInvokeAgentTool({
 | `src/report-data-surface.ts` | Principal-bound report discovery, query, lifecycle, drilldown, and export tools (#2462) |
 | `src/delegation.ts` | `DelegationEnvelope` — immutable principal + bounded delegation depth (#1892) |
 | `src/invoke-agent.ts` | `invoke-agent` tool, worker executor, completion-dispatch convention, transports (#1892) |
+| `src/playbook-preflight.ts` | `playbooks.preflight` PrincipalTool — advisory per-step verdicts, never a grant (#2590) |
 | `src/learning.ts` | `AgentLearningConfig` + `resolveAgentLearning()` declaration normalisation |
 | `src/schedule.ts` | AgentSchedule model — cron, execution tracking |
 | `src/tenant-agent.ts` | TenantAgent — junction table, hierarchical resolution |

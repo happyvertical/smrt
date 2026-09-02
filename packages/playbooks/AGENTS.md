@@ -117,6 +117,78 @@ what a lower layer disabled. Enforced in `mergePlaybookLayers()` (`enabled &&
 layer.enabled`) and rejected at `save()` with a specific message. Plane lists
 narrow the same way.
 
+## Preflight (#2590)
+
+`preflightPlaybook({ key, plane, principal, resolve, evaluate })` resolves a
+playbook through the **caller's own layer chain**, decomposes it, and returns a
+per-step verdict — `allow` | `deny` | `unknown` — plus an aggregate. It executes
+nothing.
+
+**Advisory only. Preflight predicts; it never grants.** Every step re-enforces at
+execution, unconditionally. Without that, a permission revoked mid-playbook would
+leave a cached "allowed" standing — a time-of-check/time-of-use bypass. That
+constraint is also what makes the cache free: a stale `allow` costs a
+correctly-denied step, a stale `deny` costs a briefly hidden capability that
+expires on the TTL, and neither is a security event.
+
+The two planes are **not symmetric**, deliberately:
+
+| | Server (`createServerStepEvaluator`) | Browser (`createBrowserStepEvaluator`) |
+|---|---|---|
+| Layers | `tool-allowlist`, `operation-permission` | `action-exposure`, `public-access`, `field-permissions`, `app-auth` |
+| Source | `PrincipalRun.isToolAllowed` + the operation-permission predicate | `isApiActionEnabled`, `isRoutePublic`, field read-permission slugs |
+| Intent step | `plane` — denied unless the intent declares `server` | `intent-mount` — always `unknown` |
+| App auth | n/a (the predicate *is* the gate) | **`unknown`** — never evaluated |
+
+Browser preflight covers the **static layers only**. Generated REST auth is
+`authMiddleware?: (objectName, action) => (req) => Promise<Request | Response>`:
+request-bound, `Response`-returning rather than boolean, and free to consult
+session stores, rate-limit, or audit. It is not a dry-run predicate, so preflight
+**never invokes it**, synthetically or otherwise — the `_preflight` route's
+options in `smrt-core` carry no auth handle at all, only the boolean
+`appAuthConfigured`. An optional `authPredicate` seam can later be added to
+`BrowserPreflightLayerSource` and turn the `app-auth` `unknown` into a real
+verdict **without changing the report contract**.
+
+`createBrowserPlaybookPreflight()` (in `rest-preflight.ts`) is the provider wired
+into `APIConfig.playbookPreflight`. Core owns the route and the static-layer
+facts because `ObjectRegistry` is core's; this package owns resolution and the
+verdict vocabulary — so the dependency stays one-way.
+
+### Not an oracle
+
+Every playbook the caller's chain cannot resolve — unknown key, disabled,
+wrong-plane, unresolvable intent, or an error thrown anywhere in resolution or
+evaluation — returns the single frozen `PLAYBOOK_PREFLIGHT_UNAVAILABLE` value: no
+key echo, no reason, no message, and served by the route with an unconditional
+200. An unknown key and an unauthorized key are byte-identical.
+
+Timing is held in the same class from both ends. The unknown-key path pays the
+same override-layer read a resolvable key pays (`equalizeUnknownKeyCost`),
+because `resolvePlaybook()` short-circuits a registry miss before touching the
+database; and unavailable results are cached for unknown and
+registered-but-unavailable keys **alike**, because caching only one of them would
+put every *repeat* probe of the other in a different timing class. Growth from
+probing random keys is bounded where it belongs — the preflight cache is capped
+with expiry-first eviction — not by declining to cache.
+
+### Verdict rules worth knowing
+
+- `deny` beats `unknown` beats `allow` (`worstVerdict`), and a step's `reason` is
+  always the first layer that produced its verdict — reason and verdict can never
+  describe different layers.
+- Evaluation never short-circuits: preflight exists to say *which* step of five
+  would die.
+- A missing **field** read-permission slug redacts a field, it does not fail the
+  step, so `field-permissions` stays `allow` with `reason: 'fields-redacted'` and
+  the missing slugs attached. Reporting `deny` would predict a failure that will
+  not happen.
+- A non-public route with **no** middleware wired is a real, statically knowable
+  `deny` (the generator's fail-closed 401). With one wired it is `unknown`.
+- A tool listing may filter on preflight (`filterPlaybooksByPreflight` in
+  `smrt-agents`), but that filter is a listing convenience and **never**
+  load-bearing for authorization.
+
 ## Caching
 
 Resolutions are cached per `(key, tenantId, db)` with a TTL. The cache is
@@ -126,6 +198,27 @@ tenant inherits from it. Use `clearPlaybookCache()` in tests.
 
 A monotonic per-`(db, key)` invalidation generation closes the read-racing-a-
 write window; see the Gotchas entry below before touching `cache.ts`.
+
+Preflight results cache separately, per `(principal, key, plane, tenant)`, with a
+shorter TTL and **no invalidation ceremony of their own** — an entry captured
+under an older generation of the playbook cache is dropped on read. `principal`
+is an opaque, caller-scoped partition key: it is never echoed in a report and
+never consulted for authority. Use `clearPlaybookPreflightCache()` in tests.
+
+Two partitioning traps, both of which produce a cross-context read rather than a
+stale one:
+
+- **The tenant is resolved, not defaulted.** `preflightPlaybook()` applies the
+  same `tenantId !== undefined ? tenantId : (getTenantId() ?? null)` fallback
+  `loadPlaybookBase()` does. Scoping an omitted tenant to `null` would let two
+  ambient `withTenant()` callers with one principal share an entry — and the
+  report carries the resolved title and description.
+- **The principal must cover every input the evaluation reads.** The REST
+  provider's default folds in `appAuthConfigured` (it decides whether
+  `public-access` / `app-auth` are verdicts or `unknown`) and distinguishes an
+  *absent* permission set (`perm:unpublished`, field layer `unknown`) from an
+  explicitly empty one (known, `allow` with redactions). A custom `principal`
+  must do the same.
 
 ## Gotchas
 

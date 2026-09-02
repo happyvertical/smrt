@@ -63,6 +63,40 @@ requested path rather than a hardcoded `index.js`.
 Generated code also has to be valid in an ES module: `arguments` is not a legal
 binding name there, however convenient it reads.
 
+## Browser-plane playbook preflight route (#2590)
+
+`GET {basePath}/_preflight?key=<playbook key>` (`src/generators/preflight-route.ts`)
+is an advisory, read-effect, idempotent report of what a caller's playbook would
+be allowed to do — capability *selection*, never authorization. Resolution and
+verdict shaping live in `@happyvertical/smrt-playbooks`, which depends on this
+package, so core takes the evaluator as the `APIConfig.playbookPreflight` seam and
+the dependency stays one-way. Without a provider the route 404s.
+
+**`authMiddleware` is never invoked by preflight**, and that is enforced
+structurally rather than by discipline: `PlaybookPreflightRouteOptions` has no
+auth member of any kind, and `rest.ts` passes the boolean `appAuthConfigured`
+instead — so there is no handle in the module to invoke by mistake. A synthetic-
+`Request` dry run is explicitly not an option: the middleware is request-bound,
+returns a `Response` rather than a boolean, and may consult session stores,
+rate-limit, or audit. The app-auth layer therefore reports `unknown`, which is the
+honest answer, and a future `authPredicate` seam can fill it in without changing
+the contract.
+
+The static layers preflight predicts against are exported from the same module —
+`isApiActionEnabledForObject`, `isRestActionRoutable`, `isRestRoutePublic`,
+`restFieldReadPermissions`, `restMethodForApiAction`,
+`resolveRegisteredObjectName` — and `APIGenerator`'s own
+`isApiActionEnabled` / `isRoutePublic` now delegate to them, so the route and the
+prediction of the route cannot drift. Exposure and existence are separate
+questions: `include`/`exclude` gate a route, they do not conjure one, so
+`isRestActionRoutable` additionally requires a custom action to be declared in
+`api.routes` — the only map `dispatchCustomCollectionAction` iterates. A custom
+action is predicted against the verb its own route config declares, so a
+`public: 'read'` opt-out neither silently covers a `POST` action nor falsely
+denies a declared `GET` one. Every unresolvable key returns the provider's single uniform
+"unavailable" body with an unconditional 200: unknown and unauthorized keys are
+indistinguishable at the HTTP layer too.
+
 ## Emitted agent surface (#2591)
 
 Generated model tools have always been build-time artifacts — virtual module,

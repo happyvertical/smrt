@@ -47,6 +47,19 @@ function getDbNamespace(db: unknown): string {
   return 'db:unknown';
 }
 
+/**
+ * The cache namespace a database handle resolves to.
+ *
+ * Exported so the preflight cache (#2590) partitions by the same database
+ * identity this cache does, rather than growing a second, divergent notion of
+ * "which database is this".
+ *
+ * @internal
+ */
+export function playbookCacheNamespace(db: unknown): string {
+  return getDbNamespace(db);
+}
+
 function buildCacheKey(
   key: string,
   tenantId: string | null | undefined,
