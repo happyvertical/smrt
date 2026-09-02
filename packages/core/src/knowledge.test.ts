@@ -78,6 +78,7 @@ describe('buildDomainKnowledgeManifest', () => {
       'SmrtReport',
       'SmrtObject',
       'RoutedOrder',
+      'LegacyPathOrder',
       'ThrowingRouteOrder',
       'MalformedConfigItem',
     ]);
@@ -321,13 +322,26 @@ describe('buildDomainKnowledgeManifest', () => {
       '/order_trees/[id]',
     );
 
-    // The collection segment is the manifest `collection` VERBATIM: both the
-    // route generator and the runtime dispatcher use it unmodified, so there
-    // is no `_` -> `-` transform, and `api.path` is not consulted (that
-    // configures the separate smrt-agents route map). See #2630.
-    expect(apiSurface('@example/orders:RoutedOrder', 'exportCsv')?.path).toBe(
-      '/routed_orders/[id]/export-csv',
+    // The collection segment is the manifest `collection` VERBATIM. A
+    // collection-level `api.path` must NOT be consulted: it configures
+    // smrt-agents' route map, while the SvelteKit generator and the runtime
+    // dispatcher both serve `collection` unmodified, so honoring it here
+    // would name endpoints that 404 on both (#2630).
+    expect(apiSurface('@example/orders:LegacyPathOrder', 'list')?.path).toBe(
+      '/legacy_orders',
     );
+    expect(apiSurface('@example/orders:LegacyPathOrder', 'get')?.path).toBe(
+      '/legacy_orders/[id]',
+    );
+    expect(
+      apiSurface('@example/orders:LegacyPathOrder', 'reconcile')?.path,
+    ).toBe('/legacy_orders/[id]/reconcile');
+    // ...and no emitted surface anywhere uses the override value.
+    expect(
+      artifact.surfaces.filter((surface) =>
+        (surface.path ?? '').includes('orders-v1'),
+      ),
+    ).toEqual([]);
   });
 
   it('survives a routes config the shared resolver rejects (#2619)', () => {
@@ -925,6 +939,28 @@ function fixtureManifest(): SmartObjectManifest {
             routes: { exportCsv: { method: 'GET', path: 'export-csv' } },
           },
         },
+        extends: 'SmrtObject',
+      },
+      // A collection-level `api.path` that differs from `collection`. The
+      // SvelteKit generator and the runtime dispatcher both ignore this field
+      // (it configures smrt-agents' route map instead), so the emitted path
+      // must use `collection` verbatim (#2630).
+      '@example/orders:LegacyPathOrder': {
+        className: 'LegacyPathOrder',
+        qualifiedName: '@example/orders:LegacyPathOrder',
+        collection: 'legacy_orders',
+        fields: {},
+        methods: {
+          reconcile: {
+            name: 'reconcile',
+            async: true,
+            parameters: [],
+            returnType: 'Promise<void>',
+            isStatic: false,
+            isPublic: true,
+          },
+        },
+        decoratorConfig: { api: { path: 'orders-v1' } },
         extends: 'SmrtObject',
       },
       // `effect: 'read'` on a DELETE route makes the shared custom-action
