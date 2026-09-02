@@ -20,7 +20,10 @@
  * **At runtime**, {@link defineIntent} rejects any key outside the declared
  * allowlist and any non-JSON value (functions included) anywhere in the
  * declaration, so a declaration cast through `as any` cannot smuggle one in
- * either. The tool's `execute` is then CONSTRUCTED by
+ * either. It reads every property exactly once and keeps a JSON COPY, so a
+ * getter or Proxy cannot show the checker plain data and hand something else
+ * to whoever reads the property next. The tool's `execute` is then CONSTRUCTED
+ * by
  * {@link compileViewIntentToolSpec} from `intent.target` alone. An author
  * never supplies a callable, so there is no author-controlled code on the
  * execution path to place a `fetch` in.
@@ -248,35 +251,45 @@ function assertNoUnknownKeys(
 }
 
 /**
- * Reject anything that is not JSON data, anywhere in the declaration. This is
- * the runtime half of the no-REST invariant: a function value is the only way
- * author code could reach the execution path, and there is no legitimate
+ * Validate that a value is JSON data and return a fresh deep COPY of it. This
+ * is the runtime half of the no-REST invariant: a function value is the only
+ * way author code could reach the execution path, and there is no legitimate
  * reason for one to appear in a static declaration.
+ *
+ * It copies rather than merely asserting because validate-then-store-by-
+ * reference is a time-of-check/time-of-use gap: a getter (or a Proxy) can
+ * return plain JSON to the checker and a function to whoever reads the
+ * property next. Every property is read exactly once, here, and everything
+ * downstream sees only this copy — so what was validated is precisely what is
+ * kept, frozen, and handed to the browser.
  */
-function assertJsonValue(value: unknown, path: string, depth = 0): void {
+function cloneJsonValue(value: unknown, path: string, depth = 0): unknown {
   if (depth > 32) fail(`${path} nests deeper than 32 levels`);
-  if (value === null) return;
+  if (value === null) return null;
   if (typeof value === 'function') {
     fail(
       `${path} is a function. A view intent declaration carries no code: its execute is constructed by the registry from 'target', so an intent has no path to REST.`,
     );
   }
-  if (typeof value === 'string' || typeof value === 'boolean') return;
+  if (typeof value === 'string' || typeof value === 'boolean') return value;
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) fail(`${path} must be a finite number`);
-    return;
+    return value;
   }
   if (Array.isArray(value)) {
-    value.forEach((entry, index) => {
-      assertJsonValue(entry, `${path}[${index}]`, depth + 1);
-    });
-    return;
+    return value.map((entry, index) =>
+      cloneJsonValue(entry, `${path}[${index}]`, depth + 1),
+    );
   }
   if (isPlainObject(value)) {
+    const copy: Record<string, unknown> = {};
+    // `Object.entries` reads each own enumerable property once. Symbol-keyed
+    // properties are deliberately dropped: they are not JSON, they cannot be
+    // named by a scanner, and nothing downstream reads them.
     for (const [key, entry] of Object.entries(value)) {
-      assertJsonValue(entry, `${path}.${key}`, depth + 1);
+      copy[key] = cloneJsonValue(entry, `${path}.${key}`, depth + 1);
     }
-    return;
+    return copy;
   }
   fail(
     `${path} must be JSON data (got ${Object.prototype.toString.call(value)})`,
@@ -415,12 +428,20 @@ export function defineIntent(declaration: ViewIntentDeclaration): ViewIntent {
   if (!isPlainObject(declaration)) {
     fail('defineIntent expects an object literal');
   }
+  // `Object.keys` invokes no getter, so the allowlist check is safe to run on
+  // the caller's object and gives the clearest message for a smuggled key.
   assertNoUnknownKeys(declaration, DECLARATION_KEYS, 'declaration');
-  // Runs before any field-specific check so a smuggled callable is rejected
-  // wherever it sits, including inside `inputSchema` or `target`.
-  assertJsonValue(declaration, 'declaration');
+  // Validate AND copy before any field-specific check, so a smuggled callable
+  // is rejected wherever it sits — including inside `inputSchema` or `target`
+  // — and every check below reads the copy rather than re-reading a property
+  // that could answer differently the second time.
+  const source = cloneJsonValue(declaration, 'declaration') as Record<
+    string,
+    unknown
+  >;
+  assertNoUnknownKeys(source, DECLARATION_KEYS, 'declaration');
 
-  const id = assertIdentifier(declaration.id, 'id', INTENT_ID_MAX_LENGTH);
+  const id = assertIdentifier(source.id, 'id', INTENT_ID_MAX_LENGTH);
   if (!INTENT_ID_PATTERN.test(id)) {
     fail(
       `id '${id}' must be lowercase and namespaced with at least one dot, e.g. 'orders.filter_by_status'`,
@@ -432,14 +453,11 @@ export function defineIntent(declaration: ViewIntentDeclaration): ViewIntent {
     );
   }
   const description = assertIdentifier(
-    declaration.description,
+    source.description,
     'description',
     DESCRIPTION_MAX_LENGTH,
   );
-  if (
-    declaration.inputSchema !== undefined &&
-    !isPlainObject(declaration.inputSchema)
-  ) {
+  if (source.inputSchema !== undefined && !isPlainObject(source.inputSchema)) {
     fail('inputSchema must be an object literal');
   }
 
@@ -447,14 +465,14 @@ export function defineIntent(declaration: ViewIntentDeclaration): ViewIntent {
     kind: 'intent',
     id,
     description,
-    inputSchema: (declaration.inputSchema ?? {
+    inputSchema: (source.inputSchema ?? {
       type: 'object',
       properties: {},
     }) as Record<string, unknown>,
     classification: resolveDeclaredCapability(
-      normalizeCapability(declaration.capability) ?? {},
+      normalizeCapability(source.capability) ?? {},
     ),
-    target: normalizeTarget(declaration.target),
+    target: normalizeTarget(source.target),
     planes: ['browser'] as const,
   });
 
@@ -619,14 +637,18 @@ function newCommandId(): string {
 
 class IntentArgumentError extends Error {}
 
+/**
+ * Validate one agent-supplied argument and return a JSON copy of it. Copying
+ * closes the same time-of-check gap `cloneJsonValue` closes for declarations:
+ * the value handed to a registry command is the one that was validated, not
+ * whatever a getter answers on the next read.
+ */
 function jsonArg(args: Record<string, unknown>, key: string): unknown {
-  const value = args[key];
   try {
-    assertJsonValue(value, key);
+    return cloneJsonValue(args[key], key);
   } catch {
     throw new IntentArgumentError(key);
   }
-  return value;
 }
 
 function buildControlCommand(

@@ -250,6 +250,63 @@ describe('the no-REST invariant', () => {
     ).toThrow(/is a function/);
   });
 
+  it('keeps a JSON copy, so a getter cannot swap in a function after the check', () => {
+    let reads = 0;
+    const declaration = {
+      id: 'orders.toctou_schema',
+      description: 'x',
+      target: { registry: 'control', action: 'focus' },
+    } as unknown as ViewIntentDeclaration;
+    Object.defineProperty(declaration, 'inputSchema', {
+      enumerable: true,
+      get() {
+        reads += 1;
+        // Clean JSON on the first read the validator makes; a callable on
+        // every read after it. A validate-then-store-by-reference
+        // implementation would freeze the second value into the intent.
+        return reads === 1
+          ? { type: 'object', properties: {} }
+          : { type: 'object', evil: () => fetch('/api/v1/orders') };
+      },
+    });
+
+    const intent = defineIntent(declaration);
+
+    expect(reads).toBe(1);
+    expect(intent.inputSchema).toEqual({ type: 'object', properties: {} });
+    expect(intent.inputSchema).not.toHaveProperty('evil');
+  });
+
+  it('copies agent-supplied arguments before dispatching them', async () => {
+    const intent = defineIntent({
+      id: 'orders.toctou_value',
+      description: 'x',
+      capability: { effect: 'write' },
+      target: { registry: 'control', action: 'stage' },
+    });
+    const registry = controlRegistry();
+    const spec = compileViewIntentToolSpec(intent, {
+      registry: 'control',
+      registryPort: registry,
+      identity: { formId: 'order-form', controlId: 'notes' },
+    });
+
+    let reads = 0;
+    const args: Record<string, unknown> = {};
+    Object.defineProperty(args, 'value', {
+      enumerable: true,
+      get() {
+        reads += 1;
+        return reads === 1 ? { note: 'clean' } : { note: () => fetch('/x') };
+      },
+    });
+
+    await spec.execute(args);
+
+    const command = registry.calls[0]?.command as Record<string, unknown>;
+    expect(command.value).toEqual({ note: 'clean' });
+  });
+
   it('never calls fetch when a compiled intent executes', async () => {
     const fetchSpy = vi.fn(async () => new Response('{}'));
     vi.stubGlobal('fetch', fetchSpy);
