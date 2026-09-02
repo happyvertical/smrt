@@ -18,7 +18,7 @@ import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
 import {
   generateSchemaDiff,
-  getSQLFromDiff,
+  getSQLFromChanges,
   hasActionableChanges,
 } from './differ.js';
 import {
@@ -306,8 +306,21 @@ function collectStatementsFromDiff(
     statements.push(...strategy.generateIndexes(schema));
     statements.push(...strategy.generateTriggers(schema));
   }
+  // #2608: the pre-R11 uuid convergence has to precede *every* foreign-key
+  // statement, including the deferred constraints a newly created table
+  // contributes — a new uuid child pointing at a legacy text parent fails
+  // with SQLSTATE 42804 exactly like an existing one.
+  statements.push(
+    ...getSQLFromChanges(
+      diff.changes.filter((change) => change.phase === 'pre_foreign_key'),
+    ),
+  );
   statements.push(...tablePlan.deferredStatements);
-  statements.push(...getSQLFromDiff(diff));
+  statements.push(
+    ...getSQLFromChanges(
+      diff.changes.filter((change) => change.phase !== 'pre_foreign_key'),
+    ),
+  );
   // Drop empty and comment-only entries. SQLite type-widening upgrades
   // surface as `-- SQLite: Type upgrade for X requires table recreation`
   // — passing those through to the tracker records a successful migration

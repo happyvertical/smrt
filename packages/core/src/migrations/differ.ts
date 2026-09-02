@@ -36,6 +36,14 @@ import {
   renderIndexTarget,
 } from '../schema/utils.js';
 import {
+  describeForeignKeyTypeConflict,
+  planUuidConvergence,
+  renderUuidConvergenceRepairHint,
+  renderUuidShapeProbe,
+  type UuidConvergenceLiveForeignKey,
+  type UuidConvergencePlan,
+} from '../schema/uuid-convergence.js';
+import {
   planSqliteTableRebuilds,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
@@ -423,6 +431,18 @@ export class SchemaComparer {
   private options: DiffOptions;
   private engine: DatabaseEngine;
   private ddlStrategy: ReturnType<typeof getDDLStrategy>;
+  /**
+   * Live schemas read during one `compare()` run. The uuid convergence plan
+   * (#2608) needs the same introspection the per-table comparison does, and
+   * re-reading `getTableSchema` per relationship would multiply catalog
+   * round-trips on a wide schema.
+   */
+  private liveSchemas = new Map<
+    string,
+    SqlTableSchemaInfo | null | undefined
+  >();
+  /** Convergence plan for this run; `null` on non-PostgreSQL engines. */
+  private uuidConvergence: UuidConvergencePlan | null = null;
 
   constructor(db: DatabaseInterface, options: DiffOptions = {}) {
     this.db = db;
@@ -459,8 +479,26 @@ export class SchemaComparer {
       has_changes: false,
     };
 
+    // A comparer instance may be reused across successive compares (apply a
+    // migration, then diff again). Live introspection must not be memoized
+    // across those runs.
+    this.liveSchemas.clear();
+
     // Get list of existing tables
     const existingTables = await this.getExistingTables();
+
+    // #2608: plan the pre-R11 `text` -> `uuid` convergence before anything
+    // else so its statements lead the migration stream. Every foreign key in
+    // this diff — including the deferred constraints the orchestrator emits
+    // for newly created tables — depends on the columns it rewrites.
+    this.uuidConvergence = await this.buildUuidConvergencePlan(
+      manifestSchemas,
+      existingTables,
+    );
+    for (const change of this.uuidConvergenceChanges()) {
+      diff.changes.push(change);
+      if (!isInfoOnlyChange(change)) diff.has_changes = true;
+    }
 
     // Check each manifest schema against database
     for (const [tableName, schema] of Object.entries(manifestSchemas)) {
@@ -521,7 +559,7 @@ export class SchemaComparer {
     const changes: SchemaChange[] = [];
 
     // Get current table schema from database
-    const dbSchema = await this.db.getTableSchema?.(tableName);
+    const dbSchema = await this.getLiveSchema(tableName);
     if (!dbSchema) {
       // Table doesn't exist - this is an add_table case
       return changes;
@@ -577,6 +615,209 @@ export class SchemaComparer {
     );
 
     return changes;
+  }
+
+  /**
+   * Read (and memoize for this run) one table's live schema. Returns
+   * `undefined` when the table does not exist or the adapter cannot
+   * introspect it.
+   */
+  private async getLiveSchema(
+    tableName: string,
+  ): Promise<SqlTableSchemaInfo | undefined> {
+    if (this.liveSchemas.has(tableName)) {
+      return this.liveSchemas.get(tableName) ?? undefined;
+    }
+    const schema = await this.db.getTableSchema?.(tableName);
+    this.liveSchemas.set(tableName, schema);
+    return schema ?? undefined;
+  }
+
+  /**
+   * Plan the pre-R11 `text` -> `uuid` convergence (#2608).
+   *
+   * PostgreSQL only: SQLite stores UUIDs as text by design and DuckDB cannot
+   * rewrite a column type in place, so both engines return `null` and emit
+   * nothing for this drift.
+   */
+  private async buildUuidConvergencePlan(
+    manifestSchemas: Record<string, SchemaDefinition>,
+    existingTables: Set<string>,
+  ): Promise<UuidConvergencePlan | null> {
+    if (this.engine !== 'postgres') return null;
+
+    for (const tableName of Object.keys(manifestSchemas)) {
+      if (!existingTables.has(tableName)) continue;
+      await this.getLiveSchema(tableName);
+    }
+
+    const liveForeignKeys: UuidConvergenceLiveForeignKey[] = [];
+    for (const [tableName, schema] of this.liveSchemas) {
+      for (const live of schema?.foreignKeys ?? []) {
+        liveForeignKeys.push({
+          table: tableName,
+          column: live.column,
+          referencesTable: live.referencesTable,
+          referencesColumn: live.referencesColumn,
+        });
+      }
+    }
+
+    const relationships = Object.entries(manifestSchemas).flatMap(
+      ([tableName, schema]) =>
+        schemaForeignKeysForEngine(schema, 'postgres').map((foreignKey) => ({
+          childTable: tableName,
+          childColumn: foreignKey.column,
+          parentTable: foreignKey.referencesTable,
+          parentColumn: foreignKey.referencesColumn,
+        })),
+    );
+
+    return planUuidConvergence({
+      manifestSchemas,
+      relationships,
+      liveForeignKeys,
+      getLiveColumn: (table, column) => {
+        if (!existingTables.has(table)) return undefined;
+        const live = this.liveSchemas.get(table)?.columns[column];
+        if (!live) return undefined;
+        return {
+          normalizedType: this.normalizeType(live.type),
+          rawType: live.type,
+          hasDefault:
+            live.defaultValue !== null && live.defaultValue !== undefined,
+          exists: true,
+        };
+      },
+      probeUuidShape: (table, column) => this.probeUuidShape(table, column),
+    });
+  }
+
+  /**
+   * Count values a legacy `text` identifier column holds that cannot be
+   * reinterpreted as `uuid`. Any failure resolves to `unavailable`, which the
+   * planner treats as a block — SMRT never coerces identifier values.
+   */
+  private async probeUuidShape(
+    tableName: string,
+    columnName: string,
+  ): Promise<
+    | { status: 'clean' }
+    | { status: 'dirty'; count: number; sample?: string }
+    | { status: 'unavailable'; reason: string }
+  > {
+    try {
+      const result = await this.db.query(
+        renderUuidShapeProbe(tableName, columnName),
+      );
+      const rows = (Array.isArray(result) ? result : result.rows || []) as {
+        invalid_count?: unknown;
+        sample_value?: unknown;
+      }[];
+      const count = Number(rows[0]?.invalid_count ?? 0);
+      if (!Number.isFinite(count)) {
+        return {
+          status: 'unavailable',
+          reason: 'probe returned a non-numeric count',
+        };
+      }
+      if (count === 0) return { status: 'clean' };
+      const sample = rows[0]?.sample_value;
+      return {
+        status: 'dirty',
+        count,
+        ...(typeof sample === 'string' ? { sample } : {}),
+      };
+    } catch (error) {
+      return {
+        status: 'unavailable',
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Turn the convergence plan into diff entries: executable `type_upgrade`
+   * conversions marked `phase: 'pre_foreign_key'`, plus report-only warnings
+   * for components the planner refused.
+   */
+  private uuidConvergenceChanges(): SchemaChange[] {
+    const plan = this.uuidConvergence;
+    if (!plan) return [];
+    const changes: SchemaChange[] = [];
+    for (const conversion of plan.conversions) {
+      changes.push({
+        type: 'type_upgrade',
+        table: conversion.table,
+        name: conversion.column,
+        phase: 'pre_foreign_key',
+        mismatch: { expected: 'UUID', actual: conversion.liveType },
+        sql: conversion.statements[0],
+        sqlStatements: conversion.statements,
+      });
+    }
+    for (const block of plan.blocks) {
+      const [first] = block.targets.length > 0 ? block.targets : block.nodes;
+      changes.push({
+        type: 'type_upgrade',
+        table: first?.table ?? '',
+        name: first?.column,
+        phase: 'pre_foreign_key',
+        mismatch: { expected: 'UUID', actual: 'mixed uuid/text' },
+        advisory: {
+          severity: 'warning',
+          message:
+            'blocked: incompatible column types. The manifest declares UUID for ' +
+            `${block.nodes
+              .map((node) => `${node.table}.${node.column}`)
+              .join(', ')}, but ${block.reason}.`,
+          suggestedSql: block.suggestedSql,
+        },
+      });
+    }
+    return changes;
+  }
+
+  /**
+   * Live-type verdict for one foreign key once this run's conversions land.
+   * `undefined` means the pair is compatible (or unknowable) and the ordinary
+   * add path applies.
+   */
+  private async describeForeignKeyTypeBlock(
+    tableName: string,
+    dbSchema: SqlTableSchemaInfo,
+    foreignKey: import('../schema/types.js').ForeignKeyDefinition,
+  ): Promise<string | undefined> {
+    if (this.engine !== 'postgres') return undefined;
+    const parentSchema =
+      foreignKey.referencesTable === tableName
+        ? dbSchema
+        : await this.getLiveSchema(foreignKey.referencesTable);
+    const childType = dbSchema.columns[foreignKey.column]?.type;
+    const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
+    // A column this migration is about to add materializes with the manifest
+    // type, so there is nothing live to conflict with yet.
+    if (!childType || !parentType) return undefined;
+
+    const plan = this.uuidConvergence;
+    const childEffective =
+      plan?.effectiveType(tableName, foreignKey.column) ??
+      this.normalizeType(childType);
+    const parentEffective =
+      plan?.effectiveType(
+        foreignKey.referencesTable,
+        foreignKey.referencesColumn,
+      ) ?? this.normalizeType(parentType);
+    if (childEffective === parentEffective) return undefined;
+
+    return describeForeignKeyTypeConflict({
+      childTable: tableName,
+      childColumn: foreignKey.column,
+      childType,
+      parentTable: foreignKey.referencesTable,
+      parentColumn: foreignKey.referencesColumn,
+      parentType,
+    });
   }
 
   private async compareForeignKeys(
@@ -726,6 +967,50 @@ export class SchemaComparer {
         continue;
       }
 
+      // #2608: refuse — and *report* — a constraint whose live child and
+      // parent columns have different physical types and that this run's
+      // uuid convergence will not repair. PostgreSQL rejects such an ADD
+      // CONSTRAINT with SQLSTATE 42804, so calling it "pending" in
+      // `db:status` promises a migration that cannot succeed.
+      const typeBlock = await this.describeForeignKeyTypeBlock(
+        tableName,
+        dbSchema,
+        foreignKey,
+      );
+      if (typeBlock) {
+        changes.push({
+          type: 'add_foreign_key',
+          table: tableName,
+          name: foreignKeyConstraintName(tableName, foreignKey),
+          foreignKey,
+          advisory: {
+            severity: 'warning',
+            message: `blocked: incompatible column types. ${typeBlock}. Converge the columns to UUID, then rerun the migration.`,
+            suggestedSql: renderUuidConvergenceRepairHint(
+              [
+                this.normalizeType(
+                  dbSchema.columns[foreignKey.column]?.type ?? '',
+                ) === 'TEXT'
+                  ? { table: tableName, column: foreignKey.column }
+                  : undefined,
+                this.normalizeType(
+                  (foreignKey.referencesTable === tableName
+                    ? dbSchema
+                    : this.liveSchemas.get(foreignKey.referencesTable)
+                  )?.columns[foreignKey.referencesColumn]?.type ?? '',
+                ) === 'TEXT'
+                  ? {
+                      table: foreignKey.referencesTable,
+                      column: foreignKey.referencesColumn,
+                    }
+                  : undefined,
+              ].filter((node) => node !== undefined),
+            ),
+          },
+        });
+        continue;
+      }
+
       // A missing child column is added earlier in this same table diff, so
       // probing the pre-migration schema would fail and be misclassified as
       // an orphan. The subsequent NOT VALID + VALIDATE statements remain the
@@ -818,7 +1103,7 @@ export class SchemaComparer {
     const parentSchema =
       foreignKey.referencesTable === tableName
         ? dbSchema
-        : await this.db.getTableSchema?.(foreignKey.referencesTable);
+        : await this.getLiveSchema(foreignKey.referencesTable);
     const childType = dbSchema.columns[foreignKey.column]?.type;
     const parentType = parentSchema?.columns[foreignKey.referencesColumn]?.type;
     if (!childType || !parentType) return { nullable, uuidComparison };
@@ -2506,19 +2791,26 @@ export function hasActionableChanges(diff: SchemaDiff): boolean {
  * they already do for `type_upgrade`.
  */
 export function getSQLFromDiff(diff: SchemaDiff): string[] {
-  const statements: string[] = [];
-
   // Add table creation (requires full DDL generation - not included here)
   // This is typically handled by ensureSchema()
+  return getSQLFromChanges(diff.changes);
+}
 
-  // Add column and index changes
-  for (const change of diff.changes) {
+/**
+ * Executable SQL for an explicit subset of changes, in the order given.
+ * Callers that have to interleave diff changes with statements produced
+ * elsewhere — the orchestrator, which emits `CREATE TABLE` and deferred
+ * foreign keys of its own — partition `diff.changes` by
+ * {@link SchemaChange.phase} and render each part through this helper.
+ */
+export function getSQLFromChanges(changes: readonly SchemaChange[]): string[] {
+  const statements: string[] = [];
+  for (const change of changes) {
     if (change.type !== 'type_mismatch' && !isAdvisoryOnlyChange(change)) {
       statements.push(
         ...(change.sqlStatements ?? (change.sql ? [change.sql] : [])),
       );
     }
   }
-
   return statements;
 }
