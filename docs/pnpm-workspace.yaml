@@ -7,8 +7,9 @@ allowBuilds:
 # GHSA-73wf-gq98-2v4g). Keep the documentation site's independent lockfile
 # on the patched 4.x release as well.
 #
-# fast-uri <3.1.6 is vulnerable to host confusion via percent-encoded scheme
-# normalization (GHSA-jqff-g426-hqxp). Keep the documentation site's
+# fast-uri >=3.0.0 <3.1.6 is vulnerable to host confusion via percent-encoded
+# scheme normalization (GHSA-jqff-g426-hqxp; the advisory also covers a 2.x
+# range this workspace does not resolve). Keep the documentation site's
 # independent lockfile on the patched 3.x release as well.
 overrides:
   'browserslist@<=4.28.6': 4.28.7
