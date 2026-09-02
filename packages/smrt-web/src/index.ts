@@ -1667,6 +1667,7 @@ export function createSmrtCollection<TData extends object>(
 export {
   type RegisterWebMcpBespokeToolOptions,
   type RegisterWebMcpToolsOptions,
+  registerViewIntent,
   registerWebMcpBespokeTool,
   registerWebMcpTools,
   type WebMcpBespokeToolSpec,
@@ -1675,3 +1676,30 @@ export {
   type WebMcpRegistrationDisposer,
   type WebMcpToolEffect,
 } from './webmcp.js';
+
+// ---------------------------------------------------------------------------
+// Declarative view intents (#2588)
+//
+// Only the RUNTIME half is re-exported here. `defineIntent` and the
+// declaration registry ship from the dependency-free
+// `@happyvertical/smrt-web/intents` entry, and a `*.intents.ts` sidecar MUST
+// import them from there: this root entry pulls the client-data engine, and
+// the static-declaration contract #2591 matches against names one import
+// specifier.
+// ---------------------------------------------------------------------------
+
+export {
+  compileViewIntentToolSpec,
+  type ViewIntent,
+  type ViewIntentBinding,
+  type ViewIntentControlAction,
+  type ViewIntentControlRegistryPort,
+  type ViewIntentControlTarget,
+  type ViewIntentDataSurfaceKind,
+  type ViewIntentDataSurfaceRegistryPort,
+  type ViewIntentDataSurfaceTarget,
+  type ViewIntentDeclaration,
+  type ViewIntentTarget,
+  type ViewIntentToolSpec,
+  viewIntentToolName,
+} from './intents.js';

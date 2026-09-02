@@ -17,6 +17,13 @@
  */
 
 import {
+  capabilityAnnotations,
+  resolveDeclaredCapability,
+  WEBMCP_TOOL_EFFECTS,
+  type WebMcpCapabilityClassification,
+  type WebMcpToolEffect,
+} from './capability-classification.js';
+import {
   createDefinitionFetchers,
   createSmrtCollection,
   invalidateSmrtWebCollections,
@@ -33,6 +40,11 @@ import {
   type WebMcpToolDefinition,
   type WebToolDescriptor,
 } from './index.js';
+import {
+  compileViewIntentToolSpec,
+  type ViewIntent,
+  type ViewIntentBinding,
+} from './intents.js';
 import {
   mutationTargetHydrators,
   persistedMutationResults,
@@ -85,14 +97,11 @@ function getModelContext(): ModelContextLike | undefined {
 }
 
 /**
- * Structurally mirrors `CapabilityEffect` in `@happyvertical/smrt-types`
- * (#2587) rather than importing it — this package's dependency-DAG
- * guardrails keep it free of every `@happyvertical/*` dependency (see
- * AGENTS.md "No inter-smrt dependencies"), the same reason `data-query.ts`
- * mirrors that package's bounded query envelope structurally instead of
- * importing it.
+ * Re-exported from `./capability-classification.js`, where the one
+ * classification rule this package applies now lives so the declarative
+ * view-intent entry (#2588) can share it without importing this module.
  */
-export type WebMcpToolEffect = 'read' | 'write' | 'destructive';
+export type { WebMcpToolEffect } from './capability-classification.js';
 
 export interface WebMcpExposurePolicy {
   /** Allowed effects. Omitted means read-only exposure. */
@@ -200,10 +209,7 @@ interface ProspectiveCanonicalTool {
 }
 
 type ProspectiveTool = ProspectiveLegacyTool | ProspectiveCanonicalTool;
-type ToolSemantics = Pick<
-  ProspectiveTool,
-  'effect' | 'destructive' | 'idempotent' | 'openWorld'
->;
+type ToolSemantics = WebMcpCapabilityClassification;
 
 /**
  * Register every collection's generated tool descriptors with WebMCP.
@@ -446,11 +452,35 @@ export function registerWebMcpBespokeTool(
   return registrationDisposer(dispose, ready);
 }
 
-const VALID_EFFECTS: readonly WebMcpToolEffect[] = [
-  'read',
-  'write',
-  'destructive',
-];
+/**
+ * Register one declared view intent (#2588) against a mounted registry
+ * binding, for as long as the returned disposer is not called.
+ *
+ * This is the ONLY way an intent reaches the browser, and it goes through
+ * {@link registerWebMcpBespokeTool}, so an intent inherits the same
+ * fail-closed `effects` exposure policy as a generated model tool. The
+ * intent's classification was resolved at declaration time by the shared
+ * rule, and the hints `compileViewIntentToolSpec` emits round-trip through
+ * the bespoke registrar's own re-resolution unchanged.
+ *
+ * The `execute` registered here is constructed by
+ * `compileViewIntentToolSpec` from `intent.target`. No author-supplied code
+ * runs, and the only thing it can do is dispatch one browser registry
+ * command — the runtime half of the no-REST invariant.
+ */
+export function registerViewIntent(
+  intent: ViewIntent,
+  binding: ViewIntentBinding,
+  options: RegisterWebMcpBespokeToolOptions = {},
+): WebMcpRegistrationDisposer {
+  return registerWebMcpBespokeTool(
+    compileViewIntentToolSpec(intent, binding),
+    options,
+  );
+}
+
+const VALID_EFFECTS = WEBMCP_TOOL_EFFECTS;
+
 const NAMESPACE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 interface ValidatedExposurePolicy {
@@ -584,32 +614,6 @@ function selectProspectiveTools(
 
 function qualifiedToolName(name: string, namespace?: string): string {
   return namespace ? `${namespace}_${name}` : name;
-}
-
-/**
- * Resolve a declared capability with no CRUD/action-based guess — the shared
- * fail-closed default documented on `CapabilityClassification` in
- * `@happyvertical/smrt-types` (#2587): an omitted `effect` resolves to
- * `'destructive'`, an omitted `idempotent` to `false`, an omitted `openWorld`
- * to `true`. Canonical WebMCP definitions are trusted through this helper
- * directly (they arrive pre-classified by core); `actionSemantics()`'s CRUD
- * switch below falls back to it only for a legacy custom action, which was
- * never a fixed CRUD verb to begin with.
- */
-function resolveDeclaredCapability(
-  declared: Partial<
-    Pick<WebMcpToolDefinition, 'effect' | 'idempotent' | 'openWorld'>
-  >,
-): ToolSemantics {
-  const effect = VALID_EFFECTS.includes(declared.effect as WebMcpToolEffect)
-    ? (declared.effect as WebMcpToolEffect)
-    : 'destructive';
-  return {
-    effect,
-    destructive: effect !== 'read',
-    idempotent: declared.idempotent ?? false,
-    openWorld: declared.openWorld ?? true,
-  };
 }
 
 /**
@@ -821,13 +825,7 @@ function validateProspectiveTools(
 function annotationsFor(
   tool: ToolSemantics,
 ): NonNullable<WebMcpToolRegistration['annotations']> {
-  return {
-    readOnlyHint: tool.effect === 'read',
-    destructiveHint: tool.destructive,
-    idempotentHint: tool.idempotent,
-    openWorldHint: tool.openWorld,
-    untrustedContentHint: true,
-  };
+  return capabilityAnnotations(tool);
 }
 
 function guardedExecute(

@@ -121,6 +121,36 @@ adapter for a prefix; configure distinct prefixes for intentional coexistence.
 | `useTTS()` | `speak()`, `stop()`, `isSpeaking`, `getVoices()` |
 | `useLLM()` | `chat()`, `initialize()`, `unload()`, `isGenerating`, `downloadProgress` |
 | `useTheme()` | Theme context from `ThemeProvider` |
+| `useWebMcpTool(factory)` | Registers one imperative browser tool for a component's lifetime (the escape hatch for computed tool sets) |
+| `useViewIntent(intent, { identity })` | Binds a DECLARED view intent (#2588) to a mounted registry identity |
+
+## Declarative view intents (#2588)
+
+`useViewIntent(intent, { identity })` binds an intent declared with
+`defineIntent` in a `.ts` sidecar to this component's mounted registry
+identity — `{ formId, controlId }` for a control intent, `{ surfaceId, kind }`
+for a data-surface one — for exactly the component's lifetime.
+
+- **The contract is not here.** The declaration type, the registry, and the
+  compilation to a browser tool live in `@happyvertical/smrt-web` with no
+  Svelte dependency. This binding is the thin part; a second framework is a
+  binding, not a rewrite. Do not add intent semantics to this package.
+- **Built on `useWebMcpTool`.** Do not write a second WebMCP lifecycle: the
+  synchronous Provider policy read, the `options.effects` fallback, serialized
+  same-name re-registration across effect reruns, and the lazy
+  `@happyvertical/smrt-web` import all come from it. The compiler is imported
+  from `@happyvertical/smrt-web/intents`, the dependency-free entry, so
+  binding an intent never pulls the client-data engine.
+- **Registries come from the nearest Provider's WebMCP UI context**, or from
+  an explicit `controlRegistry`/`dataSurfaceRegistry` override. With neither,
+  it is a silent no-op — an intent with nothing mounted to dispatch to
+  registers nothing. A mismatched `identity` shape THROWS: that is an author
+  error, not an environment difference.
+- **Execution dispatches one registry command as `source: 'agent'`.** Staged
+  review, the trusted local-gesture requirement, sensitivity, and writability
+  all apply unchanged, and there is no path to REST.
+- The six fixed `smrt_ui_*` tools are unchanged by this and must stay so;
+  intents sit above them.
 
 ## AI System
 
