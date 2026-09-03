@@ -526,17 +526,28 @@ describe('CLI generation', () => {
 
 ```typescript
 import { describe, it, expect } from 'vitest';
+import { createIsolatedTestDb } from '@happyvertical/smrt-vitest';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import { MyObject, MyCollection } from './my-object.js';
 
 describe('API generation', () => {
-  it('should route GET /products to the registered collection', async () => {
+  it('should require authentication for a non-public object', async () => {
+    const db = await createIsolatedTestDb();
+    const collection = await MyCollection.create({
+      persistence: { type: 'sql', db },
+    });
+
     const generator = new APIGenerator({ basePath: '/api/v1' });
+    generator.registerCollection('my-objects', collection);
     const handler = generator.generateHandler();
 
+    // No authMiddleware is configured and MyObject isn't marked
+    // `api: { public }`, so generated routes fail closed (#1540) instead
+    // of serving open.
     const response = await handler(
-      new Request('http://localhost/api/v1/products'),
+      new Request('http://localhost/api/v1/my-objects'),
     );
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
   });
 });
 ```
