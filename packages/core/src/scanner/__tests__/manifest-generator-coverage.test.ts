@@ -512,6 +512,51 @@ describe('ManifestGenerator coverage', () => {
       expect(code).toContain('"maximum": 99');
     });
 
+    it('requires the update payload, not just the id, on update_* tools', () => {
+      // `CollectionInterface.update(id, data)` needs the payload; a schema that
+      // required only `id` told clients `{id}` was valid input (#2631 review).
+      const gen = new ManifestGenerator();
+      const code = gen.generateMCPToolsCode(baseManifest());
+      const update = code.slice(code.indexOf('"update_notes"'));
+      expect(update.slice(0, update.indexOf('}\n  }'))).toContain(
+        'required: ["id", "data"]',
+      );
+    });
+
+    it('emits one canonical MCP owner per collection for a model/collection pair', () => {
+      // The framework's normal shape puts `Note` and `NoteCollection` in the
+      // manifest under the SAME `collection`. Emitting both produced duplicate
+      // tool names with differing create/update schemas, so a client indexing
+      // by name resolved an arbitrary definition (#2631 review). The model
+      // class owns the surface because create/update schemas come from
+      // `fields`, which is the row shape.
+      const gen = new ManifestGenerator();
+      const m = baseManifest();
+      m.objects['pkg:NoteCollection'] = def('NoteCollection', {
+        collection: 'notes',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Note',
+        fields: {},
+      });
+
+      const names = gen.generateMCPTools(m).split('\n').filter(Boolean);
+      expect(names).toEqual([...new Set(names)]);
+      expect(names).toEqual([
+        'list_notes',
+        'get_notes',
+        'create_notes',
+        'update_notes',
+        'delete_notes',
+      ]);
+
+      const code = gen.generateMCPToolsCode(m);
+      const emitted = [...code.matchAll(/name: "([^"]+)"/g)].map((x) => x[1]);
+      expect(emitted).toEqual([...new Set(emitted)]);
+      expect(emitted).toEqual(names);
+      // The model's field schema survived — the access class did not win.
+      expect(code).toContain('"minimum": 0');
+    });
+
     it('emits an empty array literal when every MCP operation is excluded', () => {
       const gen = new ManifestGenerator();
       const m = baseManifest();

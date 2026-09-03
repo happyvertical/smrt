@@ -1466,12 +1466,19 @@ export function createMCPServer(options = {}) {
     ...options
   });
 
-  // Add all generated tools to the server
+  // Add all generated tools to the server. A handler supplied through the
+  // documented \`createMCPServer({ handlers })\` option wins; the throwing
+  // placeholder is only for tools the application did not wire up (#2631).
+  const handlers = options.handlers || {};
   for (const tool of tools) {
-    server.addTool(tool, async (params) => {
-      // Tool execution will be handled by the application
-      throw new Error(\`Tool '\${tool.name}' handler must be provided by application\`);
-    });
+    const handler = handlers[tool.name];
+    server.addTool(
+      tool,
+      handler ||
+        (async () => {
+          throw new Error(\`Tool '\${tool.name}' handler must be provided by application\`);
+        }),
+    );
   }
 
   return server;
@@ -1503,10 +1510,12 @@ function generateClientModeTypes(manifest: SmartObjectManifest): string {
   const typeDefinitions: string[] = [];
 
   // Generate interfaces for each object in the manifest
-  for (const [objectName, objectMeta] of Object.entries(manifest.objects)) {
+  for (const objectMeta of Object.values(manifest.objects)) {
     // Manifest keys are qualified names; only the simple class name is a valid
-    // TypeScript identifier (#2631).
-    const interfaceName = objectMeta.className || objectName;
+    // TypeScript identifier (#2631). `className` is required on
+    // `SmartObjectDefinition`, so there is deliberately no manifest-key
+    // fallback here — one would reintroduce invalid emitted TypeScript.
+    const interfaceName = objectMeta.className;
     const fields = objectMeta.fields || {};
     const propertyLines: string[] = [];
 

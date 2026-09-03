@@ -269,6 +269,40 @@ export class Gizmo extends SmrtObject {
       const names = mod.tools.map((tool: { name: string }) => tool.name);
       expect(names).toContain('list_widgets');
       expect(names).toContain('delete_widgets');
+      // Duplicate tool names would let a name-indexing MCP client resolve an
+      // arbitrary definition (#2631 review).
+      expect(names).toEqual([...new Set(names)]);
+    });
+
+    it('keeps a handler supplied through createMCPServer({ handlers })', async () => {
+      const code = (await load('\0smrt:mcp')) as string;
+      // Stub the runtime server so the registration loop can be observed
+      // without resolving the bare workspace import.
+      const stubbed = code.replace(
+        /^import .*?;$/gm,
+        `class SmrtMCPServer {
+          constructor(options) { this.options = options; this.registered = new Map(); }
+          addTool(tool, handler) { this.registered.set(tool.name, handler); }
+        }`,
+      );
+      const file = join(projectRoot, 'mcp.handlers.mjs');
+      writeFileSync(file, stubbed);
+      const mod = await import(pathToFileURL(file).href);
+
+      const configured = async () => 'configured result';
+      const server = mod.createMCPServer({
+        handlers: { list_widgets: configured },
+      });
+
+      // The configured handler survives registration ...
+      expect(server.registered.get('list_widgets')).toBe(configured);
+      await expect(server.registered.get('list_widgets')()).resolves.toBe(
+        'configured result',
+      );
+      // ... while an unwired tool still gets the explanatory placeholder.
+      await expect(server.registered.get('delete_widgets')()).rejects.toThrow(
+        /handler must be provided by application/,
+      );
     });
   });
 });

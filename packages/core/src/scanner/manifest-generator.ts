@@ -2410,14 +2410,72 @@ ${fields}
   generateMCPTools(manifest: SmartObjectManifest): string {
     const tools: string[] = [];
 
-    for (const [_name, obj] of Object.entries(manifest.objects)) {
-      const mcpConfig = obj.decoratorConfig.mcp;
-      if (mcpConfig !== false) {
-        tools.push(...this.getSimpleMCPToolNames(obj));
-      }
+    for (const obj of this.selectMCPToolOwners(manifest)) {
+      tools.push(...this.getSimpleMCPToolNames(obj));
     }
 
     return tools.join('\n');
+  }
+
+  /**
+   * Choose exactly one canonical MCP owner per `collection`.
+   *
+   * MCP tool names are keyed on `collection`, but the framework's normal shape
+   * puts a model class and its `FooCollection` access class in the manifest
+   * under the SAME collection. Emitting both produces duplicate tool names with
+   * differing create/update schemas, and an MCP client that indexes tools by
+   * name then resolves an arbitrary one (#2631 review).
+   *
+   * The model class wins: `create`/`update` input schemas are derived from
+   * `obj.fields`, and the row shape lives on the model, not on the access
+   * class. Remaining ties are broken lexically on the qualified name so the
+   * emitted surface is deterministic across generation passes.
+   */
+  private selectMCPToolOwners(
+    manifest: SmartObjectManifest,
+  ): SmartObjectDefinition[] {
+    const byCollection = new Map<string, SmartObjectDefinition>();
+
+    for (const obj of Object.values(manifest.objects)) {
+      if (obj.decoratorConfig.mcp === false) continue;
+      const existing = byCollection.get(obj.collection);
+      if (!existing || this.preferMCPToolOwner(obj, existing)) {
+        byCollection.set(obj.collection, obj);
+      }
+    }
+
+    return [...byCollection.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([, obj]) => obj);
+  }
+
+  /** True when `candidate` is the better canonical MCP owner than `current`. */
+  private preferMCPToolOwner(
+    candidate: SmartObjectDefinition,
+    current: SmartObjectDefinition,
+  ): boolean {
+    const candidateIsCollection = this.isCollectionAccessClass(candidate);
+    const currentIsCollection = this.isCollectionAccessClass(current);
+    if (candidateIsCollection !== currentIsCollection) {
+      return !candidateIsCollection;
+    }
+    const candidateKey = candidate.qualifiedName || candidate.className;
+    const currentKey = current.qualifiedName || current.className;
+    return candidateKey < currentKey;
+  }
+
+  /**
+   * Collection-access class detection, matching the convention already used by
+   * `generateRestRoutes` (direct base / generic type argument) plus the
+   * `FooCollection` naming fallback this generator uses elsewhere, so a deeper
+   * subclass that carries no type argument of its own is still recognised.
+   */
+  private isCollectionAccessClass(obj: SmartObjectDefinition): boolean {
+    return (
+      obj.extends === 'SmrtCollection' ||
+      !!obj.extendsTypeArg ||
+      obj.className.endsWith('Collection')
+    );
   }
 
   /**
@@ -2426,14 +2484,11 @@ ${fields}
   generateMCPToolsCode(manifest: SmartObjectManifest): string {
     const tools: string[] = [];
 
-    for (const [_name, obj] of Object.entries(manifest.objects)) {
-      const mcpConfig = obj.decoratorConfig.mcp;
-      if (mcpConfig !== false) {
-        const code = this.generateMCPTool(obj);
-        // An object whose every operation is excluded contributes nothing;
-        // pushing '' would emit a hole in the array literal (#2631).
-        if (code) tools.push(code);
-      }
+    for (const obj of this.selectMCPToolOwners(manifest)) {
+      const code = this.generateMCPTool(obj);
+      // An object whose every operation is excluded contributes nothing;
+      // pushing '' would emit a hole in the array literal (#2631).
+      if (code) tools.push(code);
     }
 
     return tools.length > 0 ? `[\n${tools.join(',\n')}\n]` : '[]';
@@ -2555,10 +2610,11 @@ ${fields}
         id: { type: "string", description: "The ${collection} entry ID" },
         data: {
           type: "object",
+          description: "Fields to update on the ${collection} entry",
           properties: ${schemaProperties}
         }
       },
-      required: ["id"]
+      required: ["id", "data"]
     }
   }`);
     }
